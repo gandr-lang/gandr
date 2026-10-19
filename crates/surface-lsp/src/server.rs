@@ -75,6 +75,8 @@ use serde::Deserialize as _;
 use serde_json::Value;
 
 use crate::format::edits;
+use crate::goto::Goto;
+use crate::goto::targets;
 use crate::hover::Hovering;
 use crate::hover::Style;
 use crate::hover::hover;
@@ -104,6 +106,7 @@ use crate::protocol::InitializeParams;
 use crate::protocol::InitializeResult;
 use crate::protocol::InlineCompletionItem;
 use crate::protocol::InlineCompletionList;
+use crate::protocol::Linked;
 use crate::protocol::MarkupContent;
 use crate::protocol::PositionParams;
 use crate::protocol::PublishParams;
@@ -1019,6 +1022,7 @@ impl Workspace
                 spelling: self.spelling,
                 ..STYLE
             },
+            linked: Linked(true),
         };
         let answer = match classify(request) {
             Err(malformed) => malformed.response(),
@@ -1140,7 +1144,8 @@ impl Workspace
 ///
 /// Where it stands in the lifecycle, which connection it is, how much of
 /// each report its diagnostics carry, how long a diagnostic of the form under
-/// the caret waits, and how its hovers spell types and are written.
+/// the caret waits, how its hovers spell types and are written, and whether
+/// its client takes a definition as links.
 pub struct Server
 {
     /// Where the connection stands in the lifecycle.
@@ -1158,6 +1163,8 @@ pub struct Server
     /// names when the editor names none, and the markup its client's markdown
     /// renderer reads, read at `initialize`.
     style: Style,
+    /// Whether its client takes a definition as links, read at `initialize`.
+    linked: Linked,
 }
 
 /// The style a connection hovers in until `initialize` says otherwise: the
@@ -1197,6 +1204,7 @@ impl Server
             verbosity: Verbosity::User,
             quiet: QUIET,
             style: STYLE,
+            linked: Linked(false),
         }
     }
 
@@ -1437,10 +1445,11 @@ impl Server
     ///   initialization takes the verbosity, the quiet interval and the
     ///   presentation form and spelling its options name, the user level,
     ///   [`QUIET`], the sugared form and the workspace's spelling when they
-    ///   name none, and the markup its client's capabilities name; other
-    ///   requests preserve them, and no request changes `workspace`. The
-    ///   response echoes the identifier and carries the method result or its
-    ///   lifecycle, unknown-method or invalid-parameter error.
+    ///   name none, and the markup and the definition links its client's
+    ///   capabilities name; other requests preserve them, and no request
+    ///   changes `workspace`. The response echoes the identifier and carries
+    ///   the method result or its lifecycle, unknown-method or
+    ///   invalid-parameter error.
     /// - provides: one response per request.
     /// - fails: refusals are error responses, never Rust errors.
     /// - panics: none.
@@ -1454,11 +1463,13 @@ impl Server
     /// - witness: `server::tests::inline_completion_answers_the_expected_closer`
     /// - witness: `server::tests::the_outline_requests_answer_a_known_document`
     /// - witness: `server::tests::a_hover_answers_a_known_declaration`
+    /// - witness: `server::tests::definition_answers_what_a_use_refers_to_795`
     /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
     /// - witness: `server::tests::formatting_answers_the_edits_that_lay_a_document_out`
     /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
     #[spec(
-        captures: [phase = self.phase, initial = initial_settings(&params), markup = initial_markup(&params)],
+        captures: [phase = self.phase, initial = initial_settings(&params), markup = initial_markup(&params),
+            linked = initial_links(&params)],
         ensures: |ret| match (phase, method.as_ref()) {
             (Phase::Waiting, "initialize") => self.phase == Phase::Running
                 && self.verbosity == initial.verbosity().unwrap_or_default()
@@ -1468,6 +1479,7 @@ impl Server
                     spelling: initial.spelling().unwrap_or(workspace.spelling),
                     markup,
                 }
+                && self.linked == linked
                 && matches!(ret, Outgoing::Success { result: Answer::Initialize(_), .. }),
             (Phase::Waiting, _) => self.phase == phase && matches!(ret,
                 Outgoing::Failure { ref error, .. } if error.code == ErrorCode::SERVER_NOT_INITIALIZED),
@@ -1496,6 +1508,12 @@ impl Server
             (Phase::Running, "textDocument/hover") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Hover(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
+                },
+            (Phase::Running, "textDocument/definition" | "textDocument/typeDefinition") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Links(_) | Answer::Locations(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
                 },
@@ -1536,6 +1554,7 @@ impl Server
                     spelling: settings.spelling().unwrap_or(workspace.spelling),
                     markup: initial_markup(&params),
                 };
+                self.linked = initial_links(&params);
                 success(
                     id,
                     Answer::Initialize(Box::new(InitializeResult::advertised())),
@@ -1631,6 +1650,27 @@ impl Server
                             self.peer,
                             params.position,
                             self.style,
+                        ),
+                    ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "textDocument/definition" | "textDocument/typeDefinition") => {
+                let goto = if name == "textDocument/definition" {
+                    Goto::Definition
+                }
+                else {
+                    Goto::TypeDefinition
+                };
+                match serde_json::from_value::<PositionParams>(params) {
+                    Ok(params) => success(
+                        id,
+                        workspace.definition(
+                            &params.text_document.uri,
+                            self.peer,
+                            params.position,
+                            goto,
+                            self.linked,
                         ),
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
@@ -1964,7 +2004,8 @@ impl Workspace
             && tokens.data.as_ref().len().is_multiple_of(5)
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), Window::Whole | Window::Within(_) => true },
         Answer::Initialize(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
-            | Answer::Hover(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Actions(_) => false,
+            | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
+            | Answer::Actions(_) => false,
     })]
     fn tokens(
         &self,
@@ -2017,7 +2058,8 @@ impl Workspace
             list.items.len() <= held.view(peer).proposals.len().saturating_add(8))
             && list.items.iter().all(|item| item.range.start <= position && position <= item.range.end),
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
-            | Answer::Hover(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Actions(_) => false,
+            | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
+            | Answer::Actions(_) => false,
     })]
     fn inline(
         &self,
@@ -2149,6 +2191,56 @@ impl Workspace
         }
     }
 
+    /// What a `goto` request at `position` of the copy of the document at
+    /// `uri` that `peer` is answered from answers, to a client taking links as
+    /// `linked` says.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI and any position are admitted.
+    /// - ensures: an unknown document, and one whose session holds no grammar,
+    ///   yields Nothing; otherwise the targets [`targets`] answers off the
+    ///   copy's text and what it keeps for its hovers, made now when no request
+    ///   has asked since the text last changed.
+    /// - provides: the answer to `textDocument/definition` and
+    ///   `textDocument/typeDefinition`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`targets`], and an unknown document answers
+    ///   `null`.
+    /// - witness: `server::tests::definition_answers_what_a_use_refers_to_795`
+    /// - witness: `server::tests::type_definition_answers_the_family_a_use_s_type_names_795`
+    #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Links(_) | Answer::Locations(_))
+        && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
+    fn definition(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        position: Position,
+        goto: Goto,
+        linked: Linked,
+    ) -> Answer
+    {
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Answer::Nothing;
+        };
+        document
+            .session
+            .as_ref()
+            .map_or(Answer::Nothing, |session| {
+                targets(
+                    document.text.source(),
+                    uri,
+                    document.text.hovering(&uri.path(), session),
+                    position,
+                    goto,
+                    linked,
+                )
+            })
+    }
+
     /// The answer to a formatting request `id` over `window` of the copy of
     /// the document at `uri` that `peer` is answered from.
     ///
@@ -2255,6 +2347,18 @@ fn initial_markup(params: &Value) -> Markup
 {
     InitializeParams::deserialize(params)
         .map(|params| params.markup())
+        .unwrap_or_default()
+}
+
+/// Whether the client sending the `initialize` parameters `params` takes a
+/// definition as links; not when they cannot be read.
+///
+/// # Specification
+/// trivial.
+fn initial_links(params: &Value) -> Linked
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.links())
         .unwrap_or_default()
 }
 
@@ -2480,6 +2584,7 @@ mod tests
     use super::Served;
     use super::Server;
     use super::Workspace;
+    use crate::goto::Goto;
     use crate::position::Character;
     use crate::position::Line;
     use crate::position::Position;
@@ -2487,6 +2592,8 @@ mod tests
     use crate::proposal::Proposal;
     use crate::proposal::ProposalRefusal;
     use crate::protocol::ContentChange;
+    use crate::protocol::DocumentUri;
+    use crate::protocol::Linked;
     use crate::rpc::Outgoing;
     use crate::server::Logged;
     use crate::transport::Body;
@@ -2731,6 +2838,8 @@ mod tests
                         "foldingRangeProvider":true,
                         "selectionRangeProvider":true,
                         "hoverProvider":true,
+                        "definitionProvider":true,
+                        "typeDefinitionProvider":true,
                         "documentFormattingProvider":true,
                         "documentRangeFormattingProvider":true,
                         "codeLensProvider":{"resolveProvider":false},
@@ -3001,6 +3110,220 @@ mod tests
             ask(&mut server, "file:///tmp/closed.gandr", 4),
             wire(Json(r#"[{"jsonrpc":"2.0","id":5,"result":null}]"#)),
             "a document the server does not hold answers null"
+        );
+    }
+
+    /// A data type, a recursive function over it and a numeral built of its
+    /// constructors: each line names what a definition request there reads.
+    const REFERRED: &str = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
+                            def rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero \
+                            => n,\n    Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef two : Nat ;\n\
+                            def two = Succ(Succ(Zero)) ;\n";
+
+    /// A running server whose client takes definitions as links as `linked`
+    /// says, holding [`REFERRED`] at `file:///tmp/referred.gandr`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn referring(linked: Linked) -> Connected
+    {
+        let mut server = Connected::default();
+        let initialize = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
+                {{"textDocument":{{"definition":{{"linkSupport":{}}}}}}}}}}}"#,
+            linked.0
+        );
+        let _answered = send(&mut server, Json(&initialize));
+        let open = format!(
+            r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":
+                {{"uri":"file:///tmp/referred.gandr","languageId":"gandr","version":1,
+                 "text":{}}}}}}}"#,
+            Value::String(REFERRED.to_owned())
+        );
+        let _published = send(&mut server, Json(&open));
+        server
+    }
+
+    /// What the `goto` request at `position` of `uri` answers `server`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn going(
+        server: &mut Connected,
+        goto: Goto,
+        uri: &DocumentUri,
+        position: Position,
+    ) -> Value
+    {
+        let method = match goto {
+            Goto::Definition => "textDocument/definition",
+            Goto::TypeDefinition => "textDocument/typeDefinition",
+        };
+        let request = serde_json::json!({
+            "jsonrpc": "2.0", "id": 6_i32, "method": method,
+            "params": {"textDocument": {"uri": uri.to_string()}, "position": position},
+        });
+        send(server, Json(&request.to_string()))
+            .pointer("/0/result")
+            .cloned()
+            .unwrap_or(Value::Null)
+    }
+
+    /// One link in [`REFERRED`], from `origin` to `whole` with `named`
+    /// selected.
+    ///
+    /// # Specification
+    /// trivial.
+    fn link(
+        origin: Range,
+        whole: Range,
+        named: Range,
+    ) -> Value
+    {
+        serde_json::json!({
+            "originSelectionRange": origin,
+            "targetUri": "file:///tmp/referred.gandr",
+            "targetRange": whole,
+            "targetSelectionRange": named,
+        })
+    }
+
+    /// The position at `line` and `character`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn at(
+        line: Line,
+        character: Character,
+    ) -> Position
+    {
+        Position { line, character }
+    }
+
+    #[test]
+    fn definition_answers_what_a_use_refers_to_795()
+    {
+        let uri = DocumentUri::from("file:///tmp/referred.gandr");
+        let mut linked = referring(Linked(true));
+        let mut located = referring(Linked(false));
+        let position = |line: u32, character: u32| at(Line::from(line), Character::from(character));
+        let range = |line: u32, start: u32, end: u32| Range {
+            start: position(line, start),
+            end: position(line, end),
+        };
+        let definition = |server: &mut Connected, line, character| {
+            going(server, Goto::Definition, &uri, position(line, character))
+        };
+        let n = range(4, 13, 14);
+        let plus = range(4, 8, 12);
+        let nat = Range {
+            start: position(0, 0),
+            end: position(3, 1),
+        };
+        let succ = range(2, 2, 6);
+        assert_eq!(
+            definition(&mut linked, 6, 12),
+            Value::Array(vec![link(range(6, 12, 13), n, n)]),
+            "a parameter's use links to its binder"
+        );
+        assert_eq!(
+            definition(&mut located, 6, 12),
+            serde_json::json!([{"uri": "file:///tmp/referred.gandr", "range": n}]),
+            "a client without links is answered the binder's location"
+        );
+        assert_eq!(
+            definition(&mut linked, 6, 13),
+            definition(&mut linked, 6, 12),
+            "a caret just past a name answers the name"
+        );
+        assert_eq!(
+            definition(&mut linked, 7, 21),
+            Value::Array(vec![link(range(7, 20, 27), plus, plus)]),
+            "a recursive call links to its declaration"
+        );
+        assert_eq!(
+            definition(&mut linked, 7, 31),
+            Value::Array(vec![link(
+                range(7, 31, 32),
+                range(7, 9, 10),
+                range(7, 9, 10)
+            )]),
+            "a pattern's binder is the referent of its use in the arm"
+        );
+        assert_eq!(
+            definition(&mut linked, 7, 4),
+            Value::Array(vec![link(range(7, 4, 8), nat, succ)]),
+            "a constructor in a pattern links to its family with the constructor selected"
+        );
+        assert_eq!(
+            definition(&mut linked, 11, 18),
+            Value::Array(vec![link(range(11, 15, 25), nat, succ)]),
+            "a constructor nested in another's arguments answers itself"
+        );
+        assert_eq!(
+            definition(&mut linked, 10, 10),
+            Value::Array(vec![link(range(10, 10, 13), nat, range(0, 5, 8))]),
+            "a written type links to its family"
+        );
+        assert_eq!(
+            definition(&mut linked, 4, 1),
+            Value::Array(vec![]),
+            "a keyword refers to nothing"
+        );
+        assert_eq!(
+            going(
+                &mut linked,
+                Goto::Definition,
+                &DocumentUri::from("file:///tmp/closed.gandr"),
+                position(0, 0)
+            ),
+            Value::Null,
+            "a document the server does not hold answers null"
+        );
+    }
+
+    #[test]
+    fn type_definition_answers_the_family_a_use_s_type_names_795()
+    {
+        let uri = DocumentUri::from("file:///tmp/referred.gandr");
+        let mut linked = referring(Linked(true));
+        let position = |line: u32, character: u32| at(Line::from(line), Character::from(character));
+        let range = |line: u32, start: u32, end: u32| Range {
+            start: position(line, start),
+            end: position(line, end),
+        };
+        let mut type_definition = |line, character| {
+            going(
+                &mut linked,
+                Goto::TypeDefinition,
+                &uri,
+                position(line, character),
+            )
+        };
+        let whole = Range {
+            start: position(0, 0),
+            end: position(3, 1),
+        };
+        let nat = |origin| Value::Array(vec![link(origin, whole, range(0, 5, 8))]);
+        assert_eq!(
+            type_definition(6, 12),
+            nat(range(6, 12, 13)),
+            "a parameter's use is typed by the family"
+        );
+        assert_eq!(
+            type_definition(7, 9),
+            nat(range(7, 9, 10)),
+            "so is a binder in a constructor pattern"
+        );
+        assert_eq!(
+            type_definition(11, 10),
+            nat(range(11, 10, 26)),
+            "and a numeral built of its constructors"
+        );
+        assert_eq!(
+            type_definition(0, 1),
+            Value::Array(vec![]),
+            "a keyword types nothing"
         );
     }
 

@@ -7144,6 +7144,9 @@ pub struct DeclarationParts<'source>
     pub constant: ConstantIndex,
     /// The bytes covered by the declaration that introduced the name.
     pub span: ByteSpan,
+    /// The bytes of the name tile that declaration writes, or of the form
+    /// standing where a name belongs when it writes none.
+    pub named: ByteSpan,
     /// The opaque handle a checker echoes back in place of that span.
     pub origin: OriginToken,
     /// The unit key of this name's signature form.
@@ -7254,6 +7257,18 @@ impl<'source> LoweredDeclaration<'source>
     pub const fn span(&self) -> ByteSpan
     {
         self.parts.span
+    }
+
+    /// The bytes of the name tile the declaration introducing the name
+    /// writes: where a face that goes from a use to its declaration lands.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn named(&self) -> ByteSpan
+    {
+        self.parts.named
     }
 
     /// The opaque handle a checker echoes back in place of the span.

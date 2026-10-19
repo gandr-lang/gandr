@@ -121,9 +121,11 @@
 use alloc::format;
 use alloc::string::String;
 use std::path::Path;
+use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_surface_dispatcher::Declared;
+use gandr_surface_dispatcher::Referent;
 use gandr_surface_dispatcher::Subject;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::TypedSpan;
@@ -172,14 +174,44 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// What a document copy keeps for its hovers until its text changes: the type
-/// table of its text.
+/// What a document copy keeps for its hovers and its definitions until its
+/// text changes: the type table of its text and the path of each source of the
+/// unit the table was typed in.
 #[derive(Clone, Debug)]
-#[repr(transparent)]
 pub struct Hovering
 {
     /// The type of every node of the text, and of every declaration.
     table: TypeTable,
+    /// The canonical path of each source of the table's unit, in the unit's
+    /// order; empty for a text typed alone.
+    paths: Vec<PathBuf>,
+}
+
+impl Hovering
+{
+    /// The type table of the text.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn table(&self) -> &TypeTable
+    {
+        &self.table
+    }
+
+    /// The canonical path of the unit's source `referent` stands in, none for
+    /// a text typed alone.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn path(
+        &self,
+        referent: &Referent,
+    ) -> Option<&Path>
+    {
+        self.paths
+            .get(usize::from(referent.source()))
+            .map(PathBuf::as_path)
+    }
 }
 
 /// What the hovers of `text`, the document at `path` that `session` judges,
@@ -189,11 +221,12 @@ pub struct Hovering
 /// - requires: nothing; `session` may have judged any revision.
 /// - ensures: [`TypeTable::of_parsed_unit`] over the import closure the
 ///   dispatcher's [`lay_out`] lays `text` out in when it imports a sibling by
-///   path, else [`TypeTable::of_parsed`] over `text`, each parsed through
-///   `session`'s form store ([`Session::parse_held`]), which takes up every
-///   form its latest submission molded — every form of the closure, for a
-///   session that judged the document — and leaves the store as it was; the
-///   empty table when the text did not parse.
+///   path, beside the closure's paths, else [`TypeTable::of_parsed`] over
+///   `text`, beside no path, each parsed through `session`'s form store
+///   ([`Session::parse_held`]), which takes up every form its latest submission
+///   molded — every form of the closure, for a session that judged the document
+///   — and leaves the store as it was; the empty table when the text did not
+///   parse.
 /// - provides: what a document copy keeps for its hovers; a name an import
 ///   brings in types at its use as its declaration does.
 /// - fails: never; a refusal answers the empty table.
@@ -216,20 +249,27 @@ pub fn hovering<Store, Blocks>(
 ) -> Hovering
 {
     let grammar = session.grammar();
-    let table = match lay_out(grammar, path, classify(path), text) {
-        Maybe::Present(laid) => session
-            .parse_held(SourceText::from(laid.text.as_str()))
-            .ok()
-            .and_then(|parsed| {
-                TypeTable::of_parsed_unit(grammar, parsed, &laid.unit, laid.base).ok()
-            }),
-        Maybe::Absent(_) => session
-            .parse_held(text)
-            .ok()
-            .and_then(|parsed| TypeTable::of_parsed(grammar, parsed).ok()),
+    let (table, paths) = match lay_out(grammar, path, classify(path), text) {
+        Maybe::Present(laid) => (
+            session
+                .parse_held(SourceText::from(laid.text.as_str()))
+                .ok()
+                .and_then(|parsed| {
+                    TypeTable::of_parsed_unit(grammar, parsed, &laid.unit, laid.base).ok()
+                }),
+            laid.paths,
+        ),
+        Maybe::Absent(_) => (
+            session
+                .parse_held(text)
+                .ok()
+                .and_then(|parsed| TypeTable::of_parsed(grammar, parsed).ok()),
+            Vec::new(),
+        ),
     };
     Hovering {
         table: table.unwrap_or_default(),
+        paths,
     }
 }
 

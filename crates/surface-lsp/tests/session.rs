@@ -1086,6 +1086,46 @@ fn an_importer_edit_offers_the_kernel_its_own_declarations_776()
     );
 }
 
+/// A name the importer uses but a sibling declares is defined in the sibling:
+/// the answer names the sibling's own `file` URI, at its position in the
+/// sibling's text, never the importer's.
+#[test]
+fn a_definition_in_a_sibling_answers_the_sibling_s_path_795()
+{
+    let scratch = Scratch::new(Path::new("definition-795"));
+    let directory =
+        std::fs::canonicalize(&scratch.0).expect("the scratch directory has a canonical path");
+    let base = directory.join("base.gandr");
+    let document = directory.join("document.gandr");
+    std::fs::write(&base, "def one : Integer ;\n\ndef one = 1 ;\n")
+        .expect("the sibling is written");
+    std::fs::write(&document, "").expect("the document is written");
+    let address = uri(&document);
+    let mut messages = opening();
+    messages.push(open(&Source {
+        uri: address.clone(),
+        text: "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n".to_owned(),
+    }));
+    messages.push(json!({"jsonrpc": "2.0", "id": "definition", "method": "textDocument/definition", "params": {
+        "textDocument": {"uri": address}, "position": {"line": 2_i32, "character": 11_i32},
+    }}));
+    messages.extend(closing());
+    let (served, written) = session(&messages);
+    assert_eq!(served, Served::Clean);
+    let answer = written
+        .iter()
+        .find(|message| message["id"] == json!("definition"))
+        .expect("the definition request is answered");
+    assert_eq!(
+        answer["result"],
+        json!([{"uri": uri(&base), "range": {
+            "start": {"line": 0_i32, "character": 4_i32},
+            "end": {"line": 0_i32, "character": 7_i32},
+        }}]),
+        "`one` is the sibling's, at its name in the sibling's first line"
+    );
+}
+
 #[test]
 fn wire_helpers_preserve_escaped_paths_and_unicode_payloads()
 {
