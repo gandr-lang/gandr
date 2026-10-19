@@ -4619,4 +4619,34 @@ mod tests
             "every printed type reads back: {trips:?}"
         );
     }
+
+    /// #768: a family a record fills with a function literal, applied at a
+    /// nested call, prints as what the literal returns and reads back: the
+    /// pair of operations into it is the pair of their reducts.
+    #[test]
+    fn a_family_decoded_at_a_nested_call_reads_back_768()
+    {
+        let source = SourceText::from(
+            "data N : Type {\n  Z : N;\n  S : (n : N) --> N;\n}\n\ndata T : Type {\n  V : T;\n}\n\ndef \
+             ext(g : N) -> -F N { return S(g) }\n\ndef k(g : N, t : T) -> -F T { return t }\n\ndef \
+             w : #{c : Type, tm : +U (c -> -F Type), e : (g : c) => c, a : (g : c, t : tm(e(g))) \
+             => tm(g), b : (g : c, t : tm(e(g))) => tm(g)} ;\ndef w = #{N, #{thunk { fn (g) { \
+             return T } }, #{ext, #{k, k}}}} ;\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let trips: Vec<(String, RoundTrip)> = table(source)
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared)
+            .into_iter()
+            .map(|back| (back.spelled, back.trip))
+            .collect();
+        let product: Vec<&RoundTrip> = trips
+            .iter()
+            .filter(|&&(ref spelled, _)| spelled == "((N, T) => T) * ((N, T) => T)")
+            .map(|&(_, ref trip)| trip)
+            .collect();
+        assert!(
+            !product.is_empty() && product.iter().all(|&trip| *trip == RoundTrip::Equal),
+            "the pair at the call reads back as what the literal returns: {trips:?}"
+        );
+    }
 }
