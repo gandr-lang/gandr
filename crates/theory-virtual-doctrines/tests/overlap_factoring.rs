@@ -3,6 +3,8 @@
 #[cfg(test)]
 mod tests
 {
+    use alloc::collections::BTreeSet;
+
     use anodized::spec;
     use gandr_theory_cell_complexes::Cell;
     use gandr_theory_cell_complexes::CellId;
@@ -249,8 +251,10 @@ mod tests
         else {
             return DeclineIsAcyclicity(false);
         };
-        let mut fired = participating(left);
-        fired.extend(participating(right));
+        let fired: BTreeSet<CellId> = participating(left)
+            .into_iter()
+            .chain(participating(right))
+            .collect();
         DeclineIsAcyclicity(!cycle.is_empty() && cycle.iter().all(|member| fired.contains(&member.0) && matches!(store.get(member.0), Maybe::Present(entry) if entry.meta().vars().iter().any(|var| var.var().hole() == member.1.hole() && var.variance() == CellVariance::Mixed))))
     }
 
@@ -866,13 +870,12 @@ mod tests
     #[spec(ensures: |ret| cmd.metavars().all(|var| ret.iter().any(|name| name.as_str() == var.hole().as_ref())) && ret.iter().enumerate().all(|(index, name)| cmd.metavars().any(|var| name.as_str() == var.hole().as_ref()) && !ret.iter().skip(index.saturating_add(1)).any(|later| later == name)))]
     fn seam_hole_names(cmd: &CmdPat) -> Vec<String>
     {
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
         let mut names: Vec<String> = Vec::new();
         for var in cmd.metavars() {
-            if !names
-                .iter()
-                .any(|held| held.as_str() == var.hole().as_ref())
-            {
-                names.push(String::from(var.hole().as_ref()));
+            let name: &str = var.hole().as_ref();
+            if seen.insert(name) {
+                names.push(String::from(name));
             }
         }
         names
@@ -917,9 +920,10 @@ mod tests
     #[spec(ensures: |ret| tracelet.path_a.iter().chain(&tracelet.path_b).all(|step| ret.contains(&step.cell)) && ret.iter().enumerate().all(|(index, id)| tracelet.path_a.iter().chain(&tracelet.path_b).any(|step| step.cell == *id) && !ret.iter().skip(index.saturating_add(1)).any(|later| later == id)))]
     fn participating(tracelet: &Tracelet) -> Vec<CellId>
     {
+        let mut seen = BTreeSet::new();
         let mut cells = Vec::new();
         for step in tracelet.path_a.iter().chain(&tracelet.path_b) {
-            if !cells.contains(&step.cell) {
+            if seen.insert(step.cell) {
                 cells.push(step.cell);
             }
         }
@@ -1212,7 +1216,7 @@ mod tests
         else {
             panic!("the witnessed obstruction is a cycle");
         };
-        let recorded = participating(first);
+        let recorded: BTreeSet<CellId> = participating(first).into_iter().collect();
         assert!(
             cycle.iter().any(|node| recorded.contains(&node.0)),
             "the cycle runs through the FIRST member's cell — the one no adjacent pair ever put \

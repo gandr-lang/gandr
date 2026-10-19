@@ -1,5 +1,6 @@
 //! Constructor-menu queries over the cell store.
 
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -228,11 +229,13 @@ impl<'store> Query<'store>
         right: &RelationRef,
     ) -> Vec<SeamComposite>
     {
+        let left_generators: BTreeSet<CellId> = left.generators.iter().copied().collect();
+        let right_generators: BTreeSet<CellId> = right.generators.iter().copied().collect();
         let mut out = Vec::new();
         for overlap in enumerate_overlaps(self.cells) {
             if overlap.kind != OverlapKind::Composition
-                || !left.generators.contains(&overlap.left)
-                || !right.generators.contains(&overlap.right)
+                || !left_generators.contains(&overlap.left)
+                || !right_generators.contains(&overlap.right)
             {
                 continue;
             }
@@ -272,11 +275,12 @@ impl<'store> Query<'store>
         rel: &RelationRef,
     ) -> Vec<ExtensionCandidate>
     {
+        let generators: BTreeSet<CellId> = rel.generators.iter().copied().collect();
         let mut out = Vec::new();
         for overlap in enumerate_overlaps(self.cells) {
             if overlap.kind != OverlapKind::Confluence
-                || !rel.generators.contains(&overlap.left)
-                || !rel.generators.contains(&overlap.right)
+                || !generators.contains(&overlap.left)
+                || !generators.contains(&overlap.right)
             {
                 continue;
             }
