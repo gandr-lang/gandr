@@ -5798,6 +5798,7 @@ impl Walk<'_, '_>
     /// - witness: `walk::tests::missing_operands_are_unbalanced_not_layout_failures`
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `tests::goldens::a_dependent_arrow_ignoring_its_binder_spells_as_the_arrow_398`
+    /// - witness: `tests::goldens::a_dependent_pair_ignoring_its_binder_spells_as_the_product_771`
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
             Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Lambda | Join::Thunk
@@ -5818,6 +5819,9 @@ impl Walk<'_, '_>
                     // An occurrence of a dependent arrow's binder keeps the
                     // thunk the alias stands for.
                     Join::ValueFunction(..) if piece.binding == Binding::Prefix => Binding::Prefix,
+                    // A dependent pair naming no binder is the product it
+                    // reads as.
+                    Join::Sigma if piece.binding == Binding::Product => Binding::Product,
                     Join::ValueFunction(..) => Binding::Arrow,
                     Join::Sequence | Join::TypedSequence => Binding::Sequence,
                     Join::Infix { infix, .. } => infix.binding(),
@@ -6000,6 +6004,38 @@ impl Walk<'_, '_>
                     .concat_all(&[open, binder, colon, domain.doc, arrow])?;
                 let head = self.space_or_break(head)?;
                 (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
+            },
+            // The surface reads a record whose later field names no earlier
+            // one as a record of labels, not as a pair, so a dependent pair
+            // whose second factor names no binder — a decode the family
+            // reduces away (#771) — is written as the product it reads as:
+            // `A * B` sugared, each operand tighter than the chain, and
+            // `#{A, B}` explicit.
+            Join::Sigma
+                if self.fidelity == Fidelity::Faithful
+                    && !self.occurring.contains(&OpenBinders(self.opened.len())) =>
+            {
+                let second = self.pop()?;
+                let first = self.pop()?;
+                if self.form == Form::Sugared {
+                    let first = self.bare_up_to(first, Binding::Prefix)?;
+                    let second = self.bare_up_to(second, Binding::Prefix)?;
+                    let symbol = self.leaf(Infix::Product.symbol())?;
+                    let head = self.builder.concat(first, symbol)?;
+                    let head = self.space_or_break(head)?;
+                    (self.builder.concat(head, second)?, Binding::Product)
+                }
+                else {
+                    let opener = self.leaf(Brace::Hash.opener())?;
+                    let comma = self.leaf(Glyphs(","))?;
+                    let comma = self.space_or_break(comma)?;
+                    let inner = self
+                        .builder
+                        .concat_all(&[opener, first.doc, comma, second.doc])?;
+                    let inner = self.none_or_break(inner)?;
+                    let close = self.leaf(Glyphs("}"))?;
+                    (self.builder.concat(inner, close)?, Binding::Atom)
+                }
             },
             Join::Sigma => {
                 let second = self.pop()?;

@@ -1506,6 +1506,63 @@ fn a_dependent_arrow_ignoring_its_binder_spells_as_the_arrow_398()
     }
 }
 
+/// A dependent pair whose second factor names no binder — what a decode
+/// reducing its family away leaves (#771) — has no spelling of its own: the
+/// surface reads a record whose later field names no earlier one as a
+/// record of labels, so it is written as the product it reads as, `A * B`
+/// sugared and `#{A, B}` explicit; one whose second factor names its binder
+/// keeps the record.
+#[test]
+fn a_dependent_pair_ignoring_its_binder_spells_as_the_product_771()
+{
+    let names = [Name::from("a")];
+    let mut core = CoreArena::new();
+    let universe = small_universe(&mut core);
+    let abstract_a = core.value_type_abstract(ConstantIndex::from(0_usize));
+    let arrow = core.comp_type_returner(abstract_a);
+    let arrow = core.comp_type_arrow(abstract_a, arrow);
+    let function = core.value_type_thunk(arrow);
+    let ignoring = core.value_type_sigma(universe, function);
+    let pair = core.value_type_product(&[abstract_a, abstract_a]);
+    let nested = core.value_type_sigma(function, pair);
+    let own = bound(&mut core, DeBruijnIndex::from(0_u32));
+    let naming = core.value_type_sigma(universe, own);
+    let source = CoreSource::new(&core, &names);
+    for (root, form, expected, what) in [
+        (
+            ignoring,
+            Form::Sugared,
+            "Type * (a => a)",
+            "a binder no occurrence names",
+        ),
+        (
+            ignoring,
+            Form::Explicit,
+            "#{Type, +U (a -> -F a)}",
+            "explicitly",
+        ),
+        (
+            nested,
+            Form::Sugared,
+            "(a => a) * (a * a)",
+            "an inner product parenthesized",
+        ),
+        (
+            naming,
+            Form::Sugared,
+            "#{a : Type, b : a}",
+            "a binder its second factor names",
+        ),
+    ] {
+        let rendered = presented_in(&source, Root::Type(CoreNode::ValueType(root)), wide(), form);
+        assert_eq!(
+            (rendered.as_ref(), rendered.fidelity()),
+            (expected, Fidelity::Faithful),
+            "{what}"
+        );
+    }
+}
+
 /// A dependent arrow's binder spells as the source names it where that
 /// name captures nothing: a name the type mentions, or one a binder
 /// around it took, falls back to a generated name, and a generated name
