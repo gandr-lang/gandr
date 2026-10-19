@@ -1,0 +1,2 @@
+/// `unary_expression`: negation.
+def negated = -answer ;

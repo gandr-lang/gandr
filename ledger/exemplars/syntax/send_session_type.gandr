@@ -1,0 +1,2 @@
+/// `send_session_type`: a session that sends.
+def outward : !Integer. end ;

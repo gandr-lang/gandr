@@ -1,0 +1,2 @@
+/// `isomorphism_type`: an isomorphism type.
+def turned : Integer ≅ Integer ;

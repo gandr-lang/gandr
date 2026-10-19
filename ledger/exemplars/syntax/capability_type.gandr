@@ -1,0 +1,2 @@
+/// `capability_type`: a capability and the operations it grants.
+def fs : Cap {read, write} ;

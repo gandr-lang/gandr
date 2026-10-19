@@ -1,0 +1,5 @@
+/// `instantiation.direction.productivity`: a corecursive call guarded by an observation.
+def rec nats(n : Integer) -> Stream(Integer) {
+  .head => n,
+  .tail => nats[>](n + 1)
+}

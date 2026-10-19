@@ -1,0 +1,7 @@
+/// `as_pattern`: an as-pattern: a pattern whose match is also bound.
+def same(n : Integer) -> -F Integer {
+  case n {
+    0 as zero => return zero,
+    _ => return n
+  }
+}

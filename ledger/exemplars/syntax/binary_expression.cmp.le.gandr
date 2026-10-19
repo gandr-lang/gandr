@@ -1,0 +1,2 @@
+/// `binary_expression.cmp.le`: an at-most comparison.
+def at_most = 1 <= 2 ;

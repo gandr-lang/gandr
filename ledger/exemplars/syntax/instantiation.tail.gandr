@@ -1,0 +1,4 @@
+/// `instantiation.tail`: a recursive call in tail position.
+def rec tailing(n : Integer) -> -F Integer {
+  return tailing[tail](n)
+}

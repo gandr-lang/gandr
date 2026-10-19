@@ -1,0 +1,2 @@
+/// `labelled_sum_expression`: a labelled sum injection.
+def one = +{.0 = 1} ;

@@ -1,0 +1,2 @@
+/// `equivalence_type`: an equivalence type.
+def same : Integer ≃ Integer ;

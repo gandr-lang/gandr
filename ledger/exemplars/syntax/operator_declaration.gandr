@@ -1,0 +1,2 @@
+/// `operator_declaration`: an operator fixity declaration: a fixity, a precedence and the operator's text.
+op prefix 9 "!" ;

@@ -1,0 +1,2 @@
+/// `parenthesized_expression`: a parenthesized expression with its type.
+def typed = (42 : Integer) ;

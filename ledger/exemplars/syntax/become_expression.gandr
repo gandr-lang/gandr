@@ -1,0 +1,4 @@
+/// `become_expression`: a tail call: the computation becomes another.
+def again() -> -F Integer {
+  become answer()
+}

@@ -1,0 +1,2 @@
+/// `file_descriptor`: a shell file descriptor in a redirection.
+def merged = #!{ make 2>&1; } ;

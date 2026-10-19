@@ -1,0 +1,2 @@
+/// `package_type`: a package type: a type hiding its witnesses.
+def counter : package [ T ] T ;

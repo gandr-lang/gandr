@@ -1,0 +1,6 @@
+/// `tuple_pattern`: a tuple pattern.
+def swap(p : (Integer, String)) -> -F (String, Integer) {
+  case p {
+    (n, s) => return (s, n)
+  }
+}

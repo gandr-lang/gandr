@@ -1,0 +1,2 @@
+/// `acquire_statement`: an acquisition of a shared endpoint, bound.
+acquire(shared) as seat ;

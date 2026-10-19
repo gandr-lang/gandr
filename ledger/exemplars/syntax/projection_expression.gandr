@@ -1,0 +1,2 @@
+/// `projection_expression`: a projection of a field.
+def across = point.x ;

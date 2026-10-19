@@ -1,0 +1,2 @@
+/// `string.expression`: a string with an interpolated expression.
+def greeting = "hello, ${name}" ;

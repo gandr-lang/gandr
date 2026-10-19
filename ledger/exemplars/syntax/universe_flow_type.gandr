@@ -1,0 +1,2 @@
+/// `universe_flow_type`: a flow between universe codes.
+def shift : Schema.Old ⇝ Schema.New ;

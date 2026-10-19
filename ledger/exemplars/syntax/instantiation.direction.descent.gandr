@@ -1,0 +1,4 @@
+/// `instantiation.direction.descent`: a recursive call made on a smaller argument.
+def rec fact(n : Integer) -> -F Integer {
+  become fact[<](n)
+}

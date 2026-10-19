@@ -1,0 +1,9 @@
+/// `handle_expression`: a handler: a computation and its operation clauses.
+def quiet() -> -F Unit {
+  handle c : Proc {
+    k(unit)
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => k(unit)
+  }
+}

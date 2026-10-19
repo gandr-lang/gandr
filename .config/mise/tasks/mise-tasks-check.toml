@@ -466,6 +466,15 @@ fi
 echo 'syntax ledger check OK: the committed ledger is the grammar'"'"'s'
 '''
 
+# One exemplar per committed rule of the syntax ledger and per attribute
+# (`ledger/exemplars/{syntax,attributes}`), verified by the driver: the files
+# and the rules match by name, each exemplar parses with no obligation and
+# holds a tile of its rule, and each attribute exemplar lowers with its
+# attribute filed. Every finding is printed, `<file>: <fault>`.
+["check:syntax-exemplars"]
+description = "One verified exemplar per committed rule and attribute of the syntax ledger"
+run = "cargo run --locked --quiet --profile test --package gandr-lang -- ledger exemplars ledger/exemplars"
+
 ["check:tests"]
 description = "Unit and integration tests over every target"
 run = "cargo nextest run --workspace --locked --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"

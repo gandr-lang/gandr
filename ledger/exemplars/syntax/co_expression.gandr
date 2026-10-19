@@ -1,0 +1,2 @@
+/// `co_expression`: a copattern bundle of explicit instantiations.
+def sized = co { size = 1 } ;

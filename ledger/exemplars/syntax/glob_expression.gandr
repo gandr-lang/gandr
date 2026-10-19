@@ -1,0 +1,7 @@
+/// `glob_expression`: a globular structure: its cells and its homs.
+def path_glob(A : Type) -> Glob {
+  glob {
+    cells = A;
+    hom(x, y) = path_glob(Path(A, x, y));
+  }
+}

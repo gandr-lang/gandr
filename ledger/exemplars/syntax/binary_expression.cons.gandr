@@ -1,0 +1,2 @@
+/// `binary_expression.cons`: path cons: a step before the rest of a path.
+def flipped = here(back(loop) ∷ here(Base)) ;

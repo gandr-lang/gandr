@@ -1,0 +1,4 @@
+/// `f_type.row`: a computation type with the capabilities it uses.
+def main() -> -F [Fs] String {
+  become peek(fs)
+}

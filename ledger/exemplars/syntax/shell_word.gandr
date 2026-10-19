@@ -1,0 +1,2 @@
+/// `shell_word`: a shell word.
+def listing = #!{ ls; } ;

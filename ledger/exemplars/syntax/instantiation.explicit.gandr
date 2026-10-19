@@ -1,0 +1,4 @@
+/// `instantiation.explicit`: an explicit instantiation of a named parameter.
+def rec sized(n : Integer) -> -F Integer {
+  return sized[size = 1](n)
+}

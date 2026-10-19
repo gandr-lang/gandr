@@ -1,0 +1,6 @@
+/// `select_expression`: a selection of a label on a session endpoint.
+def choose() -> -F Unit {
+  fork (seat : &{ next : end }) { offer(seat) { next => close(seat) } } as desk;
+  select(desk, next);
+  close(desk)
+}

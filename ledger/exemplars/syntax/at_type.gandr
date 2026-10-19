@@ -1,0 +1,2 @@
+/// `at_type`: a type placed at a world.
+def report : Seat.Report at seat ;

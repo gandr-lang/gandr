@@ -1,0 +1,2 @@
+/// `import_declaration`: an import: another source's declarations, under a name.
+import "./def_value.gandr" as value ;

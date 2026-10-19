@@ -1,0 +1,2 @@
+/// `release_statement`: a release of an acquired endpoint, bound.
+release(seat) as shared ;

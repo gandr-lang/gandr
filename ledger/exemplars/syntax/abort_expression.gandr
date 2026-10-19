@@ -1,0 +1,5 @@
+/// `abort_expression`: aborting an accessed cell.
+def give_up() -> -F Unit {
+  hold c = 0;
+  access c as v { abort(v) }
+}

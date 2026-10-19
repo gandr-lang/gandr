@@ -1,0 +1,4 @@
+/// `instantiation.named_measure`: a recursive call decreasing a named measure.
+def rec measured(n : Integer) -> -F Integer {
+  return measured[n <](n)
+}

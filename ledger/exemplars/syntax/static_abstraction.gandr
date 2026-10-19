@@ -1,0 +1,2 @@
+/// `static_abstraction`: a static abstraction over a type.
+def apply = \F. \X. F(X) ;

@@ -1,0 +1,2 @@
+/// `variable_name`: a shell variable's name; today it is molded only inside a string's interpolation in a shell block.
+def home = #!{ echo "${HOME}"; } ;

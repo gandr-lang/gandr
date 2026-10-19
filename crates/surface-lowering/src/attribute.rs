@@ -271,6 +271,10 @@ pub struct RegisteredAttribute(&'static str);
 
 impl RegisteredAttribute
 {
+    /// `doc`: its text documents the declaration it decorates, joined after
+    /// any `///` lines; it is filed as the declaration's documentation, never
+    /// in the attribute table.
+    pub const DOC: Self = Self("doc");
     /// `explicit_exits`: the declaration, or every member of the module, it
     /// decorates asks for every exit to be written, so the `explicit-exits`
     /// lint reports each exit the lowering inferred there.
@@ -512,7 +516,7 @@ const REGISTRY: [(&str, AttributeSchema); 11_usize] = [
     ("refuses", AttributeSchema::Text),
     ("runs", AttributeSchema::Text),
     ("normalizes", AttributeSchema::Text),
-    ("doc", AttributeSchema::Text),
+    (RegisteredAttribute::DOC.0, AttributeSchema::Text),
     (
         RegisteredAttribute::EXPLICIT_EXITS.0,
         AttributeSchema::Marker,

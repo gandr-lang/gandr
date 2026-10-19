@@ -13,7 +13,10 @@
 //! `gandr ledger syntax --write <directory>` writes `syntax.md` and
 //! `syntax.json` there; `mise run check:syntax-ledger` writes them into a
 //! temporary directory and compares both with the committed files byte for
-//! byte.
+//! byte. Each committed rule and each attribute also has an exemplar, a
+//! hand-cut source the `exemplars` module verifies against the ledger:
+//! `gandr ledger exemplars <directory>`, gated by
+//! `mise run check:syntax-exemplars`.
 //!
 //! - Choice: a driver verb over this module. The dispatcher already holds the
 //!   grammar, the parser and the lowering a row reads.
@@ -64,19 +67,19 @@
 //!
 //! # Internal rules
 //!
-//! A rule whose every reading passes a tile the labeler reads as layout can
-//! never be molded: layout takes no mold, so no source exercises the rule. Such
-//! a rule is listed in a table of its own, marked with the tile, and never
-//! dropped. A tile is layout when its text, labeled alone, opens with a layout
-//! token, as `/*` opens a comment. A tile spelled by a word is not layout even
-//! where the word is a lexical rule's name: the labeler offers a word's own
-//! text as a label, so the word molds the rule's tile where it is admissible.
+//! A rule no source can mold is listed in a table of its own with the reason
+//! and what the reason is read from — the grammar, the labeler or a parser
+//! probe — and never dropped. The reasons are derived, never listed by hand;
+//! the `standing` module states each and the order they are tried in. A tile
+//! spelled by a word stays committed where nothing else reads the word: the
+//! labeler offers a word's own text as a label, so the word molds the rule's
+//! tile where it is admissible.
 //!
 //! - Alternatives: a list of internal rules beside the grammar, which is a hand
 //!   list; reading the parity table's `unproduced` reasons, which describe the
 //!   printer, not the parser.
-//! - Reversal: a rule the parser can never commit for another reason than a
-//!   layout tile widens the test.
+//! - Reversal: a rule the exemplar gate cannot show although no reason fires
+//!   widens a reason.
 //!
 //! # The machine form is one rule per line
 //!
@@ -88,6 +91,9 @@
 //! are written in byte order.
 //!
 //! [`TileKind`]: gandr_surface_grammar::TileKind
+
+mod exemplars;
+mod standing;
 
 use alloc::collections::BTreeMap;
 use core::fmt::Write as _;
@@ -104,21 +110,21 @@ use gandr_surface_grammar::RuleName;
 use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::Sym;
 use gandr_surface_grammar::TREE_SITTER_NAMED_KINDS;
-use gandr_surface_grammar::TileLabel;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::AttributeRegistry;
 use gandr_surface_lowering::AttributeSchema;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_parser::CandidateLabel;
-use gandr_surface_parser::Lexeme;
 use gandr_surface_parser::TileSpelling;
-use gandr_surface_parser::label;
 use gandr_surface_parser::tile_spelling;
 use gandr_surface_syntax::MoldId;
-use gandr_surface_syntax::SourceFragment;
 use quenchant_shape::shape::Maybe;
 use serde_json::Value;
 use serde_json::json;
+
+pub use self::exemplars::ExemplarFault;
+pub use self::exemplars::ExemplarFinding;
+pub use self::exemplars::ExemplarReport;
 
 /// The file the reading form is written to.
 const MARKDOWN: &str = "syntax.md";
@@ -130,7 +136,7 @@ const JSON: &str = "syntax.json";
 /// it.
 const REGENERATE: &str = "gandr ledger syntax --write ledger";
 
-/// Which ledger a `gandr ledger` invocation writes, and where.
+/// Which ledger a `gandr ledger` invocation writes or verifies, and where.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LedgerTask
 {
@@ -140,6 +146,22 @@ pub enum LedgerTask
         /// The directory `syntax.md` and `syntax.json` are written into.
         directory: PathBuf,
     },
+    /// The syntax exemplars under `directory`, verified.
+    Exemplars
+    {
+        /// The directory holding `syntax/` and `attributes/`.
+        directory: PathBuf,
+    },
+}
+
+/// What a ledger task did.
+#[derive(Debug)]
+pub enum LedgerRun
+{
+    /// The files a writing task wrote, in the order it wrote them.
+    Written(Vec<PathBuf>),
+    /// What a verification found.
+    Verified(ExemplarReport),
 }
 
 /// Why a ledger could not be generated or written.
@@ -166,10 +188,25 @@ pub enum LedgerFault
         /// The name the registry lists.
         name: String,
     },
+    /// A lexical class a probe spells has no sample in the `standing`
+    /// module's table.
+    Sample
+    {
+        /// The class.
+        class: &'static str,
+    },
     /// A ledger file could not be written.
     Unwritable
     {
         /// The file.
+        path: PathBuf,
+        /// Why.
+        error: std::io::Error,
+    },
+    /// An exemplar directory could not be listed.
+    Unreadable
+    {
+        /// The directory.
         path: PathBuf,
         /// Why.
         error: std::io::Error,
@@ -197,52 +234,84 @@ impl core::fmt::Display for LedgerFault
             Self::Attribute { ref name } => {
                 write!(f, "the registry lists `{name}` but gives it no schema")
             },
+            Self::Sample { class } => {
+                write!(f, "the lexical class `{class}` has no probe sample")
+            },
             Self::Unwritable {
                 ref path,
                 ref error,
             } => write!(f, "{}: cannot write: {error}", path.display()),
+            Self::Unreadable {
+                ref path,
+                ref error,
+            } => write!(f, "{}: cannot list: {error}", path.display()),
         }
     }
 }
 
 impl LedgerTask
 {
-    /// Generate the task's ledger and write its files.
+    /// Generate the task's ledger and write its files, or verify its
+    /// exemplars.
     ///
     /// # Specification
-    /// - requires: nothing; the directory is created when it is missing.
+    /// - requires: nothing; a syntax ledger's directory is created when it is
+    ///   missing.
     /// - ensures: under [`LedgerTask::Syntax`], `syntax.md` and `syntax.json`
     ///   in the directory hold exactly [`SyntaxLedger::markdown`] and
     ///   [`SyntaxLedger::json`] of a freshly built ledger, and the paths are
-    ///   returned in that order.
-    /// - provides: `gandr ledger syntax --write <directory>`.
-    /// - fails: the ledger cannot be built, or a file cannot be written.
+    ///   returned in that order. Under [`LedgerTask::Exemplars`], the report of
+    ///   the exemplars under the directory against the committed rules and the
+    ///   registered attributes (the `exemplars` module).
+    /// - provides: `gandr ledger syntax --write <directory>` and `gandr ledger
+    ///   exemplars <directory>`.
+    /// - fails: the ledger cannot be built, a file cannot be written, or an
+    ///   exemplar directory cannot be listed.
     /// - panics: none.
     ///
     /// # Errors
-    /// What [`SyntaxLedger::build`] reports, or [`LedgerFault::Unwritable`]
-    /// naming the file.
+    /// What [`SyntaxLedger::build`] reports, [`LedgerFault::Unwritable`]
+    /// naming the file, or [`LedgerFault::Unreadable`] naming the directory.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a run into an empty directory writes both files with
     ///   the rendered bytes, a second run writes the same bytes, and a
-    ///   directory under a file is refused naming the path. Arbitrary
-    ///   filesystem failures are outside these observations.
+    ///   directory under a file is refused naming the path; the committed
+    ///   exemplars verify with no finding. Arbitrary filesystem failures are
+    ///   outside these observations.
     /// - witness: `ledger::tests::a_run_writes_both_files_and_repeats_them_exactly`
     /// - witness: `ledger::tests::an_unwritable_directory_is_refused_by_path`
-    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |paths| paths.len() == 2))]
+    /// - witness: `ledger::exemplars::tests::the_committed_exemplars_verify`
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |run| match (self, run) {
+        (&Self::Syntax { .. }, &LedgerRun::Written(ref paths)) => paths.len() == 2,
+        (&Self::Exemplars { .. }, &LedgerRun::Verified(_)) => true,
+        (&Self::Syntax { .. } | &Self::Exemplars { .. }, &LedgerRun::Written(_) | &LedgerRun::Verified(_)) => false,
+    }))]
     #[inline]
-    pub fn run(&self) -> Result<Vec<PathBuf>, LedgerFault>
+    pub fn run(&self) -> Result<LedgerRun, LedgerFault>
     {
-        let Self::Syntax { ref directory } = *self;
         let ledger = SyntaxLedger::build()?;
-        std::fs::create_dir_all(directory).map_err(|error| LedgerFault::Unwritable {
-            path: directory.clone(),
-            error,
-        })?;
-        let markdown = written(directory, Path::new(MARKDOWN), ledger.markdown())?;
-        let json = written(directory, Path::new(JSON), ledger.json())?;
-        Ok(vec![markdown, json])
+        match *self {
+            Self::Syntax { ref directory } => {
+                std::fs::create_dir_all(directory).map_err(|error| LedgerFault::Unwritable {
+                    path: directory.clone(),
+                    error,
+                })?;
+                let markdown = written(directory, Path::new(MARKDOWN), ledger.markdown())?;
+                let json = written(directory, Path::new(JSON), ledger.json())?;
+                Ok(LedgerRun::Written(vec![markdown, json]))
+            },
+            Self::Exemplars { ref directory } => {
+                let pbg = built_in().map_err(LedgerFault::Grammar)?;
+                let rules: Vec<RuleName> = ledger
+                    .rules
+                    .iter()
+                    .filter(|row| row.standing == Standing::Committed)
+                    .map(|row| RuleName(row.name))
+                    .collect();
+                exemplars::verify(&pbg, &rules, directory).map(LedgerRun::Verified)
+            },
+        }
     }
 }
 
@@ -283,14 +352,10 @@ fn written(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Standing
 {
-    /// Some reading of the form passes no layout tile.
+    /// No reason of the `standing` module fires.
     Committed,
-    /// Every reading passes a layout tile; `tile` is the first the form holds.
-    Internal
-    {
-        /// The tile whose text the labeler reads as layout.
-        tile: &'static str,
-    },
+    /// No source molds the rule, for this reason.
+    Internal(standing::Internal),
 }
 
 /// Whether the surface's tree-sitter grammar has a rule's named kind.
@@ -415,7 +480,7 @@ impl SyntaxLedger
                 form: spelled(rule.regex().view(), &abbreviations, RuleName(rule.name)),
                 tree: tree.value,
                 roles: tree.roles,
-                standing: standing(rule.regex().view()),
+                standing: standing::standing(&pbg, rule)?,
             });
         }
         let attributes = AttributeRegistry::names()
@@ -533,7 +598,7 @@ impl SyntaxLedger
         out.push_str(
             "| `⟨block⟩` | the whole form of rule `block`, written out in place: its tiles are this rule's own |\n\n",
         );
-        out.push_str("The group is the rule's precedence group. The kind is the named node kind the rule realises; `*` marks a kind the surface's tree-sitter grammar does not have. The roles are the highlight roles of the rule's tiles, each once, first use first.\n");
+        out.push_str("Each committed rule links its exemplar, a small source the exemplar gate parses and checks for a tile of the rule. The group is the rule's precedence group. The kind is the named node kind the rule realises; `*` marks a kind the surface's tree-sitter grammar does not have. The roles are the highlight roles of the rule's tiles, each once, first use first.\n");
         for (sort, rows) in &by_sort {
             write!(out, "\n## `{}` — {}\n\n", sort.name(), Counted {
                 count: rows.len(),
@@ -554,19 +619,19 @@ impl SyntaxLedger
                 };
                 writeln!(
                     out,
-                    "| `{}` | {} | `{}` | `{}`{marker} | {roles} |",
-                    row.name,
+                    "| [`{name}`](exemplars/syntax/{name}.gandr) | {} | `{}` | `{}`{marker} | {roles} |",
                     Code(&row.form),
                     row.group,
                     row.kind,
+                    name = row.name,
                 )?;
             }
         }
-        let internal: Vec<(&RuleRow, &str)> = self
+        let internal: Vec<(&RuleRow, standing::Internal)> = self
             .rules
             .iter()
             .filter_map(|row| match row.standing {
-                Standing::Internal { tile } => Some((row, tile)),
+                Standing::Internal(reason) => Some((row, reason)),
                 Standing::Committed => None,
             })
             .collect();
@@ -574,28 +639,33 @@ impl SyntaxLedger
             count: internal.len(),
             noun: "rule"
         })?;
-        out.push_str("A rule whose every reading passes a tile the labeler reads as layout: layout takes no mold, so no source molds the rule.\n\n");
-        out.push_str("| Rule | Sort | Form | Layout tile |\n");
-        out.push_str("| ---- | ---- | ---- | ----------- |\n");
-        for (row, tile) in internal {
+        out.push_str("A rule no source can mold, with the reason and what the reason is read from: the grammar's forms, the labeler over a tile's own text, or a parser probe. These rules have no exemplar.\n\n");
+        out.push_str("| Rule | Sort | Form | Reason | Read from |\n");
+        out.push_str("| ---- | ---- | ---- | ------ | --------- |\n");
+        for (row, reason) in internal {
             writeln!(
                 out,
-                "| `{}` | {} | {} | {} |",
+                "| `{}` | {} | {} | {reason} | {} |",
                 row.name,
                 row.sort.name(),
                 Code(&row.form),
-                Code(tile)
+                reason.evidence()
             )?;
         }
         write!(out, "\n## Attributes — {}\n\n", Counted {
             count: self.attributes.len(),
             noun: "attribute"
         })?;
-        out.push_str("Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes.\n\n");
+        out.push_str("Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes, linking its exemplar, which the exemplar gate lowers and checks the attribute is filed.\n\n");
         out.push_str("| Attribute | Payload |\n");
         out.push_str("| --------- | ------- |\n");
         for row in &self.attributes {
-            writeln!(out, "| `{}` | {} |", row.name, row.schema)?;
+            writeln!(
+                out,
+                "| [`{name}`](exemplars/attributes/{name}.gandr) | {} |",
+                row.schema,
+                name = row.name
+            )?;
         }
         Ok(())
     }
@@ -736,10 +806,19 @@ fn rule_json(row: &RuleRow) -> Value
     match row.standing {
         Standing::Committed => {
             fields.insert("standing".to_owned(), Value::from("committed"));
+            fields.insert(
+                "exemplar".to_owned(),
+                Value::from(format!("exemplars/syntax/{}.gandr", row.name)),
+            );
         },
-        Standing::Internal { tile } => {
+        Standing::Internal(reason) => {
             fields.insert("standing".to_owned(), Value::from("internal"));
-            fields.insert("layout_tile".to_owned(), Value::from(tile));
+            fields.insert("reason".to_owned(), Value::from(reason.name().to_string()));
+            fields.insert(
+                "evidence".to_owned(),
+                Value::from(reason.evidence().to_string()),
+            );
+            fields.insert("because".to_owned(), Value::from(reason.to_string()));
         },
     }
     Value::Object(fields)
@@ -763,6 +842,7 @@ fn attribute_json(row: &AttributeRow) -> Value
         "name": row.name,
         "payload": payload,
         "reads": row.schema.to_string(),
+        "exemplar": format!("exemplars/attributes/{}.gandr", row.name),
     })
 }
 
@@ -1291,90 +1371,6 @@ fn tree(
     Ok(Tree { value, roles: seen })
 }
 
-/// How the labeler reads the text a tile is written as.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum TileReading
-{
-    /// Layout: no mold takes it.
-    Layout,
-    /// A token a mold takes.
-    Token,
-}
-
-/// How the labeler reads the text `tile` is written as.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: a class tile is a token; a literal tile is layout exactly when
-///   the first token its text labels into is layout starting at its first byte.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — `/*` is layout, `*/`, a keyword, a word naming a lexical
-///   rule and a class are not.
-/// - witness: `ledger::tests::a_layout_tile_makes_its_rule_internal`
-#[spec(ensures: |ret| ret == TileReading::Token || matches!(tile_spelling(CandidateLabel::from(tile.0)), TileSpelling::Literal(_)))]
-fn layout(tile: TileLabel) -> TileReading
-{
-    match tile_spelling(CandidateLabel::from(tile.0)) {
-        TileSpelling::Class(_) => TileReading::Token,
-        TileSpelling::Literal(text) => {
-            let first = label(SourceFragment::from(text));
-            if first
-                .first()
-                .is_some_and(|token| token.start == 0 && matches!(token.lexeme, Lexeme::Space))
-            {
-                TileReading::Layout
-            }
-            else {
-                TileReading::Token
-            }
-        },
-    }
-}
-
-/// Where the rule whose form is `root` stands.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: [`Standing::Internal`] exactly when every reading of the form
-///   passes a [`layout`] tile, naming the first such tile the form writes;
-///   [`Standing::Committed`] otherwise.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the block comment is internal through `/*`, and the line
-///   comment, whose label is a word, and a keyword form are committed.
-/// - witness: `ledger::tests::a_layout_tile_makes_its_rule_internal`
-#[spec(ensures: |ret| match ret { Standing::Internal { tile } => layout(TileLabel(tile)) == TileReading::Layout, Standing::Committed => true })]
-fn standing(root: RegexView<'_>) -> Standing
-{
-    let mut first: Option<&'static str> = None;
-    let writable: Result<bool, ()> = fold(
-        root,
-        |_| Visited::Open,
-        |node, children| {
-            Ok(match node {
-                Node::Tile(tile) => {
-                    let blocked = layout(TileLabel(tile)) == TileReading::Layout;
-                    if blocked && first.is_none() {
-                        first = Some(tile);
-                    }
-                    !blocked
-                },
-                Node::Seq => children.iter().all(|&writable| writable),
-                Node::Alt => children.iter().any(|&writable| writable),
-                Node::Empty | Node::Hole(_) | Node::Optional | Node::Repeat => true,
-            })
-        },
-        (),
-    );
-    match (writable, first) {
-        (Ok(false), Some(tile)) => Standing::Internal { tile },
-        (Ok(_) | Err(()), _) => Standing::Committed,
-    }
-}
-
 #[cfg(test)]
 mod tests
 {
@@ -1382,19 +1378,18 @@ mod tests
     use std::path::PathBuf;
 
     use gandr_surface_grammar::RuleName;
-    use gandr_surface_grammar::TileLabel;
     use gandr_surface_grammar::built_in;
 
     use super::Code;
     use super::Counted;
     use super::LedgerFault;
+    use super::LedgerRun;
     use super::LedgerTask;
     use super::RuleRow;
     use super::Standing;
     use super::SyntaxLedger;
-    use super::TileReading;
-    use super::layout;
     use super::molds_by_rule;
+    use super::standing::Internal;
     use super::tree;
 
     /// A directory of this test's own under the system's temporary directory,
@@ -1556,35 +1551,41 @@ mod tests
     }
 
     #[test]
-    fn a_layout_tile_makes_its_rule_internal()
+    fn every_internal_rule_has_its_derived_reason()
     {
-        let read = |tile| layout(TileLabel(tile));
-        assert_eq!(
-            read("/*"),
-            TileReading::Layout,
-            "a comment opener is layout"
-        );
-        assert_eq!(
-            read("*/"),
-            TileReading::Token,
-            "a comment closer alone labels as punctuation"
-        );
-        assert_eq!(read("def"), TileReading::Token, "a keyword is not layout");
-        assert_eq!(
-            read("line_comment"),
-            TileReading::Token,
-            "a word naming a lexical rule is a word"
-        );
-        assert_eq!(
-            read("identifier"),
-            TileReading::Token,
-            "a class is not layout"
-        );
         let ledger = SyntaxLedger::build().expect("the ledger builds");
-        let standing = |name| row(&ledger, RuleName(name)).standing;
-        assert_eq!(standing("block_comment"), Standing::Internal { tile: "/*" });
-        assert_eq!(standing("line_comment"), Standing::Committed);
-        assert_eq!(standing("def_value"), Standing::Committed);
+        let internal: Vec<(&str, Internal)> = ledger
+            .rules
+            .iter()
+            .filter_map(|row| match row.standing {
+                Standing::Internal(reason) => Some((row.name, reason)),
+                Standing::Committed => None,
+            })
+            .collect();
+        let shadowed = |by| Internal::Shadowed { by };
+        let captured = |tile, by| Internal::Captured { tile, by };
+        assert_eq!(internal, [
+            ("instantiation.type", Internal::Tileless),
+            ("constructor.pattern", shadowed("constructor_pattern")),
+            ("boolean.pattern", shadowed("literal_pattern")),
+            ("number.pattern", shadowed("literal_pattern")),
+            ("typed_number.pattern", shadowed("literal_pattern")),
+            ("string.pattern", shadowed("literal_pattern")),
+            ("escape_sequence", Internal::Enclosed {
+                class: "escape_sequence"
+            }),
+            ("block_comment", Internal::Layout { tile: "/*" }),
+            ("shell_list", captured("shell_or", "identifier.expression")),
+            (
+                "or_expression",
+                captured("shell_and", "identifier.expression")
+            ),
+            (
+                "and_expression",
+                captured("pipeline_operand", "identifier.expression")
+            ),
+            ("negation", captured("negation", "identifier.expression")),
+        ]);
     }
 
     #[test]
@@ -1598,14 +1599,19 @@ mod tests
             "the header names the fingerprint"
         );
         for row in &ledger.rules {
-            assert!(
-                markdown.contains(&format!("| `{}` |", row.name)),
-                "`{}` has a row",
-                row.name
-            );
+            let cell = match row.standing {
+                Standing::Committed => {
+                    format!("| [`{0}`](exemplars/syntax/{0}.gandr) |", row.name)
+                },
+                Standing::Internal(_) => format!("| `{}` |", row.name),
+            };
+            assert!(markdown.contains(&cell), "`{}` has a row", row.name);
         }
         for row in &ledger.attributes {
-            assert!(markdown.contains(&format!("| `{}` |", row.name)));
+            assert!(markdown.contains(&format!(
+                "| [`{0}`](exemplars/attributes/{0}.gandr) |",
+                row.name
+            )));
         }
         assert!(
             markdown.contains("`EXPRESSION \\|\\| EXPRESSION`"),
@@ -1638,7 +1644,10 @@ mod tests
         let task = LedgerTask::Syntax {
             directory: directory.clone(),
         };
-        let paths = task.run().expect("the ledger is written");
+        let Ok(LedgerRun::Written(paths)) = task.run()
+        else {
+            panic!("the ledger is written");
+        };
         assert_eq!(paths, [
             directory.join("syntax.md"),
             directory.join("syntax.json")

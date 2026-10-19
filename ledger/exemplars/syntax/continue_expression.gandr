@@ -1,0 +1,4 @@
+/// `continue_expression`: a continue to the next iteration.
+def skip(n : Integer) -> -F Integer {
+  loop { continue }
+}

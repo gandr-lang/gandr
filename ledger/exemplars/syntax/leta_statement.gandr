@@ -1,0 +1,2 @@
+/// `leta_statement`: an affine binding.
+leta answer = 42 ;

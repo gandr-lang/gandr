@@ -1,0 +1,7 @@
+/// `or_pattern`: an or-pattern: either alternative matches.
+def cool(c : Color) -> -F Integer {
+  case c {
+    Red | Green => return 0,
+    Blue => return 1
+  }
+}

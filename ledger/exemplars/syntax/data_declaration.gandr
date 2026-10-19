@@ -1,0 +1,5 @@
+/// `data_declaration`: a datatype: its family head and one generator per constructor.
+data Bit : Type {
+  Zero : Bit;
+  One : Bit;
+}

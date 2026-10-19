@@ -1,0 +1,6 @@
+/// `hole.pattern`: a named hole in pattern position.
+def classify(n : Integer) -> -F Integer {
+  case n {
+    ?branch => return 1
+  }
+}

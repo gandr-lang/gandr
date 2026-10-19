@@ -1,0 +1,4 @@
+/// `if_expression`: a conditional.
+def pick(b : Boolean) -> -F Integer {
+  if b { return 1 } else { return 2 }
+}

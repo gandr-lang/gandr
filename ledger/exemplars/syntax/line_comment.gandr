@@ -1,0 +1,2 @@
+/// `line_comment`: the word the line-comment rule is spelled by, molded where a statement stands.
+rec { line_comment }

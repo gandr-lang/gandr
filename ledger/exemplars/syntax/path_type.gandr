@@ -1,0 +1,2 @@
+/// `path_type`: a path type.
+def four : Path(Integer, 4, 4) ;

@@ -1,0 +1,2 @@
+/// `receive_session_type`: a session that receives.
+def inward : ?Integer. end ;

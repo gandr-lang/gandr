@@ -1,0 +1,4 @@
+/// `circuit_declaration`: an operation declared as a circuit of nodes.
+oper split : (b : Bit) --> (_ : Bit, _ : Bit) {
+  node : tee(b) --> (_, _);
+}

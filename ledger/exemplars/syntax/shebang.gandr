@@ -1,0 +1,2 @@
+/// `shebang`: the word the shebang rule is spelled by, molded where a statement stands.
+rec { shebang }

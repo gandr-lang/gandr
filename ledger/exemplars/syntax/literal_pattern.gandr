@@ -1,0 +1,7 @@
+/// `literal_pattern`: a literal pattern.
+def sign(n : Integer) -> -F Integer {
+  case n {
+    0 => return 0,
+    _ => return 1
+  }
+}

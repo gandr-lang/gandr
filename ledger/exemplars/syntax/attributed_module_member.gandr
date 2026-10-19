@@ -1,0 +1,4 @@
+/// `attributed_module_member`: an attributed definition inside a module body.
+module Answers {
+  @[ doc("The answer.") ] def answer = 42;
+}

@@ -1,0 +1,2 @@
+/// `lazy_record_type`: a lazy record type.
+def menu : &{Integer, String} ;

@@ -1,0 +1,7 @@
+/// `cons_pattern`: a path cons pattern: a step and the rest of the path.
+def tell(p : Path(Circle, Base, Base)) -> -F Integer {
+  case p {
+    here => 0,
+    loop ∷ q => 1
+  }
+}

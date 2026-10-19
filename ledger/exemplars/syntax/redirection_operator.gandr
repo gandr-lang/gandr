@@ -1,0 +1,2 @@
+/// `redirection_operator`: a shell redirection.
+def sorted = #!{ sort >> data; } ;

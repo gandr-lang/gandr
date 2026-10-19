@@ -1,0 +1,4 @@
+/// `instantiation_expression`: an instantiation: a callee with its instantiation arguments.
+def rec countdown(n : Integer) -> -F Integer {
+  become countdown[<](n)
+}

@@ -1,0 +1,2 @@
+/// `forall_type`: a universally quantified type.
+def identity : forall a . a -> a ;

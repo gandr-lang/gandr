@@ -1,0 +1,3 @@
+/// `owes`: states how many obligations a declaration is expected to leave.
+@[ owes(1) ]
+def code : Type ;

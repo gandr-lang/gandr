@@ -1,0 +1,2 @@
+/// `def_value`: a definition: a name and the value it stands for.
+def answer = 42 ;

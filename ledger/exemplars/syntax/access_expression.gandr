@@ -1,0 +1,5 @@
+/// `access_expression`: an access to a held cell under a name.
+def peek() -> -F Unit {
+  hold c = 0;
+  access c as v { pure unit }
+}

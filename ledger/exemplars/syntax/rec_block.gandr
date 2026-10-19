@@ -1,0 +1,5 @@
+/// `rec_block`: a recursive group: definitions that may name each other.
+rec {
+  def even(n : Integer) -> -F Boolean { become odd[<](n) }
+  def odd(n : Integer) -> -F Boolean { become even[<](n) }
+}

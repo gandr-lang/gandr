@@ -1,0 +1,2 @@
+/// `binary_expression.add.concat`: list concatenation.
+def joined = [1] ++ [2] ;

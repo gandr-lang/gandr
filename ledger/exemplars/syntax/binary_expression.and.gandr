@@ -1,0 +1,2 @@
+/// `binary_expression.and`: a conjunction.
+def both = true && false ;

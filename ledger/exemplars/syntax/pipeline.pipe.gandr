@@ -1,0 +1,2 @@
+/// `pipeline.pipe`: a shell pipeline.
+def sorted = #!{ cat data | sort; } ;
