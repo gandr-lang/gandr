@@ -1630,7 +1630,7 @@ impl<'source> Lowerer<'_, 'source>
         seeds: &mut Vec<(NodeIndex, Reading)>,
     )
     {
-        for form in &self.collected.data {
+        for form in self.collected.data.iter().skip(self.current.data) {
             let mut frame = Frame::Outermost;
             for parameter in &form.parameters {
                 seeds.push((parameter.classifier.node, Reading::ValueType(frame)));
@@ -2043,6 +2043,7 @@ impl<'source> Lowerer<'_, 'source>
             .collected
             .slots
             .iter()
+            .skip(self.current.slots)
             .filter_map(|slot| {
                 if let (
                     Maybe::Present(Half {
@@ -5032,13 +5033,19 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — two declarations, one with parameters and one without
     ///   a written universe, lower to their own signatures.
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
-    #[spec(captures: before = self.data.len(), ensures: self.data.len() >= before && self.signatures.len() >= before)]
+    #[spec(captures: [data = self.data.len(), signed = self.signatures.len()], ensures: self.data.len() >= data && self.signatures.len() >= signed)]
     pub(super) fn mint_data(
         &mut self,
         sink: &mut Sink<'_>,
     )
     {
-        for (position, form) in self.collected.data.iter().enumerate() {
+        for (position, form) in self
+            .collected
+            .data
+            .iter()
+            .enumerate()
+            .skip(self.current.data)
+        {
             let Some(slot) = self.collected.slots.get(usize::from(form.slot))
             else {
                 continue;
@@ -5120,7 +5127,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   and the word of its one letter. Each letter a cons wrote, and each
     ///   loop's name where its cell declares it, is labelled at the path type,
     ///   and each node of a point an empty word or a cell's side wrote at the
-    ///   family, since no core node holds them.
+    ///   family, since no core node holds them; the source's letters and empty
+    ///   words over words an earlier source minted are labelled at the types
+    ///   that source recorded.
     /// - provides: the
     ///   [`DeclarationOutcome::Data`](crate::DeclarationOutcome::Data) outcome
     ///   of a words slot and the completed outcome of a loop.
@@ -5139,7 +5148,13 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     )
     {
-        for (index, words) in self.collected.words.iter().enumerate() {
+        for (index, words) in self
+            .collected
+            .words
+            .iter()
+            .enumerate()
+            .skip(self.current.words)
+        {
             let (Some(&minted), Some(form)) = (
                 self.signatures.get(&words.family),
                 self.collected.data.get(words.family),
@@ -5205,14 +5220,17 @@ impl<'source> Lowerer<'_, 'source>
             };
             let path = sink.arena.value_type_path(carrier, point, point);
             sink.origins.record_value_type(path, origin);
+            let _first = self.word_types.insert(index, (path, carrier));
             let lettered = self
                 .lettered
                 .iter()
+                .skip(self.current.lettered)
                 .filter(|&&(_, at)| at == index)
                 .map(|&(span, _)| (span, path));
             let pointed = self
                 .pointed
                 .iter()
+                .skip(self.current.pointed)
                 .filter(|&&(_, at)| at == index)
                 .map(|&(span, _)| (span, carrier));
             let at_point = || form.cells.iter().filter(|cell| cell.point == words.point);
@@ -5240,6 +5258,33 @@ impl<'source> Lowerer<'_, 'source>
                 sink.origins.record_value(letter, origin);
                 let _first = self.looped.insert(bound, (path, letter));
             }
+        }
+        // A letter or an empty word this source writes over words an earlier
+        // source minted is labelled at the types that source recorded.
+        let earlier = |&&(span, at): &&(ByteSpan, usize)| {
+            (at < self.current.words)
+                .then(|| self.word_types.get(&at).map(|&types| (span, types)))?
+        };
+        let lettered = self
+            .lettered
+            .iter()
+            .skip(self.current.lettered)
+            .filter_map(|entry| earlier(&entry))
+            .map(|(span, (path, _))| (span, path));
+        let pointed = self
+            .pointed
+            .iter()
+            .skip(self.current.pointed)
+            .filter_map(|entry| earlier(&entry))
+            .map(|(span, (_, carrier))| (span, carrier));
+        for (span, ty) in lettered.chain(pointed) {
+            sink.origins.record_label(crate::origin::Label {
+                span,
+                labelled: crate::origin::Labelled::ValueType {
+                    ty,
+                    context: Vec::new(),
+                },
+            });
         }
     }
 
@@ -8235,7 +8280,7 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     )
     {
-        for index in 0 .. self.collected.blocks.len() {
+        for index in self.current.blocks .. self.collected.blocks.len() {
             let Some(&block) = self.collected.blocks.get(index)
             else {
                 continue;

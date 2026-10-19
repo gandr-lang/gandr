@@ -420,7 +420,7 @@ impl<'source> Collector<'_, 'source>
     ///   half with the declaration's attributes. A cell member's fault refuses
     ///   the slot once the form is filed, so the attributes stating what the
     ///   declaration expects stay with it.
-    /// - provides: the data half of [`super::collect`].
+    /// - provides: the data half of [`super::collect_source`].
     /// - fails: when the form has no name to file a refusal under.
     /// - panics: none.
     ///

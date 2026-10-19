@@ -146,7 +146,13 @@ impl<'source> Lowerer<'_, 'source>
         seeds: &mut Vec<(NodeIndex, Reading)>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        for entry in self.collected.descriptions.values() {
+        let (source_of, current) = (&self.source_of, self.current.source);
+        for entry in self
+            .collected
+            .descriptions
+            .values()
+            .filter(|entry| source_of.get(usize::from(entry.at.node)) == Some(&current))
+        {
             if self.natively_read(entry)?.0 {
                 continue;
             }
@@ -205,8 +211,8 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let mut types = BTreeMap::new();
-        for position in 0 .. self.collected.slots.len() {
+        let mut types = core::mem::take(&mut self.described_types);
+        for position in self.current.slots .. self.collected.slots.len() {
             self.fuel.spend()?;
             let Some(slot) = self.collected.slots.get(position)
             else {
@@ -276,6 +282,7 @@ impl<'source> Lowerer<'_, 'source>
                 },
             }
         }
+        self.described_types = types;
         Ok(())
     }
 
@@ -325,38 +332,44 @@ impl<'source> Lowerer<'_, 'source>
         };
         let constant = slot.constant;
         let at = slot.introduced_by;
-        let description = theory_desc(());
-        let before = sink.arena.watermark();
-        let kind = sink.arena.value_type_universe(
-            Sort::Ground(GroundSort::Value),
-            Level::constant(Universe::FUSS_FREE.level),
-        );
-        let self_type = sink.arena.value_type_data(constant, Vec::new());
-        let types = BTreeMap::new();
-        let context = DecodeContext {
-            self_sort: NameRef::from(description.id.name.as_ref()),
-            self_type,
-            types: &types,
-            locals: &[],
-            depth: ParameterDepth(0),
-        };
-        let decoded = decode_signature(sink.arena, &description, context, Vec::new(), kind);
-        self.record_since(sink, before, at.node);
-        let Ok(signature) = decoded
-        else {
+        if self.owns_slot(code).0 {
+            let description = theory_desc(());
+            let before = sink.arena.watermark();
+            let kind = sink.arena.value_type_universe(
+                Sort::Ground(GroundSort::Value),
+                Level::constant(Universe::FUSS_FREE.level),
+            );
+            let self_type = sink.arena.value_type_data(constant, Vec::new());
+            let types = BTreeMap::new();
+            let context = DecodeContext {
+                self_sort: NameRef::from(description.id.name.as_ref()),
+                self_type,
+                types: &types,
+                locals: &[],
+                depth: ParameterDepth(0),
+            };
+            let decoded = decode_signature(sink.arena, &description, context, Vec::new(), kind);
+            self.record_since(sink, before, at.node);
+            let Ok(signature) = decoded
+            else {
+                return Ok(());
+            };
+            let index = DataIndex::from(self.data.len());
+            self.constructors.push(
+                description
+                    .ctors
+                    .iter()
+                    .map(|constructor| String::from(constructor.name.as_ref()))
+                    .collect(),
+            );
+            self.data.push(Arc::new(signature));
+            let _first = self.described.insert(code, index);
+        }
+        else if !self.described.contains_key(&code) {
+            // `Theory` did not decode in the source that declares it.
             return Ok(());
-        };
-        let index = DataIndex::from(self.data.len());
-        self.constructors.push(
-            description
-                .ctors
-                .iter()
-                .map(|constructor| String::from(constructor.name.as_ref()))
-                .collect(),
-        );
-        self.data.push(Arc::new(signature));
-        let _first = self.described.insert(code, index);
-        for position in 0 .. self.collected.slots.len() {
+        }
+        for position in self.current.slots .. self.collected.slots.len() {
             self.fuel.spend()?;
             let Some(slot) = self.collected.slots.get(position)
             else {

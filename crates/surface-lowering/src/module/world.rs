@@ -36,7 +36,7 @@ impl<'source> Collector<'_, 'source>
     ///   which owns the declaration and its decorations; a clean form files its
     ///   definition half, [`super::Operand::World`], and its attributes; the
     ///   form's first fault is offered to the slot instead.
-    /// - provides: the world half of [`super::collect`].
+    /// - provides: the world half of [`super::collect_source`].
     /// - fails: when the form has no name to file a refusal under.
     /// - panics: none.
     ///

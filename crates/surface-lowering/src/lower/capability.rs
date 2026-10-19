@@ -1245,7 +1245,7 @@ impl<'source> Lowerer<'_, 'source>
     })]
     pub(super) fn mint_exercise(
         &self,
-        exercised: Exercised,
+        exercised: &Exercised,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
@@ -1276,7 +1276,7 @@ impl<'source> Lowerer<'_, 'source>
                 let id = sink.arena.computation_exercise(
                     capability,
                     signature,
-                    exercised.operation,
+                    exercised.operation.clone(),
                     payload,
                 );
                 sink.computation(id, origin)
@@ -1343,7 +1343,7 @@ impl<'source> Lowerer<'_, 'source>
     })]
     pub(super) fn mint_scope(
         &self,
-        scoped: Scoped,
+        scoped: &Scoped,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
@@ -1357,7 +1357,7 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let mut clauses: Vec<EffectClause> = Vec::with_capacity(scoped.clauses.len());
-        for (operation, body) in scoped.clauses {
+        for (operation, body) in scoped.clauses.iter().cloned() {
             let body: ComputationId = match self.mint_body(clause_body(body), sink, origin) {
                 Maybe::Present(body) => body,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),

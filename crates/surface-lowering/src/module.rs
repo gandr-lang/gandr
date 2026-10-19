@@ -2050,35 +2050,247 @@ struct Collector<'run, 'source>
     tree: &'run SyntaxTree<'source>,
     /// The lowering's remaining allowance.
     fuel: &'run mut Fuel,
-    /// What has been collected so far.
-    collected: Collected<'source>,
+    /// What has been collected so far, every earlier source included.
+    collected: &'run mut Collected<'source>,
     /// The scratch reading of the declaration form being collected.
     pieces: Pieces,
     /// The next path import's ordinal in each source that has written one.
     ordinals: BTreeMap<SourceIndex, PathImportOrdinal>,
 }
 
-/// Pair every signature with its definition, in one pass over the module.
+/// Collect every source of `unit` at once, as the lowering collects them a
+/// source at a time: what a test reads of a whole collection.
 ///
 /// # Specification
-/// - requires: `tree`'s root is the module being lowered, molded under `pbg`;
-///   `fuel` holds the lowering's remaining allowance.
-/// - ensures: one slot per distinct declared name, in the order the names were
-///   first declared, each carrying that name's signature and definition
-///   wherever the two sat, and every attribute written on its first clean
-///   declaration form of each kind; a second signature or a second definition
-///   for one name leaves the slot's first refusal set and the first occurrence
-///   intact. A fault in a declaration form's own tiles — a repair, an empty or
-///   overfull hole, a tile out of place, a tail the fragment does not admit —
-///   is offered to the declaration's slot at the declaration form itself. The
-///   attributes written before a top-level module are kept with the slots its
-///   collection admitted. Each import is kept in source order with its address
-///   decoded and its alias bound in the import scope.
-/// - provides: the admission order every later pass resolves names against.
-/// - fails: [`LoweringRefusal::MalformedForm`] when the root holds a repair, a
-///   declaration has no name to file a refusal under, or an import is out of
-///   shape; [`LoweringRefusal::DuplicateImportAlias`] when two imports bind one
-///   alias; [`LoweringRefusal::OutOfFragment`] when a root child is neither a
+/// - requires: as [`collect_source`], for the whole tree.
+/// - ensures: [`begin_collection`], then [`collect_source`] over each source of
+///   `unit` in its order; every owner names a slot, every slot's constant is
+///   its position, every name and module the tables hold points at its entry,
+///   and every module comes after the module holding it.
+/// - fails: as [`begin_collection`], [`root_pieces`] and [`collect_source`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`collect_source`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — the collection tests read every list it builds.
+/// - witness: `module::tests::a_signature_pairs_with_its_definition`
+/// - witness: `module::tests::a_mutual_block_collects_its_members_as_one_run`
+#[cfg(test)]
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |collected| {
+    collected.owner.len() == usize::from(tree.node_count())
+        && collected.owner.iter().all(|owner| match *owner {
+            | Maybe::Present(slot) => slot.0 < collected.slots.len(),
+            | Maybe::Absent(_) => true,
+        })
+        && collected
+            .slots
+            .iter()
+            .enumerate()
+            .all(|(index, slot)| usize::from(slot.constant) == index)
+        && collected.by_name.iter().all(|(&(container, name), index)| {
+            collected.slots.get(index.0).is_some_and(|slot| {
+                slot.container == container && slot.name == name && slot.role == Role::Declared
+            })
+        })
+        && collected.modules.iter().all(|(&(container, name), index)| {
+            collected
+                .structures
+                .get(index.0)
+                .is_some_and(|module| module.container == container && module.name == name)
+        })
+        && collected
+            .structures
+            .iter()
+            .enumerate()
+            .all(|(index, module)| match module.container {
+                | Container::TopLevel(_) => true,
+                | Container::Module(parent) => parent.0 < index,
+            })
+}))]
+pub fn collect<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    unit: &Unit,
+    fuel: &mut Fuel,
+) -> Result<Collected<'source>, LoweringRefusal<'source>>
+{
+    let mut collected = begin_collection(pbg, tree, unit)?;
+    let pieces = root_pieces(pbg, tree)?;
+    for own in source_pieces(unit, pieces) {
+        collect_source((pbg, tree), &mut collected, fuel, own)?;
+    }
+
+    Ok(collected)
+}
+
+/// A unit's collection before any of its sources is collected: its
+/// descriptions elaborated, nothing else admitted.
+///
+/// # Specification
+/// - requires: `tree` was molded under `pbg`.
+/// - ensures: the descriptions, their diagnostics, the native families and the
+///   cell stores are the tree's; every list and table is empty; one unowned
+///   entry per node.
+/// - provides: the collection [`collect_source`] appends each source to.
+/// - fails: as the description elaboration.
+/// - panics: none.
+///
+/// # Errors
+/// The description elaboration's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every collection starts here, so every witness of
+///   [`collect_source`] reaches it.
+/// - witness: `module::tests::a_signature_pairs_with_its_definition`
+/// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |collected| {
+    collected.slots.is_empty()
+        && collected.structures.is_empty()
+        && collected.owner.len() == usize::from(tree.node_count())
+}))]
+pub fn begin_collection<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    unit: &Unit,
+) -> Result<Collected<'source>, LoweringRefusal<'source>>
+{
+    let described = crate::description::elaborate_descriptions(pbg, tree)?;
+    let cells = crate::desc_cells::elaborate_desc_cells(&described.declarations);
+    let mut owner = Vec::new();
+    owner.resize(
+        usize::from(tree.node_count()),
+        Maybe::Absent(slot_owner::Absent::Unowned),
+    );
+
+    Ok(Collected {
+        descriptions: described
+            .declarations
+            .into_iter()
+            .map(|entry| (entry.at.node, entry))
+            .collect(),
+        description_diagnostics: described.diagnostics,
+        natives: described.natives,
+        cells,
+        slots: Vec::new(),
+        owner,
+        by_name: BTreeMap::new(),
+        structures: Vec::new(),
+        modules: BTreeMap::new(),
+        scopes: Vec::new(),
+        imports: ModuleImports::new(),
+        unit: unit.clone(),
+        data: Vec::new(),
+        words: Vec::new(),
+        constructors: BTreeMap::new(),
+        operations: BTreeMap::new(),
+        operation_names: BTreeMap::new(),
+        abstracts: BTreeMap::new(),
+        decorated: Vec::new(),
+        families: Vec::new(),
+        parameter_lists: Vec::new(),
+        models: Vec::new(),
+        family_checks: BTreeMap::new(),
+        functors: Vec::new(),
+        instances: Vec::new(),
+        theory: Maybe::Absent(theory_slot::Absent::Unminted),
+        blocks: Vec::new(),
+        recursive: BTreeSet::new(),
+    })
+}
+
+/// The root's pieces: every top-level form of every source, in source order.
+///
+/// # Specification
+/// - requires: `tree` was molded under `pbg`.
+/// - ensures: the root's children, layout dropped, in source order.
+/// - provides: what [`source_pieces`] splits by source.
+/// - fails: [`LoweringRefusal::MalformedForm`] when the root holds a repair;
+///   [`LoweringRefusal::UnknownMold`] for a mold the grammar does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// As the specification's fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a root holding a repair refuses the module whole.
+/// - witness: `module::tests::a_declaration_whose_name_is_not_a_name_refuses_the_module`
+#[spec(ensures: |ret| ret.is_err() || tree.node(tree.root()).is_some() || ret.as_ref().is_ok_and(Vec::is_empty))]
+pub fn root_pieces<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+) -> Result<Vec<Piece>, LoweringRefusal<'source>>
+{
+    let mut root = Pieces::new();
+    read_pieces(pbg, tree, tree.root(), &mut root)?;
+    if let Maybe::Present(repaired) = root.repair {
+        return Err(repaired.refusal(FormName::ROOT));
+    }
+
+    Ok(root.pieces)
+}
+
+/// The root's pieces split by the source each starts in: one list per source
+/// of `unit`, in the unit's order, each in source order.
+///
+/// # Specification
+/// - requires: `pieces` are a tree's root pieces over the text `unit` lays out.
+/// - ensures: one list per source; the lists concatenated are `pieces`.
+/// - provides: the share of the root each source's collection reads.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a unit of two sources collects each source's forms under
+///   its own source.
+/// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+#[spec(ensures: |ret| ret.len() == unit.sources().len())]
+pub fn source_pieces(
+    unit: &Unit,
+    pieces: Vec<Piece>,
+) -> Vec<Vec<Piece>>
+{
+    let mut split: Vec<Vec<Piece>> = unit.sources().iter().map(|_| Vec::new()).collect();
+    for piece in pieces {
+        let source = unit.source_at(piece.placed().span.start());
+        if let Some(own) = split.get_mut(usize::from(source)) {
+            own.push(piece);
+        }
+    }
+
+    split
+}
+
+/// Collect one source's top-level forms into `collected`, after every source
+/// before it: pair every signature with its definition, in one pass over the
+/// source.
+///
+/// # Specification
+/// - requires: `pieces` are one source's root pieces, in source order, of a
+///   tree molded under `pbg`; `collected` holds every earlier source of the
+///   unit; `fuel` holds the lowering's remaining allowance.
+/// - ensures: appended to what `collected` held, one slot per distinct declared
+///   name, in the order the names were first declared, each carrying that
+///   name's signature and definition wherever the two sat, and every attribute
+///   written on its first clean declaration form of each kind; a second
+///   signature or a second definition for one name leaves the slot's first
+///   refusal set and the first occurrence intact. A fault in a declaration
+///   form's own tiles — a repair, an empty or overfull hole, a tile out of
+///   place, a tail the fragment does not admit — is offered to the
+///   declaration's slot at the declaration form itself. The attributes written
+///   before a top-level module are kept with the slots its collection admitted;
+///   an attribute block decorates the form after it in the source, and one
+///   standing at the source's end decorates nothing. Each import is kept in
+///   source order with its address decoded and its alias bound in the import
+///   scope.
+/// - provides: the admission order every later pass resolves names against,
+///   which the lowering builds a source at a time, before its passes over that
+///   source.
+/// - fails: [`LoweringRefusal::MalformedForm`] when a declaration has no name
+///   to file a refusal under, or an import is out of shape;
+///   [`LoweringRefusal::DuplicateImportAlias`] when two imports bind one alias;
+///   [`LoweringRefusal::OutOfFragment`] when a root child is neither a
 ///   declaration, a module nor an import — an attribute block decorating
 ///   nothing, or a module with no member, included — or when a declaration's
 ///   name is a form rather than an identifier; [`LoweringRefusal::UnknownMold`]
@@ -2088,7 +2300,7 @@ struct Collector<'run, 'source>
 ///
 /// # Errors
 /// [`LoweringRefusal::MalformedForm`], [`LoweringRefusal::OutOfFragment`] and
-/// [`LoweringRefusal::DuplicateImportAlias`] for a module whose own children
+/// [`LoweringRefusal::DuplicateImportAlias`] for a source whose own children
 /// are not declarations and well-formed imports,
 /// [`LoweringRefusal::UnknownMold`] for a foreign mold, and
 /// [`LoweringRefusal::BudgetExceeded`] when the allowance runs out.
@@ -2116,114 +2328,32 @@ struct Collector<'run, 'source>
 /// - witness: `tests::namespace::an_unqualified_import_binds_no_alias`
 /// - witness: `tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
 #[spec(
+    captures: before = collected.slots.len(),
     ensures: |ret| {
-        ret.as_ref().map_or(true, |collected| {
-            collected.owner.len() == usize::from(tree.node_count())
-                && collected.owner.iter().all(|owner| match *owner {
-                    | Maybe::Present(slot) => slot.0 < collected.slots.len(),
-                    | Maybe::Absent(_) => true,
-                })
-                && collected
-                    .slots
-                    .iter()
-                    .enumerate()
-                    .all(|(index, slot)| usize::from(slot.constant) == index)
-                && collected.by_name.iter().all(|(&(container, name), index)| {
-                    collected.slots.get(index.0).is_some_and(|slot| {
-                        slot.container == container
-                            && slot.name == name
-                            && slot.role == Role::Declared
-                    })
-                })
-                && collected.modules.iter().all(|(&(container, name), index)| {
-                    collected.structures.get(index.0).is_some_and(|module| {
-                        module.container == container && module.name == name
-                    })
-                })
-                && collected
-                    .structures
-                    .iter()
-                    .enumerate()
-                    .all(|(index, module)| match module.container {
-                        | Container::TopLevel(_) => true,
-                        | Container::Module(parent) => parent.0 < index,
-                    })
-        })
+        ret.is_err()
+            || (collected.slots.len() >= before
+                && collected.owner.len() == usize::from(tree.node_count()))
     },
 )]
-#[inline]
-pub fn collect<'source>(
-    pbg: &Pbg,
-    tree: &SyntaxTree<'source>,
-    unit: &Unit,
+pub fn collect_source<'source>(
+    (pbg, tree): (&Pbg, &SyntaxTree<'source>),
+    collected: &mut Collected<'source>,
     fuel: &mut Fuel,
-) -> Result<Collected<'source>, LoweringRefusal<'source>>
+    pieces: Vec<Piece>,
+) -> Result<(), LoweringRefusal<'source>>
 {
-    let described = crate::description::elaborate_descriptions(pbg, tree)?;
-    let cells = crate::desc_cells::elaborate_desc_cells(&described.declarations);
-    let mut owner = Vec::new();
-    owner.resize(
-        usize::from(tree.node_count()),
-        Maybe::Absent(slot_owner::Absent::Unowned),
-    );
     let mut collector = Collector {
         pbg,
         tree,
         fuel,
-        collected: Collected {
-            descriptions: described
-                .declarations
-                .into_iter()
-                .map(|entry| (entry.at.node, entry))
-                .collect(),
-            description_diagnostics: described.diagnostics,
-            natives: described.natives,
-            cells,
-            slots: Vec::new(),
-            owner,
-            by_name: BTreeMap::new(),
-            structures: Vec::new(),
-            modules: BTreeMap::new(),
-            scopes: Vec::new(),
-            imports: ModuleImports::new(),
-            unit: unit.clone(),
-            data: Vec::new(),
-            words: Vec::new(),
-            constructors: BTreeMap::new(),
-            operations: BTreeMap::new(),
-            operation_names: BTreeMap::new(),
-            abstracts: BTreeMap::new(),
-            decorated: Vec::new(),
-            families: Vec::new(),
-            parameter_lists: Vec::new(),
-            models: Vec::new(),
-            family_checks: BTreeMap::new(),
-            functors: Vec::new(),
-            instances: Vec::new(),
-            theory: Maybe::Absent(theory_slot::Absent::Unminted),
-            blocks: Vec::new(),
-            recursive: BTreeSet::new(),
-        },
+        collected,
         pieces: Pieces::new(),
         ordinals: BTreeMap::new(),
     };
-    let mut root = Pieces::new();
-    read_pieces(pbg, tree, tree.root(), &mut root)?;
-    if let Maybe::Present(repaired) = root.repair {
-        return Err(repaired.refusal(FormName::ROOT));
-    }
     let mut decorations: Vec<Placed> = Vec::new();
-    for piece in root.pieces {
+    for piece in pieces {
         collector.fuel.spend()?;
         let child = piece.placed();
-        // An attribute block decorates the form after it in its own source:
-        // one standing at a source's end decorates nothing.
-        if let Some(&stray) = decorations.first()
-            && collector.collected.unit.source_at(stray.span.start())
-                != collector.collected.unit.source_at(child.span.start())
-        {
-            collector.module_child(stray)?;
-        }
         let former = collector.root_former(child)?;
         if former == Former::AttributeBlock {
             decorations.push(child);
@@ -2297,7 +2427,7 @@ pub fn collect<'source>(
     }
     collector.stray_expectations();
 
-    Ok(collector.collected)
+    Ok(())
 }
 
 /// Whether an import's address names a scheme or a path.
@@ -2533,14 +2663,14 @@ impl<'source> Collector<'_, 'source>
     /// - ensures: a declaration form is collected into its slot, a module into
     ///   its structures and member slots, and an import into the import list;
     ///   every other form refuses the module as a form of the wrong sort.
-    /// - provides: the module-shape half of [`collect`].
+    /// - provides: the module-shape half of [`collect_source`].
     /// - fails: [`LoweringRefusal::OutOfFragment`] for a child that is neither
     ///   a declaration, a module nor an import, and every module-level fault
     ///   [`Self::declaration`], [`Self::module`] and [`Self::import`] raise.
     /// - panics: none.
     ///
     /// # Errors
-    /// As [`collect`].
+    /// As [`collect_source`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — declaration, nested-module and import children are
@@ -2604,8 +2734,8 @@ impl<'source> Collector<'_, 'source>
     /// - ensures: an attribute block decorates the member after it, a data
     ///   declaration and a definition are collected into their slots, and the
     ///   block is recorded with the slots its members took, in source order.
-    /// - provides: the block half of [`collect`]: what the lowering admits as
-    ///   one block.
+    /// - provides: the block half of [`collect_source`]: what the lowering
+    ///   admits as one block.
     /// - fails: [`LoweringRefusal::OutOfFragment`] for a member that is no data
     ///   declaration, definition or attribute block, and an attribute block
     ///   decorating nothing; a repaired block as its repair; every fault
@@ -2758,7 +2888,7 @@ impl<'source> Collector<'_, 'source>
     ///   owned by the first of them so a fault in a payload refuses that
     ///   member; a module whose collection admits no slot decorates nothing,
     ///   and refuses the run as a stray attribute block does.
-    /// - provides: the decorated half of [`collect`]'s module reading.
+    /// - provides: the decorated half of [`collect_source`]'s module reading.
     /// - fails: a block out of shape, and every fault [`Self::module`] raises.
     /// - panics: none.
     ///
@@ -3331,7 +3461,7 @@ impl<'source> Collector<'_, 'source>
     ///   the first fault of the form or a decoration is offered to the slot at
     ///   the form itself, and a form with no fault files its half and its
     ///   attributes.
-    /// - provides: the per-declaration half of [`collect`].
+    /// - provides: the per-declaration half of [`collect_source`].
     /// - fails: when the form has no name: the repair it holds, the form
     ///   standing where the name belongs, or a misplaced tile.
     /// - panics: none.
@@ -3389,7 +3519,7 @@ impl<'source> Collector<'_, 'source>
     ///   when it has one, is bound in its source's scope. An address with a
     ///   scheme is [`ImportResolution::Foreign`]; a path is the unit's target
     ///   for the source's next path import.
-    /// - provides: the import half of [`collect`].
+    /// - provides: the import half of [`collect_source`].
     /// - fails: [`LoweringRefusal::MalformedForm`] for a repair or a tile out
     ///   of place, and [`LoweringRefusal::DuplicateImportAlias`] for an alias
     ///   an earlier import of its source binds.
@@ -4468,7 +4598,7 @@ impl<'source> Collector<'_, 'source>
     ///   slot carrying the refusal under its name, and its body is not read; a
     ///   malformed member files one under its module's name and the module's
     ///   other members are kept.
-    /// - provides: the module half of [`collect`].
+    /// - provides: the module half of [`collect_source`].
     /// - fails: when the module has no name to refuse it under, as a
     ///   declaration with no name does; [`LoweringRefusal::UnknownMold`] and
     ///   [`LoweringRefusal::BudgetExceeded`].

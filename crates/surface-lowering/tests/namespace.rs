@@ -1515,6 +1515,83 @@ fn a_model_of_an_imported_theory_derives_its_signature_726()
     );
 }
 
+/// #776: a unit is lowered a source at a time, so a source lowers to the same
+/// declarations, ids included, and the same leading arena rows whether or not
+/// an importer follows it. Lowered pass by pass over the whole unit, the
+/// importer's types were minted among the base's.
+#[test]
+fn a_source_lowers_alike_whatever_follows_it_776()
+{
+    let pbg = grammar();
+    let base = SourceText::from(
+        "theory Nat {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : Nat) \
+         --> Nat;\n}\ndata Point : Type { One : Point; }\ndef one : Point ;\ndef one = One \
+         ;\ndef inc(n : Integer) -> -F Integer { return n + 1 }",
+    );
+    let importer = SourceText::from(
+        "import \"./base.gandr\" ;\nmodule Counting : Model(Nat) {\n  type Nat = Integer;\n  \
+         def zero() -> -F Integer { return 0 }\n  def succ(n : Integer) -> -F Integer { return \
+         n + 1 }\n}\ndef again : Point ;\ndef again = one ;",
+    );
+    let (alone_text, alone_unit) = laid(&[(base, &[])]);
+    let (whole_text, whole_unit) = laid(&[
+        (base, &[]),
+        (importer, &[ImportTarget::Source(SourceIndex::from(
+            0_usize,
+        ))]),
+    ]);
+    let mut alone_arena = CoreArena::new();
+    let alone = lower_unit(
+        &pbg,
+        &parsed(&pbg, SourceText::from(alone_text.as_str())),
+        &alone_unit,
+        &mut alone_arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+    )
+    .expect("the base alone lowers");
+    let mut whole_arena = CoreArena::new();
+    let whole = lower_unit(
+        &pbg,
+        &parsed(&pbg, SourceText::from(whole_text.as_str())),
+        &whole_unit,
+        &mut whole_arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+    )
+    .expect("the base and its importer lower");
+    let own = alone.declarations().len();
+    assert!(
+        whole.declarations().len() > own
+            && whole.declarations().iter().all(|declaration| !matches!(
+                declaration.outcome(),
+                DeclarationOutcome::Refused(_)
+            )),
+        "the importer adds declarations of its own, and nothing is refused"
+    );
+    assert_eq!(
+        whole.declarations().get(.. own),
+        Some(alone.declarations()),
+        "the base's declarations are the same, ids included, with the importer after it"
+    );
+    let start = CoreArena::new().watermark();
+    assert!(
+        alone_arena
+            .values_since(start)
+            .all(|id| whole_arena.value(id) == alone_arena.value(id))
+            && alone_arena
+                .computations_since(start)
+                .all(|id| whole_arena.computation(id) == alone_arena.computation(id))
+            && alone_arena
+                .value_types_since(start)
+                .all(|id| whole_arena.value_type(id) == alone_arena.value_type(id))
+            && alone_arena
+                .comp_types_since(start)
+                .all(|id| whole_arena.comp_type(id) == alone_arena.comp_type(id)),
+        "the base's arena rows lead the unit's arena"
+    );
+}
+
 #[test]
 fn a_pending_declaration_is_not_exported()
 {
