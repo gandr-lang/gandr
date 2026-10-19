@@ -27,6 +27,7 @@ fn advertised_capabilities_name_the_token_legend()
                     "full": true,
                     "range": true,
                 },
+                "completionProvider": {"resolveProvider": false},
                 "inlineCompletionProvider": true,
                 "documentSymbolProvider": true,
                 "foldingRangeProvider": true,
@@ -41,7 +42,7 @@ fn advertised_capabilities_name_the_token_legend()
             },
             "serverInfo": {"name": "gandr", "version": env!("CARGO_PKG_VERSION")},
         }),
-        "the legend the crate exports, and nothing unserved: no completion list"
+        "the legend the crate exports, and every request served"
     );
 }
 /// A formatter sink refusing every write.

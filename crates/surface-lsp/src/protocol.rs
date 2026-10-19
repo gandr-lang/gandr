@@ -721,12 +721,12 @@ impl InitializeResult
     /// - ensures: positions counted in UTF-16 code units; incremental document
     ///   synchronisation with open and close notifications; semantic tokens
     ///   over the whole document and over a range, under the legend of
-    ///   [`TOKEN_TYPES`] and [`TOKEN_MODIFIERS`]; inline completion; document
-    ///   symbols, folding ranges and selection ranges; hover; definition and
-    ///   type definition; formatting over the whole document and over a range;
-    ///   code lenses, resolved in the answer, and code actions; the server
-    ///   named `gandr` at this crate's version. Nothing else: no completion
-    ///   list.
+    ///   [`TOKEN_TYPES`] and [`TOKEN_MODIFIERS`]; completion, resolved in the
+    ///   answer, and inline completion; document symbols, folding ranges and
+    ///   selection ranges; hover; definition and type definition; formatting
+    ///   over the whole document and over a range; code lenses, resolved in the
+    ///   answer, and code actions; the server named `gandr` at this crate's
+    ///   version.
     /// - provides: the one capabilities answer, written by `initialize` and by
     ///   the driver's `gandr lsp --capabilities` alike.
     /// - fails: never.
@@ -754,7 +754,8 @@ impl InitializeResult
             && ret.capabilities.document_formatting_provider.0
             && ret.capabilities.document_range_formatting_provider.0
             && ret.capabilities.code_action_provider.0
-            && !ret.capabilities.code_lens_provider.resolve_provider)]
+            && !ret.capabilities.code_lens_provider.resolve_provider
+            && !ret.capabilities.completion_provider.resolve_provider)]
     #[inline]
     #[must_use]
     pub const fn advertised() -> Self
@@ -773,6 +774,9 @@ impl InitializeResult
                     },
                     full: true,
                     range: true,
+                },
+                completion_provider: CompletionOptions {
+                    resolve_provider: false,
                 },
                 inline_completion_provider: Provider::ANSWERED,
                 document_symbol_provider: Provider::ANSWERED,
@@ -807,6 +811,8 @@ pub struct ServerCapabilities
     pub text_document_sync: TextDocumentSync,
     /// The semantic tokens the server answers.
     pub semantic_tokens_provider: SemanticTokensProvider,
+    /// Completion is answered, each item resolved in the answer.
+    pub completion_provider: CompletionOptions,
     /// Inline completion is answered.
     pub inline_completion_provider: Provider,
     /// Document symbols are answered.
@@ -912,6 +918,8 @@ pub enum Answer
     Initialize(Box<InitializeResult>),
     /// What a semantic-tokens request answers for an open document.
     Tokens(SemanticTokens),
+    /// What a completion request answers at a position of an open document.
+    Completions(CompletionList),
     /// What an inline-completion request answers for an open document.
     Inline(InlineCompletionList),
     /// What a document-symbol request answers for an open document.
@@ -964,6 +972,65 @@ pub struct SemanticTokens
 {
     /// The token stream, five integers per token.
     pub data: TokenStream,
+}
+
+/// The result of a completion request: every name and keyword the word at the
+/// cursor may complete to, best first.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionList
+{
+    /// Whether typing further may offer what this list does not: never, the
+    /// list holding every item the word's prefix admits.
+    pub is_incomplete: bool,
+    /// The items, in the order [`CompletionItem::sort_text`] keeps.
+    pub items: Vec<CompletionItem>,
+}
+
+/// One completion: the name or keyword offered, what it is, and the edit that
+/// writes it over the word at the cursor.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionItem
+{
+    /// The name or keyword.
+    pub label: String,
+    /// What it is, as the protocol numbers completion kinds.
+    pub kind: CompletionItemKind,
+    /// Where it stands among the list's items, as text the client sorts by.
+    pub sort_text: String,
+    /// The edit writing it over the word at the cursor.
+    pub text_edit: TextEdit,
+}
+
+/// What a completion item is, as the protocol numbers it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct CompletionItemKind(u8);
+
+impl CompletionItemKind
+{
+    /// A data family's constructor.
+    pub const CONSTRUCTOR: Self = Self(4);
+    /// A data family.
+    pub const ENUM: Self = Self(13);
+    /// A declaration written as a value.
+    pub const FUNCTION: Self = Self(3);
+    /// A keyword opening a form.
+    pub const KEYWORD: Self = Self(14);
+    /// A binder in scope.
+    pub const VARIABLE: Self = Self(6);
+}
+
+/// The completion provider, as advertised.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct CompletionOptions
+{
+    /// Whether an item is resolved by a second request: never.
+    pub resolve_provider: bool,
 }
 
 /// The result of an inline-completion request.

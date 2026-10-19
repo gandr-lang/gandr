@@ -10,4 +10,6 @@ mod namespace;
 #[cfg(test)]
 mod recognition;
 #[cfg(test)]
+mod scopes;
+#[cfg(test)]
 mod static_operators;

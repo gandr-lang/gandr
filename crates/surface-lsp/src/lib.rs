@@ -129,7 +129,7 @@
 //! | hover | `textDocument/hover` | served |
 //! | inlay hints | `textDocument/inlayHint` | blocked: a face that reads each binder's type off the hover's type table, which is built on demand rather than per revision |
 //! | signature help | `textDocument/signatureHelp` | blocked: a face reading the declaration a call applies off the referent index the type table keeps |
-//! | completion | `textDocument/completion` | blocked: goals whose types the checker spells |
+//! | completion | `textDocument/completion` | served: the binders in scope, the closure's declared names and the keywords the slot at the word's start admits, each starting with the word |
 //! | definition, type definition | `textDocument/definition`, `typeDefinition` | served: what the use at the position refers to, and the families the type there names, as links when the client takes them |
 //! | declaration, implementation | `textDocument/declaration`, `implementation` | declined: a signature and its definition make one declaration, which definition answers at its first form, and the core has no interfaces to implement |
 //! | references, document highlight | `textDocument/references`, `documentHighlight` | blocked: the referent index read from referent to uses |
@@ -348,6 +348,7 @@ use core::fmt;
 
 #[cfg(unix)]
 mod bus;
+mod complete;
 mod format;
 mod goto;
 mod hover;

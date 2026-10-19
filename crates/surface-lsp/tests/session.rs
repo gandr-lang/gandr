@@ -1126,6 +1126,48 @@ fn a_definition_in_a_sibling_answers_the_sibling_s_path_795()
     );
 }
 
+/// #806: a name a sibling declares completes in the importer, as the importer
+/// writes it.
+#[test]
+fn a_completion_offers_what_a_sibling_declares_806()
+{
+    let scratch = Scratch::new(Path::new("completion-806"));
+    let directory =
+        std::fs::canonicalize(&scratch.0).expect("the scratch directory has a canonical path");
+    let base = directory.join("base.gandr");
+    let document = directory.join("document.gandr");
+    std::fs::write(&base, "def one : Integer ;\n\ndef one = 1 ;\n")
+        .expect("the sibling is written");
+    std::fs::write(&document, "").expect("the document is written");
+    let address = uri(&document);
+    let mut messages = opening();
+    messages.push(open(&Source {
+        uri: address.clone(),
+        text: "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = o ;\n".to_owned(),
+    }));
+    messages.push(json!({"jsonrpc": "2.0", "id": "completion", "method": "textDocument/completion", "params": {
+        "textDocument": {"uri": address}, "position": {"line": 2_i32, "character": 11_i32},
+    }}));
+    messages.extend(closing());
+    let (served, written) = session(&messages);
+    assert_eq!(served, Served::Clean);
+    let answer = written
+        .iter()
+        .find(|message| message["id"] == json!("completion"))
+        .expect("the completion request is answered");
+    assert_eq!(
+        answer["result"]["items"][0_usize],
+        json!({"label": "one", "kind": 3_i32, "sortText": "0", "textEdit": {
+            "range": {
+                "start": {"line": 2_i32, "character": 10_i32},
+                "end": {"line": 2_i32, "character": 11_i32},
+            },
+            "newText": "one",
+        }}),
+        "`o` in the importer offers the sibling's `one` first: {answer}"
+    );
+}
+
 #[test]
 fn wire_helpers_preserve_escaped_paths_and_unicode_payloads()
 {

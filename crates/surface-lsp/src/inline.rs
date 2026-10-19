@@ -245,7 +245,7 @@ impl IntoIterator for Ghosts
 
 /// The syntactic category a hole shows: what fills it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Category
+pub enum Category
 {
     /// A value: a returned, bound or passed expression.
     Value,
@@ -412,7 +412,7 @@ enum Fit
 
 /// The slot at the cursor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Slot
+pub enum Slot
 {
     /// A hole of this category stands at the cursor.
     Open(Category),
@@ -1251,6 +1251,33 @@ impl Forms
     {
         self.0.iter().filter(move |form| form.sort == sort)
     }
+
+    /// The keywords that open a form filling a hole of `category`: the
+    /// opening tile of each form of its sort that is spelled as a word, in
+    /// mold order.
+    ///
+    /// # Specification
+    /// - ensures: the opening tile of each form of `category`'s sort whose
+    ///   label starts with a letter, in mold order.
+    /// - panics: none.
+    /// - executable: none — the answer is a lazy iterator over the forms.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an item slot offers `def` and `data`, a computation
+    ///   slot `return` and `case`; offering a bracket or another sort's keyword
+    ///   changes the completion witnesses.
+    /// - witness: `complete::tests::each_slot_offers_its_own_names`
+    pub fn keywords(
+        &self,
+        category: Category,
+    ) -> impl Iterator<Item = &'static str> + '_
+    {
+        self.of(category.sort())
+            .filter_map(|form| match form.material.first() {
+                Some(&Part::Tile(tile)) if tile.0.starts_with(char::is_alphabetic) => Some(tile.0),
+                Some(&(Part::Tile(_) | Part::Hole(_))) | None => None,
+            })
+    }
 }
 
 /// Whether a candidate's material ends a list with a trailing comma.
@@ -1291,6 +1318,90 @@ fn trailing(parts: &[Part]) -> Trailing
     }
 }
 
+/// The material of each closing of `menu`, in its order, each after the
+/// pending parts `pending`; the pending parts alone when no closing is known
+/// and some are pending.
+///
+/// # Specification
+/// - ensures: one material per closing, `pending` followed by the closing's
+///   steps; `[pending]` when there is no closing and `pending` is not empty;
+///   nothing otherwise.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`candidates`] and [`slot_of`].
+/// - witness: `inline::tests::the_defect_rows_answer_as_wanted`
+/// - witness: `inline::tests::each_category_is_named_where_its_hole_stands`
+#[spec(ensures: |ret| ret.iter().all(|material| material.starts_with(pending)))]
+fn closing_materials(
+    grammar: &Pbg,
+    menu: &Continuations,
+    pending: &[Part],
+) -> Vec<Vec<Part>>
+{
+    let mut materials: Vec<Vec<Part>> = menu
+        .closings()
+        .iter()
+        .map(|closing| {
+            let mut material = pending.to_vec();
+            material.extend(parts(grammar, closing.steps()));
+            material
+        })
+        .collect();
+    if materials.is_empty() && !pending.is_empty() {
+        materials.push(pending.to_vec());
+    }
+    materials
+}
+
+/// The slot at a cursor whose continuations are `menu`, the pending parts
+/// `pending`, and `slotted`, the first closing's material that starts with a
+/// hole.
+///
+/// # Specification
+/// - ensures: the slot open in the category of `slotted`'s first hole; else
+///   [`Category::Item`] open when no form is open and nothing is pending; else
+///   [`Slot::Filled`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the category witness names the slot at a value, a
+///   computation, a type, a pattern and the top level; the completion witnesses
+///   offer each slot's names.
+/// - witness: `inline::tests::each_category_is_named_where_its_hole_stands`
+/// - witness: `complete::tests::each_slot_offers_its_own_names`
+#[spec(ensures: |ret| slotted.is_none() || matches!(ret, Slot::Open(_)) || !matches!(slotted.and_then(<[Part]>::first), Some(&Part::Hole(_))))]
+fn slot_of(
+    menu: &Continuations,
+    pending: &[Part],
+    slotted: Option<&[Part]>,
+) -> Slot
+{
+    match slotted.and_then(<[Part]>::first) {
+        Some(&Part::Hole(category)) => Slot::Open(category),
+        None if menu.head() == HeadForm::Closed && pending.is_empty() => Slot::Open(Category::Item),
+        Some(&Part::Tile(_)) | None => Slot::Filled,
+    }
+}
+
+/// The first of `materials` that starts with a hole, with its position.
+///
+/// # Specification
+/// trivial.
+fn first_slotted(materials: &[Vec<Part>]) -> Option<(MaterialAt, &[Part])>
+{
+    materials
+        .iter()
+        .enumerate()
+        .find(|&(_, material)| matches!(material.first(), Some(&Part::Hole(_))))
+        .map(|(at, material)| (MaterialAt(at), material.as_slice()))
+}
+
+/// A material's position among a menu's closings.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct MaterialAt(usize);
+
 /// The candidates at a cursor whose continuations are `menu`, cut against
 /// `written`, with the slot at the cursor.
 ///
@@ -1326,37 +1437,23 @@ fn candidates(
 ) -> (Vec<Candidate>, Slot)
 {
     let pending = parts(grammar, menu.pending());
-    let mut materials: Vec<(Origin, Vec<Part>)> = menu
-        .closings()
-        .iter()
-        .map(|closing| {
-            let mut material = pending.clone();
-            material.extend(parts(grammar, closing.steps()));
-            (Origin::Alternative, material)
-        })
+    let closings = closing_materials(grammar, menu, &pending);
+    let found_slot = first_slotted(&closings);
+    let slot = slot_of(menu, &pending, found_slot.map(|(_, material)| material));
+    let slotted_at = found_slot.map(|(at, _)| at.0);
+    let slotted = found_slot.map(|(_, material)| material.to_vec());
+    let mut materials: Vec<(Origin, Vec<Part>)> = closings
+        .into_iter()
+        .map(|material| (Origin::Alternative, material))
         .collect();
-    if materials.is_empty() && !pending.is_empty() {
-        materials.push((Origin::Alternative, pending.clone()));
-    }
-    let slotted = materials
-        .iter()
-        .position(|entry| matches!(entry.1.first(), Some(&Part::Hole(_))));
     if let Some(&mut (ref mut origin, _)) = materials.first_mut() {
         *origin = Origin::Closing;
     }
     if let Some(&mut (ref mut origin @ Origin::Alternative, _)) =
-        slotted.and_then(|at| materials.get_mut(at))
+        slotted_at.and_then(|at| materials.get_mut(at))
     {
         *origin = Origin::Slot;
     }
-    let slotted = slotted
-        .and_then(|at| materials.get(at))
-        .map(|entry| entry.1.clone());
-    let slot = match slotted.as_ref().and_then(|material| material.first()) {
-        Some(&Part::Hole(category)) => Slot::Open(category),
-        None if menu.head() == HeadForm::Closed && pending.is_empty() => Slot::Open(Category::Item),
-        Some(&Part::Tile(_)) | None => Slot::Filled,
-    };
     let mut found: Vec<Candidate> = Vec::new();
     let push = |found: &mut Vec<Candidate>, origin: Origin, parts: Vec<Part>, fit: Fit| {
         let placed = place(origin, slot);
@@ -1614,6 +1711,83 @@ impl Labeled<'_>
             shown.push(spell(&[Part::Hole(category)], lead, source, after));
         }
         Ghosts(shown)
+    }
+
+    /// Where the word this text ends in starts: the start of its last token
+    /// when that token is a word ending where the text ends, else the text's
+    /// end.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: at most the text's length; the start of the last token when
+    ///   it is a lowercase- or an uppercase-led word ending at the text's end.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the completion witnesses complete `de` from its start
+    ///   and offer every name after an open bracket; reading the word from its
+    ///   end, or a bracket as a word, changes them.
+    /// - witness: `complete::tests::a_prefix_offers_only_what_starts_with_it`
+    #[must_use]
+    #[spec(ensures: |ret| usize::from(ret) <= <&str>::from(self.text).len())]
+    pub fn word_start(&self) -> ByteOffset
+    {
+        let end = <&str>::from(self.text).len();
+        let start = self
+            .labeling
+            .tokens()
+            .last()
+            .filter(|token| {
+                matches!(token.lexeme, Lexeme::LowerWord | Lexeme::UpperWord)
+                    && usize::try_from(token.end).is_ok_and(|ended| ended == end)
+            })
+            .and_then(|token| usize::try_from(token.start).ok())
+            .unwrap_or(end);
+        ByteOffset::from(start)
+    }
+
+    /// The slot where this text ends: the category of the hole standing
+    /// there, when one does and the text ends in code.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Slot::Filled`] when the text ends in a comment, a string or
+    ///   a shebang line; otherwise the slot [`ghost`](Self::ghost) reads at the
+    ///   text's end, from the top-level form the text ends molded alone.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one molding of the form the text ends and one bounded walk
+    ///   of its open form.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the completion witnesses read a value, a computation,
+    ///   a type, a pattern and an item slot, and a binding name's slot filled.
+    /// - witness: `complete::tests::each_slot_offers_its_own_names`
+    #[must_use]
+    #[spec(ensures: |ret| lead(self.text, self.labeling.tokens()) == Lead::Code || ret == Slot::Filled)]
+    pub fn slot(
+        &self,
+        grammar: &Pbg,
+    ) -> Slot
+    {
+        let tokens = self.labeling.tokens();
+        if lead(self.text, tokens) != Lead::Code {
+            return Slot::Filled;
+        }
+        let mut molder = Molder::new(grammar);
+        let mut state = MeldState::new(grammar);
+        if let Some(&form) = molder.form_runs(tokens, self.text).last() {
+            molder.mold_run(&mut state, tokens, form, self.text);
+        }
+        let menu = state.continuations(ClosingLimit::from(CLOSINGS));
+        let pending = parts(grammar, menu.pending());
+        let closings = closing_materials(grammar, &menu, &pending);
+        slot_of(
+            &menu,
+            &pending,
+            first_slotted(&closings).map(|(_, material)| material),
+        )
     }
 }
 

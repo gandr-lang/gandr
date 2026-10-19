@@ -143,6 +143,7 @@ use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::complete::Names;
 use crate::markup::Code;
 use crate::markup::Host;
 use crate::markup::Markup;
@@ -174,9 +175,10 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// What a document copy keeps for its hovers and its definitions until its
-/// text changes: the type table of its text and the path of each source of the
-/// unit the table was typed in.
+/// What a document copy keeps for its hovers, its definitions and its
+/// completions until its text changes: the type table of its text, the path
+/// of each source of the unit the table was typed in, and the names the unit
+/// declares.
 #[derive(Clone, Debug)]
 pub struct Hovering
 {
@@ -185,6 +187,8 @@ pub struct Hovering
     /// The canonical path of each source of the table's unit, in the unit's
     /// order; empty for a text typed alone.
     paths: Vec<PathBuf>,
+    /// The names the table's unit declares, by name.
+    names: Names,
 }
 
 impl Hovering
@@ -196,6 +200,15 @@ impl Hovering
     pub(crate) const fn table(&self) -> &TypeTable
     {
         &self.table
+    }
+
+    /// The names the table's unit declares, by name.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn names(&self) -> &Names
+    {
+        &self.names
     }
 
     /// The canonical path of the unit's source `referent` stands in, none for
@@ -227,8 +240,9 @@ impl Hovering
 ///   molded — every form of the closure, for a session that judged the document
 ///   — and leaves the store as it was; the empty table when the text did not
 ///   parse.
-/// - provides: what a document copy keeps for its hovers; a name an import
-///   brings in types at its use as its declaration does.
+/// - provides: what a document copy keeps for its hovers, its definitions and
+///   its completions, the names read off the table once ([`Names::of`]); a name
+///   an import brings in types at its use as its declaration does.
 /// - fails: never; a refusal answers the empty table.
 /// - panics: none.
 /// - executable: none — the table is the dispatcher's typed run, whose own
@@ -267,8 +281,10 @@ pub fn hovering<Store, Blocks>(
             Vec::new(),
         ),
     };
+    let table = table.unwrap_or_default();
     Hovering {
-        table: table.unwrap_or_default(),
+        names: Names::of(&table),
+        table,
         paths,
     }
 }
