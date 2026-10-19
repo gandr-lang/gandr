@@ -1305,9 +1305,10 @@ pub fn equal_type_syntax(
 ///   call of a function literal on no more arguments than the literal has
 ///   abstractions, whose body returns, is read as the value it returns, on the
 ///   same steps, and a decode of such a call as the decode of what it returns
-///   (#736); a call kept unelaborated is read as the value it returns; and a
-///   dependent arrow is read as the plain arrow where its codomain reads as the
-///   arrow's codomain under the binder, which then names no binder.
+///   (#736), the runs its code binds calls by read as the calls first (#768); a
+///   call kept unelaborated is read as the value it returns; and a dependent
+///   arrow is read as the plain arrow where its codomain reads as the arrow's
+///   codomain under the binder, which then names no binder.
 /// - provides: the comparison a printed type's reading back is held to: a type
 ///   of words has no name the surface writes, and is spelled as the path type
 ///   it reads as; a session type at a state is spelled as the protocol from
@@ -1335,7 +1336,9 @@ pub fn equal_type_syntax(
 ///   kept, and not as one between another call. A dependent arrow ignoring its
 ///   binder reads as the arrow, in either order; one naming its binder stays
 ///   different. A decoded literal call reads as what it returns, and a
-///   dependent arrow whose binder only that call names as the arrow.
+///   dependent arrow whose binder only that call names as the arrow; so does a
+///   literal decoded at a run-bound call, forty side by side in one comparison,
+///   while a run calling a name stays a decode.
 /// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
 /// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state_400`
 /// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
@@ -1344,6 +1347,7 @@ pub fn equal_type_syntax(
 /// - witness: `syntax::tests::a_kept_call_reads_as_the_value_it_returns`
 /// - witness: `syntax::tests::a_dependent_arrow_ignoring_its_binder_reads_as_the_arrow`
 /// - witness: `syntax::tests::a_decoded_literal_call_reads_as_what_it_returns_736`
+/// - witness: `syntax::tests::a_literal_decoded_at_a_run_bound_call_reads_as_what_it_returns_768`
 #[spec(ensures: |ret| ret == CertificateEquality::Different || (arena.value_type(left).is_some() && arena.value_type(right).is_some()))]
 #[inline]
 #[must_use]
@@ -1409,8 +1413,10 @@ enum Spend
 
 impl StaticSteps
 {
-    /// The steps one comparison starts with.
-    const ALLOWED: Self = Self(64);
+    /// The steps one comparison starts with: the record of the λ-calculus's
+    /// models, seventeen components each read at the syntax model, spends
+    /// seventy-one along its widest comparison (#768).
+    const ALLOWED: Self = Self(256);
 
     /// Spend one step, if one is left.
     ///
@@ -1486,10 +1492,12 @@ fn static_reduct(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: for a decode of a code [`static_reduct`] reduces, or else of a
-///   call of a function literal [`called_reduct`] reduces (#736), the decode of
-///   the reduct — the quoted type itself when the reduct is a quote — taken
-///   again while it reduces and `steps` lasts, one step spent per reduction;
-///   `ty` itself for every other type.
+///   call of a function literal [`called_reduct`] reduces (#736) once each run
+///   the code binds a call by is read as the call ([`inlined_runs`], #768), the
+///   decode of the reduct — the quoted type itself when the reduct is a quote —
+///   taken again while it reduces and `steps` lasts, one step spent per
+///   reduction and per run read; `ty` itself for every other type, its runs
+///   kept and no step spent.
 /// - provides: the value-type half of the static β [`equal_type_reading`] reads
 ///   through.
 /// - fails: never.
@@ -1503,6 +1511,7 @@ fn static_reduct(
 /// - hypothesis: L3 — as [`equal_type_reading`].
 /// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
 /// - witness: `syntax::tests::a_decoded_literal_call_reads_as_what_it_returns_736`
+/// - witness: `syntax::tests::a_literal_decoded_at_a_run_bound_call_reads_as_what_it_returns_768`
 #[spec(ensures: |ret| ret == ty || arena.value_type(ret).is_some())]
 fn decoded_value_type(
     arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
@@ -1515,7 +1524,7 @@ fn decoded_value_type(
         let target = target.clone();
         let reduct = static_reduct(arena, code);
         let reduct = if reduct == code {
-            called_reduct(arena, steps, code)
+            literal_reduct(arena, steps, code)
         }
         else {
             reduct
@@ -1561,7 +1570,7 @@ fn decoded_comp_type(
         let target = target.clone();
         let reduct = static_reduct(arena, code);
         let reduct = if reduct == code {
-            called_reduct(arena, steps, code)
+            literal_reduct(arena, steps, code)
         }
         else {
             reduct
@@ -1575,6 +1584,41 @@ fn decoded_comp_type(
         ty = arena.to_mut().comp_type_element(reduct, target);
     }
     ty
+}
+
+/// The code a decode of `code` reads as once a call of a function literal it
+/// stands for is reduced, its runs over calls read as the calls first.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`called_reduct`] of the code [`inlined_runs`] reads `code` as,
+///   with the steps both spend taken from `steps`, when that reduces; `code`
+///   itself, and `steps` as they were, when it does not. Nodes the attempt
+///   makes stay in `arena` unread.
+/// - provides: a family filled by a function literal and applied at a nested
+///   call — `tm(e(g))`, which the lowering binds as `x ← e(g); tm(x)` — reads
+///   as what the literal returns, as the printer spells it (#768).
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_literal_decoded_at_a_run_bound_call_reads_as_what_it_returns_768`
+#[spec(ensures: |ret| ret == code || arena.value(ret).is_some())]
+fn literal_reduct(
+    arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
+    steps: &mut StaticSteps,
+    code: ValueId,
+) -> ValueId
+{
+    let mut trial = *steps;
+    let inlined = inlined_runs(arena, &mut trial, code);
+    let called = called_reduct(arena, &mut trial, inlined);
+    if called == inlined {
+        return code;
+    }
+    *steps = trial;
+    called
 }
 
 /// The computation type `ty` stands for once its decode is read.
@@ -4031,6 +4075,72 @@ mod tests
                 "{what}"
             );
         }
+    }
+
+    /// #768: a family filled by a function literal and applied at a nested
+    /// call decodes `x ← f(y); lit(x)`, the run the lowering binds the call
+    /// by; read back, it is what the literal returns, as the printer spells
+    /// it, while a run calling no literal stays a decode. A comparison whose
+    /// reductions outnumber sixty-four, as the λ-calculus's model record's
+    /// does, still reads through every one.
+    #[test]
+    fn a_literal_decoded_at_a_run_bound_call_reads_as_what_it_returns_768()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let unit = arena.value_type_product(&[]);
+        let unit_code = arena.value_quote(unit);
+        let at = |arena: &mut crate::CoreArena, index: u32| {
+            arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+        };
+        let call = |arena: &mut crate::CoreArena, function: ValueId, argument: ValueId| {
+            let forced = arena.computation_force(function);
+            arena.computation_application(forced, argument)
+        };
+        // `f` and `y` the two binders around the type; `x` the run's.
+        let (f, y) = (at(&mut arena, 1_u32), at(&mut arena, 0_u32));
+        let bound = call(&mut arena, f, y);
+        let x = at(&mut arena, 0_u32);
+        // `x ← f(y); (thunk { fn (g) { return Unit } })(x)`, decoded.
+        let returns = arena.computation_return(unit_code);
+        let literal = arena.computation_lambda(returns);
+        let literal = arena.value_thunk(literal);
+        let rest = call(&mut arena, literal, x);
+        let run = arena.computation_bind(bound, rest);
+        let run = arena.value_returned(run);
+        let decoded = arena.value_type_element(run, Level::zero());
+        // `x ← f(y); f(x)`, decoded: the run calls no literal.
+        let f_under = at(&mut arena, 2_u32);
+        let named = call(&mut arena, f_under, x);
+        let named = arena.computation_bind(bound, named);
+        let named = arena.value_returned(named);
+        let named = arena.value_type_element(named, Level::zero());
+        // Forty of each side by side: eighty reductions in one comparison.
+        let wide = arena.value_type_product(&alloc::vec![decoded; 40]);
+        let units = arena.value_type_product(&alloc::vec![unit; 40]);
+        for (left, right, what) in [
+            (
+                decoded,
+                unit,
+                "a literal decoded at a run-bound call against what it returns",
+            ),
+            (unit, decoded, "in either order"),
+            (wide, units, "forty of them against forty units"),
+        ] {
+            assert_eq!(
+                (
+                    equal_type_reading(&arena, &signatures, left, right),
+                    equal_type_syntax(&arena, left, right),
+                ),
+                (CertificateEquality::Equal, CertificateEquality::Different),
+                "{what} reads as one type, which its syntax is not"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, named, unit),
+            CertificateEquality::Different,
+            "a run calling no literal does not read as the unit"
+        );
     }
 
     #[test]
