@@ -1,17 +1,22 @@
 //! The session loop: lines in, transcript blocks out.
 //!
-//! # The loop reads declarations
+//! # The loop reads declarations, expressions and types
 //!
-//! The fragment's source is declarations. A bare expression such as `42` is
-//! refused whole by the lowering, and the loop shows that refusal as the
-//! diagnostics renderer writes it; `:type <expression>` answers an expression's
-//! type by submitting the probe `def it = <expression> ;` — under the first of
-//! `it`, `it1`, … that no accepted declaration carries — and keeping nothing. A
-//! goal is a declaration owing its body: a signature with no definition,
-//! answered with a goal line `name : T`; a later definition of the same name
-//! settles it, and its line becomes a type line. A hole inside a body is
-//! outside the fragment, so goals over sub-term holes arrive with the hole
-//! surface.
+//! The fragment's source is declarations. A line that opens a declaration —
+//! its first token a declaration head — is submitted as declarations. A line
+//! that is no declaration is read as an expression or a type: the loop
+//! submits the probe `def it = <line> ;` — under the first of `it`, `it1`, …
+//! that no accepted declaration carries — and keeps it when nothing is
+//! refused, so the next line may use the name. The probe's type answers the
+//! line: a value's type, a type's sort; where the session evaluates it, its
+//! value follows. A refusal is re-ranged to the line, so the diagnostics
+//! renderer quotes the line and marks the line's bytes, not the probe.
+//! `:type <expression>` answers an expression's type by the same probe,
+//! keeping nothing. A goal is a declaration owing its body: a signature with
+//! no definition, answered with a goal line `name : T`; a later definition of
+//! the same name settles it, and its line becomes a type line. A hole inside
+//! a body is outside the fragment, so goals over sub-term holes arrive with
+//! the hole surface.
 
 use alloc::format;
 use alloc::string::String;
@@ -38,6 +43,7 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::completeness::completeness;
+use crate::completeness::first_token_is_declaration;
 use crate::encode::Disposition;
 use crate::encode::Echo;
 use crate::encode::Naming;
@@ -362,6 +368,14 @@ impl SessionLoop
             return Ok(LoopEvent::Continue);
         }
         let chunk = core::mem::take(&mut self.pending);
+        if !bool::from(first_token_is_declaration(
+            self.session.grammar(),
+            SourceText::from(chunk.as_str()),
+        )) {
+            return self
+                .prompt_probe(SourceText::from(chunk.as_str()))
+                .map(LoopEvent::Block);
+        }
         self.declarations(SourceText::from(chunk.as_str()))
             .map(LoopEvent::Block)
     }
@@ -579,6 +593,41 @@ impl SessionLoop
         let highlights = highlight_source(self.session.grammar(), &self.roles, chunk);
         let echo = Echo::new(chunk.to_string(), highlights);
         self.submit(echo, chunk, Subject::Declarations)
+    }
+
+    /// Submit a complete buffer that is no declaration as a kept probe.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the buffer is wrapped in the probe `def {name} = {buffer} ;`
+    ///   under the first free probe name, submitted as a prompt probe, and
+    ///   echoed as the buffer the user typed; the probe is kept when nothing is
+    ///   refused, so the next line may use the name.
+    /// - provides: the prompt's reading of an expression or a type.
+    /// - fails: [`LoopError::Fault`] when the session faults.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoopError::Fault`] when the session faults.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an expression at the prompt is kept and its name is
+    ///   usable on the next line.
+    /// - witness: `tests::repl_loop::an_expression_is_read_as_a_probe`
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|block|
+        block.source == <&str>::from(chunk)))]
+    fn prompt_probe(
+        &mut self,
+        chunk: SourceText<'_>,
+    ) -> Result<TranscriptBlock, LoopError>
+    {
+        let probe = self.probe_name();
+        let highlights = highlight_source(self.session.grammar(), &self.roles, chunk);
+        let echo = Echo::new(<&str>::from(chunk).to_owned(), highlights);
+        let wrapped = format!("def {probe} = {} ;", <&str>::from(chunk));
+        self.submit(echo, SourceText::from(wrapped.as_str()), Subject::Prompt {
+            name: &probe,
+        })
     }
 
     /// Submit the accepted text with `chunk` after it, and keep the chunk when

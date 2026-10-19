@@ -1420,6 +1420,8 @@ const fn is_item_position(sort: Sort) -> ItemPosition
 ///   behavior exposes admitting a terminator or rejecting a real head.
 /// - witness: `tests::acceptance::an_unclosed_delimiter_yields_to_every_declaration_family`
 #[spec(ensures: |ret| bool::from(ret) == pbg.mold(mold).is_ok_and(|def| matches!(def.sort, Sort::Item | Sort::ModuleMember) && bool::from(pbg.mold_is_form_first(mold)) && bool::from(pbg.mold_has_successor(mold))))]
+#[inline]
+#[must_use]
 pub fn declaration_head(
     pbg: &Pbg,
     mold: MoldId,

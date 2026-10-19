@@ -3,7 +3,11 @@
 //! A [`SessionLoop`] takes lines. A line opening with `:` while no buffer is
 //! waiting is a meta-command; any other line joins the buffer, and once the
 //! parser expects no further token — [`completeness()`] — the buffer is
-//! submitted to the session as the next chunk of one growing revision.
+//! submitted to the session as the next chunk of one growing revision. A
+//! buffer that opens a declaration is submitted as declarations; one that is
+//! no declaration is read as an expression or a type, submitted as a kept
+//! probe, and answered with its type and, where the session evaluates it, its
+//! value.
 //!
 //! # A chunk is kept only when nothing in it was refused
 //!
@@ -66,7 +70,7 @@
 //!
 //! # Specification evidence
 //!
-//! The crate has 45 tests. Predicates observe branch decisions, empty-state
+//! The crate has 51 tests. Predicates observe branch decisions, empty-state
 //! boundaries, byte ranges, preserved payloads and transcript kinds; a type's
 //! absence reasons are the session's and witnessed there. They do not parse,
 //! print, evaluate or clone a whole session a second time. The corpus spelling

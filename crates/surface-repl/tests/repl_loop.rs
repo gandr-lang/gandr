@@ -358,17 +358,98 @@ fn an_open_form_continues()
     assert_eq!(repl.prompt(), Prompt::Fresh);
 }
 
-/// A complete atom is submitted at once. The fragment reads only
-/// declarations, so its line is the lowering's refusal, exactly as the
-/// diagnostics renderer writes it for the same text.
+/// A complete atom is read as a probe: its type and value are printed, and
+/// the probe is kept, so the name is usable on the next line.
 #[test]
 fn a_complete_atom_submits()
 {
     let mut repl = repl();
+    let integer = base(BaseType::Integer);
     let block = block(&mut repl, "42");
     assert_eq!(block.source, "42");
-    assert_eq!(block.lines, refusals("42", RenderStyle::Plain));
-    assert_eq!(block.lines.len(), 1, "one refusal: {:?}", block.lines);
+    assert_eq!(block.lines, [
+        (OutKind::Type, format!("it : {integer}")),
+        (OutKind::Value, "42".to_owned())
+    ]);
+    assert_eq!(lines(&mut repl, "it"), [
+        (OutKind::Type, format!("it1 : {integer}")),
+        (OutKind::Value, "42".to_owned())
+    ]);
+}
+
+/// An expression at the prompt is read as a probe: its type and value are
+/// printed, and the probe is kept, so the name is usable on the next line.
+#[test]
+fn an_expression_is_read_as_a_probe()
+{
+    let mut repl = repl();
+    let integer = base(BaseType::Integer);
+    assert_eq!(lines(&mut repl, "(1, 2)"), [
+        (OutKind::Type, format!("it : {integer} * {integer}")),
+        (OutKind::Value, "(1, 2)".to_owned())
+    ]);
+    assert_eq!(lines(&mut repl, "it"), [
+        (OutKind::Type, format!("it1 : {integer} * {integer}")),
+        (OutKind::Value, "(1, 2)".to_owned())
+    ]);
+}
+
+/// A type at the prompt reports its sort: a sort literal synthesizes a
+/// universe, so its printed type is the sort; the session evaluates the probe
+/// and the machine carries no image of a code, so a stuck note follows, as a
+/// declaration of the same code answers.
+#[test]
+fn a_type_reports_its_sort()
+{
+    let mut repl = repl();
+    assert_eq!(lines(&mut repl, "Integer"), [
+        (OutKind::Type, "it : Type".to_owned()),
+        (
+            OutKind::Stuck,
+            "unrunnable: `it` is a code, which the machine carries no image of".to_owned()
+        )
+    ]);
+}
+
+/// An item at the prompt still declares: a declaration head is read as
+/// declarations, not as a probe.
+#[test]
+fn an_item_still_declares()
+{
+    let mut repl = repl();
+    let integer = base(BaseType::Integer);
+    assert_eq!(lines(&mut repl, "def it = 42 ;"), [
+        (OutKind::Type, format!("it : {integer}")),
+        (OutKind::Value, "42".to_owned())
+    ]);
+}
+
+/// A malformed expression's diagnostic carries the line's range, not the
+/// probe's: the echo is the line the user typed, the refusal quotes the line
+/// and marks its bytes, and the refused probe is not kept, so the name stays
+/// free.
+#[test]
+fn a_malformed_expression_carries_the_line_s_range()
+{
+    let mut repl = repl();
+    let block = block(&mut repl, "nope");
+    assert_eq!(block.source, "nope");
+    assert_eq!(block.lines.len(), 1, "one diagnostic: {:?}", block.lines);
+    let diagnostic = &block.lines[0].1;
+    assert!(
+        block.lines[0].0 == OutKind::Diag
+            && diagnostic.contains("`nope` is not defined")
+            && diagnostic.contains("<input>:1:1")
+            && diagnostic.contains("│ nope")
+            && !diagnostic.contains("def it = nope ;")
+            && !diagnostic.contains(":1:10"),
+        "the refusal carries the line's range, not the probe's: {diagnostic:?}"
+    );
+    let integer = base(BaseType::Integer);
+    assert_eq!(lines(&mut repl, "def it = 1 ;"), [
+        (OutKind::Type, format!("it : {integer}")),
+        (OutKind::Value, "1".to_owned())
+    ]);
 }
 
 /// A definition kept on one line is in scope on the next.

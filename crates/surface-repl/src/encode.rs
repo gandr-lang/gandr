@@ -21,8 +21,14 @@ use anodized::spec;
 use gandr_core_incremental::Resume;
 use gandr_core_incremental::submitted;
 use gandr_surface_corpus::Outcome;
+use gandr_surface_diagnostics::Diagnostic;
+use gandr_surface_diagnostics::Excerpt;
+use gandr_surface_diagnostics::Fix;
+use gandr_surface_diagnostics::Locus;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::Verbosity;
+use gandr_surface_diagnostics::context_locus;
+use gandr_surface_diagnostics::report_span;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::Goals;
@@ -41,7 +47,9 @@ use gandr_surface_session::Submission;
 use gandr_surface_session::evaluate;
 use gandr_surface_session::spelled;
 use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceFragment;
+use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::remote::repair_cards;
@@ -121,6 +129,15 @@ pub enum Subject<'name>
     /// The probe declaration `:type` wraps an expression in: its type answers
     /// the question, and it is never kept.
     Probe
+    {
+        /// The probe's name.
+        name: &'name str,
+    },
+    /// The probe declaration the prompt wraps an expression or a type in:
+    /// its type and, where the session evaluates it, its value answer the
+    /// line, and it is kept when nothing is refused, so the next line may use
+    /// the name.
+    Prompt
     {
         /// The probe's name.
         name: &'name str,
@@ -284,6 +301,94 @@ fn evaluation_line(evaluation: &Evaluation<'_>) -> (OutKind, String)
     };
     (kind, evaluation.to_string())
 }
+/// Re-range `diagnostic` from the probe's revision to the line the prompt
+/// offered: every span, annotation, context and fix is clamped to the line's
+/// bytes, and the excerpt becomes the line, so the renderer quotes the line
+/// and marks the line's bytes.
+///
+/// # Specification
+/// - requires: nothing; the diagnostic is one the session raised over the probe
+///   `def {name} = {line} ;`, and `line_start` is the line's offset in that
+///   revision.
+/// - ensures: the diagnostic's spans, annotations, contexts and fix are clamped
+///   to the line's bytes, and its excerpt is the line at `line_start` on line
+///   one, so the renderer quotes the line and marks the line's bytes; a span
+///   that fell outside the line is left unlocated.
+/// - provides: the line's coordinates for a probe's refusal.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the in-place re-ranging has no return-value observer;
+///   the clamped spans are witnessed end to end by
+///   `tests::repl_loop::a_malformed_expression_carries_the_line_s_range`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a refusal at the prompt carries the line's range, not the
+///   probe's.
+/// - witness: `tests::repl_loop::a_malformed_expression_carries_the_line_s_range`
+fn re_range(
+    diagnostic: &mut Diagnostic,
+    line: SourceText<'_>,
+    line_start: ByteOffset,
+)
+{
+    let line_end =
+        ByteOffset::from(usize::from(line_start).saturating_add(<&str>::from(line).len()));
+    let clamp = |span: ByteSpan| -> Option<ByteSpan> {
+        let start = usize::from(span.start()).max(usize::from(line_start));
+        let end = usize::from(span.end()).min(usize::from(line_end));
+        if start >= usize::from(line_end) {
+            return None;
+        }
+        ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).ok()
+    };
+    diagnostic.span = match diagnostic.span {
+        Maybe::Present(span) => clamp(span).map_or(
+            Maybe::Absent(report_span::Absent::OutsideText),
+            Maybe::Present,
+        ),
+        Maybe::Absent(reason) => Maybe::Absent(reason),
+    };
+    for annotation in &mut diagnostic.annotations {
+        annotation.locus.span = clamp(annotation.locus.span).unwrap_or(annotation.locus.span);
+    }
+    for context in &mut diagnostic.contexts {
+        context.locus = match context.locus {
+            Maybe::Present(locus) => clamp(locus.span).map_or(
+                Maybe::Absent(context_locus::Absent::OutsideText),
+                |span| {
+                    Maybe::Present(Locus {
+                        span,
+                        line: locus.line,
+                        column: locus.column,
+                    })
+                },
+            ),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+    }
+    diagnostic.excerpt = match diagnostic.excerpt {
+        Maybe::Present(_) => Maybe::Present(Excerpt {
+            text: <&str>::from(line).to_owned(),
+            start: line_start,
+            line: 1_usize,
+        }),
+        Maybe::Absent(reason) => Maybe::Absent(reason),
+    };
+    let fix = core::mem::replace(
+        &mut diagnostic.fix,
+        Maybe::Absent(gandr_surface_diagnostics::fix::Absent::Unproposed),
+    );
+    diagnostic.fix = match fix {
+        Maybe::Present(fix) => match clamp(fix.span) {
+            Some(span) => Maybe::Present(Fix {
+                span,
+                replacement: fix.replacement,
+            }),
+            None => Maybe::Absent(gandr_surface_diagnostics::fix::Absent::Unproposed),
+        },
+        Maybe::Absent(reason) => Maybe::Absent(reason),
+    };
+}
 
 /// The transcript block of `submission`, made for `offer`, and whether its
 /// chunk is kept.
@@ -303,9 +408,11 @@ fn evaluation_line(evaluation: &Evaluation<'_>) -> (OutKind, String)
 ///   the value, a blame line naming the goal reached, or a note line for a run
 ///   that stopped short or never reached the machine; then a warning line per
 ///   parse repair inside the chunk. A probe answers instead with the one type
-///   line `: T`. The disposition keeps the chunk, with the standings of the
-///   whole revision, exactly when the subject is declarations and nothing was
-///   refused.
+///   line `: T`. A prompt probe answers with the declaration's type line and,
+///   where the session evaluates it, its value line, and its refusal is
+///   re-ranged to the line. The disposition keeps the chunk, with the standings
+///   of the whole revision, exactly when the subject is declarations or a
+///   prompt probe and nothing was refused.
 /// - provides: the one encoding every face draws, so the batch transcript, the
 ///   terminal and a later interface show the same lines.
 /// - fails: never.
@@ -341,7 +448,7 @@ fn evaluation_line(evaluation: &Evaluation<'_>) -> (OutKind, String)
 ], ensures: |ret| ret.block.source.len() == echo_bytes && ret.block.source_hl.len() == highlights
     && ret.block.lines.iter().all(|row| row.0 != OutKind::Source)
     && match ret.disposition {
-        Disposition::Kept(ref standings) => matches!(subject, Subject::Declarations)
+        Disposition::Kept(ref standings) => matches!(subject, Subject::Declarations | Subject::Prompt { .. })
             && !refused && standings.0.len() <= declarations,
         Disposition::Dropped => matches!(subject, Subject::Probe { .. })
             || ret.block.lines.iter().any(|row| row.0 == OutKind::Diag),
@@ -369,6 +476,16 @@ pub fn encode_submission(
     let mut lines: Vec<(OutKind, String)> = Vec::new();
     let mut refused = false;
     for diagnostic in entries(&step, Verb::Check(Goals::Reported)) {
+        let mut diagnostic = diagnostic;
+        if let Subject::Prompt { name } = subject {
+            let line_start =
+                ByteOffset::from(usize::from(chunk).saturating_add(format!("def {name} = ").len()));
+            re_range(
+                &mut diagnostic,
+                SourceText::from(echo.source.as_str()),
+                line_start,
+            );
+        }
         let rendered = render(&diagnostic, style, Verbosity::User).to_string();
         match diagnostic.severity {
             Severity::Goal => {},
@@ -431,7 +548,19 @@ pub fn encode_submission(
                         }
                     },
                     (
-                        Subject::Probe { .. } | Subject::Declarations,
+                        Subject::Prompt { name: probe },
+                        &(Outcome::Checks(_) | Outcome::Runs(_) | Outcome::Normalizes(_)),
+                    ) if probe == name => {
+                        lines.push((
+                            OutKind::Type,
+                            typed_line(fragment, &type_of(resume, fragment)),
+                        ));
+                        if let Maybe::Present(evaluation) = evaluate(declaration, program) {
+                            lines.push(evaluation_line(&evaluation));
+                        }
+                    },
+                    (
+                        Subject::Probe { .. } | Subject::Declarations | Subject::Prompt { .. },
                         &(Outcome::Checks(_)
                         | Outcome::Refuses(_)
                         | Outcome::Runs(_)
@@ -444,8 +573,10 @@ pub fn encode_submission(
     }
     lines.extend(cards.iter().map(|card| (OutKind::Diag, card_line(card))));
     let disposition = match (subject, refused) {
-        (Subject::Declarations, false) => Disposition::Kept(standings),
-        (Subject::Declarations, true) | (Subject::Probe { .. }, _) => Disposition::Dropped,
+        (Subject::Declarations | Subject::Prompt { .. }, false) => Disposition::Kept(standings),
+        (Subject::Declarations | Subject::Probe { .. } | Subject::Prompt { .. }, _) => {
+            Disposition::Dropped
+        },
     };
     Encoded {
         block: TranscriptBlock {
