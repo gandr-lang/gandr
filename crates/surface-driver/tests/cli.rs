@@ -155,7 +155,9 @@ impl Drop for Scratch
 ///
 /// # Specification
 /// - requires: arguments have stable operating-system string views.
-/// - ensures: selects the built driver and preserves arguments in order.
+/// - ensures: selects the built driver and preserves arguments in order; the
+///   user's configuration directory is one no test writes, so a configuration
+///   file on the host never reaches a case that does not write its own.
 /// - provides: a command without starting a process.
 /// - fails: never.
 /// - panics: none.
@@ -176,6 +178,10 @@ where
 {
     let mut command = Command::new(env!("CARGO_BIN_EXE_gandr"));
     command.args(arguments);
+    command.env(
+        "XDG_CONFIG_HOME",
+        std::env::temp_dir().join("gandr-driver-unconfigured"),
+    );
     command
 }
 
@@ -1852,4 +1858,74 @@ fn a_failed_diagnostic_stream_stops_later_output()
             "no later summary or value: {arguments:?}"
         );
     }
+}
+
+/// #782: `presentation.spelling` in the user's configuration file spells
+/// what `check` and `run` print, `--spelling` outranks it, and a file naming
+/// no spelling stops the driver before any verb runs.
+#[test]
+fn the_configured_spelling_prints_and_the_flag_outranks_it_782()
+{
+    let scratch = Scratch::new(Path::new("configured-spelling"));
+    let refused = scratch.file(
+        Path::new("relation.gandr"),
+        Text::from("def r : Integer ≃ String ;\ndef r = 1 ;\n"),
+    );
+    let word = scratch.file(
+        Path::new("word.gandr"),
+        Text::from(
+            "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef once : +U (-F \
+             Path(Circle, Base, Base)) ;\ndef once = thunk { loop } ;\n",
+        ),
+    );
+    let home = scratch.0.join("configuration");
+    let configured = |text: &str| {
+        let _file = scratch.file(
+            Path::new("configuration/gandr/config.toml"),
+            Text::from(text),
+        );
+    };
+    let under_home = |arguments: &[&std::ffi::OsStr]| {
+        let mut command = gandr(arguments);
+        command.env("XDG_CONFIG_HOME", &home);
+        ran(command)
+    };
+    let check = |flag: &[&str]| {
+        let mut arguments: Vec<&std::ffi::OsStr> = flag.iter().map(std::ffi::OsStr::new).collect();
+        arguments.extend([std::ffi::OsStr::new("check"), refused.as_os_str()]);
+        stdout(&under_home(&arguments))
+    };
+    let run = |flag: &[&str]| {
+        let mut arguments: Vec<&std::ffi::OsStr> = flag.iter().map(std::ffi::OsStr::new).collect();
+        arguments.extend([std::ffi::OsStr::new("run"), word.as_os_str()]);
+        stdout(&under_home(&arguments))
+    };
+    assert!(
+        check(&[]).contains("expected `Integer ≃ String`"),
+        "no file prints Unicode"
+    );
+    configured("[presentation]\nspelling = \"ascii\"\n");
+    assert!(
+        check(&[]).contains("expected `Integer <~> String`"),
+        "the file's spelling prints"
+    );
+    assert_eq!(run(&[]), "loop :: here(Base)\n", "and spells a run's value");
+    assert!(
+        check(&["--spelling", "unicode"]).contains("expected `Integer ≃ String`"),
+        "the flag outranks the file"
+    );
+    assert_eq!(
+        run(&["--spelling", "unicode"]),
+        "loop ∷ here(Base)\n",
+        "for a run too"
+    );
+    configured("[presentation]\nspelling = \"latin\"\n");
+    let stopped = under_home(&[std::ffi::OsStr::new("check"), refused.as_os_str()]);
+    assert_eq!(code(&stopped), Code(2), "a spelling there is none of");
+    assert!(stopped.stdout.is_empty(), "stops before the verb runs");
+    assert!(
+        stderr(&stopped).contains("`presentation.spelling` is `latin`"),
+        "and says why: {}",
+        stderr(&stopped)
+    );
 }

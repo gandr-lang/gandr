@@ -98,6 +98,7 @@ use std::thread;
 use std::time::Instant;
 
 use anodized::spec;
+use gandr_surface_pretty::Spelling;
 use quenchant_shape::shape::Maybe;
 
 use crate::quiet::Met;
@@ -262,13 +263,13 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 ///   one is given, and one whose first byte is `r` to the render-bus face,
 ///   [`crate::bus::serve`]. Every other accepted connection is served as
 ///   [`Server::handle`] and [`Server::admit`] state, over the documents every
-///   connection shares, each connection answered from its own copy: its answers
-///   and publications reach it in the order its handling made them, and each
-///   synchronisation's timing line goes to `log`. A connection ends at `exit`,
-///   at the end of its stream, or at a stream fault; it then holds nothing and
-///   its socket is shut. The hub returns once no connection has been open for
-///   `linger`, its socket file removed first so a late client starts a fresh
-///   hub.
+///   connection shares, the workspace's configured spelling `spelling`, each
+///   connection answered from its own copy: its answers and publications reach
+///   it in the order its handling made them, and each synchronisation's timing
+///   line goes to `log`. A connection ends at `exit`, at the end of its stream,
+///   or at a stream fault; it then holds nothing and its socket is shut. The
+///   hub returns once no connection has been open for `linger`, its socket file
+///   removed first so a late client starts a fresh hub.
 /// - provides: the engine hub's whole lifetime.
 /// - fails: when accepting fails for a reason other than having nothing to
 ///   accept.
@@ -296,12 +297,13 @@ pub fn run_hub<Log>(
     linger: Duration,
     log: Log,
     lines: Option<Face>,
+    spelling: Spelling,
 ) -> Result<(), io::Error>
 where
     Log: Write + Send + 'static,
 {
     listener.set_nonblocking(true)?;
-    let workspace = Arc::new(Mutex::new(Workspace::default()));
+    let workspace = Arc::new(Mutex::new(Workspace::spelled(spelling)));
     let log = Arc::new(Mutex::new(log));
     let open = Arc::new(AtomicU64::new(0));
     let mut peers = 0_u64;
@@ -640,6 +642,7 @@ mod tests
                 Duration::from_millis(100),
                 io::sink(),
                 Some(echo),
+                super::Spelling::Unicode,
             )
             .expect("the hub serves");
         })
@@ -1095,7 +1098,8 @@ mod tests
                 &socket,
                 Duration::from_millis(10),
                 io::sink(),
-                Some(echo)
+                Some(echo),
+                super::Spelling::Unicode,
             )
             .is_ok(),
             "a socket another hand removed is not a fault"

@@ -114,6 +114,7 @@ use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::lay_out;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::PageWidth;
+use gandr_surface_pretty::Spelling;
 use gandr_surface_render_remote::ByteOffset as RenderOffset;
 use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::HlSpan;
@@ -210,15 +211,32 @@ pub fn hovering(
     Hovering { table }
 }
 
-/// How a hover spells and writes what it shows: the presentation form of its
-/// types and the markup its client renders.
+/// How a hover spells and writes what it shows: the presentation form and
+/// spelling of its types and the markup its client renders.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Style
 {
     /// The form every type is spelled in.
     pub form: Form,
+    /// The spelling every type is written in.
+    pub spelling: Spelling,
     /// The markup the hover is written in.
     pub markup: Markup,
+}
+
+impl Style
+{
+    /// The printer's style of these: the form and the spelling.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn printed(self) -> gandr_surface_pretty::Style
+    {
+        gandr_surface_pretty::Style {
+            form: self.form,
+            spelling: self.spelling,
+        }
+    }
 }
 
 /// What a hover at `position` of `text` shows, read against the text's
@@ -315,7 +333,7 @@ pub fn hover<Store, Blocks>(
         .orientations()
         .iter()
         .find_map(|&(span, note)| (span.start() <= offset && offset < span.end()).then_some(note));
-    if let Maybe::Present(entry) = table.at(offset, PageWidth::from(HOVER_WIDTH), style.form.into())
+    if let Maybe::Present(entry) = table.at(offset, PageWidth::from(HOVER_WIDTH), style.printed())
         && let Ok(range) = Range::of_bytes(
             &index,
             RenderOffset::from(usize::from(entry.span().start())),
@@ -486,7 +504,7 @@ fn declared<Store, Blocks>(
     let key = declaration.key;
     let held = match key {
         Some(key) if symbol.kind != SymbolKind::MODULE => {
-            match table.declared(key, PageWidth::from(HOVER_WIDTH), style.form.into()) {
+            match table.declared(key, PageWidth::from(HOVER_WIDTH), style.printed()) {
                 Maybe::Present(held) => Some(held),
                 Maybe::Absent(_) => None,
             }
@@ -640,6 +658,7 @@ mod tests
     use gandr_storage_records::InMemoryBlockStore;
     use gandr_surface_dispatcher::SourceRoot;
     use gandr_surface_pretty::Form;
+    use gandr_surface_pretty::Spelling;
     use gandr_surface_render_remote::ByteOffset as RenderOffset;
     use gandr_surface_render_remote::LineIndex;
     use gandr_surface_session::Session;
@@ -661,6 +680,7 @@ mod tests
     /// the fixtures below are written in.
     const PLAIN: Style = Style {
         form: Form::Explicit,
+        spelling: Spelling::Unicode,
         markup: Markup::Markdown,
     };
 
@@ -806,6 +826,7 @@ mod tests
         let hovering = hovering(text, &path);
         let sugared = Style {
             form: Form::Sugared,
+            spelling: Spelling::Unicode,
             markup: Markup::Markdown,
         };
         let at = |offset: usize| {
@@ -1079,6 +1100,7 @@ mod tests
     {
         let html = Style {
             form: Form::Sugared,
+            spelling: Spelling::Unicode,
             markup: Markup::Html,
         };
         let coloured = |role: &str, text: &str| {

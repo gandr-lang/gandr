@@ -69,6 +69,7 @@ use std::io::Cursor;
 
 use gandr_surface_lsp::Body;
 use gandr_surface_lsp::Served;
+use gandr_surface_lsp::Spelling;
 use gandr_surface_lsp::serve;
 use gandr_surface_lsp::write_frame;
 
@@ -81,7 +82,7 @@ for message in [
     write_frame(&mut input, &Body::from(message.as_bytes().to_vec()))?;
 }
 let mut output = Vec::new();
-let served = serve(&mut Cursor::new(input), &mut output, &mut Vec::new())?;
+let served = serve(&mut Cursor::new(input), &mut output, &mut Vec::new(), Spelling::Unicode)?;
 assert_eq!(served, Served::Clean, "exit after shutdown ends the session cleanly");
 # Ok::<(), Box<dyn core::error::Error>>(())
 ```

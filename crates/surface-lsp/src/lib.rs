@@ -33,10 +33,14 @@
 //! the written types it formed, and the members of `theory` blocks and `data`
 //! families at the types the description route states for them. Each type is
 //! spelled in the form the editor's `gandr.presentation.form` names, the
-//! sugared one unless it names the explicit one; a client whose markdown
-//! renderer keeps HTML reads every piece of gandr text a hover shows coloured
-//! by the roles its semantic tokens carry, as the `markup` module states, with
-//! the decision, its alternatives and its reversal.
+//! sugared one unless it names the explicit one, and every construct with a
+//! glyph in the spelling its `gandr.presentation.spelling` names, `unicode` or
+//! `ascii`, the user's configured spelling (the [`Spelling`] [`serve`] and
+//! `run_hub` are given) unless it names one; the same setting spells the types
+//! its diagnostics name, and changing it republishes them. A client whose
+//! markdown renderer keeps HTML reads every piece of gandr text a hover shows
+//! coloured by the roles its semantic tokens carry, as the `markup` module
+//! states, with the decision, its alternatives and its reversal.
 //! A formatting request lays the document out through `gandr-surface-format`
 //! and answers the edits that turn the held text into that layout: one
 //! trimmed edit for the whole document, or one per top-level form a range
@@ -67,6 +71,7 @@
 //!
 //! use gandr_surface_lsp::Body;
 //! use gandr_surface_lsp::Served;
+//! use gandr_surface_lsp::Spelling;
 //! use gandr_surface_lsp::serve;
 //! use gandr_surface_lsp::write_frame;
 //!
@@ -79,7 +84,12 @@
 //!     write_frame(&mut input, &Body::from(message.as_bytes().to_vec()))?;
 //! }
 //! let mut output = Vec::new();
-//! let served = serve(&mut Cursor::new(input), &mut output, &mut Vec::new())?;
+//! let served = serve(
+//!     &mut Cursor::new(input),
+//!     &mut output,
+//!     &mut Vec::new(),
+//!     Spelling::Unicode,
+//! )?;
 //! assert_eq!(
 //!     served,
 //!     Served::Clean,
@@ -135,7 +145,7 @@
 //! | monikers | `textDocument/moniker` | declined: no cross-repository index reads them |
 //! | workspace symbols | `workspace/symbol` | blocked: a workspace of more than the open documents |
 //! | workspace folders, file watching, file operations | `workspace/didChangeWorkspaceFolders`, `didChangeWatchedFiles`, `willCreateFiles` and the other file operations | blocked: a workspace of more than the open documents |
-//! | configuration | `workspace/didChangeConfiguration` | served: the `gandr` section's `diagnostics.verbosity`, as the `recheck` module states, `diagnostics.quiet`, as the `quiet` module states, and `presentation.form`, which every later hover reads |
+//! | configuration | `workspace/didChangeConfiguration` | served: the `gandr` section's `diagnostics.verbosity`, as the `recheck` module states, `diagnostics.quiet`, as the `quiet` module states, `presentation.form`, which every later hover reads, and `presentation.spelling`, which every later hover reads and which republishes the diagnostics |
 //! | pulled configuration | `workspace/configuration` | declined: the settings are pushed; reverses for a client that only answers pulls |
 //! | window messages and progress | `window/showMessage`, `logMessage`, `workDoneProgress/*` | declined: the timing line goes to the server's log; reverses for a client that reads only the protocol stream |
 //! | gandr's extensions | `gandr/goals`, `gandr/syntaxTree`, `gandr/serverStatus`, the render-bus attach through the language server's stream | blocked: each as the assessment in § Extensions beyond the specification names; the bus itself is served on the hub's socket (the `bus` module) |
@@ -337,6 +347,8 @@ mod server;
 mod tokens;
 mod transport;
 mod view;
+
+pub use gandr_surface_pretty::Spelling;
 
 #[cfg(unix)]
 pub use crate::bus::RENDER_BUS_PREFACE;

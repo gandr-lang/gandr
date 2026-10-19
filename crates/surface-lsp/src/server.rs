@@ -62,6 +62,7 @@ use std::time::Instant;
 use anodized::spec;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_pretty::Form;
+use gandr_surface_pretty::Spelling;
 use gandr_surface_render_remote::DocId;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_render_remote::RenderFrame;
@@ -723,6 +724,28 @@ pub struct Workspace
     documents: BTreeMap<DocumentUri, Held>,
     /// Where each watching connection hears which document changed.
     watchers: BTreeMap<Peer, Sender<DocumentUri>>,
+    /// The spelling its user's configuration names: what a connection writes
+    /// types in until its editor's `gandr.presentation.spelling` says
+    /// otherwise, and what a query writes them in.
+    spelling: Spelling,
+}
+
+impl Workspace
+{
+    /// A workspace holding nothing, its user's configuration naming
+    /// `spelling`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn spelled(spelling: Spelling) -> Self
+    {
+        Self {
+            spelling,
+            ..Self::default()
+        }
+    }
 }
 
 impl Workspace
@@ -991,7 +1014,10 @@ impl Workspace
             peer: Peer(u64::MAX),
             verbosity: Verbosity::User,
             quiet: QUIET,
-            style: STYLE,
+            style: Style {
+                spelling: self.spelling,
+                ..STYLE
+            },
         };
         let answer = match classify(request) {
             Err(malformed) => malformed.response(),
@@ -1126,16 +1152,18 @@ pub struct Server
     /// The interval its editor's `gandr.diagnostics.quiet` setting names, read
     /// as the verbosity is; zero holds nothing.
     quiet: Duration,
-    /// The form its editor's `gandr.presentation.form` setting names, read as
-    /// the verbosity is, and the markup its client's markdown renderer reads,
-    /// read at `initialize`.
+    /// The form and spelling its editor's `gandr.presentation` settings name,
+    /// read as the verbosity is, the spelling its workspace's configuration
+    /// names when the editor names none, and the markup its client's markdown
+    /// renderer reads, read at `initialize`.
     style: Style,
 }
 
 /// The style a connection hovers in until `initialize` says otherwise: the
-/// sugared form, in markdown.
+/// sugared form, in Unicode, in markdown.
 const STYLE: Style = Style {
     form: Form::Sugared,
+    spelling: Spelling::Unicode,
     markup: Markup::Markdown,
 };
 
@@ -1406,12 +1434,12 @@ impl Server
     /// - requires: nothing.
     /// - ensures: initialization and shutdown advance the lifecycle once, and
     ///   initialization takes the verbosity, the quiet interval and the
-    ///   presentation form its options name, the user level, [`QUIET`] and the
-    ///   sugared form when they name none, and the markup its client's
-    ///   capabilities name; other requests preserve them, and no request
-    ///   changes `workspace`. The response echoes the identifier and carries
-    ///   the method result or its lifecycle, unknown-method or
-    ///   invalid-parameter error.
+    ///   presentation form and spelling its options name, the user level,
+    ///   [`QUIET`], the sugared form and the workspace's spelling when they
+    ///   name none, and the markup its client's capabilities name; other
+    ///   requests preserve them, and no request changes `workspace`. The
+    ///   response echoes the identifier and carries the method result or its
+    ///   lifecycle, unknown-method or invalid-parameter error.
     /// - provides: one response per request.
     /// - fails: refusals are error responses, never Rust errors.
     /// - panics: none.
@@ -1434,7 +1462,11 @@ impl Server
             (Phase::Waiting, "initialize") => self.phase == Phase::Running
                 && self.verbosity == initial.verbosity().unwrap_or_default()
                 && self.quiet == initial.quiet().unwrap_or(QUIET)
-                && self.style == Style { form: initial.form().unwrap_or(Form::Sugared), markup }
+                && self.style == Style {
+                    form: initial.form().unwrap_or(Form::Sugared),
+                    spelling: initial.spelling().unwrap_or(workspace.spelling),
+                    markup,
+                }
                 && matches!(ret, Outgoing::Success { result: Answer::Initialize(_), .. }),
             (Phase::Waiting, _) => self.phase == phase && matches!(ret,
                 Outgoing::Failure { ref error, .. } if error.code == ErrorCode::SERVER_NOT_INITIALIZED),
@@ -1512,6 +1544,7 @@ impl Server
                 self.quiet = settings.quiet().unwrap_or(QUIET);
                 self.style = Style {
                     form: settings.form().unwrap_or(Form::Sugared),
+                    spelling: settings.spelling().unwrap_or(workspace.spelling),
                     markup: initial_markup(&params),
                 };
                 success(
@@ -1712,13 +1745,13 @@ impl Server
     ///   connection, even for an unknown URI. A running-state configuration
     ///   change whose `gandr` section names a quiet interval takes it, and one
     ///   naming a presentation form takes it for every later hover. One that
-    ///   names a verbosity other than this connection's takes it, then
-    ///   republishes every copy this connection holds, in URI order, at its
-    ///   version, to this connection alone, logging one timing line each;
-    ///   otherwise, one that names a zero interval publishes what each copy
-    ///   holds back, as [`Server::release`] states, and one naming neither
-    ///   changes nothing. Unknown, malformed and out-of-phase notifications
-    ///   leave documents alone.
+    ///   names a verbosity or a presentation spelling other than this
+    ///   connection's takes them, then republishes every copy this connection
+    ///   holds, in URI order, at its version, to this connection alone, logging
+    ///   one timing line each; otherwise, one that names a zero interval
+    ///   publishes what each copy holds back, as [`Server::release`] states,
+    ///   and one naming neither changes nothing. Unknown, malformed and
+    ///   out-of-phase notifications leave documents alone.
     /// - provides: document synchronization, configuration and termination.
     /// - fails: unreadable parameters and changes to documents this connection
     ///   holds no copy of are ignored.
@@ -1735,6 +1768,7 @@ impl Server
     /// - witness: `server::tests::ranged_changes_edit_the_held_text_in_order`
     /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
     /// - witness: `server::tests::a_configuration_change_reanswers_hovers_in_its_form`
+    /// - witness: `server::tests::a_presentation_spelling_respells_hovers_and_diagnostics_782`
     /// - witness: `server::tests::two_connections_hold_their_own_copies`
     #[spec(
         captures: [phase = self.phase, count = workspace.documents.len()],
@@ -1794,7 +1828,13 @@ impl Server
                 document.text.replace(text_document.text);
                 document.caret = Maybe::Absent(uncareted::Absent::Unranged);
                 document.proposals.clear();
-                let outcome = synchronised(&uri, document, self.verbosity, self.quiet);
+                let outcome = synchronised(
+                    &uri,
+                    document,
+                    self.verbosity,
+                    self.style.spelling,
+                    self.quiet,
+                );
                 for message in &outcome.messages {
                     workspace.published_by(self.peer, message);
                 }
@@ -1822,8 +1862,13 @@ impl Server
                 for change in content_changes {
                     document.caret = document.text.apply(change);
                 }
-                let outcome =
-                    synchronised(&text_document.uri, document, self.verbosity, self.quiet);
+                let outcome = synchronised(
+                    &text_document.uri,
+                    document,
+                    self.verbosity,
+                    self.style.spelling,
+                    self.quiet,
+                );
                 for message in &outcome.messages {
                     workspace.published_by(self.peer, message);
                 }
@@ -1858,10 +1903,13 @@ impl Server
                     self.style.form = form;
                 }
                 let mut outcome = Outcome::quiet();
-                let Some(verbosity) = settings
+                let verbosity = settings
                     .verbosity()
-                    .filter(|&verbosity| verbosity != self.verbosity)
-                else {
+                    .filter(|&verbosity| verbosity != self.verbosity);
+                let spelling = settings
+                    .spelling()
+                    .filter(|&spelling| spelling != self.style.spelling);
+                if verbosity.is_none() && spelling.is_none() {
                     if settings.quiet().is_some_and(|quiet| quiet.is_zero()) {
                         let uris: Vec<DocumentUri> = workspace.documents.keys().cloned().collect();
                         for uri in &uris {
@@ -1869,15 +1917,22 @@ impl Server
                         }
                     }
                     return outcome;
-                };
-                self.verbosity = verbosity;
+                }
+                self.verbosity = verbosity.unwrap_or(self.verbosity);
+                self.style.spelling = spelling.unwrap_or(self.style.spelling);
                 let peer = self.peer;
                 for (uri, held) in &mut workspace.documents {
                     let Maybe::Present(document) = held.own_mut(peer)
                     else {
                         continue;
                     };
-                    let republished = synchronised(uri, document, verbosity, self.quiet);
+                    let republished = synchronised(
+                        uri,
+                        document,
+                        self.verbosity,
+                        self.style.spelling,
+                        self.quiet,
+                    );
                     outcome.messages.extend(republished.messages);
                     outcome.log.extend(republished.log);
                 }
@@ -2365,7 +2420,8 @@ fn caret_range(
     .map_or(Maybe::Absent(formless::Absent::Between), Maybe::Present)
 }
 
-/// Recheck `document`, open at `uri`, at `verbosity`, holding back for
+/// Recheck `document`, open at `uri`, at `verbosity` and in `spelling`,
+/// holding back for
 /// `quiet` the diagnostics of the form under its caret: the notification
 /// publishing the rest and the line logging what the recheck cost.
 ///
@@ -2373,11 +2429,11 @@ fn caret_range(
 /// - requires: nothing.
 /// - ensures: one diagnostic notification naming the supplied URI and held
 ///   version, with the diagnostics the document's session judges for its whole
-///   text, rendered at `verbosity`, less those [`publishable`] holds for the
-///   form under the document's caret while `quiet` is not zero; the copy
-///   records every judged diagnostic as checked. One log line names the same
-///   URI and version, its admission pending when the judgement left one, and
-///   whether the publication held any.
+///   text, rendered at `verbosity` with their types in `spelling`, less those
+///   [`publishable`] holds for the form under the document's caret while
+///   `quiet` is not zero; the copy records every judged diagnostic as checked.
+///   One log line names the same URI and version, its admission pending when
+///   the judgement left one, and whether the publication held any.
 /// - provides: the publication shared by open, change and configuration
 ///   notifications.
 /// - fails: never.
@@ -2402,6 +2458,7 @@ fn synchronised(
     uri: &DocumentUri,
     document: &mut Document,
     verbosity: Verbosity,
+    spelling: Spelling,
     quiet: Duration,
 ) -> Outcome
 {
@@ -2414,6 +2471,7 @@ fn synchronised(
         &mut document.session,
         document.text.source(),
         verbosity,
+        spelling,
         caret,
     );
     let form = caret_range(document, rechecked.form);
@@ -2436,23 +2494,25 @@ fn synchronised(
 }
 
 /// Serve the protocol over `input` and `output` until the session ends,
-/// writing each synchronisation's timing line to `log`.
+/// writing each synchronisation's timing line to `log`, its user's
+/// configuration naming `spelling`.
 ///
 /// # Specification
 /// - requires: nothing of the streams; `input` carries the client's frames,
 ///   `output` takes the server's, and `log` takes the operator's lines.
-/// - ensures: each frame read is handled by one [`Server`], and every message
-///   it produces is written as one frame, in order; then the admissions its
-///   synchronisations left run, as [`Server::admit`] states, each correction
-///   written as one frame, and every line logged is written to `log` with a
-///   line terminator, before the next frame is read. A synchronisation whose
-///   publication held a diagnostic back arms its document's deadline the
-///   server's quiet interval later, and one that held nothing disarms it; a
-///   deadline that passes with no frame read publishes what the document holds
-///   back, as [`Server::release`] states. The session ends at `exit` or at a
-///   stream closed at a frame boundary, as [`Server::closed`] states. A line
-///   `log` refuses is dropped: the log is the operator's, and the protocol
-///   never depends on it.
+/// - ensures: each frame read is handled by one [`Server`] over a workspace
+///   whose configured spelling is `spelling`, and every message it produces is
+///   written as one frame, in order; then the admissions its synchronisations
+///   left run, as [`Server::admit`] states, each correction written as one
+///   frame, and every line logged is written to `log` with a line terminator,
+///   before the next frame is read. A synchronisation whose publication held a
+///   diagnostic back arms its document's deadline the server's quiet interval
+///   later, and one that held nothing disarms it; a deadline that passes with
+///   no frame read publishes what the document holds back, as
+///   [`Server::release`] states. The session ends at `exit` or at a stream
+///   closed at a frame boundary, as [`Server::closed`] states. A line `log`
+///   refuses is dropped: the log is the operator's, and the protocol never
+///   depends on it.
 /// - provides: the language server over any pair of streams and a log: the
 ///   driver's standard input, output and error, or memory.
 /// - fails: the first [`TransportFault`] of either protocol stream, and
@@ -2480,13 +2540,14 @@ pub fn serve<Input, Output, Log>(
     input: &mut Input,
     output: &mut Output,
     log: &mut Log,
+    spelling: Spelling,
 ) -> Result<Served, TransportFault>
 where
     Input: BufRead + Send,
     Output: Write,
     Log: Write,
 {
-    let mut workspace = Workspace::default();
+    let mut workspace = Workspace::spelled(spelling);
     let mut server = Server::default();
     paced(input, |met, deadlines| {
         let body = match met {
@@ -3606,6 +3667,78 @@ mod tests
             let _ignored = server.handle(&unchanged);
             assert_eq!(hovered(&mut server), sugared, "{why} keeps the form held");
         }
+    }
+
+    /// #782: a connection writes types in its workspace's configured spelling
+    /// until its editor names one; naming another respells the next hover and
+    /// republishes every diagnostic in it.
+    #[test]
+    fn a_presentation_spelling_respells_hovers_and_diagnostics_782()
+    {
+        let mut server = Connected {
+            server: Server::default(),
+            workspace: Workspace::spelled(super::Spelling::Ascii),
+        };
+        let _answered = send(
+            &mut server,
+            Json(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}"#),
+        );
+        let opened = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+                    "uri":"file:///tmp/r.gandr","languageId":"gandr","version":1,
+                    "text":"def r : Integer ≃ String ;\ndef r = 1 ;\n"}}}"#,
+            ),
+        );
+        let message = |published: &Value| {
+            published
+                .pointer("/0/params/diagnostics/0/message")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .unwrap_or_default()
+        };
+        let hovered = |server: &mut Connected| {
+            send(
+                server,
+                Json(
+                    r#"{"jsonrpc":"2.0","id":5,"method":"textDocument/hover","params":{
+                        "textDocument":{"uri":"file:///tmp/r.gandr"},
+                        "position":{"line":0,"character":4}}}"#,
+                ),
+            )
+            .pointer("/0/result/contents/value")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+        };
+        assert!(
+            message(&opened).contains("expected `Integer <~> String`"),
+            "the configured spelling publishes: {opened}"
+        );
+        assert_eq!(
+            hovered(&mut server),
+            Some(String::from("```gandr\nr : Integer <~> String\n```")),
+            "and hovers"
+        );
+        let republished: Vec<Value> = server
+            .handle(&Body::from(
+                br#"{"jsonrpc":"2.0","method":"workspace/didChangeConfiguration",
+                    "params":{"settings":{"gandr":{"presentation":{"spelling":"unicode"}}}}}"#
+                    .to_vec(),
+            ))
+            .messages
+            .iter()
+            .map(|outgoing| serde_json::to_value(outgoing).expect("a message encodes"))
+            .collect();
+        assert!(
+            message(&Value::from(republished.clone())).contains("expected `Integer ≃ String`"),
+            "the editor's spelling republishes: {republished:?}"
+        );
+        assert_eq!(
+            hovered(&mut server),
+            Some(String::from("```gandr\nr : Integer ≃ String\n```")),
+            "and the next hover answers in it"
+        );
     }
 
     #[test]

@@ -22,6 +22,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_surface_grammar::PbgError;
+use gandr_surface_grammar::Spelling;
 use gandr_surface_render_remote::TranscriptBlock;
 use gandr_surface_render_terminal::RenderStyle;
 use gandr_surface_repl::LoopError;
@@ -77,12 +78,13 @@ pub struct App
 impl App
 {
     /// A face over a fresh loop, its refusals rendered plainly for the
-    /// face to style.
+    /// face to style, its types and values written in `spelling`.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: an empty line, nothing waiting and an empty transcript over a
-    ///   fresh loop whose refusal renderer selects plain styling.
+    ///   fresh loop whose refusal renderer selects plain styling and whose
+    ///   blocks are written in `spelling`.
     /// - provides: the model every run of the face starts from.
     /// - fails: [`PbgError`] when the built-in grammar or its role table does
     ///   not build.
@@ -101,9 +103,9 @@ impl App
     /// - witness: `app::tests::a_fresh_loop_keeps_refusal_rows_plain`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |app| app.line.is_empty() && app.waiting.is_empty() && app.transcript.is_empty() && app.repl.prompt() == Prompt::Fresh))]
     #[inline]
-    pub fn new() -> Result<Self, PbgError>
+    pub fn new(spelling: Spelling) -> Result<Self, PbgError>
     {
-        let repl = SessionLoop::new(RenderStyle::Plain)?;
+        let repl = SessionLoop::new(RenderStyle::Plain)?.spelling(spelling);
         Ok(Self {
             repl,
             line: String::new(),
@@ -264,6 +266,7 @@ impl App
 #[cfg(test)]
 mod tests
 {
+    use gandr_surface_grammar::Spelling;
     use gandr_surface_render_remote::OutKind;
     use gandr_surface_repl::Prompt;
 
@@ -274,7 +277,7 @@ mod tests
     #[test]
     fn unicode_edits_and_empty_backspace_preserve_input_boundaries()
     {
-        let mut app = App::new().expect("the grammar builds");
+        let mut app = App::new(Spelling::Unicode).expect("the grammar builds");
         assert!(app.line().as_ref().is_empty());
         assert!(app.waiting().is_empty());
         assert!(app.transcript().is_empty());
@@ -310,7 +313,7 @@ mod tests
     #[test]
     fn completed_and_interrupted_waits_preserve_the_transcript()
     {
-        let mut app = App::new().expect("the grammar builds");
+        let mut app = App::new(Spelling::Unicode).expect("the grammar builds");
         for typed in "def kept = (".chars() {
             assert_eq!(
                 app.handle(Key::Char(typed)).expect("typing succeeds"),
@@ -395,7 +398,7 @@ mod tests
     #[test]
     fn a_fresh_loop_keeps_refusal_rows_plain()
     {
-        let mut app = App::new().expect("the grammar builds");
+        let mut app = App::new(Spelling::Unicode).expect("the grammar builds");
         for line in ["def wrong : Integer ;", "def wrong = \"text\" ;"] {
             for typed in line.chars() {
                 assert_eq!(
