@@ -1682,25 +1682,40 @@ impl Labeled<'_>
         let menu = state.continuations(ClosingLimit::from(CLOSINGS));
         let (mut found, slot) = candidates(grammar, forms, &menu, &written);
         found.sort_by_key(|candidate| rank(candidate, slot));
-        let mut shown: Vec<Snippet> = Vec::with_capacity(SHOWN);
+        // At most `SHOWN` ghost texts are kept, so each search below reads an
+        // array of that length.
+        let mut shown: [Option<Snippet>; SHOWN] = [const { None }; SHOWN];
         // A candidate that differs from a better one only by separators — a
         // trailing `,` or `;` — adds nothing an author asks for.
-        let mut skeletons: Vec<Vec<Part>> = Vec::with_capacity(SHOWN);
+        let mut skeletons: [Option<Vec<Part>>; SHOWN] = [const { None }; SHOWN];
+        let mut kept = 0_usize;
         for candidate in &found {
             let skeleton = skeleton(&candidate.parts);
-            if skeletons.contains(&skeleton) {
+            if skeletons
+                .iter()
+                .any(|held| held.as_ref() == Some(&skeleton))
+            {
                 continue;
             }
             let snippet = spell(&candidate.parts, lead, source, after);
-            if !shown.contains(&snippet) {
-                shown.push(snippet);
-                skeletons.push(skeleton);
+            if shown.iter().any(|held| held.as_ref() == Some(&snippet)) {
+                continue;
             }
-            if shown.len() == SHOWN {
+            let (Some(shown_at), Some(skeleton_at)) =
+                (shown.get_mut(kept), skeletons.get_mut(kept))
+            else {
+                break;
+            };
+            *shown_at = Some(snippet);
+            *skeleton_at = Some(skeleton);
+            kept = kept.saturating_add(1);
+            if kept == SHOWN {
                 break;
             }
         }
-        if shown.is_empty() {
+        let mut ghosts: Vec<Snippet> = Vec::with_capacity(kept.max(1));
+        ghosts.extend(shown.into_iter().flatten());
+        if ghosts.is_empty() {
             let category = match (slot, menu.head()) {
                 (Slot::Open(category), _) => category,
                 (Slot::Filled, HeadForm::Open { mold, .. }) => {
@@ -1708,9 +1723,9 @@ impl Labeled<'_>
                 },
                 (Slot::Filled, HeadForm::Closed) => Category::Item,
             };
-            shown.push(spell(&[Part::Hole(category)], lead, source, after));
+            ghosts.push(spell(&[Part::Hole(category)], lead, source, after));
         }
-        Ghosts(shown)
+        Ghosts(ghosts)
     }
 
     /// Where the word this text ends in starts: the start of its last token

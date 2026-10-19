@@ -460,7 +460,7 @@ fn golden(
             .unwrap_or_default()
             .replace('\n', "⏎");
         let mut shown_text: String = spanned.chars().take(24).collect();
-        if spanned.chars().count() > 24 {
+        if spanned.chars().nth(24).is_some() {
             shown_text.push('…');
         }
         let line = format!(
