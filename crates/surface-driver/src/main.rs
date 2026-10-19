@@ -11,7 +11,7 @@
 //! | ---- | ------- |
 //! | `0` | every declaration settled, a script's run returned a value, every staged certificate was readmitted, every source was laid out, a ledger was written, or every exemplar held; also `--help`, `--version`, a bare `gandr`, `gandr lsp --capabilities`, a language-server session ended by `exit` after `shutdown`, a Model Context Protocol session whose input ended, an engine hub that lingered out or found another serving its socket, a read-evaluate loop that reached the end of its input or `:quit`, a terminal face the user left, and `gandr tui --smoke` |
 //! | `1` | at least one declaration is unsettled, or a source was not read as its root expects; a script's run was blamed on a goal or stopped short of a value; the kernel refused a staged certificate; `gandr fmt --check` found a source out of layout; `gandr ledger exemplars` found an exemplar that does not hold; also a language-server session ended by `exit`, or by its input closing, before `shutdown` |
-//! | `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, output the driver could not write, a language-server or Model Context Protocol stream that failed, an engine hub that could not be reached, bound or served, a fault that stopped a read-evaluate loop or a terminal face, a terminal that failed, `gandr tui` without a terminal, a script that never reached the machine: unreadable, refused, declaring no name, or running into a declaration the machine carries no image of, or a staged program that could not be checked, a family admission that faulted, or a worker pool that did not start, or a source the formatter refused or could not write back, or a ledger that could not be generated, written or listed |
+//! | `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, a user configuration file that cannot be read or names a spelling there is none of, output the driver could not write, a language-server or Model Context Protocol stream that failed, an engine hub that could not be reached, bound or served, a fault that stopped a read-evaluate loop or a terminal face, a terminal that failed, `gandr tui` without a terminal, a script that never reached the machine: unreadable, refused, declaring no name, or running into a declaration the machine carries no image of, or a staged program that could not be checked, a family admission that faulted, or a worker pool that did not start, or a source the formatter refused or could not write back, or a ledger that could not be generated, written or listed |
 //!
 //! A fault outranks an unsettled declaration: a run with both exits `2`. The
 //! walk continues past a faulted path, so every fault of a run is printed.
@@ -53,6 +53,7 @@
 //! | `gandr repl --batch` | the plain transcript, even on a terminal | as `repl` |
 //! | `gandr tui` | the transcript, an input pane and a status line, full-screen on the terminal | a fault that stops the face, a terminal that fails, or no terminal |
 //! | `gandr tui --smoke` | `gandr tui: ready` | a fault that stops the face |
+//! | `gandr --spelling <unicode\|ascii> <verb>` | as the verb, every construct with a glyph (`≃`, `≅`, `⇝`, `∷`) written in that spelling: types in reports, a run's value, hovers and published diagnostics, the loop's transcript; without the flag, the spelling the user's configuration file names (the `config` module), else Unicode | as the verb |
 //!
 //! A path is a source file of any name, or a directory searched for `.gandr`
 //! sources. The directories a source sits in decide its root — `strict`,
@@ -83,7 +84,8 @@
 //! its path classifies as and runs only when no declaration of it was refused;
 //! its target is the last name it declares (`gandr-surface-dispatcher`'s
 //! `evaluate` module). A completed run writes its value as the one line of
-//! standard output, spelled as a `runs` expectation states it, so a caller
+//! standard output, spelled as a `runs` expectation states it (in Unicode; in
+//! ASCII when that spelling is asked), so a caller
 //! reads the value without parsing anything else. A run blamed on a goal, stuck
 //! or unfinished is `` gandr: <path>: `<target>` <what it came to> `` on
 //! standard error; a source carrying a refusal is `gandr: <path>: refused;
@@ -285,6 +287,7 @@ use gandr_surface_dispatcher::entries;
 use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::PageWidth;
+use gandr_surface_grammar::Spelling;
 use gandr_surface_lsp::Capabilities;
 use gandr_surface_lsp::Served;
 use gandr_surface_render_terminal::RenderStyle;
@@ -294,6 +297,7 @@ use gandr_surface_repl::Ended;
 use quenchant_shape::shape::Maybe;
 
 mod allocator;
+mod config;
 
 /// The process's global allocator: the private malloc zone of
 /// [`allocator::zone::Zone`] on macOS under `malloc-zone`, the system
@@ -331,9 +335,12 @@ const UNEXEMPLIFIED: u8 = 1;
 /// gandr language toolchain driver.
 #[derive(Debug, clap::Parser)]
 #[command(name = "gandr", version, about)]
-#[repr(transparent)]
 struct Cli
 {
+    /// Write every construct that has a glyph in this spelling, over the
+    /// `presentation.spelling` of the user's configuration file.
+    #[arg(long, global = true, value_enum)]
+    spelling: Option<SpellingName>,
     /// The verb; with none, the driver prints its status.
     #[command(subcommand)]
     command: Option<Command>,
@@ -685,6 +692,72 @@ enum FormName
     Sugared,
 }
 
+/// A spelling `--spelling` names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
+enum SpellingName
+{
+    /// Each glyph: `≃`, `≅`, `⇝`, `∷`.
+    Unicode,
+    /// Each glyph's ASCII spelling: `<~>`, `Iso(A, B)`, `~~>`, `::`.
+    Ascii,
+}
+
+impl From<SpellingName> for Spelling
+{
+    /// The spelling `name` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(name: SpellingName) -> Self
+    {
+        match name {
+            SpellingName::Unicode => Self::Unicode,
+            SpellingName::Ascii => Self::Ascii,
+        }
+    }
+}
+
+/// How a verb prints what it reports: how much of each report, and the
+/// spelling every type and value is written in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Printing
+{
+    /// How much of each report prints.
+    verbosity: Verbosity,
+    /// The spelling every type and value is written in.
+    spelling: Spelling,
+}
+
+/// The spelling `flag` names, else the one the user's configuration file
+/// names, else [`Spelling::Unicode`].
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a named flag wins without the file being read; otherwise the file
+///   is read as `config::read` states and its spelling, or Unicode when it
+///   names none, is the answer.
+/// - provides: the one precedence every face's spelling follows.
+/// - fails: the file's fault, when the flag names nothing.
+/// - panics: none.
+/// - executable: none — the result depends on the environment and the file
+///   system.
+///
+/// # Errors
+/// The [`config::Fault`] reading the file met.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a configured spelling prints, a flag outranks it, and a
+///   malformed file stops the run, through the binary.
+/// - witness: `tests::cli::the_configured_spelling_prints_and_the_flag_outranks_it_782`
+fn spelling(flag: Option<SpellingName>) -> Result<Spelling, config::Fault>
+{
+    match flag {
+        Some(name) => Ok(Spelling::from(name)),
+        None => Ok(config::read()?.spelling.unwrap_or_default()),
+    }
+}
+
 /// The lints `names` enable everywhere, each widening the reach the others
 /// leave: `explicit-runs` reaches every run whether or not
 /// `explicit-runs=effects` is named beside it.
@@ -740,8 +813,11 @@ enum Screen
 ///   `run` runs its script as [`script`] states, and `fmt` lays out its paths
 ///   as [`fmt`] states. `lsp` serves and `lsp --capabilities` prints as [`lsp`]
 ///   and [`capabilities`] state, `repl` runs as [`repl`] states, and `tui` as
-///   [`tui`] states. Output the driver cannot write is noted on standard error,
-///   when that is writable, and exits `2`.
+///   [`tui`] states. Every face writes its types and values in the spelling
+///   [`spelling`] resolves; a configuration file that cannot be read is `gandr:
+///   <path>: <fault>` on standard error and exits `2` before any verb runs.
+///   Output the driver cannot write is noted on standard error, when that is
+///   writable, and exits `2`.
 /// - provides: the exit code as the run's verdict. With `tracing`, a
 ///   thread-local subscriber reports dispatch spans to standard error after
 ///   argument parsing.
@@ -770,12 +846,23 @@ enum Screen
 /// - witness: `tests::cli::a_script_that_blames_leaves_with_a_failure_status`
 /// - witness: `tests::cli::an_ill_typed_script_is_refused_by_the_checker`
 /// - witness: `tests::cli::fmt_rewrites_what_check_reports`
+/// - witness: `tests::cli::the_configured_spelling_prints_and_the_flag_outranks_it_782`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(UNSETTLED) || ret == ExitCode::from(FAULTED))]
 fn main() -> ExitCode
 {
     let cli = match <Cli as clap::Parser>::try_parse() {
         Ok(cli) => cli,
         Err(error) => return usage(&error),
+    };
+    let spelling = match spelling(cli.spelling) {
+        Ok(spelling) => spelling,
+        Err(fault) => {
+            return match writeln!(std::io::stderr(), "gandr: {fault}") {
+                // When standard error is unwritable too, the exit code is the
+                // one channel left.
+                Ok(()) | Err(_) => ExitCode::from(FAULTED),
+            };
+        },
     };
     #[cfg(feature = "tracing")]
     let _subscriber = tracing::subscriber::set_default(
@@ -887,14 +974,16 @@ fn main() -> ExitCode
             return relayed(
                 socket,
                 linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
+                spelling,
             );
         },
-        Some(Command::Lsp { .. }) => return lsp(),
+        Some(Command::Lsp { .. }) => return lsp(spelling),
         #[cfg(unix)]
         Some(Command::Serve { socket, linger_ms }) => {
             return hub(
                 socket,
                 linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
+                spelling,
             );
         },
         #[cfg(unix)]
@@ -902,32 +991,40 @@ fn main() -> ExitCode
             return mcp(
                 socket,
                 linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
+                spelling,
             );
         },
         Some(Command::Repl { batch }) => {
-            return repl(if batch { Face::Batch } else { Face::ByInput });
+            return repl(if batch { Face::Batch } else { Face::ByInput }, spelling);
         },
         #[cfg(unix)]
         Some(Command::View { socket, linger_ms }) => {
             return view(
                 socket,
                 linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
+                spelling,
             );
         },
         Some(Command::Tui { smoke }) => {
-            return tui(if smoke {
-                Screen::Smoke
-            }
-            else {
-                Screen::Terminal
-            });
+            return tui(
+                if smoke {
+                    Screen::Smoke
+                }
+                else {
+                    Screen::Terminal
+                },
+                spelling,
+            );
         },
     };
     let mut stdout = std::io::stdout().lock();
     let mut stderr = std::io::stderr().lock();
     let rendered = render(
         gandr_surface_dispatcher::dispatch(invocation),
-        verbosity,
+        Printing {
+            verbosity,
+            spelling,
+        },
         &mut stdout,
         &mut stderr,
     );
@@ -947,7 +1044,8 @@ fn main() -> ExitCode
 }
 
 /// Serve the language server over standard input and output until the
-/// session ends, and choose the exit code.
+/// session ends, its user's configuration naming `spelling`, and choose the
+/// exit code.
 ///
 /// # Specification
 /// - requires: nothing; the streams come from the process.
@@ -966,12 +1064,17 @@ fn main() -> ExitCode
 ///   these traces. Arbitrary methods and live-editor timing are excluded.
 /// - witness: `tests::cli::lsp_serves_a_session_over_the_standard_streams`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(ABRUPT) || ret == ExitCode::from(FAULTED))]
-fn lsp() -> ExitCode
+fn lsp(spelling: Spelling) -> ExitCode
 {
     let mut input = std::io::BufReader::new(std::io::stdin());
     let mut output = std::io::stdout().lock();
     let mut log = std::io::stderr();
-    ended(gandr_surface_lsp::serve(&mut input, &mut output, &mut log))
+    ended(gandr_surface_lsp::serve(
+        &mut input,
+        &mut output,
+        &mut log,
+        spelling,
+    ))
 }
 
 /// The exit code a language-server session that ended as `served` owes.
@@ -1038,8 +1141,8 @@ fn hub_fault(error: &std::io::Error) -> ExitCode
 }
 
 /// Carry the language-server session on the standard streams to the hub at
-/// `socket`, starting one lingering `linger` when none answers, and choose
-/// the exit code.
+/// `socket`, starting one lingering `linger` and configured with `spelling`
+/// when none answers, and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -1059,9 +1162,10 @@ fn hub_fault(error: &std::io::Error) -> ExitCode
 fn relayed(
     socket: Option<PathBuf>,
     linger: Duration,
+    spelling: Spelling,
 ) -> ExitCode
 {
-    match reach_hub(socket, linger) {
+    match reach_hub(socket, linger, spelling) {
         Ok(stream) => ended(gandr_surface_lsp::relay(
             std::io::stdin(),
             &mut std::io::stdout().lock(),
@@ -1072,8 +1176,8 @@ fn relayed(
 }
 
 /// Carry the Model Context Protocol session on the standard streams to the
-/// hub at `socket`, starting one lingering `linger` when none answers, and
-/// choose the exit code.
+/// hub at `socket`, starting one lingering `linger` and configured with
+/// `spelling` when none answers, and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -1094,9 +1198,10 @@ fn relayed(
 fn mcp(
     socket: Option<PathBuf>,
     linger: Duration,
+    spelling: Spelling,
 ) -> ExitCode
 {
-    let carried = reach_hub(socket, linger).and_then(|stream| {
+    let carried = reach_hub(socket, linger, spelling).and_then(|stream| {
         gandr_surface_mcp::relay(std::io::stdin(), &mut std::io::stdout().lock(), stream)
     });
     match carried {
@@ -1106,7 +1211,8 @@ fn mcp(
 }
 
 /// Attach to the render bus of the hub at `socket`, starting one lingering
-/// `linger` when none answers, follow it, and choose the exit code.
+/// `linger` and configured with `spelling` when none answers, follow it, and
+/// choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -1129,9 +1235,10 @@ fn mcp(
 fn view(
     socket: Option<PathBuf>,
     linger: Duration,
+    spelling: Spelling,
 ) -> ExitCode
 {
-    let attached = reach_hub(socket, linger).and_then(|mut stream| {
+    let attached = reach_hub(socket, linger, spelling).and_then(|mut stream| {
         stream.write_all(gandr_surface_lsp::RENDER_BUS_PREFACE.as_bytes())?;
         let reading = std::io::BufReader::new(stream.try_clone()?);
         Ok((stream, reading))
@@ -1159,14 +1266,14 @@ fn view(
     }
 }
 
-/// A connection to the hub at `socket`, started lingering `linger` when none
-/// answers.
+/// A connection to the hub at `socket`, started lingering `linger` and
+/// configured with `spelling` when none answers.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a hub answering at once is connected; otherwise this executable
-///   is started detached as `gandr serve` on the socket, and the socket is
-///   tried every 20 ms for five seconds.
+///   is started detached as `gandr serve` on the socket with `--spelling`
+///   naming `spelling`, and the socket is tried every 20 ms for five seconds.
 /// - provides: one way every client reaches its workspace's hub.
 /// - fails: when the socket cannot be named, the hub cannot be started, or it
 ///   never answers within five seconds.
@@ -1186,6 +1293,7 @@ fn view(
 fn reach_hub(
     socket: Option<PathBuf>,
     linger: Duration,
+    spelling: Spelling,
 ) -> std::io::Result<std::os::unix::net::UnixStream>
 {
     use std::os::unix::net::UnixStream;
@@ -1201,6 +1309,11 @@ fn reach_hub(
         .arg(&socket)
         .arg("--linger-ms")
         .arg(linger.as_millis().to_string())
+        .arg("--spelling")
+        .arg(match spelling {
+            Spelling::Unicode => "unicode",
+            Spelling::Ascii => "ascii",
+        })
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -1220,7 +1333,7 @@ fn reach_hub(
 }
 
 /// Run the engine hub on `socket`, lingering `linger` once its last client
-/// leaves, and choose the exit code.
+/// leaves, its workspace configured with `spelling`, and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -1242,6 +1355,7 @@ fn reach_hub(
 fn hub(
     socket: Option<PathBuf>,
     linger: Duration,
+    spelling: Spelling,
 ) -> ExitCode
 {
     let socket = match hub_socket(socket) {
@@ -1256,6 +1370,7 @@ fn hub(
                 linger,
                 std::io::stderr(),
                 Some(gandr_surface_mcp::serve),
+                spelling,
             ) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => hub_fault(&error),
@@ -1274,8 +1389,8 @@ fn hub(
     }
 }
 
-/// Run the read-evaluate loop on the standard streams, and choose the exit
-/// code.
+/// Run the read-evaluate loop on the standard streams, writing its types and
+/// values in `spelling`, and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing; the streams come from the process.
@@ -1298,17 +1413,20 @@ fn hub(
 ///   appearance are outside these finite pipe sessions.
 /// - witness: `tests::cli::a_piped_repl_session_prints_its_transcript`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
-fn repl(face: Face) -> ExitCode
+fn repl(
+    face: Face,
+    spelling: Spelling,
+) -> ExitCode
 {
     let input = std::io::stdin();
     let mut output = std::io::stdout().lock();
     let ended = match (face, input.is_terminal()) {
         (Face::Batch, _) | (Face::ByInput, false) => {
-            gandr_surface_repl::run_batch(input.lock(), &mut output, RenderStyle::Plain)
+            gandr_surface_repl::run_batch(input.lock(), &mut output, RenderStyle::Plain, spelling)
         },
         (Face::ByInput, true) => {
             let style = RenderStyle::for_terminal(TerminalCapability::from(output.is_terminal()));
-            gandr_surface_repl::run_interactive(&mut output, style)
+            gandr_surface_repl::run_interactive(&mut output, style, spelling)
         },
     };
     let noted = match ended {
@@ -1323,7 +1441,8 @@ fn repl(face: Face) -> ExitCode
     }
 }
 
-/// Run the terminal face, or its smoke face, and choose the exit code.
+/// Run the terminal face, or its smoke face, writing its types and values in
+/// `spelling`, and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing; the streams come from the process.
@@ -1349,7 +1468,10 @@ fn repl(face: Face) -> ExitCode
 /// - witness: `tests::cli::smoke_is_terminal_free_but_interactive_tui_refuses_pipes`
 /// - witness: `tests::cli::unwritable_standard_output_exits_two`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
-fn tui(screen: Screen) -> ExitCode
+fn tui(
+    screen: Screen,
+    spelling: Spelling,
+) -> ExitCode
 {
     let attached = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
     let noted = match (screen, attached) {
@@ -1362,7 +1484,7 @@ fn tui(screen: Screen) -> ExitCode
             std::io::stderr(),
             "gandr: the terminal face needs a terminal on standard input and output; `gandr repl` reads a pipe"
         ),
-        (Screen::Terminal, true) => match gandr_surface_tui::run() {
+        (Screen::Terminal, true) => match gandr_surface_tui::run(spelling) {
             Ok(Ended::Completed) => return ExitCode::SUCCESS,
             Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: {fault}"),
             Err(error) => writeln!(std::io::stderr(), "gandr: the terminal failed: {error}"),
@@ -1514,7 +1636,7 @@ fn ungranted(refused: &AuthorityError) -> ExitCode
             && (!status || *exit == ExitCode::SUCCESS)))]
 fn render(
     outcome: Outcome,
-    verbosity: Verbosity,
+    printing: Printing,
     stdout: &mut dyn std::io::Write,
     stderr: &mut dyn std::io::Write,
 ) -> std::io::Result<ExitCode>
@@ -1529,8 +1651,8 @@ fn render(
             lints,
             walk,
             width,
-        } => run(verb, lints, walk, width, verbosity, stdout, stderr),
-        Outcome::Script(mut runnable) => script(&mut runnable, stdout, stderr),
+        } => run(verb, lints, walk, width, printing, stdout, stderr),
+        Outcome::Script(mut runnable) => script(&mut runnable, printing.spelling, stdout, stderr),
         Outcome::Stage(staging) => stage(staging, stdout, stderr),
         Outcome::Format(formatting) => fmt(formatting, stdout, stderr),
         Outcome::Ledger(task) => ledger(&task, stdout, stderr),
@@ -1724,23 +1846,23 @@ fn stage(
     })
 }
 
-/// Visit `walk` at `width` under `verb`, printing each step at `verbosity`,
-/// then the report and the verdict.
+/// Visit `walk` at `width` under `verb`, printing each step at the verbosity
+/// and in the spelling `printing` names, then the report and the verdict.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: consumes the walk, writing each step in walk order: each
 ///   diagnostic the dispatcher's `entries` yields for a source step under
 ///   `verb`, each lint reaching where `lints` says, laid out by
-///   `gandr-surface-render-terminal`, to standard output at `verbosity` — below
-///   the JSON level a report as a plain snippet followed by an empty line and a
-///   ledger line as itself, at it each entry as one line of JSON — and each
-///   fault as one `gandr: <path>: <fault>` line to standard error; then the
-///   final report and verdict, at the JSON level as one object whose `level` is
-///   `summary`. The exit is zero for settled, one for unsettled and two for
-///   faulted, as the walk's final report decides under the offered verb, at
-///   every verbosity. Every byte written and the exit are the same at every
-///   width.
+///   `gandr-surface-render-terminal`, to standard output at `verbosity` with
+///   every type in `spelling` — below the JSON level a report as a plain
+///   snippet followed by an empty line and a ledger line as itself, at it each
+///   entry as one line of JSON — and each fault as one `gandr: <path>: <fault>`
+///   line to standard error; then the final report and verdict, at the JSON
+///   level as one object whose `level` is `summary`. The exit is zero for
+///   settled, one for unsettled and two for faulted, as the walk's final report
+///   decides under the offered verb, at every verbosity. Every byte written and
+///   the exit are the same at every width.
 /// - provides: ordered rendering and severity aggregation for check and test.
 /// - fails: the first write error, without visiting or writing anything after
 ///   it.
@@ -1769,15 +1891,19 @@ fn run(
     lints: Lints,
     walk: Walk,
     width: Width,
-    verbosity: Verbosity,
+    printing: Printing,
     stdout: &mut dyn std::io::Write,
     stderr: &mut dyn std::io::Write,
 ) -> std::io::Result<ExitCode>
 {
+    let Printing {
+        verbosity,
+        spelling,
+    } = printing;
     let visited = walk.visit(width, |step| {
         match step {
             Step::Source { .. } => {
-                for diagnostic in entries(&step, verb).linting(lints) {
+                for diagnostic in entries(&step, verb).linting(lints).spelling(spelling) {
                     let separator = match (diagnostic.severity, verbosity) {
                         (
                             Severity::Error | Severity::Warning | Severity::Goal | Severity::Note,
@@ -1835,23 +1961,24 @@ fn run(
     })
 }
 
-/// Run `runnable`, printing its value on standard output and everything else
-/// on standard error, and choose the exit code.
+/// Run `runnable`, its value written in `spelling`, printing it on standard
+/// output and everything else on standard error, and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a path that cannot be read as one source is `gandr: <path>:
 ///   <fault>` on standard error. Otherwise every report `gandr check --goals`
-///   prints for the source goes to standard error as a plain snippet followed
-///   by an empty line, and every ledger line beside them; then a run that
-///   returned a value writes the value as the one line of standard output. A
-///   run blamed, stuck or unfinished, and a target that reaches a declaration
-///   the machine carries no image of, is one line on standard error: `gandr:`,
-///   the path, the target's name in backticks and the evaluation's spelling. A
-///   source carrying a refusal is `gandr: <path>: refused; nothing ran` and one
-///   declaring no name `gandr: <path>: declares no name to run`, each on
-///   standard error. The exit code is `0` for a value, `1` for a run that
-///   stopped short of one, and `2` for a script that never reached the machine.
+///   prints for the source, its types in `spelling`, goes to standard error as
+///   a plain snippet followed by an empty line, and every ledger line beside
+///   them; then a run that returned a value writes the value as the one line of
+///   standard output. A run blamed, stuck or unfinished, and a target that
+///   reaches a declaration the machine carries no image of, is one line on
+///   standard error: `gandr:`, the path, the target's name in backticks and the
+///   evaluation's spelling. A source carrying a refusal is `gandr: <path>:
+///   refused; nothing ran` and one declaring no name `gandr: <path>: declares
+///   no name to run`, each on standard error. The exit code is `0` for a value,
+///   `1` for a run that stopped short of one, and `2` for a script that never
+///   reached the machine.
 /// - provides: `gandr run`, with its value on the one stream a caller reads.
 /// - fails: the first write error on either stream.
 /// - panics: none.
@@ -1877,10 +2004,12 @@ fn run(
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(STOPPED) || *exit == ExitCode::from(UNREACHED)))]
 fn script(
     runnable: &mut Script,
+    spelling: Spelling,
     stdout: &mut dyn std::io::Write,
     stderr: &mut dyn std::io::Write,
 ) -> std::io::Result<ExitCode>
 {
+    runnable.spell_in(spelling);
     let ran = runnable.run();
     let status = ran.status();
     match ran {
@@ -1888,7 +2017,7 @@ fn script(
             writeln!(stderr, "gandr: {}: {fault}", path.display())?;
         },
         ScriptRun::Source { step, ran } => {
-            for diagnostic in entries(&step, Verb::Check(Goals::Reported)) {
+            for diagnostic in entries(&step, Verb::Check(Goals::Reported)).spelling(spelling) {
                 let rendered = gandr_surface_render_terminal::render(
                     &diagnostic,
                     RenderStyle::Plain,

@@ -30,6 +30,7 @@ use gandr_surface_grammar::built_in;
 use gandr_surface_lsp::Body;
 use gandr_surface_lsp::Capabilities;
 use gandr_surface_lsp::Served;
+use gandr_surface_lsp::Spelling;
 use gandr_surface_lsp::TransportFault;
 use gandr_surface_lsp::read_frame;
 use gandr_surface_lsp::serve;
@@ -231,7 +232,8 @@ fn logged(messages: &[Value]) -> (Served, Vec<Value>, Vec<String>)
     let mut stream = input.as_ref();
     let mut output = Vec::new();
     let mut log = Vec::new();
-    let served = serve(&mut stream, &mut output, &mut log).expect("the streams carry the session");
+    let served = serve(&mut stream, &mut output, &mut log, Spelling::Unicode)
+        .expect("the streams carry the session");
     let log = String::from_utf8(log).expect("the log is UTF-8");
     (
         served,
@@ -599,7 +601,7 @@ fn a_stream_closed_without_exit_ends_abruptly()
     let mut output = Vec::new();
     assert!(
         matches!(
-            serve(&mut cut, &mut output, &mut Vec::new()),
+            serve(&mut cut, &mut output, &mut Vec::new(), Spelling::Unicode),
             Err(TransportFault::Truncated)
         ),
         "a stream breaking inside a frame is a transport fault"
@@ -706,8 +708,8 @@ fn idled(quiet: &Value) -> Vec<Value>
         linger: core::time::Duration::from_secs(1),
     };
     let mut output = Vec::new();
-    let served =
-        serve(&mut input, &mut output, &mut Vec::new()).expect("the streams carry the session");
+    let served = serve(&mut input, &mut output, &mut Vec::new(), Spelling::Unicode)
+        .expect("the streams carry the session");
     assert_eq!(served, Served::Abrupt, "the stream closes without shutdown");
     written(&Body::from(output))
         .iter()

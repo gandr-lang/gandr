@@ -25,6 +25,7 @@ use std::io;
 use std::io::Write;
 
 use anodized::spec;
+use gandr_surface_grammar::Spelling;
 use gandr_surface_render_terminal::RenderStyle;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -149,7 +150,8 @@ impl LineSource for Terminal
 ///   its block written and flushed at once; an interrupt drops the waiting
 ///   buffer; the end of input, or `:quit`, submits a buffer still waiting and
 ///   writes its block. A grammar that does not build, a failed read and a
-///   session fault each end the run faulted, after a flush.
+///   session fault each end the run faulted, after a flush. Every type and
+///   value a block writes is in `spelling`.
 /// - provides: the interactive half of the faces, over any source.
 /// - fails: the writer's error.
 /// - panics: none.
@@ -170,12 +172,13 @@ pub fn drive<Source, Output>(
     source: &mut Source,
     output: &mut Output,
     style: RenderStyle,
+    spelling: Spelling,
 ) -> io::Result<Ended>
 where
     Source: LineSource,
     Output: Write,
 {
-    let ended = converse(source, output, style)?;
+    let ended = converse(source, output, style, spelling)?;
     output.flush()?;
     Ok(ended)
 }
@@ -204,13 +207,14 @@ fn converse<Source, Output>(
     source: &mut Source,
     output: &mut Output,
     style: RenderStyle,
+    spelling: Spelling,
 ) -> io::Result<Ended>
 where
     Source: LineSource,
     Output: Write,
 {
     let mut repl = match SessionLoop::new(style) {
-        Ok(repl) => repl,
+        Ok(repl) => repl.spelling(spelling),
         Err(error) => return Ok(Ended::Faulted(Fault::Grammar(error))),
     };
     loop {
@@ -264,6 +268,7 @@ where
 pub fn run_interactive<Output>(
     output: &mut Output,
     style: RenderStyle,
+    spelling: Spelling,
 ) -> io::Result<Ended>
 where
     Output: Write,
@@ -272,5 +277,5 @@ where
         Ok(editor) => editor,
         Err(error) => return Ok(Ended::Faulted(Fault::Editor(error))),
     };
-    drive(&mut Terminal { editor }, output, style)
+    drive(&mut Terminal { editor }, output, style, spelling)
 }
