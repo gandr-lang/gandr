@@ -33,6 +33,7 @@ fn advertised_capabilities_name_the_token_legend()
                 "foldingRangeProvider": true,
                 "selectionRangeProvider": true,
                 "hoverProvider": true,
+                "signatureHelpProvider": {"triggerCharacters": ["(", ","], "retriggerCharacters": [")"]},
                 "definitionProvider": true,
                 "typeDefinitionProvider": true,
                 "documentFormattingProvider": true,

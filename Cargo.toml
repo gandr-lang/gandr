@@ -536,6 +536,7 @@ path = "crates/surface-layout"
 # - surface-diagnostics
 # - surface-dispatcher
 # - surface-format
+# - surface-lsp
 # - surface-render-terminal (dev)
 # - surface-session
 [workspace.dependencies.gandr-surface-lowering]

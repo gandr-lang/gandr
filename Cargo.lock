@@ -842,6 +842,7 @@ dependencies = [
  "gandr-surface-dispatcher",
  "gandr-surface-format",
  "gandr-surface-grammar",
+ "gandr-surface-lowering",
  "gandr-surface-parser",
  "gandr-surface-pretty",
  "gandr-surface-render-remote",

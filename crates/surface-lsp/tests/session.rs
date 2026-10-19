@@ -1168,6 +1168,50 @@ fn a_completion_offers_what_a_sibling_declares_806()
     );
 }
 
+/// A sibling's declaration answers signature help in its importer with the
+/// head and documentation the sibling writes.
+#[test]
+fn signature_help_reads_a_sibling_s_head()
+{
+    let scratch = Scratch::new(Path::new("signature-help"));
+    let directory =
+        std::fs::canonicalize(&scratch.0).expect("the scratch directory has a canonical path");
+    let base = directory.join("base.gandr");
+    let document = directory.join("document.gandr");
+    std::fs::write(
+        &base,
+        "/// Picks the first.\ndef pick(a : Integer, b : Integer) -> -F Integer { return a }\n",
+    )
+    .expect("the sibling is written");
+    std::fs::write(&document, "").expect("the document is written");
+    let address = uri(&document);
+    let mut messages = opening();
+    messages.push(open(&Source {
+        uri: address.clone(),
+        text: "import \"./base.gandr\" ;\ndef two : +U (-F Integer) ;\ndef two = thunk { pick(1, ) } ;\n"
+            .to_owned(),
+    }));
+    messages.push(json!({"jsonrpc": "2.0", "id": "signature", "method": "textDocument/signatureHelp", "params": {
+        "textDocument": {"uri": address}, "position": {"line": 2_i32, "character": 25_i32},
+    }}));
+    messages.extend(closing());
+    let (served, written) = session(&messages);
+    assert_eq!(served, Served::Clean);
+    let answer = written
+        .iter()
+        .find(|message| message["id"] == json!("signature"))
+        .expect("the signature-help request is answered");
+    assert_eq!(
+        answer["result"],
+        json!({"signatures": [{
+            "label": "pick(a : Integer, b : Integer) -> -F Integer",
+            "documentation": {"kind": "markdown", "value": "Picks the first."},
+            "parameters": [{"label": "a : Integer"}, {"label": "b : Integer"}],
+        }], "activeSignature": 0_i32, "activeParameter": 1_i32}),
+        "the second argument of the sibling's `pick`: {answer}"
+    );
+}
+
 #[test]
 fn wire_helpers_preserve_escaped_paths_and_unicode_payloads()
 {

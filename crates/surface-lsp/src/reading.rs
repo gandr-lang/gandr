@@ -4,13 +4,14 @@
 //! # A held text is parsed once
 //!
 //! Semantic tokens, document symbols, folding ranges, selection ranges, a
-//! hover and the render bus's report all read the molded tree of the same
-//! text. A copy of a document holds that text beside a [`Reading`] of it,
-//! made by the first such request after the text last changed: one parse,
-//! from which the highlighter's spans, the declarations with their form keys,
-//! the folds and the selection skeleton are read and kept. Every later request
-//! until the next change answers from them. A change to the text drops the
-//! reading, so no answer is read off a text the copy no longer holds.
+//! hover, signature help and the render bus's report all read the molded tree
+//! of the same text. A copy of a document holds that text beside a [`Reading`]
+//! of it, made by the first such request after the text last changed: one
+//! parse, from which the highlighter's spans, the declarations with their form
+//! keys, the folds, the selection skeleton and the calls are read and kept.
+//! Every later request until the next change answers from them. A change to
+//! the text drops the reading, so every answer is read off the text the copy
+//! holds.
 //!
 //! An editor sends the four structural requests after each keystroke, so a
 //! parse per request parses each text four times or more and pays the molder's
@@ -35,6 +36,8 @@ use gandr_surface_parser::parse;
 use gandr_surface_render_remote::ByteOffset as RenderOffset;
 use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::LineIndex;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeKey;
 use gandr_surface_syntax::NodeLabel;
@@ -53,6 +56,8 @@ use crate::protocol::FoldingRange;
 use crate::protocol::SelectionRange;
 use crate::recheck::grammar;
 use crate::recheck::roles;
+use crate::signature::Argument;
+use crate::signature::Calls;
 
 quenchant_shape::reason_enum! {
     /// Why a text has no reading.
@@ -121,7 +126,7 @@ fn head(
 }
 
 /// What one parse of a text answers: its highlighter spans, declarations,
-/// folds and selection skeleton.
+/// folds, selection skeleton and calls.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Readout
 {
@@ -133,6 +138,8 @@ struct Readout
     folds: Vec<FoldingRange>,
     /// The nodes a selection walks.
     skeleton: Skeleton,
+    /// The calls, by where their arguments open.
+    calls: Calls,
 }
 
 /// The reading of one text, or why it has none.
@@ -150,8 +157,9 @@ impl Reading
     ///   [`unread::Absent::Unparsed`] when the parser could not commit a tree;
     ///   otherwise the highlighter's spans over the tree, sorted, pairwise
     ///   disjoint and on character boundaries of `text`, its declarations each
-    ///   beside its declaring form's key, its folds and its selection skeleton,
-    ///   as [`crate::outline`] reads each off the tree.
+    ///   beside its declaring form's key, its folds, its selection skeleton and
+    ///   its calls, as [`crate::outline`] and [`Calls::of`] read each off the
+    ///   tree.
     /// - provides: the one parse a held text's structural requests share.
     /// - fails: never; an unread text names its reason.
     /// - panics: none.
@@ -201,6 +209,7 @@ impl Reading
                 .collect(),
             folds: folds(&tree, &index),
             skeleton: Skeleton::of(&tree),
+            calls: Calls::of(grammar, &tree),
         }))
     }
 
@@ -257,6 +266,23 @@ impl Reading
         match self.0 {
             Maybe::Present(ref readout) => &readout.folds,
             Maybe::Absent(_) => &[],
+        }
+    }
+
+    /// The head of the innermost call whose arguments hold `offset`, and the
+    /// argument `offset` writes; none when the text was not read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn call_at(
+        &self,
+        offset: ByteOffset,
+    ) -> Option<(ByteSpan, Argument)>
+    {
+        match self.0 {
+            Maybe::Present(ref readout) => readout.calls.at(offset),
+            Maybe::Absent(_) => None,
         }
     }
 

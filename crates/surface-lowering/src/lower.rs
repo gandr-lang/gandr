@@ -2701,6 +2701,9 @@ struct Lowerer<'run, 'source>
     /// What the mint sweep does for each node, kept once it is done: a later
     /// source's classification reads an earlier source's plans.
     plans: Vec<Plan>,
+    /// Each written name resolved, with what it names, in the order resolved:
+    /// a name of a declaration refused later is kept.
+    resolutions: Vec<(ByteSpan, crate::Resolution)>,
     /// Whether the mint sweep has carried out each node's plan, which it does
     /// once.
     taken: Vec<bool>,
@@ -3437,8 +3440,11 @@ pub fn lower_unit<'source>(
         recognition,
         data,
         constructors,
+        mut resolutions,
         ..
     } = lowerer;
+    resolutions.sort_unstable();
+    resolutions.dedup();
 
     Ok(LoweredModule::new(
         declarations,
@@ -3461,7 +3467,8 @@ pub fn lower_unit<'source>(
     .with_constructors(constructors)
     .with_inferred_exits(inferred)
     .with_nested_sites(nested)
-    .with_in_scope(in_scope))
+    .with_in_scope(in_scope)
+    .with_resolutions(resolutions))
 }
 
 impl<'run, 'source> Lowerer<'run, 'source>
@@ -3628,6 +3635,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             described: BTreeMap::new(),
             data: Vec::new(),
             constructors: Vec::new(),
+            resolutions: Vec::new(),
             recursions: BTreeMap::new(),
             staged_parameters: BTreeMap::new(),
             ran: BTreeMap::new(),
@@ -5576,6 +5584,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let name = self.name_at(site.at);
         match self.resolve_name(site, frame, name)? {
             Maybe::Present(resolved) => {
+                self.resolved(site.at.span, resolved);
                 let plan = self.resolved_term(site, frame, resolved);
                 self.plan(site, plan);
                 Ok(())
@@ -5665,6 +5674,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let name = self.name_at(site.at);
         if let Maybe::Present(constructor) = self.constructor_named(site, name) {
+            self.constructed_at(site.at.span, constructor);
             let none = Stretch {
                 start: self.operands.len(),
                 end: self.operands.len(),
@@ -5672,6 +5682,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return self.construct(site, constructor, none);
         }
         if let Maybe::Present(resolved) = self.resolve_name(site, site.reading.frame(), name)? {
+            self.resolved(site.at.span, resolved);
             if let Resolved::Declaration { constant, .. } = resolved
                 && let Maybe::Present(arity) = self.data_family(constant)
             {
@@ -5753,6 +5764,70 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 )
             },
             Resolved::Binder(_) | Resolved::Declaration { .. } => resolved.term(),
+        }
+    }
+
+    /// Keep that the name written at `span` resolved to `resolved`: a binder
+    /// by its written name, a declaration by its admission position.
+    ///
+    /// # Specification
+    /// - requires: `resolved` is what the name at `span` resolves to.
+    /// - ensures: one record of `span` naming the binder's written site, or the
+    ///   declaration's admission position, appended to
+    ///   [`LoweredModule::resolutions`]; nothing for a binder the source names
+    ///   nowhere.
+    /// - provides: the use a declaration refused later keeps.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`LoweredModule::resolutions`].
+    /// - witness: `tests::scopes::a_refused_declaration_keeps_the_names_it_resolved_836`
+    #[spec(captures: before = self.resolutions.len(), ensures: self.resolutions.len() <= before.saturating_add(1))]
+    fn resolved(
+        &mut self,
+        span: ByteSpan,
+        resolved: Resolved,
+    )
+    {
+        let resolution = match resolved {
+            Resolved::Binder(bound) => match self.scope.site(bound.binder) {
+                Maybe::Present(site) => crate::Resolution::Binder(site),
+                Maybe::Absent(_) => return,
+            },
+            Resolved::Declaration { constant, .. } => crate::Resolution::Declaration(constant),
+        };
+        self.resolutions.push((span, resolution));
+    }
+
+    /// Keep that the name written at `span` names `constructor`.
+    ///
+    /// # Specification
+    /// - requires: `constructor` is what the name at `span` resolves to.
+    /// - ensures: one record of `span` naming the constructor's name tile and
+    ///   its family's admission position appended to
+    ///   [`LoweredModule::resolutions`]; nothing for a family whose slot was
+    ///   not collected.
+    /// - provides: the use a declaration refused later keeps.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`LoweredModule::resolutions`].
+    /// - witness: `tests::scopes::a_refused_declaration_keeps_the_names_it_resolved_836`
+    #[spec(captures: before = self.resolutions.len(), ensures: self.resolutions.len() <= before.saturating_add(1))]
+    fn constructed_at(
+        &mut self,
+        span: ByteSpan,
+        constructor: crate::module::Constructor,
+    )
+    {
+        if let Some(slot) = self.collected.slots.get(usize::from(constructor.family)) {
+            self.resolutions
+                .push((span, crate::Resolution::Constructor {
+                    named: constructor.named.span,
+                    family: slot.constant,
+                }));
         }
     }
 
@@ -7407,6 +7482,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Run::One(head) = cursor.clone().operands()
             && let Maybe::Present(constructor) = self.constructor_head(site, head)?
         {
+            self.constructed_at(head.span, constructor);
             let _head = cursor.operands();
             let start = self.operands.len();
             arguments(site, &mut cursor, &mut self.operands)?;
@@ -7954,6 +8030,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Reading::Value(_) = site.reading
             && let Maybe::Present(constructor) = self.constructor_named(site, name)
         {
+            self.constructed_at(site.at.span, constructor);
             let none = Stretch {
                 start: self.operands.len(),
                 end: self.operands.len(),
@@ -7965,6 +8042,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let from = site.reading.frame();
         if let Maybe::Present(resolved) = self.resolve_name(site, from, name)? {
+            self.resolved(site.at.span, resolved);
             let none = Stretch {
                 start: self.operands.len(),
                 end: self.operands.len(),
@@ -8766,6 +8844,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         });
         match resolved {
             Ok(Maybe::Present(resolved)) => {
+                self.resolved(head.span, resolved);
                 let applied = Stretch {
                     start,
                     end: self.operands.len(),

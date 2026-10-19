@@ -306,7 +306,8 @@ pub struct DocumentIdentifier
 
 /// The parameters of `initialize` the server reads: the client's `gandr`
 /// settings, passed as its initialization options, the HTML tags its
-/// markdown renderer keeps, and whether it takes a definition as a link.
+/// markdown renderer keeps, whether it takes a definition as a link, and
+/// whether it takes a parameter as its place in a signature's label.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct InitializeParams
@@ -315,7 +316,7 @@ pub struct InitializeParams
     #[serde(default)]
     pub initialization_options: Option<Settings>,
     /// The client's capabilities, of which the server reads the markdown
-    /// renderer's and the definition request's.
+    /// renderer's, the definition request's and the signature-help request's.
     #[serde(default)]
     pub capabilities: Option<ClientCapabilities>,
 }
@@ -361,12 +362,40 @@ impl InitializeParams
                 .unwrap_or(false),
         )
     }
+
+    /// How a signature's parameters are answered to this client: as their
+    /// place in the label when it declares
+    /// `textDocument.signatureHelp.signatureInformation.parameterInformation.
+    /// labelOffsetSupport`, as their text otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn label_offsets(&self) -> LabelOffsets
+    {
+        LabelOffsets(
+            self.capabilities
+                .as_ref()
+                .and_then(|capabilities| capabilities.text_document.as_ref())
+                .and_then(|text_document| text_document.signature_help.as_ref())
+                .and_then(|help| help.signature_information.as_ref())
+                .and_then(|information| information.parameter_information.as_ref())
+                .and_then(|parameter| parameter.label_offset_support)
+                .unwrap_or(false),
+        )
+    }
 }
 
 /// Whether a client takes a definition as links from the name asked about.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Linked(pub bool);
+
+/// Whether a client takes a signature's parameter as its place in the label.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LabelOffsets(pub bool);
 
 /// The client capabilities the server reads.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
@@ -383,12 +412,49 @@ pub struct ClientCapabilities
 
 /// The text document client capabilities the server reads.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
-#[repr(transparent)]
+#[serde(rename_all = "camelCase")]
 pub struct TextDocumentCapabilities
 {
     /// `textDocument.definition`.
     #[serde(default)]
     pub definition: Option<DefinitionCapabilities>,
+    /// `textDocument.signatureHelp`.
+    #[serde(default)]
+    pub signature_help: Option<SignatureHelpCapabilities>,
+}
+
+/// What the client takes in answer to a signature-help request.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct SignatureHelpCapabilities
+{
+    /// `textDocument.signatureHelp.signatureInformation`.
+    #[serde(default)]
+    pub signature_information: Option<SignatureInformationCapabilities>,
+}
+
+/// What the client takes of one signature.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct SignatureInformationCapabilities
+{
+    /// `textDocument.signatureHelp.signatureInformation.parameterInformation`.
+    #[serde(default)]
+    pub parameter_information: Option<ParameterInformationCapabilities>,
+}
+
+/// What the client takes of one parameter.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct ParameterInformationCapabilities
+{
+    /// `…parameterInformation.labelOffsetSupport`: whether it takes a
+    /// parameter as its place in the label.
+    #[serde(default)]
+    pub label_offset_support: Option<bool>,
 }
 
 /// What the client takes in answer to a definition request.
@@ -723,10 +789,11 @@ impl InitializeResult
     ///   over the whole document and over a range, under the legend of
     ///   [`TOKEN_TYPES`] and [`TOKEN_MODIFIERS`]; completion, resolved in the
     ///   answer, and inline completion; document symbols, folding ranges and
-    ///   selection ranges; hover; definition and type definition; formatting
-    ///   over the whole document and over a range; code lenses, resolved in the
-    ///   answer, and code actions; the server named `gandr` at this crate's
-    ///   version.
+    ///   selection ranges; hover; signature help, asked for as a call's `(` or
+    ///   a `,` is typed and again at a `)`; definition and type definition;
+    ///   formatting over the whole document and over a range; code lenses,
+    ///   resolved in the answer, and code actions; the server named `gandr` at
+    ///   this crate's version.
     /// - provides: the one capabilities answer, written by `initialize` and by
     ///   the driver's `gandr lsp --capabilities` alike.
     /// - fails: never.
@@ -749,6 +816,8 @@ impl InitializeResult
             && ret.capabilities.folding_range_provider.0
             && ret.capabilities.selection_range_provider.0
             && ret.capabilities.hover_provider.0
+            && matches!(ret.capabilities.signature_help_provider.trigger_characters,
+                [open, comma] if matches!(open.as_bytes(), b"(") && matches!(comma.as_bytes(), b","))
             && ret.capabilities.definition_provider.0
             && ret.capabilities.type_definition_provider.0
             && ret.capabilities.document_formatting_provider.0
@@ -783,6 +852,10 @@ impl InitializeResult
                 folding_range_provider: Provider::ANSWERED,
                 selection_range_provider: Provider::ANSWERED,
                 hover_provider: Provider::ANSWERED,
+                signature_help_provider: SignatureHelpOptions {
+                    trigger_characters: SIGNATURE_TRIGGERS,
+                    retrigger_characters: [")"],
+                },
                 definition_provider: Provider::ANSWERED,
                 type_definition_provider: Provider::ANSWERED,
                 document_formatting_provider: Provider::ANSWERED,
@@ -823,6 +896,9 @@ pub struct ServerCapabilities
     pub selection_range_provider: Provider,
     /// Hovers are answered.
     pub hover_provider: Provider,
+    /// Signature help is answered, asked for by the characters that open and
+    /// separate a call's arguments.
+    pub signature_help_provider: SignatureHelpOptions,
     /// Definitions are answered: where what a written name refers to is
     /// written.
     pub definition_provider: Provider,
@@ -920,6 +996,9 @@ pub enum Answer
     Tokens(SemanticTokens),
     /// What a completion request answers at a position of an open document.
     Completions(CompletionList),
+    /// What a signature-help request answers at a position of an open
+    /// document: the declared head of the call the position stands in.
+    Signatures(SignatureHelp),
     /// What an inline-completion request answers for an open document.
     Inline(InlineCompletionList),
     /// What a document-symbol request answers for an open document.
@@ -1031,6 +1110,69 @@ pub struct CompletionOptions
 {
     /// Whether an item is resolved by a second request: never.
     pub resolve_provider: bool,
+}
+
+/// The characters that ask for signature help as they are typed: the `(` that
+/// opens a call's arguments and the `,` between them.
+pub const SIGNATURE_TRIGGERS: [&str; 2] = ["(", ","];
+
+/// The signature-help provider, as advertised.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignatureHelpOptions
+{
+    /// The characters that ask for help as they are typed.
+    pub trigger_characters: [&'static str; 2],
+    /// The characters that ask again while help is shown: the `)` that may
+    /// leave the call.
+    pub retrigger_characters: [&'static str; 1],
+}
+
+/// The result of a signature-help request: the one head the call's name
+/// refers to, and the argument the position writes.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignatureHelp
+{
+    /// The signatures, one.
+    pub signatures: Vec<SignatureInformation>,
+    /// The signature shown: the first.
+    pub active_signature: u32,
+    /// The parameter the position writes; `null` past the last parameter.
+    pub active_parameter: Option<u32>,
+}
+
+/// One signature: its label, its documentation and its parameters.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SignatureInformation
+{
+    /// The declared head, on one line.
+    pub label: String,
+    /// The documentation written for the declaration, when it has any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<MarkupContent>,
+    /// The parameters, in written order.
+    pub parameters: Vec<ParameterInformation>,
+}
+
+/// One parameter of a signature.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct ParameterInformation
+{
+    /// Where it stands in the signature's label.
+    pub label: ParameterLabel,
+}
+
+/// Where a parameter stands in its signature's label.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum ParameterLabel
+{
+    /// Its text, for a client that takes no offsets.
+    Text(String),
+    /// Its start and end in the label, in UTF-16 code units.
+    Offsets([u32; 2]),
 }
 
 /// The result of an inline-completion request.

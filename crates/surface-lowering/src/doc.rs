@@ -222,6 +222,7 @@ impl<'source> Documentation<'source>
         | Err(_) => into.text.0.len() == before.0 && into.links.len() == before.1,
     },
 )]
+#[inline]
 pub fn read_doc<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,

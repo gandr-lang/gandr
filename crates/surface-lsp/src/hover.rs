@@ -131,6 +131,7 @@ use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::TypedSpan;
 use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::lay_out;
+use gandr_surface_lowering::Unit;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Spelling;
@@ -141,6 +142,7 @@ use gandr_surface_render_remote::LineIndex;
 use gandr_surface_session::Session;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
+use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::complete::Names;
@@ -154,6 +156,8 @@ use crate::protocol::MarkupContent;
 use crate::protocol::SymbolKind;
 use crate::reading::Declaration;
 use crate::reading::Reading;
+use crate::recheck::roles;
+use crate::signature::Signatures;
 
 /// The page width a hover lays a type out at.
 const HOVER_WIDTH: u32 = 80;
@@ -175,10 +179,10 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// What a document copy keeps for its hovers, its definitions and its
-/// completions until its text changes: the type table of its text, the path
-/// of each source of the unit the table was typed in, and the names the unit
-/// declares.
+/// What a document copy keeps for its hovers, its definitions, its
+/// completions and its signature help until its text changes: the type table
+/// of its text, the path of each source of the unit the table was typed in,
+/// the names the unit declares and the heads it declares them with.
 #[derive(Clone, Debug)]
 pub struct Hovering
 {
@@ -189,6 +193,8 @@ pub struct Hovering
     paths: Vec<PathBuf>,
     /// The names the table's unit declares, by name.
     names: Names,
+    /// The heads the table's unit declares, by where each name is written.
+    signatures: Signatures,
 }
 
 impl Hovering
@@ -209,6 +215,15 @@ impl Hovering
     pub(crate) const fn names(&self) -> &Names
     {
         &self.names
+    }
+
+    /// The heads the table's unit declares, by where each name is written.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn signatures(&self) -> &Signatures
+    {
+        &self.signatures
     }
 
     /// The canonical path of the unit's source `referent` stands in, none for
@@ -240,9 +255,11 @@ impl Hovering
 ///   molded — every form of the closure, for a session that judged the document
 ///   — and leaves the store as it was; the empty table when the text did not
 ///   parse.
-/// - provides: what a document copy keeps for its hovers, its definitions and
-///   its completions, the names read off the table once ([`Names::of`]); a name
-///   an import brings in types at its use as its declaration does.
+/// - provides: what a document copy keeps for its hovers, its definitions, its
+///   completions and its signature help: the names read off the table once
+///   ([`Names::of`]) and the heads read off the same parse
+///   ([`Signatures::of`]); a name an import brings in types at its use as its
+///   declaration does.
 /// - fails: never; a refusal answers the empty table.
 /// - panics: none.
 /// - executable: none — the table is the dispatcher's typed run, whose own
@@ -263,29 +280,41 @@ pub fn hovering<Store, Blocks>(
 ) -> Hovering
 {
     let grammar = session.grammar();
-    let (table, paths) = match lay_out(grammar, path, classify(path), text) {
+    let heads = |tree: &SyntaxTree<'_>, unit: &Unit| {
+        roles().map_or_else(
+            |_| Signatures::default(),
+            |roles| Signatures::of(grammar, roles, tree, unit),
+        )
+    };
+    let (typed, paths) = match lay_out(grammar, path, classify(path), text) {
         Maybe::Present(laid) => (
             session
                 .parse_held(SourceText::from(laid.text.as_str()))
                 .ok()
                 .and_then(|parsed| {
-                    TypeTable::of_parsed_unit(grammar, parsed, &laid.unit, laid.base).ok()
+                    let signatures = heads(parsed.tree(), &laid.unit);
+                    TypeTable::of_parsed_unit(grammar, parsed, &laid.unit, laid.base)
+                        .ok()
+                        .map(|table| (table, signatures))
                 }),
             laid.paths,
         ),
         Maybe::Absent(_) => (
-            session
-                .parse_held(text)
-                .ok()
-                .and_then(|parsed| TypeTable::of_parsed(grammar, parsed).ok()),
+            session.parse_held(text).ok().and_then(|parsed| {
+                let signatures = heads(parsed.tree(), &Unit::single());
+                TypeTable::of_parsed(grammar, parsed)
+                    .ok()
+                    .map(|table| (table, signatures))
+            }),
             Vec::new(),
         ),
     };
-    let table = table.unwrap_or_default();
+    let (table, signatures) = typed.unwrap_or_default();
     Hovering {
         names: Names::of(&table),
         table,
         paths,
+        signatures,
     }
 }
 
