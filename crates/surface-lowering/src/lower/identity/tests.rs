@@ -998,6 +998,35 @@ fn a_derived_operation_reads_a_parameter_or_a_call()
     );
 }
 
+/// #791: before the fix, a `cong` whose answer is synthesised read its map's
+/// codomain only off `+U (A -> -F B)`, so a parameter stated as `A => B`, the
+/// same type, refused the operation as unannotated.
+#[test]
+fn cong_reads_a_map_stated_as_a_value_function_791()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\n",
+            "data Int : Type {\n  Z : Int;\n}\n",
+            "def explicit(f : +U (Circle -> -F Int)) -> -F Path(Int, f(Base), f(Base)) {\n  back(cong(f, loop))\n}\n",
+            "def sugared(f : Circle => Int) -> -F Path(Int, f(Base), f(Base)) {\n  back(cong(f, loop))\n}\n",
+            "def grouped(f : (Circle => Int)) -> -F Path(Int, f(Base), f(Base)) {\n  back(cong(f, loop))\n}\n",
+        )),
+        &mut arena,
+    );
+    for name in ["explicit", "sugared", "grouped"] {
+        assert!(
+            matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` reads its map's codomain: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+}
+
 #[test]
 fn a_motive_telescope_rebuilds_exactly_when_an_entry_is_an_arrow()
 {

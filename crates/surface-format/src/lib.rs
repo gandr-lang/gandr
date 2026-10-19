@@ -85,9 +85,7 @@
 //! whose declarations do not pair up is refused with [`Change::Meaning`]. A
 //! withdrawal is never silent: [`Formatted::withdrawn`] names each such
 //! declaration, its span and the reason ([`Withdrawn`]), and `gandr fmt`
-//! prints one line for each. Today's reason is the lowering, which reads a
-//! stated sum's labels and a thunked function's arity from the explicit
-//! spelling only (#791). A rewrite never applies where its other spelling
+//! prints one line for each. A rewrite never applies where its other spelling
 //! reads otherwise: a parenthesised list after a rule's `<=>` is the rule's
 //! outputs, not a tuple, and `A => B` is the value-function alias only in a
 //! type. A declaration the lowering refuses in the source has no meaning to
@@ -416,10 +414,6 @@ pub struct Withdrawal
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Withdrawn
 {
-    /// Rewritten, a form that reads its labels or arity from the
-    /// declaration's stated type was refused: the lowering reads a stated
-    /// sum or thunked function in the explicit spelling only (#791).
-    StatedSugar,
     /// Rewritten, the declaration is refused: the refusal, as the lowering
     /// writes it.
     Refused(String),
@@ -440,10 +434,6 @@ impl fmt::Display for Withdrawn
     ) -> fmt::Result
     {
         match *self {
-            Self::StatedSugar => f.write_str(
-                "the lowering reads its stated sum or function type in the explicit spelling only \
-                 (#791)",
-            ),
             Self::Refused(ref refusal) => write!(f, "rewritten, it is refused: {refusal}"),
             Self::Lowered => f.write_str("rewritten, it would lower to other core"),
         }
@@ -538,7 +528,7 @@ pub enum Layout
 /// - witness: `tests::rewrite::a_selection_runs_only_the_rewrites_it_names`
 /// - witness: `tests::rewrite::sweeps::every_source_formats_into_either_form_and_keeps_its_meaning`
 /// - witness: `rewrite::tests::a_rewrite_that_changes_what_a_source_means_is_withdrawn`
-/// - witness: `tests::rewrite::a_withdrawn_declaration_is_reported_with_its_reason_791`
+/// - witness: `tests::rewrite::a_match_over_a_stated_sum_is_sugared_791`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |formatted| formatted.pieces.windows(2).all(|pair| matches!(pair, [left, right] if left.source.end() <= right.source.start() && left.formatted.end() <= right.formatted.start()))))]
 #[inline]
 pub fn format(

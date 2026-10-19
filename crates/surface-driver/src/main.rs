@@ -1753,10 +1753,12 @@ fn ledger(
 ///   under `fmt --check`, then `fmt`, then `fmt --check` again, observe each
 ///   stream, each exit, and the source's bytes after each run. Fault precedence
 ///   over a change, the check writing nothing and a second check passing are
-///   each distinguished. Formatter refusals and unwritable sources are outside
-///   these fixtures.
+///   each distinguished; a sugared match over a stated sum keeps nothing.
+///   Formatter refusals, unwritable sources and a withdrawn declaration's line
+///   are outside these fixtures: no rewrite of the table changes what a corpus
+///   source lowers to, and the formatter's own tests withdraw one.
 /// - witness: `tests::cli::fmt_rewrites_what_check_reports`
-/// - witness: `tests::cli::fmt_names_each_declaration_that_kept_its_spelling_791`
+/// - witness: `tests::cli::fmt_sugars_a_match_over_a_stated_sum_791`
 #[spec(captures: [checking = formatting.rewrite() == Rewrite::Check],
     ensures: |ref ret| ret.as_ref().map_or(true, |exit|
         *exit == ExitCode::SUCCESS || *exit == ExitCode::from(FAULTED)
