@@ -4464,9 +4464,15 @@ impl Walk<'_, '_>
                 Self::call(source, function, argument, depth, tasks);
                 return writes(Production("call_expression"), Ok(()));
             },
-            | Former::Return(_) => match admits {
-                | Admits::Computation(Tail::Ends) => None,
-                | Admits::Computation(Tail::Continues)
+            // A body that ends answering a type's code keeps its `pure`: the
+            // lowering reads a type at a body's end only as a returned value.
+            | Former::Return(returned) => match admits {
+                | Admits::Computation(Tail::Ends)
+                    if !matches!(source.read(returned), Former::Quote(_) | Former::QuoteComputation(_)) =>
+                {
+                    None
+                },
+                | Admits::Computation(Tail::Ends | Tail::Continues)
                 | Admits::Type
                 | Admits::ValueType
                 | Admits::CompType

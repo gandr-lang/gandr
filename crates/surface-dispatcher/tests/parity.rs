@@ -490,8 +490,9 @@ const BODY_PAGE: u32 = 1_000;
 /// the rewritten one, and that the printer does not spell faithfully, would
 /// lower to other core (#812); `thrice` and `unthrice`, written explicitly,
 /// are refused (#812); `leftUnit`'s and `stated`'s composites have no motive
-/// the printer spells (#803).
-const EXCLUDED_BODIES: [(&str, &str, &str); 10] = [
+/// the printer spells (#803). The sugared form of the universe sources keeps
+/// the thunk type their bodies return explicit (#838).
+const EXCLUDED_BODIES: [(&str, &str, &str); 14] = [
     ("lc/subst-as-rename.gandr", "weakenedVariable", "#812"),
     ("lc/subst-rename.gandr", "renameLookWeakens", "#812"),
     ("lc/subst-rename.gandr", "shiftPastLift", "#812"),
@@ -502,6 +503,10 @@ const EXCLUDED_BODIES: [(&str, &str, &str); 10] = [
     ("identity/path-operand.gandr", "thrice", "#812"),
     ("identity/path-operand.gandr", "unthrice", "#812"),
     ("identity/word-append.gandr", "leftUnit", "#803"),
+    ("universe/closed.gandr", "endo", "#838"),
+    ("universe/closed.gandr", "endoBare", "#838"),
+    ("universe/closed.gandr", "onType", "#838"),
+    ("universe/vacuous-pi.gandr", "pick", "#838"),
 ];
 
 /// Why the body parity cannot hold a declaration, by the issue whose symptom

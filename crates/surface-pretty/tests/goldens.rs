@@ -2966,13 +2966,46 @@ fn a_parameterised_constructor_is_written_against_its_family_where_source_reads_
     );
     assert_eq!(
         spelled(&source, body(returns_code)),
-        faithful(Written("Vec(MkIx)")),
+        faithful(Written("pure Vec(MkIx)")),
         "a family's argument is classified by the family's parameter"
     );
     assert_eq!(
         spelled(&source, Root::Value(CoreNode::Value(made))),
         faithful(Written("MkIx")),
         "a value presented alone is not source"
+    );
+}
+
+/// A body that ends answering a type's code keeps its `pure`, which the
+/// lowering reads back where it refuses the bare type by sort; one that ends
+/// answering any other value elides it (#815).
+#[test]
+fn a_body_answering_a_type_keeps_its_pure_815()
+{
+    let mut core = CoreArena::new();
+    let integer_type = core.value_type_base(BaseType::Integer);
+    let integer_code = core.value_quote(integer_type);
+    let returns_code = core.computation_return(integer_code);
+    let answers_code = core.computation_lambda(returns_code);
+    let returns_integer = core.comp_type_returner(integer_type);
+    let returner_code = core.value_quote_computation(returns_integer);
+    let returns_returner = core.computation_return(returner_code);
+    let one = integer(&mut core, Sign::NonNegative, Written("1"));
+    let returns_one = core.computation_return(one);
+    let answers_one = core.computation_lambda(returns_one);
+    let source = CoreSource::new(&core, &[]);
+    let body = |id| Root::Computation(CoreNode::Computation(id));
+    assert_eq!(
+        spelled(&source, body(answers_code)),
+        faithful(Written("fn (a) { pure Integer }"))
+    );
+    assert_eq!(
+        spelled(&source, body(returns_returner)),
+        faithful(Written("pure (-F Integer)"))
+    );
+    assert_eq!(
+        spelled(&source, body(answers_one)),
+        faithful(Written("fn (a) { 1 }"))
     );
 }
 
