@@ -1,0 +1,75 @@
+// A substitution that sends every index to a variable is the renaming that
+// sends it to that variable's index; at weakening, the substitution by the
+// shift by one is weakening.
+
+// The naturals; the syntax; the congruences; the shift's lookup and the
+// weakened lookup.
+import "../model-in-source.gandr" ;
+import "./syntax.gandr" ;
+import "./congruence.gandr" ;
+import "./shift-lookup.gandr" ;
+import "./lookup-weaken.gandr" ;
+
+/// The hypothesis at `m`, weakened.
+@[ checks ]
+def weakenedVariable(
+  s : Env,
+  r : Ren,
+  h : (n : N) => Path(Term, look(n, s, Z), Ix(rlook(n, r))),
+  m : N
+) -> -F Path(Term, wk(look(m, s, Z)), wk(Ix(rlook(m, r)))) {
+  cong(wk, h(m))
+}
+
+/// A substitution renaming at every index renames at every index of its
+/// lift.
+@[ checks ]
+def substRenamesLift(
+  s : Env,
+  r : Ren,
+  h : (n : N) => Path(Term, look(n, s, Z), Ix(rlook(n, r))),
+  n : N
+) -> -F Path(Term, look(n, Lift(s), Z), Ix(rlook(n, RLift(r)))) {
+  case n {
+    Z => here(Ix(Z)),
+    S(m) => lookWeakens(m, s, Z) then (weakenedVariable(s, r, h, m) then ixShiftAdds(
+      rlook(m, r),
+      S(Z)
+    ))
+  }
+}
+
+/// A substitution that renames at every index is that renaming.
+@[ checks ]
+def rec substRenames(
+  t : Term,
+  s : Env,
+  r : Ren,
+  h : (n : N) => Path(Term, look(n, s, Z), Ix(rlook(n, r)))
+) -> -F Path(Term, subst(t, s), rename(t, r)) {
+  case t {
+    Ix(n) => h(n),
+    Lam(b) => cong(
+      lamOf,
+      substRenames[<](b, Lift(s), RLift(r), thunk { fn (n) { substRenamesLift(s, r, h, n) } })
+    ),
+    Ap(f, x) => transport(
+      \z. Path(Term, Ap(subst(f, s), subst(x, s)), Ap(z, rename(x, r))),
+      substRenames[<](f, s, r, h),
+      transport(
+        \z. Path(Term, Ap(subst(f, s), subst(x, s)), Ap(subst(f, s), z)),
+        substRenames[<](x, s, r, h),
+        here(Ap(subst(f, s), subst(x, s)))
+      )
+    )
+  }
+}
+
+/// The substitution shifting by one renames each index by the shift by one.
+@[ checks ]
+def shiftOneRenames(i : N) -> -F Path(Term, look(i, Shift(S(Z)), Z), Ix(rlook(i, RShift(S(Z))))) {
+  case i {
+    Z => here(Ix(S(Z))),
+    S(j) => here(Ix(S(S(j))))
+  }
+}

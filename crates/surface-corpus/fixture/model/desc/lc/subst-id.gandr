@@ -1,0 +1,55 @@
+// A substitution that sends every index to its own variable leaves every
+// term as it is. The lifted step weakens the hypothesis and reads the
+// weakened variable as its successor.
+
+// The naturals; the syntax; the congruences; the shift's lookup and the
+// weakened lookup.
+import "../model-in-source.gandr" ;
+import "./syntax.gandr" ;
+import "./congruence.gandr" ;
+import "./shift-lookup.gandr" ;
+import "./lookup-weaken.gandr" ;
+
+/// An identity at every index holds of the lift.
+@[ checks ]
+def substIdLift(s : Env, h : (n : N) => Path(Term, look(n, s, Z), Ix(n)), n : N) -> -F Path(
+  Term,
+  look(n, Lift(s), Z),
+  Ix(n)
+) {
+  case n {
+    Z => here(Ix(Z)),
+    S(m) => lookWeakens(m, s, Z) then (wkCong(look(m, s, Z), Ix(m), h(m)) then ixShiftAdds(m, S(Z)))
+  }
+}
+
+/// A substitution that is the identity at every index is the identity.
+@[ checks ]
+def rec substId(t : Term, s : Env, h : (n : N) => Path(Term, look(n, s, Z), Ix(n))) -> -F Path(
+  Term,
+  subst(t, s),
+  t
+) {
+  case t {
+    Ix(n) => h(n),
+    Lam(b) => cong(lamOf, substId[<](b, Lift(s), thunk { fn (n) { substIdLift(s, h, n) } })),
+    Ap(f, x) => transport(
+      \z. Path(Term, Ap(subst(f, s), subst(x, s)), Ap(z, x)),
+      substId[<](f, s, h),
+      transport(
+        \z. Path(Term, Ap(subst(f, s), subst(x, s)), Ap(subst(f, s), z)),
+        substId[<](x, s, h),
+        here(Ap(subst(f, s), subst(x, s)))
+      )
+    )
+  }
+}
+
+/// The shift by zero is the identity at every index.
+@[ checks ]
+def shiftZeroIsId(n : N) -> -F Path(Term, look(n, Shift(Z), Z), Ix(n)) {
+  case n {
+    Z => here(Ix(Z)),
+    S(j) => here(Ix(S(j)))
+  }
+}
