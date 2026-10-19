@@ -471,6 +471,7 @@ path = "crates/surface-corpus"
 # consumers:
 # - surface-dispatcher
 # - surface-driver
+# - surface-format
 # - surface-lsp
 # - surface-render-terminal
 # - surface-repl
@@ -575,6 +576,7 @@ path = "crates/surface-parser"
 # consumers:
 # - surface-diagnostics
 # - surface-dispatcher
+# - surface-format
 # - surface-lsp
 # - surface-repl
 # - surface-session

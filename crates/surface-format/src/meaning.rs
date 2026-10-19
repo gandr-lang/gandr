@@ -10,6 +10,7 @@
 //! allocation's position, compares what each declaration lowered to.
 
 use alloc::format;
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::mem::discriminant;
 
@@ -24,8 +25,11 @@ use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredDeclaration;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringBudget;
-use gandr_surface_lowering::lower_module;
+use gandr_surface_lowering::Unit;
+use gandr_surface_lowering::lower_unit;
 use gandr_surface_lowering::namespace::Recognition;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeKey;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
@@ -46,20 +50,22 @@ pub enum Agreement
     Unpaired,
 }
 
-/// `tree` lowered into `arena`, or nothing when the lowering refuses the
-/// source whole.
+/// `tree`, the text `unit` lays out, lowered into `arena`, or nothing when
+/// the lowering refuses it whole.
 ///
 /// # Specification
 /// trivial.
 pub fn lowered<'source>(
     grammar: &Pbg,
     tree: &SyntaxTree<'source>,
+    unit: &Unit,
     arena: &mut CoreArena,
 ) -> Option<LoweredModule<'source>>
 {
-    lower_module(
+    lower_unit(
         grammar,
         tree,
+        unit,
         arena,
         LoweringBudget::DEFAULT,
         Recognition::default(),
@@ -67,19 +73,104 @@ pub fn lowered<'source>(
     .ok()
 }
 
-/// The forms holding the declarations `module` refused, where no rewrite's
-/// meaning can be checked: each declaration's signature, definition and
-/// duplicate, by key.
+/// The declarations `module` refused at or after `base`, where no rewrite's
+/// meaning can be checked: the keys of the forms holding each — its
+/// signature, definition and duplicate — and its withdrawal, the refusal its
+/// reason.
 ///
 /// # Specification
 /// trivial.
-pub fn refused(module: &LoweredModule<'_>) -> Vec<NodeKey>
+pub fn refused(
+    module: &LoweredModule<'_>,
+    base: ByteOffset,
+) -> Vec<Differing>
 {
     module
         .declarations()
         .iter()
-        .filter(|declaration| matches!(declaration.outcome(), DeclarationOutcome::Refused(_)))
-        .flat_map(halves)
+        .filter(|declaration| declaration.span().start() >= base)
+        .filter_map(|declaration| match declaration.outcome() {
+            DeclarationOutcome::Refused(refusal) => Some(Differing {
+                keys: halves(declaration).collect(),
+                withdrawal: Withdrawal {
+                    declaration: format!("{}", declaration.name()),
+                    span: own(declaration.span(), base),
+                    reason: Withdrawn::Unchecked(format!("{refusal}")),
+                },
+            }),
+            DeclarationOutcome::Completed { .. }
+            | DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World => None,
+        })
+        .collect()
+}
+
+/// The withdrawal, for `reason`, of the first declaration `module` lowered at
+/// or after `base` whose forms' keys `held` accepts.
+///
+/// # Specification
+/// trivial.
+pub fn holding<Held>(
+    module: &LoweredModule<'_>,
+    base: ByteOffset,
+    reason: &Withdrawn,
+    held: Held,
+) -> Option<Withdrawal>
+where
+    Held: Fn(&[NodeKey]) -> bool,
+{
+    module
+        .declarations()
+        .iter()
+        .filter(|declaration| declaration.span().start() >= base)
+        .find(|declaration| held(&halves(declaration).collect::<Vec<_>>()))
+        .map(|declaration| Withdrawal {
+            declaration: format!("{}", declaration.name()),
+            span: own(declaration.span(), base),
+            reason: reason.clone(),
+        })
+}
+
+/// The withdrawal of each declaration `module` lowered at or after `base`
+/// whose forms' keys `held` accepts and whose name `reader` maps to the
+/// declaration that reads it: the declarations a reader's meaning depends on
+/// through their spelling.
+///
+/// # Specification
+/// trivial.
+pub fn read<Held, Reader>(
+    module: &LoweredModule<'_>,
+    base: ByteOffset,
+    held: Held,
+    reader: Reader,
+) -> Vec<Differing>
+where
+    Held: Fn(&[NodeKey]) -> bool,
+    Reader: Fn(&str) -> Option<String>,
+{
+    module
+        .declarations()
+        .iter()
+        .filter(|declaration| declaration.span().start() >= base)
+        .filter_map(|declaration| {
+            let keys: Vec<NodeKey> = halves(declaration).collect();
+            if !held(&keys) {
+                return None;
+            }
+            let name = format!("{}", declaration.name());
+            let by = reader(&name)?;
+            Some(Differing {
+                keys,
+                withdrawal: Withdrawal {
+                    declaration: name,
+                    span: own(declaration.span(), base),
+                    reason: Withdrawn::Read(by),
+                },
+            })
+        })
         .collect()
 }
 
@@ -115,8 +206,8 @@ fn halves(declaration: &LoweredDeclaration<'_>) -> impl Iterator<Item = NodeKey>
 ///   seals agree but for their types' positions, and whose refusals are of one
 ///   kind; else [`Agreement::Declarations`] with each of `before`'s
 ///   declarations whose pair is not so, in order: the keys of the forms holding
-///   it, its name and span, and why — the refusal the rewritten declaration
-///   met, or that it lowered otherwise.
+///   it, its name, its span in the source starting at `base`, and why — the
+///   refusal the rewritten declaration met, or that it lowered otherwise.
 /// - provides: the check a rewrite's output passes.
 /// - fails: never.
 /// - panics: none.
@@ -130,8 +221,8 @@ fn halves(declaration: &LoweredDeclaration<'_>) -> impl Iterator<Item = NodeKey>
 #[spec(ensures: |ret| !matches!(ret, Agreement::Declarations(ref keys) if keys.is_empty()))]
 pub fn agree(
     arena: &CoreArena,
-    before: &LoweredModule<'_>,
-    after: &LoweredModule<'_>,
+    (before, after): (&LoweredModule<'_>, &LoweredModule<'_>),
+    base: ByteOffset,
 ) -> Agreement
 {
     let types = |left: ValueTypeId, right: ValueTypeId| {
@@ -226,7 +317,7 @@ pub fn agree(
             keys: halves(left).collect(),
             withdrawal: Withdrawal {
                 declaration: format!("{}", left.name()),
-                span: left.span(),
+                span: own(left.span(), base),
                 reason: reason(right.outcome()),
             },
         })
@@ -237,6 +328,22 @@ pub fn agree(
     else {
         Agreement::Declarations(differing)
     }
+}
+
+/// `span`, a span of a unit's text, in the text of the source starting at
+/// `base`.
+///
+/// # Specification
+/// trivial.
+fn own(
+    span: ByteSpan,
+    base: ByteOffset,
+) -> ByteSpan
+{
+    let shift = |offset: ByteOffset| {
+        ByteOffset::from(usize::from(offset).saturating_sub(usize::from(base)))
+    };
+    ByteSpan::new(shift(span.start()), shift(span.end())).unwrap_or(span)
 }
 
 /// Why a declaration whose rewritten text lowered to `outcome` keeps its

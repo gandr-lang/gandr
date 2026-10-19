@@ -61,10 +61,11 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use anodized::spec;
+use gandr_surface_format::Beside;
 use gandr_surface_format::FormatError;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::Withdrawal;
-use gandr_surface_format::format;
+use gandr_surface_format::format_beside;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::built_in;
@@ -73,6 +74,8 @@ use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::component;
+use crate::root;
 use crate::walk::Reached;
 use crate::walk::Traversal;
 use crate::walk::walk_step;
@@ -517,7 +520,21 @@ fn lay_out<'formatting>(
     let text = std::fs::read_to_string(path).map_err(FormatFault::Unreadable)?;
     let grammar = grammar.map_err(FormatFault::Grammar)?;
     let parsed = parse(grammar, SourceText::from(text.as_str())).map_err(FormatFault::Parse)?;
-    let formatted = format(grammar, &parsed, options).map_err(FormatFault::Refused)?;
+    let closure = component::lay_out(
+        grammar,
+        path,
+        root::classify(path),
+        SourceText::from(text.as_str()),
+    );
+    let beside = match closure {
+        Maybe::Present(ref laid) => Beside::Imports {
+            before: SourceText::from(laid.text.get(.. usize::from(laid.base)).unwrap_or_default()),
+            unit: &laid.unit,
+        },
+        Maybe::Absent(_) => Beside::Alone,
+    };
+    let formatted =
+        format_beside(grammar, &parsed, options, beside).map_err(FormatFault::Refused)?;
     let withdrawn = formatted
         .withdrawn()
         .iter()

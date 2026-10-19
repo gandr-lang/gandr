@@ -772,10 +772,12 @@ version = "0.0.0"
 dependencies = [
  "expect-test",
  "gandr-core-term",
+ "gandr-surface-diagnostics",
  "gandr-surface-grammar",
  "gandr-surface-layout",
  "gandr-surface-lowering",
  "gandr-surface-parser",
+ "gandr-surface-pretty",
  "gandr-surface-syntax",
  "gandr-workflow-sweep",
  "quenchant-anodized",
