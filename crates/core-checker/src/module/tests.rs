@@ -1148,6 +1148,140 @@ fn a_pure_run_a_type_reads_stands_as_what_it_returns_444()
     );
 }
 
+/// A reflexivity over `carrier`, `U ((y : carrier) -> F Path(carrier, y,
+/// y))`, and its body `λy. return here(y)`.
+///
+/// # Specification
+/// trivial.
+fn reflexivity(
+    arena: &mut CoreArena,
+    carrier: ValueTypeId,
+) -> (ValueTypeId, ValueId)
+{
+    let [left, right, point] = [(); 3].map(|()| {
+        arena.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            DeBruijnIndex::from(0_u32),
+        )
+    });
+    let path = arena.value_type_path(carrier, left, right);
+    let returns = arena.comp_type_returner(path);
+    let pi = arena.comp_type_pi(carrier, returns);
+    let here = arena.value_here(point);
+    let returned = arena.computation_return(here);
+    let lambda = arena.computation_lambda(returned);
+    (arena.value_type_thunk(pi), arena.value_thunk(lambda))
+}
+
+#[test]
+fn a_call_beneath_a_type_read_argument_stands_as_written_762()
+{
+    let mut arena = CoreArena::new();
+    let (function, identity) = integer_function(&mut arena);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let pair = arena.value_type_product(&[integer, integer]);
+    let (at_integer, integer_body) = reflexivity(&mut arena, integer);
+    let (at_pair, pair_body) = reflexivity(&mut arena, pair);
+    let variable = |arena: &mut CoreArena| {
+        arena.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            DeBruijnIndex::from(0_u32),
+        )
+    };
+    // `id(id(x))` as a written type reads it, and as an argument writes it:
+    // the inner call nested beneath the outer.
+    let returned_twice = |arena: &mut CoreArena| {
+        let x = variable(arena);
+        let inner = call(arena, ConstantIndex::from(0_usize), x);
+        let inner = arena.value_returned(inner);
+        let outer = call(arena, ConstantIndex::from(0_usize), inner);
+        arena.value_returned(outer)
+    };
+    // `(id(x), x)` likewise, the call beneath a tuple.
+    let returned_paired = |arena: &mut CoreArena| {
+        let x = variable(arena);
+        let inner = call(arena, ConstantIndex::from(0_usize), x);
+        let inner = arena.value_returned(inner);
+        let x = variable(arena);
+        arena.value_tuple(&[inner, x])
+    };
+    let declared = |arena: &mut CoreArena, carrier: ValueTypeId, endpoint: ValueId| {
+        let path = arena.value_type_path(carrier, endpoint, endpoint);
+        let returns = arena.comp_type_returner(path);
+        let pi = arena.comp_type_pi(integer, returns);
+        arena.value_type_thunk(pi)
+    };
+    let twice_endpoint = returned_twice(&mut arena);
+    let twice_type = declared(&mut arena, integer, twice_endpoint);
+    let x = variable(&mut arena);
+    let inner_twice = call(&mut arena, ConstantIndex::from(0_usize), x);
+    let inner_twice = arena.value_nested(inner_twice);
+    let outer_twice = call(&mut arena, ConstantIndex::from(0_usize), inner_twice);
+    let outer_twice = arena.value_nested(outer_twice);
+    let twice_call = call(&mut arena, ConstantIndex::from(1_usize), outer_twice);
+    let twice_lambda = arena.computation_lambda(twice_call);
+    let twice_body = arena.value_thunk(twice_lambda);
+    let paired_endpoint = returned_paired(&mut arena);
+    let paired_type = declared(&mut arena, pair, paired_endpoint);
+    let x = variable(&mut arena);
+    let inner_paired = call(&mut arena, ConstantIndex::from(0_usize), x);
+    let inner_paired = arena.value_nested(inner_paired);
+    let x = variable(&mut arena);
+    let paired_argument = arena.value_tuple(&[inner_paired, x]);
+    let paired_call = call(&mut arena, ConstantIndex::from(2_usize), paired_argument);
+    let paired_lambda = arena.computation_lambda(paired_call);
+    let paired_body = arena.value_thunk(paired_lambda);
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &[
+            declaration(At(0), Maybe::Present(function), Maybe::Present(identity)),
+            declaration(
+                At(1),
+                Maybe::Present(at_integer),
+                Maybe::Present(integer_body),
+            ),
+            declaration(At(2), Maybe::Present(at_pair), Maybe::Present(pair_body)),
+            declaration(
+                At(3),
+                Maybe::Present(twice_type),
+                Maybe::Present(twice_body),
+            ),
+            declaration(
+                At(4),
+                Maybe::Present(paired_type),
+                Maybe::Present(paired_body),
+            ),
+        ])
+    };
+    for (constant, nested) in [
+        (3_usize, [inner_twice, outer_twice]),
+        (4_usize, [inner_paired, inner_paired]),
+    ] {
+        assert!(
+            matches!(report.judged()[constant].verdict(), Verdict::Checked { .. }),
+            "the argument converts with the type written with it: {:?}",
+            report.judged()[constant].verdict()
+        );
+        let elaboration = &report.nested_elaborations()[&ConstantIndex::from(constant)];
+        for at in nested {
+            assert_eq!(
+                elaboration.decisions().get(&at),
+                Some(&Nesting::Returned),
+                "a pure call beneath the argument stands as what it returns"
+            );
+        }
+        assert!(elaboration.binds().is_empty(), "and mints no bind");
+    }
+    let readmission = crate::bridge::readmit(&mut arena, &report);
+    assert!(
+        readmission.readmitted().iter().all(|readmitted| matches!(
+            readmitted.outcome(),
+            crate::bridge::Outcome::Defined { .. }
+        )),
+        "the kernel re-derives the elaborated bodies: {readmission:?}"
+    );
+}
+
 #[test]
 fn a_nested_computation_is_decided_by_its_expected_type()
 {
