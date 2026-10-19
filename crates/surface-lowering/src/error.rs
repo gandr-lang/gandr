@@ -206,9 +206,9 @@ impl fmt::Display for FragmentSort
 /// # Specification
 /// - requires: the producer identifies the boundary crossed by the source form.
 /// - ensures: reserved, unadmitted, wrong-sort, wrong-arity, indexed,
-///   unannotated, not-a-function, non-uniform, not-in-tail, joins-block,
-///   empty-list, endpoint, non-contractive, held and view reports remain
-///   distinct; an arity report carries the number of operands offered.
+///   unannotated, not-a-function, non-uniform, foreign-claim, not-in-tail,
+///   joins-block, empty-list, endpoint, non-contractive, held and view reports
+///   remain distinct; an arity report carries the number of operands offered.
 /// - provides: why a parsed form has no representation at this position.
 /// - fails: not applicable to the report itself.
 /// - panics: none.
@@ -220,6 +220,7 @@ impl fmt::Display for FragmentSort
 ///   run operand and zero/two-operand refusals distinguish the four boundaries
 ///   by exact typed payloads. The fixtures do not enumerate every grammar form.
 /// - witness: `lower::native::tests::only_the_descent_claim_heads_a_recursive_call`
+/// - witness: `lower::native::tests::a_descent_claim_names_its_own_function_873`
 /// - witness: `lower::native::tests::an_indexed_generator_is_declined`
 /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
 /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
@@ -262,6 +263,10 @@ pub enum FragmentBoundary
     /// unchanging parameters stands, something other than that parameter: the
     /// parameters before the one the definition descends on stay unchanged.
     NonUniform,
+    /// The form is a descent claim, `f[<]`, whose head names a function
+    /// other than the recursive one it is written in: a descent claim heads a
+    /// call of the function being defined or of a member of its mutual block.
+    ForeignClaim,
     /// The form is `cong` at a constructor, which is not a function: `cong`
     /// maps a path by a function definition.
     NotAFunction,
@@ -319,6 +324,10 @@ impl fmt::Display for FragmentBoundary
                 "passes something other than the parameter itself where an earlier parameter \
                  stands; only the parameter the definition descends on and the ones after it \
                  vary",
+            ),
+            Self::ForeignClaim => f.write_str(
+                "names a function other than the recursive one it is written in: a descent \
+                 claim heads a call of the function being defined",
             ),
             Self::NotAFunction => {
                 f.write_str("maps a path by a constructor, which is not a function")
