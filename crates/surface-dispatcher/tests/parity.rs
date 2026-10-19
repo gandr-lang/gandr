@@ -34,19 +34,6 @@ use quenchant_shape::shape::Maybe;
 /// The page the printer spells a signature on: wide, so a type is one line.
 const PAGE: u32 = 1_000;
 
-/// The declarations kept out of the parity, each by its source, its name and
-/// the issue that keeps it out: the parity holds for every other. The
-/// formatter withdraws both of `empty.gandr`'s from either rewrite of their
-/// value function: rewritten, the body's empty case lowers to other core or
-/// is refused (#808). It withdraws `path-operand.gandr`'s `stay` from either
-/// rewrite of its dependent alias: `stayUp`'s call reads the alias and not
-/// the explicit thunk (#812).
-const EXCLUDED: [(&str, &str, &str); 3] = [
-    ("fixture/model/data/empty.gandr", "viaLambda", "#808"),
-    ("fixture/model/data/empty.gandr", "viaStated", "#808"),
-    ("fixture/model/identity/path-operand.gandr", "stay", "#812"),
-];
-
 /// A source's text, its path standing for its import closure.
 #[derive(Clone, Copy, Debug)]
 struct Written<'text>
@@ -298,17 +285,9 @@ fn misses(
     else {
         return vec![format!("{name}: the source does not type")];
     };
-    let excluded = |declaration: &str| {
-        EXCLUDED
-            .iter()
-            .any(|&(source, held, _)| name.ends_with(source) && held == declaration)
-    };
     let mut misses = Vec::new();
     let mut printed_whole = BTreeMap::new();
     for (declaration, pair) in printed(&table, &signatures) {
-        if excluded(&declaration) {
-            continue;
-        }
         match pair {
             (Spelled::Faithful(sugared), Spelled::Faithful(explicit)) => {
                 drop(printed_whole.insert(declaration, (sugared, explicit)));

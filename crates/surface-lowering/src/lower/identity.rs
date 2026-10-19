@@ -2653,26 +2653,34 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// What a call of the declaration at `constant` reads its result off: a
-    /// function tail's written result, or the codomain of the telescope or
-    /// the value function its signature writes.
+    /// function tail's written result, the codomain of the telescope or the
+    /// value function its signature writes, or the returner the arrows of
+    /// its thunked signature end in.
     ///
     /// # Specification
     /// - requires: the ascending sweep has classified the declaration.
     /// - ensures: the tail's parameters and result when either half is a tail
     ///   writing a result; otherwise, when the signature is written as `(x : A,
     ///   …) => B` through parentheses, its entries and `B`, and as `A => B`, no
-    ///   binders, the domains' count and `B`; the call's own fields left empty.
-    /// - fails: none otherwise.
+    ///   binders, the domains' count and `B`; when it is written as the thunk
+    ///   that alias stands for, `+U (A1 -> … -> An -> -F B)`, the arrows every
+    ///   one dependent, `(x : A) -> C`, or none, the binders the dependent
+    ///   arrows' entries hold, the arrows' count and the returner `-F B`; the
+    ///   call's own fields left empty.
+    /// - fails: none otherwise, a chain mixing dependent and plain arrows among
+    ///   them.
     /// - panics: none.
     ///
     /// # Termination
-    /// Every turn steps to the operand of a transparent node, strictly deeper
-    /// in a finite tree.
+    /// Every turn steps to the operand of a transparent node or to an arrow's
+    /// codomain, strictly deeper in a finite tree.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a call of a definition and of a signature each read
-    ///   their result.
+    ///   their result, and a signature written as the alias and as the thunk it
+    ///   stands for read the same dependent result.
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    /// - witness: `lower::identity::tests::a_call_reads_a_dependent_result_through_either_spelling_812`
     #[spec(ensures: |ret| ret.is_none_or(|callee| callee.arguments.start == callee.arguments.end))]
     fn callee_of(
         &self,
@@ -2692,26 +2700,69 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return None;
         };
-        let mut at = written.node;
-        while let Some(&Plan::Transparent(inner)) = self.plans.get(usize::from(at)) {
-            at = inner;
-        }
-        let none = Stretch { start: 0, end: 0 };
-        let (parameters, arity, result) = match self.plans.get(usize::from(at)) {
-            Some(&Plan::Telescope(entries, codomain)) => {
-                (entries, entries.end.saturating_sub(entries.start), codomain)
-            },
-            Some(&Plan::ValueFunction(domains, codomain)) => {
-                (none, domains.end.saturating_sub(domains.start), codomain)
-            },
-            _ => return None,
+        let through = |mut at: NodeIndex| {
+            while let Some(&Plan::Transparent(inner)) = self.plans.get(usize::from(at)) {
+                at = inner;
+            }
+            at
         };
+        let none = Stretch { start: 0, end: 0 };
+        let (parameters, arity, result, returned) =
+            match self.plans.get(usize::from(through(written.node))) {
+                Some(&Plan::Telescope(entries, codomain)) => (
+                    entries,
+                    entries.end.saturating_sub(entries.start),
+                    codomain,
+                    false,
+                ),
+                Some(&Plan::ValueFunction(domains, codomain)) => (
+                    none,
+                    domains.end.saturating_sub(domains.start),
+                    codomain,
+                    false,
+                ),
+                Some(&Plan::Former(TypeFormer::Thunk, held)) => {
+                    let mut at = through(held);
+                    let mut arity = 0_usize;
+                    let mut plain = false;
+                    let mut bound: Option<Stretch> = None;
+                    loop {
+                        match self.plans.get(usize::from(at)) {
+                            Some(&Plan::Arrow(_, codomain)) => {
+                                plain = true;
+                                arity = arity.saturating_add(1);
+                                at = through(codomain);
+                            },
+                            Some(&Plan::DependentArrow(entries, codomain)) => {
+                                bound = match bound {
+                                    None => Some(entries),
+                                    Some(held) if held.end == entries.start => Some(Stretch {
+                                        start: held.start,
+                                        end: entries.end,
+                                    }),
+                                    Some(_) => return None,
+                                };
+                                arity =
+                                    arity.saturating_add(entries.end.saturating_sub(entries.start));
+                                at = through(codomain);
+                            },
+                            Some(&Plan::Former(TypeFormer::Returner, _)) => break,
+                            _ => return None,
+                        }
+                    }
+                    if plain && bound.is_some() {
+                        return None;
+                    }
+                    (bound.unwrap_or(none), arity, at, true)
+                },
+                _ => return None,
+            };
         Some(Callee {
             parameters,
             arity,
             recursive: None,
             result,
-            returned: false,
+            returned,
             arguments: none,
             descends: false,
         })
