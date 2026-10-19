@@ -243,6 +243,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::StepSym;
 use gandr_surface_grammar::TileLabel;
+use gandr_surface_grammar::aliased;
 use gandr_surface_syntax::MoldId;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
@@ -882,13 +883,17 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// `theory` is, and the mobility mark its lead `mobile`, which opens a module
 /// signature's field where an unreserved word would tie against the value
 /// field's `identifier`.
+///
+/// `inf`, the ASCII spelling of the grade `ω`, is reserved: a grade slot
+/// admits a name as well as `ω`, and an unreserved `inf` would tie its glyph's
+/// tile against `identifier` there.
 const KEYWORDS: &[&str] = &[
     "def", "val", "run", "leta", "as", "extern", "from", "type", "fn", "pure", "return", "become",
     "thunk", "force", "case", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close",
     "select", "offer", "fork", "acquire", "release", "migrate", "at", "true", "false", "unit",
     "forall", "mu", "end", "data", "codata", "rec", "op", "rule", "for", "in", "while", "break",
     "continue", "with", "import", "module", "theory", "oper", "handle", "access", "unwind",
-    "resume", "abort", "world", "mobile",
+    "resume", "abort", "world", "mobile", "inf",
 ];
 
 /// Return the grammar tile labels to enumerate for a labeled token.
@@ -909,9 +914,10 @@ const KEYWORDS: &[&str] = &[
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every lexeme menu, reserved and ordinary words, canonical
-///   versus dialect shell openers and the relation aliases `<~>` and `~~>`
-///   expose exact label sequences. Dropping a generic alternative, widening a
-///   keyword or losing the source spelling changes the menu.
+///   versus dialect shell openers and each ASCII token of the spelling table
+///   (`<~>`, `~~>`, `::`, `inf`) expose exact label sequences. Dropping a
+///   generic alternative, widening a keyword or losing the source spelling
+///   changes the menu.
 /// - witness: `mold::tests::keyword_and_identifier_share_a_word_menu`
 /// - witness: `mold::tests::literal_and_shell_menus_are_exact`
 #[inline]
@@ -940,6 +946,9 @@ pub fn candidate_labels<'text>(
                 // adding it here lets `?name` attach without competing with a
                 // bare `identifier` anywhere else.
                 labels.push(CandidateLabel::from("hole_name"));
+            }
+            if let Some(tile) = aliased(LabelText(text)) {
+                labels.push(CandidateLabel::from(tile.0));
             }
         },
         Lexeme::UpperWord => {
@@ -988,13 +997,10 @@ pub fn candidate_labels<'text>(
             else if text.starts_with("$!") && text.ends_with('{') {
                 labels.push(CandidateLabel::from("command_substitution_start"));
             }
-            // The ASCII spellings of two relations between types offer the
-            // glyph's tile, so the alias molds the glyph's one form.
-            else if text == "<~>" {
-                labels.push(CandidateLabel::from("≃"));
-            }
-            else if text == "~~>" {
-                labels.push(CandidateLabel::from("⇝"));
+            // An ASCII spelling the spelling table pairs with a glyph offers
+            // the glyph's tile, so the alias molds the glyph's one form.
+            else if let Some(tile) = aliased(LabelText(text)) {
+                labels.push(CandidateLabel::from(tile.0));
             }
         },
         Lexeme::Space | Lexeme::Unknown => {},
@@ -3790,7 +3796,9 @@ mod tests
             (Lexeme::Punct, "#!{", &["#!{", "#!{"]),
             (Lexeme::Punct, "<~>", &["<~>", "≃"]),
             (Lexeme::Punct, "~~>", &["~~>", "⇝"]),
+            (Lexeme::Punct, "::", &["::", "∷"]),
             (Lexeme::Punct, "≃", &["≃"]),
+            (Lexeme::LowerWord, "inf", &["inf", "ω"]),
             (Lexeme::Space, " ", &[]),
             (Lexeme::Unknown, "~", &[]),
         ];

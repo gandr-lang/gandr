@@ -154,6 +154,40 @@ fn every_type_operator_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
+/// Each ASCII token of the spelling table molds as its glyph's tile: a source
+/// written with it is the tree the glyph's source is, mold for mold (#782).
+#[test]
+fn each_ascii_spelling_molds_as_its_glyph_782() -> Result<(), Box<dyn Error>>
+{
+    let cases = [
+        ("def e : A ≃ B;", "def e : A <~> B;"),
+        ("def e : A ⇝ B;", "def e : A ~~> B;"),
+        ("def w = loop ∷ here(Base);", "def w = loop :: here(Base);"),
+        (
+            "def f(p : Path(Circle, Base, Base)) -> -F Integer {\n  case p {\n    loop ∷ q => \
+             1\n  }\n}",
+            "def f(p : Path(Circle, Base, Base)) -> -F Integer {\n  case p {\n    loop :: q => \
+             1\n  }\n}",
+        ),
+        ("def g : +U[ω] (A -> -F B);", "def g : +U[inf] (A -> -F B);"),
+    ];
+    for (glyph, ascii) in cases {
+        assert_parses_clean(CaseName(ascii), SourceText::from(ascii))?;
+        let molds =
+            |source: &'static str| -> Result<Vec<gandr_surface_syntax::NodeLabel>, Box<dyn Error>> {
+                let tree = parse(built(), SourceText::from(source))?.into_tree();
+                Ok(tree
+                    .positions()
+                    .filter_map(|position| tree.node(position))
+                    .map(gandr_surface_syntax::Node::label)
+                    .filter(|label| !matches!(label, gandr_surface_syntax::NodeLabel::Space))
+                    .collect())
+            };
+        assert_eq!(molds(glyph)?, molds(ascii)?, "`{ascii}` molds as `{glyph}`");
+    }
+    Ok(())
+}
+
 /// Parse `source` under the built-in grammar and require a clean reading.
 ///
 /// # Specification
