@@ -323,6 +323,7 @@ use super::Lowerer;
 use super::Plan;
 use super::Produced;
 use super::Reading;
+use super::Resolved;
 use super::Sink;
 use super::Site;
 use super::Stretch;
@@ -7812,6 +7813,7 @@ impl<'source> Lowerer<'_, 'source>
         if arguments.len() != stretch(&self.parameters, recursion.parameters).len() {
             return Err(call.out(FragmentBoundary::Arity(OperandCount::from(arguments.len()))));
         }
+        let mut passed_names = Vec::with_capacity(uniform.len());
         for (parameter, &argument) in uniform.iter().zip(arguments) {
             let Some(node) = self.tree.node(argument)
             else {
@@ -7824,17 +7826,21 @@ impl<'source> Lowerer<'_, 'source>
                     ..
                 } => {
                     let written = self.name_at(passed);
-                    matches!(
-                        self.scope.resolve(frame, written, &mut self.fuel)?,
-                        Maybe::Present(found) if found.binder == parameter.frame
-                    )
+                    match self.scope.resolve(frame, written, &mut self.fuel)? {
+                        Maybe::Present(found) if found.binder == parameter.frame => Some(found),
+                        Maybe::Present(_) | Maybe::Absent(_) => None,
+                    }
                 },
-                Shape::Root | Shape::Form { .. } | Shape::Repair(_) | Shape::Layout => false,
+                Shape::Root | Shape::Form { .. } | Shape::Repair(_) | Shape::Layout => None,
             };
-            if !unchanged {
+            let Some(found) = unchanged
+            else {
                 let varied = Site { at: passed, ..call };
                 return Err(varied.out(FragmentBoundary::NonUniform));
-            }
+            };
+            // The call erases the argument, so no origin records its name: keep
+            // the use beside the others the lowering resolved.
+            passed_names.push((passed.span, found));
             // The argument is the parameter itself, which the fixpoint binds
             // outside the call: it answers at the parameter's written type.
             if let Maybe::Present(declared) = parameter.declared
@@ -7846,6 +7852,9 @@ impl<'source> Lowerer<'_, 'source>
                     read: LabelRead::ValueType(read),
                 });
             }
+        }
+        for (span, found) in passed_names {
+            self.resolved(span, Resolved::Binder(found));
         }
 
         Ok(())
