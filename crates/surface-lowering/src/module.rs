@@ -307,6 +307,7 @@ use crate::origin::Insertion;
 use crate::origin::OriginTable;
 use crate::origin::OriginToken;
 use crate::origin::Provenance;
+use crate::resolve::InScope;
 use crate::resolve::SurfaceName;
 use crate::unit::ImportTarget;
 use crate::unit::PathImportOrdinal;
@@ -7618,6 +7619,8 @@ pub struct LoweredModule<'source>
     /// What the lowering recorded of each syntax node it held a computation
     /// nested at.
     nested: BTreeMap<NodeIndex, NestedSite>,
+    /// The binders in scope at each offset the lowering read under one.
+    in_scope: InScope,
     /// Every minted core node's origin, and the declarations' own.
     origins: OriginTable,
     /// The imports, in source order, with their aliases bound.
@@ -7656,6 +7659,7 @@ impl<'source> LoweredModule<'source>
             documentation: BTreeMap::new(),
             inferred_exits: Vec::new(),
             nested: BTreeMap::new(),
+            in_scope: InScope::default(),
             origins,
             imports,
             recognition,
@@ -7753,6 +7757,46 @@ impl<'source> LoweredModule<'source>
     {
         self.nested = nested;
         self
+    }
+
+    /// This module, carrying the binders in scope at each offset the lowering
+    /// read under one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_in_scope(
+        mut self,
+        in_scope: InScope,
+    ) -> Self
+    {
+        self.in_scope = in_scope;
+        self
+    }
+
+    /// The binders in scope at each offset the lowering read under one, the
+    /// declarations it refused included.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn in_scope(&self) -> &InScope
+    {
+        &self.in_scope
+    }
+
+    /// The binders in scope at each offset the lowering read under one, the
+    /// module given up for them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn into_in_scope(self) -> InScope
+    {
+        self.in_scope
     }
 
     /// The runs the checker inferred, of the nested values `ran` it decided

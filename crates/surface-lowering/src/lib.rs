@@ -471,6 +471,7 @@ pub use crate::origin::scrutinised;
 pub use crate::resolve::Bound;
 pub use crate::resolve::Frame;
 pub use crate::resolve::HeadArity;
+pub use crate::resolve::InScope;
 pub use crate::resolve::Mentioned;
 pub use crate::resolve::OperandCount;
 pub use crate::resolve::Scope;

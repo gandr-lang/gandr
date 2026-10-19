@@ -138,6 +138,7 @@ use gandr_surface_diagnostics::constant_names;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::ComponentName;
 use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::InScope;
 use gandr_surface_lowering::Insertion;
 use gandr_surface_lowering::Labelled;
 use gandr_surface_lowering::LoweredModule;
@@ -186,6 +187,7 @@ use crate::typed::referent::Referents;
 
 mod referent;
 
+pub use crate::typed::referent::NameKind;
 pub use crate::typed::referent::Referent;
 pub use crate::typed::referent::referred;
 
@@ -830,6 +832,9 @@ pub struct TypeTable
     base: ByteOffset,
     /// Each written use the lowering resolved, with what it refers to.
     referents: Referents,
+    /// The binders in scope at each offset of the unit's text the lowering
+    /// read under one.
+    in_scope: InScope,
 }
 
 /// The intuitionistic binder at or around `at`.
@@ -1854,6 +1859,7 @@ impl TypeTable
             signatures,
             opened,
             referents,
+            in_scope: module.into_in_scope(),
         })
     }
 
@@ -2092,6 +2098,64 @@ impl TypeTable
             .get(usize::from(source).saturating_add(1_usize))
             .map_or(self.naming.text.len(), |next| usize::from(next.start()));
         self.naming.text.get(start .. end).map(SourceText::from)
+    }
+
+    /// Each name the table's unit declares, a family's constructors included,
+    /// with what it names, ascending by where it is written.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry per declaration of the unit that is no family's
+    ///   operation or words, named by its name tile — [`NameKind::Family`] for
+    ///   a described or native family, [`NameKind::Value`] for any other — and
+    ///   one [`NameKind::Constructor`] per constructor a family writes, named
+    ///   by its name tile and extended by the family's form; a declaration the
+    ///   lowering refused included.
+    /// - provides: the declared names a completion offers.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a family, its constructors, a function and a
+    ///   sibling's declaration are each named once with their kind.
+    /// - witness: `typed::tests::the_declared_names_are_named_with_their_kind_806`
+    #[spec(ensures: |ret| ret.is_sorted())]
+    #[inline]
+    #[must_use]
+    pub fn declared_names(&self) -> &[(Referent, NameKind)]
+    {
+        self.referents.offered()
+    }
+
+    /// The written names of the binders in scope at `offset` of the source's
+    /// own text, innermost first, a shadowed binder included.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the text of each binder [`InScope::binders_at`] answers at
+    ///   `offset` moved into the unit's text, in its order.
+    /// - provides: the binders a completion at `offset` offers.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a lazy iterator over the chain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pattern's binder in its arm and not in its sibling,
+    ///   a parameter in the body of a refused declaration.
+    /// - witness: `typed::tests::the_binders_in_scope_are_spelled_in_the_source_s_text_831`
+    #[inline]
+    pub fn binders_at(
+        &self,
+        offset: ByteOffset,
+    ) -> impl Iterator<Item = SourceText<'_>>
+    {
+        let at = ByteOffset::from(usize::from(offset).saturating_add(usize::from(self.base)));
+        self.in_scope.binders_at(at).filter_map(|site| {
+            self.naming
+                .text
+                .get(usize::from(site.start()) .. usize::from(site.end()))
+                .map(SourceText::from)
+        })
     }
 
     /// The span of every entry, in table order, unspelled.
@@ -3978,6 +4042,108 @@ mod tests
             at("there = "),
             None,
             "the importer's own declaration's name is no use"
+        );
+    }
+
+    /// #806: every name a unit declares is offered once, with what it names:
+    /// a sibling's family, its constructor and its function, and the
+    /// importer's own declaration.
+    #[test]
+    fn the_declared_names_are_named_with_their_kind_806()
+    {
+        use gandr_surface_lowering::ImportTarget;
+        use gandr_surface_lowering::SourceIndex;
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_lowering::UnitSource;
+
+        use super::NameKind;
+
+        let sibling = SourceText::from(
+            "data Point : Type {\n  Here : Point;\n  There : Point;\n}\ndef here : Point ;\ndef \
+             here = Here ;",
+        );
+        let importer =
+            SourceText::from("import \"./point.gandr\" ;\ndef there : Point ;\ndef there = here ;");
+        let laid = format!("{}\n{}", <&str>::from(sibling), <&str>::from(importer));
+        let base = ByteOffset::from(<&str>::from(sibling).len().saturating_add(1_usize));
+        let unit = Unit::new(vec![
+            UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+            UnitSource::new(base, vec![ImportTarget::Source(SourceIndex::from(0_usize))]),
+        ])
+        .expect("the unit's sources start in order");
+        let grammar = built_in().expect("the built-in grammar builds");
+        let table = TypeTable::of_unit(&grammar, SourceText::from(laid.as_str()), &unit, base)
+            .expect("the unit parses");
+        let named: Vec<(Site, NameKind)> = table
+            .declared_names()
+            .iter()
+            .filter_map(|&(referent, kind)| Some((written(&table, referent)?, kind)))
+            .collect();
+        let in_source =
+            |text: SourceText<'_>, source: usize, needle: &'static str, name: &'static str| Site {
+                source: SourceIndex::from(source),
+                at: found(text, SourceText::from(needle)),
+                name: String::from(name),
+            };
+        assert_eq!(
+            named,
+            [
+                (
+                    in_source(sibling, 0, "Point : Type", "Point"),
+                    NameKind::Family
+                ),
+                (
+                    in_source(sibling, 0, "Here : Point", "Here"),
+                    NameKind::Constructor
+                ),
+                (
+                    in_source(sibling, 0, "There : Point", "There"),
+                    NameKind::Constructor
+                ),
+                (
+                    in_source(sibling, 0, "here : Point ;", "here"),
+                    NameKind::Value
+                ),
+                (
+                    in_source(importer, 1, "there : Point", "there"),
+                    NameKind::Value
+                ),
+            ],
+            "each declared name once, in the order the unit writes them, with its kind"
+        );
+    }
+
+    /// #831: the binders in scope at an offset of the source's own text are
+    /// spelled from that text, the declaration being typed refused.
+    #[test]
+    fn the_binders_in_scope_are_spelled_in_the_source_s_text_831()
+    {
+        let typing = SourceText::from(
+            "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef rec plus(n : \
+             Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    Succ(p) => Succ(pl)\n  \
+             }\n}\n",
+        );
+        let table = table(typing);
+        let at = |needle: &'static str| {
+            table
+                .binders_at(found(typing, SourceText::from(needle)))
+                .map(|name| String::from(<&str>::from(name)))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            at("pl)"),
+            ["p", "m", "plus", "n"],
+            "the arm's binder, then the function's"
+        );
+        assert_eq!(
+            at("n,\n"),
+            ["m", "plus", "n"],
+            "a sibling arm never sees `p`"
+        );
+        assert_eq!(
+            at("Nat;"),
+            Vec::<String>::new(),
+            "a family's constructor reads under no binder"
         );
     }
 

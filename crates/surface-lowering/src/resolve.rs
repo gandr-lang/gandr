@@ -106,6 +106,7 @@ use core::fmt;
 use anodized::spec;
 use gandr_core_term::Zone;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceFragment;
@@ -1612,6 +1613,144 @@ impl<'source> Scope<'source>
             .collect();
         names.reverse();
         names
+    }
+
+    /// The binders in scope at each span of `read`: this scope's frames, each
+    /// with its binder's written name and the frame it extends, beside `read`,
+    /// each span the lowering read under a binder with the innermost frame it
+    /// was read under.
+    ///
+    /// # Specification
+    /// - requires: every frame of `read` is a position of this scope.
+    /// - ensures: one frame per frame of this scope, in order, keeping its site
+    ///   and parent; `read` ascending by start then end, duplicates dropped;
+    ///   the widest read span's width.
+    /// - provides: the table [`InScope::binders_at`] answers from, built once
+    ///   per lowering.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one pass over the frames and one sort of `read`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`InScope::binders_at`].
+    /// - witness: `tests::scopes::the_binders_in_scope_are_the_innermost_reading_s_chain`
+    #[spec(ensures: |ret| ret.frames.len() == self.frames.len()
+        && ret.read.windows(2).all(|pair| matches!(*pair, [(first, _), (second, _)] if (first.start(), first.end()) < (second.start(), second.end()) || (first.start(), first.end()) == (second.start(), second.end()))))]
+    #[inline]
+    #[must_use]
+    pub fn in_scope(
+        &self,
+        mut read: Vec<(ByteSpan, ScopeId)>,
+    ) -> InScope
+    {
+        read.sort_by_key(|&(span, frame)| (span.start(), span.end(), frame));
+        read.dedup();
+        let widest = read
+            .iter()
+            .map(|&(span, _)| usize::from(span.end()).saturating_sub(usize::from(span.start())))
+            .max()
+            .unwrap_or(0_usize);
+        InScope {
+            frames: self
+                .frames
+                .iter()
+                .map(|frame| (frame.site, frame.parent))
+                .collect(),
+            read,
+            widest,
+        }
+    }
+}
+
+/// The binders in scope at each offset of a lowered text.
+///
+/// Every frame the lowering minted is kept with its binder's written name and
+/// the frame it extends, and every span it read under a binder with the
+/// innermost frame it was read under. A declaration the lowering refused keeps
+/// its spans and frames, so a name not yet written in full is read in scope.
+///
+/// # Specification
+/// - requires: built by [`Scope::in_scope`].
+/// - ensures: every frame of `read` is a position of `frames`, every parent an
+///   earlier one; `read` ascends by start then end; `widest` is at least every
+///   read span's width.
+/// - provides: the binders a name written at an offset would resolve to.
+/// - executable: none — a carrier; [`Scope::in_scope`] and
+///   [`InScope::binders_at`] carry the predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`InScope::binders_at`].
+/// - witness: `tests::scopes::the_binders_in_scope_are_the_innermost_reading_s_chain`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct InScope
+{
+    /// Each frame, by position: its binder's written name, when written, and
+    /// the frame it extends.
+    frames: Vec<(Maybe<ByteSpan, binder_site::Absent>, Frame)>,
+    /// Each span read under a binder, with the innermost frame it was read
+    /// under, ascending by start then end.
+    read: Vec<(ByteSpan, ScopeId)>,
+    /// The widest read span's width in bytes.
+    widest: usize,
+}
+
+impl InScope
+{
+    /// The written names of the binders in scope at `offset`, innermost
+    /// first, a shadowed binder included.
+    ///
+    /// # Specification
+    /// - requires: nothing; any offset is admitted.
+    /// - ensures: the narrowest read span starting at or before `offset` and
+    ///   ending after it, the earliest among equals; then the name of each
+    ///   frame of its frame's chain that has one, from that frame outward;
+    ///   nothing when no read span holds `offset`.
+    /// - provides: the binders a completion at `offset` offers.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a lazy iterator over the chain, drawn
+    ///   as the caller draws it.
+    /// - intension: a binary search for the spans starting at or before
+    ///   `offset`, a walk back over those no wider than the widest, then one
+    ///   step per frame of the chain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parameter in its body and out of it, a pattern's
+    ///   binder in its arm and in a sibling arm, a lambda's binder, and the
+    ///   binders of a declaration the lowering refused, each asserted at their
+    ///   exact names.
+    /// - witness: `tests::scopes::the_binders_in_scope_are_the_innermost_reading_s_chain`
+    /// - witness: `tests::scopes::the_binders_in_scope_are_kept_for_a_refused_declaration_831`
+    #[inline]
+    pub fn binders_at(
+        &self,
+        offset: ByteOffset,
+    ) -> impl Iterator<Item = ByteSpan> + '_
+    {
+        let after = self
+            .read
+            .partition_point(|&(span, _)| span.start() <= offset);
+        let mut innermost: Option<(ByteSpan, ScopeId)> = None;
+        for &(span, frame) in self.read.get(.. after).unwrap_or_default().iter().rev() {
+            if usize::from(offset).saturating_sub(usize::from(span.start())) > self.widest {
+                break;
+            }
+            let width =
+                |held: ByteSpan| usize::from(held.end()).saturating_sub(usize::from(held.start()));
+            if offset < span.end() && innermost.is_none_or(|(held, _)| width(span) <= width(held)) {
+                innermost = Some((span, frame));
+            }
+        }
+        core::iter::successors(innermost.map(|(_, frame)| frame), |frame| {
+            match self.frames.get(frame.0)?.1 {
+                Frame::Inner(parent) => Some(parent),
+                Frame::Outermost => None,
+            }
+        })
+        .filter_map(|frame| match self.frames.get(frame.0)?.0 {
+            Maybe::Present(site) => Some(site),
+            Maybe::Absent(_) => None,
+        })
     }
 }
 

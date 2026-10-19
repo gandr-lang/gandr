@@ -37,6 +37,7 @@ use gandr_core_term::ValueType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::Provenance;
+use gandr_surface_lowering::Role;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::description::written::WrittenConstructor;
@@ -117,6 +118,18 @@ impl Referent
     }
 }
 
+/// What a declared name names, which decides where it may be written.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum NameKind
+{
+    /// A data family: written as a type.
+    Family,
+    /// A family's constructor: written as a value or a pattern's head.
+    Constructor,
+    /// Any other declaration: written as a value.
+    Value,
+}
+
 /// What a use refers to, and whether that is a family a type names.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct Target
@@ -160,7 +173,7 @@ impl Target
 /// - requires: built by [`Referents::of`].
 /// - ensures: the uses ascend by start, each span in the source's own text;
 ///   `widest` is at least the width of every use; the declarations ascend by
-///   constant.
+///   constant; the offered names ascend by referent.
 /// - panics: none.
 /// - executable: none — a carrier; [`Referents::of`] and [`Referents::at`]
 ///   carry the predicates.
@@ -173,6 +186,9 @@ pub(super) struct Referents
     widest: usize,
     /// Each declaration's referent, by the constant it admits.
     declarations: Vec<(ConstantIndex, Referent)>,
+    /// Each name the unit declares, a family's constructors included, with
+    /// what it names.
+    offered: Vec<(Referent, NameKind)>,
 }
 
 /// `span`, a span of the unit's text, as the source holding its start writes
@@ -284,6 +300,50 @@ impl Referents
                 .entry(native.named.span)
                 .or_insert(native.written.constructors.as_slice());
         }
+        // Each declared name, a family's constructors after it; an operation
+        // or a loop's words is declared from its family's form and named by it.
+        let mut offered: Vec<(Referent, NameKind)> = Vec::new();
+        for declaration in module.declarations() {
+            if matches!(declaration.role(), Role::Operation | Role::Words) {
+                continue;
+            }
+            let (Some((source, named)), Some((_, extent))) = (
+                placed(unit, declaration.named()),
+                placed(unit, declaration.span()),
+            )
+            else {
+                continue;
+            };
+            let constructors = written.get(&declaration.named());
+            let declared = if constructors.is_some() {
+                NameKind::Family
+            }
+            else {
+                NameKind::Value
+            };
+            offered.push((
+                Referent {
+                    source,
+                    named,
+                    extent,
+                },
+                declared,
+            ));
+            for constructor in constructors.copied().unwrap_or_default() {
+                if let Some((source, named)) = placed(unit, constructor.named) {
+                    offered.push((
+                        Referent {
+                            source,
+                            named,
+                            extent,
+                        },
+                        NameKind::Constructor,
+                    ));
+                }
+            }
+        }
+        offered.sort_unstable();
+        offered.dedup_by_key(|&mut (referent, _)| referent);
         let constructed = |family: ConstantIndex, tag: ConstructorTag| {
             let declaration = module
                 .declarations()
@@ -368,7 +428,18 @@ impl Referents
             uses,
             widest,
             declarations,
+            offered,
         }
+    }
+
+    /// Each name the unit declares, a family's constructors included, with
+    /// what it names, ascending by referent.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn offered(&self) -> &[(Referent, NameKind)]
+    {
+        &self.offered
     }
 
     /// The innermost use holding `offset`, and what it refers to.

@@ -74,6 +74,7 @@ use quenchant_shape::shape::Maybe;
 use serde::Deserialize as _;
 use serde_json::Value;
 
+use crate::complete::completions;
 use crate::format::edits;
 use crate::goto::Goto;
 use crate::goto::targets;
@@ -1461,6 +1462,7 @@ impl Server
     /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
     /// - witness: `server::tests::semantic_tokens_full_answers_a_known_document`
     /// - witness: `server::tests::inline_completion_answers_the_expected_closer`
+    /// - witness: `server::tests::completion_answers_the_names_a_word_may_complete_to_806`
     /// - witness: `server::tests::the_outline_requests_answer_a_known_document`
     /// - witness: `server::tests::a_hover_answers_a_known_declaration`
     /// - witness: `server::tests::definition_answers_what_a_use_refers_to_795`
@@ -1490,6 +1492,12 @@ impl Server
             (Phase::Running, "textDocument/semanticTokens/full" | "textDocument/semanticTokens/range") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Tokens(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
+                },
+            (Phase::Running, "textDocument/completion") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Completions(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
                 },
@@ -1592,6 +1600,15 @@ impl Server
                             self.peer,
                             Window::Within(params.range),
                         ),
+                    ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "textDocument/completion") => {
+                match serde_json::from_value::<PositionParams>(params) {
+                    Ok(params) => success(
+                        id,
+                        workspace.completion(&params.text_document.uri, self.peer, params.position),
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
@@ -2003,7 +2020,7 @@ impl Workspace
         Answer::Tokens(ref tokens) => self.documents.contains_key(uri)
             && tokens.data.as_ref().len().is_multiple_of(5)
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), Window::Whole | Window::Within(_) => true },
-        Answer::Initialize(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
+        Answer::Initialize(_) | Answer::Completions(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
             | Answer::Actions(_) => false,
     })]
@@ -2057,7 +2074,7 @@ impl Workspace
         Answer::Inline(ref list) => self.documents.get(uri).is_some_and(|held|
             list.items.len() <= held.view(peer).proposals.len().saturating_add(8))
             && list.items.iter().all(|item| item.range.start <= position && position <= item.range.end),
-        Answer::Initialize(_) | Answer::Tokens(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
+        Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
             | Answer::Actions(_) => false,
     })]
@@ -2189,6 +2206,49 @@ impl Workspace
             }),
             (Maybe::Absent(_), None) => Answer::Nothing,
         }
+    }
+
+    /// What a completion request at `position` of the copy of the document at
+    /// `uri` that `peer` is answered from offers.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI and any position are admitted.
+    /// - ensures: an unknown document, and one whose session or grammar did not
+    ///   build, yields Nothing; otherwise the list [`completions`] answers off
+    ///   the copy's text and what it keeps for its hovers, made now when no
+    ///   request has asked since the text last changed.
+    /// - provides: the answer to `textDocument/completion`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`completions`], and an unknown document answers
+    ///   `null`.
+    /// - witness: `server::tests::completion_answers_the_names_a_word_may_complete_to_806`
+    #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Completions(_))
+        && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
+    fn completion(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        position: Position,
+    ) -> Answer
+    {
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Answer::Nothing;
+        };
+        let (Ok(session), Ok(grammar), Ok(forms)) = (document.session.as_ref(), grammar(), forms())
+        else {
+            return Answer::Nothing;
+        };
+        Answer::Completions(completions(
+            grammar,
+            forms,
+            document.text.source(),
+            document.text.hovering(&uri.path(), session),
+            position,
+        ))
     }
 
     /// What a `goto` request at `position` of the copy of the document at
@@ -2833,6 +2893,7 @@ mod tests
                                 "tokenModifiers":["declaration","defaultLibrary"]},
                             "full":true,
                             "range":true},
+                        "completionProvider":{"resolveProvider":false},
                         "inlineCompletionProvider":true,
                         "documentSymbolProvider":true,
                         "foldingRangeProvider":true,
@@ -2848,7 +2909,7 @@ mod tests
                 env!("CARGO_PKG_VERSION"),
                 r#""}}}]"#
             ))),
-            "the advertised capabilities, whole: no completion list"
+            "the advertised capabilities, whole"
         );
     }
 
@@ -2870,16 +2931,42 @@ mod tests
             )),
             "the known document's tokens: `def`, `f` a declared function, `42`"
         );
-        let request = r#"{"jsonrpc":"2.0","id":4,"method":"textDocument/completion","params":{
-            "textDocument":{"uri":"file:///tmp/example.gandr"},
-            "position":{"line":0,"character":4}}}"#;
+    }
+
+    #[test]
+    fn completion_answers_the_names_a_word_may_complete_to_806()
+    {
+        let mut server = initialized();
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/typing.gandr","languageId":"gandr","version":1,
+                     "text":"def one : Integer ;\ndef one = 1 ;\ndef two : Integer ;\ndef two = on"}}}"#,
+            ),
+        );
+        let ask = |server: &mut Connected, uri: &str| {
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":8,"method":"textDocument/completion","params":{{
+                    "textDocument":{{"uri":"{uri}"}},
+                    "position":{{"line":3,"character":12}}}}}}"#
+            );
+            send(server, Json(&request))
+        };
         assert_eq!(
-            send(&mut server, Json(request)),
+            ask(&mut server, "file:///tmp/typing.gandr"),
             wire(Json(
-                r#"[{"jsonrpc":"2.0","id":4,
-                     "error":{"code":-32601,"message":"`textDocument/completion` is not served"}}]"#
+                r#"[{"jsonrpc":"2.0","id":8,"result":{"isIncomplete":false,"items":[
+                    {"label":"one","kind":3,"sortText":"0","textEdit":{
+                        "range":{"start":{"line":3,"character":10},"end":{"line":3,"character":12}},
+                        "newText":"one"}}]}}]"#
             )),
-            "completion is not advertised, so it is not served"
+            "`on` in a value: the declaration starting with it, written over the word"
+        );
+        assert_eq!(
+            ask(&mut server, "file:///tmp/unknown.gandr"),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":8,"result":null}]"#)),
+            "a document the server does not hold: null"
         );
     }
 

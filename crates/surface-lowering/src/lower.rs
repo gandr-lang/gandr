@@ -3431,6 +3431,7 @@ pub fn lower_unit<'source>(
     let nested = lowerer.nested_sites(&origins);
     let declarations = lowerer.assemble(&mut origins);
     let structures = lowerer.structures();
+    let in_scope = lowerer.in_scope();
     let Lowerer {
         collected,
         recognition,
@@ -3459,7 +3460,8 @@ pub fn lower_unit<'source>(
     .with_documentation(documentation)
     .with_constructors(constructors)
     .with_inferred_exits(inferred)
-    .with_nested_sites(nested))
+    .with_nested_sites(nested)
+    .with_in_scope(in_scope))
 }
 
 impl<'run, 'source> Lowerer<'run, 'source>
@@ -14204,6 +14206,42 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
 
         lowered
+    }
+
+    /// The binders in scope at each node the lowering read under a binder:
+    /// the scope's frames, beside each such node's span and its reading's
+    /// frame.
+    ///
+    /// # Specification
+    /// - requires: every source is lowered.
+    /// - ensures: [`Scope::in_scope`] over this lowering's scope and one span
+    ///   per node whose reading names an inner frame, a node of a refused
+    ///   declaration included.
+    /// - provides: the table [`LoweredModule::in_scope`] keeps.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the table's own builder and query carry the
+    ///   predicates.
+    /// - intension: one pass over the node readings.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::InScope::binders_at`].
+    /// - witness: `tests::scopes::the_binders_in_scope_are_kept_for_a_refused_declaration_831`
+    fn in_scope(&self) -> crate::InScope
+    {
+        let read = self
+            .readings
+            .iter()
+            .enumerate()
+            .filter_map(|(position, reading)| match reading.frame() {
+                Frame::Inner(frame) => self
+                    .tree
+                    .node(NodeIndex::from(position))
+                    .map(|node| (node.span(), frame)),
+                Frame::Outermost => None,
+            })
+            .collect();
+        self.scope.in_scope(read)
     }
 }
 
