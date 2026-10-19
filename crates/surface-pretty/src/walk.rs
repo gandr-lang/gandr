@@ -845,13 +845,13 @@ where
 ///   two, a scope's subject under the capability's and a fork's child and
 ///   parent each under one linear binder, a hold's scope and an access's body
 ///   each under one linear binder; the computation a bind runs, the function an
-///   application applies and a computation where a value is read admit
-///   computations where the body goes on, a body in braces one where it ends,
-///   and a bind's rest and the branches of a case what its own position admits;
-///   a thunk's body is a child only where bodies are spelled; a family's
-///   arguments admit values their parameters state the type of, and a
-///   constructor's classifier is a child only where bodies are spelled and its
-///   position states no type; every leaf former has none.
+///   application applies, a computation where a value is read, an offer's arms
+///   and a fork's child admit computations where the body goes on, a body in
+///   braces one where it ends, and a bind's rest and the branches of a case
+///   what its own position admits; a thunk's body is a child only where bodies
+///   are spelled; a family's arguments admit values their parameters state the
+///   type of, and a constructor's classifier is a child only where bodies are
+///   spelled and its position states no type; every leaf former has none.
 /// - provides: the one table of child positions the scan and the walk share.
 /// - fails: never.
 /// - panics: none.
@@ -887,9 +887,11 @@ where
     | Former::Thunk(_) => ret.len() == match bodies { Bodies::Spelled => 1_usize, Bodies::Opaque => 0_usize },
     | Former::Session { payloads, .. } => ret.len() == usize::from(payloads)
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
-    | Former::Offer { arms, .. } => ret.len() == usize::from(arms),
+    | Former::Offer { arms, .. } => ret.len() == usize::from(arms)
+        && ret.iter().all(|slot| slot.admits == Admits::Computation(Tail::Continues)),
     | Former::Fork { .. } => ret.len() == 3_usize
-        && ret.iter().skip(1_usize).all(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize }),
+        && ret.iter().skip(1_usize).all(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize })
+        && ret.get(1_usize).is_some_and(|slot| slot.admits == Admits::Computation(Tail::Continues)),
     | Former::Hold { .. } => ret.len() == 2_usize
         && ret.last().is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize }),
     | Former::Access { .. } => ret.len() == 2_usize
@@ -1160,9 +1162,14 @@ where
         Former::Ascription { body, ty } => {
             Vec::from([Slot::of(body, admits, Binds::NONE), comp_type(ty)])
         },
-        Former::Offer { arms, .. } => {
-            components(arms, Admits::Computation(Tail::Ends), Binds::NONE, None)
-        },
+        // An offer's arm and a fork's child end in a computation the surface
+        // reads only as one, `retire => pure unit`: no exit is elided there.
+        Former::Offer { arms, .. } => components(
+            arms,
+            Admits::Computation(Tail::Continues),
+            Binds::NONE,
+            None,
+        ),
         Former::Fork {
             protocol,
             child,
@@ -1174,7 +1181,7 @@ where
             };
             Vec::from([
                 value_type(protocol),
-                ends(child, linear),
+                Slot::of(child, Admits::Computation(Tail::Continues), linear),
                 Slot::of(parent, admits, linear),
             ])
         },
