@@ -381,10 +381,11 @@ fn every_typed_entry_spells_without_a_dishonest_question_mark()
 ///
 /// The sweep visits its sample under every pull-request profile and every
 /// source under the `sweeps` profile, as every sweep does
-/// (`gandr-workflow-sweep`); the nightly run prints the whole corpus's
-/// counts.
+/// (`gandr-workflow-sweep`), but a pull request reads back no source past
+/// `READ_BYTES`; the nightly run prints the whole corpus's counts.
 mod sweeps
 {
+    use gandr_workflow_sweep::Coverage;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
     use gandr_workflow_sweep::SampleSize;
@@ -400,6 +401,42 @@ mod sweeps
         name: SampleName("every_printed_type_reads_back_to_its_certificate"),
         size: SampleSize(64),
     };
+
+    /// The most a sampled run lets one source's read-back lower: its printed
+    /// types times the bytes its check reads. Each type read back is appended
+    /// to the source laid out after its import closure, and the whole is
+    /// lowered once in each spelling, so a source costs with both: the record
+    /// of the λ-calculus's models, 34 M by this measure, took 2.8 s a spelling
+    /// with specifications enforced, where the corpus's median source takes a
+    /// few milliseconds. The nine λ-calculus sources past it and, of the
+    /// sources before them, `model/identity/univalence.gandr` (18 M),
+    /// `loop-space.gandr` (8.5 M) and `set-fold.gandr` (7.8 M) are read back
+    /// under the `sweeps` and nightly profiles, which read every source whole.
+    const READ_BYTES: usize = 0x0060_0000;
+
+    /// The bytes one check of a source reads.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+    struct Checked(usize);
+
+    /// The bytes a check of the walk's source at `path` reads: its text laid
+    /// out after its import closure, or its own text when it imports nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    fn checked(
+        grammar: &Pbg,
+        path: &Path,
+        root: SourceRoot,
+        (text, base): (SourceText<'_>, ByteOffset),
+    ) -> Checked
+    {
+        let own = text.as_ref().get(usize::from(base) ..).unwrap_or_default();
+        match lay_out(grammar, path, root, SourceText::from(own)) {
+            Maybe::Present(laid) => Checked(laid.text.len()),
+            Maybe::Absent(_) => Checked(own.len()),
+        }
+    }
 
     #[test]
     fn every_printed_type_reads_back_to_its_certificate()
@@ -419,6 +456,7 @@ mod sweeps
         let mut trips: BTreeMap<&str, usize> = BTreeMap::new();
         let mut unread: Vec<String> = Vec::new();
         let mut moved: Vec<String> = Vec::new();
+        let mut over = 0_usize;
         let walk = Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]);
         let ControlFlow::Continue(_report) =
             walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
@@ -439,6 +477,12 @@ mod sweeps
                 else {
                     return ControlFlow::Continue(());
                 };
+                let Checked(checked) = checked(&grammar, path, root, (text, base));
+                let work = table.spans().count().saturating_mul(checked);
+                if sweep.coverage() == Coverage::Sampled && work > READ_BYTES {
+                    over = over.saturating_add(1);
+                    return ControlFlow::Continue(());
+                }
                 let reads = [Spelling::Unicode, Spelling::Ascii]
                     .into_iter()
                     .flat_map(|spelling| {
@@ -503,6 +547,7 @@ mod sweeps
         for (class, count) in &trips {
             eprintln!("| {class} | {count} |");
         }
+        eprintln!("{over} sources past the read-back ceiling, read whole by the `sweeps` profile");
         assert!(
             trips.get("Equal").is_some_and(|&equal| equal > 0_usize),
             "the corpus's printed types read back"
