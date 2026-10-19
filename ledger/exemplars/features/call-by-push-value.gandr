@@ -1,0 +1,14 @@
+/// `call-by-push-value`: a value definition and a computation definition; `-F` returns a value, `thunk` suspends a computation and `become` runs it.
+@[ checks ]
+def answer = 42 ;
+
+/// A computation returning the answer plus one.
+@[ checks ]
+def next() -> -F Integer {
+  return answer + 1
+}
+
+/// The computation suspended as a value; a run forces it.
+@[ runs("43") ]
+def stepped : +U (-F Integer) ;
+def stepped = thunk { become next() } ;

@@ -1,0 +1,21 @@
+/// `identity-types`: `Path(A, a, b)` is the type of paths from `a` to `b` in `A`; `here(a)` is reflexivity and `p then q` composes.
+@[ checks ]
+def four_eq_four : Path(Integer, 4, 4) ;
+def four_eq_four = here(4) ;
+
+/// Two paths, the second leaving where the first arrives, composed.
+@[ checks ]
+def join(
+  a : Integer,
+  b : Integer,
+  c : Integer,
+  q : Path(Integer, a, b),
+  r : Path(Integer, b, c)
+) -> -F Path(Integer, a, c) {
+  become q then r
+}
+
+/// Reflexivity composed with itself by a run.
+@[ checks ]
+def joined : +U (-F Path(Integer, 4, 4)) ;
+def joined = thunk { become join(4, 4, 4, four_eq_four, four_eq_four) } ;

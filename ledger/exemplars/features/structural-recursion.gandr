@@ -1,0 +1,20 @@
+/// `structural-recursion`: `def rec` recurses on a structurally smaller argument, each recursive call marked `[<]`.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+/// Addition by recursion on the second argument.
+@[ checks ]
+def rec plus(n : Nat, m : Nat) -> -F Nat {
+  case m {
+    Zero => n,
+    Succ(p) => Succ(plus[<](n, p))
+  }
+}
+
+/// One plus two.
+@[ runs("Succ(Succ(Succ(Zero)))") ]
+def three : +U (-F Nat) ;
+def three = thunk { become plus(Succ(Zero), Succ(Succ(Zero))) } ;

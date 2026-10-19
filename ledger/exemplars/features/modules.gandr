@@ -1,0 +1,10 @@
+/// `modules`: a module groups declarations under a name, and a member is reached through it.
+module Origin {
+  /// The starting point.
+  def zero() -> -F Integer { return 0 }
+}
+
+/// The member called through its module's name.
+@[ runs("0") ]
+def started : +U (-F Integer) ;
+def started = thunk { become Origin.zero() } ;

@@ -1,0 +1,30 @@
+/// `signatures-as-values`: a `theory` block presents a sort and its operations as one value of `Theory`, which an ordinary function reads by `case`.
+@[ checks ]
+theory Monoid {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> (z : M);
+  oper one : () --> (z : M);
+}
+
+/// One per operation of a presentation's chain, zero at its end.
+@[ checks ]
+def rec operations(chain : Theory) -> -F Integer {
+  case chain {
+    Oper(name, inputs, outputs, rest) => { run r <- operations[<](rest); return r + 1 },
+    _ => return 0
+  }
+}
+
+/// The number of operations a presentation declares.
+@[ checks ]
+def arity(presented : Theory) -> -F Integer {
+  case presented {
+    Presents(sorts, opers, rules) => become operations(opers),
+    _ => return 0
+  }
+}
+
+/// `Monoid` declares two operations.
+@[ runs("2") ]
+def counted : +U (-F Integer) ;
+def counted = thunk { become arity(Monoid) } ;

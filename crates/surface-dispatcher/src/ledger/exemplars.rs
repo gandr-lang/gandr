@@ -40,6 +40,12 @@
 //! The exemplars are seeded by the `harvest_exemplars` example, which finds
 //! the smallest corpus form whose tree holds each rule's molds; each is then
 //! cut down by hand.
+//!
+//! The `features` directory beside `syntax` and `attributes` is not read
+//! here. Its exemplars are programs, one per row of the features ledger, and
+//! `mise run check:exemplars` settles them under `gandr test`. A syntax or
+//! attribute exemplar shows a form, often one the checker's fragment does not
+//! reach yet, so it is parsed and lowered and never checked.
 
 use alloc::collections::BTreeSet;
 use std::path::Path;

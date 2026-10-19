@@ -1,0 +1,9 @@
+/// `rule-equations`: a data type presented with rules written as equations, `<=>`; the normal form runs each left side to its right.
+@[ normalizes("S(P(S(Z))) ~> S(Z)") ]
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) <=> x;
+  rule P(S(x)) <=> x;
+}
