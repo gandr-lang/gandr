@@ -284,7 +284,9 @@ use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::ObligationCount;
 use gandr_core_checker::Verdict;
+use gandr_core_checker::bridge::LeadingCount;
 use gandr_core_checker::bridge::Readmitted;
+use gandr_core_checker::bridge::crossed;
 use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::CheckpointObserver;
 use gandr_core_incremental::CheckpointStore;
@@ -331,6 +333,7 @@ use gandr_surface_dispatcher::lower_parsed;
 use gandr_surface_dispatcher::lower_parsed_unit;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationCount;
+use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::DocumentationText;
 use gandr_surface_lowering::ImportIndex;
 use gandr_surface_lowering::ImportUri;
@@ -340,7 +343,9 @@ use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::documentation;
 use gandr_surface_lowering::namespace::NamePath;
 use gandr_surface_lowering::namespace::Scope;
+use gandr_surface_parser::MeldError;
 use gandr_surface_parser::ObligationInstance;
+use gandr_surface_parser::ParseResult;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeKey;
@@ -348,6 +353,7 @@ use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
+use crate::closures;
 use crate::edit::EditScript;
 use crate::edit::Snapshot;
 use crate::edit::diff;
@@ -756,11 +762,13 @@ pub enum KernelCheckpoint
 }
 
 /// What one admission produced: the kernel artifact of every declaration that
-/// crossed, and whether it reached the block store.
+/// crossed, whether it reached the block store, and how many declarations the
+/// kernel was offered again.
 ///
 /// # Specification
 /// - requires: constructed by [`Session::admit`].
-/// - ensures: the checkpoint is the one committed for the artifact.
+/// - ensures: the checkpoint is the one committed for the artifact; no more
+///   declarations crossed than were judged.
 /// - panics: none.
 /// - executable: none — this data type has no call boundary; [`Session::admit`]
 ///   carries the executable clauses.
@@ -768,6 +776,7 @@ pub enum KernelCheckpoint
 /// # Adequacy
 /// - hypothesis: L3 — as [`Session::admit`].
 /// - witness: `tests::session::a_judged_revision_reports_before_its_admission`
+/// - witness: `tests::session::an_edit_to_its_own_text_readmits_the_document_alone_776`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Admitted
 {
@@ -775,6 +784,12 @@ pub struct Admitted
     kernel: EncodedArtifact,
     /// Whether it reached the block store.
     checkpoint: KernelCheckpoint,
+    /// How many declarations the readmission offered the kernel again; the
+    /// rest of those judged it resumed from the process's readmission of the
+    /// revision's import closure.
+    crossed: DeclarationCount,
+    /// How many declarations the checker judged.
+    judged: DeclarationCount,
 }
 
 impl Admitted
@@ -800,6 +815,30 @@ impl Admitted
     pub const fn checkpoint(&self) -> &KernelCheckpoint
     {
         &self.checkpoint
+    }
+
+    /// How many declarations the readmission offered the kernel again, of
+    /// [`judged`](Self::judged): the rest it resumed from the process's
+    /// readmission of the revision's import closure.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn crossed(&self) -> DeclarationCount
+    {
+        self.crossed
+    }
+
+    /// How many declarations the checker judged.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn judged(&self) -> DeclarationCount
+    {
+        self.judged
     }
 }
 
@@ -1463,7 +1502,21 @@ pub struct Session<Store, Blocks>
     /// The threads a revision's changed forms are molded on.
     threads: Threads,
     /// The kernel admission the latest judgement left to run.
-    admission: Maybe<Admission, admission::Absent>,
+    admission: Maybe<Pending, admission::Absent>,
+}
+
+/// A kernel admission a judgement left to run, beside the import closure its
+/// revision was laid out after.
+#[derive(Clone, Debug)]
+struct Pending
+{
+    /// The admission.
+    admission: Admission,
+    /// How many of the judged declarations the closure holds: those written
+    /// before the revision's own source.
+    boundary: usize,
+    /// The closure's text: the revision before its own source.
+    closure: String,
 }
 
 impl<Store, Blocks> fmt::Debug for Session<Store, Blocks>
@@ -1802,7 +1855,9 @@ impl<Store, Blocks> Session<Store, Blocks>
             .admit()
             .map_err(|fault| SessionFault::Compose(ComposeFault::Readmission(fault)))?
         {
-            let Admitted { kernel, checkpoint } = admitted;
+            let Admitted {
+                kernel, checkpoint, ..
+            } = admitted;
             submission.composed = submission.composed.admitted(kernel);
             submission.kernel = Maybe::Present(checkpoint);
         }
@@ -2080,6 +2135,15 @@ impl<Store, Blocks> Session<Store, Blocks>
         let imports = Imports::of(&module, own);
         let documentation = documentation_of(&module, own);
         let snapshot = Snapshot::of(&items, module.origins());
+        // The closure's declarations — those written before the revision's own
+        // source — lead the judged ones, a declaration the lowering refused
+        // being judged nowhere.
+        let boundary = module
+            .declarations()
+            .iter()
+            .filter(|declaration| !matches!(declaration.outcome(), DeclarationOutcome::Refused(_)))
+            .take_while(|declaration| declaration.span().start() < base)
+            .count();
         let (settled, admission) = judge_member(
             self.root.corpus_root(),
             (module, revision),
@@ -2114,7 +2178,15 @@ impl<Store, Blocks> Session<Store, Blocks>
         self.imports = imports;
         self.snapshot = snapshot;
         self.documentation = documentation;
-        self.admission = Maybe::Present(admission);
+        self.admission = Maybe::Present(Pending {
+            admission,
+            boundary,
+            closure: String::from(
+                <&str>::from(revision)
+                    .get(.. usize::from(base))
+                    .unwrap_or_default(),
+            ),
+        });
         Ok(Submission {
             root: self.root,
             text: revision,
@@ -2289,8 +2361,16 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   [`judge_module`](gandr_surface_dispatcher::judge_module) exports for
     ///   the same revision — beside the checkpoint [`build`] mints over the
     ///   records [`ArtifactRecordSet::from_artifact`] cuts from it, every node
-    ///   of their tree then in the block store, or the first refusal. Either
-    ///   way the session holds no admission after.
+    ///   of their tree then in the block store, and how many declarations the
+    ///   kernel was offered of how many were judged; or the first refusal. The
+    ///   readmission of the import closure the revision was laid out after is
+    ///   resumed from the one the process holds for the closure's text whose
+    ///   declarations' checkpoints — content, consulted answers and typing —
+    ///   are pointwise those of the latest resume, and is held for the next
+    ///   admission otherwise
+    ///   ([`readmit_resuming`](gandr_core_checker::bridge::readmit_resuming));
+    ///   the closure's declarations then cross only when no such readmission is
+    ///   held. Either way the session holds no admission after.
     /// - provides: the half of a submission that runs beside the interactive
     ///   loop: what the kernel re-derives, and the latency until the artifact
     ///   exists.
@@ -2304,23 +2384,58 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// # Adequacy
     /// - hypothesis: L3 — a judged revision admitted afterwards carries the
     ///   kernel artifact and checkpoint its submission carries, a second
-    ///   admission finds none held, and a refused revision leaves none.
+    ///   admission finds none held, and a refused revision leaves none; a
+    ///   document laid out after its import closure offers the kernel its own
+    ///   declarations alone once the closure was admitted, the artifact the
+    ///   whole composition exports, and the whole closure again once a source
+    ///   of it changed.
     /// - witness: `tests::session::a_judged_revision_reports_before_its_admission`
+    /// - witness: `tests::session::an_edit_to_its_own_text_readmits_the_document_alone_776`
     /// - witness: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`
-    #[spec(ensures: |_| matches!(self.admission, Maybe::Absent(admission::Absent::Idle)))]
+    #[spec(ensures: |ret| matches!(self.admission, Maybe::Absent(admission::Absent::Idle))
+        && ret.as_ref().is_ok_and(|admitted| match *admitted {
+            Maybe::Present(ref admitted) => admitted.crossed() <= admitted.judged(),
+            Maybe::Absent(_) => true,
+        }) || ret.is_err())]
     #[inline]
     pub fn admit(&mut self) -> Result<Maybe<Admitted, admission::Absent>, Readmitted>
     where
         Blocks: BlockStore,
     {
         let held = core::mem::replace(&mut self.admission, Maybe::Absent(admission::Absent::Idle));
-        let Maybe::Present(admission) = held
+        let Maybe::Present(Pending {
+            admission,
+            boundary,
+            closure,
+        }) = held
         else {
             return Ok(Maybe::Absent(admission::Absent::Idle));
         };
-        let kernel = admission.admit()?;
+        let checkpoints = match self.incremental.last() {
+            Maybe::Present(resume) => resume.checkpoints().items().get(.. boundary),
+            Maybe::Absent(_) => None,
+        };
+        let held = checkpoints.and_then(|checkpoints| {
+            closures::find(SourceText::from(closure.as_str()), checkpoints)
+        });
+        let resumption = admission.admit_resuming(
+            LeadingCount::from(boundary),
+            held.as_deref()
+                .map_or(Maybe::Absent(crossed::Absent::Unasked), Maybe::Present),
+        );
+        if let (Maybe::Present(crossed), Some(checkpoints)) = (resumption.crossed, checkpoints) {
+            closures::keep(closure, checkpoints.to_vec(), crossed);
+        }
+        let kernel = resumption.artifact?;
         let checkpoint = checkpoint_kernel(&kernel, &mut self.blocks);
-        Ok(Maybe::Present(Admitted { kernel, checkpoint }))
+        Ok(Maybe::Present(Admitted {
+            kernel,
+            checkpoint,
+            crossed: DeclarationCount::from(
+                usize::from(resumption.judged).saturating_sub(usize::from(resumption.resumed)),
+            ),
+            judged: DeclarationCount::from(usize::from(resumption.judged)),
+        }))
     }
 
     /// The root the session's source sits under.
@@ -2343,6 +2458,26 @@ impl<Store, Blocks> Session<Store, Blocks>
     pub const fn grammar(&self) -> &Pbg
     {
         &self.grammar
+    }
+
+    /// Parse `revision` through the session's form store, leaving the store
+    /// as it was: every form the latest submission molded is taken up and the
+    /// rest molded on the session's threads.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The commit's [`MeldError`], when its arena cannot be built.
+    #[inline]
+    pub fn parse_held<'text>(
+        &self,
+        revision: SourceText<'text>,
+    ) -> Result<ParseResult<'text>, MeldError>
+    {
+        self.forms
+            .parse_held(&self.grammar, revision, self.threads)
+            .map(|(parsed, _census)| parsed)
     }
 
     /// Every lowering the session performed: one per submission.

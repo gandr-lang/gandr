@@ -84,12 +84,39 @@
 //! **Reversal.** A lowering that reads a forest drops the second parse
 //! without a prediction: each source is parsed once, alone, and lowered from
 //! that tree.
+//!
+//! # A source read whole is read once per process
+//!
+//! **Choice.** A source [`lay_out`] reads whole — the document to find its
+//! imports, each sibling for its imports or to find whether it parses — is
+//! read through one store per process, keyed by the source's text and the
+//! grammar's fingerprint, the text compared byte for byte: a text read before
+//! answers what its parse found. An editor lays a document's closure out at
+//! every recheck, and a language server hovering it and a second connection
+//! opening it lay it out again, while only the document's own text changed;
+//! on the λ-calculus closure of #776, every sibling parsed again cost 35 ms of
+//! each lay-out with specifications enforced. The store holds a few hundred
+//! readings and lets the one asked for longest ago go, so an edited
+//! document's earlier revisions leave it.
+//!
+//! **Alternatives.** A store per session keeps nothing a second connection
+//! or the hover's lay-out can reuse. A key of the source's path and its
+//! modification time answers a stale reading when a file changes within the
+//! clock's resolution; the text itself is the key that cannot. A digest of
+//! the text as the key would still compare the bytes on a hit, which is the
+//! whole cost of comparing them.
+//!
+//! **Reversal.** Parsing each source once into a forest, the reversal of the
+//! one-tree component above, keeps each source's tree; the lay-out then reads
+//! its imports there, and the store goes.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::collections::VecDeque;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::sync::PoisonError;
 
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
@@ -101,6 +128,7 @@ use gandr_surface_lowering::UnitSource;
 use gandr_surface_lowering::written_imports;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::GrammarFingerprint;
 use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
@@ -705,12 +733,9 @@ impl Graph
             let text = SourceText::from(source.text.as_str());
             let mut parsed = ParsedBytes::default();
             let (parse, written) = match self.reading {
-                Reading::Whole => {
-                    parsed = ParsedBytes::from(source.text.len());
-                    match paths_written(grammar, text) {
-                        Maybe::Present(written) => (Parse::Parsed, written),
-                        Maybe::Absent(_) => (Parse::Unparsed, Vec::new()),
-                    }
+                Reading::Whole => match read_whole(grammar, text, &mut parsed) {
+                    Maybe::Present(written) => (Parse::Parsed, written),
+                    Maybe::Absent(_) => (Parse::Unparsed, Vec::new()),
                 },
                 Reading::ImportForms => {
                     let written = paths_formed(grammar, text, &mut parsed);
@@ -748,8 +773,18 @@ impl Graph
             if let Some(reading) = self.read.get_mut(to.0)
                 && reading.parse == Parse::Unchecked
             {
-                self.parsed.absorb(ParsedBytes::from(reading.text.len()));
-                reading.parse = if parse(grammar, SourceText::from(reading.text.as_str())).is_ok() {
+                let text = SourceText::from(reading.text.as_str());
+                let parses = match self.reading {
+                    Reading::Whole => matches!(
+                        read_whole(grammar, text, &mut self.parsed),
+                        Maybe::Present(_)
+                    ),
+                    Reading::ImportForms => {
+                        self.parsed.absorb(ParsedBytes::from(reading.text.len()));
+                        parse(grammar, text).is_ok()
+                    },
+                };
+                reading.parse = if parses {
                     Parse::Parsed
                 }
                 else {
@@ -1319,6 +1354,154 @@ fn paths_written(
     )
 }
 
+/// The most sources [`READINGS`] holds before it lets the one read longest
+/// ago go: a closure of a few hundred sources, beside the revisions of the
+/// documents an editor has open.
+const READINGS_HELD: usize = 512;
+
+/// What reading one source whole found, for each grammar it was read under,
+/// and when it was last asked for.
+#[derive(Debug)]
+struct Held
+{
+    /// The grammar the source was parsed under.
+    grammar: GrammarFingerprint,
+    /// The path imports its parse writes, or that it does not parse.
+    written: Maybe<Vec<String>, laid::Absent>,
+    /// The tick of the store's clock it was last asked for at.
+    used: u64,
+}
+
+/// Every source this process has read whole, by its text.
+#[derive(Debug)]
+struct Readings
+{
+    /// What each text's reading found, under each grammar it was read under.
+    held: BTreeMap<String, Vec<Held>>,
+    /// How many readings the store holds.
+    count: usize,
+    /// Ticks once per question.
+    clock: u64,
+}
+
+impl Readings
+{
+    /// Keep `fresh`, what reading `text` found, unless the store holds a
+    /// reading of `text` under its grammar already, then let the readings
+    /// asked for longest ago go until at most [`READINGS_HELD`] remain.
+    ///
+    /// # Specification
+    /// - requires: `count` is the number of readings `held` holds.
+    /// - ensures: `count` is still that number, and at most [`READINGS_HELD`];
+    ///   `fresh` is held unless it was the one asked for longest ago.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closure laid out twice parses its sources once, and
+    ///   a sibling whose text changed is read again and laid out as it now
+    ///   reads.
+    /// - witness: `component::tests::a_source_read_whole_is_parsed_once_per_text_776`
+    #[spec(ensures: self.count <= READINGS_HELD)]
+    fn keep(
+        &mut self,
+        text: String,
+        fresh: Held,
+    )
+    {
+        let held = self.held.entry(text).or_default();
+        if held.iter().all(|held| held.grammar != fresh.grammar) {
+            held.push(fresh);
+            self.count = self.count.saturating_add(1);
+        }
+        while self.count > READINGS_HELD {
+            let oldest = self
+                .held
+                .iter()
+                .flat_map(|(text, held)| held.iter().map(move |held| (held.used, text)))
+                .min()
+                .map(|(_, text)| text.clone());
+            let Some(oldest) = oldest
+            else {
+                break;
+            };
+            if let Some(held) = self.held.get_mut(&oldest) {
+                let before = held.len();
+                let least = held.iter().map(|held| held.used).min();
+                held.retain(|held| Some(held.used) != least);
+                let gone = before.saturating_sub(held.len());
+                if held.is_empty() {
+                    let _gone = self.held.remove(&oldest);
+                }
+                self.count = self.count.saturating_sub(gone);
+            }
+        }
+    }
+}
+
+/// The process's readings, shared by every lay-out and every grouping that
+/// reads its sources whole.
+static READINGS: Mutex<Readings> = Mutex::new(Readings {
+    held: BTreeMap::new(),
+    count: 0_usize,
+    clock: 0_u64,
+});
+
+/// The path imports `text` writes, read whole under `grammar`: what
+/// [`paths_written`] answers, parsed once per process for each text and
+/// grammar, `parsed` counting the bytes of a text parsed now.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`paths_written`] of `text` under `grammar`. A text and grammar
+///   this process read before answer what that reading found, the text compared
+///   byte for byte, and `parsed` is unchanged; any other is parsed, `parsed`
+///   absorbs its length, and the store keeps its reading, letting the one asked
+///   for longest ago go past [`READINGS_HELD`].
+/// - provides: the sibling reading every keystroke's lay-out repeats: an
+///   editor's recheck reads each source of the document's closure again, and
+///   only the document's own text changes.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause would parse the text again, the work the
+///   store saves; the witness reads a held text and a changed one.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a closure laid out twice parses its sources once, and a
+///   sibling whose text changed is read again and laid out as it now reads.
+/// - witness: `component::tests::a_source_read_whole_is_parsed_once_per_text_776`
+fn read_whole(
+    grammar: &Pbg,
+    text: SourceText<'_>,
+    parsed: &mut ParsedBytes,
+) -> Maybe<Vec<String>, laid::Absent>
+{
+    let fingerprint = grammar.fingerprint();
+    {
+        let mut readings = READINGS.lock().unwrap_or_else(PoisonError::into_inner);
+        readings.clock = readings.clock.saturating_add(1);
+        let now = readings.clock;
+        if let Some(held) = readings
+            .held
+            .get_mut(text.as_ref())
+            .and_then(|held| held.iter_mut().find(|held| held.grammar == fingerprint))
+        {
+            held.used = now;
+            return held.written.clone();
+        }
+    }
+    parsed.absorb(ParsedBytes::from(text.as_ref().len()));
+    let written = paths_written(grammar, text);
+    let mut readings = READINGS.lock().unwrap_or_else(PoisonError::into_inner);
+    let used = readings.clock;
+    readings.keep(String::from(text.as_ref()), Held {
+        grammar: fingerprint,
+        written: written.clone(),
+        used,
+    });
+    drop(readings);
+    written
+}
+
 /// Every source each source of `read` reaches through its imports.
 ///
 /// # Specification
@@ -1540,6 +1723,65 @@ mod tests
                 "{reading:?}: each source of a cycle is lowered apart"
             );
         }
+    }
+
+    /// #776: a source read whole is parsed once per text in a process. A
+    /// second grouping of the same sources parses nothing and lays them out
+    /// alike; a sibling whose text changed is parsed again and laid out as it
+    /// now reads.
+    #[test]
+    fn a_source_read_whole_is_parsed_once_per_text_776()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let floor = "/// #776: the floor.\ndef six : Integer ;\ndef six = 6 ;";
+        let base = "/// #776: the base.\ndef seven : Integer ;\ndef seven = 7 ;";
+        let importer = "import \"./base.gandr\" ;\n/// #776: the importer.\ndef eight : Integer \
+                        ;\ndef eight = 8 ;";
+        let tree = Scratch::new(Path::new("read-once"), &[
+            (Path::new("floor.gandr"), SourceText::from(floor)),
+            (Path::new("base.gandr"), SourceText::from(base)),
+            (Path::new("importer.gandr"), SourceText::from(importer)),
+        ]);
+        let grouped = || {
+            group(
+                &grammar,
+                Vec::from([tree.given(Path::new("importer.gandr"))]),
+                Reading::Whole,
+            )
+        };
+        let first = grouped();
+        assert_eq!(
+            usize::from(first.parsed),
+            base.len().saturating_add(importer.len()),
+            "the first grouping parses the importer and its sibling"
+        );
+        let again = grouped();
+        assert_eq!(
+            usize::from(again.parsed),
+            0_usize,
+            "a second grouping parses neither"
+        );
+        let texts = |grouped: &super::Grouped| {
+            grouped
+                .components
+                .iter()
+                .map(|component| component.text.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(texts(&again), texts(&first), "and lays them out alike");
+        let rewritten = format!("import \"./floor.gandr\" ;\n{base}");
+        std::fs::write(tree.0.join("base.gandr"), &rewritten).expect("the sibling is rewritten");
+        let changed = grouped();
+        assert_eq!(
+            usize::from(changed.parsed),
+            rewritten.len().saturating_add(floor.len()),
+            "the changed sibling is read again, and the source it now imports"
+        );
+        assert_eq!(
+            texts(&changed),
+            [format!("{floor}\n{rewritten}\n{importer}")],
+            "the closure is laid out as the sibling now reads"
+        );
     }
 
     #[test]

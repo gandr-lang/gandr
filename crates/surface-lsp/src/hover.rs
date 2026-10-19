@@ -45,6 +45,23 @@
 //! the typed run's table itself, and the hover then reads it there rather than
 //! judging the copy's text again.
 //!
+//! # The table is typed over the session's held forms
+//!
+//! [`hovering`] parses the copy's text through its session's form store
+//! ([`Session::parse_held`]), which holds every form of the revision the
+//! session last judged — the import closure's among them, for a document that
+//! imports a sibling — so the table molds only what the recheck before it
+//! molded, never the closure again; the closure is laid out by the
+//! dispatcher's [`lay_out`], which reads each sibling once per process. The
+//! lowering and the typed run still read the whole laid-out text, the
+//! closure with the document.
+//!
+//! The alternative was a whole parse of the laid-out text per revision: on
+//! the λ-calculus closure of #776, half the table's time went to it. The
+//! choice reverses with the one-tree component's: once each imported source
+//! is composed once, the table reads the closure's typings where they are
+//! kept and types the document's own declarations alone.
+//!
 //! # A hover answers the node under the cursor, never an ancestor
 //!
 //! A node the source wrote answers as itself: a pattern with its name and
@@ -134,7 +151,6 @@ use crate::protocol::MarkupContent;
 use crate::protocol::SymbolKind;
 use crate::reading::Declaration;
 use crate::reading::Reading;
-use crate::recheck::grammar;
 
 /// The page width a hover lays a type out at.
 const HOVER_WIDTH: u32 = 80;
@@ -166,15 +182,18 @@ pub struct Hovering
     table: TypeTable,
 }
 
-/// What the hovers of `text`, the document at `path`, read, built under the
-/// process's grammar: one typed run per text, rather than one per hover.
+/// What the hovers of `text`, the document at `path` that `session` judges,
+/// read: one typed run per text, rather than one per hover.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: [`TypeTable::of_unit`] over the import closure the dispatcher's
-///   [`lay_out`] lays `text` out in when it imports a sibling by path, else
-///   [`TypeTable::of`] over `text`; the empty table when the grammar did not
-///   build or the text did not parse.
+/// - requires: nothing; `session` may have judged any revision.
+/// - ensures: [`TypeTable::of_parsed_unit`] over the import closure the
+///   dispatcher's [`lay_out`] lays `text` out in when it imports a sibling by
+///   path, else [`TypeTable::of_parsed`] over `text`, each parsed through
+///   `session`'s form store ([`Session::parse_held`]), which takes up every
+///   form its latest submission molded — every form of the closure, for a
+///   session that judged the document — and leaves the store as it was; the
+///   empty table when the text did not parse.
 /// - provides: what a document copy keeps for its hovers; a name an import
 ///   brings in types at its use as its declaration does.
 /// - fails: never; a refusal answers the empty table.
@@ -190,25 +209,28 @@ pub struct Hovering
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::an_imported_name_hovers_its_declaration_s_type`
 #[must_use]
-pub fn hovering(
+pub fn hovering<Store, Blocks>(
     text: SourceText<'_>,
     path: &Path,
+    session: &Session<Store, Blocks>,
 ) -> Hovering
 {
-    let table = grammar().map_or_else(
-        |_| TypeTable::default(),
-        |grammar| match lay_out(grammar, path, classify(path), text) {
-            Maybe::Present(laid) => TypeTable::of_unit(
-                grammar,
-                SourceText::from(laid.text.as_str()),
-                &laid.unit,
-                laid.base,
-            )
-            .unwrap_or_default(),
-            Maybe::Absent(_) => TypeTable::of(grammar, text).unwrap_or_default(),
-        },
-    );
-    Hovering { table }
+    let grammar = session.grammar();
+    let table = match lay_out(grammar, path, classify(path), text) {
+        Maybe::Present(laid) => session
+            .parse_held(SourceText::from(laid.text.as_str()))
+            .ok()
+            .and_then(|parsed| {
+                TypeTable::of_parsed_unit(grammar, parsed, &laid.unit, laid.base).ok()
+            }),
+        Maybe::Absent(_) => session
+            .parse_held(text)
+            .ok()
+            .and_then(|parsed| TypeTable::of_parsed(grammar, parsed).ok()),
+    };
+    Hovering {
+        table: table.unwrap_or_default(),
+    }
 }
 
 /// How a hover spells and writes what it shows: the presentation form and
@@ -741,7 +763,7 @@ mod tests
             text,
             &session,
             &Reading::of(text),
-            &hovering(text, std::path::Path::new("")),
+            &hovering(text, std::path::Path::new(""), &session),
             position,
             style,
         ) {
@@ -793,7 +815,7 @@ mod tests
             text,
             &session,
             &Reading::of(text),
-            &hovering(text, &path),
+            &hovering(text, &path, &session),
             position,
             PLAIN,
         );
@@ -823,7 +845,7 @@ mod tests
         let index = LineIndex::new(written.as_str().into());
         let session = checked(text);
         let reading = Reading::of(text);
-        let hovering = hovering(text, &path);
+        let hovering = hovering(text, &path, &session);
         let sugared = Style {
             form: Form::Sugared,
             spelling: Spelling::Unicode,

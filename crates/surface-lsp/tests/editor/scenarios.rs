@@ -1021,6 +1021,47 @@ fn restoring_a_semicolon_clears_its_diagnostic()
     session.closes_over_streams();
 }
 
+/// #776: an importer erased twice in one process — the first time over the
+/// process's held readings and closures as it found them, the second with
+/// everything the first held — answers alike at every keystroke: the same
+/// diagnostics, inline completions and hovers. Every keystroke of each run
+/// is also held to a fresh connection's answers.
+#[test]
+fn an_importer_erased_cold_and_warm_answers_alike_776()
+{
+    let source = corpus()
+        .into_iter()
+        .find(|source| {
+            source
+                .uri
+                .ends_with("fixture/model/identity/loop-winding.gandr")
+        })
+        .expect("the corpus holds the winding number");
+    let erased = || {
+        let mut session = Session::open(
+            source.uri.clone(),
+            Text(&source.text),
+            Typing::Assisted,
+            Oracle::Keystroke,
+        );
+        session.erase_lines(Stride(6));
+        let answers = session.answers().to_vec();
+        session.closes_over_streams();
+        answers
+    };
+    let cold = erased();
+    assert!(
+        cold.len() > 10_usize,
+        "every keystroke is read: {}",
+        cold.len()
+    );
+    assert_eq!(
+        erased(),
+        cold,
+        "the warm erasure answers as the cold one did"
+    );
+}
+
 /// The document the quiet scenario types into: three declarations, the last
 /// naming the first.
 const QUIET_SEED: &str = "def one = 1 ;\ndef mid = 2 ;\ndef two = one ;\n";

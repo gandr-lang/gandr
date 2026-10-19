@@ -23,8 +23,8 @@ The interactive session: each revision of one source lowered, judged exactly as 
 
 - **The session.** `Session`, `Session::new`, `Session::submit`, `Session::last`, `Session::stream`, `Session::lowerings`, `Session::into_store`; `Submission`, `Resumed`, `Persistence`, `resumed::Absent`, `SessionFault`.
 - **The judgement before the admission.** `Session::judge`, `Session::admit`, `Admitted`, `admitted::Absent`, `admission::Absent`: a revision's report and resume before its kernel admission, and the admission after.
-- **A document that imports a sibling.** `Session::judge_unit_reading`, `Session::submit_unit`, `Session::trial_unit`, `Laying`, `Submission::base`: the document judged over the import closure the dispatcher's `lay_out` lays it out in, its own declarations reported, as `gandr check` reports its file.
-- **The form store.** `Submission::forms`, `FormCensus`, `FormCount`, `Session::with_width`: each submission's forms and how many were molded rather than taken up.
+- **A document that imports a sibling.** `Session::judge_unit_reading`, `Session::submit_unit`, `Session::trial_unit`, `Laying`, `Submission::base`: the document judged over the import closure the dispatcher's `lay_out` lays it out in, its own declarations reported, as `gandr check` reports its file. `Admitted::crossed` and `Admitted::judged`: the closure's readmission resumed from the one the process holds for the same closure, so an edit to the document's own text offers the kernel its own declarations alone.
+- **The form store.** `Submission::forms`, `FormCensus`, `FormCount`, `Session::with_width`, `Session::parse_held`: each submission's forms and how many were molded rather than taken up, and a second reading of a revision that molds only the forms the store does not hold.
 - **Trials.** `Session::trial`, `Trial`, `CandidateIndex`, `resumed::Absent::Tried`, `FormStore::parse_held`: candidate revisions judged against the latest accepted state without submitting any, each as a fresh session judges it, ranked, the session unchanged.
 - **The step a face renders.** `Submission::into_step`: the submission as the dispatcher's `Step::Source`.
 - **The parser's repairs.** `Submission::obligations`: the parse's completion obligations, in source order.
@@ -80,6 +80,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | ----- | ------ |
 | A crate of its own, contract evidence, references | [`src/lib.rs`](src/lib.rs) |
 | Submissions, trials, the report, the kernel admission, checkpoints, imports, repairs, diagnostics and goals, evaluation | [`session`](src/session.rs) |
+| The import closures the process readmitted, resumed by content | [`closures`](src/closures.rs) |
 | The form store | [`forms`](src/forms.rs) |
 | The item source | [`item_source`](src/item_source.rs) |
 | Edits as a diff of the lowered core, native snapshots, localization | [`edit`](src/edit.rs) |
