@@ -91,10 +91,11 @@
 //! sweep's name and the source's corpus path ([`Rotation::holds`]). The typing
 //! cannot: its costliest source alone types for longer than the budget, so it
 //! types every source each night, opened whole up to the night's part and
-//! typed through it, the parts cut so each costs about a [`NIGHTS`]th
-//! ([`Rotation::part`]). Either way the night is the UTC day, every keystroke
-//! and every token is visited within [`NIGHTS`] consecutive nights, the run
-//! prints the night it visited, and `GANDR_SWEEP_NIGHT` replays it. Every
+//! typed through it, each source cut into as many parts as its sweep names so
+//! each costs about that fraction ([`Rotation::part`]). Either way the night
+//! is the UTC day, every token is visited within [`NIGHTS`] consecutive
+//! nights and every keystroke within the typing's part count, the run prints
+//! the night it visited, and `GANDR_SWEEP_NIGHT` replays it. Every
 //! other sweep visits the whole corpus every night. The alternatives were a
 //! stride over the keystrokes, which never visits the text between its steps;
 //! shards across jobs, which each pay the build again inside one summed
@@ -153,6 +154,7 @@ pub use crate::rotation::NIGHTS;
 pub use crate::rotation::Night;
 pub use crate::rotation::Offset;
 pub use crate::rotation::Part;
+pub use crate::rotation::Parts;
 pub use crate::rotation::Rotation;
 pub use crate::rotation::Slice;
 pub use crate::rotation::Text;

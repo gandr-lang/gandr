@@ -5,8 +5,8 @@
 //! The corpus scenarios and the random scripts are sweeps, in [`sweeps`]: each
 //! visits its stated sample under every pull-request profile and every source
 //! and every script under the `sweeps` profile; nightly, the erasure visits
-//! the night's slice of the corpus and the typing the night's part of every
-//! source.
+//! the night's slice of the corpus and the typing the night's part of sixteen
+//! of every source.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -1353,6 +1353,7 @@ mod sweeps
 {
     use gandr_surface_dispatcher::classify;
     use gandr_surface_dispatcher::lay_out;
+    use gandr_workflow_sweep::Parts;
     use gandr_workflow_sweep::Rotation;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
@@ -1393,6 +1394,13 @@ mod sweeps
     /// sweep visit it on the pull request within their own ceilings
     /// ([`ERASED_CEILING`], [`HOVERED_CEILING`]).
     const TYPED_CEILING: Ceiling = Ceiling(1024);
+
+    /// How many parts the nightly typing cuts every source into, one typed a
+    /// night: a sixteenth of typing the whole corpus each night, and of its
+    /// costliest source, every keystroke within sixteen nights. A quarter of
+    /// every source typed for 317 s to 480 s on the nightly runner, past the
+    /// profile's limit once three more sweeps shared its cores.
+    const TYPED_PARTS: Parts = Parts(16);
 
     /// The erasure's sample: twenty-four sources, every keystroke held to the
     /// oracle.
@@ -1651,14 +1659,15 @@ mod sweeps
     }
 
     /// Every source of the run typed: from its start, or under the `nightly`
-    /// profile opened whole up to the night's part and typed through it, so
-    /// every keystroke of every source is typed once every few nights.
+    /// profile opened whole up to the night's part of [`TYPED_PARTS`] and
+    /// typed through it, so every keystroke of every source is typed once
+    /// every [`TYPED_PARTS`] nights.
     #[test]
     fn typing_each_corpus_source_keeps_every_answer_faithful()
     {
         let (rotation, sources) = visited(TYPED, Some(TYPED_CEILING), Nightly::Part);
         each_in_parallel(&sources, |source| {
-            let part = rotation.part(gandr_workflow_sweep::Text(&source.text));
+            let part = rotation.part(gandr_workflow_sweep::Text(&source.text), TYPED_PARTS);
             let opening = source
                 .text
                 .get(.. part.start.0)
