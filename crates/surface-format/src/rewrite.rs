@@ -1349,6 +1349,13 @@ impl<'source> Respelling<'_, 'source>
     ///
     /// # Specification
     /// trivial.
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `named` holds the tokens of one binder's name, searched once per token of one arrow's later domains"
+        )
+    )]
     fn alias(
         &self,
         out: &mut Builder<'source>,

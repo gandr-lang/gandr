@@ -174,10 +174,6 @@
     )
 )]
 #![no_std]
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(linear_search_in_loop, reason = "2 cost-shape sites; #814 lists them")
-)]
 
 extern crate alloc;
 
@@ -193,6 +189,7 @@ mod meaning;
 
 mod rewrite;
 
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
@@ -692,6 +689,7 @@ pub fn format_beside(
         .iter()
         .flat_map(|declaration| declaration.keys.iter().copied())
         .collect();
+    let mut held: BTreeSet<NodeKey> = withdrawn.iter().copied().collect();
     let motives = match (chosen, lowered.as_ref()) {
         (Some(_), Some(module)) => composite::motives(module, &arena, base),
         (Some(_) | None, _) => composite::Motives::default(),
@@ -717,10 +715,11 @@ pub fn format_beside(
             &layout,
             ending,
         )?;
+        let respelled: BTreeSet<NodeIndex> = unchecked.respelled.iter().copied().collect();
         for declaration in refused {
             if top_forms(tree, &declaration.keys)
                 .iter()
-                .any(|form| unchecked.respelled.contains(form))
+                .any(|form| respelled.contains(form))
             {
                 reports.push(declaration.withdrawal);
             }
@@ -767,12 +766,13 @@ pub fn format_beside(
                         .keys
                         .iter()
                         .copied()
-                        .filter(|key| !withdrawn.contains(key))
+                        .filter(|key| !held.contains(key))
                         .collect();
                     if fresh.is_empty() {
                         stuck.push(declaration);
                     }
                     else {
+                        held.extend(fresh.iter().copied());
                         withdrawn.extend(fresh);
                         reports.push(declaration.withdrawal);
                     }
@@ -782,9 +782,10 @@ pub fn format_beside(
                         tree,
                         (&flat.leaves, &laid.respelled),
                         lowered,
-                        (&stuck, &withdrawn),
+                        (&stuck, &held),
                         base,
                     ) {
+                        held.extend(callee.keys.iter().copied());
                         withdrawn.extend(callee.keys);
                         reports.push(callee.withdrawal);
                     }
@@ -810,10 +811,11 @@ fn read(
     tree: &SyntaxTree<'_>,
     (leaves, respelled): (&[Leaf<'_>], &[NodeIndex]),
     lowered: &LoweredModule<'_>,
-    (stuck, withdrawn): (&[meaning::Differing], &[NodeKey]),
+    (stuck, withdrawn): (&[meaning::Differing], &BTreeSet<NodeKey>),
     base: ByteOffset,
 ) -> Vec<meaning::Differing>
 {
+    let respelled: BTreeSet<NodeIndex> = respelled.iter().copied().collect();
     let readers: Vec<(&str, Vec<ByteSpan>)> = stuck
         .iter()
         .map(|declaration| {
@@ -855,6 +857,13 @@ fn read(
 ///
 /// # Specification
 /// trivial.
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        linear_search_in_loop,
+        reason = "bounded: `reports` holds the withdrawals of one source's formatting"
+    )
+)]
 fn unspelled(
     tree: &SyntaxTree<'_>,
     module: &gandr_surface_lowering::LoweredModule<'_>,
@@ -917,6 +926,7 @@ fn top_forms(
     if keys.is_empty() {
         return forms;
     }
+    let keys: BTreeSet<NodeKey> = keys.iter().copied().collect();
     for form in tree.children(tree.root()) {
         let mut pending = Vec::from([form]);
         while let Some(at) = pending.pop() {
