@@ -4475,9 +4475,14 @@ impl Walk<'_, '_>
             },
             // A body that ends answering a type's code keeps its `pure`: the
             // lowering reads a type at a body's end only as a returned value.
+            // So does one that ends answering a `run`: bare at a statement's
+            // head, `run` opens a bind, `run x <- c ; …`.
             | Former::Return(returned) => match admits {
                 | Admits::Computation(Tail::Ends)
-                    if !matches!(source.read(returned), Former::Quote(_) | Former::QuoteComputation(_)) =>
+                    if !matches!(
+                        source.read(returned),
+                        Former::Quote(_) | Former::QuoteComputation(_) | Former::Run(_)
+                    ) =>
                 {
                     None
                 },
