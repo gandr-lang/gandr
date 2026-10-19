@@ -308,6 +308,7 @@ use crate::origin::OriginTable;
 use crate::origin::OriginToken;
 use crate::origin::Provenance;
 use crate::resolve::InScope;
+use crate::resolve::Resolution;
 use crate::resolve::SurfaceName;
 use crate::unit::ImportTarget;
 use crate::unit::PathImportOrdinal;
@@ -7621,6 +7622,9 @@ pub struct LoweredModule<'source>
     nested: BTreeMap<NodeIndex, NestedSite>,
     /// The binders in scope at each offset the lowering read under one.
     in_scope: InScope,
+    /// Each written name the lowering resolved, with what it names, ascending
+    /// by span.
+    resolutions: Vec<(ByteSpan, Resolution)>,
     /// Every minted core node's origin, and the declarations' own.
     origins: OriginTable,
     /// The imports, in source order, with their aliases bound.
@@ -7660,6 +7664,7 @@ impl<'source> LoweredModule<'source>
             inferred_exits: Vec::new(),
             nested: BTreeMap::new(),
             in_scope: InScope::default(),
+            resolutions: Vec::new(),
             origins,
             imports,
             recognition,
@@ -7797,6 +7802,35 @@ impl<'source> LoweredModule<'source>
     pub fn into_in_scope(self) -> InScope
     {
         self.in_scope
+    }
+
+    /// This module, carrying each written name the lowering resolved, with
+    /// what it names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_resolutions(
+        mut self,
+        resolutions: Vec<(ByteSpan, Resolution)>,
+    ) -> Self
+    {
+        self.resolutions = resolutions;
+        self
+    }
+
+    /// Each written name the lowering resolved, with what it names, ascending
+    /// by span; a name in a declaration the lowering refused included, when
+    /// it was resolved before the refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn resolutions(&self) -> &[(ByteSpan, Resolution)]
+    {
+        &self.resolutions
     }
 
     /// The runs the checker inferred, of the nested values `ran` it decided

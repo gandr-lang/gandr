@@ -3962,6 +3962,25 @@ mod tests
         assert_eq!(at("m : Nat)"), None, "a binder is no use of itself");
     }
 
+    /// #836: a constructor applied to no field yet refuses its declaration,
+    /// and its name still refers to the constructor.
+    #[test]
+    fn a_refused_declaration_s_uses_refer_to_their_sites_836()
+    {
+        let typing = REFERRED.replace("Succ(Succ(Zero))", "Succ()");
+        let referred = SourceText::from(typing.as_str());
+        let table = table(referred);
+        assert_eq!(
+            refers(&table, referred, SourceText::from("Succ()")),
+            Some(site(
+                referred,
+                SourceText::from("Succ : (n"),
+                SourceText::from("Succ"),
+            )),
+            "the constructor's name in the family, though `two` is refused"
+        );
+    }
+
     /// #795: the type of a node answers the families it names, and a written
     /// family answers itself.
     #[test]

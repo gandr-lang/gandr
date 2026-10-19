@@ -105,6 +105,7 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_core_term::Zone;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
@@ -1752,6 +1753,31 @@ impl InScope
             Maybe::Absent(_) => None,
         })
     }
+}
+
+/// What a written name the lowering resolved names.
+///
+/// The lowering records a name's resolution when it resolves it, before the
+/// declaration holding the name is lowered whole, so a declaration it refuses
+/// keeps every name it resolved before the refusal.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Resolution
+{
+    /// The binder written at this span.
+    Binder(ByteSpan),
+    /// The declaration admitted at this position.
+    Declaration(ConstantIndex),
+    /// A constructor.
+    Constructor
+    {
+        /// The constructor's name tile, where its family's form writes it.
+        named: ByteSpan,
+        /// The family's admission position.
+        family: ConstantIndex,
+    },
 }
 
 #[cfg(test)]

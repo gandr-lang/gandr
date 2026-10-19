@@ -128,7 +128,7 @@
 //! | selection ranges | `textDocument/selectionRange` | served |
 //! | hover | `textDocument/hover` | served |
 //! | inlay hints | `textDocument/inlayHint` | blocked: a face that reads each binder's type off the hover's type table, which is built on demand rather than per revision |
-//! | signature help | `textDocument/signatureHelp` | blocked: a face reading the declaration a call applies off the referent index the type table keeps |
+//! | signature help | `textDocument/signatureHelp` | served: the head the innermost call's name was written with — a declaration's, a constructor's, or a binder's function type — its documentation, and the argument the position writes |
 //! | completion | `textDocument/completion` | served: the binders in scope, the closure's declared names and the keywords the slot at the word's start admits, each starting with the word |
 //! | definition, type definition | `textDocument/definition`, `typeDefinition` | served: what the use at the position refers to, and the families the type there names, as links when the client takes them |
 //! | declaration, implementation | `textDocument/declaration`, `implementation` | declined: a signature and its definition make one declaration, which definition answers at its first form, and the core has no interfaces to implement |
@@ -365,6 +365,7 @@ mod reading;
 mod recheck;
 mod rpc;
 mod server;
+mod signature;
 mod tokens;
 mod transport;
 mod view;

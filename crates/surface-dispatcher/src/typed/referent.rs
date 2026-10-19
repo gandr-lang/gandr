@@ -37,6 +37,7 @@ use gandr_core_term::ValueType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::Provenance;
+use gandr_surface_lowering::Resolution;
 use gandr_surface_lowering::Role;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::Unit;
@@ -238,20 +239,26 @@ impl Referents
     ///   constant, by its name tile and its declaring form; each written
     ///   constructor value and each of `patterns`, referring to the name tile
     ///   the family's declaration writes for the tag, extended by the family's
-    ///   form. A referent's spans are in the text of the source holding it. A
-    ///   use whose referent no record places is not kept.
+    ///   form; and each name the lowering's resolution record holds, a name of
+    ///   a declaration it refused included, referring as the origin it would
+    ///   have left does. A use both name at one span is kept once. A referent's
+    ///   spans are in the text of the source holding it. A use whose referent
+    ///   no record places is not kept.
     /// - provides: the index a definition request answers from.
     /// - fails: never.
     /// - panics: none.
-    /// - intension: one pass over each origin record and each declaration.
+    /// - intension: one pass over each origin record, each resolution and each
+    ///   declaration.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a parameter's use, a declaration's use, a family
     ///   written in a signature, a constructor in a term and in a pattern, and
     ///   an imported declaration's use each refer to their own site; a position
-    ///   in no use refers to nothing.
+    ///   in no use refers to nothing; a constructor and a call's head in a
+    ///   declaration the lowering refused refer to their sites.
     /// - witness: `typed::tests::a_use_refers_to_its_binder_and_its_declaration_795`
     /// - witness: `typed::tests::an_imported_name_refers_to_its_sibling_795`
+    /// - witness: `typed::tests::a_refused_declaration_s_uses_refer_to_their_sites_836`
     #[spec(ensures: |ret| ret.uses.windows(2).all(|pair| matches!(*pair, [(first, _), (second, _)] if first.start() <= second.start()))
         && ret.uses.iter().all(|&(span, _)| usize::from(span.end()).saturating_sub(usize::from(span.start())) <= ret.widest))]
     pub(super) fn of(
@@ -416,6 +423,28 @@ impl Referents
         }
         for &(span, family, tag) in patterns {
             keep(span, constructed(family, tag), false);
+        }
+        // A name the lowering resolved keeps its use though the declaration
+        // holding it was refused and emitted no origin for it.
+        for &(span, resolution) in module.resolutions() {
+            let referent = match resolution {
+                Resolution::Binder(binder) => {
+                    placed(unit, binder).map(|(source, named)| Referent {
+                        source,
+                        named,
+                        extent: named,
+                    })
+                },
+                Resolution::Declaration(constant) => declared(constant),
+                Resolution::Constructor { named, family } => placed(unit, named)
+                    .zip(declared(family))
+                    .map(|((source, named), family)| Referent {
+                        source,
+                        named,
+                        extent: family.extent,
+                    }),
+            };
+            keep(span, referent, false);
         }
         uses.sort_by_key(|&(span, _)| (span.start(), span.end()));
         uses.dedup_by_key(|&mut (span, _)| span);

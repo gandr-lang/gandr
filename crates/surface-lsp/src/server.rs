@@ -107,6 +107,7 @@ use crate::protocol::InitializeParams;
 use crate::protocol::InitializeResult;
 use crate::protocol::InlineCompletionItem;
 use crate::protocol::InlineCompletionList;
+use crate::protocol::LabelOffsets;
 use crate::protocol::Linked;
 use crate::protocol::MarkupContent;
 use crate::protocol::PositionParams;
@@ -140,6 +141,7 @@ use crate::rpc::classify;
 use crate::rpc::failure;
 use crate::rpc::publish;
 use crate::rpc::success;
+use crate::signature::help;
 use crate::tokens::encode;
 use crate::tokens::overlapping;
 use crate::transport::Body;
@@ -1024,6 +1026,7 @@ impl Workspace
                 ..STYLE
             },
             linked: Linked(true),
+            offsets: LabelOffsets(true),
         };
         let answer = match classify(request) {
             Err(malformed) => malformed.response(),
@@ -1145,8 +1148,9 @@ impl Workspace
 ///
 /// Where it stands in the lifecycle, which connection it is, how much of
 /// each report its diagnostics carry, how long a diagnostic of the form under
-/// the caret waits, how its hovers spell types and are written, and whether
-/// its client takes a definition as links.
+/// the caret waits, how its hovers spell types and are written, whether its
+/// client takes a definition as links, and whether it takes a signature's
+/// parameters as their places in the label.
 pub struct Server
 {
     /// Where the connection stands in the lifecycle.
@@ -1166,6 +1170,9 @@ pub struct Server
     style: Style,
     /// Whether its client takes a definition as links, read at `initialize`.
     linked: Linked,
+    /// Whether its client takes a signature's parameters as their places in
+    /// the label, read at `initialize`.
+    offsets: LabelOffsets,
 }
 
 /// The style a connection hovers in until `initialize` says otherwise: the
@@ -1206,6 +1213,7 @@ impl Server
             quiet: QUIET,
             style: STYLE,
             linked: Linked(false),
+            offsets: LabelOffsets(false),
         }
     }
 
@@ -1471,7 +1479,7 @@ impl Server
     /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
     #[spec(
         captures: [phase = self.phase, initial = initial_settings(&params), markup = initial_markup(&params),
-            linked = initial_links(&params)],
+            linked = initial_links(&params), offsets = initial_offsets(&params)],
         ensures: |ret| match (phase, method.as_ref()) {
             (Phase::Waiting, "initialize") => self.phase == Phase::Running
                 && self.verbosity == initial.verbosity().unwrap_or_default()
@@ -1482,6 +1490,7 @@ impl Server
                     markup,
                 }
                 && self.linked == linked
+                && self.offsets == offsets
                 && matches!(ret, Outgoing::Success { result: Answer::Initialize(_), .. }),
             (Phase::Waiting, _) => self.phase == phase && matches!(ret,
                 Outgoing::Failure { ref error, .. } if error.code == ErrorCode::SERVER_NOT_INITIALIZED),
@@ -1498,6 +1507,12 @@ impl Server
             (Phase::Running, "textDocument/completion") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Completions(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
+                },
+            (Phase::Running, "textDocument/signatureHelp") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Signatures(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
                 },
@@ -1563,6 +1578,7 @@ impl Server
                     markup: initial_markup(&params),
                 };
                 self.linked = initial_links(&params);
+                self.offsets = initial_offsets(&params);
                 success(
                     id,
                     Answer::Initialize(Box::new(InitializeResult::advertised())),
@@ -1609,6 +1625,20 @@ impl Server
                     Ok(params) => success(
                         id,
                         workspace.completion(&params.text_document.uri, self.peer, params.position),
+                    ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "textDocument/signatureHelp") => {
+                match serde_json::from_value::<PositionParams>(params) {
+                    Ok(params) => success(
+                        id,
+                        workspace.signature_help(
+                            &params.text_document.uri,
+                            self.peer,
+                            params.position,
+                            self.offsets,
+                        ),
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
@@ -2020,7 +2050,7 @@ impl Workspace
         Answer::Tokens(ref tokens) => self.documents.contains_key(uri)
             && tokens.data.as_ref().len().is_multiple_of(5)
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), Window::Whole | Window::Within(_) => true },
-        Answer::Initialize(_) | Answer::Completions(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
+        Answer::Initialize(_) | Answer::Completions(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
             | Answer::Actions(_) => false,
     })]
@@ -2074,7 +2104,7 @@ impl Workspace
         Answer::Inline(ref list) => self.documents.get(uri).is_some_and(|held|
             list.items.len() <= held.view(peer).proposals.len().saturating_add(8))
             && list.items.iter().all(|item| item.range.start <= position && position <= item.range.end),
-        Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
+        Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Signatures(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
             | Answer::Actions(_) => false,
     })]
@@ -2251,6 +2281,51 @@ impl Workspace
         ))
     }
 
+    /// What a signature-help request at `position` of the copy of the document
+    /// at `uri` that `peer` is answered from answers, to a client taking a
+    /// parameter as its place in the label when `offsets` holds.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI and any position are admitted.
+    /// - ensures: an unknown document, and one whose session did not build,
+    ///   yields Nothing; otherwise what [`help`] answers off the copy's text,
+    ///   its reading and what it keeps for its hovers, each made now when no
+    ///   request has asked since the text last changed.
+    /// - provides: the answer to `textDocument/signatureHelp`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`help`], and an unknown document answers `null`.
+    /// - witness: `server::tests::signature_help_answers_the_declared_head_of_the_call`
+    #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Signatures(_))
+        && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
+    fn signature_help(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        position: Position,
+        offsets: LabelOffsets,
+    ) -> Answer
+    {
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Answer::Nothing;
+        };
+        document
+            .session
+            .as_ref()
+            .map_or(Answer::Nothing, |session| {
+                help(
+                    document.text.source(),
+                    document.text.reading(),
+                    document.text.hovering(&uri.path(), session),
+                    position,
+                    offsets,
+                )
+            })
+    }
+
     /// What a `goto` request at `position` of the copy of the document at
     /// `uri` that `peer` is answered from answers, to a client taking links as
     /// `linked` says.
@@ -2419,6 +2494,19 @@ fn initial_links(params: &Value) -> Linked
 {
     InitializeParams::deserialize(params)
         .map(|params| params.links())
+        .unwrap_or_default()
+}
+
+/// Whether the client `initialize` names in `params` takes a signature's
+/// parameters as their places in the label; not when the parameters do not
+/// read.
+///
+/// # Specification
+/// trivial.
+fn initial_offsets(params: &Value) -> LabelOffsets
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.label_offsets())
         .unwrap_or_default()
 }
 
@@ -2899,6 +2987,7 @@ mod tests
                         "foldingRangeProvider":true,
                         "selectionRangeProvider":true,
                         "hoverProvider":true,
+                        "signatureHelpProvider":{"triggerCharacters":["(",","],"retriggerCharacters":[")"]},
                         "definitionProvider":true,
                         "typeDefinitionProvider":true,
                         "documentFormattingProvider":true,
@@ -2967,6 +3056,104 @@ mod tests
             ask(&mut server, "file:///tmp/unknown.gandr"),
             wire(Json(r#"[{"jsonrpc":"2.0","id":8,"result":null}]"#)),
             "a document the server does not hold: null"
+        );
+    }
+
+    #[test]
+    fn signature_help_answers_the_declared_head_of_the_call()
+    {
+        let open = |offsets: bool| {
+            let mut server = Connected::default();
+            let initialize = format!(
+                r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
+                {{"textDocument":{{"signatureHelp":{{"signatureInformation":
+                {{"parameterInformation":{{"labelOffsetSupport":{offsets}}}}}}}}}}}}}}}"#
+            );
+            let _answered = send(&mut server, Json(&initialize));
+            let _published = send(
+                &mut server,
+                Json(
+                    r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                        {"uri":"file:///tmp/called.gandr","languageId":"gandr","version":1,
+                         "text":"data Nat : Type {\n  Zero : Nat;\n  /// One more.\n  Succ : (n : Nat) --> Nat;\n}\ndef rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef f : +U (-F Nat) ;\ndef f = thunk { plus(Zero, Succ()) } ;\ndef ap(g : +U (Nat -> -F Nat), x : Nat) -> -F Nat { g(x) }\n"}}}"#,
+                ),
+            );
+            server
+        };
+        let ask = |server: &mut Connected, line: u32, character: u32| {
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":9,"method":"textDocument/signatureHelp","params":{{
+                    "textDocument":{{"uri":"file:///tmp/called.gandr"}},
+                    "position":{{"line":{line},"character":{character}}}}}}}"#
+            );
+            send(server, Json(&request))
+        };
+        let mut offsets = open(true);
+        let mut texts = open(false);
+        let plus = |active: u32| {
+            wire(Json(&format!(
+                r#"[{{"jsonrpc":"2.0","id":9,"result":{{"signatures":[{{
+                    "label":"plus(n : Nat, m : Nat) -> -F Nat",
+                    "parameters":[{{"label":[5,12]}},{{"label":[14,21]}}]}}],
+                    "activeSignature":0,"activeParameter":{active}}}}}]"#
+            )))
+        };
+        assert_eq!(
+            ask(&mut offsets, 12, 21),
+            plus(0),
+            "the first argument of a call, its parameters as places in the label"
+        );
+        assert_eq!(
+            ask(&mut offsets, 12, 27),
+            plus(1),
+            "past the comma, the second"
+        );
+        let succ = wire(Json(
+            r#"[{"jsonrpc":"2.0","id":9,"result":{"signatures":[{
+                "label":"Succ : (n : Nat) --> Nat",
+                "documentation":{"kind":"markdown","value":"One more."},
+                "parameters":[{"label":[8,15]}]}],
+                "activeSignature":0,"activeParameter":0}}]"#,
+        ));
+        assert_eq!(
+            ask(&mut offsets, 12, 32),
+            succ,
+            "a constructor applied to no field yet, though the lowering refuses `f`"
+        );
+        assert_eq!(
+            ask(&mut texts, 12, 27),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":9,"result":{"signatures":[{
+                    "label":"plus(n : Nat, m : Nat) -> -F Nat",
+                    "parameters":[{"label":"n : Nat"},{"label":"m : Nat"}]}],
+                    "activeSignature":0,"activeParameter":1}}]"#
+            )),
+            "a client taking no offsets: each parameter as its text"
+        );
+        assert_eq!(
+            ask(&mut offsets, 8, 32),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":9,"result":{"signatures":[{
+                    "label":"plus(n : Nat, m : Nat) -> -F Nat",
+                    "parameters":[{"label":[5,12]},{"label":[14,21]}]}],
+                    "activeSignature":0,"activeParameter":1}}]"#
+            )),
+            "a recursive call, by its claim's name"
+        );
+        assert_eq!(
+            ask(&mut offsets, 12, 34),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":null}]"#)),
+            "past the call: null"
+        );
+        assert_eq!(
+            ask(&mut offsets, 13, 54),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":9,"result":{"signatures":[{
+                    "label":"g : +U (Nat -> -F Nat)",
+                    "parameters":[{"label":[8,11]}]}],
+                    "activeSignature":0,"activeParameter":0}}]"#
+            )),
+            "a parameter typed by a function, by its written type"
         );
     }
 
@@ -3344,8 +3531,8 @@ mod tests
         );
         assert_eq!(
             definition(&mut linked, 11, 18),
-            Value::Array(vec![link(range(11, 15, 25), nat, succ)]),
-            "a constructor nested in another's arguments answers itself"
+            Value::Array(vec![link(range(11, 15, 19), nat, succ)]),
+            "a constructor nested in another's arguments answers itself, from its name"
         );
         assert_eq!(
             definition(&mut linked, 10, 10),
