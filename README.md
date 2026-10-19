@@ -1,5 +1,7 @@
 # gandr
 
+[![CI](https://github.com/gandr-lang/gandr/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gandr-lang/gandr/actions/workflows/ci.yml) [![Nightly](https://github.com/gandr-lang/gandr/actions/workflows/nightly.yml/badge.svg?branch=main)](https://github.com/gandr-lang/gandr/actions/workflows/nightly.yml) [![codecov](https://codecov.io/gh/gandr-lang/gandr/graph/badge.svg)](https://codecov.io/gh/gandr-lang/gandr) [![licence](https://img.shields.io/badge/license-Apache--2.0_WITH_LLVM--exception-blue)](LICENSE.Apache-2.0.txt) [![rustc](https://img.shields.io/badge/rustc-nightly--2026--06--25-blue)](rust-toolchain.toml)
+
 A programming language built on a small certified kernel. A call-by-push-value core is checked by a defunctionalized machine over a flat, content-addressed term arena; every declaration a producer hands the kernel is re-checked before admission, and a conversion an untrusted engine decides is replayed from its trace, decision by decision. Values and records live in a content-addressed storage tier: a typed chunk DAG and an authenticated, content-defined Merkle search tree.
 
 ## Status
