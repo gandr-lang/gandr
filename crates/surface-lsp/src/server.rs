@@ -4071,11 +4071,15 @@ mod tests
             }, "kind": kind})
         };
         let uri = "file:///tmp/referred.gandr";
-        let n = Value::Array(vec![mark(1, 4, 13, 14), mark(2, 6, 12, 13)]);
+        let n = Value::Array(vec![
+            mark(1, 4, 13, 14),
+            mark(2, 6, 12, 13),
+            mark(2, 7, 28, 29),
+        ]);
         assert_eq!(
             highlight(uri, 6, 12),
             n,
-            "a parameter's use marks its binder and its use"
+            "a parameter's use marks its binder, its use in an arm and in the recursive call"
         );
         assert_eq!(highlight(uri, 4, 13), n, "the binder marks the same");
         assert_eq!(

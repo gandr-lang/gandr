@@ -4047,6 +4047,24 @@ mod tests
         );
     }
 
+    /// #859: a recursive call's leading argument, which the call erases,
+    /// refers to the parameter it passes unchanged.
+    #[test]
+    fn a_recursive_call_s_leading_argument_refers_to_its_parameter_859()
+    {
+        let referred = SourceText::from(REFERRED);
+        let table = table(referred);
+        assert_eq!(
+            refers(&table, referred, SourceText::from("n, p)")),
+            Some(site(
+                referred,
+                SourceText::from("n : Nat,"),
+                SourceText::from("n"),
+            )),
+            "the leading `n` of `plus[<](n, p)`, the parameter `n`"
+        );
+    }
+
     /// A name is found at its declaring name with every use referring to it:
     /// a parameter, a pattern variable, a declaration and a constructor in
     /// terms and in a pattern; a use is no declaring name.
@@ -4066,7 +4084,11 @@ mod tests
                 .map(super::ByteSpan::start)
                 .collect()
         };
-        assert_eq!(uses("n : Nat,"), [at("n,\n")], "a parameter: its one use");
+        assert_eq!(
+            uses("n : Nat,"),
+            [at("n,\n"), at("n, p)")],
+            "a parameter: its use in an arm and in the recursive call"
+        );
         assert_eq!(
             uses("m : Nat)"),
             [at("m {")],
