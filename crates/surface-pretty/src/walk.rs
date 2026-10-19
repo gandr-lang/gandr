@@ -1476,6 +1476,14 @@ fn protocol_template(
                 pending.push(Spelling::Leave);
                 pending.push(Spelling::State(body));
             },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    linear_search_in_loop,
+                    reason = "bounded: `binders` holds the `mu`s open around one session type, \
+                              innermost last"
+                )
+            )]
             Ok(&ProtocolNode::Recur(binder)) => {
                 match binders.iter().rposition(|&open| open == binder) {
                     Some(position) => text.push_str(&Nesting(position).name()),
