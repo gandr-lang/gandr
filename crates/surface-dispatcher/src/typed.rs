@@ -1990,6 +1990,72 @@ impl TypeTable
         )
     }
 
+    /// The span of every written use referring to the name `referent` names,
+    /// in the source's own text, one per start, ascending.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the narrowest use starting at each offset whose referent is
+    ///   written where `referent` is, as `Referents::uses_of` states, in order;
+    ///   none for a name no use refers to.
+    /// - provides: the uses a highlight, a reference search and a rename
+    ///   answer.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a lazy iterator over the index; the
+    ///   index's own lookup states the count.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parameter's uses, a declaration's uses and a
+    ///   constructor's uses in a term and in a pattern are each found, and no
+    ///   use of another name is.
+    /// - witness: `typed::tests::each_name_is_found_with_every_use_referring_to_it`
+    #[inline]
+    pub fn uses_of(
+        &self,
+        referent: Referent,
+    ) -> impl Iterator<Item = ByteSpan> + '_
+    {
+        self.referents
+            .uses_of(referent)
+            .iter()
+            .map(|&(_, span)| span)
+    }
+
+    /// The referent whose name, written in the table's own source, holds
+    /// `offset` of that source's text: a declaration's, a constructor's, or a
+    /// binder some use refers to.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a referent of the table's own source whose name holds
+    ///   `offset`, as `Referents::named_at` states; absent as
+    ///   [`referred::Absent::Unreferred`] when no name holds it.
+    /// - provides: what a highlight, a reference search or a rename at a
+    ///   declaring name means.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration's name, a constructor's name and a used
+    ///   parameter's name each answer themselves; a use answers nothing here.
+    /// - witness: `typed::tests::each_name_is_found_with_every_use_referring_to_it`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(found) => found.source() == self.own_source()
+            && found.named().start() <= offset && offset < found.named().end(),
+        Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn named_at(
+        &self,
+        offset: ByteOffset,
+    ) -> Maybe<Referent, referred::Absent>
+    {
+        self.referents
+            .named_at(self.own_source(), offset)
+            .map_or(Maybe::Absent(referred::Absent::Unreferred), Maybe::Present)
+    }
+
     /// The declarations of the data families the type of the node at `offset`
     /// names.
     ///
@@ -3978,6 +4044,57 @@ mod tests
                 SourceText::from("Succ"),
             )),
             "the constructor's name in the family, though `two` is refused"
+        );
+    }
+
+    /// A name is found at its declaring name with every use referring to it:
+    /// a parameter, a pattern variable, a declaration and a constructor in
+    /// terms and in a pattern; a use is no declaring name.
+    #[test]
+    fn each_name_is_found_with_every_use_referring_to_it()
+    {
+        let referred = SourceText::from(REFERRED);
+        let table = table(referred);
+        let at = |needle: &'static str| found(referred, SourceText::from(needle));
+        let uses = |needle: &'static str| -> Vec<ByteOffset> {
+            let Maybe::Present(referent) = table.named_at(at(needle))
+            else {
+                return Vec::new();
+            };
+            table
+                .uses_of(referent)
+                .map(super::ByteSpan::start)
+                .collect()
+        };
+        assert_eq!(uses("n : Nat,"), [at("n,\n")], "a parameter: its one use");
+        assert_eq!(
+            uses("m : Nat)"),
+            [at("m {")],
+            "the other parameter: its one use"
+        );
+        assert_eq!(
+            uses("p) =>"),
+            [at("p))")],
+            "a pattern variable: its one use"
+        );
+        assert_eq!(
+            uses("plus(n"),
+            [at("plus[<]")],
+            "a declaration: its recursive call"
+        );
+        assert_eq!(
+            uses("Succ : (n"),
+            [
+                at("Succ(p)"),
+                at("Succ(plus"),
+                at("Succ(Succ"),
+                at("Succ(Zero")
+            ],
+            "a constructor: in a pattern and in terms, nested ones included"
+        );
+        assert!(
+            matches!(table.named_at(at("m {")), Maybe::Absent(_)),
+            "a use is no declaring name"
         );
     }
 

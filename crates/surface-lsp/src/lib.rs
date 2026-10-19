@@ -132,9 +132,10 @@
 //! | completion | `textDocument/completion` | served: the binders in scope, the closure's declared names and the keywords the slot at the word's start admits, each starting with the word |
 //! | definition, type definition | `textDocument/definition`, `typeDefinition` | served: what the use at the position refers to, and the families the type there names, as links when the client takes them |
 //! | declaration, implementation | `textDocument/declaration`, `implementation` | declined: a signature and its definition make one declaration, which definition answers at its first form, and the core has no interfaces to implement |
-//! | references, document highlight | `textDocument/references`, `documentHighlight` | blocked: the referent index read from referent to uses |
-//! | rename, linked editing | `textDocument/prepareRename`, `rename`, `linkedEditingRange` | blocked: the same reverse reading |
-//! | call hierarchy | `textDocument/prepareCallHierarchy`, `callHierarchy/*` | blocked: the same reverse reading |
+//! | document highlight | `textDocument/documentHighlight` | served: the declaring name and every use of the name at a position, within the document, read off the type table's reverse use index, as the `uses` module states; a recursive call's use spans its marker with its name |
+//! | references | `textDocument/references` | planned: the same reverse use index, read in every open document's import closure |
+//! | rename, linked editing | `textDocument/prepareRename`, `rename`, `linkedEditingRange` | blocked: a binder's rename is planned on the reverse use index; a declaration's needs the importers of its source, which the path table finds |
+//! | call hierarchy | `textDocument/prepareCallHierarchy`, `callHierarchy/*` | blocked: the declaration enclosing each use |
 //! | type hierarchy | `textDocument/prepareTypeHierarchy`, `typeHierarchy/*` | declined: the core has no subtyping to arrange types by |
 //! | formatting | `textDocument/formatting`, `rangeFormatting` | served |
 //! | on-type formatting | `textDocument/onTypeFormatting` | declined: a form's layout is decided once the form is whole, which range formatting at the cursor already serves on request |
@@ -370,6 +371,7 @@ mod server;
 mod signature;
 mod tokens;
 mod transport;
+mod uses;
 mod view;
 
 pub use gandr_surface_pretty::Spelling;

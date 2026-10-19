@@ -41,6 +41,7 @@ fn advertised_capabilities_name_the_token_legend()
                 "codeLensProvider": {"resolveProvider": false},
                 "codeActionProvider": true,
                 "workspaceSymbolProvider": true,
+                "documentHighlightProvider": true,
             },
             "serverInfo": {"name": "gandr", "version": env!("CARGO_PKG_VERSION")},
         }),
