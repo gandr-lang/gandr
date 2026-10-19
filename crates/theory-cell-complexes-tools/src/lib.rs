@@ -46,6 +46,17 @@
 //!
 //! [`CellAlphabet`]: gandr_theory_cell_complexes::CellAlphabet
 
+// Module documentation that predates the shape lint: 3 headings outside the
+// vocabulary and 1 budget exceeded. Each allow leaves with the rewrite that
+// clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",

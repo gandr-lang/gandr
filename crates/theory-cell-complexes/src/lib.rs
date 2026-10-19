@@ -69,6 +69,18 @@
 //!   `ConvexityDischarge` names a warrant for skipping, and the
 //!   left-connectedness conditions that warrant is one part of.
 
+// Module documentation that predates the shape lint: 22 headings outside the
+// vocabulary, 3 decision records and 3 budgets exceeded. Each allow leaves with
+// the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",

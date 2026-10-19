@@ -156,6 +156,17 @@
 //!
 //! The papers the crate draws on are in its `README.md`, § References.
 
+// Module documentation that predates the shape lint: 10 headings outside the
+// vocabulary and 2 budgets exceeded. Each allow leaves with the rewrite that
+// clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 
 extern crate alloc;

@@ -260,6 +260,18 @@
 //!   unexpected diagnostic and a missing expected one both failing the test;
 //!   the two directions in which a stated verdict here fails.
 
+// Module documentation that predates the shape lint: 21 headings outside the
+// vocabulary, 2 decision records and 3 budgets exceeded. Each allow leaves with
+// the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 
 extern crate alloc;

@@ -135,6 +135,17 @@
 //! - The MCP Rust SDK. "rmcp." <https://crates.io/crates/rmcp> — the
 //!   alternative § The protocol is written here weighs.
 
+// Module documentation that predates the shape lint: 7 headings outside the
+// vocabulary and 6 decision records. Each allow leaves with the rewrite that
+// clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 extern crate alloc;
 
 mod connection;

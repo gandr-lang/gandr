@@ -140,6 +140,18 @@
 //!   — raw mode, the alternate screen and key events, reached through ratatui's
 //!   re-export.
 
+// Module documentation that predates the shape lint: 8 headings outside the
+// vocabulary, 1 decision record and 3 budgets exceeded. Each allow leaves with
+// the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 extern crate alloc;
 
 mod app;

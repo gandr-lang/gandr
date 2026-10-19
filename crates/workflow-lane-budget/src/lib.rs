@@ -44,6 +44,17 @@
 //!
 //! See the [crate README](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-lane-budget/README.md).
 
+// Module documentation that predates the shape lint: 1 heading outside the
+// vocabulary and 1 decision record. Each allow leaves with the rewrite that
+// clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 pub mod budget;
 pub mod cone;
 pub mod error;

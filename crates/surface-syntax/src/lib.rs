@@ -57,6 +57,17 @@
 //!   <https://doi.org/10.1145/3763182>, arXiv:2508.16848 — molds, grout and the
 //!   material a tree records.
 
+// Module documentation that predates the shape lint: 23 headings outside the
+// vocabulary and 3 decision records. Each allow leaves with the rewrite that
+// clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 
 #[cfg(not(target_has_atomic = "ptr"))]

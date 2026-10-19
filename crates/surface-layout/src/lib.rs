@@ -110,6 +110,18 @@
 //!   [prettier.pdf](https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf)
 //!   — the document algebra that this crate's choice and flattening generalize.
 
+// Module documentation that predates the shape lint: 19 headings outside the
+// vocabulary, 4 decision records and 1 budget exceeded. Each allow leaves with
+// the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 
 extern crate alloc;

@@ -40,6 +40,15 @@
 //!
 //! The papers the crate draws on are in its `README.md`, § References.
 
+// Module documentation that predates the shape lint: 1 heading outside the
+// vocabulary. Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 
 #[cfg(not(target_has_atomic = "ptr"))]

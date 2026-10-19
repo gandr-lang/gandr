@@ -67,6 +67,18 @@
 //!   re-execution, sequential composition of rules, and the concurrency theorem
 //!   the fused-cell differential adopts as a test.
 
+// Module documentation that predates the shape lint: 11 headings outside the
+// vocabulary, 2 decision records and 1 budget exceeded. Each allow leaves with
+// the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 
 extern crate alloc;

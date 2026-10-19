@@ -131,6 +131,18 @@
 //! [ACKS]: https://doi.org/10.1145/3632920
 //! [CCHM]: https://doi.org/10.4230/LIPIcs.TYPES.2015.5
 
+// Module documentation that predates the shape lint: 5 headings outside the
+// vocabulary, 1 decision record and 2 duplicated paragraphs. Each allow leaves
+// with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        module_doc_duplication,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 
 extern crate alloc;

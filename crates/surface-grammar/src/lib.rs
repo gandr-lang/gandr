@@ -104,6 +104,18 @@
 //!   February 2026. `doi:10.17487/RFC9923` — the accumulator the grammar
 //!   fingerprint is computed with.
 
+// Module documentation that predates the shape lint: 30 headings outside the
+// vocabulary, 24 decision records and 6 budgets exceeded. Each allow leaves
+// with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 #![cfg_attr(
     all(test, dylint_lib = "quenchant_dylints"),

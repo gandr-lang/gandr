@@ -174,6 +174,19 @@
 //!
 //! [`Wiring`]: gandr_theory_circuit_algebras::Wiring
 
+// Module documentation that predates the shape lint: 16 headings outside the
+// vocabulary, 10 decision records, 4 budgets exceeded and 1 duplicated
+// paragraph. Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        module_doc_budget,
+        module_doc_duplication,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",

@@ -130,6 +130,19 @@
 //! destination becomes an explicit API requirement, rather than an incidental
 //! side effect of dispatch.
 
+// Module documentation that predates the shape lint: 50 headings outside the
+// vocabulary, 12 decision records, 7 issue references and 12 budgets exceeded.
+// Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        doc_issue_reference,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(linear_search_in_loop, reason = "1 cost-shape site; #814 lists it")

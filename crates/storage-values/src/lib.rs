@@ -251,6 +251,18 @@
 //!   [doi:10.1007/3-540-48184-2_32](https://doi.org/10.1007/3-540-48184-2_32) —
 //!   deriving a subtree digest from its children's digests.
 
+// Module documentation that predates the shape lint: 31 headings outside the
+// vocabulary, 3 decision records and 3 budgets exceeded. Each allow leaves with
+// the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 
 extern crate alloc;
