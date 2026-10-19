@@ -106,6 +106,19 @@
 //!
 //! See the [crate README](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-sweep/README.md).
 
+// Module documentation that predates the shape lint: 1 heading outside the
+// vocabulary, 1 decision record, 2 issue references and 2 budgets exceeded.
+// Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        doc_issue_reference,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(linear_search_in_loop, reason = "4 cost-shape sites; #814 lists them")

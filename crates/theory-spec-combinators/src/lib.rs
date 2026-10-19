@@ -61,6 +61,17 @@
 //! appended to between the capture and the check keeps every element before
 //! the mark, so [`appended`] holds exactly what the function added.
 
+// Module documentation that predates the shape lint: 1 heading outside the
+// vocabulary and 1 budget exceeded. Each allow leaves with the rewrite that
+// clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 
 #[cfg(test)]

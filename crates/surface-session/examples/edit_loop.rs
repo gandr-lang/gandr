@@ -25,6 +25,15 @@
 //! relabels the next revision from, a session after its first submission, and
 //! what one edit's submission adds to that session.
 
+// Module documentation that predates the shape lint: 1 budget exceeded. Each
+// allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 extern crate alloc;
 
 #[path = "../tests/large.rs"]

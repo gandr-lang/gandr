@@ -131,6 +131,19 @@
 //!
 //! The papers the crate draws on are in its `README.md`, § References.
 
+// Module documentation that predates the shape lint: 46 headings outside the
+// vocabulary, 17 decision records, 1 issue reference and 7 budgets exceeded.
+// Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        doc_issue_reference,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",

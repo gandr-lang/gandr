@@ -323,6 +323,19 @@
 //! - Zed Industries. "Language Extensions." <https://zed.dev/docs/extensions/languages>
 //!   — what a Zed extension adds to a language server.
 
+// Module documentation that predates the shape lint: 32 headings outside the
+// vocabulary, 15 decision records, 3 issue references and 16 budgets exceeded.
+// Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        doc_issue_reference,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(linear_search_in_loop, reason = "2 cost-shape sites; #814 lists them")

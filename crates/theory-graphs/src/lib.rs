@@ -78,6 +78,17 @@
 //!   February 2026. `doi:10.17487/RFC9923` — the 64-bit FNV-1a parameters
 //!   `Fnv64` fixes, pinned against the published test vectors.
 
+// Module documentation that predates the shape lint: 5 headings outside the
+// vocabulary and 1 decision record. Each allow leaves with the rewrite that
+// clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 
 extern crate alloc;

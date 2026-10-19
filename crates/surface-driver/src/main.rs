@@ -241,6 +241,18 @@
 //! those choices when the driver gains a consumer requiring them, or the
 //! selected version needs a security or maintenance replacement.
 
+// Module documentation that predates the shape lint: 6 headings outside the
+// vocabulary, 1 decision record and 2 budgets exceeded. Each allow leaves with
+// the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 use core::num::NonZeroUsize;
 use core::ops::ControlFlow;
 #[cfg(unix)]

@@ -107,6 +107,18 @@
 //! - Spivak, *Functorial Data Migration*, Information and Computation 217, 2012
 //!   — schemas as finitely presented categories and `Δ_F`.
 
+// Module documentation that predates the shape lint: 12 headings outside the
+// vocabulary, 7 decision records and 2 budgets exceeded. Each allow leaves with
+// the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 
 extern crate alloc;

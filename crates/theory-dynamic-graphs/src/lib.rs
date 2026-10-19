@@ -3,6 +3,15 @@
 //! Standing graphs use bounded repair; one-shot callers use the batch traversal
 //! in `gandr-theory-graphs`. Neither structure supports edge deletion.
 
+// Module documentation that predates the shape lint: 4 headings outside the
+// vocabulary. Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",

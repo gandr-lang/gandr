@@ -120,6 +120,19 @@
 //! through `libc`: `rustix`, already in the graph, exposes neither `MAP_JIT`
 //! nor `pthread_jit_write_protect_np`; the choice reverses if it grows both.
 
+// Module documentation that predates the shape lint: 6 headings outside the
+// vocabulary, 5 decision records, 1 issue reference and 3 budgets exceeded.
+// Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        doc_issue_reference,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(linear_search_in_loop, reason = "2 cost-shape sites; #814 lists them")

@@ -61,6 +61,17 @@
 //! RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing cargo nextest run -p gandr-core-checker -p gandr-theory-deep-inference
 //! ```
 
+// Module documentation that predates the shape lint: 2 headings outside the
+// vocabulary and 1 budget exceeded. Each allow leaves with the rewrite that
+// clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 extern crate alloc;
 
 #[path = "staging_templates/admission.rs"]

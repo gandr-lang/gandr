@@ -156,6 +156,19 @@
 //! | [`comments`]      | every comment of a source beside the node it belongs to |
 //! | [`Comment`]       | one comment, its owner, role, kind, column and width    |
 
+// Module documentation that predates the shape lint: 2 headings outside the
+// vocabulary, 3 decision records, 3 issue references and 1 budget exceeded.
+// Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        doc_issue_reference,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",

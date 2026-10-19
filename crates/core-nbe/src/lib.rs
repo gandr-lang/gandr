@@ -335,6 +335,19 @@
 //! across distinct arenas. The substitution oracle separately witnesses
 //! outermost versus innermost redex selection and ordered-sibling preservation.
 
+// Module documentation that predates the shape lint: 115 headings outside the
+// vocabulary, 33 decision records, 2 issue references and 22 budgets exceeded.
+// Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        doc_issue_reference,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",

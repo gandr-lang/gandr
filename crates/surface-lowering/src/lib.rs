@@ -302,6 +302,19 @@
 //!   not-found, shadow and hook events a handler settles, and scopes with
 //!   sections.
 
+// Module documentation that predates the shape lint: 166 headings outside the
+// vocabulary, 93 decision records, 40 issue references and 33 budgets exceeded.
+// Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        doc_issue_reference,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",

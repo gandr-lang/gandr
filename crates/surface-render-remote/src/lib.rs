@@ -159,6 +159,17 @@
 //!   — the document URI and version a frame is routed by, and the position
 //!   encoding a language server converts a character column into.
 
+// Module documentation that predates the shape lint: 12 headings outside the
+// vocabulary and 1 budget exceeded. Each allow leaves with the rewrite that
+// clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 
 extern crate alloc;

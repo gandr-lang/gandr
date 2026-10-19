@@ -36,6 +36,15 @@
 //! See the [profiles and commitments](https://github.com/gandr-lang/gandr/blob/main/crates/storage-chunker/README.md#two-profiles)
 //! and [references](https://github.com/gandr-lang/gandr/blob/main/crates/storage-chunker/README.md#references).
 
+// Module documentation that predates the shape lint: 10 headings outside the
+// vocabulary. Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 
 extern crate alloc;

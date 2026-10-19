@@ -80,6 +80,18 @@
 //!   value/computation split the IL's two polarities carry, and the thunk as
 //!   the positive suspension of a computation.
 
+// Module documentation that predates the shape lint: 18 headings outside the
+// vocabulary, 3 decision records and 9 budgets exceeded. Each allow leaves with
+// the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",

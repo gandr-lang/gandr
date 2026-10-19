@@ -476,6 +476,19 @@
 //! Each decision, with the alternative it was chosen over and what would
 //! reverse it, is stated in the documentation of the module it governs.
 
+// Module documentation that predates the shape lint: 159 headings outside the
+// vocabulary, 87 decision records, 11 issue references and 48 budgets exceeded.
+// Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        doc_issue_reference,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",

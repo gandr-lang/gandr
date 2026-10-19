@@ -123,6 +123,18 @@
 //! - The rustyline contributors. `rustyline` 18.0.1. <https://docs.rs/rustyline/18.0.1/rustyline/>
 //!   — the line editor of the terminal face.
 
+// Module documentation that predates the shape lint: 11 headings outside the
+// vocabulary, 1 decision record and 2 budgets exceeded. Each allow leaves with
+// the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 extern crate alloc;
 
 mod batch;

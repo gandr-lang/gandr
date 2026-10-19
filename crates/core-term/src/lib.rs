@@ -171,6 +171,19 @@
 //!   the coverage questions the pattern table is read for, answered in
 //!   `gandr-core-checker`.
 
+// Module documentation that predates the shape lint: 81 headings outside the
+// vocabulary, 35 decision records, 14 issue references and 11 budgets exceeded.
+// Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        doc_issue_reference,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 #![cfg_attr(
     all(test, dylint_lib = "quenchant_dylints"),

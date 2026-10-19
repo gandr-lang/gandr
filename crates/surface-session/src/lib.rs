@@ -149,6 +149,19 @@
 //!   reduction of a longest common subsequence over distinct keys to a longest
 //!   increasing subsequence, which item alignment uses.
 
+// Module documentation that predates the shape lint: 34 headings outside the
+// vocabulary, 8 decision records, 1 issue reference and 9 budgets exceeded.
+// Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        doc_issue_reference,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 extern crate alloc;
 
 mod closures;

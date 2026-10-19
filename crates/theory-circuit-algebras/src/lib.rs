@@ -151,6 +151,18 @@
 //!   normal form for diagrams whose wires merge, outside the monogamous
 //!   fragment and not built here.
 
+// Module documentation that predates the shape lint: 33 headings outside the
+// vocabulary, 5 decision records and 6 budgets exceeded. Each allow leaves with
+// the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 #![cfg_attr(
     all(test, dylint_lib = "quenchant_dylints"),

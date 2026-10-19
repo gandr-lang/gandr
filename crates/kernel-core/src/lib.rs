@@ -596,6 +596,19 @@
 //!
 //! [`Environment::add_decl`]: crate::env::Environment::add_decl
 
+// Module documentation that predates the shape lint: 94 headings outside the
+// vocabulary, 41 decision records, 17 issue references and 41 budgets exceeded.
+// Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        doc_issue_reference,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",

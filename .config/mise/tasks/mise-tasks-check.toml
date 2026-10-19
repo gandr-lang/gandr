@@ -77,8 +77,12 @@ env.CARGO_ENCODED_RUSTFLAGS = "{% if env.CARGO_ENCODED_RUSTFLAGS is defined %}{%
 # rustdoc states its `# Clause cost` (the `theory-spec-combinators` crate
 # docs). A crate the backfill has not reached yet carries the matching `allow`
 # on its root under `cfg_attr(dylint_lib = "quenchant_dylints", …)`; that line
-# leaves with the crate's own backfill, and this flag stays.
-env.DYLINT_RUSTFLAGS = "-D spec_attribute_present -D spec_attribute_unqualified -D adequacy_present -D maybe_shape -D erased_error_signature -D spec_clause_traversal"
+# leaves with the crate's own backfill, and this flag stays. The module
+# documentation shape (`rustdoc_shape`) is denied the same way: a crate whose
+# documentation predates it allows each refusing lint on its root, its count
+# in the comment beside the allow. `doc_history_prose` is a report, forced to
+# `warn` so the workspace's denied warnings never make it a refusal.
+env.DYLINT_RUSTFLAGS = "-D spec_attribute_present -D spec_attribute_unqualified -D adequacy_present -D maybe_shape -D erased_error_signature -D spec_clause_traversal -D rustdoc_shape --force-warn doc_history_prose"
 # Every policy run also records what each specification names, one file per
 # compilation unit, for `evidence:obligations`. Recording always keeps one
 # configuration, so the lint state and the records never disagree; it adds no
