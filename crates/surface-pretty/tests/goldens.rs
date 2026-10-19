@@ -1143,6 +1143,51 @@ fn the_sugared_form_breaks_its_infix_and_lists_at_the_narrow_page()
     );
 }
 
+/// A quoted type stands where an expression is read: the sugared form
+/// takes the alias there only over one bare domain, and writes any other
+/// as the thunk it stands for, which reads back (#815).
+#[test]
+fn a_quoted_alias_is_written_as_an_expression_reads_it_815()
+{
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    let string = core.value_type_base(BaseType::String);
+    let returns_integer = core.comp_type_returner(integer);
+    let one = core.comp_type_arrow(integer, returns_integer);
+    let two = core.comp_type_arrow(string, one);
+    for (body, expected) in [
+        (returns_integer, "+U (-F Integer)"),
+        (one, "Integer => Integer"),
+        (two, "+U (String -> Integer -> -F Integer)"),
+    ] {
+        let thunked = core.value_type_thunk(body);
+        let quoted = core.value_quote(thunked);
+        let source = CoreSource::new(&core, &[]);
+        let presented = presented_in(
+            &source,
+            Root::Value(CoreNode::Value(quoted)),
+            wide(),
+            Form::Sugared,
+        );
+        assert_eq!(
+            (presented.as_ref(), presented.fidelity()),
+            (expected, Fidelity::Faithful),
+            "a code of {expected}"
+        );
+        let typed = presented_in(
+            &source,
+            Root::Type(CoreNode::ValueType(thunked)),
+            wide(),
+            Form::Sugared,
+        );
+        assert!(
+            typed.as_ref().contains("=>"),
+            "a type position keeps the alias: {}",
+            typed.as_ref()
+        );
+    }
+}
+
 /// A record type and a record spell each field after its own label, in
 /// label order whatever order they were given in; the empty record type
 /// is the unit type and the empty record the unit, as the grammar writes

@@ -4506,6 +4506,21 @@ impl Walk<'_, '_>
                 Self::inlined(source, body, below(depth, kind), tasks);
                 return writes(Production("call_expression"), Ok(()));
             },
+            // A quoted type stands where an expression is read, which takes
+            // the alias only over one bare domain, `A => C`: a parenthesized
+            // domain list there, `(c : U) => el(c)` or `() => C`, reads as a
+            // parenthesized expression. Any other alias is written as the
+            // thunk it stands for, `+U ((c : U) -> -F el(c))`.
+            | Former::Quote(quoted)
+                if self.form == Form::Sugared
+                    && let Former::ThunkType(body) = source.read(quoted)
+                    && !self
+                        .alias(source, body)
+                        .is_some_and(|(links, dependent, _)| links.len() == 1_usize && dependent.0 == 0_u64) =>
+            {
+                shaped = Some(Vec::from([Slot::of(body, Admits::CompType, Binds::NONE)]));
+                Some(writes(Production("u_type"), Join::Prefix(Prefix::Thunk)))
+            },
             // A computation where a value is read stands bare, its run left
             // to the checker, and so does the computation a returned value
             // stands for; its piece, as a decode's and a quote's, is the
