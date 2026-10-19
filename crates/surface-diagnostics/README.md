@@ -25,7 +25,7 @@ The diagnostics model: what a refusal, an unsettled declaration, a goal, a shado
 | ------- | --------------------- |
 | `diagnose`, `Subject`, `PATHLESS` | One diagnostic per subject, located at its term; a refusal with no recorded span claims none. |
 | `Diagnostic` and its parts | `primary`, `details` per `Verbosity`, `json`; contexts carry their role's sentence, the type judged and the binders they introduce. |
-| `Failures`, `Spellings`, `spelling`, `kept` | The machine's failure per refused body and the spelled types, kept while the arena lives. |
+| `Failures`, `TypeSpellings`, `Spellings`, `spelling`, `kept` | The machine's failure per refused body and the spelled types, kept while the arena lives, in each spelling: a face reads the one its reader chose. |
 | `sentence`, `Label`, `Culprit` | The frame table, the labels a locus reads as, and the culprit a lowering refusal names. |
 | `Lint`, `Identifier`, `Fix` | A lint's finding, named by the lint rather than a refusal: the `explicit-exits` lint reports each inferred exit as a warning whose `fix` inserts the keyword, the edit that settles it; the `explicit-runs` lint reports each inferred run, its `fix` writing `run` before the computation, parenthesised where the computation begins a statement. |
 

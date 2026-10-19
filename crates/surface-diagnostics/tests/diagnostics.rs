@@ -53,6 +53,7 @@ use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
+use gandr_surface_pretty::Spelling;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
@@ -379,7 +380,7 @@ fn force_without_rules(kept: Kept) -> Diagnostic
         declaration,
         refusal,
         origins: &table,
-        spellings,
+        spellings: spellings.spelled(Spelling::Unicode),
         failure: failures.get(declaration.constant()),
         upstream: Maybe::Absent(upstream::Absent::Own),
     })
@@ -599,7 +600,7 @@ fn a_sealed_type_is_spelled_by_its_path()
     else {
         panic!("the leak is a value mismatch");
     };
-    let spelled = |node| match spellings.get(node) {
+    let spelled = |node| match spellings.spelled(Spelling::Unicode).get(node) {
         Maybe::Present(presentation) => presentation.as_ref().to_owned(),
         Maybe::Absent(reason) => format!("{reason:?}"),
     };
@@ -611,6 +612,68 @@ fn a_sealed_type_is_spelled_by_its_path()
         ("Integer".to_owned(), "Counter.T".to_owned()),
         "the atom is named as a client writes it"
     );
+}
+
+/// The types a refusal compares are spelled in each spelling while the arena
+/// is at hand, and a face reads the one its reader chose (#782).
+#[test]
+fn a_refusal_spells_its_types_in_either_spelling_782()
+{
+    for (source, unicode, ascii) in [
+        (
+            "def r : Integer ≃ String ;\ndef r = 1 ;\n",
+            "Integer ≃ String",
+            "Integer <~> String",
+        ),
+        (
+            "def r : Integer ≅ String ;\ndef r = 1 ;\n",
+            "Integer ≅ String",
+            "Iso(Integer, String)",
+        ),
+    ] {
+        let step = unsettled(
+            Path::new("relations.gandr"),
+            SourceRoot::Strict,
+            SourceText::from(source),
+        );
+        let Step::Source {
+            composed:
+                Composed::Settled {
+                    ref report,
+                    ref spellings,
+                    ..
+                },
+            ..
+        } = step
+        else {
+            panic!("the module settles");
+        };
+        let Some(Maybe::Present(Refusal::Checking(CheckRefusal::TypeMismatch(Mismatch::Value {
+            synthesised,
+            expected,
+            ..
+        })))) = report
+            .declarations()
+            .last()
+            .map(|declaration| declaration.produced().refusal())
+        else {
+            panic!("the literal is a value mismatch");
+        };
+        let spelled = |spelling, node| match spellings.spelled(spelling).get(node) {
+            Maybe::Present(presentation) => presentation.as_ref().to_owned(),
+            Maybe::Absent(reason) => format!("{reason:?}"),
+        };
+        for (spelling, relation) in [(Spelling::Unicode, unicode), (Spelling::Ascii, ascii)] {
+            assert_eq!(
+                [
+                    spelled(spelling, TypeNode::Value(expected)),
+                    spelled(spelling, TypeNode::Value(synthesised))
+                ],
+                [String::from(relation), String::from("Integer")],
+                "{source:?} in {spelling:?}"
+            );
+        }
+    }
 }
 
 #[test]

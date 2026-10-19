@@ -294,6 +294,7 @@ mod tests
                 Duration::from_millis(100),
                 io::sink(),
                 Some(serve),
+                gandr_surface_lsp::Spelling::Unicode,
             )
             .expect("the hub serves");
         })

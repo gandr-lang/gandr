@@ -506,6 +506,7 @@ path = "crates/surface-format"
 # - surface-corpus (dev)
 # - surface-diagnostics (dev)
 # - surface-dispatcher
+# - surface-driver
 # - surface-format
 # - surface-lowering
 # - surface-lsp
@@ -1163,13 +1164,15 @@ version = "0.7.1"
 default-features = false
 
 # TOML, read into a table: the test-timing report reads the priority
-# overrides of `.config/nextest.toml`. `display` and `std` stay off: the
-# report writes no TOML through the crate.
+# overrides of `.config/nextest.toml`, and the driver the user's
+# configuration file. `display` and `std` stay off: neither writes TOML
+# through the crate.
 # features:
 # - parse: the parser
 # - serde: `from_str` into a `Table`, the one entry point that reads a whole
 #   document
 # consumers:
+# - surface-driver
 # - workflow-test-timing
 [workspace.dependencies.toml]
 version = "1.1.8"

@@ -23,6 +23,7 @@ use gandr_surface_dispatcher::ScriptRun;
 use gandr_surface_dispatcher::SourceFault;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::run_source;
+use gandr_surface_grammar::Spelling;
 use gandr_surface_grammar::built_in;
 use gandr_surface_syntax::SourceText;
 
@@ -226,6 +227,35 @@ fn run_source_file_accepts_an_executable_shebang_line()
         &ran_text(SourceText::from(ANSWER)),
         RunStatus::Value,
     );
+}
+
+/// #782: a script asked for ASCII writes the value it runs to in ASCII.
+#[test]
+fn a_script_runs_to_its_value_in_the_spelling_asked_782()
+{
+    let word = "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef once : +U (-F \
+                Path(Circle, Base, Base)) ;\ndef once = thunk { loop } ;\n";
+    let file = Scratch::write(Path::new("spelling"), SourceText::from(word));
+    for (spelling, spelled) in [
+        (Spelling::Unicode, "loop ∷ here(Base)"),
+        (Spelling::Ascii, "loop :: here(Base)"),
+    ] {
+        let mut script = Script::new(file.0.clone());
+        script.spell_in(spelling);
+        let run = script.run();
+        let ScriptRun::Source {
+            ran:
+                Ran::Evaluated {
+                    evaluation: Evaluation::Value(ref value),
+                    ..
+                },
+            ..
+        } = run
+        else {
+            panic!("the word runs to a value: {run:?}");
+        };
+        assert_eq!(value.as_ref(), spelled, "the word in {spelling:?}");
+    }
 }
 
 #[test]

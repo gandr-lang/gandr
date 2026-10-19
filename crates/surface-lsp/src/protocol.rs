@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use anodized::spec;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_pretty::Form;
+use gandr_surface_pretty::Spelling;
 use serde::Deserialize;
 use serde::Serialize;
 use serde::Serializer;
@@ -361,13 +362,16 @@ pub struct Settings
 
 /// The `gandr.presentation` settings.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
-#[repr(transparent)]
 pub struct PresentationSettings
 {
     /// `gandr.presentation.form`: whether a type is written with the sugar
     /// the surface reads or in the explicit formers.
     #[serde(default)]
     pub form: Option<FormSetting>,
+    /// `gandr.presentation.spelling`: whether a construct with a glyph is
+    /// written with it or in its ASCII spelling.
+    #[serde(default)]
+    pub spelling: Option<SpellingSetting>,
 }
 
 /// A `gandr.presentation.form` value.
@@ -393,6 +397,34 @@ impl From<FormSetting> for Form
         match setting {
             FormSetting::Sugared => Self::Sugared,
             FormSetting::Explicit => Self::Explicit,
+        }
+    }
+}
+
+/// A `gandr.presentation.spelling` value, spelled as `gandr --spelling`
+/// spells it.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum SpellingSetting
+{
+    /// [`Spelling::Unicode`].
+    Unicode,
+    /// [`Spelling::Ascii`].
+    Ascii,
+}
+
+impl From<SpellingSetting> for Spelling
+{
+    /// The spelling `setting` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(setting: SpellingSetting) -> Self
+    {
+        match setting {
+            SpellingSetting::Unicode => Self::Unicode,
+            SpellingSetting::Ascii => Self::Ascii,
         }
     }
 }
@@ -522,6 +554,19 @@ impl Settings
         self.presentation
             .and_then(|presentation| presentation.form)
             .map(Form::from)
+    }
+
+    /// The presentation spelling these settings name, when they name one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn spelling(self) -> Option<Spelling>
+    {
+        self.presentation
+            .and_then(|presentation| presentation.spelling)
+            .map(Spelling::from)
     }
 }
 

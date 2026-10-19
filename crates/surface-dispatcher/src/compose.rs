@@ -189,7 +189,7 @@ use gandr_surface_corpus::SettleFault;
 use gandr_surface_corpus::SettleReport;
 use gandr_surface_corpus::settle;
 use gandr_surface_diagnostics::Failures;
-use gandr_surface_diagnostics::Spellings;
+use gandr_surface_diagnostics::TypeSpellings;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::InferredExit;
@@ -360,9 +360,9 @@ pub enum Composed<'source>
         /// through.
         origins: OriginTable,
         /// The types the checker refusals compare, and the types and binders
-        /// their failures name, spelled while the arena was at hand: the
-        /// table a refusal's types are read from.
-        spellings: Spellings,
+        /// their failures name, spelled in each spelling while the arena was
+        /// at hand: the table a refusal's types are read from.
+        spellings: TypeSpellings,
         /// The failure the checking machine kept for each refused body, by
         /// admission position: the rules it stood inside and the hypotheses
         /// in scope.
@@ -1161,7 +1161,7 @@ struct Share<'source>
     /// Its declarations refused at their own form.
     unstatable: Vec<LoweringRefusal<'source>>,
     /// The types the unit's checker refusals compare and its failures name.
-    spellings: Spellings,
+    spellings: TypeSpellings,
     /// The builtins it shadowed.
     shadowed: Vec<ShadowedBuiltin>,
     /// The exits the lowering inferred in it.
@@ -1223,7 +1223,7 @@ fn judge_members<'source>(
         Ok(report) => {
             let failures = Failures::of(&verdicts);
             located(module.origins_mut(), &verdicts);
-            let spellings = Spellings::of(
+            let spellings = TypeSpellings::of(
                 &arena,
                 &module,
                 &report,
@@ -1356,7 +1356,7 @@ fn owned<'source>(
     && ret.runs.iter().all(|run| member.start <= run.span.start() && run.span.start() <= member.end))]
 fn share<'source>(
     member: Member,
-    (report, spellings): (SettleReport<'source>, Spellings),
+    (report, spellings): (SettleReport<'source>, TypeSpellings),
     (arena, module): (&CoreArena, &LoweredModule<'source>),
     unit: &Unitwide<'source>,
 ) -> Share<'source>
@@ -2696,7 +2696,7 @@ def h = 1 ;"#,
             let unstatable = super::unstatable(&module);
             let failures = super::Failures::of(&verdicts);
             super::located(module.origins_mut(), &verdicts);
-            let spellings = super::Spellings::of(
+            let spellings = super::TypeSpellings::of(
                 &arena,
                 &module,
                 &report,

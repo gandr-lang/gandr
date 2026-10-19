@@ -335,7 +335,7 @@ fn unlocated_rules() -> Diagnostic
         declaration,
         refusal,
         origins: &primary,
-        spellings,
+        spellings: spellings.spelled(gandr_surface_grammar::Spelling::Unicode),
         failure: failures.get(declaration.constant()),
         upstream: Maybe::Absent(gandr_surface_diagnostics::upstream::Absent::Own),
     })

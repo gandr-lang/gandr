@@ -75,6 +75,8 @@ No setting selects the server's features. The client adopts what `initialize` ad
 
 `gandr.presentation.form` chooses how a hover spells a type. `sugared`, the default, writes every sugar the surface reads where the type has its shape: `Integer => String` for `+U (Integer -> -F String)`, `A * B`, `A + B`, `C & D`, and `(a, b)` for a tuple. `explicit` writes the formers the core is made of. **gandr: Toggle sugared/explicit types** in the Command Palette flips it and hovers again at the cursor.
 
+`gandr.presentation.spelling` chooses how hovers and diagnostics write a construct that has a glyph: `unicode` writes `≃`, `≅`, `⇝` and `∷`; `ascii` writes `<~>`, `Iso(A, B)`, `~~>` and `::`. Unset, the default, the server follows `presentation.spelling` in the user's `gandr/config.toml`, else Unicode. Changing it republishes the open files' diagnostics in the new spelling.
+
 ## Hover colours
 
 The server colours a hover by the roles its semantic tokens carry: the extension's client announces that its hovers render HTML, and the server writes each type, name and checked fill as `<pre><code>` with every classified run in a `span` coloured by a theme colour the extension contributes. Each colour defaults, per theme kind, to what the built-in theme of that kind gives the role's semantic token, so a hover reads as the line it describes. Override any of them under `workbench.colorCustomizations`. A run the highlighter classifies as `other`, such as the `:` of a signature, is left in the hover's foreground, as the editor leaves it.

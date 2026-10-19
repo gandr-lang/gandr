@@ -23,6 +23,18 @@
 //! costs the same copy. Reversal: a diagnostic that needs a type no failure
 //! names needs the arena, or a richer table built at the judgement.
 //!
+//! # Spelled in both spellings
+//!
+//! Each type is spelled twice, once in each [`Spelling`]: the arena is gone
+//! by the time a face asks, and the face, not the judgement, knows which
+//! spelling its reader chose. [`TypeSpellings`] holds both, and a face reads
+//! one through [`TypeSpellings::spelled`]. The alternative, the reader's
+//! spelling threaded into the judgement, would judge a document once per
+//! spelling where a shared session serves editors that chose differently.
+//! The second pass spells only the types a refusal names. Reversal: a profile
+//! that shows the second pass, at which point the judgement spells the one
+//! spelling each face it serves asked for.
+//!
 //! # Spelled under the binders in scope
 //!
 //! A type a failure names stands under the binders its run had opened up to
@@ -44,6 +56,7 @@
 //! checker's report.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -69,6 +82,8 @@ use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Placement;
 use gandr_surface_pretty::Presentation;
+use gandr_surface_pretty::Spelling;
+use gandr_surface_pretty::Style;
 use gandr_surface_pretty::present_type;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
@@ -184,16 +199,16 @@ impl Failures
 }
 
 /// The spelling of every type a module's checker refusals compare and its
-/// failures name, keyed by its node.
+/// failures name, keyed by its node, in one spelling.
 ///
 /// # Specification
-/// - requires: built by [`Spellings::of`] over the arena the refusals were
-///   judged over.
+/// - requires: read from a [`TypeSpellings`] built over the arena the refusals
+///   were judged over.
 /// - ensures: each node keyed is one a refusal of the module compares, or one a
 ///   failure names, spelled by the shared printer.
 /// - panics: none.
-/// - executable: none — this data type has no call boundary; [`Spellings::of`]
-///   carries the predicates.
+/// - executable: none — this data type has no call boundary;
+///   [`TypeSpellings::of`] carries the predicates.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a mismatch spells both of its types, a failure the type
@@ -204,7 +219,30 @@ impl Failures
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Spellings(BTreeMap<TypeNode, Presentation>);
 
-impl Spellings
+/// A module's [`Spellings`] in each [`Spelling`].
+///
+/// # Specification
+/// - requires: built by [`TypeSpellings::of`].
+/// - ensures: both spellings key the same nodes but where the printer lays one
+///   out on more lines than the other.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary;
+///   [`TypeSpellings::of`] carries the predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a mismatch between relations spells each side with its
+///   glyph in Unicode and its ASCII spelling in ASCII.
+/// - witness: `tests::diagnostics::a_refusal_spells_its_types_in_either_spelling_782`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TypeSpellings
+{
+    /// The types in [`Spelling::Unicode`].
+    unicode: Spellings,
+    /// The types in [`Spelling::Ascii`].
+    ascii: Spellings,
+}
+
+impl TypeSpellings
 {
     /// Spell every type the checker refusals `report` settled compare, and
     /// every type `failures` name, their nodes read from `arena`, their
@@ -219,15 +257,15 @@ impl Spellings
     /// - ensures: each type a produced checker refusal compares, as
     ///   [`gandr_core_checker::CheckRefusal::compared`] names it, and each type
     ///   [`Failure::types`] names, is keyed by its node and spelled through
-    ///   [`present_type`] in its sugared form on a page of [`SPELLING_WIDTH`]
-    ///   columns, constants by their paths from the top level, so a member of a
-    ///   module, a sealed abstract type among them, reads as it is written
-    ///   outside it; a dependent arrow's binder is named as the source writes
-    ///   it, where it captures nothing; a type a failure names is spelled under
-    ///   the hypotheses it stands under, each by the name
-    ///   [`crate::frame::contexts`] gives it, a failure's first naming of a
-    ///   node winning; a type the printer cannot lay out, or lays out over more
-    ///   than one line, is left unkeyed; nothing else is keyed.
+    ///   [`present_type`] in its sugared form, once in each spelling, on a page
+    ///   of [`SPELLING_WIDTH`] columns, constants by their paths from the top
+    ///   level, so a member of a module, a sealed abstract type among them,
+    ///   reads as it is written outside it; a dependent arrow's binder is named
+    ///   as the source writes it, where it captures nothing; a type a failure
+    ///   names is spelled under the hypotheses it stands under, each by the
+    ///   name [`crate::frame::contexts`] gives it, a failure's first naming of
+    ///   a node winning; a type the printer cannot lay out, or lays out over
+    ///   more than one line, is left unkeyed; nothing else is keyed.
     /// - provides: the spellings a diagnostic reads a refusal's types from once
     ///   the arena is gone.
     /// - fails: never.
@@ -243,11 +281,11 @@ impl Spellings
     /// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
     /// - witness: `tests::diagnostics::a_sealed_type_is_spelled_by_its_path`
     /// - witness: `tests::diagnostics::a_refusal_spells_its_binders_by_name_418`
-    #[spec(ensures: |ret| ret.0.iter().all(|(node, presentation)| !presentation.as_ref().contains('\n')
+    #[spec(ensures: |ret| [&ret.unicode, &ret.ascii].iter().all(|spelled| spelled.0.iter().all(|(node, presentation)| !presentation.as_ref().contains('\n')
         && (report.declarations().iter().any(|declaration|
             matches!(declaration.produced().refusal(), Maybe::Present(Refusal::Checking(refusal))
                 if [refusal.compared().expected, refusal.compared().found].contains(&Maybe::Present(*node))))
-            || failures.0.values().any(|failure| failure.types().contains(node)))))]
+            || failures.0.values().any(|failure| failure.types().contains(node))))))]
     #[inline]
     #[must_use]
     pub fn of(
@@ -258,7 +296,9 @@ impl Spellings
         (origins, text): (&OriginTable, SourceText<'_>),
     ) -> Self
     {
-        let mut spelled = BTreeMap::new();
+        let mut unicode = BTreeMap::new();
+        let mut ascii = BTreeMap::new();
+        let mut seen = BTreeSet::new();
         // Each failure's hypotheses, named where the source wrote their
         // binders, and each type it names with how many of them it stands
         // under.
@@ -341,7 +381,7 @@ impl Spellings
                 }),
         );
         if named.is_empty() {
-            return Self(spelled);
+            return Self::default();
         }
         let paths = constant_names(module);
         let names: Vec<Name<'_>> = paths.iter().map(|path| Name::from(path.as_str())).collect();
@@ -373,7 +413,7 @@ impl Spellings
             .naming_arrows(&arrows)
             .relating(&relations);
         for (node, Scoped { scope, depth }) in named {
-            if spelled.contains_key(&node) {
+            if !seen.insert(node) {
                 continue;
             }
             let root = match node {
@@ -384,19 +424,51 @@ impl Spellings
                 .get(scope)
                 .and_then(|context| context.get(.. depth))
                 .unwrap_or_default();
-            if let Ok(presentation) = present_type(
-                &source.within(context),
-                root,
-                PageWidth::from(SPELLING_WIDTH),
-                Form::Sugared.into(),
-            ) && !presentation.as_ref().contains('\n')
-            {
-                let _fresh = spelled.insert(node, presentation);
+            for (spelling, spelled) in [
+                (Spelling::Unicode, &mut unicode),
+                (Spelling::Ascii, &mut ascii),
+            ] {
+                let style = Style {
+                    form: Form::Sugared,
+                    spelling,
+                };
+                if let Ok(presentation) = present_type(
+                    &source.within(context),
+                    root,
+                    PageWidth::from(SPELLING_WIDTH),
+                    style,
+                ) && !presentation.as_ref().contains('\n')
+                {
+                    let _fresh = spelled.insert(node, presentation);
+                }
             }
         }
-        Self(spelled)
+        Self {
+            unicode: Spellings(unicode),
+            ascii: Spellings(ascii),
+        }
     }
 
+    /// The types in `spelling`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn spelled(
+        &self,
+        spelling: Spelling,
+    ) -> &Spellings
+    {
+        match spelling {
+            Spelling::Unicode => &self.unicode,
+            Spelling::Ascii => &self.ascii,
+        }
+    }
+}
+
+impl Spellings
+{
     /// The spelling of `node`.
     ///
     /// # Specification

@@ -22,6 +22,7 @@ use gandr_surface_lsp::DocumentUri;
 use gandr_surface_lsp::Peer;
 use gandr_surface_lsp::Served;
 use gandr_surface_lsp::Server;
+use gandr_surface_lsp::Spelling;
 use gandr_surface_lsp::TransportFault;
 use gandr_surface_lsp::Workspace;
 use gandr_surface_lsp::read_frame;
@@ -174,7 +175,9 @@ impl Client
             read: 0_usize,
         };
         let mut outbox = Outbox(Arc::clone(&written));
-        let serving = std::thread::spawn(move || serve(&mut inbox, &mut outbox, &mut io::sink()));
+        let serving = std::thread::spawn(move || {
+            serve(&mut inbox, &mut outbox, &mut io::sink(), Spelling::Unicode)
+        });
         waiting.recv().expect("the loop asks for its first frame");
         Self {
             connection: Connection::Served(Streams {
@@ -478,8 +481,13 @@ impl Client
             input.frame(message);
         }
         let mut output = Stream::default();
-        let served = serve(&mut input.0.as_slice(), &mut output.0, &mut Vec::new())
-            .expect("the replay serves");
+        let served = serve(
+            &mut input.0.as_slice(),
+            &mut output.0,
+            &mut Vec::new(),
+            Spelling::Unicode,
+        )
+        .expect("the replay serves");
         assert_eq!(served, Served::Clean, "the replay ends cleanly");
         let mut expected = joined.received.clone();
         expected.push(json!({ "jsonrpc": "2.0", "id": "end", "result": null }));

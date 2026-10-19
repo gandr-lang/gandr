@@ -394,7 +394,7 @@ where
 ///   computation opener the table records a binder for is named by the bytes
 ///   the table locates; every other binder is [`binding::Absent::Unnamed`].
 /// - provides: the names a context's binders, the diagnostic's hypotheses and
-///   the spelling of every type under them read ([`Spellings::of`]).
+///   the spelling of every type under them read ([`crate::TypeSpellings::of`]).
 /// - fails: never.
 /// - panics: none.
 ///
