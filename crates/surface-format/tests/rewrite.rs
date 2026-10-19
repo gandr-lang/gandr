@@ -4,15 +4,23 @@
 //! by name, and the corpus formatted into either form — a sample on every
 //! pull request, every source under the `sweeps` profile.
 
+use gandr_surface_format::Beside;
 use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::Formatted;
 use gandr_surface_format::RewriteName;
 use gandr_surface_format::Selection;
+use gandr_surface_format::Withdrawn;
 use gandr_surface_format::format;
+use gandr_surface_format::format_beside;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
+use gandr_surface_lowering::ImportTarget;
+use gandr_surface_lowering::SourceIndex;
+use gandr_surface_lowering::Unit;
+use gandr_surface_lowering::UnitSource;
 use gandr_surface_parser::parse;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
 
 /// Every pair of the table in the explicit spelling, nested and
@@ -25,6 +33,7 @@ def nested : #{+{Integer, String}, Unit} ;
 def lazy : +U &{-F Integer, &{-F Integer, -F String}} ;
 def mixed : +U &{&{-F Integer, -F Integer}, -F String} ;
 def step : +U (Integer -> String -> -F Unit) ;
+def dependent : +U ((a : Type) -> a -> -F a) ;
 def thunked : +U (-F Integer) ;
 def returned : +U (Integer -> -F #{Integer, String}) ;
 def tuple = #{1, #{2, \"b\"}} ;
@@ -40,6 +49,7 @@ def nested : (Integer + String) * Unit ;
 def lazy : +U (-F Integer & -F Integer & -F String) ;
 def mixed : +U ((-F Integer & -F Integer) & -F String) ;
 def step : (Integer, String) => Unit ;
+def dependent : (a : Type, a) => a ;
 def thunked : () => Integer ;
 def returned : Integer => Integer * String ;
 def tuple = (1, (2, \"b\")) ;
@@ -92,6 +102,55 @@ fn each_rewrite_moves_its_pair_both_ways()
         assert_eq!(
             spelled(&grammar, source, form, Selection::Every),
             expected,
+            "{form}"
+        );
+    }
+}
+
+/// The circle the path-composite goldens compose its loop in.
+const CIRCLE: &str = "\
+data Circle : Type {
+  Base : Circle;
+  loop : Base <-> Base;
+}
+
+";
+
+/// The path composite moves both ways, nested: desugared, each composite is
+/// the transport whose motive the lowering derived, spelled as the printer
+/// spells it; sugared back, the transport is the composite again.
+#[test]
+fn the_path_composite_moves_both_ways()
+{
+    let grammar = grammar();
+    let sugared = format!(
+        "{CIRCLE}def thrice : Path(Path(Circle, Base, Base), loop then (loop then loop), here(Base)) ;\n"
+    );
+    let explicit = format!(
+        "{CIRCLE}def thrice : Path(
+  Path(Circle, Base, Base),
+  transport(\\a. Path(Circle, Base, a), transport(\\a. Path(Circle, Base, a), loop, loop), loop),
+  here(Base)
+) ;
+"
+    );
+    let back = format!(
+        "{CIRCLE}def thrice : Path(
+  Path(Circle, Base, Base),
+  loop then (loop then loop),
+  here(Base)
+) ;
+"
+    );
+    for (source, form, expected) in [
+        (&sugared, Form::Explicit, &explicit),
+        (&explicit, Form::Sugared, &back),
+        (&back, Form::Sugared, &back),
+        (&explicit, Form::Explicit, &explicit),
+    ] {
+        assert_eq!(
+            spelled(&grammar, source.as_str(), form, Selection::Every),
+            *expected,
             "{form}"
         );
     }
@@ -197,6 +256,110 @@ fn a_match_over_a_stated_sum_is_sugared_791()
             .as_str(),
             [].as_slice()
         )
+    );
+}
+
+/// A source that imports a sibling is lowered beside it: the rewrite whose
+/// meaning reads the sibling's declarations applies, where alone the
+/// declaration's lowering is refused and it keeps its spelling, reported.
+#[test]
+fn an_importing_source_is_rewritten_beside_its_imports()
+{
+    let grammar = grammar();
+    let source = "import \"./circle.gandr\" ;\n\ndef twice : Path(Path(Circle, Base, Base), loop then loop, here(Base)) ;\n";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Explicit,
+        ..FormatOptions::default()
+    };
+    let unit = Unit::new(Vec::from([
+        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+        UnitSource::new(
+            ByteOffset::from(CIRCLE.len()),
+            Vec::from([ImportTarget::Source(SourceIndex::from(0_usize))]),
+        ),
+    ]))
+    .expect("the unit is well formed");
+    let beside = Beside::Imports {
+        before: SourceText::from(CIRCLE),
+        unit: &unit,
+    };
+    let formatted = format_beside(&grammar, &parsed, options, beside)
+        .unwrap_or_else(|error| panic!("the source formats beside its import: {error}"));
+    assert_eq!(formatted.withdrawn(), []);
+    assert_eq!(
+        formatted.into_text(),
+        "import \"./circle.gandr\" ;\n\ndef twice : Path(
+  Path(Circle, Base, Base),
+  transport(\\a. Path(Circle, Base, a), loop, loop),
+  here(Base)
+) ;
+"
+    );
+    let alone = format_beside(&grammar, &parsed, options, Beside::Alone)
+        .unwrap_or_else(|error| panic!("the source formats alone: {error}"));
+    let kept: Vec<(&str, bool)> = alone
+        .withdrawn()
+        .iter()
+        .map(|withdrawal| {
+            (
+                withdrawal.declaration.as_str(),
+                matches!(withdrawal.reason, Withdrawn::Unchecked(_)),
+            )
+        })
+        .collect();
+    assert_eq!(kept, [("twice", true)]);
+    assert_eq!(alone.into_text(), source);
+}
+
+/// #812: a rewrite whose own declaration keeps its meaning but changes how
+/// a declaration that reads it lowers is withdrawn for that reader, and the
+/// source still formats. Desugaring `stay`'s alias leaves `stay` itself
+/// alone, but `stayUp`'s call reads the alias and not the explicit thunk, so
+/// `stayUp` is withdrawn, still differs, and `stay` is withdrawn for it.
+#[test]
+fn a_rewrite_a_reader_reads_otherwise_is_withdrawn_for_it_812()
+{
+    let grammar = grammar();
+    let source = "\
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+def next(n : Nat) -> -F Nat {
+  Succ(n)
+}
+
+def stay : (a : Nat) => Path(Nat, a, a) ;
+
+def stayUp(a : Nat) -> -F Path(Nat, Succ(a), Succ(a)) {
+  cong(next, stay(a)) then here(Succ(a))
+}
+";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Explicit,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options)
+        .unwrap_or_else(|error| panic!("the source formats: {error}"));
+    let kept: Vec<(&str, &Withdrawn)> = formatted
+        .withdrawn()
+        .iter()
+        .map(|withdrawal| (withdrawal.declaration.as_str(), &withdrawal.reason))
+        .collect();
+    assert!(
+        kept.iter()
+            .any(|&(name, reason)| name == "stay"
+                && *reason == Withdrawn::Read(String::from("stayUp"))),
+        "{kept:?}"
+    );
+    assert!(
+        formatted
+            .text()
+            .as_ref()
+            .contains("def stay : (a : Nat) => Path(Nat, a, a) ;")
     );
 }
 

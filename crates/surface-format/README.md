@@ -60,7 +60,7 @@ assert_eq!(<&str>::from(formatted.text()), "def answer = 42 ;\n");
 
 ## The tree, never the core
 
-The formatter reads the concrete syntax tree, because the core drops comments and undoes the shorthand the surface exists for. It reads nothing the checker decides: it depends on the layout engine, the parser, the grammar and the syntax tree, and on neither the checker nor the presentation printer, so formatting a source never lowers, types or marks it.
+The formatter reads the concrete syntax tree, because the core drops comments and undoes the shorthand the surface exists for. Layout alone never lowers, types or marks a source; a rewrite between spellings is checked by lowering, and the explicit `then` spells its motive through the presentation printer (see `src/lib.rs`).
 
 ## What moves and what does not
 

@@ -24,6 +24,8 @@ use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SyntaxTree;
 
 use crate::Form;
+use crate::composite::Motives;
+use crate::composite::Spaced;
 use crate::leaf::Copied;
 use crate::leaf::Documentation;
 use crate::leaf::Leaf;
@@ -58,6 +60,9 @@ pub enum RewriteName
     Tuple,
     /// The value function: `+U (A -> -F B)` and `A => B`.
     ValueFunction,
+    /// The path composite: `transport(\y. Path(A, a, y), q, p)` and
+    /// `p then q`.
+    PathComposite,
 }
 
 impl fmt::Display for RewriteName
@@ -78,6 +83,7 @@ impl fmt::Display for RewriteName
             Self::LazyProduct => "lazy-product",
             Self::Tuple => "tuple",
             Self::ValueFunction => "value-function",
+            Self::PathComposite => "path-composite",
         })
     }
 }
@@ -121,7 +127,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 10] = [
+pub const REWRITES: [Rewrite; 12] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -202,6 +208,22 @@ pub const REWRITES: [Rewrite; 10] = [
         to: Spelling("+U (A -> B -> -F C)"),
         enabled: Enabled::On,
     },
+    Rewrite {
+        name: RewriteName::PathComposite,
+        direction: Direction::Sugar,
+        mold: MoldName("call_expression"),
+        from: Spelling("transport(\\y. Path(A, a, y), q, p)"),
+        to: Spelling("p then q"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::PathComposite,
+        direction: Direction::Desugar,
+        mold: MoldName("binary_expression.then"),
+        from: Spelling("p then q"),
+        to: Spelling("transport(\\y. Path(A, a, y), q, p)"),
+        enabled: Enabled::On,
+    },
 ];
 
 /// Which rewrites a form runs.
@@ -248,6 +270,15 @@ impl Chosen
                 selection,
             }),
         }
+    }
+
+    /// The direction the form names.
+    ///
+    /// # Specification
+    /// trivial.
+    pub const fn direction(self) -> Direction
+    {
+        self.direction
     }
 
     /// The rewrite chosen for the form whose rule is `rule`, if any.
@@ -315,7 +346,9 @@ impl Band
     ) -> Self
     {
         match (rule.0, position) {
-            ("u_type" | "f_type" | "f_type.row" | "at_type", _) => Self::Atom,
+            ("u_type" | "f_type" | "f_type.row" | "at_type" | "binary_expression.then", _) => {
+                Self::Atom
+            },
             ("product_type", _) => Self::Bridge,
             ("sum_type", _) => Self::Product,
             ("lazy_product_type", Position::First) => Self::Sum,
@@ -336,7 +369,8 @@ impl Band
             "product_type" => Self::Product,
             "sum_type" => Self::Sum,
             "lazy_product_type" => Self::Lazy,
-            "function_type"
+            "binary_expression.then"
+            | "function_type"
             | "value_function_type"
             | "forall_type"
             | "static_abstraction"
@@ -411,6 +445,9 @@ enum Shape<'source>
         entries: Vec<Child<'source>>,
         /// Whether an entry binds a name, `x : A`.
         binder: Binder,
+        /// The entries read as a list of domains, each with the name it
+        /// binds; empty when the list is not one.
+        domains: Vec<Domain<'source>>,
     },
     /// An arrow `A -> C`.
     Arrow
@@ -436,6 +473,16 @@ enum Binder
     None,
     /// An entry does.
     Some,
+}
+
+/// One entry of a parenthesised list of domains, `A` or `x : A`.
+#[derive(Clone, Copy, Debug)]
+struct Domain<'source>
+{
+    /// The name the entry binds, `x` in `x : A`.
+    name: Option<Child<'source>>,
+    /// The entry's type, `A`.
+    ty: Child<'source>,
 }
 
 /// One form, respelled.
@@ -483,6 +530,8 @@ struct Respelling<'run, 'source>
     /// The spans no rewrite enters: declarations whose meaning cannot be
     /// checked.
     refused: &'run [ByteSpan],
+    /// The motive of each path composite, by its span.
+    motives: &'source Motives,
     /// Each nested form respelled, by position.
     spelled: BTreeMap<NodeIndex, Spelled<'source>>,
     /// Each node's extent: its first leaf's start to its last leaf's end.
@@ -491,6 +540,8 @@ struct Respelling<'run, 'source>
     parents: BTreeMap<NodeIndex, NodeIndex>,
     /// Whether a rewrite applied.
     changed: Changed,
+    /// The spans of the path composites kept, no motive derived for them.
+    unspelled: Vec<ByteSpan>,
 }
 
 /// Whether a respelling changed a form.
@@ -508,8 +559,8 @@ enum Changed
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Context
 {
-    /// A type: after a `:`, or an operand of a type former. `A => B` reads
-    /// as the value-function alias only here.
+    /// A type: after a `:`, or an operand of a type former. The nullary
+    /// value-function alias `() => A` reads as a type only here.
     Type,
     /// After a rule's `<=>`: a parenthesised list there is the rule's
     /// outputs, never a tuple.
@@ -539,8 +590,22 @@ enum Visit
     Leave,
 }
 
+/// What one formatting's rewrites read: the rewrites chosen, the spans they
+/// do not enter, and the motives of the path composites the lowering derived.
+#[derive(Clone, Copy, Debug)]
+pub struct Rewrites<'run, 'source>
+{
+    /// The rewrites that run.
+    pub chosen: Chosen,
+    /// The spans no rewrite enters: declarations whose meaning cannot be
+    /// checked.
+    pub withdrawn: &'run [ByteSpan],
+    /// The motive of each path composite, by its span.
+    pub motives: &'source Motives,
+}
+
 /// The top-level form `form` of `tree`, whose leaves are `leaves`, respelled
-/// by the rewrites `chosen` names, outside the spans `refused` lists.
+/// by the rewrites `rewrites` chooses, outside the spans it withdraws.
 ///
 /// # Specification
 /// - requires: `tree` was parsed under `grammar`, `form` is one of its root's
@@ -552,6 +617,8 @@ enum Visit
 ///   the other spelling's, its comments after the operand they followed, an
 ///   operand parenthesised where its band is looser than its position admits
 ///   and unwrapped where a parenthesis it was written in is no longer needed.
+///   Beside it, the span of each path composite the explicit form would enter
+///   but that keeps its spelling, no motive derived for it.
 /// - provides: the leaves [`crate::format`] lays out in place of a form's.
 /// - fails: never.
 /// - panics: none.
@@ -561,29 +628,31 @@ enum Visit
 /// - hypothesis: L3 — each rewrite at each direction over one golden source
 ///   holding every pair, nested and with comments, and the corpus sweep.
 /// - witness: `tests::rewrite::each_rewrite_moves_its_pair_both_ways`
+/// - witness: `tests::rewrite::the_path_composite_moves_both_ways`
 /// - witness: `tests::rewrite::a_sugared_source_keeps_every_comment_with_its_construct`
 /// - witness: `tests::rewrite::sweeps::every_source_formats_into_either_form_and_keeps_its_meaning`
-#[spec(ensures: |ret| !matches!(ret, Respelled::Changed(ref written) if written.is_empty()))]
+#[spec(ensures: |ret| !matches!(ret.0, Respelled::Changed(ref written) if written.is_empty()))]
 pub fn respell<'source>(
     grammar: &Pbg,
     tree: &SyntaxTree<'source>,
     form: NodeIndex,
     leaves: &[Leaf<'source>],
-    chosen: Chosen,
-    refused: &[ByteSpan],
-) -> Respelled<'source>
+    rewrites: Rewrites<'_, 'source>,
+) -> (Respelled<'source>, Unspelled)
 {
     let mut respelling = Respelling {
         grammar,
         tree,
         leaves,
         form,
-        chosen,
-        refused,
+        chosen: rewrites.chosen,
+        refused: rewrites.withdrawn,
+        motives: rewrites.motives,
         spelled: BTreeMap::new(),
         extents: BTreeMap::new(),
         parents: BTreeMap::new(),
         changed: Changed::No,
+        unspelled: Vec::new(),
     };
     let mut stack: Vec<(NodeIndex, Visit)> = Vec::from([(form, Visit::Enter)]);
     while let Some((at, visit)) = stack.pop() {
@@ -600,11 +669,18 @@ pub fn respell<'source>(
             Visit::Leave => respelling.leave(at),
         }
     }
-    match (respelling.changed, respelling.spelled.remove(&form)) {
+    let respelled = match (respelling.changed, respelling.spelled.remove(&form)) {
         (Changed::Yes, Some(spelled)) => Respelled::Changed(spelled.leaves),
         (Changed::No, _) | (Changed::Yes, None) => Respelled::Kept,
-    }
+    };
+    (respelled, Unspelled(respelling.unspelled))
 }
+
+/// The spans of the path composites a respelling kept, no motive derived for
+/// them, in the order it met them.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Unspelled(pub Vec<ByteSpan>);
 
 /// Whether a node is respelled from its children.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -865,6 +941,7 @@ impl<'source> Respelling<'_, 'source>
         if let Shape::Parenthesized {
             ref entries,
             binder: Binder::None,
+            ..
         } = shape
             && let &[Child::Node(entry)] = entries.as_slice()
             && commented == Commented::No
@@ -965,6 +1042,7 @@ impl<'source> Respelling<'_, 'source>
                 &Shape::Parenthesized {
                     ref entries,
                     binder: Binder::None,
+                    ..
                 },
                 Commented::No,
             ) => match entries.as_slice() {
@@ -1114,15 +1192,27 @@ impl<'source> Respelling<'_, 'source>
                 Band::Atom
             },
             (RewriteName::ValueFunction, Direction::Sugar) => {
-                if self.context(at) != Context::Type {
-                    return None;
-                }
-                self.alias(&mut out, parts)?;
+                self.alias(&mut out, parts, self.context(at))?;
                 Band::Loose
             },
             (RewriteName::ValueFunction, Direction::Desugar) => {
                 self.thunk(&mut out, parts)?;
                 Band::Bridge
+            },
+            (RewriteName::PathComposite, Direction::Sugar) => {
+                let (path, then) = self.composite(parts)?;
+                out.place(&self.operand(path), Band::Atom);
+                out.spaced(Spelling(" then "));
+                out.place(&self.operand(then), Band::Atom);
+                Band::Loose
+            },
+            (RewriteName::PathComposite, Direction::Desugar) => {
+                if self.motives.of(extent).is_none() {
+                    self.unspelled.push(extent);
+                    return None;
+                }
+                self.transport(&mut out, parts, extent)?;
+                Band::Atom
             },
         };
         self.changed = Changed::Yes;
@@ -1252,7 +1342,12 @@ impl<'source> Respelling<'_, 'source>
 
     /// Write the value-function alias the thunk type whose parts are `parts`
     /// spells, or nothing when its body is not a chain of arrows ending in a
-    /// pure returner.
+    /// pure returner. A domain that binds a name keeps it, `(x : A, …) =>
+    /// C`, where a later domain or the result reads it, and is written bare
+    /// otherwise, as the printer writes the dependent alias. Outside a type
+    /// the nullary alias `() => A` reads as an expression, so there it is
+    /// nothing too; the printer writes `A => B` wherever its thunk stands, a
+    /// motive's body among them.
     ///
     /// # Specification
     /// trivial.
@@ -1260,6 +1355,7 @@ impl<'source> Respelling<'_, 'source>
         &self,
         out: &mut Builder<'source>,
         parts: &[Part<'source>],
+        context: Context,
     ) -> Option<()>
     {
         let (owns, operands) = split(parts);
@@ -1270,44 +1366,82 @@ impl<'source> Respelling<'_, 'source>
         if <&str>::from(only) != "+U" {
             return None;
         }
-        let mut domains: Vec<Child<'source>> = Vec::new();
+        let mut domains: Vec<Domain<'source>> = Vec::new();
         let mut link = self.stripped(thunked);
         let result = loop {
             match self.shape_of(link)? {
                 (&Shape::Arrow { domain, codomain }, Commented::No) => {
-                    if matches!(
-                        self.shape_of(domain),
+                    domains.push(match self.shape_of(domain) {
+                        Some((
+                            &Shape::Parenthesized {
+                                binder: Binder::Some,
+                                ref domains,
+                                ..
+                            },
+                            Commented::No,
+                        )) => match domains.as_slice() {
+                            &[only @ Domain { name: Some(_), .. }] => only,
+                            _ => return None,
+                        },
                         Some((
                             &Shape::Parenthesized {
                                 binder: Binder::Some,
                                 ..
                             },
-                            _
-                        ))
-                    ) {
-                        return None;
-                    }
-                    domains.push(domain);
+                            _,
+                        )) => return None,
+                        Some(_) | None => Domain {
+                            name: None,
+                            ty: domain,
+                        },
+                    });
                     link = self.stripped(codomain);
                 },
                 (&Shape::Returner { result }, Commented::No) => break result,
                 _ => return None,
             }
         };
+        for index in 0 .. domains.len() {
+            let Some(&Domain {
+                name: Some(name), ..
+            }) = domains.get(index)
+            else {
+                continue;
+            };
+            let named = self.tokens(name);
+            let read = domains
+                .iter()
+                .skip(index.saturating_add(1))
+                .map(|later| later.ty)
+                .chain([result])
+                .any(|later| {
+                    self.tokens(later)
+                        .iter()
+                        .any(|&token| named.contains(&token))
+                });
+            if !read && let Some(domain) = domains.get_mut(index) {
+                domain.name = None;
+            }
+        }
         match domains.as_slice() {
+            &[] if context != Context::Type => return None,
             &[] => {
                 out.token(OPEN_PAREN);
                 out.token(CLOSE_PAREN);
             },
-            &[only] => out.place(&self.operand(only), Band::Lazy),
+            &[Domain { name: None, ty }] => out.place(&self.operand(ty), Band::Lazy),
             many => {
                 out.token(OPEN_PAREN);
-                for (index, &domain) in many.iter().enumerate() {
+                for (index, domain) in many.iter().enumerate() {
                     if index > 0 {
                         out.token(COMMA);
                         out.gap(Spelling(" "));
                     }
-                    out.place(&self.operand(domain), Band::Loose);
+                    if let Some(name) = domain.name {
+                        out.place(&self.operand(name), Band::Atom);
+                        out.spaced(Spelling(" : "));
+                    }
+                    out.place(&self.operand(domain.ty), Band::Loose);
                 }
                 out.token(CLOSE_PAREN);
             },
@@ -1318,7 +1452,8 @@ impl<'source> Respelling<'_, 'source>
     }
 
     /// Write the thunk of arrows the value-function alias whose parts are
-    /// `parts` stands for, or nothing when a domain binds a name.
+    /// `parts` stands for: a domain that binds a name as `(x : A) ->`, every
+    /// other bare.
     ///
     /// # Specification
     /// trivial.
@@ -1344,22 +1479,156 @@ impl<'source> Respelling<'_, 'source>
                 &Shape::Parenthesized {
                     ref entries,
                     binder: Binder::None,
+                    ..
                 },
                 Commented::No,
-            )) => entries.clone(),
+            )) => entries
+                .iter()
+                .map(|&ty| Domain { name: None, ty })
+                .collect(),
+            Some((
+                &Shape::Parenthesized {
+                    binder: Binder::Some,
+                    ref domains,
+                    ..
+                },
+                Commented::No,
+            )) if !domains.is_empty() => domains.clone(),
             Some((&Shape::Parenthesized { .. }, _)) => return None,
-            Some(_) | None => Vec::from([domain]),
+            Some(_) | None => Vec::from([Domain {
+                name: None,
+                ty: domain,
+            }]),
         };
         out.token(Spelling("+U"));
         out.gap(Spelling(" "));
         out.token(OPEN_PAREN);
-        for &domain in &domains {
-            out.place(&self.operand(domain), Band::Lazy);
+        for domain in &domains {
+            match domain.name {
+                Some(name) => {
+                    out.token(OPEN_PAREN);
+                    out.place(&self.operand(name), Band::Atom);
+                    out.spaced(Spelling(" : "));
+                    out.place(&self.operand(domain.ty), Band::Loose);
+                    out.token(CLOSE_PAREN);
+                },
+                None => out.place(&self.operand(domain.ty), Band::Lazy),
+            }
             out.spaced(Spelling(" -> "));
         }
         out.token(Spelling("-F"));
         out.gap(Spelling(" "));
         out.place(&self.operand(codomain), Band::Atom);
+        out.token(CLOSE_PAREN);
+        Some(())
+    }
+
+    /// The tokens `child` writes, whitespace and comments left out.
+    ///
+    /// # Specification
+    /// trivial.
+    fn tokens(
+        &self,
+        child: Child<'source>,
+    ) -> Vec<SourceFragment<'source>>
+    {
+        self.operand(child)
+            .leaves
+            .iter()
+            .filter(|leaf| leaf.material == Material::Token)
+            .map(|leaf| leaf.text)
+            .collect()
+    }
+
+    /// The path and the composite's second path of the transport call whose
+    /// parts are `parts`, when it is `transport(\y. Path(A, a, y), q, p)`
+    /// with neither `A` nor `a` naming `y`: `p` and `q`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn composite(
+        &self,
+        parts: &[Part<'source>],
+    ) -> Option<(Child<'source>, Child<'source>)>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let (_, operands) = split(parts);
+        let &[callee, Child::Node(motive), then, path] = operands.as_slice()
+        else {
+            return None;
+        };
+        if self
+            .tokens(callee)
+            .iter()
+            .map(|&token| <&str>::from(token))
+            .ne(["transport"])
+        {
+            return None;
+        }
+        if self.rule(motive) != Some(MoldName("static_abstraction")) {
+            return None;
+        }
+        let (abstraction, _) = self.parts(motive);
+        let (owns, body) = split(&abstraction);
+        let (&[_, binder, _], &[Child::Node(body)]) = (owns.as_slice(), body.as_slice())
+        else {
+            return None;
+        };
+        if self.rule(body) != Some(MoldName("path_type")) {
+            return None;
+        }
+        let (typed, _) = self.parts(body);
+        let (_, endpoints) = split(&typed);
+        let &[carrier, fixed, moving] = endpoints.as_slice()
+        else {
+            return None;
+        };
+        let names = |child: Child<'source>| self.tokens(child).contains(&binder);
+        (self.tokens(moving) == [binder] && !names(carrier) && !names(fixed))
+            .then_some((path, then))
+    }
+
+    /// Write the transport the path composite whose parts are `parts`, at
+    /// `extent`, stands for, its motive as the lowering derived it, or
+    /// nothing when the lowering derived none the printer spells.
+    ///
+    /// # Specification
+    /// trivial.
+    fn transport(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+        extent: ByteSpan,
+    ) -> Option<()>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let (owns, operands) = split(parts);
+        let (&[then], &[path, next]) = (owns.as_slice(), operands.as_slice())
+        else {
+            return None;
+        };
+        if <&str>::from(then) != "then" {
+            return None;
+        }
+        let motive = self.motives.of(extent)?;
+        out.token(Spelling("transport"));
+        out.token(OPEN_PAREN);
+        for token in motive {
+            if token.spaced == Spaced::Yes {
+                out.gap(Spelling(" "));
+            }
+            out.fragment(SourceFragment::from(token.text.as_str()));
+        }
+        out.token(COMMA);
+        out.gap(Spelling(" "));
+        out.place(&self.operand(next), Band::Loose);
+        out.token(COMMA);
+        out.gap(Spelling(" "));
+        out.place(&self.operand(path), Band::Loose);
         out.token(CLOSE_PAREN);
         Some(())
     }
@@ -1400,7 +1669,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 22] = [
+const RULES: [MoldName; 25] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -1423,6 +1692,9 @@ const RULES: [MoldName; 22] = [
     MoldName("equivalence_type"),
     MoldName("isomorphism_type"),
     MoldName("universe_flow_type"),
+    MoldName("call_expression"),
+    MoldName("path_type"),
+    MoldName("binary_expression.then"),
 ];
 
 /// `#{`.
@@ -1467,12 +1739,44 @@ fn shape<'source>(
             Shape::Parenthesized {
                 entries: operands,
                 binder,
+                domains: domains(parts).unwrap_or_default(),
             }
         },
         ("function_type", &["->"], &[domain, codomain]) => Shape::Arrow { domain, codomain },
         ("f_type", &["-F"], &[result]) => Shape::Returner { result },
         _ => Shape::Other,
     }
+}
+
+/// The entries of the parenthesised list whose parts are `parts`, each `A`
+/// or `x : A`, or nothing when an entry is spelled otherwise.
+///
+/// # Specification
+/// trivial.
+fn domains<'source>(parts: &[Part<'source>]) -> Option<Vec<Domain<'source>>>
+{
+    let mut domains = Vec::new();
+    let mut name = None;
+    let mut ty = None;
+    for part in parts {
+        match part.role {
+            Role::Own(text) => match <&str>::from(text) {
+                "(" => {},
+                ":" if name.is_none() => name = Some(ty.take()?),
+                "," | ")" => {
+                    domains.push(Domain {
+                        name: name.take(),
+                        ty: ty.take()?,
+                    });
+                },
+                _ => return None,
+            },
+            Role::Operand(child) if ty.is_none() => ty = Some(child),
+            Role::Operand(_) => return None,
+            Role::Comment => {},
+        }
+    }
+    Some(domains)
 }
 
 /// The own tiles and the operands of `parts`, in order.
@@ -1619,13 +1923,13 @@ impl<'source> Builder<'source>
     /// trivial.
     fn written(
         &self,
-        text: Spelling,
+        text: SourceFragment<'source>,
         material: Material,
     ) -> Leaf<'source>
     {
         Leaf {
             span: self.position,
-            text: SourceFragment::from(text.0),
+            text,
             material,
             owner: self.owner,
             documentation: Documentation::Outside,
@@ -1639,6 +1943,18 @@ impl<'source> Builder<'source>
     fn token(
         &mut self,
         text: Spelling,
+    )
+    {
+        self.fragment(SourceFragment::from(text.0));
+    }
+
+    /// Write the token `text`, written outside the source.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fragment(
+        &mut self,
+        text: SourceFragment<'source>,
     )
     {
         let leaf = self.written(text, Material::Token);
@@ -1661,7 +1977,7 @@ impl<'source> Builder<'source>
         {
             return;
         }
-        let leaf = self.written(text, Material::Whitespace);
+        let leaf = self.written(SourceFragment::from(text.0), Material::Whitespace);
         self.leaves.push(leaf);
     }
 

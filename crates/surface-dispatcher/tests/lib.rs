@@ -19,4 +19,6 @@ mod corpus;
 #[cfg(test)]
 mod entries;
 #[cfg(test)]
+mod parity;
+#[cfg(test)]
 mod run;

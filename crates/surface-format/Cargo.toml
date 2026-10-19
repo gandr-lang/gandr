@@ -22,14 +22,19 @@ path = "tests/lib.rs"
 # formatted text back for the meaning check; the grammar names the forms
 # kept verbatim; the syntax tree is the input. A rewrite between the
 # spellings is checked by lowering the source and the rewritten text into
-# one core arena and comparing what each declaration lowered to.
+# one core arena and comparing what each declaration lowered to. The path
+# composite's explicit spelling writes the motive the lowering derived,
+# spelled through the shared printer under the names the diagnostics give
+# a lowered module's constants and constructors.
 [dependencies]
 anodized.workspace = true
 gandr-core-term.workspace = true
+gandr-surface-diagnostics.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-layout.workspace = true
 gandr-surface-lowering.workspace = true
 gandr-surface-parser.workspace = true
+gandr-surface-pretty.workspace = true
 gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true
 

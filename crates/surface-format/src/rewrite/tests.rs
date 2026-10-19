@@ -7,12 +7,14 @@ use alloc::vec::Vec;
 use gandr_core_term::CoreArena;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_layout::PhysicalLineEnding;
+use gandr_surface_lowering::Unit;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 
 use super::Chosen;
 use super::Respelled;
+use super::Rewrites;
 use super::Selection;
 use super::respell;
 use crate::Form;
@@ -20,6 +22,7 @@ use crate::LayoutOptions;
 use crate::PageWidth;
 use crate::Withdrawal;
 use crate::Withdrawn;
+use crate::composite::Motives;
 use crate::layout;
 use crate::leaf;
 use crate::leaf::Material;
@@ -59,7 +62,13 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
     };
     let chosen = Chosen::of(Form::Sugared, Selection::Every)
         .unwrap_or_else(|| panic!("the sugared form runs rewrites"));
-    let Respelled::Changed(sugared) = respell(&grammar, tree, form, &flat.leaves, chosen, &[])
+    let motives = Motives::default();
+    let rewrites = Rewrites {
+        chosen,
+        withdrawn: &[],
+        motives: &motives,
+    };
+    let (Respelled::Changed(sugared), _) = respell(&grammar, tree, form, &flat.leaves, rewrites)
     else {
         panic!("the product rewrite applies");
     };
@@ -89,13 +98,13 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
             .unwrap_or_else(|error| panic!("the layout: {error}"));
         text.push('\n');
         let mut arena = CoreArena::new();
-        let lowered = meaning::lowered(&grammar, tree, &mut arena)
+        let alone = Unit::single();
+        let lowered = meaning::lowered(&grammar, tree, &alone, &mut arena)
             .unwrap_or_else(|| panic!("the source lowers"));
         let verdict = verify_rewritten(
             &grammar,
-            &parsed,
-            leaves,
-            SourceText::from(text.as_str()),
+            (&parsed, leaves, SourceText::from(text.as_str())),
+            (SourceText::from(""), &alone),
             (&mut arena, &lowered),
         );
         (String::from(text.as_str()), verdict)

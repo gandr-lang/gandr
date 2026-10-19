@@ -61,8 +61,9 @@
 //! the content digest is its check. Either other form runs the rewrites of
 //! its direction from [`REWRITES`], the table of every pair of spellings the
 //! presentation printer (`gandr-surface-pretty`) tells apart — the eager
-//! product, the sum, the lazy product, the tuple and the value function —
-//! each moving one form between its two spellings on the concrete syntax
+//! product, the sum, the lazy product, the tuple, the value function and the
+//! path composite — each moving one form between its two spellings on the
+//! concrete syntax
 //! tree: its operands and their comments are kept, its own tiles are the
 //! other spelling's, each comment it owns goes before the operand it
 //! preceded, and an operand is parenthesised or unwrapped as its new
@@ -75,23 +76,31 @@
 //! | `sum`            | `+{A, B, …}`            | `A + B + …`     |
 //! | `lazy-product`   | `&{C, D}`               | `C & D`         |
 //! | `tuple`          | `#{a, b, …}`            | `(a, b, …)`     |
-//! | `value-function` | `+U (A -> B -> -F C)`   | `(A, B) => C`   |
+//! | `value-function` | `+U ((x : A) -> B -> -F C)` | `(x : A, B) => C` |
+//! | `path-composite` | `transport(\y. Path(A, a, y), q, p)` | `p then q` |
 //!
 //! A rewrite changes tokens, so its check is the meaning, never the digest:
 //! the source and the rewritten text are each lowered into one core arena
 //! and every declaration must lower to the same core. A declaration that
 //! lowers otherwise has its top-level forms — signature and definition —
-//! written again without rewrites, until every declaration agrees; text
-//! whose declarations do not pair up is refused with [`Change::Meaning`]. A
-//! withdrawal is never silent: [`Formatted::withdrawn`] names each such
-//! declaration, its span and the reason ([`Withdrawn`]), and `gandr fmt`
-//! prints one line for each. A rewrite never applies where its other spelling
-//! reads otherwise: a parenthesised list after a rule's `<=>` is the rule's
-//! outputs, not a tuple, and `A => B` is the value-function alias only in a
-//! type. A declaration the lowering refuses in the source has no meaning to
-//! compare, so no rewrite enters its forms. A labelled entry, a binder in a
-//! domain, a comment inside a chain of arrows and a thunk with a grade keep
-//! their spelling too, since no sugar spells them.
+//! written again without rewrites, until every declaration agrees. One that
+//! still lowers otherwise, written as it was, reads a rewritten declaration's
+//! spelling rather than its type (#812): each respelled declaration whose
+//! name it writes is written again too, reported for that reader
+//! ([`Withdrawn::Read`]). Text whose declarations do not pair up, or that
+//! still disagrees with no such declaration left, is refused with
+//! [`Change::Meaning`]. A withdrawal is never silent:
+//! [`Formatted::withdrawn`] names each such declaration, its span and the
+//! reason ([`Withdrawn`]), and `gandr fmt` prints one line for each. A
+//! rewrite never applies where its other spelling reads otherwise: a
+//! parenthesised list after a rule's `<=>` is the rule's outputs, not a
+//! tuple, and `() => A` is the nullary value-function alias only in a type.
+//! The value-function alias names a domain's binder where a later domain or
+//! the result reads it and writes it bare otherwise, as the printer does. A
+//! declaration the lowering refuses in the source has no meaning to compare,
+//! so no rewrite enters its forms, and it is reported where a rewrite would
+//! have. A labelled entry, a comment inside a chain of arrows and a thunk
+//! with a grade keep their spelling too, since no sugar spells them.
 //!
 //! - Choice: rewrites on the tree, each named, checked by meaning and withdrawn
 //!   from a declaration whose meaning they would change, so every comment is
@@ -106,9 +115,36 @@
 //! - Reversal: a printer that carries the source's comments and names, at which
 //!   point one printing serves both and this table retires.
 //!
+//! A source that imports a sibling is lowered beside it: alone, every
+//! declaration that reads an imported name is refused and none could be
+//! rewritten. [`format_beside`] takes the text its imports reach, laid out
+//! before it, and the lowering unit that admits them ([`Beside`]); `gandr fmt`
+//! lays the closure out as `gandr check` does. [`format`] formats a source
+//! alone.
+//!
+//! `p then q` is the transport `transport(\y. Path(A, a, y), q, p)`, and the
+//! syntax holds neither the carrier `A` nor the fixed endpoint `a`: they are
+//! the type of `p`, which the lowering derives. So the explicit form reads the
+//! motive from the lowering — the returned transport it inserted at the
+//! composite — and spells it through the presentation printer, as
+//! `gandr-surface-diagnostics` names the module's constants for it. A
+//! composite whose motive the printer cannot spell, one naming a binder
+//! around it, keeps `then` and is reported (#803).
+//!
+//! - Choice: the motive spelled by the shared printer from the lowering the
+//!   meaning check already runs, so the explicit spelling is the printer's
+//!   token for token.
+//! - Alternative: inferring `A` and `a` from the syntax, a second type reader
+//!   beside the lowering's, wrong wherever the operand's type is not written.
+//! - Reversal: a lowering that keeps the composite's motive in the syntax it
+//!   records, at which point the rewrite reads it there and the printer
+//!   dependency goes.
+//!
 //! | item              | what it is                                              |
 //! | ----------------- | ------------------------------------------------------- |
 //! | [`format`]        | a parsed source formatted at a page width               |
+//! | [`format_beside`] | the same, lowered beside the sources it imports         |
+//! | [`Beside`]        | the sources a source's rewrites are checked beside      |
 //! | [`Formatted`]     | the formatted text and where each top-level form landed |
 //! | [`Withdrawal`]    | a declaration that kept its spelling, and why           |
 //! | [`Piece`]         | one top-level form's source span and formatted span     |
@@ -129,9 +165,15 @@
 extern crate alloc;
 
 mod attach;
+
+mod composite;
+
 mod layout;
+
 mod leaf;
+
 mod meaning;
+
 mod rewrite;
 
 use alloc::string::String;
@@ -148,11 +190,13 @@ use gandr_surface_layout::PhysicalLineEnding;
 use gandr_surface_layout::RenderError;
 use gandr_surface_layout::error::BuildError;
 use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::Unit as LoweringUnit;
 use gandr_surface_parser::MeldError;
 use gandr_surface_parser::ParseResult;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeKey;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
@@ -423,6 +467,16 @@ pub enum Withdrawn
     Refused(String),
     /// Rewritten, the declaration lowers to other core.
     Lowered,
+    /// As written, the declaration is refused, so no rewrite's meaning can be
+    /// checked: the refusal, as the lowering writes it.
+    Unchecked(String),
+    /// A path composite it writes keeps its spelling: the lowering derived no
+    /// motive the printer spells for it.
+    Unspelled,
+    /// Rewritten, a declaration that reads it — named here — would lower
+    /// otherwise, though the declaration's own meaning holds: that reader
+    /// reads its spelling, not only its type.
+    Read(String),
 }
 
 impl fmt::Display for Withdrawn
@@ -440,6 +494,19 @@ impl fmt::Display for Withdrawn
         match *self {
             Self::Refused(ref refusal) => write!(f, "rewritten, it is refused: {refusal}"),
             Self::Lowered => f.write_str("rewritten, it would lower to other core"),
+            Self::Unchecked(ref refusal) => {
+                write!(
+                    f,
+                    "as written, it is refused, so no rewrite can be checked: {refusal}"
+                )
+            },
+            Self::Unspelled => f.write_str(
+                "a path composite it writes has no motive the printer spells, so it keeps `then`",
+            ),
+            Self::Read(ref reader) => write!(
+                f,
+                "rewritten, `{reader}`, which reads it, would lower to other core"
+            ),
         }
     }
 }
@@ -541,6 +608,39 @@ pub fn format(
     options: FormatOptions,
 ) -> Result<Formatted, FormatError>
 {
+    format_beside(grammar, parsed, options, Beside::Alone)
+}
+
+/// Format the source `parsed` was parsed from, its rewrites checked by a
+/// lowering `beside` the sources it imports.
+///
+/// # Errors
+/// As [`format`].
+///
+/// # Specification
+/// - requires: `parsed` was parsed under `grammar`; under [`Beside::Imports`],
+///   `before` is the text `unit` lays out before the source, and the source is
+///   the unit's last.
+/// - ensures: as [`format`], each lowering the meaning check reads lowered in
+///   `beside`'s unit, so a declaration that reads an imported name is rewritten
+///   as one that does not; a withdrawal's span is in the source's own text.
+/// - provides: the formatting `gandr fmt` runs, beside a source's imports.
+/// - fails: as [`format`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source importing the declaration its signature names is
+///   sugared beside the import and kept alone.
+/// - witness: `tests::rewrite::an_importing_source_is_rewritten_beside_its_imports`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |formatted| formatted.pieces.windows(2).all(|pair| matches!(pair, [left, right] if left.source.end() <= right.source.start() && left.formatted.end() <= right.formatted.start()))))]
+#[inline]
+pub fn format_beside(
+    grammar: &Pbg,
+    parsed: &ParseResult<'_>,
+    options: FormatOptions,
+    beside: Beside<'_>,
+) -> Result<Formatted, FormatError>
+{
     let tree = parsed.tree();
     let source = tree.source();
     let flat = leaf::flatten(grammar, tree, parsed.obligations());
@@ -548,9 +648,37 @@ pub fn format(
         declared(&flat.leaves).unwrap_or(options.form),
         options.rewrites,
     );
+    let alone = LoweringUnit::single();
+    let (before, unit) = match beside {
+        Beside::Alone => ("", &alone),
+        Beside::Imports { before, unit } => (<&str>::from(before), unit),
+    };
+    let base = ByteOffset::from(before.len());
+    let whole = (!before.is_empty()).then(|| alloc::format!("{before}{}", <&str>::from(source)));
+    let whole = whole
+        .as_deref()
+        .and_then(|text| parse(grammar, SourceText::from(text)).ok());
     let mut arena = CoreArena::new();
-    let lowered = chosen.and_then(|_| meaning::lowered(grammar, tree, &mut arena));
-    let mut withdrawn = lowered.as_ref().map(meaning::refused).unwrap_or_default();
+    let lowered = chosen.and_then(|_| {
+        meaning::lowered(
+            grammar,
+            whole.as_ref().map_or(tree, ParseResult::tree),
+            unit,
+            &mut arena,
+        )
+    });
+    let refused = lowered
+        .as_ref()
+        .map(|module| meaning::refused(module, base))
+        .unwrap_or_default();
+    let mut withdrawn: Vec<NodeKey> = refused
+        .iter()
+        .flat_map(|declaration| declaration.keys.iter().copied())
+        .collect();
+    let motives = match (chosen.map(Chosen::direction), lowered.as_ref()) {
+        (Some(Direction::Desugar), Some(module)) => composite::motives(module, &arena, base),
+        (Some(Direction::Desugar | Direction::Sugar) | None, _) => composite::Motives::default(),
+    };
     let ending = Ending::of(source);
     let layout = LayoutOptions::try_new(
         options.page,
@@ -558,10 +686,37 @@ pub fn format(
         ending.physical(),
     )?;
     let mut reports: Vec<Withdrawal> = Vec::new();
+    if let (Some(chosen), false) = (chosen, refused.is_empty()) {
+        let any = composite::Motives::any();
+        let unchecked = write(
+            grammar,
+            tree,
+            &flat,
+            Some(rewrite::Rewrites {
+                chosen,
+                withdrawn: &[],
+                motives: &any,
+            }),
+            &layout,
+            ending,
+        )?;
+        for declaration in refused {
+            if top_forms(tree, &declaration.keys)
+                .iter()
+                .any(|form| unchecked.respelled.contains(form))
+            {
+                reports.push(declaration.withdrawal);
+            }
+        }
+    }
     loop {
         let spans = forms_of(tree, &withdrawn);
         let rewrites = match (chosen, lowered.as_ref()) {
-            (Some(chosen), Some(_)) => Some((chosen, spans.as_slice())),
+            (Some(chosen), Some(_)) => Some(rewrite::Rewrites {
+                chosen,
+                withdrawn: spans.as_slice(),
+                motives: &motives,
+            }),
             (Some(_) | None, _) => None,
         };
         let laid = write(grammar, tree, &flat, rewrites, &layout, ending)?;
@@ -571,23 +726,50 @@ pub fn format(
             verify(grammar, parsed, &flat.leaves, text)?;
             return Ok(laid.formatted(reports));
         };
-        if laid.rewritten == Rewritten::No {
+        if laid.respelled.is_empty() {
             verify(grammar, parsed, &flat.leaves, text)?;
+            unspelled(tree, lowered, (&laid.unspelled, base), &mut reports);
             return Ok(laid.formatted(reports));
         }
-        match verify_rewritten(grammar, parsed, &laid.leaves, text, (&mut arena, lowered))? {
-            Agreement::Same => return Ok(laid.formatted(reports)),
+        let agreement = verify_rewritten(
+            grammar,
+            (parsed, &laid.leaves, text),
+            (SourceText::from(before), unit),
+            (&mut arena, lowered),
+        )?;
+        match agreement {
+            Agreement::Same => {
+                unspelled(tree, lowered, (&laid.unspelled, base), &mut reports);
+                return Ok(laid.formatted(reports));
+            },
             Agreement::Declarations(differing) => {
                 let before = withdrawn.len();
+                let mut stuck = Vec::new();
                 for declaration in differing {
                     let fresh: Vec<NodeKey> = declaration
                         .keys
-                        .into_iter()
+                        .iter()
+                        .copied()
                         .filter(|key| !withdrawn.contains(key))
                         .collect();
-                    if !fresh.is_empty() {
+                    if fresh.is_empty() {
+                        stuck.push(declaration);
+                    }
+                    else {
                         withdrawn.extend(fresh);
                         reports.push(declaration.withdrawal);
+                    }
+                }
+                if withdrawn.len() == before {
+                    for callee in read(
+                        tree,
+                        (&flat.leaves, &laid.respelled),
+                        lowered,
+                        (&stuck, &withdrawn),
+                        base,
+                    ) {
+                        withdrawn.extend(callee.keys);
+                        reports.push(callee.withdrawal);
                     }
                 }
                 if withdrawn.len() == before {
@@ -599,10 +781,139 @@ pub fn format(
     }
 }
 
-/// The spans of the top-level forms of `tree` holding a form, at any depth,
-/// whose key is among `keys`: a declaration's rules and clauses may sit
-/// beside the form the lowering keys it by, so the top-level form is the
-/// unit a rewrite is withdrawn from.
+/// The declarations whose rewrites the declarations `stuck` read: each kept
+/// as written and still lowering otherwise, so the change is in a
+/// declaration a rewrite respelled — among the `respelled` forms and outside
+/// those `withdrawn` — whose name a stuck declaration's tokens, among
+/// `leaves`, write. Each is withdrawn for the first such reader.
+///
+/// # Specification
+/// trivial.
+fn read(
+    tree: &SyntaxTree<'_>,
+    (leaves, respelled): (&[Leaf<'_>], &[NodeIndex]),
+    lowered: &LoweredModule<'_>,
+    (stuck, withdrawn): (&[meaning::Differing], &[NodeKey]),
+    base: ByteOffset,
+) -> Vec<meaning::Differing>
+{
+    let readers: Vec<(&str, Vec<ByteSpan>)> = stuck
+        .iter()
+        .map(|declaration| {
+            (
+                declaration.withdrawal.declaration.as_str(),
+                forms_of(tree, &declaration.keys),
+            )
+        })
+        .collect();
+    meaning::read(
+        lowered,
+        base,
+        |keys| {
+            !keys.iter().all(|key| withdrawn.contains(key))
+                && top_forms(tree, keys)
+                    .iter()
+                    .any(|form| respelled.contains(form))
+        },
+        |name| {
+            readers.iter().find_map(|&(reader, ref spans)| {
+                leaves
+                    .iter()
+                    .any(|leaf| {
+                        leaf.material == Material::Token
+                            && <&str>::from(leaf.text) == name
+                            && spans.iter().any(|span| {
+                                span.start() <= leaf.span.start() && leaf.span.end() <= span.end()
+                            })
+                    })
+                    .then(|| String::from(reader))
+            })
+        },
+    )
+}
+
+/// Report, beside `reports`, each declaration of `module` holding one of the
+/// path composites at `spans` that kept its spelling, no motive derived for
+/// it, once.
+///
+/// # Specification
+/// trivial.
+fn unspelled(
+    tree: &SyntaxTree<'_>,
+    module: &gandr_surface_lowering::LoweredModule<'_>,
+    (spans, base): (&[ByteSpan], ByteOffset),
+    reports: &mut Vec<Withdrawal>,
+)
+{
+    for &span in spans {
+        let Some(form) = tree.children(tree.root()).find(|&form| {
+            tree.node(form).is_some_and(|node| {
+                node.span().start() <= span.start() && span.end() <= node.span().end()
+            })
+        })
+        else {
+            continue;
+        };
+        let held = meaning::holding(module, base, &Withdrawn::Unspelled, |keys| {
+            top_forms(tree, keys).contains(&form)
+        });
+        if let Some(withdrawal) = held
+            && !reports.contains(&withdrawal)
+        {
+            reports.push(withdrawal);
+        }
+    }
+}
+
+/// What a source's rewrites are checked beside: the source alone, or the
+/// sources its imports reach, laid out before it as one unit.
+#[derive(Clone, Copy, Debug, Default)]
+pub enum Beside<'unit>
+{
+    /// The source alone: an import resolves to nothing, so a declaration that
+    /// reads an imported name is refused and no rewrite enters it.
+    #[default]
+    Alone,
+    /// The sources the source's imports reach, laid out before it.
+    Imports
+    {
+        /// The unit's text before the source.
+        before: SourceText<'unit>,
+        /// The unit: every source it lays out, the source last.
+        unit: &'unit LoweringUnit,
+    },
+}
+
+/// The top-level forms of `tree` holding a form, at any depth, whose key is
+/// among `keys`: a declaration's rules and clauses may sit beside the form
+/// the lowering keys it by, so the top-level form is the unit a rewrite is
+/// withdrawn from.
+///
+/// # Specification
+/// trivial.
+fn top_forms(
+    tree: &SyntaxTree<'_>,
+    keys: &[NodeKey],
+) -> Vec<NodeIndex>
+{
+    let mut forms = Vec::new();
+    if keys.is_empty() {
+        return forms;
+    }
+    for form in tree.children(tree.root()) {
+        let mut pending = Vec::from([form]);
+        while let Some(at) = pending.pop() {
+            if tree.key(at).is_some_and(|key| keys.contains(&key)) {
+                forms.push(form);
+                break;
+            }
+            pending.extend(tree.children(at));
+        }
+    }
+    forms
+}
+
+/// The spans of [`top_forms`].
 ///
 /// # Specification
 /// trivial.
@@ -611,27 +922,14 @@ fn forms_of(
     keys: &[NodeKey],
 ) -> Vec<ByteSpan>
 {
-    let mut spans = Vec::new();
-    if keys.is_empty() {
-        return spans;
-    }
-    for form in tree.children(tree.root()) {
-        let mut pending = Vec::from([form]);
-        while let Some(at) = pending.pop() {
-            if tree.key(at).is_some_and(|key| keys.contains(&key)) {
-                if let Some(node) = tree.node(form) {
-                    spans.push(node.span());
-                }
-                break;
-            }
-            pending.extend(tree.children(at));
-        }
-    }
-    spans
+    top_forms(tree, keys)
+        .into_iter()
+        .filter_map(|form| tree.node(form).map(gandr_surface_syntax::Node::span))
+        .collect()
 }
 
 /// One writing of a source: its text, its pieces, the leaves it was laid out
-/// from, and whether a rewrite respelled any.
+/// from, and the forms a rewrite respelled.
 struct Written<'source>
 {
     /// The text.
@@ -640,8 +938,10 @@ struct Written<'source>
     pieces: Vec<Piece>,
     /// The leaves laid out, in order.
     leaves: Vec<Leaf<'source>>,
-    /// Whether a rewrite respelled a form.
-    rewritten: Rewritten,
+    /// The top-level forms a rewrite respelled, in order.
+    respelled: Vec<NodeIndex>,
+    /// The path composites kept, no motive derived for them, in order.
+    unspelled: Vec<ByteSpan>,
 }
 
 impl Written<'_>
@@ -674,7 +974,7 @@ fn write<'source>(
     grammar: &Pbg,
     tree: &SyntaxTree<'source>,
     flat: &leaf::Leaves<'source>,
-    rewrites: Option<(Chosen, &[ByteSpan])>,
+    rewrites: Option<rewrite::Rewrites<'_, 'source>>,
     layout: &LayoutOptions,
     ending: Ending,
 ) -> Result<Written<'source>, FormatError>
@@ -684,7 +984,8 @@ fn write<'source>(
     let mut text = String::with_capacity(<&str>::from(source).len());
     let mut pieces = Vec::new();
     let mut written: Vec<Leaf<'source>> = Vec::with_capacity(flat.leaves.len());
-    let mut rewritten = Rewritten::No;
+    let mut respelled = Vec::new();
+    let mut unspelled = Vec::new();
     for unit in units(&flat.leaves) {
         let Some(first) = unit.leaves.first()
         else {
@@ -713,15 +1014,14 @@ fn write<'source>(
         };
         let laid = match flat.integrity(form) {
             Integrity::Clean => {
-                let respelled = match rewrites {
-                    Some((chosen, withdrawn)) => {
-                        rewrite::respell(grammar, tree, form, unit.leaves, chosen, withdrawn)
-                    },
-                    None => Respelled::Kept,
-                };
-                let leaves = match respelled {
+                let (respelling, kept) = rewrites.map_or_else(
+                    || (Respelled::Kept, rewrite::Unspelled::default()),
+                    |rewrites| rewrite::respell(grammar, tree, form, unit.leaves, rewrites),
+                );
+                unspelled.extend(kept.0);
+                let leaves = match respelling {
                     Respelled::Changed(ref leaves) => {
-                        rewritten = Rewritten::Yes;
+                        respelled.push(form);
                         leaves.as_slice()
                     },
                     Respelled::Kept => unit.leaves,
@@ -754,18 +1054,9 @@ fn write<'source>(
         text,
         pieces,
         leaves: written,
-        rewritten,
+        respelled,
+        unspelled,
     })
-}
-
-/// Whether a rewrite respelled a form of the source.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Rewritten
-{
-    /// None did: the tokens are the source's.
-    No,
-    /// One did.
-    Yes,
 }
 
 /// One top-level unit of the source: a form, or a comment or shebang at the
@@ -940,16 +1231,16 @@ fn verify(
 
 /// Check that `text`, the source rewritten, spells the tokens and comments of
 /// `written`, the leaves it was laid out from, in order, and keeps each
-/// comment in its role; then lower it into `arena` beside `lowered`, the
-/// source's lowering, and say which declarations lowered otherwise.
+/// comment in its role; then lower it after `before` in `unit` into `arena`
+/// beside `lowered`, the source's lowering, and say which declarations
+/// lowered otherwise.
 ///
 /// # Specification
 /// trivial.
 fn verify_rewritten(
     grammar: &Pbg,
-    parsed: &ParseResult<'_>,
-    written: &[Leaf<'_>],
-    text: SourceText<'_>,
+    (parsed, written, text): (&ParseResult<'_>, &[Leaf<'_>], SourceText<'_>),
+    (before, unit): (SourceText<'_>, &LoweringUnit),
     (arena, lowered): (&mut CoreArena, &LoweredModule<'_>),
 ) -> Result<Agreement, FormatError>
 {
@@ -965,11 +1256,26 @@ fn verify_rewritten(
     {
         return Err(FormatError::Changed(Change::Attachment));
     }
-    let Some(respelled) = meaning::lowered(grammar, reparsed.tree(), arena)
+    let before = <&str>::from(before);
+    let whole = (!before.is_empty()).then(|| alloc::format!("{before}{}", <&str>::from(text)));
+    let whole = match whole {
+        Some(ref whole) => {
+            Some(parse(grammar, SourceText::from(whole.as_str())).map_err(FormatError::Reparse)?)
+        },
+        None => None,
+    };
+    let tree = whole
+        .as_ref()
+        .map_or_else(|| reparsed.tree(), ParseResult::tree);
+    let Some(respelled) = meaning::lowered(grammar, tree, unit, arena)
     else {
         return Err(FormatError::Changed(Change::Meaning));
     };
-    Ok(meaning::agree(arena, lowered, &respelled))
+    Ok(meaning::agree(
+        arena,
+        (lowered, &respelled),
+        ByteOffset::from(before.len()),
+    ))
 }
 
 /// What a rewrite keeps of a comment: its text, its kind and its role, the
