@@ -595,7 +595,10 @@ fn every_arm_of_a_declared_data_case_is_addressable()
             "row {tag} tests the constructor at tag {tag}"
         );
         assert!(
-            rows.iter().filter(|other| other.body == row.body).count() == 1,
+            rows.iter()
+                .filter(|other| other.body == row.body)
+                .nth(1)
+                .is_none(),
             "each arm's body has its own syntax node"
         );
         let value = nullary(&mut written, "Color", tag);

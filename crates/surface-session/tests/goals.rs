@@ -22,6 +22,13 @@ const PARSER_RECOVERY: &str = include_str!("fixtures/parser-recovery.gandr");
 const INCOMPLETE_INPUT: &str = include_str!("fixtures/incomplete-input.gandr");
 
 #[test]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        linear_search_in_loop,
+        reason = "bounded: one recovery fixture's few goals and checkpoints"
+    )
+)]
 fn goal_flags_match_checkpoint_footprints_for_recovery_fixtures()
 {
     // Two predicates over one revision, computed apart: the dispatcher's, a
