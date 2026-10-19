@@ -119,7 +119,7 @@
 //! | hover | `textDocument/hover` | served |
 //! | inlay hints | `textDocument/inlayHint` | blocked: a face that reads each binder's type off the hover's type table, which is built on demand rather than per revision |
 //! | signature help | `textDocument/signatureHelp` | blocked: the declaration a call applies, which the use-to-binder map keys for local binders but not for constants |
-//! | completion | `textDocument/completion` | blocked: goals whose types the checker spells |
+//! | completion | `textDocument/completion` | served for the document's declared names and the grammar's top-level keywords, each at its kind; blocked: the typed ranking that filters them against the checker's goal type at the cursor |
 //! | definition, declaration, type definition, implementation | `textDocument/definition`, `declaration`, `typeDefinition`, `implementation` | served for a declaration's name: the head of the declaration it declares, which the outline reads off the tree; `declaration` and `implementation` are not served, and a use of a name answers nothing — the use-to-binder map the checker keys for local binders is the next step
 //! | references, document highlight | `textDocument/references`, `documentHighlight` | blocked: the same use-to-binder map |
 //! | rename, linked editing | `textDocument/prepareRename`, `rename`, `linkedEditingRange` | blocked: the same use-to-binder map |

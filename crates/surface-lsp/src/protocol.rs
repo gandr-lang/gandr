@@ -611,6 +611,7 @@ impl InitializeResult
             && ret.capabilities.code_action_provider.0
             && ret.capabilities.definition_provider.0
             && ret.capabilities.type_definition_provider.0
+            && ret.capabilities.completion_provider.0
             && !ret.capabilities.code_lens_provider.resolve_provider)]
     #[inline]
     #[must_use]
@@ -644,6 +645,7 @@ impl InitializeResult
                 code_action_provider: Provider::ANSWERED,
                 definition_provider: Provider::ANSWERED,
                 type_definition_provider: Provider::ANSWERED,
+                completion_provider: Provider::ANSWERED,
             },
             server_info: ServerInfo {
                 name: SOURCE,
@@ -686,6 +688,9 @@ pub struct ServerCapabilities
     pub definition_provider: Provider,
     /// Type definition is answered for a declaration's name.
     pub type_definition_provider: Provider,
+    /// Completion is answered for a document's declared names and the
+    /// grammar's top-level keywords.
+    pub completion_provider: Provider,
 }
 
 /// Whether a request is answered, advertised as a provider with no options.
@@ -788,6 +793,9 @@ pub enum Answer
     /// What a definition or type-definition request answers over a
     /// declaration's name: the location of the declaration's head.
     Definition(Location),
+    /// What a completion request answers for an open document: the document's
+    /// declared names, then the grammar's top-level keywords.
+    Completion(Vec<CompletionItem>),
     /// `null`: what `shutdown` answers, a request about a document that is not
     /// open, and a hover over nothing the server knows.
     Nothing,
@@ -909,7 +917,7 @@ impl Serialize for DocumentSymbols
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
-pub struct SymbolKind(u8);
+pub struct SymbolKind(pub u8);
 
 impl SymbolKind
 {
@@ -1077,6 +1085,19 @@ pub struct InlineCompletionItem
     pub insert_text: StringValue,
     /// The range the text replaces: the empty range at the cursor.
     pub range: Range,
+}
+
+/// One completion: the name offered, its kind, and the text inserted.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionItem
+{
+    /// The name offered.
+    pub label: String,
+    /// The kind the name is: a declaration's, or a keyword's.
+    pub kind: u8,
+    /// The text inserted: the name.
+    pub insert_text: String,
 }
 
 /// A string in the protocol's snippet syntax.
