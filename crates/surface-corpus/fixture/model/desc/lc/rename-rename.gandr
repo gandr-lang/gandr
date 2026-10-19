@@ -1,0 +1,130 @@
+// Renaming twice is renaming once, the renaming case of the fusion lemmas of
+// Allais et al. (_A type- and scope-safe universe of syntaxes with binding:
+// their semantics and proofs_, JFP 2021, doi:10.1017/S0956796820000076): a
+// term renamed by `a1` then `a2` is the term renamed by `a3` when the
+// lookups agree at every index, and likewise for two composites. Each is an
+// induction on the term whose hypothesis is the pointwise one, lifted once
+// under each abstraction; an application's two paths are joined by
+// `transport`.
+
+// The naturals; the syntax; the congruences.
+import "../model-in-source.gandr" ;
+import "./syntax.gandr" ;
+import "./congruence.gandr" ;
+
+/// A pointwise agreement of `a1` then `a2` with `a3` holds of their lifts.
+@[ checks ]
+def renameRenameLift(
+  a1 : Ren,
+  a2 : Ren,
+  a3 : Ren,
+  h : (n : N) => Path(N, rlook(rlook(n, a1), a2), rlook(n, a3)),
+  n : N
+) -> -F Path(N, rlook(rlook(n, RLift(a1)), RLift(a2)), rlook(n, RLift(a3))) {
+  case n {
+    Z => here(Z),
+    S(m) => cong(succOf, h(m))
+  }
+}
+
+/// Renaming by `a1` then `a2` is renaming by `a3`, given they agree at every
+/// index.
+@[ checks ]
+def rec renameRename(
+  t : Term,
+  a1 : Ren,
+  a2 : Ren,
+  a3 : Ren,
+  h : (n : N) => Path(N, rlook(rlook(n, a1), a2), rlook(n, a3))
+) -> -F Path(Term, rename(rename(t, a1), a2), rename(t, a3)) {
+  case t {
+    Ix(n) => cong(ixOf, h(n)),
+    Lam(b) => cong(
+      lamOf,
+      renameRename[<](
+        b,
+        RLift(a1),
+        RLift(a2),
+        RLift(a3),
+        thunk { fn (n) { renameRenameLift(a1, a2, a3, h, n) } }
+      )
+    ),
+    Ap(f, x) => transport(
+      \z. Path(
+        Term,
+        Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)),
+        Ap(z, rename(x, a3))
+      ),
+      renameRename[<](f, a1, a2, a3, h),
+      transport(
+        \z. Path(
+          Term,
+          Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)),
+          Ap(rename(rename(f, a1), a2), z)
+        ),
+        renameRename[<](x, a1, a2, a3, h),
+        here(Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)))
+      )
+    )
+  }
+}
+
+/// A pointwise agreement of two composites holds of their lifts.
+@[ checks ]
+def renameSquareLift(
+  a1 : Ren,
+  a2 : Ren,
+  a3 : Ren,
+  a4 : Ren,
+  h : (n : N) => Path(N, rlook(rlook(n, a1), a2), rlook(rlook(n, a3), a4)),
+  n : N
+) -> -F Path(N, rlook(rlook(n, RLift(a1)), RLift(a2)), rlook(rlook(n, RLift(a3)), RLift(a4))) {
+  case n {
+    Z => here(Z),
+    S(m) => cong(succOf, h(m))
+  }
+}
+
+/// Renaming by `a1` then `a2` is renaming by `a3` then `a4`, given the two
+/// composites agree at every index.
+@[ checks ]
+def rec renameSquare(
+  t : Term,
+  a1 : Ren,
+  a2 : Ren,
+  a3 : Ren,
+  a4 : Ren,
+  h : (n : N) => Path(N, rlook(rlook(n, a1), a2), rlook(rlook(n, a3), a4))
+) -> -F Path(Term, rename(rename(t, a1), a2), rename(rename(t, a3), a4)) {
+  case t {
+    Ix(n) => cong(ixOf, h(n)),
+    Lam(b) => cong(
+      lamOf,
+      renameSquare[<](
+        b,
+        RLift(a1),
+        RLift(a2),
+        RLift(a3),
+        RLift(a4),
+        thunk { fn (n) { renameSquareLift(a1, a2, a3, a4, h, n) } }
+      )
+    ),
+    Ap(f, x) => transport(
+      \z. Path(
+        Term,
+        Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)),
+        Ap(z, rename(rename(x, a3), a4))
+      ),
+      renameSquare[<](f, a1, a2, a3, a4, h),
+      transport(
+        \z. Path(
+          Term,
+          Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)),
+          Ap(rename(rename(f, a1), a2), z)
+        ),
+        renameSquare[<](x, a1, a2, a3, a4, h),
+        here(Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)))
+      )
+    )
+  }
+}

@@ -1,0 +1,111 @@
+// The record type of `LC`'s models, one field per component of `Model(LC)`
+// in the order the derivation mints them: contexts a type, substitutions and
+// terms families over it; the nine operations, each over the context indices
+// it ranges over; the six laws, each a path. A component's indices stand in
+// the order they first occur in the sorts it binds, so `liftTm` and law 2,
+// whose first binder is `s : Sub(d, g)`, take `d` before `g`. The syntax model
+// packs into it as `SyntaxNat` packs into `Nat`'s (`model-in-source`), and
+// its operations run: β-reduction is a single substitution.
+
+// The naturals; the syntax; the syntax model.
+import "../model-in-source.gandr" ;
+import "./syntax.gandr" ;
+import "./syntax-model.gandr" ;
+
+/// The syntax model packed into the record of `LC`'s models: its carriers,
+/// then its operations and laws in the order `Model(LC)` mints them.
+@[ checks ]
+def lcSyntax : #{
+  con : Type,
+  sub : +U (con -> con -> -F Type),
+  tm : +U (con -> -F Type),
+  empty : () => con,
+  subTm : (g : con, d : con, t : tm(g), s : sub(d, g)) => tm(d),
+  extendTm : (g : con) => con,
+  pTm : (g : con) => sub(extendTm(g), g),
+  qTm : (g : con) => tm(extendTm(g)),
+  singleTm : (g : con, a : tm(g)) => sub(g, extendTm(g)),
+  liftTm : (d : con, g : con, s : sub(d, g)) => sub(extendTm(d), extendTm(g)),
+  lam : (g : con, t : tm(extendTm(g))) => tm(g),
+  app : (g : con, t : tm(g), u : tm(g)) => tm(g),
+  law1 : (g : con, b : tm(g)) => Path(tm(g), subTm(extendTm(g), g, qTm(g), singleTm(g, b)), b),
+  law2 : (d : con, g : con, s : sub(d, g)) => Path(
+    tm(extendTm(d)),
+    subTm(extendTm(g), extendTm(d), qTm(g), liftTm(d, g, s)),
+    qTm(d)
+  ),
+  law3 : (g : con, d : con, b : tm(g), s : sub(d, g)) => Path(
+    tm(extendTm(d)),
+    subTm(extendTm(g), extendTm(d), subTm(g, extendTm(g), b, pTm(g)), liftTm(d, g, s)),
+    subTm(d, extendTm(d), subTm(g, d, b, s), pTm(d))
+  ),
+  law4 : (g : con, b : tm(g), a : tm(g)) => Path(
+    tm(g),
+    subTm(extendTm(g), g, subTm(g, extendTm(g), b, pTm(g)), singleTm(g, a)),
+    b
+  ),
+  law5 : (g : con, d : con, t : tm(extendTm(g)), s : sub(d, g)) => Path(
+    tm(d),
+    subTm(g, d, lam(g, t), s),
+    lam(d, subTm(extendTm(g), extendTm(d), t, liftTm(d, g, s)))
+  ),
+  law6 : (g : con, d : con, t : tm(g), u : tm(g), s : sub(d, g)) => Path(
+    tm(d),
+    subTm(g, d, app(g, t, u), s),
+    app(d, subTm(g, d, t, s), subTm(g, d, u, s))
+  )
+} ;
+def lcSyntax = #{
+  N,
+  #{
+    thunk { fn (d) { fn (g) { return Env } } },
+    #{
+      thunk { fn (g) { return Term } },
+      #{
+        LCSyntax.empty,
+        #{
+          LCSyntax.subTm,
+          #{
+            LCSyntax.extendTm,
+            #{
+              LCSyntax.pTm,
+              #{
+                LCSyntax.qTm,
+                #{
+                  LCSyntax.singleTm,
+                  #{
+                    LCSyntax.liftTm,
+                    #{
+                      LCSyntax.lam,
+                      #{
+                        LCSyntax.app,
+                        #{
+                          LCSyntax.law1,
+                          #{
+                            LCSyntax.law2,
+                            #{LCSyntax.law3, #{LCSyntax.law4, #{LCSyntax.law5, LCSyntax.law6}}}
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+} ;
+
+/// `(λx. x)(λx. x)` contracts, by the model's single substitution of the
+/// argument into the body, to `λx. x`.
+@[ runs("Lam(Ix(Z))") ]
+def betaIdentity : +U (-F Term) ;
+def betaIdentity = thunk {
+  run q <- LCSyntax.qTm(Z);
+  run identity <- LCSyntax.lam(Z, q);
+  run single <- LCSyntax.singleTm(Z, identity);
+  become LCSyntax.subTm(S(Z), Z, q, single)
+} ;

@@ -1,0 +1,106 @@
+// The syntax model of `theory LC`, written as a `Model(LC)` module: a
+// context is its length, a substitution between two contexts is an `Env`
+// and a term in one a `Term`; each operation builds the syntax, ignoring the
+// context indices the derivation adds, and each law is the path its own file
+// proves of the syntax.
+
+// The naturals; the syntax; the six laws, in the theory's order.
+import "../model-in-source.gandr" ;
+import "./syntax.gandr" ;
+import "./sub-q-single.gandr" ;
+import "./sub-q-lift.gandr" ;
+import "./sub-weaken-lift.gandr" ;
+import "./sub-weaken-single.gandr" ;
+import "./sub-lam.gandr" ;
+import "./sub-app.gandr" ;
+
+/// The λ-calculus's syntax as a model of its single-substitution calculus.
+module LCSyntax : Model(LC) {
+  type Con = N;
+  type Sub(d : N, g : N) = Env;
+  type Tm(g : N) = Term;
+
+  /// The empty context has no variables.
+  def empty() -> -F N { return Z }
+
+  /// A substitution applied to a term.
+  def subTm(g : N, d : N, t : Term, s : Env) -> -F Term { become subst(t, s) }
+
+  /// Context extension adds one variable.
+  def extendTm(g : N) -> -F N { return S(g) }
+
+  /// Weakening shifts every index by one.
+  def pTm(g : N) -> -F Env { return Shift(S(Z)) }
+
+  /// The newest variable is index zero.
+  def qTm(g : N) -> -F Term { return Ix(Z) }
+
+  /// Single substitution conses its term onto the identity.
+  def singleTm(g : N, a : Term) -> -F Env { return Cons(a, Shift(Z)) }
+
+  /// Lifting is the substitution's constructor; its indices stand in the
+  /// order their first occurrence gives, the target `d` before `g`.
+  def liftTm(d : N, g : N, s : Env) -> -F Env { return Lift(s) }
+
+  /// Abstraction binds index zero.
+  def lam(g : N, t : Term) -> -F Term { return Lam(t) }
+
+  /// Application.
+  def app(g : N, t : Term, u : Term) -> -F Term { return Ap(t, u) }
+
+  /// Law 1, `subQSingle`.
+  @[ checks ]
+  def law1(g : N, b : Term) -> -F Path(Term, subTm(S(g), g, qTm(g), singleTm(g, b)), b) {
+    become subQSingle(b)
+  }
+
+  /// Law 2, `subQLift`; its indices stand as `liftTm`'s do.
+  @[ checks ]
+  def law2(d : N, g : N, s : Env) -> -F Path(
+    Term,
+    subTm(S(g), S(d), qTm(g), liftTm(d, g, s)),
+    qTm(d)
+  ) {
+    become subQLift(s)
+  }
+
+  /// Law 3, `subWeakenLift`, by induction on `b`.
+  @[ checks ]
+  def law3(g : N, d : N, b : Term, s : Env) -> -F Path(
+    Term,
+    subTm(S(g), S(d), subTm(g, S(g), b, pTm(g)), liftTm(d, g, s)),
+    subTm(d, S(d), subTm(g, d, b, s), pTm(d))
+  ) {
+    become subWeakenLift(b, s)
+  }
+
+  /// Law 4, `subWeakenSingle`, by induction on `b`.
+  @[ checks ]
+  def law4(g : N, b : Term, a : Term) -> -F Path(
+    Term,
+    subTm(S(g), g, subTm(g, S(g), b, pTm(g)), singleTm(g, a)),
+    b
+  ) {
+    become subWeakenSingle(b, a)
+  }
+
+  /// Law 5, `subLam`.
+  @[ checks ]
+  def law5(g : N, d : N, t : Term, s : Env) -> -F Path(
+    Term,
+    subTm(g, d, lam(g, t), s),
+    lam(d, subTm(S(g), S(d), t, liftTm(d, g, s)))
+  ) {
+    become subLam(t, s)
+  }
+
+  /// Law 6, `subApp`.
+  @[ checks ]
+  def law6(g : N, d : N, t : Term, u : Term, s : Env) -> -F Path(
+    Term,
+    subTm(g, d, app(g, t, u), s),
+    app(d, subTm(g, d, t, s), subTm(g, d, u, s))
+  ) {
+    become subApp(t, u, s)
+  }
+}

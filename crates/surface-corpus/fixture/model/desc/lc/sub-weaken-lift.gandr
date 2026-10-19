@@ -1,0 +1,51 @@
+// Law 3 of the single-substitution calculus, `sub(sub(b, p), lift(s)) =
+// sub(sub(b, s), p)`: weakening then a lifted substitution is the
+// substitution then weakening. It does not hold by computation — at a
+// variable `b` the substitution is stuck — and is proved by induction on
+// `b`, `substSquare`, from the agreement of the two composites at every
+// index: a lookup under the lift is the weakened lookup, and the
+// substitution shifting by one is weakening.
+
+// The naturals; the syntax; the weakened lookup, the composites' square and
+// the substitution that renames.
+import "../model-in-source.gandr" ;
+import "./syntax.gandr" ;
+import "./lookup-weaken.gandr" ;
+import "./subst-subst.gandr" ;
+import "./subst-as-rename.gandr" ;
+
+/// A lookup under one binder is the lookup under the substitution shifting
+/// by one.
+@[ checks ]
+def lookShiftedOnce(
+  s : Env,
+  n : N
+) -> -F Path(Term, look(n, s, S(Z)), subst(look(n, s, Z), Shift(S(Z)))) {
+  lookWeakens(n, s, Z) then back(substRenames(
+    look(n, s, Z),
+    Shift(S(Z)),
+    RShift(S(Z)),
+    thunk { fn (i) { shiftOneRenames(i) } }
+  ))
+}
+
+/// The two composites of law 3 agree at every index.
+@[ checks ]
+def weakenLiftAgree(
+  s : Env,
+  n : N
+) -> -F Path(Term, subst(look(n, Shift(S(Z)), Z), Lift(s)), subst(look(n, s, Z), Shift(S(Z)))) {
+  case n {
+    Z => lookShiftedOnce(s, Z),
+    S(j) => lookShiftedOnce(s, S(j))
+  }
+}
+
+/// Weakening then a lifted substitution is the substitution then weakening.
+@[ checks ]
+def subWeakenLift(
+  b : Term,
+  s : Env
+) -> -F Path(Term, subst(subst(b, Shift(S(Z))), Lift(s)), subst(subst(b, s), Shift(S(Z)))) {
+  substSquare(b, Shift(S(Z)), Lift(s), s, Shift(S(Z)), thunk { fn (n) { weakenLiftAgree(s, n) } })
+}
