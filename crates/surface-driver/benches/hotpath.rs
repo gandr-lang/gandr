@@ -1,0 +1,173 @@
+//! The `gandr` series of the benchmark report: three fixed workloads run once
+//! each under the hotpath profiler.
+//!
+//! | Workload | What it runs | Measured functions |
+//! | -------- | ------------ | ------------------ |
+//! | `closure check` | `gandr check` of the largest model source and its imports | the checker's per-declaration judgement and the kernel bridge's readmission |
+//! | `stage readmission` | `gandr stage pow:0..8 double:0..8` | the kernel's readmission of each staged certificate |
+//! | `lsp keystroke` | a language-server session that opens the same source and erases one line | the server's recheck |
+//!
+//! Built with `--features hotpath`, which turns on the profiler in every
+//! measured crate, counts allocations through the profiler's global
+//! allocator, and links the upload client. The run prints the report on exit;
+//! with `HOTPATH_UPLOAD` set in GitHub Actions it uploads the report, and
+//! hotpath Cloud compares a pull request's report with its base's and
+//! comments the comparison on the pull request.
+//!
+//! # Decision
+//!
+//! hotpath 0.28 was chosen for its CI comparison service: a pull request gets
+//! a per-function comparison of time and allocations against its base, with
+//! no baseline storage of our own. Allocation counts are exact for a fixed
+//! workload; wall-clock time on a shared runner is not, so the policy
+//! (`hotpath/policy.toml`) judges allocations and lists time unjudged.
+//! Rejected: criterion and divan time a closure in isolation and keep their
+//! baselines on the machine that ran them; iai-callgrind counts instructions
+//! exactly but needs valgrind and gives no per-function allocation view. The
+//! choice reverses if the comparison service stops answering, or if
+//! instruction counts prove the better regression signal for the same lane
+//! cost.
+
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "a measurement binary: a workload that cannot start ends the run"
+)]
+
+use core::ops::ControlFlow;
+use std::path::PathBuf;
+
+use gandr_surface_dispatcher::Goals;
+use gandr_surface_dispatcher::HostGrant;
+use gandr_surface_dispatcher::Invocation;
+use gandr_surface_dispatcher::Lints;
+use gandr_surface_dispatcher::Outcome;
+use gandr_surface_dispatcher::ProgramSpec;
+use gandr_surface_dispatcher::Width;
+use gandr_surface_lsp::Spelling;
+
+/// The source the closure check and the keystroke run on: the largest model
+/// source's closure.
+const SOURCE: &str = "../surface-corpus/fixture/model/desc/lc/model-record.gandr";
+
+/// The staged programs whose certificates the kernel readmits.
+const PROGRAMS: [&str; 2] = ["pow:0..8", "double:0..8"];
+
+/// The path of [`SOURCE`] from the driver's manifest directory.
+///
+/// # Specification
+/// trivial.
+fn source() -> PathBuf
+{
+    std::fs::canonicalize(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(SOURCE))
+        .expect("the model source exists")
+}
+
+/// Check the closure of [`SOURCE`], visiting every step of the walk.
+///
+/// # Specification
+/// trivial.
+fn closure_check()
+{
+    let Outcome::Run { walk, width, .. } = gandr_surface_dispatcher::dispatch(Invocation::Check {
+        goals: Goals::Gated,
+        lints: Lints::default(),
+        grant: HostGrant::UNBOUNDED,
+        paths: vec![source()],
+        width: Width::SERIAL,
+    })
+    else {
+        panic!("check dispatches a walk");
+    };
+    let ControlFlow::Continue(report) = walk.visit(width, |_step| ControlFlow::<()>::Continue(()))
+    else {
+        panic!("the visitor never stops the walk");
+    };
+    core::hint::black_box(report);
+}
+
+/// Stage [`PROGRAMS`] and readmit every certificate they produce.
+///
+/// # Specification
+/// trivial.
+fn stage_readmission()
+{
+    let programs = PROGRAMS
+        .iter()
+        .map(|spelled| spelled.parse::<ProgramSpec>().expect("a staged program"))
+        .collect();
+    let Outcome::Stage(staging) = gandr_surface_dispatcher::dispatch(Invocation::Stage {
+        programs,
+        width: Width::SERIAL,
+    })
+    else {
+        panic!("stage dispatches a staging");
+    };
+    let run = staging.run().expect("the staging runs");
+    core::hint::black_box(run.digest());
+}
+
+/// One message as a framed body: its `Content-Length` header, then the JSON.
+///
+/// # Specification
+/// trivial.
+fn framed(message: &serde_json::Value) -> Vec<u8>
+{
+    let body = message.to_string();
+    let mut frame = format!("Content-Length: {}\r\n\r\n", body.len()).into_bytes();
+    frame.extend_from_slice(body.as_bytes());
+    frame
+}
+
+/// Open [`SOURCE`] in a language-server session, erase its middle line as one
+/// keystroke would leave it, then shut the session down.
+///
+/// # Specification
+/// trivial.
+fn lsp_keystroke()
+{
+    let path = source();
+    let text = std::fs::read_to_string(&path).expect("the model source reads");
+    let lines: Vec<&str> = text.lines().collect();
+    let erased_at = lines.len().checked_div(2).unwrap_or_default();
+    let kept: Vec<&str> = lines
+        .iter()
+        .enumerate()
+        .filter(|&(at, _)| at != erased_at)
+        .map(|(_, line)| *line)
+        .collect();
+    let erased = kept.join("\n");
+    let uri = format!("file://{}", path.display());
+    let session = [
+        serde_json::json!({"jsonrpc": "2.0", "id": 1_u8, "method": "initialize", "params": {}}),
+        serde_json::json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
+        serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+            "textDocument": {"uri": uri, "languageId": "gandr", "version": 1_u8, "text": text},
+        }}),
+        serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+            "textDocument": {"uri": uri, "version": 2_u8},
+            "contentChanges": [{"text": erased}],
+        }}),
+        serde_json::json!({"jsonrpc": "2.0", "id": 2_u8, "method": "shutdown"}),
+        serde_json::json!({"jsonrpc": "2.0", "method": "exit"}),
+    ];
+    let frames: Vec<u8> = session.iter().flat_map(framed).collect();
+    let mut input: &[u8] = &frames;
+    let mut output = Vec::new();
+    let mut log = Vec::new();
+    let served = gandr_surface_lsp::serve(&mut input, &mut output, &mut log, Spelling::Unicode)
+        .expect("the session is served");
+    core::hint::black_box((served, output, log));
+}
+
+/// Run each workload once under its own measured block.
+///
+/// # Specification
+/// trivial.
+#[hotpath::main]
+fn main()
+{
+    hotpath::measure_block!("closure check", closure_check());
+    hotpath::measure_block!("stage readmission", stage_readmission());
+    hotpath::measure_block!("lsp keystroke", lsp_keystroke());
+}

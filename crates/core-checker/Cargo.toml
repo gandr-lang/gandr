@@ -38,6 +38,7 @@ path = "tests/lib.rs"
 # one relation engine. The pinned anodized facade supplies the executable
 # specifications; logic/BigInt stays disabled in this no_std library. Nothing
 # here names a surface crate: names, spans and syntax stay above the core.
+# `hotpath` profiles checking and readmission for the benchmark report.
 [dependencies]
 anodized.workspace = true
 gandr-core-nbe.workspace = true
@@ -50,6 +51,7 @@ gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-theory-deep-inference.workspace = true
 gandr-theory-sites.workspace = true
+hotpath = { workspace = true, optional = true }
 once_cell.workspace = true
 quenchant-shape.workspace = true
 serde.workspace = true
@@ -64,6 +66,12 @@ proptest.workspace = true
 ringbuf.workspace = true
 rtrb.workspace = true
 serde_json.workspace = true
+
+[features]
+default = []
+# Per-declaration checking and kernel readmission timed and their allocations
+# counted for the benchmark report (the driver's `hotpath` bench).
+hotpath = ["dep:hotpath", "hotpath/hotpath"]
 
 [lints]
 workspace = true

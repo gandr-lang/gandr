@@ -7,6 +7,9 @@
 //! monotonic clock, after one warm-up pass. `cargo bench` runs the full
 //! measurement; under `cargo test` the bench runs one short pass of each
 //! loop and prints nothing, so the gates exercise it without timing it.
+//! Built with the `hotpath` feature, the short pass is the `store` series of
+//! the benchmark report: the profiler counts each store operation's calls,
+//! time and allocations, and uploads the report when CI asks it to.
 
 #![expect(
     clippy::expect_used,
@@ -132,6 +135,7 @@ struct Count(usize);
 ///
 /// # Specification
 /// trivial.
+#[cfg_attr(feature = "hotpath", hotpath::main)]
 fn main()
 {
     let full = std::env::args().any(|argument| argument == "--bench");

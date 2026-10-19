@@ -151,6 +151,7 @@ impl Store
     ///   column is refused as foreign.
     /// - witness: `tests::defect::a_row_must_be_complete_and_its_own`
     #[inline]
+    #[cfg_attr(feature = "hotpath", hotpath::measure(impl_type = "Store"))]
     pub fn add_part(
         &mut self,
         object: ObjectId,
@@ -256,6 +257,7 @@ impl Store
     ///   leaves the other keys live.
     /// - witness: `tests::defect::deleting_the_middle_vertex_refuses_by_name`
     #[inline]
+    #[cfg_attr(feature = "hotpath", hotpath::measure(impl_type = "Store"))]
     pub fn delete_part(
         &mut self,
         object: ObjectId,

@@ -1064,6 +1064,61 @@ jobs:
             gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/comments" -F body=@comment.md --silent
           fi
 
+  # The benchmark report (`hotpath/policy.toml`): each series runs once under
+  # the hotpath profiler and uploads its report to hotpath Cloud, which
+  # compares a pull request's report with main's and comments the comparison
+  # on the pull request. Main's push uploads the baseline; a dispatch runs the
+  # series too, which is how act exercises the job. The upload signs in
+  # with the job's OIDC token, which a fork's pull request is not given. A
+  # report, never a gate: nothing needs this job. It builds over main's plain
+  # test state, rebuilding only what the profiler's features change.
+  hotpath:
+    name: report the hotpath benchmarks (linux)
+    needs: *rust-needs
+    if: ${{ !cancelled() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && needs.changes.outputs.rust == 'true')) }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 20
+    env:
+      CI_BUILD_STATE: cargo-test-plain-only
+      # Main's push restores main's newest state rather than looking it up.
+      CI_ON_MAIN: "true"
+      HOTPATH_UPLOAD: fail-on-error
+      HOTPATH_ALLOC_METRIC: count
+      HOTPATH_FUNCTIONS_LIMIT: "0"
+      HOTPATH_USER_METADATA: runner=linux-arm64,profile=test
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *identify-build-state
+      - *install-policy-tools
+      - *setup-rust
+      - *restore-test-state
+      - *unpack-build-state
+      - *fetch-dependencies
+      - name: run the gandr series
+        env:
+          HOTPATH_BENCHMARK: gandr
+          HOTPATH_UPLOAD_RESPONSE_PATH: /tmp/hotpath-gandr.json
+        run: cargo test --locked --profile test --package gandr-lang --bench hotpath --features hotpath
+      # act holds no OIDC token, so the upload is skipped there.
+      - name: confirm the gandr series was stored
+        if: &uploaded ${{ env.ACT != 'true' }}
+        run: test -s /tmp/hotpath-gandr.json
+      - name: run the store series
+        env:
+          HOTPATH_BENCHMARK: store
+          HOTPATH_UPLOAD_RESPONSE_PATH: /tmp/hotpath-store.json
+        run: cargo test --locked --profile test --package gandr-storage-schema --bench store --features hotpath
+      - name: confirm the store series was stored
+        if: *uploaded
+        run: test -s /tmp/hotpath-store.json
+      - *lane-timing
+
   # Formatting and workflow security lint share the treefmt pass.
   format-gate:
     name: check formatting and lint gates (treefmt)

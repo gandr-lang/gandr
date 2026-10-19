@@ -848,6 +848,22 @@ path = "crates/workflow-test-timing"
 version = "0.17.1"
 default-features = false
 
+# Per-function time and allocation profiling, uploaded from the pull-request
+# lane to hotpath Cloud, which compares a pull request with its base and
+# comments the verdict. Each consumer takes it optionally behind its own
+# `hotpath` feature, so a default build compiles none of it. The record is in
+# the driver's `hotpath` bench.
+# features:
+# - none: each consumer's `hotpath` feature turns on the profiler it needs
+# consumers:
+# - core-checker
+# - storage-schema
+# - surface-driver
+# - surface-lsp
+[workspace.dependencies.hotpath]
+version = "0.28.6"
+default-features = false
+
 # The C library's raw bindings: the emitter's executable regions — `MAP_JIT`
 # and the per-thread write toggle on macOS, a `memfd` mapped twice on Linux,
 # the executable view below 2 GiB on x86-64. Chosen over rustix, also in the
