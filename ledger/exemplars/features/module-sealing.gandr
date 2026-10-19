@@ -1,0 +1,15 @@
+/// `module-sealing`: a module sealed by a signature keeps its type abstract outside; a value of it is made and read only through the members the signature exposes.
+module Counter :> #{ type T, zero : T, next : +U[ω] (T -> -F T), read : +U[ω] (T -> -F Integer) } {
+  type T = Integer;
+  /// The counter's zero.
+  def zero = 0;
+  /// One step on.
+  def next(n : T) -> -F T { become n + 1 }
+  /// The count read as an integer.
+  def read(n : T) -> -F Integer { return n }
+}
+
+/// One step from the counter's zero, read back through the exposed reader.
+@[ runs("1") ]
+def shown : +U (-F Integer) ;
+def shown = thunk { run n <- Counter.next(Counter.zero) ; become Counter.read(n) } ;
