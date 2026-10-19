@@ -787,6 +787,48 @@ mod tests
         );
     }
 
+    /// Hovering a declaration's name and hovering its written type print the
+    /// type in one form: the sugared default writes the composite the
+    /// transport derives as `then`, as the source does.
+    #[test]
+    fn a_declaration_s_name_and_its_written_type_print_one_form_754()
+    {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../surface-corpus/fixture/model/identity/circle.gandr");
+        let written = std::fs::read_to_string(&path).expect("the corpus source is read");
+        let text = SourceText::from(written.as_str());
+        let line = written
+            .find("def twice : Path(")
+            .expect("the source declares `twice`");
+        let index = LineIndex::new(written.as_str().into());
+        let session = checked(text);
+        let reading = Reading::of(text);
+        let hovering = hovering(text, &path);
+        let sugared = Style {
+            form: Form::Sugared,
+            markup: Markup::Markdown,
+        };
+        let at = |offset: usize| {
+            let position = Position::of_byte(&index, RenderOffset::from(offset))
+                .expect("the offset is on a boundary");
+            match hover(text, &session, &reading, &hovering, position, sugared) {
+                Maybe::Present(shown) => shown.contents.value,
+                Maybe::Absent(reason) => panic!("the position hovers nothing: {reason:?}"),
+            }
+        };
+        let ty = "Path(Path(Circle, Base, Base), loop then loop, loop ∷ loop ∷ here(Base))";
+        let named = at(line.saturating_add("def tw".len()));
+        assert!(
+            named.starts_with(&fenced(SourceText::from(format!("twice : {ty}").as_str()))),
+            "the name prints the type as written: {named}"
+        );
+        assert_eq!(
+            at(line.saturating_add("def twice : Pa".len())),
+            fenced(SourceText::from(format!("{ty} : Type").as_str())),
+            "the written type prints the same text"
+        );
+    }
+
     #[test]
     fn each_marked_position_hovers_its_answer()
     {
