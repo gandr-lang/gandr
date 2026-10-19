@@ -26,6 +26,7 @@ use gandr_surface_syntax::SyntaxTree;
 use crate::Form;
 use crate::composite::Motives;
 use crate::composite::Spaced;
+use crate::composite::Standing;
 use crate::leaf::Copied;
 use crate::leaf::Documentation;
 use crate::leaf::Leaf;
@@ -270,15 +271,6 @@ impl Chosen
                 selection,
             }),
         }
-    }
-
-    /// The direction the form names.
-    ///
-    /// # Specification
-    /// trivial.
-    pub const fn direction(self) -> Direction
-    {
-        self.direction
     }
 
     /// The rewrite chosen for the form whose rule is `rule`, if any.
@@ -559,8 +551,9 @@ enum Changed
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Context
 {
-    /// A type: after a `:`, or an operand of a type former. The nullary
-    /// value-function alias `() => A` reads as a type only here.
+    /// A type: after a `:`, an operand of a type former, or a static
+    /// abstraction's body. `A => B` reads as the value-function alias only
+    /// here.
     Type,
     /// After a rule's `<=>`: a parenthesised list there is the rule's
     /// outputs, never a tuple.
@@ -778,7 +771,9 @@ impl<'source> Respelling<'_, 'source>
         match (rule, preceding.map(<&str>::from)) {
             (_, Some("<=>")) => Context::Outputs,
             (_, Some(":")) => Context::Type,
-            (Some(rule), _) if rule.ends_with("_type") => Context::Type,
+            (Some(rule), _) if rule.ends_with("_type") || rule == "static_abstraction" => {
+                Context::Type
+            },
             _ => Context::Value,
         }
     }
@@ -1200,6 +1195,9 @@ impl<'source> Respelling<'_, 'source>
                 Band::Bridge
             },
             (RewriteName::PathComposite, Direction::Sugar) => {
+                if self.motives.standing(extent) != Standing::Returned {
+                    return None;
+                }
                 let (path, then) = self.composite(parts)?;
                 out.place(&self.operand(path), Band::Atom);
                 out.spaced(Spelling(" then "));
@@ -1345,9 +1343,9 @@ impl<'source> Respelling<'_, 'source>
     /// pure returner. A domain that binds a name keeps it, `(x : A, …) =>
     /// C`, where a later domain or the result reads it, and is written bare
     /// otherwise, as the printer writes the dependent alias. Outside a type
-    /// the nullary alias `() => A` reads as an expression, so there it is
-    /// nothing too; the printer writes `A => B` wherever its thunk stands, a
-    /// motive's body among them.
+    /// it is nothing: a thunk type standing as a value, a call's argument,
+    /// the printer writes as its thunk, and `() => A` reads as an expression
+    /// there; a static abstraction's body, a transport's motive, is a type.
     ///
     /// # Specification
     /// trivial.
@@ -1424,7 +1422,7 @@ impl<'source> Respelling<'_, 'source>
             }
         }
         match domains.as_slice() {
-            &[] if context != Context::Type => return None,
+            _ if context != Context::Type => return None,
             &[] => {
                 out.token(OPEN_PAREN);
                 out.token(CLOSE_PAREN);

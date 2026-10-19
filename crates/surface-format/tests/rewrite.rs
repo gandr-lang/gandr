@@ -156,6 +156,86 @@ fn the_path_composite_moves_both_ways()
     }
 }
 
+/// A transport standing as a computation keeps its spelling sugared, with
+/// nothing withdrawn: the printer writes `then` only for the transport the
+/// lowering returns at a composite, and spells one a body runs as written.
+#[test]
+fn a_transport_standing_as_a_computation_keeps_its_spelling()
+{
+    let grammar = grammar();
+    let source = format!(
+        "{CIRCLE}def twice(p: Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {{
+  transport(\\a. Path(Circle, Base, a), p, p)
+}}
+"
+    );
+    let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Sugared,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(formatted.withdrawn(), &[]);
+    assert_eq!(formatted.into_text(), source);
+}
+
+/// The value-function alias is written only in a type, as the printer
+/// writes it: a thunk type standing as a call's argument, a transport's
+/// family, keeps its thunk sugared with no rewrite tried and none
+/// withdrawn, and one that is a static abstraction's body, a type, takes
+/// the alias, nullary among them.
+#[test]
+fn the_value_function_alias_is_written_only_in_a_type()
+{
+    let grammar = grammar();
+    let argument = "\
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+def kept(a: Nat, b: Nat, q: Path(Nat, a, b)) -> -F Path(Nat, b, a) {
+  become transport(
+    +U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Nat, y, a)),
+    q,
+    here(a),
+    here(q),
+    here(a)
+  )
+}
+";
+    let parsed = parse(&grammar, SourceText::from(argument)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Sugared,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(formatted.withdrawn(), &[]);
+    assert_eq!(formatted.into_text(), argument);
+    let explicit = "\
+def motive : Type -> Type ;
+def motive = \\X. +U (X -> -F X) ;
+def suspended : Type -> Type ;
+def suspended = \\X. +U (-F X) ;
+";
+    let sugared = "\
+def motive : Type -> Type ;
+def motive = \\X. X => X ;
+def suspended : Type -> Type ;
+def suspended = \\X. () => X ;
+";
+    for (source, form, expected) in [
+        (explicit, Form::Sugared, sugared),
+        (sugared, Form::Explicit, explicit),
+    ] {
+        assert_eq!(
+            spelled(&grammar, source, form, Selection::Every),
+            expected,
+            "{form}"
+        );
+    }
+}
+
 /// An explicit source with comments inside its declarations, sugared: each
 /// comment stays in its role before or after the construct it annotated.
 #[test]

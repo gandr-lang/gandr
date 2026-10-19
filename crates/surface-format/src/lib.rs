@@ -94,7 +94,8 @@
 //! reason ([`Withdrawn`]), and `gandr fmt` prints one line for each. A
 //! rewrite never applies where its other spelling reads otherwise: a
 //! parenthesised list after a rule's `<=>` is the rule's outputs, not a
-//! tuple, and `() => A` is the nullary value-function alias only in a type.
+//! tuple, and `A => B` is the value-function alias only in a type, a static
+//! abstraction's body among them, where the printer writes it.
 //! The value-function alias names a domain's binder where a later domain or
 //! the result reads it and writes it bare otherwise, as the printer does. A
 //! declaration the lowering refuses in the source has no meaning to compare,
@@ -129,7 +130,10 @@
 //! composite — and spells it through the presentation printer, as
 //! `gandr-surface-diagnostics` names the module's constants for it. A
 //! composite whose motive the printer cannot spell, one naming a binder
-//! around it, keeps `then` and is reported (#803).
+//! around it, keeps `then` and is reported (#803). The sugared form writes
+//! `then` for the same transports, those the lowering returns at a
+//! composite, as the printer does: a transport a body runs as written stays
+//! `transport(…)`.
 //!
 //! - Choice: the motive spelled by the shared printer from the lowering the
 //!   meaning check already runs, so the explicit spelling is the printer's
@@ -688,9 +692,9 @@ pub fn format_beside(
         .iter()
         .flat_map(|declaration| declaration.keys.iter().copied())
         .collect();
-    let motives = match (chosen.map(Chosen::direction), lowered.as_ref()) {
-        (Some(Direction::Desugar), Some(module)) => composite::motives(module, &arena, base),
-        (Some(Direction::Desugar | Direction::Sugar) | None, _) => composite::Motives::default(),
+    let motives = match (chosen, lowered.as_ref()) {
+        (Some(_), Some(module)) => composite::motives(module, &arena, base),
+        (Some(_) | None, _) => composite::Motives::default(),
     };
     let ending = Ending::of(source);
     let layout = LayoutOptions::try_new(
