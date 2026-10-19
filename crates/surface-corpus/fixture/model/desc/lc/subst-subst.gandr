@@ -1,0 +1,129 @@
+// Two composites of substitutions act alike on every term when they agree
+// at every index. At an abstraction both composites unfold by conversion,
+// lifting being a constructor (`substTwiceUnderLam`; with lifting a
+// definition the step is refused, #761, `pathological/desc/lc`). The lifted
+// step reads a lookup under one binder as the weakened lookup
+// (`lookWeakens`), pushes the weakening through the lifted substitution
+// (`substWeaken`), and weakens the hypothesis.
+
+// The naturals; the syntax; the congruences; the lemmas the lifted step
+// uses.
+import "../model-in-source.gandr" ;
+import "./syntax.gandr" ;
+import "./congruence.gandr" ;
+import "./lookup-weaken.gandr" ;
+import "./subst-rename.gandr" ;
+
+/// Two substitutions at an abstraction are the abstraction of the body
+/// under both lifts, by conversion.
+@[ checks ]
+def substTwiceUnderLam(b : Term, s1 : Env, s2 : Env) -> -F Path(
+  Term,
+  subst(subst(Lam(b), s1), s2),
+  Lam(subst(subst(b, Lift(s1)), Lift(s2)))
+) {
+  here(Lam(subst(subst(b, Lift(s1)), Lift(s2))))
+}
+
+/// A lookup under one binder, under a lifted substitution, is the
+/// weakened lookup under it.
+@[ checks ]
+def substLookWeakens(s1 : Env, s2 : Env, m : N) -> -F Path(
+  Term,
+  subst(look(m, s1, S(Z)), Lift(s2)),
+  subst(wk(look(m, s1, Z)), Lift(s2))
+) {
+  transport(
+    \z. Path(Term, subst(look(m, s1, S(Z)), Lift(s2)), subst(z, Lift(s2))),
+    lookWeakens(m, s1, Z),
+    here(subst(look(m, s1, S(Z)), Lift(s2)))
+  )
+}
+
+/// A lookup under one binder, under a lifted substitution, is the
+/// substituted lookup weakened.
+@[ checks ]
+def substLookWeakenLift(s1 : Env, s2 : Env, m : N) -> -F Path(
+  Term,
+  subst(look(m, s1, S(Z)), Lift(s2)),
+  wk(subst(look(m, s1, Z), s2))
+) {
+  substLookWeakens(s1, s2, m) then substWeaken(look(m, s1, Z), s2)
+}
+
+/// The hypothesis at `m`, weakened.
+@[ checks ]
+def weakenedComposites(
+  s1 : Env,
+  s2 : Env,
+  u1 : Env,
+  u2 : Env,
+  h : (n : N) => Path(Term, subst(look(n, s1, Z), s2), subst(look(n, u1, Z), u2)),
+  m : N
+) -> -F Path(Term, wk(subst(look(m, s1, Z), s2)), wk(subst(look(m, u1, Z), u2))) {
+  cong(wk, h(m))
+}
+
+/// A pointwise agreement of two composites holds of their lifts.
+@[ checks ]
+def substSquareLift(
+  s1 : Env,
+  s2 : Env,
+  u1 : Env,
+  u2 : Env,
+  h : (n : N) => Path(Term, subst(look(n, s1, Z), s2), subst(look(n, u1, Z), u2)),
+  n : N
+) -> -F Path(Term, subst(look(n, Lift(s1), Z), Lift(s2)), subst(look(n, Lift(u1), Z), Lift(u2))) {
+  case n {
+    Z => here(Ix(Z)),
+    S(m) => substLookWeakenLift(
+      s1,
+      s2,
+      m
+    ) then (weakenedComposites(s1, s2, u1, u2, h, m) then back(substLookWeakenLift(u1, u2, m)))
+  }
+}
+
+/// Substituting `s1` then `s2` is substituting `u1` then `u2`, given the
+/// two composites agree at every index.
+@[ checks ]
+def rec substSquare(
+  t : Term,
+  s1 : Env,
+  s2 : Env,
+  u1 : Env,
+  u2 : Env,
+  h : (n : N) => Path(Term, subst(look(n, s1, Z), s2), subst(look(n, u1, Z), u2))
+) -> -F Path(Term, subst(subst(t, s1), s2), subst(subst(t, u1), u2)) {
+  case t {
+    Ix(n) => h(n),
+    Lam(b) => cong(
+      lamOf,
+      substSquare[<](
+        b,
+        Lift(s1),
+        Lift(s2),
+        Lift(u1),
+        Lift(u2),
+        thunk { fn (n) { substSquareLift(s1, s2, u1, u2, h, n) } }
+      )
+    ),
+    Ap(f, x) => transport(
+      \z. Path(
+        Term,
+        Ap(subst(subst(f, s1), s2), subst(subst(x, s1), s2)),
+        Ap(z, subst(subst(x, u1), u2))
+      ),
+      substSquare[<](f, s1, s2, u1, u2, h),
+      transport(
+        \z. Path(
+          Term,
+          Ap(subst(subst(f, s1), s2), subst(subst(x, s1), s2)),
+          Ap(subst(subst(f, s1), s2), z)
+        ),
+        substSquare[<](x, s1, s2, u1, u2, h),
+        here(Ap(subst(subst(f, s1), s2), subst(subst(x, s1), s2)))
+      )
+    )
+  }
+}

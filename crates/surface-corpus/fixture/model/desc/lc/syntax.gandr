@@ -1,0 +1,161 @@
+// The pure λ-calculus as data and its single substitution, the base of the
+// λ-calculus syntax model (#640). `theory LC` is the single-substitution
+// calculus of Kaposi and Xie (_Second-Order Generalised Algebraic Theories_,
+// FSCD 2024, doi:10.4230/LIPIcs.FSCD.2024.10, §7): the presentation
+// `first_order` mints from `theory Lambda`, its names written without the
+// generated `$` and its context arguments implicit, as a `theory` block
+// writes them (#765). The syntax model's carriers are de Bruijn terms and
+// two substitution data: a substitution shifts, conses a term onto another
+// or lifts one under a binder, and a renaming shifts or lifts. Lifting is a
+// constructor and every lookup a tail call, so the substitution laws reach
+// their inductive steps by conversion (#761).
+//
+// The argument, file by file: this base; the laws that hold by computation
+// (`sub-q-single`, `sub-q-lift`, `sub-lam`, `sub-app`); the congruences and
+// the lemmas laws 3 and 4 are proved from (`congruence`, `shift-lookup`,
+// `rename-rename`, `lookup-weaken`, `subst-rename`, `subst-subst`,
+// `subst-id`, `subst-as-rename`); laws 3 and 4 (`sub-weaken-lift`,
+// `sub-weaken-single`); the syntax model (`syntax-model`) and the record of
+// `LC`'s models it packs into (`model-record`).
+
+// The naturals, the de Bruijn indices.
+import "../model-in-source.gandr" ;
+
+/// The single-substitution calculus of the pure λ-calculus: contexts,
+/// substitutions between them and terms in a context; the empty context,
+/// substitution, context extension, weakening, the newest variable, single
+/// substitution and lifting; abstraction and application; the six
+/// substitution laws. Its rules over the indexed sorts are outside the
+/// fragment (#522); `Model(LC)` derives from it all the same.
+@[ refuses("OutOfFragment") ]
+theory LC {
+  sort Con : Type;
+  sort Sub(d : Con, g : Con) : Type;
+  sort Tm(g : Con) : Type;
+
+  oper empty : () --> Con;
+  oper subTm : (t : Tm(g), s : Sub(d, g)) --> Tm(d);
+  oper extendTm : (g : Con) --> Con;
+  oper pTm : () --> Sub(extendTm(g), g);
+  oper qTm : () --> Tm(extendTm(g));
+  oper singleTm : (a : Tm(g)) --> Sub(g, extendTm(g));
+  oper liftTm : (s : Sub(d, g)) --> Sub(extendTm(d), extendTm(g));
+  oper lam : (t : Tm(extendTm(g))) --> Tm(g);
+  oper app : (t : Tm(g), u : Tm(g)) --> Tm(g);
+
+  rule law1 : subTm(qTm(), singleTm(b)) <=> b;
+  rule law2 : subTm(qTm(), liftTm(s)) <=> qTm();
+  rule law3 : subTm(subTm(b, pTm()), liftTm(s)) <=> subTm(subTm(b, s), pTm());
+  rule law4 : subTm(subTm(b, pTm()), singleTm(a)) <=> b;
+  rule law5 : subTm(lam(t), s) <=> lam(subTm(t, liftTm(s)));
+  rule law6 : subTm(app(t, u), s) <=> app(subTm(t, s), subTm(u, s));
+}
+
+/// λ-terms with de Bruijn indices: a variable, an abstraction whose body
+/// binds index zero, and an application.
+@[ checks ]
+data Term : Type {
+  Ix : (n : N) --> Term;
+  Lam : (t : Term) --> Term;
+  Ap : (t : Term, u : Term) --> Term;
+}
+
+/// Renamings: every index shifted by `k`, or a renaming lifted under one
+/// binder.
+@[ checks ]
+data Ren : Type {
+  RShift : (k : N) --> Ren;
+  RLift : (r : Ren) --> Ren;
+}
+
+/// Substitutions: every index shifted by `k`, a term consed on for index
+/// zero, or a substitution lifted under one binder.
+@[ checks ]
+data Env : Type {
+  Shift : (k : N) --> Env;
+  Cons : (a : Term, s : Env) --> Env;
+  Lift : (s : Env) --> Env;
+}
+
+/// Addition, by recursion on the second summand.
+@[ checks ]
+def rec plus(n : N, k : N) -> -F N {
+  case k {
+    Z => n,
+    S(j) => S(plus[<](n, j))
+  }
+}
+
+/// `n + j + k`, by recursion on `k`: a shift's index under `k` more binders.
+@[ checks ]
+def rec plusTwo(n : N, j : N, k : N) -> -F N {
+  case k {
+    Z => plus(n, j),
+    S(i) => S(plusTwo[<](n, j, i))
+  }
+}
+
+/// The index a renaming sends `n` to: a lift keeps zero and renames under
+/// it.
+@[ checks ]
+def rec rlook(n : N, r : Ren) -> -F N {
+  case r {
+    RShift(k) => plus(n, k),
+    RLift(q) => case n {
+      Z => Z,
+      S(m) => S(rlook[<](m, q))
+    }
+  }
+}
+
+/// A renaming applied to a term, lifted under each abstraction.
+@[ checks ]
+def rec rename(t : Term, r : Ren) -> -F Term {
+  case t {
+    Ix(n) => Ix(rlook(n, r)),
+    Lam(b) => Lam(rename[<](b, RLift(r))),
+    Ap(f, a) => Ap(rename[<](f, r), rename[<](a, r))
+  }
+}
+
+/// Weakening: every index shifted by one.
+@[ checks ]
+def wk(t : Term) -> -F Term {
+  rename(t, RShift(S(Z)))
+}
+
+/// A term under `k` more binders: itself under none.
+@[ checks ]
+def shiftBy(a : Term, k : N) -> -F Term {
+  case k {
+    Z => a,
+    S(j) => rename(a, RShift(S(j)))
+  }
+}
+
+/// The term a substitution sends index `n` to, under `k` binders the lookup
+/// has crossed: each lift it passes adds one.
+@[ checks ]
+def rec look(n : N, s : Env, k : N) -> -F Term {
+  case s {
+    Shift(j) => Ix(plusTwo(n, j, k)),
+    Cons(a, r) => case n {
+      Z => shiftBy(a, k),
+      S(m) => look[<](m, r, k)
+    },
+    Lift(r) => case n {
+      Z => Ix(plus(Z, k)),
+      S(m) => look[<](m, r, S(k))
+    }
+  }
+}
+
+/// A substitution applied to a term, lifted under each abstraction.
+@[ checks ]
+def rec subst(t : Term, s : Env) -> -F Term {
+  case t {
+    Ix(n) => look(n, s, Z),
+    Lam(b) => Lam(subst[<](b, Lift(s))),
+    Ap(f, a) => Ap(subst[<](f, s), subst[<](a, s))
+  }
+}

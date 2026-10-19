@@ -1,0 +1,49 @@
+// Law 4 of the single-substitution calculus, `sub(sub(b, p), single(a)) =
+// b`: weakening then substituting for the new variable is the identity. It
+// does not hold by computation — at a variable `b` the substitution is stuck
+// — and is proved by induction on `b`: `substSquare` takes it to the shift
+// by zero twice, and `substId` takes that to `b`.
+
+// The naturals; the syntax; the congruences, the composites' square and the
+// identity substitution.
+import "../model-in-source.gandr" ;
+import "./syntax.gandr" ;
+import "./congruence.gandr" ;
+import "./subst-subst.gandr" ;
+import "./subst-id.gandr" ;
+
+/// The composites of law 4 and of the shift by zero twice agree at every
+/// index.
+@[ checks ]
+def weakenSingleAgree(a : Term, n : N) -> -F Path(
+  Term,
+  subst(look(n, Shift(S(Z)), Z), Cons(a, Shift(Z))),
+  subst(look(n, Shift(Z), Z), Shift(Z))
+) {
+  case n {
+    Z => here(Ix(Z)),
+    S(j) => here(Ix(S(j)))
+  }
+}
+
+/// Weakening then substituting `a` for the new variable is the identity.
+@[ checks ]
+def subWeakenSingle(
+  b : Term,
+  a : Term
+) -> -F Path(Term, subst(subst(b, Shift(S(Z))), Cons(a, Shift(Z))), b) {
+  substSquare(
+    b,
+    Shift(S(Z)),
+    Cons(a, Shift(Z)),
+    Shift(Z),
+    Shift(Z),
+    thunk { fn (n) { weakenSingleAgree(a, n) } }
+  )
+    then (substCong(
+      Shift(Z),
+      subst(b, Shift(Z)),
+      b,
+      substId(b, Shift(Z), thunk { fn (n) { shiftZeroIsId(n) } })
+    ) then substId(b, Shift(Z), thunk { fn (n) { shiftZeroIsId(n) } }))
+}
