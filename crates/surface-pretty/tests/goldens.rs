@@ -2361,6 +2361,7 @@ fn fidelity_follows_nodes_not_the_characters_of_a_name()
         "a lift, which the surface does not write, spells `?`"
     );
 }
+
 /// Element identity spells `here(a)`, and a pair inside it uses the
 /// grammar's tuple spelling, not the binary sugar.
 #[test]
@@ -2903,6 +2904,23 @@ fn arms_sharing_a_body_bind_distinct_fields_815()
     assert!(
         text.contains("Sort(b, c, d) => unit") && text.contains("Bound(b, c, d, e, f) => unit"),
         "each arm binds distinct fields: {text}"
+    );
+}
+
+/// A hold of a value at its world is written parenthesized, as the surface
+/// writes it: bare at a block's head, `hold` would open a hold statement and
+/// the block would not parse (#815).
+#[test]
+fn a_held_handle_is_written_parenthesized_815()
+{
+    let mut core = CoreArena::new();
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let held = core.computation_world(gandr_core_term::world::WorldForm::Hold { value: bound });
+    let holds = core.computation_lambda(held);
+    let source = CoreSource::new(&core, &[]);
+    assert_eq!(
+        spelled(&source, Root::Computation(CoreNode::Computation(holds))),
+        faithful(Written("fn (a) { (hold a) }"))
     );
 }
 
