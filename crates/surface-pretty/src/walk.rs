@@ -591,29 +591,12 @@ pub enum Bodies
     /// `Some(1)`, as a run's value is written.
     Opaque,
     /// `thunk { c }`: a computation presented is a body a reader reads, and
-    /// so is a thunk a type mentions, a path's endpoint, which the author
-    /// wrote; a parameterised constructor there is source that reads back,
-    /// written against its family, `(MkIx : Ix(3))`, except as a family's
-    /// argument, whose parameter states its type, `Vec(MkIx)`.
+    /// so is a definition's value, a thunk a type mentions, a path's
+    /// endpoint, which the author wrote; a parameterised constructor there is
+    /// source that reads back, written against its family, `(MkIx : Ix(3))`,
+    /// except as a family's argument, whose parameter states its type,
+    /// `Vec(MkIx)`.
     Spelled,
-}
-
-impl Bodies
-{
-    /// How a presentation rooted at a position admitting `admits` writes its
-    /// thunks.
-    ///
-    /// # Specification
-    /// trivial.
-    const fn of(admits: Admits) -> Self
-    {
-        match admits {
-            Admits::Computation(_) | Admits::Type | Admits::ValueType | Admits::CompType => {
-                Self::Spelled
-            },
-            Admits::Value | Admits::Stated => Self::Opaque,
-        }
-    }
 }
 
 /// How the walk treats a node it reaches.
@@ -2447,8 +2430,8 @@ fn candidate(ordinal: Ordinal) -> Maybe<BinderName, binder::Absent>
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
 /// - ensures: the names encountered from `root` in a position admitting
-///   `admits`, at most one distinct name per allowed visit; absent when that
-///   scan takes more than the visit budget.
+///   `admits`, its thunks read as `bodies` says, at most one distinct name per
+///   allowed visit; absent when that scan takes more than the visit budget.
 /// - provides: the names binders must avoid, and the bound on the walk.
 /// - fails: never; an over-long scan is an absence.
 /// - panics: none.
@@ -2471,11 +2454,11 @@ fn mentioned<S>(
     source: &S,
     root: S::Node,
     admits: Admits,
+    bodies: Bodies,
 ) -> Maybe<BTreeSet<Name<'_>>, scan::Absent>
 where
     S: Source + ?Sized,
 {
-    let bodies = Bodies::of(admits);
     let mut names = BTreeSet::new();
     let mut pending = Vec::from([(root, admits, ValueDepth::ROOT)]);
     let mut visits = 0_u32;
@@ -6349,7 +6332,7 @@ impl Walk<'_, '_>
 }
 
 /// The document of the node `root` of `source`, in a position admitting
-/// `admits`.
+/// `admits`, its thunks written as `bodies` says.
 ///
 /// # Specification
 /// - requires: `builder` is the builder the document is rendered from.
@@ -6358,8 +6341,8 @@ impl Walk<'_, '_>
 ///   budget. A scan refusal builds nothing; a walk refusal may leave partial
 ///   documents in the builder when the source changes after the scan. A
 ///   computation's document is one group, so its statements break together.
-/// - provides: the document [`crate::present_type`], [`crate::present_value`]
-///   and [`crate::present_computation`] lay out.
+/// - provides: the document [`crate::present_type`], [`crate::present_value`],
+///   [`crate::present_definition`] and [`crate::present_computation`] lay out.
 /// - fails: the builder's refusal, or bookkeeping the walk's scheduling
 ///   excludes.
 /// - panics: none.
@@ -6388,14 +6371,14 @@ impl Walk<'_, '_>
 pub fn walk<S>(
     source: &S,
     root: S::Node,
-    admits: Admits,
+    (admits, bodies): (Admits, Bodies),
     style: Style,
     builder: &mut dyn Compose,
 ) -> Result<Walked, PresentationError>
 where
     S: Source + ?Sized,
 {
-    let Maybe::Present(mut mentioned) = mentioned(source, root, admits)
+    let Maybe::Present(mut mentioned) = mentioned(source, root, admits, bodies)
     else {
         return Ok(Walked::OverBudget);
     };
@@ -6414,7 +6397,7 @@ where
         context,
         fidelity: Fidelity::Faithful,
         unspelled: BTreeSet::new(),
-        bodies: Bodies::of(admits),
+        bodies,
         protocols: Vec::new(),
         forms: Vec::new(),
         form: style.form,
@@ -6767,6 +6750,7 @@ mod tests
                 &source,
                 crate::core_source::CoreNode::Value(root),
                 super::Admits::Value,
+                super::Bodies::Opaque,
             )
         };
         assert!(matches!(scanned(within), super::Maybe::Present(_)));

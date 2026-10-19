@@ -49,8 +49,8 @@ use gandr_surface_pretty::Style;
 use gandr_surface_pretty::Unreadable;
 use gandr_surface_pretty::Unspelled;
 use gandr_surface_pretty::present_computation;
+use gandr_surface_pretty::present_definition;
 use gandr_surface_pretty::present_type;
-use gandr_surface_pretty::present_value;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeKey;
@@ -629,7 +629,7 @@ fn spelt(
             present_computation(source, CoreNode::Computation(computation), page, style)
                 .map(|printed| (format!("thunk {{ {} }}", printed.as_ref()), printed))
         },
-        _ => present_value(source, CoreNode::Value(body), page, style)
+        _ => present_definition(source, CoreNode::Value(body), page, style)
             .map(|printed| (String::from(printed.as_ref()), printed)),
     };
     let (Ok(typed), Ok((text, bodied))) = (typed, bodied)

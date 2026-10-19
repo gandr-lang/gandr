@@ -325,6 +325,7 @@ pub use crate::scope::BinderIndex;
 pub use crate::scope::ChildSlot;
 pub use crate::scope::Scopes;
 use crate::walk::Admits;
+use crate::walk::Bodies;
 use crate::walk::Tail;
 use crate::walk::Walked;
 use crate::walk::walk;
@@ -564,7 +565,13 @@ pub fn present_type<S>(
 where
     S: Source + ?Sized,
 {
-    present(source, root, Admits::Type, style, Layout::Page(page))
+    present(
+        source,
+        root,
+        (Admits::Type, Bodies::Spelled),
+        style,
+        Layout::Page(page),
+    )
 }
 
 /// The value at `root` of `source`, laid out at `page`.
@@ -615,7 +622,61 @@ pub fn present_value<S>(
 where
     S: Source + ?Sized,
 {
-    present(source, root, Admits::Value, style, Layout::Page(page))
+    present(
+        source,
+        root,
+        (Admits::Value, Bodies::Opaque),
+        style,
+        Layout::Page(page),
+    )
+}
+
+/// The value at `root` of `source`, a definition's body under its stated
+/// type, laid out at `page` as source that reads back.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the root written as [`present_value`] writes a value, but for
+///   what a reader reads back: a thunk written `thunk { c }`, its body as
+///   [`present_computation`] writes one, and a parameterised constructor below
+///   the root written against its family, `(MkIx : Ix(3))`, where the root
+///   itself stands bare, its type the definition's. Output has the same
+///   line-ending and width guarantees as [`present_type`].
+/// - provides: the body of a `def name = …` the lowering reads back to the same
+///   term against the definition's stated type.
+/// - fails: as [`present_type`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`present_type`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a constructor of a parameterised family, bare at the root
+///   and inside a constructor's field, and a thunk below the root, distinguish
+///   a lost annotation, an annotation at the root and an opaque thunk.
+/// - witness: `tests::goldens::a_definition_writes_its_constructors_against_their_family_815`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
+    Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
+    Err(_) => true,
+})]
+#[inline]
+pub fn present_definition<S>(
+    source: &S,
+    root: S::Node,
+    page: PageWidth,
+    style: Style,
+) -> Result<Presentation, PresentationError>
+where
+    S: Source + ?Sized,
+{
+    present(
+        source,
+        root,
+        (Admits::Stated, Bodies::Spelled),
+        style,
+        Layout::Page(page),
+    )
 }
 
 /// The computation at `root` of `source`, an elaborated body, laid out at
@@ -668,7 +729,7 @@ where
     present(
         source,
         root,
-        Admits::Computation(Tail::Ends),
+        (Admits::Computation(Tail::Ends), Bodies::Spelled),
         style,
         Layout::Page(page),
     )
@@ -717,7 +778,7 @@ where
     present(
         source,
         root,
-        Admits::Computation(Tail::Ends),
+        (Admits::Computation(Tail::Ends), Bodies::Spelled),
         style,
         Layout::Line,
     )
@@ -734,8 +795,9 @@ enum Layout
     Line,
 }
 
-/// The node at `root` of `source`, in a position admitting `admits`, written
-/// in `style` as `layout` asks.
+/// The node at `root` of `source`, at a `position` admitting its [`Admits`]
+/// with thunks written as its [`Bodies`] says, written in `style` as `layout`
+/// asks.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -771,7 +833,7 @@ enum Layout
 fn present<S>(
     source: &S,
     root: S::Node,
-    admits: Admits,
+    position: (Admits, Bodies),
     style: Style,
     layout: Layout,
 ) -> Result<Presentation, PresentationError>
@@ -779,7 +841,7 @@ where
     S: Source + ?Sized,
 {
     let spelled = |composer: &mut dyn Compose| {
-        Ok::<_, PresentationError>(match walk(source, root, admits, style, composer)? {
+        Ok::<_, PresentationError>(match walk(source, root, position, style, composer)? {
             Walked::Built {
                 doc,
                 fidelity,

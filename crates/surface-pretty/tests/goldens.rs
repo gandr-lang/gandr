@@ -78,6 +78,7 @@ use gandr_surface_pretty::Unreadable;
 use gandr_surface_pretty::Unspelled;
 use gandr_surface_pretty::present_computation;
 use gandr_surface_pretty::present_computation_line;
+use gandr_surface_pretty::present_definition;
 use gandr_surface_pretty::present_type;
 use gandr_surface_pretty::present_value;
 use gandr_theory_sites::Degree;
@@ -111,6 +112,8 @@ enum Root
     Type(CoreNode),
     /// A value, through [`present_value`].
     Value(CoreNode),
+    /// A definition's value, through [`present_definition`].
+    Definition(CoreNode),
     /// An elaborated body, through [`present_computation`].
     Computation(CoreNode),
 }
@@ -183,6 +186,7 @@ where
     match root {
         Root::Type(node) => present_type(source, node, page, style),
         Root::Value(node) => present_value(source, node, page, style),
+        Root::Definition(node) => present_definition(source, node, page, style),
         Root::Computation(node) => present_computation(source, node, page, style),
     }
     .expect("a presentation within the default ceilings lays out")
@@ -3061,6 +3065,39 @@ fn a_parameterised_constructor_is_written_against_its_family_where_source_reads_
         spelled(&source, Root::Value(CoreNode::Value(made))),
         faithful(Written("MkIx")),
         "a value presented alone is not source"
+    );
+}
+
+/// A definition's value is source: a parameterised constructor below its
+/// root is written against its family, which the lowering needs to read it
+/// back, while the root's own type is the definition's; a thunk inside is
+/// written whole (#815).
+#[test]
+fn a_definition_writes_its_constructors_against_their_family_815()
+{
+    let mut core = CoreArena::new();
+    let three = integer(&mut core, Sign::NonNegative, Written("3"));
+    let ix = core.value_type_data(ConstantIndex::from(0_usize), vec![three]);
+    let made = core.value_constructor(ix, ConstructorTag::from(0_usize), Vec::new());
+    let returned = core.computation_return(three);
+    let thunked = core.value_thunk(returned);
+    let pair = core.value_tuple(&[made, thunked]);
+    let names = [Name::from("Ix")];
+    let mut constructors = Constructors::default();
+    constructors.family(Name::from("Ix"), [(
+        Name::from("MkIx"),
+        Arity::from(0_usize),
+    )]);
+    let source = CoreSource::new(&core, &names).naming(&constructors);
+    assert_eq!(
+        spelled(&source, Root::Definition(CoreNode::Value(pair))),
+        faithful(Written("#{(MkIx : Ix(3)), thunk { 3 }}")),
+        "a constructor below the root reads back against its family"
+    );
+    assert_eq!(
+        spelled(&source, Root::Definition(CoreNode::Value(made))),
+        faithful(Written("MkIx")),
+        "the root's type is the definition's"
     );
 }
 
