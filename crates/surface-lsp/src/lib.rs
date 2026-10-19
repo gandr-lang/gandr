@@ -144,7 +144,7 @@
 //! | document colours | `textDocument/documentColor`, `colorPresentation` | declined: gandr has no colour literals |
 //! | inline values | `textDocument/inlineValue` | declined: they serve a debugger, and gandr has no debug adapter |
 //! | monikers | `textDocument/moniker` | declined: no cross-repository index reads them |
-//! | workspace symbols | `workspace/symbol` | blocked: a workspace of more than the open documents |
+//! | workspace symbols | `workspace/symbol` | served: every name the open documents' import closures declare whose characters the query holds in order, without case, at most 128, as the `search` module states; a source no open document's closure reads is not searched |
 //! | file watching | `client/registerCapability`, `workspace/didChangeWatchedFiles` | served: a client that registers watchers dynamically is asked at `initialized` to watch `**/*.gandr`; a changed file rechecks and republishes every open copy whose closure named it at its last judgement, a missing import written included, as the `server` module states; the editor's own copy of the changed file stays authoritative |
 //! | workspace folders, file operations | `workspace/didChangeWorkspaceFolders`, `willCreateFiles` and the other file operations | blocked: a workspace of more than the open documents |
 //! | configuration | `workspace/didChangeConfiguration` | served: the `gandr` section's `diagnostics.verbosity`, as the `recheck` module states, `diagnostics.quiet`, as the `quiet` module states, `presentation.form`, which every later hover reads, and `presentation.spelling`, which every later hover reads and which republishes the diagnostics |
@@ -365,6 +365,7 @@ mod quiet;
 mod reading;
 mod recheck;
 mod rpc;
+mod search;
 mod server;
 mod signature;
 mod tokens;
