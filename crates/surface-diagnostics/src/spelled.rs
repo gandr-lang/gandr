@@ -388,7 +388,7 @@ impl Spellings
                 &source.within(context),
                 root,
                 PageWidth::from(SPELLING_WIDTH),
-                Form::Sugared,
+                Form::Sugared.into(),
             ) && !presentation.as_ref().contains('\n')
             {
                 let _fresh = spelled.insert(node, presentation);

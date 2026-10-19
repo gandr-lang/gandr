@@ -315,7 +315,7 @@ pub fn hover<Store, Blocks>(
         .orientations()
         .iter()
         .find_map(|&(span, note)| (span.start() <= offset && offset < span.end()).then_some(note));
-    if let Maybe::Present(entry) = table.at(offset, PageWidth::from(HOVER_WIDTH), style.form)
+    if let Maybe::Present(entry) = table.at(offset, PageWidth::from(HOVER_WIDTH), style.form.into())
         && let Ok(range) = Range::of_bytes(
             &index,
             RenderOffset::from(usize::from(entry.span().start())),
@@ -486,7 +486,7 @@ fn declared<Store, Blocks>(
     let key = declaration.key;
     let held = match key {
         Some(key) if symbol.kind != SymbolKind::MODULE => {
-            match table.declared(key, PageWidth::from(HOVER_WIDTH), style.form) {
+            match table.declared(key, PageWidth::from(HOVER_WIDTH), style.form.into()) {
                 Maybe::Present(held) => Some(held),
                 Maybe::Absent(_) => None,
             }

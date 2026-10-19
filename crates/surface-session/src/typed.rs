@@ -159,7 +159,7 @@ fn spelled_type(
             &ContentSource::from(nodes.as_slice()),
             NodeIndex::from(0_usize),
             page,
-            Form::Sugared,
+            Form::Sugared.into(),
         )
         .map_or(
             Maybe::Absent(spelled::Absent::Unpresentable),

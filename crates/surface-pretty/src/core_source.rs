@@ -2294,7 +2294,7 @@ mod tests
                 source,
                 CoreNode::Computation(body),
                 crate::PageWidth::from(100_u32),
-                crate::Form::Explicit,
+                crate::Form::Explicit.into(),
             )
             .expect("the body lays out")
             .to_string()
