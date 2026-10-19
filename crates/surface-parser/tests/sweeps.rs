@@ -11,6 +11,7 @@
 //! or modifies.
 
 use core::error::Error;
+use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -202,15 +203,19 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
         )
     };
     let sources = corpus::sources()?;
-    let visited = sweep.visit_rotating(RECOVERY, &sources);
-    let mut sourced: Vec<PathBuf> = Vec::new();
+    let visited: HashSet<PathBuf> = sweep
+        .visit_rotating(RECOVERY, &sources)
+        .into_iter()
+        .map(|source| source.path)
+        .collect();
+    let mut sourced: HashSet<PathBuf> = HashSet::new();
     let mut stale = Vec::new();
     let mut moved = Vec::new();
     let mut worse: Vec<(usize, usize, String)> = Vec::new();
     for source in &sources {
         let rel = source.name.as_ref();
         let record = records.join(rel).with_extension("recovery");
-        sourced.push(record.clone());
+        let _sourced = sourced.insert(record.clone());
         if only.as_deref().is_some_and(|only| only != rel) {
             continue;
         }
@@ -218,7 +223,7 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
             stale.push(format!("{rel} has no record; {}", rerecord(rel)));
             continue;
         }
-        if only.is_none() && !visited.contains(source) {
+        if only.is_none() && !visited.contains(&source.path) {
             continue;
         }
         let src = std::fs::read_to_string(&source.path)

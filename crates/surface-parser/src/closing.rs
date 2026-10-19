@@ -745,6 +745,13 @@ enum Next
 ///   reordering equal charges changes them.
 /// - witness: `closing::tests::closings_offer_each_path_cheapest_first`
 /// - witness: `closing::tests::an_unknown_mold_is_unreachable`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        linear_search_in_loop,
+        reason = "bounded: `found` holds at most `limit` closings, and `reads_alike` is a relation no key indexes"
+    )
+)]
 #[spec(ensures: |ret| ret.len() <= usize::from(limit))]
 #[inline]
 #[must_use]
