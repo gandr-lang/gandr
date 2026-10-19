@@ -65,6 +65,7 @@ use gandr_core_checker::Failure;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::TypeNode;
 use gandr_core_term::CompTypeId;
+use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_corpus::Refusal;
@@ -655,17 +656,24 @@ fn words_point(
 }
 
 /// The constructors of every data declaration of a module, each family by
-/// its constant's admission position.
+/// its constant's admission position, and the family each data case of its
+/// bodies eliminates.
 ///
 /// Each constructor is kept by its name and field count in tag order, and
 /// a family records whether it is the words of a family's loops, whose empty
 /// word is spelled `here(a)` at their point `a` and whose letters cons onto
 /// the rest of a word. The core names a constructor by its family and its
-/// tag, so a printer reads the names here, owned so a table outliving the
-/// lowered module keeps them.
-#[repr(transparent)]
+/// tag, and a data case matches by tag alone, so a printer reads the names
+/// here, owned so a table outliving the lowered module keeps them.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Families(Vec<Family>);
+pub struct Families
+{
+    /// Each data declaration's constructors.
+    families: Vec<Family>,
+    /// Each data case, with the admission position of the constant of the
+    /// family it eliminates.
+    cases: Vec<(ComputationId, usize)>,
+}
 
 /// One data declaration's constructors, as [`Families`] keeps them.
 ///
@@ -684,7 +692,46 @@ struct Family
 
 impl Families
 {
-    /// The constructors of every data declaration of `module`.
+    /// The constructors of every data declaration of `module`, and the
+    /// family each data case of its arena eliminates.
+    ///
+    /// A case is named by its node in the module's own arena, so a table
+    /// made here names the cases of that arena alone; a source over another
+    /// arena, such as a run's value read back, takes [`Self::declared`].
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the families [`Self::declared`] holds, and one case per data
+    ///   case the module's origins record a family for, at that family's
+    ///   position.
+    /// - provides: the constructor names a [`CoreSource`] over the module's
+    ///   arena spells a constructor value and a data case's patterns with.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a body's match names each branch by its constructor;
+    ///   a case left out spells `?`, which the test fails on.
+    /// - witness: `tests::diagnostics::a_body_names_its_match_arms_by_their_constructors_809`
+    #[spec(ensures: |ret| ret.families.len() <= module.declarations().len()
+        && ret.cases.len() == module.origins().eliminations().len())]
+    #[inline]
+    #[must_use]
+    pub fn of(module: &LoweredModule<'_>) -> Self
+    {
+        let cases = module
+            .origins()
+            .eliminations()
+            .map(|(case, family)| (case, usize::from(family)))
+            .collect();
+        Self {
+            cases,
+            ..Self::declared(module)
+        }
+    }
+
+    /// The constructors of every data declaration of `module`, naming no
+    /// data case.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -692,9 +739,9 @@ impl Families
     ///   holds, at its constant's position, its constructors named as written
     ///   in tag order with the field count the signature gives each; the words
     ///   of a family's loops are consed, their empty word named `here(a)` at
-    ///   their point `a`.
-    /// - provides: the constructor names a [`CoreSource`] spells a constructor
-    ///   value and a data case's patterns with.
+    ///   their point `a`; no case.
+    /// - provides: the constructor names a [`CoreSource`] over any arena spells
+    ///   a constructor value with.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -704,59 +751,62 @@ impl Families
     ///   the test fails on.
     /// - witness: `tests::diagnostics::a_mismatch_spells_the_constructors_its_type_mentions`
     /// - witness: `tests::diagnostics::a_word_spells_by_its_letters`
-    #[spec(ensures: |ret| ret.0.len() <= module.declarations().len())]
+    #[spec(ensures: |ret| ret.families.len() <= module.declarations().len() && ret.cases.is_empty())]
     #[inline]
     #[must_use]
-    pub fn of(module: &LoweredModule<'_>) -> Self
+    pub fn declared(module: &LoweredModule<'_>) -> Self
     {
-        Self(
-            module
-                .declarations()
-                .iter()
-                .filter_map(|declaration| {
-                    let DeclarationOutcome::Data(index) = declaration.outcome()
-                    else {
-                        return None;
-                    };
-                    let Maybe::Present(signature) = module.data(index)
-                    else {
-                        return None;
-                    };
-                    let point = words_point(module, declaration);
-                    let constructors = module
-                        .constructors(index)
-                        .iter()
-                        .zip(signature.constructors())
-                        .enumerate()
-                        .map(|(tag, (name, fields))| match point {
-                            Maybe::Present((_, ref point)) if tag == 0 => {
-                                (alloc::format!("{name}({point})"), fields.len())
-                            },
-                            Maybe::Present(_) | Maybe::Absent(_) => (name.clone(), fields.len()),
-                        })
-                        .collect();
-                    let placement = match point {
-                        Maybe::Present(_) => Placement::Consed,
-                        Maybe::Absent(_) => Placement::Applied,
-                    };
-                    Some(Family {
-                        constant: usize::from(declaration.constant()),
-                        constructors,
-                        placement,
+        let families = module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| {
+                let DeclarationOutcome::Data(index) = declaration.outcome()
+                else {
+                    return None;
+                };
+                let Maybe::Present(signature) = module.data(index)
+                else {
+                    return None;
+                };
+                let point = words_point(module, declaration);
+                let constructors = module
+                    .constructors(index)
+                    .iter()
+                    .zip(signature.constructors())
+                    .enumerate()
+                    .map(|(tag, (name, fields))| match point {
+                        Maybe::Present((_, ref point)) if tag == 0 => {
+                            (alloc::format!("{name}({point})"), fields.len())
+                        },
+                        Maybe::Present(_) | Maybe::Absent(_) => (name.clone(), fields.len()),
                     })
+                    .collect();
+                let placement = match point {
+                    Maybe::Present(_) => Placement::Consed,
+                    Maybe::Absent(_) => Placement::Applied,
+                };
+                Some(Family {
+                    constant: usize::from(declaration.constant()),
+                    constructors,
+                    placement,
                 })
-                .collect(),
-        )
+            })
+            .collect();
+        Self {
+            families,
+            cases: Vec::new(),
+        }
     }
 
     /// The constructor table these families make, each family under the
-    /// name `names` gives its constant.
+    /// name `names` gives its constant, and each data case answering it.
     ///
     /// # Specification
     /// - requires: `names` are the module's constant names by admission
     ///   position, as [`constant_names`] spells them.
     /// - ensures: each family whose constant `names` holds answers its
-    ///   constructors by tag, the first family under a name winning.
+    ///   constructors by tag, the first family under a name winning; each case
+    ///   of such a family answers the family's name.
     /// - provides: the [`Constructors`] a [`CoreSource`] names through.
     /// - fails: never.
     /// - panics: none.
@@ -767,6 +817,7 @@ impl Families
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::of`].
     /// - witness: `tests::diagnostics::a_mismatch_spells_the_constructors_its_type_mentions`
+    /// - witness: `tests::diagnostics::a_body_names_its_match_arms_by_their_constructors_809`
     #[inline]
     #[must_use]
     pub fn naming<'names>(
@@ -775,7 +826,7 @@ impl Families
     ) -> Constructors<'names>
     {
         let mut constructors = Constructors::default();
-        for family in &self.0 {
+        for family in &self.families {
             if let Some(&named) = names.get(family.constant) {
                 let members = family
                     .constructors
@@ -785,6 +836,11 @@ impl Families
                     Placement::Applied => constructors.family(named, members),
                     Placement::Consed => constructors.words(named, members),
                 }
+            }
+        }
+        for &(case, family) in &self.cases {
+            if let Some(&named) = names.get(family) {
+                constructors.case(case, named);
             }
         }
         constructors

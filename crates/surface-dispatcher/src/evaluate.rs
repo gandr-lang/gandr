@@ -677,7 +677,9 @@ impl<'source> Program<'source>
             });
         }
         let names = constant_names(module);
-        let families = Families::of(module);
+        // A run's value is read back into an arena of its own, whose cases
+        // the module's would misname.
+        let families = Families::declared(module);
         let hidden = hidden_members(module);
         let sealed = if hidden.is_empty() {
             BTreeMap::new()

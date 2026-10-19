@@ -20,12 +20,14 @@ use gandr_core_checker::Mismatch;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
 use gandr_core_term::FailureClass;
+use gandr_core_term::Value;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_corpus::Settlement;
 use gandr_surface_diagnostics::AnnotationKind;
 use gandr_surface_diagnostics::Class;
 use gandr_surface_diagnostics::Diagnostic;
 use gandr_surface_diagnostics::Failures;
+use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::Fix;
 use gandr_surface_diagnostics::Identifier;
 use gandr_surface_diagnostics::Lint;
@@ -33,6 +35,7 @@ use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::Subject;
 use gandr_surface_diagnostics::Unsettlement;
 use gandr_surface_diagnostics::Verbosity;
+use gandr_surface_diagnostics::constant_names;
 use gandr_surface_diagnostics::diagnose;
 use gandr_surface_diagnostics::report_identifier;
 use gandr_surface_diagnostics::report_span;
@@ -40,6 +43,7 @@ use gandr_surface_diagnostics::upstream;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Lints;
+use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Standing;
@@ -49,11 +53,19 @@ use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::compose;
 use gandr_surface_dispatcher::entries;
+use gandr_surface_dispatcher::lower_source;
 use gandr_surface_grammar::built_in;
+use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
+use gandr_surface_pretty::CoreNode;
+use gandr_surface_pretty::CoreSource;
+use gandr_surface_pretty::Form;
+use gandr_surface_pretty::Name;
+use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Spelling;
+use gandr_surface_pretty::present_computation;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
@@ -514,6 +526,71 @@ fn a_word_spells_by_its_letters()
             "Path(Path(Circle, Base, Base), back(loop) ∷ here(Base), here(Base))"
         )),
         "the point is spelled by its own family's constructors, not an earlier family's"
+    );
+}
+
+#[test]
+fn a_body_names_its_match_arms_by_their_constructors_809()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let text = SourceText::from(
+        "data Nat : Type {\n  Zero : Nat;\n  Succ : (p : Nat) --> Nat;\n}\ndef rec down(n : Nat) \
+         -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(p) => become down[<](p)\n  \
+         }\n}\n",
+    );
+    let Lowered::Module { module, arena } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is one module");
+    };
+    let body = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name().as_ref() == "down")
+        .and_then(|declaration| match declaration.outcome() {
+            DeclarationOutcome::Bodied { body } | DeclarationOutcome::Completed { body, .. } => {
+                arena.value(body)
+            },
+            DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World
+            | DeclarationOutcome::Refused(_) => None,
+        });
+    let Some(&Value::Thunk(computation)) = body
+    else {
+        panic!("`down` is defined by a thunk");
+    };
+    let spelled = constant_names(&module);
+    let names: Vec<Name<'_>> = spelled
+        .iter()
+        .map(|name| Name::from(name.as_str()))
+        .collect();
+    let families = Families::of(&module);
+    let constructors = families.naming(&names);
+    let source = CoreSource::new(&arena, &names).naming(&constructors);
+    let presentation = present_computation(
+        &source,
+        CoreNode::Computation(computation),
+        PageWidth::from(100_u32),
+        Form::Sugared.into(),
+    )
+    .expect("the body lays out");
+    // The anonymous fixpoint has no surface form, so the body is approximate
+    // as a whole; its arms leave nothing unspelled.
+    assert_eq!(
+        (
+            presentation.to_string(),
+            presentation.unspelled().is_empty()
+        ),
+        (
+            String::from("rec a { fn (b) { case b { Zero => b, Succ(c) => a(c) } } }"),
+            true
+        ),
+        "each arm is written under the constructor it matches: {:?}",
+        presentation.unspelled()
     );
 }
 

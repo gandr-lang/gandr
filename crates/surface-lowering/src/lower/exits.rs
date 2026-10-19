@@ -1650,33 +1650,44 @@ impl Sources
     }
 
     /// Record for computation `id` the match record of the computation it was
-    /// copied from, when that one roots a match.
+    /// copied from, when that one roots a match, and the family it eliminates,
+    /// when it is a data case.
     ///
     /// # Specification
     /// - requires: `id` has no match record yet.
     /// - ensures: a copy of a match's root carries that match's record; where
     ///   the source eliminates the value its record names and the copy
     ///   eliminates a value of its own, the copy's record names the copy's, so
-    ///   the patterns answer where the run judged the copy (#298).
+    ///   the patterns answer where the run judged the copy (#298); a copy of a
+    ///   data case eliminates the source's family.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a match carried under a binder keeps its patterns,
-    ///   and a match bound by a `run` whose block continues its local ends
-    ///   answers its patterns at the copy's scrutinee.
+    /// - hypothesis: L3 — a match carried under a binder keeps its patterns, a
+    ///   match bound by a `run` whose block continues its local ends answers
+    ///   its patterns at the copy's scrutinee, and a match written in an arm
+    ///   that binds a field names its own arms in the leaf's copy.
     /// - witness: `lower::exits::tests::an_exit_under_nesting_leaves_its_function`
     /// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
-    #[spec(ensures: self.computations.get(&id).is_none_or(|&held| matches!(sink.origins.case(held), Maybe::Absent(_)) || matches!(sink.origins.case(id), Maybe::Present(_))))]
+    /// - witness: `lower::native::tests::a_data_case_names_the_family_it_eliminates_809`
+    #[spec(ensures: self.computations.get(&id).is_none_or(|&held|
+        (matches!(sink.origins.case(held), Maybe::Absent(_)) || matches!(sink.origins.case(id), Maybe::Present(_)))
+        && (matches!(sink.origins.elimination(held), Maybe::Absent(_)) || matches!(sink.origins.elimination(id), Maybe::Present(_)))))]
     pub(super) fn keep_case(
         &self,
         sink: &mut Sink<'_>,
         id: ComputationId,
     )
     {
-        if let Some(&held) = self.computations.get(&id)
-            && let Maybe::Present(case) = sink.origins.case(held)
-        {
+        let Some(&held) = self.computations.get(&id)
+        else {
+            return;
+        };
+        if let Maybe::Present(family) = sink.origins.elimination(held) {
+            sink.origins.record_elimination(id, family);
+        }
+        if let Maybe::Present(case) = sink.origins.case(held) {
             let mut kept = case.clone();
             if let (Some(source), Some(copy)) = (
                 eliminated(sink.arena.computation(held)),
@@ -1861,6 +1872,9 @@ fn rebuild(
     if let Maybe::Present(case) = sink.origins.case(node) {
         let kept = case.clone();
         sink.origins.record_case(rebuilt, kept);
+    }
+    if let Maybe::Present(family) = sink.origins.elimination(node) {
+        sink.origins.record_elimination(rebuilt, family);
     }
 
     rebuilt

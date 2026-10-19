@@ -3010,7 +3010,9 @@ impl TypeTable
             .iter()
             .map(|name| Name::from(name.as_str()))
             .collect();
-        let constructors = self.families.naming(&names);
+        // The cases are this lowering's own: the table's are another arena's.
+        let families = Families::of(&module);
+        let constructors = families.naming(&names);
         let printer = CoreSource::new(&arena, &names).naming(&constructors);
         present_computation_line(
             &printer,

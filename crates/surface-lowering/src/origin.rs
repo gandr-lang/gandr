@@ -108,6 +108,7 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::pattern::PatternId;
 use gandr_core_term::pattern::Patterns;
+use gandr_kernel_term::ConstantIndex;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
@@ -510,6 +511,10 @@ pub struct OriginTable
     declarations: Vec<Origin>,
     /// Each lowered match's arms, ascending by the root of its tree.
     cases: Vec<(ComputationId, CaseOrigin)>,
+    /// The data declaration each data case of a match's tree eliminates, by
+    /// the case. The core matches by tag alone, so a printer naming a case's
+    /// branches by their constructors reads the family here.
+    eliminations: BTreeMap<ComputationId, ConstantIndex>,
     /// The name each lambda or bind binds, by the computation that opens the
     /// binder, ascending by id: the syntax the binder's name was written at.
     binders: Vec<(ComputationId, Origin)>,
@@ -736,6 +741,31 @@ impl OriginTable
         record(&mut self.pairs, id, label);
     }
 
+    /// Record that the data case `case` eliminates a value of the data
+    /// declaration `family`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Self::elimination`] answers `family` for `case`, the first
+    ///   record winning.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a match over a unary family names each branch of its
+    ///   case by the constructor it binds.
+    /// - witness: `lower::native::tests::a_data_case_names_the_family_it_eliminates_809`
+    #[spec(ensures: self.eliminations.contains_key(&case))]
+    #[inline]
+    pub fn record_elimination(
+        &mut self,
+        case: ComputationId,
+        family: ConstantIndex,
+    )
+    {
+        let _first = self.eliminations.entry(case).or_insert(family);
+    }
+
     /// Record, for each node a rewrite of the lowered terms minted, the origin
     /// of the node it stands for: a rebuilt node takes the origin of the node
     /// it was rebuilt from, with that node's binder name and a variable's
@@ -749,10 +779,11 @@ impl OriginTable
     /// - ensures: each minted node whose source answers an origin records it,
     ///   the source being the node `carried` pairs it with, or for a bind the
     ///   run `binds` pairs it with, the run first and the first pair after it;
-    ///   a rebuilt opener records its source's binder, a rebuilt dependent
-    ///   arrow the name its source binds, and a rebuilt variable its source's
-    ///   binder span; a minted bind records no binder; nothing recorded before
-    ///   changes, and every family stays ascending.
+    ///   a rebuilt opener records its source's binder, a rebuilt data case the
+    ///   family its source eliminates, a rebuilt dependent arrow the name its
+    ///   source binds, and a rebuilt variable its source's binder span; a
+    ///   minted bind records no binder; nothing recorded before changes, and
+    ///   every family stays ascending.
     /// - provides: the nodes of a body the checker elaborated, located as the
     ///   written nodes they elaborate, so a refusal of the second run is
     ///   published where the first run's is.
@@ -816,6 +847,9 @@ impl OriginTable
                 Source::Rebuilt(held) => {
                     if let Maybe::Present(name) = self.binder(held) {
                         self.record_binder(written, name);
+                    }
+                    if let Some(&family) = self.eliminations.get(&held) {
+                        self.record_elimination(written, family);
                     }
                     self.computation(held)
                 },
@@ -1220,6 +1254,36 @@ impl OriginTable
     pub fn pairs(&self) -> &[(ValueTypeId, Origin)]
     {
         &self.pairs
+    }
+
+    /// Each data case a match's tree holds, with the data declaration it
+    /// eliminates, ascending by case.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn eliminations(&self) -> impl ExactSizeIterator<Item = (ComputationId, ConstantIndex)>
+    {
+        self.eliminations
+            .iter()
+            .map(|(&case, &family)| (case, family))
+    }
+
+    /// The data declaration the data case `case` eliminates.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn elimination(
+        &self,
+        case: ComputationId,
+    ) -> Maybe<ConstantIndex, origin::Absent>
+    {
+        self.eliminations
+            .get(&case)
+            .copied()
+            .map_or(Maybe::Absent(origin::Absent::Unrecorded), Maybe::Present)
     }
 
     /// How many core nodes this table recorded an origin for.
