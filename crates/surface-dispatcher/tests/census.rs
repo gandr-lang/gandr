@@ -32,6 +32,8 @@ use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
+use gandr_surface_pretty::Spelling;
+use gandr_surface_pretty::Style;
 use gandr_surface_pretty::Unreadable;
 use gandr_surface_pretty::Unspelled;
 use gandr_surface_syntax::ByteOffset;
@@ -243,7 +245,7 @@ fn every_typed_entry_spells_without_a_dishonest_question_mark()
             };
             let table = typed(&grammar, path, root, (text, base));
             if let Some(ref table) = table {
-                for entry in table.entries(page, Form::Sugared) {
+                for entry in table.entries(page, Form::Sugared.into()) {
                     let Maybe::Present(entry) = entry
                     else {
                         continue;
@@ -254,7 +256,7 @@ fn every_typed_entry_spells_without_a_dishonest_question_mark()
                         census.count(path, site, expected);
                     }
                 }
-                for (_, declared) in table.declarations(page, Form::Sugared) {
+                for (_, declared) in table.declarations(page, Form::Sugared.into()) {
                     if let Maybe::Present(Declared::Typed(ty)) = declared {
                         census.count(path, Site::Declaration, &ty);
                     }
@@ -374,7 +376,8 @@ fn every_typed_entry_spells_without_a_dishonest_question_mark()
 /// A visited type that reads back as another, does not parse, refuses to
 /// lower or cannot be laid out fails the sweep by name, as does one whose
 /// reading prints again otherwise (the printer as a fixed point): every
-/// printed type is a written type that reads back to its certificate.
+/// printed type is a written type that reads back to its certificate, in
+/// either spelling (#782) — the Unicode glyphs and their ASCII spellings.
 ///
 /// The sweep visits its sample under every pull-request profile and every
 /// source under the `sweeps` profile, as every sweep does
@@ -436,7 +439,20 @@ mod sweeps
                 else {
                     return ControlFlow::Continue(());
                 };
-                for read in table.read_back(&grammar, page, Form::Sugared) {
+                let reads = [Spelling::Unicode, Spelling::Ascii]
+                    .into_iter()
+                    .flat_map(|spelling| {
+                        let style = Style {
+                            form: Form::Sugared,
+                            spelling,
+                        };
+                        table
+                            .read_back(&grammar, page, style)
+                            .into_iter()
+                            .map(move |read| (spelling, read))
+                    });
+                for (spelling, read) in reads {
+                    let at = format!("{} ({spelling:?})", path.display());
                     let class = match read.trip {
                         RoundTrip::Equal => "Equal",
                         RoundTrip::Open => "Open",
@@ -444,33 +460,20 @@ mod sweeps
                         RoundTrip::Different => {
                             unread.push(format!(
                                 "{}: `{}` reads back as another type",
-                                path.display(),
-                                read.spelled
+                                at, read.spelled
                             ));
                             "Different"
                         },
                         RoundTrip::Refused(ref refusal) => {
-                            unread.push(format!(
-                                "{}: `{}` refuses: {refusal}",
-                                path.display(),
-                                read.spelled
-                            ));
+                            unread.push(format!("{}: `{}` refuses: {refusal}", at, read.spelled));
                             "Refused"
                         },
                         RoundTrip::Unparsed => {
-                            unread.push(format!(
-                                "{}: `{}` does not parse",
-                                path.display(),
-                                read.spelled
-                            ));
+                            unread.push(format!("{}: `{}` does not parse", at, read.spelled));
                             "Unparsed"
                         },
                         RoundTrip::Unspelled => {
-                            unread.push(format!(
-                                "{}: {:?} is unspelled",
-                                path.display(),
-                                read.site
-                            ));
+                            unread.push(format!("{}: {:?} is unspelled", at, read.site));
                             "Unspelled"
                         },
                     };
@@ -482,17 +485,12 @@ mod sweeps
                             if collapsed(SourceText::from(again.as_str()))
                                 != collapsed(SourceText::from(read.spelled.as_str())) =>
                         {
-                            moved.push(format!(
-                                "{}: `{}` reprints as `{again}`",
-                                path.display(),
-                                read.spelled
-                            ));
+                            moved.push(format!("{}: `{}` reprints as `{again}`", at, read.spelled));
                         },
                         Maybe::Absent(reprinted::Absent::Unspelled) => {
                             moved.push(format!(
                                 "{}: `{}` reads back to a type the printer cannot lay out",
-                                path.display(),
-                                read.spelled
+                                at, read.spelled
                             ));
                         },
                         Maybe::Present(_)

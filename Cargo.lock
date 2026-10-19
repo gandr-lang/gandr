@@ -885,6 +885,7 @@ dependencies = [
  "gandr-core-term",
  "gandr-kernel-strata",
  "gandr-kernel-term",
+ "gandr-surface-grammar",
  "gandr-surface-layout",
  "gandr-theory-levitation",
  "gandr-theory-sites",

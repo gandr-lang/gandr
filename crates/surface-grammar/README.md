@@ -34,6 +34,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - `built_in`, `built_in_prec_table`, `PrecTable`: the gandr surface and its named precedence groups, the mold table thawed from frozen tables.
 - `RoleTable`, `HighlightError`: the role of every mold, read off a grammar, and the highlight spans of a tree molded under it; a tree under another grammar and a tile past the table are refused.
 - `named_kind_parity`, `named_kind_realization`, `TREE_SITTER_NAMED_KINDS`, `PBG_ONLY_KINDS`: how every named node kind is realised.
+- `SPELLED`, `Spelled`, `Ascii`, `Spelling`, `spelled`, `aliased` and the named entries `EQUIVALENCE`, `FLOW`, `ISOMORPHISM`, `CONS`, `UNRESTRICTED`: every construct has an ASCII spelling and may have a Unicode one; the table pairs each glyph tile with its ASCII token or head, which the labeler molds as the glyph and the printer writes when asked for ASCII. `PRIME` is the identifier prime, which has none. Witnesses: `tests::spelling::every_glyph_tile_of_the_grammar_has_an_ascii_spelling`, `tests::spelling::each_glyph_is_written_in_the_spelling_asked`.
 
 ## Expected features
 

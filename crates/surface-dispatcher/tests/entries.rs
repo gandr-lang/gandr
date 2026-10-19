@@ -543,7 +543,7 @@ fn every_judged_node_answers_at_its_own_span()
             };
             let tree = parsed.into_tree();
             let mut refused: BTreeSet<_> = table
-                .declarations(page, Form::Sugared)
+                .declarations(page, Form::Sugared.into())
                 .filter(|entry| matches!(entry.1, Maybe::Present(Declared::Refused(_))))
                 .map(|(key, _)| key)
                 .collect();

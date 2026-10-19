@@ -920,6 +920,9 @@ pub enum Unspelled
     Exhausted,
     /// A name a line cannot hold: empty, or holding a line break or a tab.
     Unprintable,
+    /// A name holding the prime `′`, written in the ASCII spelling, which has
+    /// no letter for it.
+    Primed,
     /// A universe over a sort parameter or at a level that mentions a
     /// variable.
     Universe,

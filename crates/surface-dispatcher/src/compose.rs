@@ -2982,7 +2982,7 @@ def h = 1 ;"#,
                 &printer,
                 CoreNode::Computation(computation),
                 PageWidth::from(100_u32),
-                Form::Explicit,
+                Form::Explicit.into(),
             )
             .expect("the body lays out");
             (presentation.to_string(), presentation.fidelity())
@@ -3117,7 +3117,7 @@ def h = 1 ;"#,
                         &printer,
                         CoreNode::ValueType(declared(name)),
                         PageWidth::from(100_u32),
-                        Form::Sugared,
+                        Form::Sugared.into(),
                     )),
                     (String::from(sugared), Fidelity::Faithful),
                     "`{explicit}` prints sugared as `{sugared}`"
@@ -3141,7 +3141,7 @@ def h = 1 ;"#,
                     &printer,
                     CoreNode::Value(body("pair")),
                     PageWidth::from(100_u32),
-                    Form::Sugared,
+                    Form::Sugared.into(),
                 ),
             ),
             (
@@ -3151,7 +3151,7 @@ def h = 1 ;"#,
                     &printer,
                     CoreNode::Computation(suspended),
                     PageWidth::from(100_u32),
-                    Form::Sugared,
+                    Form::Sugared.into(),
                 ),
             ),
         ] {
@@ -3228,7 +3228,7 @@ def h = 1 ;"#,
                 &CoreSource::new(&arena, &names).restoring(&restoration),
                 CoreNode::Computation(computation),
                 PageWidth::from(100_u32),
-                Form::Explicit,
+                Form::Explicit.into(),
             )
             .expect("the body lays out");
             (presentation.to_string(), presentation.fidelity())
@@ -3356,7 +3356,7 @@ def h = 1 ;"#,
                 &source,
                 CoreNode::Computation(arm),
                 PageWidth::from(100_u32),
-                Form::Sugared,
+                Form::Sugared.into(),
             )
             .expect("the arm lays out");
             assert_eq!(

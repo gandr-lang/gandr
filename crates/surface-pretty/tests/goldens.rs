@@ -72,7 +72,10 @@ use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Source;
+use gandr_surface_pretty::Spelling;
+use gandr_surface_pretty::Style;
 use gandr_surface_pretty::Unreadable;
+use gandr_surface_pretty::Unspelled;
 use gandr_surface_pretty::present_computation;
 use gandr_surface_pretty::present_computation_line;
 use gandr_surface_pretty::present_type;
@@ -153,31 +156,34 @@ where
     presented_in(source, root, page, Form::Explicit)
 }
 
-/// `root` of `source` laid out at `page` in `form`.
+/// `root` of `source` laid out at `page` in `style`.
 ///
 /// # Specification
 /// - requires: the fixture fits the default build and render ceilings.
-/// - ensures: as [`presented`], in `form`.
-/// - provides: a presentation in either form.
+/// - ensures: as [`presented`], in `style`.
+/// - provides: a presentation in either form and either spelling.
 /// - panics: if the presentation refuses.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`presented`], and the sugared fixtures in both forms.
+/// - hypothesis: L3 — as [`presented`], the sugared fixtures in both forms, and
+///   the glyph fixtures in both spellings.
 /// - witness: `tests::goldens::the_sugared_form_writes_every_sugar_its_shape_admits`
+/// - witness: `tests::goldens::each_glyph_former_is_written_in_the_spelling_asked_782`
 #[spec(ensures: |ref ret| !ret.as_ref().contains(['\r', '\t']))]
 fn presented_in<S>(
     source: &S,
     root: Root,
     page: PageWidth,
-    form: Form,
+    style: impl Into<Style>,
 ) -> Presentation
 where
     S: Source<Node = CoreNode>,
 {
+    let style = style.into();
     match root {
-        Root::Type(node) => present_type(source, node, page, form),
-        Root::Value(node) => present_value(source, node, page, form),
-        Root::Computation(node) => present_computation(source, node, page, form),
+        Root::Type(node) => present_type(source, node, page, style),
+        Root::Value(node) => present_value(source, node, page, style),
+        Root::Computation(node) => present_computation(source, node, page, style),
     }
     .expect("a presentation within the default ceilings lays out")
 }
@@ -531,8 +537,8 @@ fn table_spelling(
 {
     let table = Table(rows);
     let presentation = match reading {
-        Reading::AsType => present_type(&table, Row(0), wide(), Form::Explicit),
-        Reading::AsValue => present_value(&table, Row(0), wide(), Form::Explicit),
+        Reading::AsType => present_type(&table, Row(0), wide(), Form::Explicit.into()),
+        Reading::AsValue => present_value(&table, Row(0), wide(), Form::Explicit.into()),
     }
     .expect("a table presentation lays out");
     (presentation.to_string(), presentation.fidelity())
@@ -1394,6 +1400,147 @@ fn every_type_former_spells_as_the_grammar_writes_it()
         spelled(&source, Root::Type(CoreNode::ValueType(record))),
         "the same record unrecorded spells as the record"
     );
+}
+
+/// The wide-page spelling and fidelity of `root` in `spelling`, explicit,
+/// with why each `?` was written.
+///
+/// # Specification
+/// trivial.
+fn spelled_as<S>(
+    source: &S,
+    root: Root,
+    spelling: Spelling,
+) -> ((String, Fidelity), Vec<Unspelled>)
+where
+    S: Source<Node = CoreNode>,
+{
+    let presentation = presented_in(source, root, wide(), Style {
+        form: Form::Explicit,
+        spelling,
+    });
+    (
+        (presentation.to_string(), presentation.fidelity()),
+        presentation.unspelled().iter().copied().collect(),
+    )
+}
+
+/// Each former the grammar writes with a glyph is written in the spelling
+/// asked: the relations infix with `≃` and `⇝` or `<~>` and `~~>`, the
+/// isomorphism infix with `≅` or as the call `Iso(A, B)`, and a word's
+/// letters consed with `∷` or `::` (#782).
+#[test]
+fn each_glyph_former_is_written_in_the_spelling_asked_782()
+{
+    let names = [Name::from("Loops")];
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    let string = core.value_type_base(BaseType::String);
+    let unit = core.value_type_unit();
+    let string_unit = core.value_type_product(&[string, unit]);
+    let returns_string = core.comp_type_returner(string);
+    let to_string = core.comp_type_arrow(integer, returns_string);
+    let forward = core.value_type_thunk(to_string);
+    let record = core.value_type_sigma(forward, unit);
+    let equivalence = core.value_type_sigma(forward, string_unit);
+    let universe = small_universe(&mut core);
+    let integer_code = core.value_quote(integer);
+    let string_code = core.value_quote(string);
+    let directed = core.value_type_flow(universe, integer_code, string_code);
+    let mut relations = [
+        (record, Relation::Isomorphism),
+        (equivalence, Relation::Equivalence),
+        (directed, Relation::Flow),
+    ];
+    relations.sort_unstable_by_key(|&(id, _)| id);
+    let loops = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let nil = core.value_constructor(loops, ConstructorTag::from(0_usize), Vec::new());
+    let once = core.value_constructor(loops, ConstructorTag::from(1_usize), vec![nil]);
+    let word = core.value_constructor(loops, ConstructorTag::from(1_usize), vec![once]);
+    let mut constructors = Constructors::default();
+    constructors.words(Name::from("Loops"), [
+        (Name::from("base"), Arity::from(0_usize)),
+        (Name::from("loop"), Arity::from(1_usize)),
+    ]);
+    let source = CoreSource::new(&core, &names)
+        .naming(&constructors)
+        .relating(&relations);
+    for (root, unicode, ascii) in [
+        (
+            Root::Type(CoreNode::ValueType(record)),
+            "Integer ≅ String",
+            "Iso(Integer, String)",
+        ),
+        (
+            Root::Type(CoreNode::ValueType(equivalence)),
+            "Integer ≃ String",
+            "Integer <~> String",
+        ),
+        (
+            Root::Type(CoreNode::ValueType(directed)),
+            "Integer ⇝ String",
+            "Integer ~~> String",
+        ),
+        (
+            Root::Value(CoreNode::Value(word)),
+            "loop ∷ loop ∷ base",
+            "loop :: loop :: base",
+        ),
+    ] {
+        for (spelling, expected) in [(Spelling::Unicode, unicode), (Spelling::Ascii, ascii)] {
+            assert_eq!(
+                spelled_as(&source, root, spelling),
+                (faithful(Written(expected)), Vec::new()),
+                "{root:?} in {spelling:?}"
+            );
+        }
+    }
+}
+
+/// A name holding the prime is written as it stands in Unicode; in ASCII,
+/// which has no spelling for the prime, a constant or a context binder so
+/// named is written `?`, approximate and recorded primed, and a binder the
+/// source named so takes a generated name (#782).
+#[test]
+fn a_primed_name_has_no_ascii_spelling_782()
+{
+    let names = [Name::from("f′")];
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    let constant = core.value_constant(ConstantIndex::from(0_usize));
+    let opened = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let between = core.value_type_path(integer, opened, outer);
+    let returns_between = core.comp_type_returner(between);
+    let over_context = core.comp_type_pi(integer, returns_between);
+    let context = [Some(Name::from("y′"))];
+    let arrows = [(over_context, Name::from("n′"))];
+    let source = CoreSource::new(&core, &names)
+        .within(&context)
+        .naming_arrows(&arrows);
+    for (root, unicode, ascii) in [
+        (
+            Root::Value(CoreNode::Value(constant)),
+            faithful(Written("f′")),
+            approximate(Written("?")),
+        ),
+        (
+            Root::Type(CoreNode::CompType(over_context)),
+            faithful(Written("(n′ : Integer) -> -F Path(Integer, n′, y′)")),
+            approximate(Written("(a : Integer) -> -F Path(Integer, a, ?)")),
+        ),
+    ] {
+        assert_eq!(
+            spelled_as(&source, root, Spelling::Unicode),
+            (unicode, Vec::new()),
+            "{root:?} in Unicode"
+        );
+        assert_eq!(
+            spelled_as(&source, root, Spelling::Ascii),
+            (ascii, vec![Unspelled::Primed]),
+            "{root:?} in ASCII"
+        );
+    }
 }
 
 /// Each universe spells its sort and its constant level as the grammar
@@ -2618,10 +2765,15 @@ fn an_elaborated_body_prints_with_its_exits_elided()
         sequenced,
     ] {
         let root = CoreNode::Computation(id);
-        let wide = present_computation(&source, root, PageWidth::from(4_096_u32), Form::Explicit)
-            .expect("the body lays out");
-        let line =
-            present_computation_line(&source, root, Form::Explicit).expect("the body writes");
+        let wide = present_computation(
+            &source,
+            root,
+            PageWidth::from(4_096_u32),
+            Form::Explicit.into(),
+        )
+        .expect("the body lays out");
+        let line = present_computation_line(&source, root, Form::Explicit.into())
+            .expect("the body writes");
         assert_eq!(
             (line.as_ref(), line.fidelity()),
             (wide.as_ref(), wide.fidelity()),
