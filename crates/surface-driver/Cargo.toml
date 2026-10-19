@@ -28,9 +28,20 @@ path = "src/main.rs"
 name = "tests"
 path = "tests/lib.rs"
 
+# The benchmark report: the closure check of the largest model source, the
+# kernel's readmission of a fixed staged certificate set and one
+# language-server keystroke, profiled by hotpath and uploaded to hotpath Cloud
+# from CI as the `gandr` series. Built only with the `hotpath` feature.
+[[bench]]
+harness = false
+name = "hotpath"
+path = "benches/hotpath.rs"
+required-features = ["hotpath"]
+
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. serde_json encodes the run's summary line
-# under `--verbosity json`; toml reads the user's configuration file.
+# under `--verbosity json`; toml reads the user's configuration file. hotpath
+# profiles the benchmark report behind the `hotpath` feature.
 [dependencies]
 anodized.workspace = true
 clap.workspace = true
@@ -43,6 +54,7 @@ gandr-surface-mcp.workspace = true
 gandr-surface-render-terminal.workspace = true
 gandr-surface-repl.workspace = true
 gandr-surface-tui.workspace = true
+hotpath = { workspace = true, optional = true }
 quenchant-shape.workspace = true
 serde_json.workspace = true
 toml.workspace = true
@@ -51,6 +63,17 @@ tracing-subscriber = { workspace = true, optional = true }
 
 [features]
 default = []
+# The `hotpath` bench: the checker's judgement and readmission and the
+# language server's recheck timed and their allocations counted, the report
+# uploaded to hotpath Cloud when CI asks for it.
+hotpath = [
+  "dep:hotpath",
+  "gandr-surface-dispatcher/hotpath",
+  "gandr-surface-lsp/hotpath",
+  "hotpath/hotpath",
+  "hotpath/hotpath-alloc",
+  "hotpath/hotpath-cloud",
+]
 # On macOS, serve every allocation from one private malloc zone rather than
 # the default zone; off, and on every other target, the system allocator.
 # Off by default: it missed its kill line. README § The global allocator.

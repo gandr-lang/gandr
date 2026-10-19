@@ -1612,6 +1612,7 @@ enum Resume<'crossed>
 #[spec(ensures: |ret| ret.0.readmitted().len() == report.judged().len()
     && (matches!(resume, Resume::Leading { .. })
         || (usize::from(ret.0.resumed()) == 0 && matches!(ret.1, Maybe::Absent(_)))))]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 fn readmit_from<Vouch>(
     arena: &mut CoreArena,
     report: &ModuleReport,

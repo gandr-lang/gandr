@@ -568,6 +568,7 @@ pub struct Rechecked
         && diagnostic.related_information.iter().all(|related|
             related.location.uri == *uri && related.location.range.start <= related.location.range.end)))]
 #[must_use]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub fn recheck(
     uri: &DocumentUri,
     session: &mut DocumentSession,

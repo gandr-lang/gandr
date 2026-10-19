@@ -61,6 +61,9 @@ sysctl.workspace = true
 
 [features]
 default = []
+# The checker's judgement and readmission profiled for the benchmark report
+# (the driver's `hotpath` bench).
+hotpath = ["gandr-core-checker/hotpath"]
 # Invocation boundary diagnostics through the caller-owned subscriber.
 tracing = ["dep:tracing"]
 

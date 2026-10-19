@@ -951,6 +951,7 @@ struct Decision
     | (&(Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_) | Verdict::Suspended(_)), &Maybe::Absent(kept::Absent::Accepted)) => true,
         | _ => false,
     })]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 fn decide(
     context: &mut CheckingContext<'_>,
     declaration: &Declaration,

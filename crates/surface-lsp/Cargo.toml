@@ -27,7 +27,8 @@ path = "tests/lib.rs"
 # percent-decoded. The hub's render-bus face writes the seam's frames, so the
 # seam's serde image is on.
 # The pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled.
+# logic/BigInt stays disabled. `hotpath` profiles a recheck for the
+# benchmark report.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
@@ -43,6 +44,7 @@ gandr-surface-pretty.workspace = true
 gandr-surface-render-remote = { workspace = true, features = ["serde"] }
 gandr-surface-session.workspace = true
 gandr-surface-syntax.workspace = true
+hotpath = { workspace = true, optional = true }
 percent-encoding.workspace = true
 quenchant-shape.workspace = true
 serde.workspace = true
@@ -56,6 +58,12 @@ serde_json.workspace = true
 expect-test.workspace = true
 gandr-workflow-sweep.workspace = true
 proptest.workspace = true
+
+[features]
+default = []
+# A document's recheck timed and its allocations counted for the benchmark
+# report (the driver's `hotpath` bench).
+hotpath = ["dep:hotpath", "hotpath/hotpath"]
 
 [lints]
 workspace = true

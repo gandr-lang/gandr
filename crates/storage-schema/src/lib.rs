@@ -122,6 +122,10 @@
 #![no_std]
 
 extern crate alloc;
+// The profiler's instrumentation names `std`; it links only into the
+// benchmark build.
+#[cfg(feature = "hotpath")]
+extern crate std;
 
 pub mod error;
 pub mod keyed;

@@ -21,6 +21,8 @@ path = "tests/lib.rs"
 
 # The measurement: a `harness = false` bench timing the preimage lookup, the
 # insert-and-remove round trip and the equation check on a 6400-part store.
+# Under the `hotpath` feature it is also the `store` series of the benchmark
+# report, uploaded from the pull-request lane.
 [[bench]]
 harness = false
 name = "store"
@@ -28,11 +30,18 @@ path = "benches/store.rs"
 
 # The pinned anodized facade supplies core-only specification helpers; BLAKE3
 # is the schema and manifest digest; the record plane holds every table and
-# proves its records.
+# proves its records. `hotpath` profiles the store for the benchmark report.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
 gandr-storage-records.workspace = true
+hotpath = { workspace = true, optional = true }
+
+[features]
+default = []
+# The lookup, insert and delete timed and their allocations counted; the bench
+# reports them and uploads the report to hotpath Cloud from CI.
+hotpath = ["dep:hotpath", "hotpath/hotpath", "hotpath/hotpath-alloc", "hotpath/hotpath-cloud"]
 
 [lints]
 workspace = true

@@ -568,6 +568,7 @@ impl Store
     /// - witness: `tests::equations::every_inverse_agrees_with_a_scan_after_every_edit`
     /// - witness: `tests::keyed::the_fixture_round_trips_through_the_block_store`
     #[inline]
+    #[cfg_attr(feature = "hotpath", hotpath::measure(impl_type = "Store"))]
     pub fn preimage(
         &self,
         arrow: ArrowId,

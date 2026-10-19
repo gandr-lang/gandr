@@ -426,6 +426,7 @@ struct Replaying<'certificate>
 /// - witness: `staging::tests::every_width_checks_the_serial_program`
 /// - witness: `staging::tests::exhausted_allowances_refuse_alike_at_every_width`
 #[spec(ensures: |output| output.len() == certificates.len())]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 fn readmitted<F>(
     arena: &Arena,
     context: &[TypeId],
