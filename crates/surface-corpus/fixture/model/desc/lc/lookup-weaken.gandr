@@ -1,0 +1,45 @@
+// A lookup under one binder more is the lookup weakened. `look` counts the
+// binders it has crossed and weakens what it finds by their number, so
+// crossing one more weakens once more; at a consed term the two weakenings
+// fuse by `renameRename`, and at a shift the sum is read by `shiftAdds`.
+
+// The naturals; the syntax; the shift's lookup and the fusion of renamings.
+import "../model-in-source.gandr" ;
+import "./syntax.gandr" ;
+import "./shift-lookup.gandr" ;
+import "./rename-rename.gandr" ;
+
+/// A term under `k + 1` binders is the term under `k` weakened.
+@[ checks ]
+def shiftByWeakens(a : Term, k : N) -> -F Path(Term, shiftBy(a, S(k)), wk(shiftBy(a, k))) {
+  case k {
+    Z => here(wk(a)),
+    S(i) => back(renameRename(
+      a,
+      RShift(S(i)),
+      RShift(S(Z)),
+      RShift(S(S(i))),
+      thunk { fn (n) { shiftsCompose(i, n) } }
+    ))
+  }
+}
+
+/// A lookup under one binder more is the lookup weakened, by recursion on
+/// the index.
+@[ checks ]
+def rec lookWeakens(n : N, s : Env, k : N) -> -F Path(Term, look(n, s, S(k)), wk(look(n, s, k))) {
+  case s {
+    Shift(j) => case n {
+      Z => back(ixShiftAdds(plusTwo(Z, j, k), S(Z))),
+      S(m) => back(ixShiftAdds(plusTwo(S(m), j, k), S(Z)))
+    },
+    Cons(a, r) => case n {
+      Z => shiftByWeakens(a, k),
+      S(m) => lookWeakens[<](m, r, k)
+    },
+    Lift(r) => case n {
+      Z => back(ixShiftAdds(plus(Z, k), S(Z))),
+      S(m) => lookWeakens[<](m, r, S(k))
+    }
+  }
+}

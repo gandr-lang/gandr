@@ -1,0 +1,155 @@
+// Renaming then substituting is substituting then renaming, when the two
+// composites agree at every index; its instance at weakening is that a
+// weakened term under a lifted substitution is the substituted term
+// weakened. The induction's lifted step weakens both sides of the
+// hypothesis and commutes the weakening past the lifted renaming by
+// `renameSquare`.
+
+// The naturals; the syntax; the congruences; the shift's lookup, the fusion of
+// renamings and the weakened lookup.
+import "../model-in-source.gandr" ;
+import "./syntax.gandr" ;
+import "./congruence.gandr" ;
+import "./shift-lookup.gandr" ;
+import "./rename-rename.gandr" ;
+import "./lookup-weaken.gandr" ;
+
+/// A lookup under one binder, weakened, renamed by a lift: the step that
+/// carries `lookWeakens` under the lifted renaming.
+@[ checks ]
+def renameLookWeakens(u : Env, q : Ren, m : N) -> -F Path(
+  Term,
+  rename(wk(look(m, u, Z)), RLift(q)),
+  rename(look(m, u, S(Z)), RLift(q))
+) {
+  transport(
+    \z. Path(Term, rename(z, RLift(q)), rename(look(m, u, S(Z)), RLift(q))),
+    lookWeakens(m, u, Z),
+    here(rename(look(m, u, S(Z)), RLift(q)))
+  )
+}
+
+/// Renaming by `q` then shifting is shifting then renaming by `q` lifted,
+/// at every index.
+@[ checks ]
+def shiftPastLift(
+  q : Ren,
+  n : N
+) -> -F Path(N, rlook(rlook(n, q), RShift(S(Z))), rlook(rlook(n, RShift(S(Z))), RLift(q))) {
+  case n {
+    Z => shiftAdds(rlook(Z, q), S(Z)),
+    S(j) => shiftAdds(rlook(S(j), q), S(Z))
+  }
+}
+
+/// The hypothesis at `m`, weakened.
+@[ checks ]
+def weakenedSquare(
+  r : Ren,
+  s : Env,
+  u : Env,
+  q : Ren,
+  h : (n : N) => Path(Term, look(rlook(n, r), s, Z), rename(look(n, u, Z), q)),
+  m : N
+) -> -F Path(Term, wk(look(rlook(m, r), s, Z)), wk(rename(look(m, u, Z), q))) {
+  cong(wk, h(m))
+}
+
+/// A pointwise agreement of renaming then substituting with substituting
+/// then renaming holds of the lifts.
+@[ checks ]
+def substRenameSquareLift(
+  r : Ren,
+  s : Env,
+  u : Env,
+  q : Ren,
+  h : (n : N) => Path(Term, look(rlook(n, r), s, Z), rename(look(n, u, Z), q)),
+  n : N
+) -> -F Path(Term, look(rlook(n, RLift(r)), Lift(s), Z), rename(look(n, Lift(u), Z), RLift(q))) {
+  case n {
+    Z => here(Ix(Z)),
+    S(m) => lookWeakens(
+      rlook(m, r),
+      s,
+      Z
+    ) then (weakenedSquare(r, s, u, q, h, m) then (renameSquare(
+      look(m, u, Z),
+      q,
+      RShift(S(Z)),
+      RShift(S(Z)),
+      RLift(q),
+      thunk { fn (i) { shiftPastLift(q, i) } }
+    ) then renameLookWeakens(u, q, m)))
+  }
+}
+
+/// Renaming by `r` then substituting `s` is substituting `u` then renaming
+/// by `q`, given the two agree at every index.
+@[ checks ]
+def rec substRenameSquare(
+  t : Term,
+  r : Ren,
+  s : Env,
+  u : Env,
+  q : Ren,
+  h : (n : N) => Path(Term, look(rlook(n, r), s, Z), rename(look(n, u, Z), q))
+) -> -F Path(Term, subst(rename(t, r), s), rename(subst(t, u), q)) {
+  case t {
+    Ix(n) => h(n),
+    Lam(b) => cong(
+      lamOf,
+      substRenameSquare[<](
+        b,
+        RLift(r),
+        Lift(s),
+        Lift(u),
+        RLift(q),
+        thunk { fn (n) { substRenameSquareLift(r, s, u, q, h, n) } }
+      )
+    ),
+    Ap(f, x) => transport(
+      \z. Path(
+        Term,
+        Ap(subst(rename(f, r), s), subst(rename(x, r), s)),
+        Ap(z, rename(subst(x, u), q))
+      ),
+      substRenameSquare[<](f, r, s, u, q, h),
+      transport(
+        \z. Path(
+          Term,
+          Ap(subst(rename(f, r), s), subst(rename(x, r), s)),
+          Ap(subst(rename(f, r), s), z)
+        ),
+        substRenameSquare[<](x, r, s, u, q, h),
+        here(Ap(subst(rename(f, r), s), subst(rename(x, r), s)))
+      )
+    )
+  }
+}
+
+/// Weakening then a lifted substitution agrees with the substitution then
+/// weakening, at every index.
+@[ checks ]
+def weakenLiftLooks(
+  s : Env,
+  n : N
+) -> -F Path(Term, look(rlook(n, RShift(S(Z))), Lift(s), Z), rename(look(n, s, Z), RShift(S(Z)))) {
+  case n {
+    Z => lookWeakens(Z, s, Z),
+    S(j) => lookWeakens(S(j), s, Z)
+  }
+}
+
+/// A weakened term under a lifted substitution is the substituted term
+/// weakened.
+@[ checks ]
+def substWeaken(x : Term, s : Env) -> -F Path(Term, subst(wk(x), Lift(s)), wk(subst(x, s))) {
+  substRenameSquare(
+    x,
+    RShift(S(Z)),
+    Lift(s),
+    s,
+    RShift(S(Z)),
+    thunk { fn (n) { weakenLiftLooks(s, n) } }
+  )
+}

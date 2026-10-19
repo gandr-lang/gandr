@@ -1,0 +1,13 @@
+// Law 5 of the single-substitution calculus, `sub(lam(t), s) =
+// lam(sub(t, lift(s)))`: substitution goes under an abstraction lifted. It
+// holds by computation, `subst`'s abstraction arm.
+
+// The syntax and its substitution.
+import "./syntax.gandr" ;
+
+/// A substitution applied to an abstraction is the abstraction of its body
+/// under the lifted substitution.
+@[ checks ]
+def subLam(t : Term, s : Env) -> -F Path(Term, subst(Lam(t), s), Lam(subst(t, Lift(s)))) {
+  return here(Lam(subst(t, Lift(s))))
+}

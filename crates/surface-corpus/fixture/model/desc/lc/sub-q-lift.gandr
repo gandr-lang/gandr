@@ -1,0 +1,13 @@
+// Law 2 of the single-substitution calculus, `sub(q, lift(s)) = q`: a lifted
+// substitution keeps the newest variable. It holds by computation: the
+// lookup at index zero of a lift is index zero, under no binder.
+
+// The naturals; the syntax and its substitution.
+import "../model-in-source.gandr" ;
+import "./syntax.gandr" ;
+
+/// A lifted substitution at the newest variable is that variable.
+@[ checks ]
+def subQLift(s : Env) -> -F Path(Term, subst(Ix(Z), Lift(s)), Ix(Z)) {
+  return here(Ix(Z))
+}

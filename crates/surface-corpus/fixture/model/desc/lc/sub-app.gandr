@@ -1,0 +1,16 @@
+// Law 6 of the single-substitution calculus, `sub(app(t, u), s) =
+// app(sub(t, s), sub(u, s))`: substitution distributes over application. It
+// holds by computation, `subst`'s application arm.
+
+// The syntax and its substitution.
+import "./syntax.gandr" ;
+
+/// A substitution applied to an application applies to both sides.
+@[ checks ]
+def subApp(t : Term, u : Term, s : Env) -> -F Path(
+  Term,
+  subst(Ap(t, u), s),
+  Ap(subst(t, s), subst(u, s))
+) {
+  return here(Ap(subst(t, s), subst(u, s)))
+}
