@@ -193,11 +193,11 @@ fn directed_composition_declines_a_mixed_variance_cycle()
         cycle.len() >= 2,
         "a 2-cycle through distinct cells (never a self-loop), not empty"
     );
-    let reachable: Vec<CellId> = participating(&a)
+    let reachable: alloc::collections::BTreeSet<CellId> = participating(&a)
         .into_iter()
         .chain(participating(&b))
         .collect();
-    let mut cycle_cells = Vec::new();
+    let mut cycle_cells = alloc::collections::BTreeSet::new();
     for node in &cycle {
         let cell = node.0;
         let hole = &node.1;
@@ -217,9 +217,7 @@ fn directed_composition_declines_a_mixed_variance_cycle()
             classified.variance(),
             "the cycling hole is mixed-variance in its cell"
         );
-        if !cycle_cells.contains(&cell) {
-            cycle_cells.push(cell);
-        }
+        cycle_cells.insert(cell);
     }
     assert!(
         cycle_cells.len() >= 2,
@@ -297,7 +295,8 @@ fn the_acyclicity_verdict_is_not_invariant_under_certificate_identity()
     else {
         panic!("expected a flow cycle")
     };
-    let recorded = participating(&two_step);
+    let recorded: alloc::collections::BTreeSet<CellId> =
+        participating(&two_step).into_iter().collect();
     assert!(
         cycle.iter().any(|node| recorded.contains(&node.0)),
         "the cycle runs through a cell only that presentation records"
@@ -854,13 +853,12 @@ struct UnionReadingDecline(bool);
 fn seam_hole_names(cmd: &CmdPat) -> alloc::vec::Vec<alloc::string::String>
 {
     let occurrences = SequentAlphabet::metavariables(cmd);
+    let mut seen: alloc::collections::BTreeSet<&str> = alloc::collections::BTreeSet::new();
     let mut names: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
-    for var in occurrences {
-        if !names
-            .iter()
-            .any(|held| held.as_str() == var.hole().as_ref())
-        {
-            names.push(alloc::string::String::from(var.hole().as_ref()));
+    for var in &occurrences {
+        let name: &str = var.hole().as_ref();
+        if seen.insert(name) {
+            names.push(alloc::string::String::from(name));
         }
     }
     names
@@ -1222,9 +1220,10 @@ fn composition_overlap(
 #[spec(ensures: |ret| tracelet.path_a.iter().chain(&tracelet.path_b).all(|step| ret.iter().filter(|cell| **cell == step.cell).count() == 1))]
 fn participating(tracelet: &Tracelet) -> Vec<CellId>
 {
+    let mut seen = alloc::collections::BTreeSet::new();
     let mut cells = Vec::new();
     for step in tracelet.path_a.iter().chain(&tracelet.path_b) {
-        if !cells.contains(&step.cell) {
+        if seen.insert(step.cell) {
             cells.push(step.cell);
         }
     }
@@ -1315,13 +1314,10 @@ fn fanout_family_is_a_multi_sum_not_a_single_rule()
         family.len() >= 2,
         "the g-seam composition fans out to a family (multi-sum), not one rule"
     );
-    let mut fused_rules = Vec::new();
-    for overlap in &family {
-        let composite = overlap.composite(&store).expect("the composite exists");
-        if !fused_rules.contains(&composite) {
-            fused_rules.push(composite);
-        }
-    }
+    let fused_rules: std::collections::HashSet<CmdPat> = family
+        .iter()
+        .map(|overlap| overlap.composite(&store).expect("the composite exists"))
+        .collect();
     assert!(
         fused_rules.len() >= 2,
         "the family yields distinct fused right-hand sides, never a single rule"
@@ -1459,10 +1455,11 @@ fn characterized_stream(
 {
     let left_cells = participating(a);
     let right_cells = participating(b);
+    let mut seen: alloc::collections::BTreeSet<SeamHole> = alloc::collections::BTreeSet::new();
     let mut holes: Vec<SeamHole> = Vec::new();
     for var in SequentAlphabet::metavariables(&a.joins_at) {
         let hole = SequentAlphabet::hole_of(&var);
-        if !holes.contains(&hole) {
+        if seen.insert(hole.clone()) {
             holes.push(hole);
         }
     }
@@ -1533,8 +1530,7 @@ fn the_gates_own_graph_streamed_incrementally_reproduces_its_verdict()
         let stream = characterized_stream(left, right, store);
         edges_streamed = edges_streamed.saturating_add(stream.len());
 
-        let mut reversed = stream.clone();
-        reversed.reverse();
+        let reversed: Vec<EdgeId> = stream.iter().rev().copied().collect();
         for (arrival, offers) in [("as derived", &stream), ("reversed", &reversed)] {
             let mut maintenance =
                 AcyclicityMaintenance::new().expect("a fresh structure is available");
