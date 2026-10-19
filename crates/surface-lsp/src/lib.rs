@@ -246,11 +246,13 @@
 //! With specifications enforced a sweep over the whole corpus takes minutes,
 //! past the 30 s every test is held to, so each sweep sits in a `sweeps`
 //! module and visits a sample its constant states under every pull-request
-//! profile, and every source under the `sweeps` nextest profile, which the
-//! nightly workflow runs in both modes. A sample ranks the corpus by its
-//! BLAKE3 digest under the sweep's name, holds a source of each corpus class,
-//! and adds every source the change adds or modifies (`gandr-workflow-sweep`):
-//! a run reproduces, and a corpus edit is swept on the pull request that makes
+//! profile, and every source under the `nightly` nextest profile, which the
+//! nightly workflow runs enforced — the erasure over the night's slice of
+//! the corpus and the typing over the night's part of every source, the
+//! whole of either every few nights. A sample ranks the corpus by its BLAKE3
+//! digest under the sweep's name, holds a source of each corpus class, and
+//! adds every source the change adds or modifies (`gandr-workflow-sweep`): a
+//! run reproduces, and a corpus edit is swept on the pull request that makes
 //! it. The typing samples only sources no longer than a kibibyte: the longest
 //! source alone types for longer than the bound, and the erasure still holds a
 //! long source to the oracle at every keystroke. The random edit scenarios

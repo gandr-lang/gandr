@@ -30,16 +30,13 @@ inherits = "ci"
 
 # The sweeps whole. A sweep drives the whole corpus through one feature and
 # sits in a `sweeps` module, which is all this filter names: a new sweep joins
-# by where it is written. Under every other profile a sweep visits its stated
-# sample, so it never leaves the pull-request lanes; under this one it visits
-# every source (`gandr-workflow-sweep` reads the profile's name) and prints
-# what it counts — the hover coverage by node kind, the read-back census by
-# class — as a report, held to no ceiling (#467). The nightly workflow runs
-# it plain and enforced (`mise run ci:sweeps`), where the limit is the
-# nightly budget, not the 30 s bound. The slowest whole sweep, the typing,
-# measured 756 s enforced on four hosted cores (the table verdicts, 371 s
-# plain); twenty minutes holds it with the margin a slow runner needs, and
-# each lane's whole run, 14 and 7 minutes, sits inside its 60.
+# by where it is written. Under every other profile but `nightly` a sweep
+# visits its stated sample, so it never leaves the pull-request lanes; under
+# this one it visits every source (`gandr-workflow-sweep` reads the profile's
+# name) and prints what it counts — the hover coverage by node kind, the
+# read-back census by class — as a report, held to no ceiling (#467). This
+# profile is the local whole run and the records' rewrite (`mise run
+# ci:recovery`); its limit is a slow local machine's.
 [profile.sweeps]
 default-filter = "test(/(^|::)sweeps::/)"
 status-level = "pass"
@@ -47,6 +44,20 @@ final-status-level = "slow"
 failure-output = "immediate-final"
 fail-fast = false
 slow-timeout = { period = "60s", terminate-after = 20 }
+
+# The nightly run (`mise run ci:sweeps-nightly`), held to fifteen minutes
+# summed over the whole workflow. The four sweeps whose sources cost their
+# length squared rotate over four nights (`gandr-workflow-sweep`'s rotation):
+# erasing, the token drops and the table verdicts visit the night's slice of
+# the corpus, the typing the night's part of every source. Every other sweep
+# visits the corpus whole. nextest does not inherit a default filter, so the
+# profile states it again. The limit is the slowest sweep's share of the
+# budget, so a sweep that outgrows it fails as a timeout rather than passing
+# slowly.
+[profile.nightly]
+inherits = "sweeps"
+default-filter = "test(/(^|::)sweeps::/)"
+slow-timeout = { period = "60s", terminate-after = 8 }
 
 # The instrumented enforcing run is a report, never a gate, and instrumentation
 # multiplies the specification cost several times over, so its limit is its

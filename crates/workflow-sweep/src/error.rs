@@ -34,6 +34,15 @@ pub enum SweepError
         /// What building it reported.
         detail: String,
     },
+    /// The night a nightly run visits could not be read: the variable naming
+    /// it is not a day number, or the clock precedes the Unix epoch.
+    Night
+    {
+        /// What was read: the variable's value, or the clock.
+        spelled: String,
+        /// What reading it reported.
+        detail: String,
+    },
 }
 
 impl fmt::Display for SweepError
@@ -74,6 +83,13 @@ impl fmt::Display for SweepError
             Self::Grammar { ref detail } => {
                 write!(f, "the built-in grammar does not build: {detail}")
             },
+            Self::Night {
+                ref spelled,
+                ref detail,
+            } => write!(
+                f,
+                "cannot read the night from {spelled}: {detail}; set GANDR_SWEEP_NIGHT to a day number since the Unix epoch"
+            ),
         }
     }
 }
@@ -116,6 +132,15 @@ mod tests
             }
             .to_string(),
             "the built-in grammar does not build: a cycle"
+        );
+        assert_eq!(
+            SweepError::Night {
+                spelled: String::from("yesterday"),
+                detail: String::from("invalid digit found in string"),
+            }
+            .to_string(),
+            "cannot read the night from yesterday: invalid digit found in string; set \
+             GANDR_SWEEP_NIGHT to a day number since the Unix epoch"
         );
     }
 }

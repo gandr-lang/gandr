@@ -215,25 +215,18 @@ run = [
   "cargo nextest run --locked --package gandr-surface-grammar --test tests -E 'test(=highlight::corpus_roles_match_the_golden)'",
 ]
 
-# Every sweep over its whole input — the `sweeps` nextest profile, which
-# selects the tests in a `sweeps` module (.config/nextest.toml) — plain and
-# with specifications enforced, the halves side by side. Every other profile
-# visits each sweep's stated sample. The nightly workflow runs each half on
-# the build state it restores; the enforcing half builds into the enforcing
-# gate's target directory.
-["ci:sweeps"]
-description = "Every sweep over its whole input, plain and specifications enforced"
-depends = ["ci:sweeps-plain", "ci:sweeps-enforcing"]
-
-["ci:sweeps-plain"]
-description = "Every sweep over its whole input"
-run = "cargo nextest run --workspace --locked --profile sweeps"
-
-["ci:sweeps-enforcing"]
-description = "Every sweep over its whole input, specifications enforced"
+# The nightly sweeps with specifications enforced, under the `nightly`
+# nextest profile (.config/nextest.toml): every sweep whole, the four whose
+# sources cost their length squared over the night's slice of the corpus.
+# Every other profile visits each sweep's stated sample; `--profile sweeps`
+# visits the whole corpus in every sweep. The run builds into the enforcing
+# gate's target directory, which the nightly workflow restores.
+# GANDR_SWEEP_NIGHT=<day> replays another night.
+["ci:sweeps-nightly"]
+description = "Every sweep with specifications enforced, the costliest over the night's slice"
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
-run = "cargo nextest run --workspace --locked --profile sweeps"
+run = "cargo nextest run --workspace --locked --profile nightly"
 
 # The enforcing suite, instrumented into target/coverage so it never shares
 # the cached enforcing state, under the `coverage` nextest profile (its own

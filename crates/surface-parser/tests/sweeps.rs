@@ -1,12 +1,14 @@
 //! The parser's sweeps: the corpus cut short and with each token dropped,
 //! against the recovery records and through the molder's two procedures.
 //!
-//! Each visits its stated sample under every pull-request profile and the
-//! whole corpus under the `sweeps` profile, nightly (`gandr-workflow-sweep`).
-//! A sample is a hashed slice of the corpus at a fixed size, salted by the
-//! sweep's name, at least one source of each class — `strict` and each
-//! directory below `fixture`, the pending set among them — and every source the
-//! change adds or modifies.
+//! Each visits its stated sample under every pull-request profile, the whole
+//! corpus under the `sweeps` profile, and the night's slice of it under the
+//! `nightly` profile (`gandr-workflow-sweep`): each source costs its length
+//! squared, and the whole corpus is visited every few nights. A sample is a
+//! hashed slice of the corpus at a fixed size, salted by the sweep's name, at
+//! least one source of each class — `strict` and each directory below
+//! `fixture`, the pending set among them — and every source the change adds
+//! or modifies.
 
 use core::error::Error;
 use std::path::Path;
@@ -28,6 +30,7 @@ use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 use gandr_workflow_sweep::Changed;
 use gandr_workflow_sweep::Coverage;
+use gandr_workflow_sweep::Rotation;
 use gandr_workflow_sweep::Sample;
 use gandr_workflow_sweep::SampleName;
 use gandr_workflow_sweep::SampleSize;
@@ -94,12 +97,13 @@ const TABLES_WHOLE_STRIDE: usize = if cfg!(anodized_panic) { 16 } else { 1 };
 /// a whole or cut-short row that moved is a tree change, each answered by the
 /// change that causes it.
 ///
-/// The whole matrix is some forty thousand parses (`mise run ci:recovery`,
-/// and the `sweeps` profile nightly), and the rewrite always runs it. The
-/// sample, [`RECOVERY`], parses forty-eight sources and every source the change
-/// touches: each one's whole row and the rows of every sixteenth significant
-/// token. Every source's record is still required to exist, and every record
-/// to have a source.
+/// The whole matrix is some forty thousand parses (`mise run ci:recovery`, and
+/// the `sweeps` profile), and the rewrite always runs it; the `nightly`
+/// profile parses the night's slice of it. The sample, [`RECOVERY`], parses
+/// forty-eight sources and every source the change touches: each one's whole
+/// row and the rows of every sixteenth significant token. Every source's
+/// record is still required to exist, and every record to have a source, under
+/// every profile.
 #[test]
 fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error>>
 {
@@ -182,11 +186,12 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
     let update = std::env::var_os("UPDATE_EXPECT").is_some();
     let only = std::env::var("GANDR_RECOVERY_SOURCE").ok();
     let sweep = if update {
-        Sweep::new(Coverage::Full, Changed::default())
+        Sweep::new(Coverage::Full, Changed::default(), Rotation::Whole)
     }
     else {
         Sweep::asked()?
     };
+    eprintln!("{}", sweep.rotation());
     let stride = match sweep.coverage() {
         Coverage::Full => 1,
         Coverage::Sampled => RECOVERY_STRIDE,
@@ -197,7 +202,7 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
         )
     };
     let sources = corpus::sources()?;
-    let visited = sweep.visit(RECOVERY, &sources);
+    let visited = sweep.visit_rotating(RECOVERY, &sources);
     let mut sourced: Vec<PathBuf> = Vec::new();
     let mut stale = Vec::new();
     let mut moved = Vec::new();
@@ -397,6 +402,7 @@ fn table_verdicts_equal_dry_run_verdicts() -> Result<(), Box<dyn Error>>
 
     let pbg = built();
     let sweep = Sweep::asked()?;
+    eprintln!("{}", sweep.rotation());
     let stride = match sweep.coverage() {
         Coverage::Full => TABLES_WHOLE_STRIDE,
         Coverage::Sampled => TABLES_STRIDE,
@@ -421,7 +427,7 @@ fn table_verdicts_equal_dry_run_verdicts() -> Result<(), Box<dyn Error>>
     for stray in STRAYS {
         differential(&|| format!("stray {stray:?}"), stray);
     }
-    for source in sweep.visit(TABLES, &corpus::sources()?) {
+    for source in sweep.visit_rotating(TABLES, &corpus::sources()?) {
         let rel = source.name.as_ref();
         let src = std::fs::read_to_string(&source.path)
             .map_err(|error| format!("{}: {error}", source.path.display()))?;

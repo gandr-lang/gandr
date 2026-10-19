@@ -1,6 +1,6 @@
 # gandr-workflow-sweep
 
-The corpus sources a sweep test visits: a stated, hashed and stratified sample under every pull-request profile, the whole corpus under the nightly `sweeps` profile.
+The corpus sources a sweep test visits: a stated, hashed and stratified sample under every pull-request profile, the whole corpus under the `sweeps` profile, and the night's slice of it for the costliest sweeps under the `nightly` profile.
 
 - [Synopsis](#synopsis)
 - [Provided features](#provided-features)
@@ -11,15 +11,16 @@ The corpus sources a sweep test visits: a stated, hashed and stratified sample u
 
 ## Synopsis
 
-**What.** `gandr-workflow-sweep` is a test-support library. A sweep — a test that drives the whole corpus through one feature, such as typing and erasing every source or molding every token drop — asks it which corpus sources to visit. Under the `sweeps` nextest profile the answer is every source; under every other profile it is the sweep's sample.
+**What.** `gandr-workflow-sweep` is a test-support library. A sweep — a test that drives the whole corpus through one feature, such as typing and erasing every source or molding every token drop — asks it which corpus sources to visit. Under the `sweeps` nextest profile the answer is every source; under the `nightly` profile it is every source too, except for a rotating sweep, which visits the night's slice; under every other profile it is the sweep's sample.
 
-**Why.** Every test is held to 30 s on every pull request and merge-queue entry, plain and with specifications enforced, and no test leaves those lanes. A sweep over the whole corpus does not fit that bound, so it runs twice: over a bounded sample on every landing, and whole nightly. The sample is deterministic and stated in the sweep's documentation, so a failure reproduces anywhere.
+**Why.** Every test is held to 30 s on every pull request and merge-queue entry, and no test leaves those lanes. A sweep over the whole corpus does not fit that bound, so it runs twice: over a bounded sample on every landing, and whole nightly. The nightly run is itself held to fifteen minutes, and the sweeps whose sources cost their length squared do not fit it whole: three visit one of four slices of the corpus a night, and the typing types a quarter of every source a night, so every input is visited every four nights. The sample, the slice and the part are deterministic and stated, so a failure reproduces anywhere.
 
 **How.** nextest names the running profile in `NEXTEST_PROFILE`. A sample ranks its candidates by the BLAKE3 digest of the sweep's name and the source's path below `crates/surface-corpus`, keeps the first-ranked source of every class — `strict`, and each directory below `fixture`, the pending set among them — fills to its size in rank order, and adds every candidate the change adds or modifies. The change is measured against the revision `GANDR_SWEEP_BASE` names, or where `HEAD` left `origin/main` when it is unset; a source whose change is layout alone — the formatter lays it and its base out to one text — is no change. The [crate docs](src/lib.rs) record the alternatives and the reversal.
 
 ## Provided features
 
-- `Sweep::asked` reads the run's coverage and change; `Sweep::visit` returns the sources to visit.
+- `Sweep::asked` reads the run's coverage, change and rotation; `Sweep::visit` returns the sources to visit, and `Sweep::visit_rotating` the night's slice of them under the `nightly` profile.
+- `Rotation` names the night a nightly run visits, whether a source is in its slice and which part of a text it covers; `GANDR_SWEEP_NIGHT` replays another night.
 - `corpus::sources` walks the strict and fixture roots as the dispatcher's walk does, naming each source and its class.
 - `Sample` names a sweep's sample and its size; `Sample::select` applies it.
 - `SweepError` names the corpus entry or the `git` invocation behind every refusal.
@@ -33,6 +34,7 @@ The corpus sources a sweep test visits: a stated, hashed and stratified sample u
 ```sh
 cargo nextest run -p gandr-surface-format                          # the sampled sweep
 cargo nextest run --profile sweeps -p gandr-surface-format         # the whole corpus
+GANDR_SWEEP_NIGHT=20744 cargo nextest run --profile nightly -p gandr-surface-parser  # the slice of night 20744
 GANDR_SWEEP_BASE=HEAD~3 cargo nextest run -p gandr-surface-format  # the last three commits' sources join the sample
 cargo nextest run -p gandr-workflow-sweep
 ```
