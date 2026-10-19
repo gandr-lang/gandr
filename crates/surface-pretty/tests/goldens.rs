@@ -919,6 +919,66 @@ fn session_types_spell_their_protocol_and_payloads()
     }
 }
 
+/// A fork's child and an offer's arm keep the exit they end in: the surface
+/// reads a value bare there as a value where a computation is expected
+/// (#815).
+#[test]
+fn a_fork_and_an_offer_keep_the_exits_they_end_in_815()
+{
+    use gandr_core_term::session::PayloadCount;
+    use gandr_core_term::session::Protocol;
+    use gandr_core_term::session::ProtocolState;
+    use gandr_core_term::session::ProtocolSyntax;
+    use gandr_core_term::session::SessionAction;
+    use gandr_core_term::session::SessionType;
+    let mut core = CoreArena::new();
+    let ended = SessionType::new(
+        Arc::new(
+            Protocol::new(
+                alloc::vec![ProtocolSyntax::End],
+                ProtocolState::from(0),
+                PayloadCount::default(),
+            )
+            .expect("end"),
+        ),
+        Arc::from([]),
+    )
+    .expect("no payloads");
+    let protocol = core.value_type_session(ended);
+    let unit = core.value_unit();
+    let returns_unit = core.computation_return(unit);
+    let endpoint = DeBruijnIndex::from(0_u32);
+    let closed = core.computation_session(SessionAction::Close { endpoint });
+    let offered = core.computation_session(SessionAction::Offer {
+        endpoint,
+        arms: BTreeMap::from([
+            (FieldLabel::from(String::from("next")), closed),
+            (FieldLabel::from(String::from("retire")), returns_unit),
+        ]),
+    });
+    let fork = |core: &mut CoreArena, child| {
+        core.computation_session(SessionAction::Fork {
+            protocol,
+            child,
+            parent: closed,
+        })
+    };
+    let returned = fork(&mut core, returns_unit);
+    let offering = fork(&mut core, offered);
+    let source = CoreSource::new(&core, &[]);
+    let body = |id| Root::Computation(CoreNode::Computation(id));
+    assert_eq!(
+        spelled(&source, body(returned)),
+        faithful(Written("fork (a : end) { pure unit } as a ; close(a)"))
+    );
+    assert_eq!(
+        spelled(&source, body(offering)),
+        faithful(Written(
+            "fork (a : end) { offer(a) { next => close(a), retire => pure unit } } as a ; close(a)"
+        ))
+    );
+}
+
 /// A tuple of any arity from one spells its components between `#{` and
 /// `}`, a nested tuple one component among them; an injection spells the
 /// summand it enters, the third as readily as the first.
