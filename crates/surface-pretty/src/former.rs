@@ -670,11 +670,15 @@ pub enum Former<'source, Node>
     },
     /// A nominal elimination over its scrutinee and one branch per
     /// constructor, which the source answers by [`Source::component`] and
-    /// names by [`Source::constructor`]: `case n { Zero => c, Succ(m) => d }`.
+    /// names by [`Source::constructor`]: `case n { Zero => c, Succ(m) => d }`,
+    /// or `case n -> C { … }` with its motive where nothing states its type.
     DataCase
     {
         /// The scrutinee.
         scrutinee: Node,
+        /// The type every branch returns, under one binder for the
+        /// scrutinee.
+        motive: Node,
         /// How many branches it has.
         arity: Arity,
     },

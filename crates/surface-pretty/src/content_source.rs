@@ -317,10 +317,11 @@ impl Source for ContentSource<'_>
             },
             ContentNode::DataCase {
                 scrutinee,
+                motive,
                 ref branches,
-                ..
             } => Former::DataCase {
                 scrutinee,
+                motive,
                 arity: Arity::from(branches.len()),
             },
             ContentNode::RecordProjection(record, ref label) => {
