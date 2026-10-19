@@ -500,7 +500,8 @@ path = "crates/surface-dispatcher"
 path = "crates/surface-format"
 
 # The checked precedence-bounded grammar: its mold table, its precedence
-# DAG and the built-in surface the melder pushes over.
+# DAG, the built-in surface the melder pushes over, and the table pairing
+# each glyph with its ASCII spelling.
 # consumers:
 # - surface-corpus (dev)
 # - surface-diagnostics (dev)
@@ -509,6 +510,7 @@ path = "crates/surface-format"
 # - surface-lowering
 # - surface-lsp
 # - surface-parser
+# - surface-pretty
 # - surface-render-terminal (dev)
 # - surface-repl
 # - surface-session

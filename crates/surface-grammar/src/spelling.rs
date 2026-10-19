@@ -117,29 +117,38 @@ impl Spelled
     }
 }
 
+/// The equivalence of types, `A ≃ B` or `A <~> B`.
+pub const EQUIVALENCE: Spelled = Spelled {
+    tile: TileLabel("≃"),
+    ascii: Ascii::Token(LabelText("<~>")),
+};
+
+/// The flow between types, `A ⇝ B` or `A ~~> B`.
+pub const FLOW: Spelled = Spelled {
+    tile: TileLabel("⇝"),
+    ascii: Ascii::Token(LabelText("~~>")),
+};
+
+/// The isomorphism of types, `A ≅ B` or the call `Iso(A, B)`.
+pub const ISOMORPHISM: Spelled = Spelled {
+    tile: TileLabel("≅"),
+    ascii: Ascii::Head(LabelText("Iso")),
+};
+
+/// A word's letter before the rest of the word, `g ∷ p` or `g :: p`.
+pub const CONS: Spelled = Spelled {
+    tile: TileLabel("∷"),
+    ascii: Ascii::Token(LabelText("::")),
+};
+
+/// The unrestricted grade, `ω` or `inf`.
+pub const UNRESTRICTED: Spelled = Spelled {
+    tile: TileLabel("ω"),
+    ascii: Ascii::Token(LabelText("inf")),
+};
+
 /// Every glyph tile of the surface with its ASCII spelling.
-pub const SPELLED: &[Spelled] = &[
-    Spelled {
-        tile: TileLabel("≃"),
-        ascii: Ascii::Token(LabelText("<~>")),
-    },
-    Spelled {
-        tile: TileLabel("⇝"),
-        ascii: Ascii::Token(LabelText("~~>")),
-    },
-    Spelled {
-        tile: TileLabel("≅"),
-        ascii: Ascii::Head(LabelText("Iso")),
-    },
-    Spelled {
-        tile: TileLabel("∷"),
-        ascii: Ascii::Token(LabelText("::")),
-    },
-    Spelled {
-        tile: TileLabel("ω"),
-        ascii: Ascii::Token(LabelText("inf")),
-    },
-];
+pub const SPELLED: &[Spelled] = &[EQUIVALENCE, FLOW, ISOMORPHISM, CONS, UNRESTRICTED];
 
 /// The prime an identifier may carry, `x′`: Unicode with no ASCII spelling.
 pub const PRIME: LabelText<'static> = LabelText("′");

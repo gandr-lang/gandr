@@ -160,6 +160,7 @@ use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Scopes;
+use gandr_surface_pretty::Style;
 use gandr_surface_pretty::present_computation_line;
 use gandr_surface_pretty::present_type;
 use gandr_surface_syntax::ByteOffset;
@@ -1798,7 +1799,7 @@ impl TypeTable
         &self.orientations
     }
 
-    /// The innermost typed node whose span holds `offset`, spelled in `form`
+    /// The innermost typed node whose span holds `offset`, spelled in `style`
     /// on a page of `page` columns.
     ///
     /// # Specification
@@ -1843,12 +1844,12 @@ impl TypeTable
         &self,
         offset: ByteOffset,
         page: PageWidth,
-        form: Form,
+        style: Style,
     ) -> Maybe<TypedSpan, typing::Absent>
     {
         self.chosen(offset)
             .map_or(Maybe::Absent(typing::Absent::Untyped), |entry| {
-                self.answer(entry, page, form)
+                self.answer(entry, page, style)
             })
     }
 
@@ -1918,7 +1919,7 @@ impl TypeTable
     }
 
     /// Every entry of the table, in the order the typed run finished them,
-    /// each spelled in `form` on a page of `page` columns as [`Self::at`]
+    /// each spelled in `style` on a page of `page` columns as [`Self::at`]
     /// spells the entry it answers with.
     ///
     /// # Specification
@@ -1941,15 +1942,15 @@ impl TypeTable
     pub fn entries(
         &self,
         page: PageWidth,
-        form: Form,
+        style: Style,
     ) -> impl Iterator<Item = Maybe<TypedSpan, typing::Absent>> + '_
     {
         self.entries
             .iter()
-            .map(move |entry| self.answer(entry, page, form))
+            .map(move |entry| self.answer(entry, page, style))
     }
 
-    /// `entry` spelled in `form` on a page of `page` columns.
+    /// `entry` spelled in `style` on a page of `page` columns.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1970,15 +1971,15 @@ impl TypeTable
         &self,
         entry: &Entry,
         page: PageWidth,
-        form: Form,
+        style: Style,
     ) -> Maybe<TypedSpan, typing::Absent>
     {
         let binders = self.standing(entry.standing);
-        let Maybe::Present(ty) = self.spell(entry.ty, &binders, page, form)
+        let Maybe::Present(ty) = self.spell(entry.ty, &binders, page, style)
         else {
             return Maybe::Absent(typing::Absent::Unspelled);
         };
-        let expected = match self.spell(entry.last, &binders, page, form) {
+        let expected = match self.spell(entry.last, &binders, page, style) {
             Maybe::Present(other) if entry.last != entry.ty && other != ty => Maybe::Present(other),
             Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(checked_against::Absent::Agreed),
         };
@@ -1992,7 +1993,7 @@ impl TypeTable
     }
 
     /// The type or refusal of the declaration one of whose forms has the key
-    /// `key`, a type spelled in `form` on a page of `page` columns.
+    /// `key`, a type spelled in `style` on a page of `page` columns.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -2019,11 +2020,11 @@ impl TypeTable
         &self,
         key: NodeKey,
         page: PageWidth,
-        form: Form,
+        style: Style,
     ) -> Maybe<Declared, typing::Absent>
     {
         match self.declared.get(&key) {
-            Some(&Held::Typed(node)) => match self.spell(node, &Context::default(), page, form) {
+            Some(&Held::Typed(node)) => match self.spell(node, &Context::default(), page, style) {
                 Maybe::Present(spelled) => Maybe::Present(Declared::Typed(spelled)),
                 Maybe::Absent(reason) => Maybe::Absent(reason),
             },
@@ -2033,7 +2034,7 @@ impl TypeTable
     }
 
     /// Every declaration's form key with its type or refusal, a type spelled
-    /// in `form` on a page of `page` columns, in key order.
+    /// in `style` on a page of `page` columns, in key order.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -2053,15 +2054,15 @@ impl TypeTable
     pub fn declarations(
         &self,
         page: PageWidth,
-        form: Form,
+        style: Style,
     ) -> impl Iterator<Item = (NodeKey, Maybe<Declared, typing::Absent>)> + '_
     {
         self.declared
             .keys()
-            .map(move |&key| (key, self.declared(key, page, form)))
+            .map(move |&key| (key, self.declared(key, page, style)))
     }
 
-    /// `node` spelled through the shared printer in `form` on a page of `page`
+    /// `node` spelled through the shared printer in `style` on a page of `page`
     /// columns, writing each constant by its name, each variable of `context`
     /// by the name written for its binder, and each capability scope's
     /// region by its scope's name.
@@ -2073,10 +2074,10 @@ impl TypeTable
         node: TypeNode,
         context: &Context,
         page: PageWidth,
-        form: Form,
+        style: Style,
     ) -> Maybe<Presentation, typing::Absent>
     {
-        self.spell_in(&self.arena, node, context, &Read::default(), page, form)
+        self.spell_in(&self.arena, node, context, &Read::default(), page, style)
     }
 
     /// `node` of `arena` spelled as [`Self::spell`] spells a node of the
@@ -2094,7 +2095,7 @@ impl TypeTable
         context: &Context,
         read: &Read,
         page: PageWidth,
-        form: Form,
+        style: Style,
     ) -> Maybe<Presentation, typing::Absent>
     {
         let names: Vec<Name<'_>> = self
@@ -2144,7 +2145,7 @@ impl TypeTable
             .relating(&relations)
             .within(&binders)
             .scoped(&regions);
-        present_type(&printer, root(node), page, form)
+        present_type(&printer, root(node), page, style)
             .map_or(Maybe::Absent(typing::Absent::Unspelled), Maybe::Present)
     }
 
@@ -2277,7 +2278,7 @@ impl TypeTable
     /// # Specification
     /// - requires: nothing.
     /// - ensures: one parameter per binder of `context`, outermost first, each
-    ///   `name : type, ` with its type spelled in `form` on a page of `page`
+    ///   `name : type, ` with its type spelled in `style` on a page of `page`
     ///   columns under the names before it; none when `context` binds nothing,
     ///   or a binder's type is unknown to the table or spells a `?`.
     /// - provides: the context [`Self::read_back`] reads an open type under.
@@ -2293,7 +2294,7 @@ impl TypeTable
         &self,
         context: &Context,
         page: PageWidth,
-        form: Form,
+        style: Style,
     ) -> Option<Under>
     {
         if context.binders.is_empty() {
@@ -2308,7 +2309,7 @@ impl TypeTable
                 regions: Vec::new(),
                 types: Vec::new(),
             };
-            let Maybe::Present(spelled) = self.spell(TypeNode::Value(ty), &before, page, form)
+            let Maybe::Present(spelled) = self.spell(TypeNode::Value(ty), &before, page, style)
             else {
                 return None;
             };
@@ -2335,7 +2336,7 @@ impl TypeTable
 
     /// Every type the table prints — each entry's own, the type an outer
     /// judgement checked a term against, each declaration's — spelled in
-    /// `form` on a page of `page` columns and read back: parsed as a
+    /// `style` on a page of `page` columns and read back: parsed as a
     /// signature's type, or as a parameter's under parameters declaring the
     /// binders it names, lowered after the source the table was built from,
     /// and compared with the type node the table holds.
@@ -2390,7 +2391,7 @@ impl TypeTable
         &self,
         grammar: &Pbg,
         page: PageWidth,
-        form: Form,
+        style: Style,
     ) -> Vec<ReadBack>
     {
         // Each printed type with the node it was printed from, its trip when
@@ -2399,10 +2400,10 @@ impl TypeTable
         let mut printed: Vec<Printed> = Vec::new();
         for entry in &self.entries {
             let binders = self.standing(entry.standing);
-            let own = self.spell(entry.ty, &binders, page, form);
+            let own = self.spell(entry.ty, &binders, page, style);
             let mut sides = Vec::from([(ReadSite::Own(entry.span), entry.ty, own.clone())]);
             if entry.last != entry.ty {
-                let last = self.spell(entry.last, &binders, page, form);
+                let last = self.spell(entry.last, &binders, page, style);
                 if !matches!((&last, &own), (Maybe::Present(last), Maybe::Present(own)) if last == own)
                 {
                     sides.push((ReadSite::CheckedAgainst(entry.span), entry.last, last));
@@ -2411,7 +2412,7 @@ impl TypeTable
             for (site, node, spelled) in sides {
                 printed.push(match spelled {
                     Maybe::Present(spelled) => {
-                        let closed = self.spell(node, &Context::default(), page, form);
+                        let closed = self.spell(node, &Context::default(), page, style);
                         let (settled, under) = if !spelled.unspelled().is_empty() {
                             (Some(RoundTrip::Unknown), None)
                         }
@@ -2420,7 +2421,7 @@ impl TypeTable
                             (None, None)
                         }
                         else {
-                            self.telescope(&binders, page, form)
+                            self.telescope(&binders, page, style)
                                 .map_or((Some(RoundTrip::Open), None), |under| (None, Some(under)))
                         };
                         Printed {
@@ -2444,7 +2445,7 @@ impl TypeTable
         for (&key, held) in &self.declared {
             if let Held::Typed(node) = *held {
                 let site = ReadSite::Declared(key);
-                printed.push(match self.spell(node, &Context::default(), page, form) {
+                printed.push(match self.spell(node, &Context::default(), page, style) {
                     Maybe::Present(spelled) => Printed {
                         site,
                         node,
@@ -2710,7 +2711,7 @@ impl TypeTable
                                 },
                             };
                             let context = under.map(|under| under.context).unwrap_or_default();
-                            match self.spell_in(&arena, again, &context, &read_back, page, form) {
+                            match self.spell_in(&arena, again, &context, &read_back, page, style) {
                                 Maybe::Present(again) => Maybe::Present(again.to_string()),
                                 Maybe::Absent(_) => Maybe::Absent(reprinted::Absent::Unspelled),
                             }
@@ -2799,7 +2800,7 @@ impl TypeTable
                 TypeNode::Value(declared),
                 &Context::default(),
                 PageWidth::from(u32::from(u16::MAX)),
-                Form::Sugared,
+                Form::Sugared.into(),
             )
             else {
                 return Maybe::Absent(reprinted::Absent::Unspelled);
@@ -2956,10 +2957,14 @@ impl TypeTable
             .collect();
         let constructors = self.families.naming(&names);
         let printer = CoreSource::new(&arena, &names).naming(&constructors);
-        present_computation_line(&printer, CoreNode::Computation(computation), Form::Sugared)
-            .map_or(Maybe::Absent(reprinted::Absent::Unspelled), |again| {
-                Maybe::Present(again.to_string())
-            })
+        present_computation_line(
+            &printer,
+            CoreNode::Computation(computation),
+            Form::Sugared.into(),
+        )
+        .map_or(Maybe::Absent(reprinted::Absent::Unspelled), |again| {
+            Maybe::Present(again.to_string())
+        })
     }
 
     /// The value the declaration [`REPRINTED`] of `source` runs to, spelled as
@@ -3470,7 +3475,7 @@ mod tests
         match table.at(
             ByteOffset::from(offset),
             PageWidth::from(80_u32),
-            Form::Explicit,
+            Form::Explicit.into(),
         ) {
             Maybe::Present(entry) => Maybe::Present(Answer {
                 subject: entry.subject(),
@@ -3599,7 +3604,7 @@ mod tests
             "an injection, which needs its type, reads back run under the declaration's"
         );
         let trips: Vec<(String, RoundTrip)> = table
-            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared)
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
             .into_iter()
             .map(|back| (back.spelled, back.trip))
             .collect();
@@ -3842,7 +3847,7 @@ mod tests
              a) -> -F a { run z <- h(a, y) ; return z }\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
-        let read = table(source).read_back(&grammar, PageWidth::from(80_u32), Form::Sugared);
+        let read = table(source).read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into());
         let trip = |spelled: &str, declared: bool| {
             read.iter()
                 .filter(|read| {
@@ -3894,7 +3899,7 @@ mod tests
             used()
         );
         let grammar = built_in().expect("the built-in grammar builds");
-        let read = table.read_back(&grammar, PageWidth::from(80_u32), Form::Sugared);
+        let read = table.read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into());
         let scoped: Vec<&RoundTrip> = read
             .iter()
             .filter(|read| read.spelled == "Cap {exit} at c")
@@ -3945,7 +3950,7 @@ mod tests
             match table.at(
                 ByteOffset::from(offset),
                 PageWidth::from(80_u32),
-                Form::Sugared,
+                Form::Sugared.into(),
             ) {
                 Maybe::Present(entry) => (
                     String::from(
@@ -4132,14 +4137,14 @@ mod tests
         let keyed: Vec<String> = tree
             .positions()
             .filter_map(|position| tree.key(position))
-            .filter_map(
-                |key| match table.declared(key, PageWidth::from(80_u32), Form::Explicit) {
+            .filter_map(|key| {
+                match table.declared(key, PageWidth::from(80_u32), Form::Explicit.into()) {
                     Maybe::Present(Declared::Typed(spelled)) => {
                         Some(String::from(spelled.as_ref()))
                     },
                     Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => None,
-                },
-            )
+                }
+            })
             .collect();
         assert_eq!(
             keyed,
@@ -4189,14 +4194,14 @@ mod tests
         let keyed: Vec<String> = tree
             .positions()
             .filter_map(|position| tree.key(position))
-            .filter_map(
-                |key| match table.declared(key, PageWidth::from(80_u32), Form::Explicit) {
+            .filter_map(|key| {
+                match table.declared(key, PageWidth::from(80_u32), Form::Explicit.into()) {
                     Maybe::Present(Declared::Typed(spelled)) => {
                         Some(String::from(spelled.as_ref()))
                     },
                     Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => None,
-                },
-            )
+                }
+            })
             .collect();
         assert_eq!(
             keyed,
@@ -4282,14 +4287,14 @@ mod tests
         let keyed: Vec<String> = tree
             .positions()
             .filter_map(|position| tree.key(position))
-            .filter_map(
-                |key| match table.declared(key, PageWidth::from(80_u32), Form::Explicit) {
+            .filter_map(|key| {
+                match table.declared(key, PageWidth::from(80_u32), Form::Explicit.into()) {
                     Maybe::Present(Declared::Typed(spelled)) => {
                         Some(String::from(spelled.as_ref()))
                     },
                     Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => None,
-                },
-            )
+                }
+            })
             .collect();
         assert_eq!(
             keyed,
@@ -4382,7 +4387,7 @@ mod tests
             table.entries
         );
         let trips: Vec<(String, RoundTrip)> = table
-            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared)
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
             .into_iter()
             .map(|back| (back.spelled, back.trip))
             .collect();
@@ -4550,7 +4555,7 @@ mod tests
     fn spelled(source: SourceText<'_>) -> Vec<super::TypedSpan>
     {
         table(source)
-            .entries(PageWidth::from(200_u32), Form::Sugared)
+            .entries(PageWidth::from(200_u32), Form::Sugared.into())
             .filter_map(|entry| match entry {
                 Maybe::Present(entry) => Some(entry),
                 Maybe::Absent(_) => None,
@@ -4572,7 +4577,7 @@ mod tests
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let trips: Vec<(String, RoundTrip)> = table(source)
-            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared)
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
             .into_iter()
             .map(|back| (back.spelled, back.trip))
             .collect();
@@ -4601,7 +4606,7 @@ mod tests
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let trips: Vec<(String, RoundTrip)> = table(source)
-            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared)
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
             .into_iter()
             .map(|back| (back.spelled, back.trip))
             .collect();
@@ -4635,7 +4640,7 @@ mod tests
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let trips: Vec<(String, RoundTrip)> = table(source)
-            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared)
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
             .into_iter()
             .map(|back| (back.spelled, back.trip))
             .collect();
@@ -4665,7 +4670,7 @@ mod tests
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let trips: Vec<(String, RoundTrip)> = table(source)
-            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared)
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
             .into_iter()
             .map(|back| (back.spelled, back.trip))
             .collect();

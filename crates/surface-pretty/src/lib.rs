@@ -14,6 +14,7 @@
 //! | [`present_computation`]       | an elaborated body at a width, its exits elided           |
 //! | [`present_computation_line`]  | the same body on one line, never laid out                |
 //! | [`Form`]                      | sugared or explicit: which spelling a former takes       |
+//! | [`Spelling`], [`Style`]       | Unicode or ASCII glyphs; a form and a spelling together  |
 //! | [`Presentation`]              | the laid-out text and whether it says the whole node     |
 //! | [`Source`], [`Former`]        | the one question the printer asks of its input           |
 //! | [`CoreSource`]                | the core arena as a source                               |
@@ -35,9 +36,9 @@
 //!
 //! # Two forms, one walk
 //!
-//! Every presentation entry point takes a [`Form`]. Both forms write only
-//! what the surface grammar parses, so a printed type reads back as the type
-//! it names.
+//! Every presentation entry point takes a [`Style`]: a [`Form`] and a
+//! [`Spelling`]. Both forms write only what the surface grammar parses, so a
+//! printed type reads back as the type it names.
 //!
 //! Every production spells a mold, every mold has a production: each spelling
 //! the printer writes is one the grammar molds and the lowering reads back to
@@ -122,6 +123,25 @@
 //! - **Reversal.** A ruled change to the grammar's spellings or bands; this
 //!   crate follows it, never leads it. A sugar the lowering stops reading back
 //!   to the shape it prints leaves the sugared form.
+//!
+//! # Two spellings
+//!
+//! Every construct has an ASCII spelling and may have a Unicode one
+//! (`gandr-surface-grammar` § Spellings). [`Spelling::Unicode`], the default,
+//! writes each glyph the grammar holds; [`Spelling::Ascii`] writes what the
+//! grammar's table pairs it with: `A <~> B` for `A ≃ B`, `A ~~> B` for `A ⇝
+//! B`, the call `Iso(A, B)` for `A ≅ B`, and `g :: p` for `g ∷ p`. A name
+//! holding the prime `′`, which has no ASCII spelling, is written `?` and the
+//! presentation is approximate, recorded [`Unspelled::Primed`]; a binder the
+//! source named so takes a generated name instead, as one that would capture
+//! does. The spelling is a second flag on the walk beside the form, read at
+//! the arms that write a glyph, so both spellings admit the same nodes.
+//!
+//! - **Alternatives.** Transliterating the Unicode text afterwards, which
+//!   cannot write `≅` as a call and would rewrite a glyph inside a string
+//!   literal; a spelling per glyph, which no reader asked for.
+//! - **Reversal.** A ruled ASCII spelling for the prime, at which point a
+//!   primed name is written with it instead of `?`.
 //!
 //! # A body prints in its canonical form, its exits elided
 //!
@@ -251,6 +271,7 @@ use alloc::collections::BTreeSet;
 use core::fmt;
 
 use anodized::spec;
+pub use gandr_surface_grammar::Spelling;
 use gandr_surface_layout::ComputationWidth;
 use gandr_surface_layout::LayoutOptions;
 pub use gandr_surface_layout::PageWidth;
@@ -377,6 +398,36 @@ pub enum Form
     Explicit,
 }
 
+/// How a presentation is written: which of the grammar's spellings a former
+/// takes, and which glyphs.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Style
+{
+    /// Sugared or explicit (§ Two forms, one walk).
+    pub form: Form,
+    /// Unicode or ASCII (§ Two spellings).
+    pub spelling: Spelling,
+}
+
+impl From<Form> for Style
+{
+    /// `form` in the default spelling, Unicode.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(form: Form) -> Self
+    {
+        Self {
+            form,
+            spelling: Spelling::Unicode,
+        }
+    }
+}
+
 /// A node laid out at a page width.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Presentation
@@ -491,12 +542,12 @@ pub fn present_type<S>(
     source: &S,
     root: S::Node,
     page: PageWidth,
-    form: Form,
+    style: Style,
 ) -> Result<Presentation, PresentationError>
 where
     S: Source + ?Sized,
 {
-    present(source, root, Admits::Type, form, Layout::Page(page))
+    present(source, root, Admits::Type, style, Layout::Page(page))
 }
 
 /// The value at `root` of `source`, laid out at `page`.
@@ -542,12 +593,12 @@ pub fn present_value<S>(
     source: &S,
     root: S::Node,
     page: PageWidth,
-    form: Form,
+    style: Style,
 ) -> Result<Presentation, PresentationError>
 where
     S: Source + ?Sized,
 {
-    present(source, root, Admits::Value, form, Layout::Page(page))
+    present(source, root, Admits::Value, style, Layout::Page(page))
 }
 
 /// The computation at `root` of `source`, an elaborated body, laid out at
@@ -592,7 +643,7 @@ pub fn present_computation<S>(
     source: &S,
     root: S::Node,
     page: PageWidth,
-    form: Form,
+    style: Style,
 ) -> Result<Presentation, PresentationError>
 where
     S: Source + ?Sized,
@@ -601,7 +652,7 @@ where
         source,
         root,
         Admits::Computation(Tail::Ends),
-        form,
+        style,
         Layout::Page(page),
     )
 }
@@ -641,7 +692,7 @@ where
 pub fn present_computation_line<S>(
     source: &S,
     root: S::Node,
-    form: Form,
+    style: Style,
 ) -> Result<Presentation, PresentationError>
 where
     S: Source + ?Sized,
@@ -650,7 +701,7 @@ where
         source,
         root,
         Admits::Computation(Tail::Ends),
-        form,
+        style,
         Layout::Line,
     )
 }
@@ -667,7 +718,7 @@ enum Layout
 }
 
 /// The node at `root` of `source`, in a position admitting `admits`, written
-/// in `form` as `layout` asks.
+/// in `style` as `layout` asks.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -704,14 +755,14 @@ fn present<S>(
     source: &S,
     root: S::Node,
     admits: Admits,
-    form: Form,
+    style: Style,
     layout: Layout,
 ) -> Result<Presentation, PresentationError>
 where
     S: Source + ?Sized,
 {
     let spelled = |composer: &mut dyn Compose| {
-        Ok::<_, PresentationError>(match walk(source, root, admits, form, composer)? {
+        Ok::<_, PresentationError>(match walk(source, root, admits, style, composer)? {
             Walked::Built {
                 doc,
                 fidelity,

@@ -987,7 +987,7 @@ mod tests
             &ContentSource::from(nodes),
             root,
             PageWidth::from(100_u32),
-            crate::Form::Explicit,
+            crate::Form::Explicit.into(),
         )
     }
 

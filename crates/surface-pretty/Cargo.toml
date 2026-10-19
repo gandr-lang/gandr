@@ -21,10 +21,11 @@ path = "tests/lib.rs"
 # The printer reads core types and values and the incremental checker's
 # content tables, the leaf vocabularies and levels they carry, and lays its
 # documents out through the layout engine; a name the printer cannot spell
-# says why through the shape crate's named absence. The binder scopes index
-# the nodes they reach in a `hashbrown` map under `foldhash`'s fixed seed.
-# The pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled.
+# says why through the shape crate's named absence. The grammar's spelling
+# table names each glyph's ASCII spelling. The binder scopes index the nodes
+# they reach in a `hashbrown` map under `foldhash`'s fixed seed. The pinned
+# anodized facade supplies core-only specification helpers; logic/BigInt
+# stays disabled.
 [dependencies]
 anodized.workspace = true
 foldhash.workspace = true
@@ -32,6 +33,7 @@ gandr-core-incremental.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
+gandr-surface-grammar.workspace = true
 gandr-surface-layout.workspace = true
 hashbrown.workspace = true
 quenchant-shape.workspace = true
