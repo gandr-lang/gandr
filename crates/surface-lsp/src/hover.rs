@@ -120,6 +120,7 @@
 
 use alloc::format;
 use alloc::string::String;
+use core::cell::OnceCell;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -131,6 +132,7 @@ use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::TypedSpan;
 use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::lay_out;
+use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::Unit;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::PageWidth;
@@ -157,6 +159,7 @@ use crate::protocol::SymbolKind;
 use crate::reading::Declaration;
 use crate::reading::Reading;
 use crate::recheck::roles;
+use crate::search::Found;
 use crate::signature::Signatures;
 
 /// The page width a hover lays a type out at.
@@ -180,9 +183,10 @@ quenchant_shape::reason_enum! {
 }
 
 /// What a document copy keeps for its hovers, its definitions, its
-/// completions and its signature help until its text changes: the type table
-/// of its text, the path of each source of the unit the table was typed in,
-/// the names the unit declares and the heads it declares them with.
+/// completions, its signature help and the workspace's symbols until its text
+/// changes: the type table of its text, the path of each source of the unit
+/// the table was typed in, the names the unit declares, the heads it declares
+/// them with, and, once asked, where each name is written.
 #[derive(Clone, Debug)]
 pub struct Hovering
 {
@@ -195,6 +199,9 @@ pub struct Hovering
     names: Names,
     /// The heads the table's unit declares, by where each name is written.
     signatures: Signatures,
+    /// The names the table's unit declares with their ranges, made by the
+    /// first workspace-symbol request.
+    found: OnceCell<Found>,
 }
 
 impl Hovering
@@ -239,6 +246,29 @@ impl Hovering
         self.paths
             .get(usize::from(referent.source()))
             .map(PathBuf::as_path)
+    }
+
+    /// The canonical path of the unit's source `source`, none for a text typed
+    /// alone.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn source_path(
+        &self,
+        source: SourceIndex,
+    ) -> Option<&Path>
+    {
+        self.paths.get(usize::from(source)).map(PathBuf::as_path)
+    }
+
+    /// The names the table's unit declares, each with its name's range in its
+    /// source's text, read at the first workspace-symbol request.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn found(&self) -> &Found
+    {
+        self.found.get_or_init(|| Found::of(&self.table))
     }
 }
 
@@ -315,6 +345,7 @@ pub fn hovering<Store, Blocks>(
         table,
         paths,
         signatures,
+        found: OnceCell::new(),
     }
 }
 

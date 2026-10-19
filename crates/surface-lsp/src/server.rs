@@ -49,6 +49,7 @@
 //! authorities, which needs a parser.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use core::cell::OnceCell;
 use core::fmt;
 use core::ops::ControlFlow;
@@ -111,6 +112,7 @@ use crate::protocol::InlineCompletionItem;
 use crate::protocol::InlineCompletionList;
 use crate::protocol::LabelOffsets;
 use crate::protocol::Linked;
+use crate::protocol::Location;
 use crate::protocol::MarkupContent;
 use crate::protocol::PositionParams;
 use crate::protocol::PublishParams;
@@ -120,8 +122,10 @@ use crate::protocol::SelectionRangeParams;
 use crate::protocol::SemanticTokens;
 use crate::protocol::Settings;
 use crate::protocol::StringValue;
+use crate::protocol::SymbolInformation;
 use crate::protocol::WatchedFilesParams;
 use crate::protocol::WatchesFiles;
+use crate::protocol::WorkspaceSymbolParams;
 use crate::quiet::Holding;
 use crate::quiet::Met;
 use crate::quiet::QUIET;
@@ -147,6 +151,8 @@ use crate::rpc::failure;
 use crate::rpc::publish;
 use crate::rpc::register;
 use crate::rpc::success;
+use crate::search::FOUND_HELD;
+use crate::search::kind_of;
 use crate::signature::help;
 use crate::tokens::encode;
 use crate::tokens::overlapping;
@@ -267,7 +273,8 @@ struct HeldText
     text: String,
     /// The reading of `text`, made by the first request that asks.
     reading: OnceCell<Reading>,
-    /// The type table of `text`, made by the first hover after it changed.
+    /// The type table of `text`, made by the first request that reads it after
+    /// the text changed.
     hovering: OnceCell<Hovering>,
 }
 
@@ -1487,6 +1494,7 @@ impl Server
     /// - witness: `server::tests::semantic_tokens_full_answers_a_known_document`
     /// - witness: `server::tests::inline_completion_answers_the_expected_closer`
     /// - witness: `server::tests::completion_answers_the_names_a_word_may_complete_to_806`
+    /// - witness: `server::tests::workspace_symbols_find_the_names_the_open_closures_declare`
     /// - witness: `server::tests::the_outline_requests_answer_a_known_document`
     /// - witness: `server::tests::a_hover_answers_a_known_declaration`
     /// - witness: `server::tests::definition_answers_what_a_use_refers_to_795`
@@ -1536,6 +1544,12 @@ impl Server
             (Phase::Running, "textDocument/inlineCompletion") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Inline(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
+                },
+            (Phase::Running, "workspace/symbol") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Found(ref found), .. } => found.len() <= FOUND_HELD,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
                 },
@@ -1666,6 +1680,15 @@ impl Server
                     Ok(params) => success(
                         id,
                         workspace.inline(&params.text_document.uri, self.peer, params.position),
+                    ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "workspace/symbol") => {
+                match serde_json::from_value::<WorkspaceSymbolParams>(params) {
+                    Ok(params) => success(
+                        id,
+                        workspace.symbols(self.peer, SourceText::from(params.query.as_str())),
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
@@ -2130,7 +2153,7 @@ impl Workspace
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), Window::Whole | Window::Within(_) => true },
         Answer::Initialize(_) | Answer::Completions(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
-            | Answer::Actions(_) => false,
+            | Answer::Actions(_) | Answer::Found(_) => false,
     })]
     fn tokens(
         &self,
@@ -2184,7 +2207,7 @@ impl Workspace
             && list.items.iter().all(|item| item.range.start <= position && position <= item.range.end),
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Signatures(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
-            | Answer::Actions(_) => false,
+            | Answer::Actions(_) | Answer::Found(_) => false,
     })]
     fn inline(
         &self,
@@ -2357,6 +2380,103 @@ impl Workspace
             document.text.hovering(&uri.path(), session),
             position,
         ))
+    }
+
+    /// What a workspace-symbol request for `query` answers `peer`: the names
+    /// the open documents' import closures declare, each read off the copy
+    /// `peer` is answered from.
+    ///
+    /// # Specification
+    /// - requires: nothing; any query is admitted.
+    /// - ensures: every name [`crate::search::Found::matching`] finds for
+    ///   `query` in a held copy's closure, at most [`FOUND_HELD`], ascending by
+    ///   name folded to lower case, then by name, document and range. A name an
+    ///   open document writes is found where that document's copy writes it,
+    ///   and once; a name a sibling no document holds open writes is found at
+    ///   the sibling's path, once however many closures read it. Each copy's
+    ///   index is made now when no request has asked since its text last
+    ///   changed.
+    /// - provides: the answer to `workspace/symbol`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name a held document writes, a sibling's names read
+    ///   by two importers, a held sibling's own copy shadowing the disk, and a
+    ///   query no name holds each distinguish a missing, a doubled or a stale
+    ///   symbol.
+    /// - witness: `server::tests::workspace_symbols_find_the_names_the_open_closures_declare`
+    #[spec(ensures: |ret| matches!(ret, Answer::Found(ref found) if found.len() <= FOUND_HELD))]
+    fn symbols(
+        &self,
+        peer: Peer,
+        query: SourceText<'_>,
+    ) -> Answer
+    {
+        let held: BTreeSet<PathBuf> = self
+            .documents
+            .keys()
+            .map(|uri| named_path(&uri.path()))
+            .collect();
+        let mut siblings: BTreeSet<(DocumentUri, Range)> = BTreeSet::new();
+        let mut found: Vec<(String, SymbolInformation)> = Vec::new();
+        for uri in self.documents.keys() {
+            let Maybe::Present(document) = self.view(uri, peer)
+            else {
+                continue;
+            };
+            let Ok(session) = document.session.as_ref()
+            else {
+                continue;
+            };
+            let hovering = document.text.hovering(&uri.path(), session);
+            let own = hovering.table().own_source();
+            for entry in hovering.found().matching(query) {
+                let target = if entry.source == own {
+                    uri.clone()
+                }
+                else {
+                    let Some(path) = hovering
+                        .source_path(entry.source)
+                        .filter(|path| !held.contains(*path))
+                    else {
+                        continue;
+                    };
+                    let Some(target) = DocumentUri::of_path(path)
+                    else {
+                        continue;
+                    };
+                    if !siblings.insert((target.clone(), entry.range)) {
+                        continue;
+                    }
+                    target
+                };
+                found.push((entry.folded.clone(), SymbolInformation {
+                    name: entry.name.clone(),
+                    kind: kind_of(entry.kind),
+                    location: Location {
+                        uri: target,
+                        range: entry.range,
+                    },
+                }));
+            }
+        }
+        found.sort_unstable_by(|first, second| {
+            (
+                &first.0,
+                &first.1.name,
+                &first.1.location.uri,
+                first.1.location.range,
+            )
+                .cmp(&(
+                    &second.0,
+                    &second.1.name,
+                    &second.1.location.uri,
+                    second.1.location.range,
+                ))
+        });
+        found.truncate(FOUND_HELD);
+        Answer::Found(found.into_iter().map(|(_, symbol)| symbol).collect())
     }
 
     /// What a signature-help request at `position` of the copy of the document
@@ -3084,7 +3204,8 @@ mod tests
                         "documentFormattingProvider":true,
                         "documentRangeFormattingProvider":true,
                         "codeLensProvider":{"resolveProvider":false},
-                        "codeActionProvider":true},
+                        "codeActionProvider":true,
+                        "workspaceSymbolProvider":true},
                     "serverInfo":{"name":"gandr","version":""#,
                 env!("CARGO_PKG_VERSION"),
                 r#""}}}]"#
@@ -3148,6 +3269,111 @@ mod tests
             wire(Json(r#"[{"jsonrpc":"2.0","id":8,"result":null}]"#)),
             "a document the server does not hold: null"
         );
+    }
+
+    #[test]
+    fn workspace_symbols_find_the_names_the_open_closures_declare()
+    {
+        let directory = std::env::temp_dir().join(format!("gandr-symbols-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let base = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n";
+        let disk = [
+            ("base.gandr", base),
+            (
+                "first.gandr",
+                "import \"./base.gandr\" ;\ndef nought : Nat ;\ndef nought = Zero ;\n",
+            ),
+            (
+                "second.gandr",
+                "import \"./base.gandr\" ;\ndef other : Integer ;\ndef other = 2 ;\n",
+            ),
+            ("third.gandr", "def three : Integer ;\ndef three = 3 ;\n"),
+            (
+                "fourth.gandr",
+                "import \"./third.gandr\" ;\ndef four : Integer ;\ndef four = 4 ;\n",
+            ),
+        ];
+        for (file, text) in disk {
+            std::fs::write(directory.join(file), text).expect("the source is written");
+        }
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        let mut server = initialized();
+        let opened = [
+            ("first.gandr", disk[1].1),
+            ("second.gandr", disk[2].1),
+            ("third.gandr", "def thrice : Integer ;\ndef thrice = 3 ;\n"),
+            ("fourth.gandr", disk[4].1),
+        ];
+        for (file, text) in opened {
+            let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                "textDocument": {"uri": uri(file), "languageId": "gandr", "version": 1_i32, "text": text}}});
+            let _published = send(&mut server, Json(&open.to_string()));
+        }
+        let search = |server: &mut Connected, query: &str| {
+            let request = serde_json::json!({"jsonrpc": "2.0", "id": 9_i32, "method": "workspace/symbol",
+                "params": {"query": query}});
+            send(server, Json(&request.to_string()))
+        };
+        let canonical =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        let base_uri = format!("file://{}", canonical.join("base.gandr").display());
+        assert_eq!(
+            search(&mut server, "su"),
+            serde_json::json!([{"jsonrpc": "2.0", "id": 9_i32, "result": [
+                {"name": "Succ", "kind": 9_i32, "location": {"uri": base_uri,
+                    "range": {"start": {"line": 2_i32, "character": 2_i32},
+                              "end": {"line": 2_i32, "character": 6_i32}}}}]}]),
+            "a constructor a sibling two open closures read is found once, at the sibling's path"
+        );
+        let names = |answer: &Value| -> Vec<(String, u64, String)> {
+            answer[0_usize]["result"]
+                .as_array()
+                .map(|found| {
+                    found
+                        .iter()
+                        .map(|symbol| {
+                            (
+                                symbol["name"]
+                                    .as_str()
+                                    .map(String::from)
+                                    .unwrap_or_default(),
+                                symbol["kind"].as_u64().unwrap_or_default(),
+                                symbol["location"]["uri"]
+                                    .as_str()
+                                    .map(String::from)
+                                    .unwrap_or_default(),
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        assert_eq!(
+            names(&search(&mut server, "nat")),
+            [(String::from("Nat"), 10_u64, base_uri)],
+            "the family, as an enum"
+        );
+        assert_eq!(
+            names(&search(&mut server, "nou")),
+            [(String::from("nought"), 12_u64, uri("first.gandr"))],
+            "a name an open document writes, at its own URI"
+        );
+        assert_eq!(
+            names(&search(&mut server, "the")),
+            [
+                (String::from("other"), 12_u64, uri("second.gandr")),
+                (String::from("thrice"), 12_u64, uri("third.gandr"))
+            ],
+            "the characters apart, and an open sibling found as its own copy writes it, never as \
+             the disk does"
+        );
+        assert_eq!(
+            names(&search(&mut server, "qq")),
+            [],
+            "a query no name holds finds nothing"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
     }
 
     #[test]

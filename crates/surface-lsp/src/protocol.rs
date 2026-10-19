@@ -965,6 +965,7 @@ impl InitializeResult
             && ret.capabilities.document_formatting_provider.0
             && ret.capabilities.document_range_formatting_provider.0
             && ret.capabilities.code_action_provider.0
+            && ret.capabilities.workspace_symbol_provider.0
             && !ret.capabilities.code_lens_provider.resolve_provider
             && !ret.capabilities.completion_provider.resolve_provider)]
     #[inline]
@@ -1006,6 +1007,7 @@ impl InitializeResult
                     resolve_provider: false,
                 },
                 code_action_provider: Provider::ANSWERED,
+                workspace_symbol_provider: Provider::ANSWERED,
             },
             server_info: ServerInfo {
                 name: SOURCE,
@@ -1055,6 +1057,9 @@ pub struct ServerCapabilities
     pub code_lens_provider: CodeLensOptions,
     /// Code actions are answered.
     pub code_action_provider: Provider,
+    /// Workspace symbols are answered: the names the open documents' import
+    /// closures declare.
+    pub workspace_symbol_provider: Provider,
 }
 
 /// Whether a request is answered, advertised as a provider with no options.
@@ -1165,6 +1170,9 @@ pub enum Answer
     Lenses(Vec<CodeLens>),
     /// What a code-action request answers over a range of an open document.
     Actions(Vec<CodeAction>),
+    /// What a workspace-symbol request answers: the names found, each where
+    /// its name is written.
+    Found(Vec<SymbolInformation>),
     /// `null`: what `shutdown` answers, a request about a document that is not
     /// open, and a hover over nothing the server knows.
     Nothing,
@@ -1440,6 +1448,8 @@ impl SymbolKind
     pub const VARIABLE: Self = Self(13);
     /// A codata declaration: a record of observations.
     pub const STRUCT: Self = Self(23);
+    /// A family's constructor.
+    pub const CONSTRUCTOR: Self = Self(9);
 }
 
 /// A run of lines a client can fold.
@@ -1732,6 +1742,29 @@ pub struct Location
     pub uri: DocumentUri,
     /// The range within it.
     pub range: Range,
+}
+
+/// A declared name of the workspace, where its name is written.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SymbolInformation
+{
+    /// The name.
+    pub name: String,
+    /// What it declares.
+    pub kind: SymbolKind,
+    /// The range of its name in the document writing it.
+    pub location: Location,
+}
+
+/// The parameters of `workspace/symbol`: the characters the names asked for
+/// hold, in order.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct WorkspaceSymbolParams
+{
+    /// The query; empty asks for every name.
+    #[serde(default)]
+    pub query: String,
 }
 
 #[cfg(test)]
