@@ -367,6 +367,7 @@ fn paint_echo<'block>(
 #[cfg(test)]
 mod tests
 {
+    use gandr_surface_grammar::Spelling;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::layout::Position;
@@ -385,7 +386,7 @@ mod tests
             (20, 4, false),
             (20, 7, true),
         ] {
-            let app = App::new().expect("the grammar builds");
+            let app = App::new(Spelling::Unicode).expect("the grammar builds");
             let mut terminal =
                 Terminal::new(TestBackend::new(width, height)).expect("the backend opens");
             terminal
@@ -406,7 +407,7 @@ mod tests
     #[test]
     fn input_wider_than_a_terminal_coordinate_keeps_its_actual_tail()
     {
-        let mut app = App::new().expect("the grammar builds");
+        let mut app = App::new(Spelling::Unicode).expect("the grammar builds");
         for _ in 0_usize ..= usize::from(u16::MAX) {
             let _handled = app.handle(Key::Char('x')).expect("typing succeeds");
         }
@@ -448,7 +449,7 @@ mod tests
     #[test]
     fn input_cursor_counts_cells_not_utf8_bytes()
     {
-        let mut app = App::new().expect("the grammar builds");
+        let mut app = App::new(Spelling::Unicode).expect("the grammar builds");
         for typed in "界e\u{301}".chars() {
             let _handled = app.handle(Key::Char(typed)).expect("typing succeeds");
         }

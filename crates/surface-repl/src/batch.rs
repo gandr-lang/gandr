@@ -7,6 +7,7 @@ use std::io::Write;
 
 use anodized::spec;
 use gandr_surface_grammar::PbgError;
+use gandr_surface_grammar::Spelling;
 use gandr_surface_render_remote::TranscriptBlock;
 use gandr_surface_render_terminal::RenderStyle;
 use gandr_surface_syntax::SourceText;
@@ -109,10 +110,11 @@ where
 ///   answered; at the end of input, or at `:quit`, a buffer still waiting is
 ///   submitted and written; then the writer is flushed, whether the run
 ///   completed or faulted, but not after a write error. A successful transcript
-///   is determined by the input, render style and loaded file contents. A
-///   grammar that does not build, an input line that cannot be read, and a
-///   session fault each stop the run, which then ends faulted; a refusal is a
-///   transcript line, not a fault.
+///   is determined by the input, render style, spelling and loaded file
+///   contents; every type and value it writes is in `spelling`. A grammar that
+///   does not build, an input line that cannot be read, and a session fault
+///   each stop the run, which then ends faulted; a refusal is a transcript
+///   line, not a fault.
 /// - provides: the deterministic face a pipe or a test drives.
 /// - fails: the writer's error.
 /// - panics: none.
@@ -135,12 +137,13 @@ pub fn run_batch<Input, Output>(
     input: Input,
     output: &mut Output,
     style: RenderStyle,
+    spelling: Spelling,
 ) -> io::Result<Ended>
 where
     Input: BufRead,
     Output: Write,
 {
-    let ended = transcribe(input, output, style)?;
+    let ended = transcribe(input, output, style, spelling)?;
     output.flush()?;
     Ok(ended)
 }
@@ -168,13 +171,14 @@ fn transcribe<Input, Output>(
     input: Input,
     output: &mut Output,
     style: RenderStyle,
+    spelling: Spelling,
 ) -> io::Result<Ended>
 where
     Input: BufRead,
     Output: Write,
 {
     let mut repl = match SessionLoop::new(style) {
-        Ok(repl) => repl,
+        Ok(repl) => repl.spelling(spelling),
         Err(error) => return Ok(Ended::Faulted(Fault::Grammar(error))),
     };
     for line in input.lines() {

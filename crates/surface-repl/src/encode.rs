@@ -37,6 +37,7 @@ use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::entries;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
+use gandr_surface_pretty::Spelling;
 use gandr_surface_render_remote::DiagCard;
 use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::OutKind;
@@ -398,21 +399,22 @@ fn re_range(
 ///   before `offer.chunk` is the accepted text `prior` was taken from, and
 ///   `resume` is the session's latest resume, read after that answer.
 /// - ensures: the block echoes `offer.echo`. Its lines are, in order: the
-///   diagnostics renderer's report, under `style`, for every refusal and every
-///   shadowing warning `gandr check --goals` would print for the revision, each
-///   its own line, a warning refusing nothing; then, when nothing was refused,
-///   one line per declaration the chunk introduced or whose outcome differs
-///   from `prior` — `name : T` as a type line when it checks owing nothing, as
-///   a goal line when it owes — and, after the type line of a declaration the
-///   session evaluates, the line of what its run came to: a value line spelling
-///   the value, a blame line naming the goal reached, or a note line for a run
-///   that stopped short or never reached the machine; then a warning line per
-///   parse repair inside the chunk. A probe answers instead with the one type
-///   line `: T`. A prompt probe answers with the declaration's type line and,
-///   where the session evaluates it, its value line, and its refusal is
-///   re-ranged to the line. The disposition keeps the chunk, with the standings
-///   of the whole revision, exactly when the subject is declarations or a
-///   prompt probe and nothing was refused.
+///   diagnostics renderer's report, under `style` and naming its types in
+///   `spelling`, for every refusal and every shadowing warning `gandr check
+///   --goals` would print for the revision, each its own line, a warning
+///   refusing nothing; then, when nothing was refused, one line per declaration
+///   the chunk introduced or whose outcome differs from `prior` — `name : T` as
+///   a type line when it checks owing nothing, as a goal line when it owes —
+///   and, after the type line of a declaration the session evaluates, the line
+///   of what its run came to: a value line spelling the value in `spelling`, a
+///   blame line naming the goal reached, or a note line for a run that stopped
+///   short or never reached the machine; then a warning line per parse repair
+///   inside the chunk. A probe answers instead with the one type line `: T`. A
+///   prompt probe answers with the declaration's type line and, where the
+///   session evaluates it, its value line, and its refusal is re-ranged to the
+///   line. The disposition keeps the chunk, with the standings of the whole
+///   revision, exactly when the subject is declarations or a prompt probe and
+///   nothing was refused.
 /// - provides: the one encoding every face draws, so the batch transcript, the
 ///   terminal and a later interface show the same lines.
 /// - fails: never.
@@ -464,6 +466,7 @@ pub fn encode_submission(
     resume: Maybe<&Resume, submitted::Absent>,
     prior: &Standings,
     style: RenderStyle,
+    spelling: Spelling,
 ) -> Encoded
 {
     let Offer {
@@ -475,7 +478,7 @@ pub fn encode_submission(
     let mut step = submission.into_step(Path::new(""));
     let mut lines: Vec<(OutKind, String)> = Vec::new();
     let mut refused = false;
-    for diagnostic in entries(&step, Verb::Check(Goals::Reported)) {
+    for diagnostic in entries(&step, Verb::Check(Goals::Reported)).spelling(spelling) {
         let mut diagnostic = diagnostic;
         if let Subject::Prompt { name } = subject {
             let line_start =
@@ -510,6 +513,7 @@ pub fn encode_submission(
         ..
     } = step
     {
+        program.spell_in(spelling);
         for declaration in report.declarations() {
             let name = declaration.name().to_string();
             let fragment = SourceFragment::from(name.as_str());

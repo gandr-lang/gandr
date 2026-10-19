@@ -167,6 +167,7 @@ use gandr_surface_dispatcher::lay_out;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::RoleTable;
+use gandr_surface_grammar::Spelling;
 use gandr_surface_grammar::built_in;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::LineIndex;
@@ -480,29 +481,29 @@ pub struct Rechecked
 }
 
 /// Judge `text`, the document at `uri`, in its `session`, read its
-/// diagnostics off the judgement at `verbosity`, and find the form holding
-/// `caret` in the tree the judgement parsed.
+/// diagnostics off the judgement at `verbosity`, their types in `spelling`,
+/// and find the form holding `caret` in the tree the judgement parsed.
 ///
 /// # Specification
 /// - requires: `session` was opened for `uri`; any text is admissible input.
 /// - ensures: the text is judged once, and each diagnostic the dispatcher's
 ///   walk yields for the judgement's step under `gandr check --goals` becomes
 ///   one LSP diagnostic, in that order, as [`diagnostic`] writes it at
-///   `verbosity`: the range of its first primary annotation, the refusal's
-///   vocabulary name as its code, its message, primary label, unlocated
-///   contexts and note as its message, each context annotation and then each
-///   located context, outermost first, as a related location carrying its
-///   label, and the severity of a goal as information, of a warning as a
-///   warning, of a note as a hint and of every other diagnostic as an error; a
-///   diagnostic with no primary annotation, and a ledger line, at the
-///   document's origin. A fault that keeps the document from composing, and a
-///   grammar that did not build, is one error at the origin naming it. The
-///   timing carries the judgement's form census, the incremental checker's
-///   census, and the wall of the whole recheck; its admission is pending when
-///   the judgement left one. The form is [`caret_form`] of the judged tree at
-///   `caret`, `caret`'s own reason when it is absent, and
-///   [`formless::Absent::Unparsed`] when the judgement faulted or the grammar
-///   did not build.
+///   `verbosity`, every type it names in `spelling`: the range of its first
+///   primary annotation, the refusal's vocabulary name as its code, its
+///   message, primary label, unlocated contexts and note as its message, each
+///   context annotation and then each located context, outermost first, as a
+///   related location carrying its label, and the severity of a goal as
+///   information, of a warning as a warning, of a note as a hint and of every
+///   other diagnostic as an error; a diagnostic with no primary annotation, and
+///   a ledger line, at the document's origin. A fault that keeps the document
+///   from composing, and a grammar that did not build, is one error at the
+///   origin naming it. The timing carries the judgement's form census, the
+///   incremental checker's census, and the wall of the whole recheck; its
+///   admission is pending when the judgement left one. The form is
+///   [`caret_form`] of the judged tree at `caret`, `caret`'s own reason when it
+///   is absent, and [`formless::Absent::Unparsed`] when the judgement faulted
+///   or the grammar did not build.
 /// - provides: the one recheck every synchronisation publishes.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
@@ -534,6 +535,7 @@ pub fn recheck(
     session: &mut DocumentSession,
     text: SourceText<'_>,
     verbosity: Verbosity,
+    spelling: Spelling,
     caret: Maybe<gandr_surface_syntax::ByteOffset, formless::Absent>,
 ) -> Rechecked
 {
@@ -601,7 +603,7 @@ pub fn recheck(
             Maybe::Absent(admitted::Absent::Unadmitted),
         ),
     };
-    let diagnostics = diagnostics_of(submission, uri, text, verbosity);
+    let diagnostics = diagnostics_of(submission, uri, text, verbosity, spelling);
     Rechecked {
         diagnostics,
         form,
@@ -796,7 +798,13 @@ pub fn trial(
                         Composed::Refused(_) => Reached::RefusedWhole,
                         Composed::Settled { .. } => Reached::Judged,
                     },
-                    diagnostics: diagnostics_of(submission, uri, text, Verbosity::User),
+                    diagnostics: diagnostics_of(
+                        submission,
+                        uri,
+                        text,
+                        Verbosity::User,
+                        Spelling::Unicode,
+                    ),
                 },
                 Err(fault) => Tried {
                     candidate,
@@ -872,8 +880,8 @@ fn own(
 }
 
 /// The diagnostics `submission`, the judgement of `text` at `uri`, publishes
-/// at `verbosity`: each diagnostic `gandr check --goals` prints for its step,
-/// in order.
+/// at `verbosity` and in `spelling`: each diagnostic `gandr check --goals`
+/// prints for its step, in order.
 ///
 /// # Specification
 /// trivial.
@@ -882,12 +890,14 @@ fn diagnostics_of(
     uri: &DocumentUri,
     text: SourceText<'_>,
     verbosity: Verbosity,
+    spelling: Spelling,
 ) -> Vec<Diagnostic>
 {
     let path = uri.path();
     let index = LineIndex::new(text.as_ref().into());
     let step = submission.into_step(Path::new(&path));
     entries(&step, Verb::Check(Goals::Reported))
+        .spelling(spelling)
         .map(|found| match found.severity {
             Seriousness::Ledger => {
                 Diagnostic::at_origin(format!("{}: {}", found.path.display(), found.message.text))
@@ -1029,6 +1039,7 @@ fn diagnostic(
 mod tests
 {
     use gandr_surface_diagnostics::Verbosity;
+    use gandr_surface_grammar::Spelling;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
@@ -1066,7 +1077,15 @@ mod tests
         text: SourceText<'_>,
     ) -> Vec<Diagnostic>
     {
-        recheck(uri, &mut open(uri), text, Verbosity::User, UNCARETED).diagnostics
+        recheck(
+            uri,
+            &mut open(uri),
+            text,
+            Verbosity::User,
+            Spelling::Unicode,
+            UNCARETED,
+        )
+        .diagnostics
     }
 
     /// A range from one line and character to another.
@@ -1361,8 +1380,15 @@ mod tests
             Verbosity::Json,
         ]
         .map(|verbosity| {
-            let diagnostics =
-                recheck(&uri, &mut open(&uri), text, verbosity, UNCARETED).diagnostics;
+            let diagnostics = recheck(
+                &uri,
+                &mut open(&uri),
+                text,
+                verbosity,
+                Spelling::Unicode,
+                UNCARETED,
+            )
+            .diagnostics;
             let [ref diagnostic] = *diagnostics.as_slice()
             else {
                 panic!("one unresolved type head at {verbosity:?}");
@@ -1452,6 +1478,7 @@ mod tests
             &mut session,
             SourceText::from("def a : Integer ;\ndef a = 1 ;\n"),
             Verbosity::User,
+            Spelling::Unicode,
             UNCARETED,
         );
         assert_eq!(rechecked.diagnostics, Vec::new());
@@ -1489,6 +1516,7 @@ mod tests
             &mut session,
             SourceText::from("pure 3\n"),
             Verbosity::User,
+            Spelling::Unicode,
             UNCARETED,
         );
         assert_eq!(
@@ -1515,6 +1543,7 @@ mod tests
             &mut session,
             SourceText::from(base),
             Verbosity::User,
+            Spelling::Unicode,
             UNCARETED,
         )
         .diagnostics;
@@ -1546,6 +1575,7 @@ mod tests
                 &mut session,
                 SourceText::from(base),
                 Verbosity::User,
+                Spelling::Unicode,
                 UNCARETED
             )
             .diagnostics,

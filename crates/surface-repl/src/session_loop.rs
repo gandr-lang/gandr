@@ -32,6 +32,7 @@ use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::RoleTable;
+use gandr_surface_grammar::Spelling;
 use gandr_surface_grammar::built_in;
 use gandr_surface_render_remote::OutKind;
 use gandr_surface_render_remote::TranscriptBlock;
@@ -209,12 +210,14 @@ pub struct SessionLoop
     pending: String,
     /// How refusals are rendered.
     style: RenderStyle,
+    /// The spelling its types and values are written in.
+    spelling: Spelling,
 }
 
 impl SessionLoop
 {
     /// A loop over a fresh session under the built-in grammar, rendering
-    /// refusals under `style`.
+    /// refusals under `style`, its types and values in [`Spelling::Unicode`].
     ///
     /// # Specification
     /// - requires: nothing.
@@ -236,7 +239,7 @@ impl SessionLoop
     /// - witness: `tests::repl_loop::an_open_form_continues`
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|repl|
         repl.accepted.is_empty() && repl.pending.is_empty() && repl.standings == Standings::default()
-            && repl.style == style && matches!(repl.session.last(), Maybe::Absent(_))))]
+            && repl.style == style && repl.spelling == Spelling::Unicode && matches!(repl.session.last(), Maybe::Absent(_))))]
     #[inline]
     pub fn new(style: RenderStyle) -> Result<Self, PbgError>
     {
@@ -249,7 +252,34 @@ impl SessionLoop
             standings: Standings::default(),
             pending: String::new(),
             style,
+            spelling: Spelling::Unicode,
         })
+    }
+
+    /// This loop, the types its refusals name and the values its runs reach
+    /// written in `spelling`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every later submission is encoded in `spelling`; nothing
+    ///   accepted or pending changes.
+    /// - provides: the reader's spelling for every face the loop drives.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a word value printed in each spelling.
+    /// - witness: `tests::repl_loop::a_value_is_written_in_the_spelling_asked_782`
+    #[spec(ensures: |ref ret| ret.spelling == spelling)]
+    #[inline]
+    #[must_use]
+    pub fn spelling(
+        mut self,
+        spelling: Spelling,
+    ) -> Self
+    {
+        self.spelling = spelling;
+        self
     }
 
     /// Which prompt a face shows before the next line.
@@ -687,6 +717,7 @@ impl SessionLoop
                 self.session.last(),
                 &self.standings,
                 self.style,
+                self.spelling,
             )
         };
         if let Disposition::Kept(standings) = encoded.disposition {

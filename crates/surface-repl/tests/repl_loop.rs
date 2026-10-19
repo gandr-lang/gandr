@@ -25,6 +25,7 @@ use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::entries;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::Spelling;
 use gandr_surface_grammar::built_in;
 use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::OutKind;
@@ -813,12 +814,38 @@ where
     Input: std::io::BufRead,
 {
     let mut output = Vec::new();
-    let ended =
-        run_batch(input, &mut output, RenderStyle::Plain).expect("the transcript is written");
+    let ended = run_batch(input, &mut output, RenderStyle::Plain, Spelling::Unicode)
+        .expect("the transcript is written");
     (
         ended,
         String::from_utf8(output).expect("the transcript is UTF-8"),
     )
+}
+
+/// #782: a loop asked for ASCII writes the value a word runs to, and the
+/// types a refusal names, in ASCII.
+#[test]
+fn a_value_is_written_in_the_spelling_asked_782()
+{
+    let input = "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef once : +U (-F \
+                 Path(Circle, Base, Base)) ;\ndef once = thunk { loop } ;\ndef r : Integer ≃ \
+                 String ;\ndef r = 1 ;\n";
+    let transcript = |spelling| {
+        let mut output = Vec::new();
+        let _ended = run_batch(input.as_bytes(), &mut output, RenderStyle::Plain, spelling)
+            .expect("the transcript is written");
+        String::from_utf8(output).expect("the transcript is UTF-8")
+    };
+    for (spelling, word, relation) in [
+        (Spelling::Unicode, "loop ∷ here(Base)", "Integer ≃ String"),
+        (Spelling::Ascii, "loop :: here(Base)", "Integer <~> String"),
+    ] {
+        let written = transcript(spelling);
+        assert!(
+            written.contains(word) && written.contains(&format!("expected `{relation}`")),
+            "the word and the relation in {spelling:?}: {written}"
+        );
+    }
 }
 
 /// A piped session loading a corpus source and asking a type prints the
@@ -981,8 +1008,13 @@ fn the_terminal_face_discards_on_interrupt_and_submits_at_the_end()
         prompts: Vec::new(),
     };
     let mut output = Vec::new();
-    let ended =
-        drive(&mut script, &mut output, RenderStyle::Plain).expect("the transcript is written");
+    let ended = drive(
+        &mut script,
+        &mut output,
+        RenderStyle::Plain,
+        Spelling::Unicode,
+    )
+    .expect("the transcript is written");
     assert!(matches!(ended, Ended::Completed));
     assert_eq!(script.prompts, [
         Prompt::Fresh,
@@ -1122,8 +1154,13 @@ fn write_and_flush_failures_keep_their_kind()
         limit: 5,
         ..Probe::default()
     };
-    let error = run_batch(b"def n = 1 ;\n".as_slice(), &mut output, RenderStyle::Plain)
-        .expect_err("the transcript exceeds the writer's limit");
+    let error = run_batch(
+        b"def n = 1 ;\n".as_slice(),
+        &mut output,
+        RenderStyle::Plain,
+        Spelling::Unicode,
+    )
+    .expect_err("the transcript exceeds the writer's limit");
     assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
     assert_eq!(output.bytes, "▸ d".as_bytes());
     assert_eq!(output.flushes, 0);
@@ -1133,8 +1170,8 @@ fn write_and_flush_failures_keep_their_kind()
             flush_error: true,
             ..Probe::default()
         };
-        let error =
-            run_batch(input, &mut output, RenderStyle::Plain).expect_err("flush is refused");
+        let error = run_batch(input, &mut output, RenderStyle::Plain, Spelling::Unicode)
+            .expect_err("flush is refused");
         assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
         assert_eq!(output.flushes, 1);
         assert_eq!(output.bytes, [0_u8; 0]);
@@ -1158,8 +1195,13 @@ fn terminal_endings_stop_reads_and_flush_once()
             limit: usize::MAX,
             ..Probe::default()
         };
-        let ended =
-            drive(&mut source, &mut output, RenderStyle::Plain).expect("the writer succeeds");
+        let ended = drive(
+            &mut source,
+            &mut output,
+            RenderStyle::Plain,
+            Spelling::Unicode,
+        )
+        .expect("the writer succeeds");
         if failed {
             assert!(matches!(ended, Ended::Faulted(Fault::Input(ref error))
                     if error.kind() == io::ErrorKind::InvalidData));

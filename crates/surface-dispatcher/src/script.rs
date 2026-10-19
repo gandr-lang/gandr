@@ -17,6 +17,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::SurfaceName;
+use gandr_surface_pretty::Spelling;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -279,11 +280,14 @@ pub struct Script
     text: String,
     /// The lowerings the script has run.
     lowerings: LoweringCount,
+    /// The spelling its run's value is written in.
+    spelling: Spelling,
 }
 
 impl Script
 {
-    /// A script of the source at `path`, nothing yet read.
+    /// A script of the source at `path`, nothing yet read, its value written
+    /// in [`Spelling::Unicode`].
     ///
     /// # Specification
     /// trivial.
@@ -296,7 +300,31 @@ impl Script
             path,
             text: String::new(),
             lowerings: LoweringCount::default(),
+            spelling: Spelling::Unicode,
         }
+    }
+
+    /// This script, its run's value written in `spelling`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a later [`Self::run`] writes the value, or the sealed type,
+    ///   its program runs to in `spelling`; what runs is unchanged.
+    /// - provides: `gandr run`'s reader's spelling.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a script whose word holds a cons runs to it in ASCII.
+    /// - witness: `tests::run::a_script_runs_to_its_value_in_the_spelling_asked_782`
+    #[spec(ensures: self.spelling == spelling)]
+    #[inline]
+    pub fn spell_in(
+        &mut self,
+        spelling: Spelling,
+    )
+    {
+        self.spelling = spelling;
     }
 
     /// Read the source, compose it as `check` would, and run its program.
@@ -309,7 +337,7 @@ impl Script
     ///   [`SourceFault::Grammar`], and a pipeline fault a
     ///   [`SourceFault::Compose`], each naming the path given. Otherwise the
     ///   source is composed under its root, its step built as a walk builds it,
-    ///   and [`execute`] runs it.
+    ///   and [`execute`] runs it, its value written in the script's spelling.
     /// - provides: `gandr run`.
     /// - fails: never; every failure is a [`ScriptRun`].
     /// - panics: none.
@@ -356,6 +384,12 @@ impl Script
         let source = SourceText::from(self.text.as_str());
         match compose(grammar, root.corpus_root(), source, &mut self.lowerings) {
             Ok(mut composed) => {
+                if let Composed::Settled {
+                    ref mut program, ..
+                } = composed
+                {
+                    program.spell_in(self.spelling);
+                }
                 let ran = execute(&mut composed);
                 let standing = Standing::of(root, &composed);
                 ScriptRun::Source {

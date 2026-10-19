@@ -74,6 +74,24 @@
           ],
           "default": "sugared",
           "markdownDescription": "How a hover spells a type. **gandr: Toggle sugared/explicit types** flips it."
+        },
+        "gandr.presentation.spelling": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            null,
+            "unicode",
+            "ascii"
+          ],
+          "enumDescriptions": [
+            "The spelling `presentation.spelling` names in the user's `gandr/config.toml`, else Unicode.",
+            "Each glyph: `≃`, `≅`, `⇝`, `∷`.",
+            "Each glyph's ASCII spelling: `<~>`, `Iso(A, B)`, `~~>`, `::`."
+          ],
+          "default": null,
+          "markdownDescription": "How a hover and a diagnostic write a construct that has a glyph, as `gandr --spelling` chooses it. Unset, the server follows the user's configuration file."
         }
       }
     },

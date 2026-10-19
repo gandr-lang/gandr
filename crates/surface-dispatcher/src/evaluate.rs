@@ -179,6 +179,8 @@ use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
+use gandr_surface_pretty::Spelling;
+use gandr_surface_pretty::Style;
 use gandr_surface_pretty::present_computation_line;
 use gandr_surface_pretty::present_type;
 use quenchant_shape::shape::Maybe;
@@ -268,11 +270,14 @@ pub struct Program<'source>
     /// The path of the module whose signature hides each hidden member, by
     /// the member's admission position.
     hidden: BTreeMap<ConstantIndex, String>,
-    /// The declared type, spelled on one line, of each declaration whose run
-    /// can reach a hidden member, by admission position.
-    sealed: BTreeMap<ConstantIndex, String>,
+    /// The declared type, spelled on one line in each spelling, of each
+    /// declaration whose run can reach a hidden member, by admission position
+    /// and spelling.
+    sealed: BTreeMap<(ConstantIndex, Spelling), String>,
     /// The constructors of the module's data declarations, by family.
     families: Families,
+    /// The spelling its values and sealed types are written in.
+    spelling: Spelling,
 }
 
 /// One declaration of a program: its name and how it stands for a run.
@@ -582,8 +587,9 @@ impl<'source> Program<'source>
     ///   first declaration. Each member a module matched against a signature
     ///   keeps out of its interface is hidden at that module's path, and each
     ///   declaration whose references reach a hidden member, transitively,
-    ///   holds its declared type spelled on one line where the printer can lay
-    ///   it out.
+    ///   holds its declared type spelled on one line, in each spelling, where
+    ///   the printer can lay it out. Its values are spelled in
+    ///   [`Spelling::Unicode`].
     /// - provides: the program every run of the module's declarations shares.
     /// - fails: never; a body that does not focus is the declaration's
     ///   standing, not a failure of the program.
@@ -601,7 +607,7 @@ impl<'source> Program<'source>
     /// - witness: `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`
     /// - witness: `evaluate::tests::a_skipped_admission_position_holds_no_declaration`
     #[spec(
-        ensures: |ref ret| usize::from(ret.definitions.len())
+        ensures: |ref ret| ret.spelling == Spelling::Unicode && usize::from(ret.definitions.len())
                 == module.declarations().iter().map(|lowered| usize::from(lowered.constant()).saturating_add(1)).max().unwrap_or(0)
             && ret.declarations.keys().all(|constant| module.declarations().iter().any(|lowered| lowered.constant() == *constant))
             && module.declarations().iter().all(|lowered| ret.declarations.get(&lowered.constant()).is_some_and(|declared|
@@ -686,22 +692,31 @@ impl<'source> Program<'source>
                 .judged()
                 .iter()
                 .filter(|judged| reaching.contains(&judged.constant()))
-                .filter_map(|judged| {
-                    let declared = match judged.verdict() {
-                        Verdict::Checked { declared, .. } | Verdict::Suspended(declared) => {
-                            declared.id()
-                        },
-                        Verdict::Synthesised { synthesised, .. } => synthesised.produced().id(),
-                        Verdict::Data | Verdict::Owed(_) | Verdict::Refused(_) => return None,
-                    };
+                .filter_map(|judged| match judged.verdict() {
+                    Verdict::Checked { declared, .. } | Verdict::Suspended(declared) => {
+                        Some((judged.constant(), declared.id()))
+                    },
+                    Verdict::Synthesised { synthesised, .. } => {
+                        Some((judged.constant(), synthesised.produced().id()))
+                    },
+                    Verdict::Data | Verdict::Owed(_) | Verdict::Refused(_) => None,
+                })
+                .flat_map(|(constant, declared)| {
+                    [Spelling::Unicode, Spelling::Ascii]
+                        .map(|spelling| ((constant, spelling), declared))
+                })
+                .filter_map(|((constant, spelling), declared)| {
                     present_type(
                         &source,
                         CoreNode::ValueType(declared),
                         PageWidth::from(u32::from(u16::MAX)),
-                        Form::Sugared.into(),
+                        Style {
+                            form: Form::Sugared,
+                            spelling,
+                        },
                     )
                     .ok()
-                    .map(|spelled| (judged.constant(), spelled.to_string()))
+                    .map(|spelled| ((constant, spelling), spelled.to_string()))
                 })
                 .collect()
         };
@@ -713,7 +728,34 @@ impl<'source> Program<'source>
             hidden,
             sealed,
             families,
+            spelling: Spelling::Unicode,
         }
+    }
+
+    /// This program, its values and sealed types written in `spelling`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every later run spells its value, or its sealed type, in
+    ///   `spelling`; what runs is unchanged.
+    /// - provides: the reader's spelling for `gandr run` and the session; a
+    ///   `runs` expectation is compared in the program's own spelling, Unicode,
+    ///   before any face asks for another.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a value holding a relation runs to its spelling in
+    ///   each spelling.
+    /// - witness: `evaluate::tests::a_value_runs_to_its_spelling_in_either_spelling_782`
+    #[spec(ensures: self.spelling == spelling)]
+    #[inline]
+    pub fn spell_in(
+        &mut self,
+        spelling: Spelling,
+    )
+    {
+        self.spelling = spelling;
     }
 
     /// The declaration `gandr run` runs: the last name the source declares.
@@ -888,7 +930,7 @@ impl<'source> Program<'source>
                 Evaluation::Unfinished(Unfinished::Inconsistent(index)) => self.declarations.get(&index)
                     .is_some_and(|declared| matches!(declared.slot, Slot::Defined(_))),
                 Evaluation::Sealed(ref sealed) => self.hidden.values().any(|module| *module == sealed.module)
-                    && self.sealed.get(&constant).is_some_and(|declared| *declared == sealed.declared),
+                    && self.sealed.get(&(constant, self.spelling)).is_some_and(|declared| *declared == sealed.declared),
                 Evaluation::Value(_) | Evaluation::Stuck(_)
                     | Evaluation::Unfinished(Unfinished::Declined(_) | Unfinished::Readback(_) | Unfinished::Unspelled) => true,
             }
@@ -1044,7 +1086,7 @@ impl<'source> Program<'source>
         let mut core = CoreArena::new();
         match read_back_terminal(&self.arena, store, terminal, &mut core) {
             Ok(read) => match self.hidden_in(&mut core, read) {
-                Maybe::Present(module) => self.sealed.get(&constant).map_or(
+                Maybe::Present(module) => self.sealed.get(&(constant, self.spelling)).map_or(
                     Evaluation::Unfinished(Unfinished::Unspelled),
                     |declared| {
                         Evaluation::Sealed(SealedRun {
@@ -1414,11 +1456,12 @@ impl<'source> Program<'source>
     /// # Specification
     /// - requires: nothing; a malformed core graph is admissible.
     /// - ensures: the terminal presented as the computation it is, in the
-    ///   sugared form on one line without a break search: a returned value as
-    ///   the value, a function as its `fn`, constants by their paths from the
-    ///   top level and constructors by their names, every former as the grammar
-    ///   writes it and `?` where the printer cannot spell a node; the
-    ///   unspelled-layout absence where the printer cannot write it.
+    ///   sugared form and the program's spelling on one line without a break
+    ///   search: a returned value as the value, a function as its `fn`,
+    ///   constants by their paths from the top level and constructors by their
+    ///   names, every former as the grammar writes it and `?` where the printer
+    ///   cannot spell a node; the unspelled-layout absence where the printer
+    ///   cannot write it.
     /// - provides: the one value spelling `gandr run`, the session and a `runs`
     ///   expectation share, the same printer a hover answers with.
     /// - fails: [`Unfinished::Unspelled`] when the presentation reaches a build
@@ -1448,9 +1491,12 @@ impl<'source> Program<'source>
             .collect();
         let constructors = self.families.naming(&names);
         let source = CoreSource::new(core, &names).naming(&constructors);
-        present_computation_line(&source, CoreNode::Computation(read), Form::Sugared.into())
-            .map(ValueSpelling)
-            .map_err(|_refusal| Unfinished::Unspelled)
+        present_computation_line(&source, CoreNode::Computation(read), Style {
+            form: Form::Sugared,
+            spelling: self.spelling,
+        })
+        .map(ValueSpelling)
+        .map_err(|_refusal| Unfinished::Unspelled)
     }
 }
 
@@ -1855,6 +1901,7 @@ mod tests
     use super::Evaluation;
     use super::Program;
     use super::RunStatus;
+    use super::Spelling;
     use super::Unfinished;
     use super::Unrunnable;
     use super::run_target;
@@ -1967,6 +2014,28 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
                 evaluation.to_string(),
                 spelled,
                 "`{name}` is spelled as pinned"
+            );
+        }
+    }
+
+    /// #782: a value is spelled in the program's spelling, Unicode until a
+    /// face asks for another.
+    #[test]
+    fn a_value_runs_to_its_spelling_in_either_spelling_782()
+    {
+        let mut words = program(
+            "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef once : +U (-F \
+             Path(Circle, Base, Base)) ; def once = thunk { loop } ;",
+        );
+        for (spelling, spelled) in [
+            (Spelling::Unicode, "loop ∷ here(Base)"),
+            (Spelling::Ascii, "loop :: here(Base)"),
+        ] {
+            words.spell_in(spelling);
+            assert_eq!(
+                run(&mut words, SurfaceName::from("once")).to_string(),
+                spelled,
+                "the word in {spelling:?}"
             );
         }
     }

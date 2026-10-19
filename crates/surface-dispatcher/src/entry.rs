@@ -33,8 +33,8 @@ use gandr_surface_diagnostics::Diagnostic;
 use gandr_surface_diagnostics::Failures;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::SourceStart;
-use gandr_surface_diagnostics::Spellings;
 use gandr_surface_diagnostics::Subject;
+use gandr_surface_diagnostics::TypeSpellings;
 use gandr_surface_diagnostics::Unsettlement;
 use gandr_surface_diagnostics::diagnose;
 use gandr_surface_diagnostics::report_span;
@@ -46,6 +46,7 @@ use gandr_surface_lowering::InferredRun;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
+use gandr_surface_pretty::Spelling;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
@@ -198,8 +199,9 @@ struct Remaining<'step>
     admitted: &'step [DeclarationReport<'step>],
     /// The table their core nodes are located through.
     origins: &'step OriginTable,
-    /// The spellings of the types their checker failures name.
-    spellings: &'step Spellings,
+    /// The spellings of the types their checker failures name, in each
+    /// spelling.
+    spellings: &'step TypeSpellings,
     /// The failures the checking machine kept, by admission position.
     failures: &'step Failures,
 }
@@ -218,6 +220,8 @@ pub struct Entries<'step>
     verb: Verb,
     /// Where each lint reports its findings.
     lints: Lints,
+    /// The spelling the types a diagnostic names are read in.
+    spelling: Spelling,
     /// What remains.
     cursor: Cursor<'step>,
 }
@@ -258,7 +262,7 @@ pub struct Entries<'step>
 /// - witness: `entry::tests::an_inferred_run_is_reported_where_a_lint_reaches`
 /// - witness: `entry::tests::counted_declarations_preserve_visible_order_and_exhaustion`
 /// - witness: `entry::tests::faults_and_empty_sources_stay_exhausted`
-#[spec(ensures: |ref ret| ret.verb == verb && ret.lints == Lints::default() && match *step {
+#[spec(ensures: |ref ret| ret.verb == verb && ret.lints == Lints::default() && ret.spelling == Spelling::Unicode && match *step {
     Step::Fault { path, .. } => core::ptr::eq(core::ptr::from_ref(ret.path), core::ptr::from_ref(path))
         && ret.text.as_ref().is_empty() && matches!(ret.cursor, Cursor::Done),
     Step::Source { path, text, .. } => core::ptr::eq(core::ptr::from_ref(ret.path), core::ptr::from_ref(path)) && core::ptr::eq(core::ptr::from_ref(ret.text.as_ref()), core::ptr::from_ref(text.as_ref())),
@@ -292,6 +296,7 @@ pub fn entries<'step>(
         start: SourceStart::of(text, base),
         verb,
         lints: Lints::default(),
+        spelling: Spelling::Unicode,
         cursor,
     }
 }
@@ -556,6 +561,33 @@ impl<'step> Entries<'step>
         self
     }
 
+    /// These entries, each type a diagnostic names read in `spelling`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the same entries, every type a refusal compares or its
+    ///   failure names spelled in `spelling`; [`entries`] reads them in
+    ///   [`Spelling::Unicode`].
+    /// - provides: the reader's spelling, read where a step is printed.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a mismatch between two relations, printed in each
+    ///   spelling.
+    /// - witness: `entry::tests::a_refusal_names_its_types_in_the_spelling_asked_782`
+    #[spec(ensures: |ref ret| ret.spelling == spelling)]
+    #[inline]
+    #[must_use]
+    pub fn spelling(
+        mut self,
+        spelling: Spelling,
+    ) -> Self
+    {
+        self.spelling = spelling;
+        self
+    }
+
     /// What `declaration` prints, when its verb prints it.
     ///
     /// # Specification
@@ -609,7 +641,7 @@ impl<'step> Entries<'step>
                             declaration,
                             refusal,
                             origins: held.origins,
-                            spellings: held.spellings,
+                            spellings: held.spellings.spelled(self.spelling),
                             failure: held.failures.get(declaration.constant()),
                             upstream: upstream(refusal, held.admitted),
                         },
@@ -805,11 +837,13 @@ mod tests
     use gandr_surface_diagnostics::Lint;
     use gandr_surface_diagnostics::Severity;
     use gandr_surface_grammar::built_in;
+    use gandr_surface_pretty::Spelling;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
+    use super::Entries;
     use super::entries;
     use crate::Goals;
     use crate::Lints;
@@ -1051,6 +1085,37 @@ mod tests
             ],
             "the refused declaration is the one error; the one calling it is a note at the call, \
              and the one calling a declaration that checks prints nothing"
+        );
+    }
+
+    /// #782: a refusal names the types it compares in the spelling its
+    /// entries are asked for, Unicode unless asked otherwise.
+    #[test]
+    fn a_refusal_names_its_types_in_the_spelling_asked_782()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let refused = step(
+            Path::new("relation.gandr"),
+            SourceRoot::Strict,
+            SourceText::from("def r : Integer ≃ String ;\ndef r = 1 ;\n"),
+            Standing::Unsettled,
+            &grammar,
+        );
+        let compared = |printed: Entries<'_>| {
+            printed
+                .map(|diagnostic| diagnostic.detail.compared.to_string())
+                .collect::<Vec<_>>()
+        };
+        let expected = |relation: &str| [format!("expected `{relation}`, found `Integer`")];
+        assert_eq!(
+            compared(entries(&refused, Verb::Check(Goals::Gated))),
+            expected("Integer ≃ String"),
+            "Unicode by default"
+        );
+        assert_eq!(
+            compared(entries(&refused, Verb::Check(Goals::Gated)).spelling(Spelling::Ascii)),
+            expected("Integer <~> String"),
+            "ASCII when asked"
         );
     }
 
