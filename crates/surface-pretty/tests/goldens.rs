@@ -1023,11 +1023,7 @@ fn the_sugared_form_writes_every_sugar_its_shape_admits()
             "Integer => Integer => String",
             "+U (Integer -> -F (+U (Integer -> -F String)))",
         ),
-        (
-            dependent,
-            "+U ((a : Type) -> -F a)",
-            "+U ((a : Type) -> -F a)",
-        ),
+        (dependent, "(a : Type) => a", "+U ((a : Type) -> -F a)"),
         (pair, "Integer * String", "#{Integer, String}"),
         (
             triple,
@@ -2054,7 +2050,7 @@ fn a_run_bound_call_in_a_type_prints_nested_676()
 /// handed to a literal returning `⌜Unit⌝` is spelled as the call's argument
 /// and dropped with it, so the arrow is the plain `Unit -> -F Unit` and the
 /// thunk over it the alias `Unit => Unit`; a literal returning its argument
-/// keeps it, `(a : Type) -> -F a`, and the thunk over that stays a thunk.
+/// keeps it, `(a : Type) -> -F a`, and the alias over that names it.
 #[test]
 fn a_binder_only_a_dropped_argument_names_is_unnamed_736()
 {
@@ -2091,7 +2087,7 @@ fn a_binder_only_a_dropped_argument_names_is_unnamed_736()
         (CoreNode::CompType(dropped), "Unit -> -F Unit"),
         (CoreNode::CompType(kept), "(a : Type) -> -F a"),
         (CoreNode::ValueType(dropped_thunk), "Unit => Unit"),
-        (CoreNode::ValueType(kept_thunk), "+U ((a : Type) -> -F a)"),
+        (CoreNode::ValueType(kept_thunk), "(a : Type) => a"),
     ] {
         let presented = presented_in(&source, Root::Type(root), wide(), Form::Sugared);
         assert_eq!(
@@ -2099,6 +2095,62 @@ fn a_binder_only_a_dropped_argument_names_is_unnamed_736()
             (spelling, Fidelity::Faithful),
             "the binder is named exactly where the printed codomain names it"
         );
+    }
+}
+
+/// #800: the sugared form writes a thunk over a dependent arrow chain as the
+/// dependent alias, naming each binder its codomain reads and writing every
+/// other domain bare, where it wrote the explicit thunk before; the explicit
+/// form is unchanged.
+#[test]
+fn a_dependent_alias_names_each_binder_its_codomain_reads_800()
+{
+    let mut core = CoreArena::new();
+    let universe = small_universe(&mut core);
+    let integer = core.value_type_base(BaseType::Integer);
+    let outer = bound(&mut core, DeBruijnIndex::from(1_u32));
+    let inner = bound(&mut core, DeBruijnIndex::from(0_u32));
+    let returns_outer = core.comp_type_returner(outer);
+    let returns_inner = core.comp_type_returner(inner);
+    let first = bound(&mut core, DeBruijnIndex::from(0_u32));
+    let ignoring = core.comp_type_pi(first, returns_outer);
+    let ignoring = core.comp_type_pi(universe, ignoring);
+    let ignoring = core.value_type_thunk(ignoring);
+    let reading = core.comp_type_pi(first, returns_inner);
+    let reading = core.comp_type_pi(universe, reading);
+    let reading = core.value_type_thunk(reading);
+    let returns_after = core.comp_type_returner(outer);
+    let after = core.comp_type_pi(universe, returns_after);
+    let after = core.comp_type_arrow(integer, after);
+    let after = core.comp_type_pi(universe, after);
+    let after = core.value_type_thunk(after);
+    let source = CoreSource::new(&core, &[]);
+    for (root, sugared, explicit) in [
+        (
+            ignoring,
+            "(a : Type, a) => a",
+            "+U ((a : Type) -> a -> -F a)",
+        ),
+        (
+            reading,
+            "(a : Type, b : a) => b",
+            "+U ((a : Type) -> (b : a) -> -F b)",
+        ),
+        (
+            after,
+            "(a : Type, Integer, Type) => a",
+            "+U ((a : Type) -> Integer -> Type -> -F a)",
+        ),
+    ] {
+        for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
+            let presented =
+                presented_in(&source, Root::Type(CoreNode::ValueType(root)), wide(), form);
+            assert_eq!(
+                (presented.as_ref(), presented.fidelity()),
+                (expected, Fidelity::Faithful),
+                "{root:?} in the {form:?} form"
+            );
+        }
     }
 }
 

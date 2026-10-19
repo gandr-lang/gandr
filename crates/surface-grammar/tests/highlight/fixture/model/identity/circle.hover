@@ -290,15 +290,15 @@
 79:18-79:19 #{ ⇒ Path(Circle, Base, Base) ≅ Int @79:18-79:49
 79:20-79:23 wind ⇒ wind : Path(Circle, Base, Base) => Int @79:20-79:24
 79:24-79:24 , ⇒ Path(Circle, Base, Base) ≅ Int @79:18-79:49
-79:26-79:27 #{ ⇒ #{a : Int => Path(Circle, Base, Base), b : +U ((b : Path(Circle, Base, Base)) ->⏎  -F Path(Path(Circle, Base, Base), a(wind(b)), b)) * +U ((b : Int) ->⏎  -F Path(Int, wind(a(b)), b))} @79:26-79:48
+79:26-79:27 #{ ⇒ #{a : Int => Path(Circle, Base, Base), b : ((b : Path(Circle, Base, Base)) =>⏎  Path(Path(Circle, Base, Base), a(wind(b)), b)) * ((b : Int) => Path(Int,⏎  wind(a(b)), b))} @79:26-79:48
 79:28-79:31 spin ⇒ spin : Int => Path(Circle, Base, Base) @79:28-79:32
-79:32-79:32 , ⇒ #{a : Int => Path(Circle, Base, Base), b : +U ((b : Path(Circle, Base, Base)) ->⏎  -F Path(Path(Circle, Base, Base), a(wind(b)), b)) * +U ((b : Int) ->⏎  -F Path(Int, wind(a(b)), b))} @79:26-79:48
-79:34-79:35 #{ ⇒ +U ((a : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base),⏎  spin(wind(a)), a)) * +U ((a : Int) -> -F Path(Int, wind(spin(a)), a)) @79:34-79:47
-79:36-79:39 sect ⇒ sect : +U ((p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base),⏎  spin(wind(p)), p))⏎⏎checked against⏎⏎+U ((a : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base),⏎  spin(wind(a)), a)) @79:36-79:40
-79:40-79:40 , ⇒ +U ((a : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base),⏎  spin(wind(a)), a)) * +U ((a : Int) -> -F Path(Int, wind(spin(a)), a)) @79:34-79:47
-79:42-79:45 retr ⇒ retr : +U ((n : Int) -> -F Path(Int, wind(spin(n)), n))⏎⏎checked against⏎⏎+U ((a : Int) -> -F Path(Int, wind(spin(a)), a)) @79:42-79:46
-79:46-79:46 } ⇒ +U ((a : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base),⏎  spin(wind(a)), a)) * +U ((a : Int) -> -F Path(Int, wind(spin(a)), a)) @79:34-79:47
-79:47-79:47 } ⇒ #{a : Int => Path(Circle, Base, Base), b : +U ((b : Path(Circle, Base, Base)) ->⏎  -F Path(Path(Circle, Base, Base), a(wind(b)), b)) * +U ((b : Int) ->⏎  -F Path(Int, wind(a(b)), b))} @79:26-79:48
+79:32-79:32 , ⇒ #{a : Int => Path(Circle, Base, Base), b : ((b : Path(Circle, Base, Base)) =>⏎  Path(Path(Circle, Base, Base), a(wind(b)), b)) * ((b : Int) => Path(Int,⏎  wind(a(b)), b))} @79:26-79:48
+79:34-79:35 #{ ⇒ ((a : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(a)),⏎  a)) * ((a : Int) => Path(Int, wind(spin(a)), a)) @79:34-79:47
+79:36-79:39 sect ⇒ sect : (p : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(p)),⏎  p)⏎⏎checked against⏎⏎(a : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(a)),⏎  a) @79:36-79:40
+79:40-79:40 , ⇒ ((a : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(a)),⏎  a)) * ((a : Int) => Path(Int, wind(spin(a)), a)) @79:34-79:47
+79:42-79:45 retr ⇒ retr : (n : Int) => Path(Int, wind(spin(n)), n)⏎⏎checked against⏎⏎(a : Int) => Path(Int, wind(spin(a)), a) @79:42-79:46
+79:46-79:46 } ⇒ ((a : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(a)),⏎  a)) * ((a : Int) => Path(Int, wind(spin(a)), a)) @79:34-79:47
+79:47-79:47 } ⇒ #{a : Int => Path(Circle, Base, Base), b : ((b : Path(Circle, Base, Base)) =>⏎  Path(Path(Circle, Base, Base), a(wind(b)), b)) * ((b : Int) => Path(Int,⏎  wind(a(b)), b))} @79:26-79:48
 79:48-79:48 } ⇒ Path(Circle, Base, Base) ≅ Int @79:18-79:49
 79:50-79:50 ; ⇒ windingIso : Path(Circle, Base, Base) ≅ Int @79:1-79:51
 85:1-85:11 @[ checks ] ⇒ winding : Path(Circle, Base, Base) ≃ Int⏎⏎The loops at the point and the presented integers are equivalent: the⏎book's `Path(Circle, Base, Base) ≃ Int`, the quasi-inverse made⏎bi-invertible, `spin` serving as both inverses. A value is a record, never⏎a call, so the equivalence is written as the record `isoToEquiv` builds. @85:1-86:1
@@ -321,19 +321,19 @@
 87:15-87:16 #{ ⇒ Path(Circle, Base, Base) ≃ Int @87:15-87:55
 87:17-87:20 wind ⇒ wind : Path(Circle, Base, Base) => Int @87:17-87:21
 87:21-87:21 , ⇒ Path(Circle, Base, Base) ≃ Int @87:15-87:55
-87:23-87:24 #{ ⇒ #{a : Int => Path(Circle, Base, Base), b : +U ((b : Path(Circle, Base, Base)) ->⏎  -F Path(Path(Circle, Base, Base), a(wind(b)), b))} * #{a : Int => Path(Circle,⏎  Base, Base), b : +U ((b : Int) -> -F Path(Int, wind(a(b)), b))} @87:23-87:54
-87:25-87:26 #{ ⇒ #{a : Int => Path(Circle, Base, Base), b : +U ((b : Path(Circle, Base, Base)) ->⏎  -F Path(Path(Circle, Base, Base), a(wind(b)), b))} @87:25-87:38
+87:23-87:24 #{ ⇒ #{a : Int => Path(Circle, Base, Base), b : (b : Path(Circle, Base, Base)) =>⏎  Path(Path(Circle, Base, Base), a(wind(b)), b)} * #{a : Int => Path(Circle,⏎  Base, Base), b : (b : Int) => Path(Int, wind(a(b)), b)} @87:23-87:54
+87:25-87:26 #{ ⇒ #{a : Int => Path(Circle, Base, Base), b : (b : Path(Circle, Base, Base)) =>⏎  Path(Path(Circle, Base, Base), a(wind(b)), b)} @87:25-87:38
 87:27-87:30 spin ⇒ spin : Int => Path(Circle, Base, Base) @87:27-87:31
-87:31-87:31 , ⇒ #{a : Int => Path(Circle, Base, Base), b : +U ((b : Path(Circle, Base, Base)) ->⏎  -F Path(Path(Circle, Base, Base), a(wind(b)), b))} @87:25-87:38
-87:33-87:36 sect ⇒ sect : +U ((p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base),⏎  spin(wind(p)), p))⏎⏎checked against⏎⏎+U ((a : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base),⏎  spin(wind(a)), a)) @87:33-87:37
-87:37-87:37 } ⇒ #{a : Int => Path(Circle, Base, Base), b : +U ((b : Path(Circle, Base, Base)) ->⏎  -F Path(Path(Circle, Base, Base), a(wind(b)), b))} @87:25-87:38
-87:38-87:38 , ⇒ #{a : Int => Path(Circle, Base, Base), b : +U ((b : Path(Circle, Base, Base)) ->⏎  -F Path(Path(Circle, Base, Base), a(wind(b)), b))} * #{a : Int => Path(Circle,⏎  Base, Base), b : +U ((b : Int) -> -F Path(Int, wind(a(b)), b))} @87:23-87:54
-87:40-87:41 #{ ⇒ #{a : Int => Path(Circle, Base, Base), b : +U ((b : Int) -> -F Path(Int,⏎  wind(a(b)), b))} @87:40-87:53
+87:31-87:31 , ⇒ #{a : Int => Path(Circle, Base, Base), b : (b : Path(Circle, Base, Base)) =>⏎  Path(Path(Circle, Base, Base), a(wind(b)), b)} @87:25-87:38
+87:33-87:36 sect ⇒ sect : (p : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(p)),⏎  p)⏎⏎checked against⏎⏎(a : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(a)),⏎  a) @87:33-87:37
+87:37-87:37 } ⇒ #{a : Int => Path(Circle, Base, Base), b : (b : Path(Circle, Base, Base)) =>⏎  Path(Path(Circle, Base, Base), a(wind(b)), b)} @87:25-87:38
+87:38-87:38 , ⇒ #{a : Int => Path(Circle, Base, Base), b : (b : Path(Circle, Base, Base)) =>⏎  Path(Path(Circle, Base, Base), a(wind(b)), b)} * #{a : Int => Path(Circle,⏎  Base, Base), b : (b : Int) => Path(Int, wind(a(b)), b)} @87:23-87:54
+87:40-87:41 #{ ⇒ #{a : Int => Path(Circle, Base, Base), b : (b : Int) => Path(Int, wind(a(b)), b)⏎} @87:40-87:53
 87:42-87:45 spin ⇒ spin : Int => Path(Circle, Base, Base) @87:42-87:46
-87:46-87:46 , ⇒ #{a : Int => Path(Circle, Base, Base), b : +U ((b : Int) -> -F Path(Int,⏎  wind(a(b)), b))} @87:40-87:53
-87:48-87:51 retr ⇒ retr : +U ((n : Int) -> -F Path(Int, wind(spin(n)), n))⏎⏎checked against⏎⏎+U ((a : Int) -> -F Path(Int, wind(spin(a)), a)) @87:48-87:52
-87:52-87:52 } ⇒ #{a : Int => Path(Circle, Base, Base), b : +U ((b : Int) -> -F Path(Int,⏎  wind(a(b)), b))} @87:40-87:53
-87:53-87:53 } ⇒ #{a : Int => Path(Circle, Base, Base), b : +U ((b : Path(Circle, Base, Base)) ->⏎  -F Path(Path(Circle, Base, Base), a(wind(b)), b))} * #{a : Int => Path(Circle,⏎  Base, Base), b : +U ((b : Int) -> -F Path(Int, wind(a(b)), b))} @87:23-87:54
+87:46-87:46 , ⇒ #{a : Int => Path(Circle, Base, Base), b : (b : Int) => Path(Int, wind(a(b)), b)⏎} @87:40-87:53
+87:48-87:51 retr ⇒ retr : (n : Int) => Path(Int, wind(spin(n)), n)⏎⏎checked against⏎⏎(a : Int) => Path(Int, wind(spin(a)), a) @87:48-87:52
+87:52-87:52 } ⇒ #{a : Int => Path(Circle, Base, Base), b : (b : Int) => Path(Int, wind(a(b)), b)⏎} @87:40-87:53
+87:53-87:53 } ⇒ #{a : Int => Path(Circle, Base, Base), b : (b : Path(Circle, Base, Base)) =>⏎  Path(Path(Circle, Base, Base), a(wind(b)), b)} * #{a : Int => Path(Circle,⏎  Base, Base), b : (b : Int) => Path(Int, wind(a(b)), b)} @87:23-87:54
 87:54-87:54 } ⇒ Path(Circle, Base, Base) ≃ Int @87:15-87:55
 87:56-87:56 ; ⇒ winding : Path(Circle, Base, Base) ≃ Int @87:1-87:57
 90:1-90:11 @[ checks ] ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso))⏎⏎The equivalence is `isoToEquiv` at the quasi-inverse, by conversion. @90:1-91:1
@@ -353,8 +353,8 @@
 92:33-92:33 , ⇒ Type @91:20-95:2
 93:3-93:9 winding ⇒ winding : Path(Circle, Base, Base) ≃ Int @93:3-93:10
 93:10-93:10 , ⇒ Type @91:20-95:2
-94:3-94:12 isoToEquiv ⇒ isoToEquiv : +U ((a : Type) -> (b : Type) -> (a ≅ b) -> -F (a ≃ b)) @94:3-94:13
-94:13-94:13 ( ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : +U ((c : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base,⏎  Base), b(a(c)), c))} * #{b : Int => Path(Circle, Base, Base),⏎  c : +U ((c : Int) -> -F Path(Int, a(b(c)), c))}} @94:3-94:56
+94:3-94:12 isoToEquiv ⇒ isoToEquiv : (a : Type, b : Type, a ≅ b) => a ≃ b @94:3-94:13
+94:13-94:13 ( ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : (c : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base),⏎  b(a(c)), c)} * #{b : Int => Path(Circle, Base, Base), c : (c : Int) =>⏎  Path(Int, a(b(c)), c)}} @94:3-94:56
 94:14-94:18 Path( ⇒ Path(Circle, Base, Base) : Type @94:14-94:38
 94:19-94:24 Circle ⇒ Circle : Type @94:19-94:25
 94:25-94:25 , ⇒ Path(Circle, Base, Base) : Type @94:14-94:38
@@ -362,11 +362,11 @@
 94:31-94:31 , ⇒ Path(Circle, Base, Base) : Type @94:14-94:38
 94:33-94:36 Base ⇒ Base : Circle @94:33-94:37
 94:37-94:37 ) ⇒ Path(Circle, Base, Base) : Type @94:14-94:38
-94:38-94:38 , ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : +U ((c : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base,⏎  Base), b(a(c)), c))} * #{b : Int => Path(Circle, Base, Base),⏎  c : +U ((c : Int) -> -F Path(Int, a(b(c)), c))}} @94:3-94:56
+94:38-94:38 , ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : (c : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base),⏎  b(a(c)), c)} * #{b : Int => Path(Circle, Base, Base), c : (c : Int) =>⏎  Path(Int, a(b(c)), c)}} @94:3-94:56
 94:40-94:42 Int ⇒ Int : Type @94:40-94:43
-94:43-94:43 , ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : +U ((c : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base,⏎  Base), b(a(c)), c))} * #{b : Int => Path(Circle, Base, Base),⏎  c : +U ((c : Int) -> -F Path(Int, a(b(c)), c))}} @94:3-94:56
-94:45-94:54 windingIso ⇒ windingIso : Path(Circle, Base, Base) ≅ Int⏎⏎checked against⏎⏎#{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base, Base⏎), c : +U ((c : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base),⏎  b(a(c)), c)) * +U ((c : Int) -> -F Path(Int, a(b(c)), c))}} @94:45-94:55
-94:55-94:55 ) ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : +U ((c : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base,⏎  Base), b(a(c)), c))} * #{b : Int => Path(Circle, Base, Base),⏎  c : +U ((c : Int) -> -F Path(Int, a(b(c)), c))}} @94:3-94:56
+94:43-94:43 , ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : (c : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base),⏎  b(a(c)), c)} * #{b : Int => Path(Circle, Base, Base), c : (c : Int) =>⏎  Path(Int, a(b(c)), c)}} @94:3-94:56
+94:45-94:54 windingIso ⇒ windingIso : Path(Circle, Base, Base) ≅ Int⏎⏎checked against⏎⏎#{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base, Base⏎), c : ((c : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), b(a(c)⏎), c)) * ((c : Int) => Path(Int, a(b(c)), c))}} @94:45-94:55
+94:55-94:55 ) ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : (c : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base),⏎  b(a(c)), c)} * #{b : Int => Path(Circle, Base, Base), c : (c : Int) =>⏎  Path(Int, a(b(c)), c)}} @94:3-94:56
 95:1-95:1 ) ⇒ Type @91:20-95:2
 95:3-95:3 ; ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso))⏎⏎The equivalence is `isoToEquiv` at the quasi-inverse, by conversion. @91:1-95:4
 96:1-96:3 def ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso)) @96:1-96:35

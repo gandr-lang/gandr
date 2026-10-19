@@ -61,19 +61,19 @@
 23:29-23:29 ) ⇒ Succ(Zero) : Nat @23:20-23:30
 23:30-23:30 ) ⇒ Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @23:15-23:31
 23:31-23:31 ; ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @23:1-23:32
-27:1-27:11 @[ checks ] ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @27:1-28:1
-28:1-28:3 def ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-28:72
-28:5-28:13 reversed( ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:5-28:13
+27:1-27:11 @[ checks ] ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @27:1-28:1
+28:1-28:3 def ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-28:72
+28:5-28:13 reversed( ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:5-28:13
 28:14-28:14 a ⇒ a : Nat @28:14-28:15
-28:15-28:15 : ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-28:72
+28:15-28:15 : ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-28:72
 28:17-28:19 Nat ⇒ Nat : Type @28:17-28:20
-28:20-28:20 , ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-28:72
+28:20-28:20 , ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-28:72
 28:22-28:22 b ⇒ b : (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a) @28:22-28:23
-28:23-28:23 : ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-28:72
+28:23-28:23 : ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-28:72
 28:25-28:27 Nat ⇒ Nat : Type @28:25-28:28
-28:28-28:28 , ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-28:72
+28:28-28:28 , ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-28:72
 28:30-28:30 q ⇒ q : Path(Nat, a, b) @28:30-28:31
-28:31-28:31 : ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-28:72
+28:31-28:31 : ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-28:72
 28:33-28:37 Path( ⇒ Path(Nat, a, b) : Type @28:33-28:48
 28:38-28:40 Nat ⇒ Nat : Type @28:38-28:41
 28:41-28:41 , ⇒ Path(Nat, a, b) : Type @28:33-28:48
@@ -81,7 +81,7 @@
 28:44-28:44 , ⇒ Path(Nat, a, b) : Type @28:33-28:48
 28:46-28:46 b ⇒ b : Nat @28:46-28:47
 28:47-28:47 ) ⇒ Path(Nat, a, b) : Type @28:33-28:48
-28:48-28:51 ) -> ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-28:72
+28:48-28:51 ) -> ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-28:72
 28:53-28:54 -F ⇒ -F Path(Nat, b, a) : Type[-] @28:53-28:71
 28:56-28:60 Path( ⇒ Path(Nat, b, a) : Type @28:56-28:71
 28:61-28:63 Nat ⇒ Nat : Type @28:61-28:64
@@ -90,7 +90,7 @@
 28:67-28:67 , ⇒ Path(Nat, b, a) : Type @28:56-28:71
 28:69-28:69 a ⇒ a : Nat @28:69-28:70
 28:70-28:70 ) ⇒ Path(Nat, b, a) : Type @28:56-28:71
-28:72-29:8 {⏎  become ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-36:2
+28:72-29:8 {⏎  become ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-36:2
 29:10-29:19 transport( ⇒ -F Path(Nat, b, a) @29:10-35:4
 30:5-30:8 +U ( ⇒ +U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Nat, y, a)) : Type @30:5-30:66
 30:9-30:9 ( ⇒ (y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Nat, y, a) : Type[-] @30:9-30:65
@@ -133,20 +133,20 @@
 34:10-34:10 a ⇒ a : Nat @34:10-34:11
 34:11-34:11 ) ⇒ Path(Nat, a, a) @34:5-34:12
 35:3-35:3 ) ⇒ -F Path(Nat, b, a) @29:10-35:4
-36:1-36:1 } ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-36:2
-39:1-39:23 @[ refuses("NotOver") ] ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @39:1-40:1
-40:1-40:3 def ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
-40:5-40:11 astray( ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @40:5-40:11
+36:1-36:1 } ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-36:2
+39:1-39:23 @[ refuses("NotOver") ] ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A lift whose path is not over `q` is refused. @39:1-40:1
+40:1-40:3 def ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
+40:5-40:11 astray( ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A lift whose path is not over `q` is refused. @40:5-40:11
 40:12-40:12 a ⇒ a : Nat @40:12-40:13
-40:13-40:13 : ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
+40:13-40:13 : ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
 40:15-40:17 Nat ⇒ Nat : Type @40:15-40:18
-40:18-40:18 , ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
+40:18-40:18 , ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
 40:20-40:20 b ⇒ b : (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat @40:20-40:21
-40:21-40:21 : ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
+40:21-40:21 : ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
 40:23-40:25 Nat ⇒ Nat : Type @40:23-40:26
-40:26-40:26 , ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
+40:26-40:26 , ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
 40:28-40:28 q ⇒ q : Path(Nat, a, b) @40:28-40:29
-40:29-40:29 : ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
+40:29-40:29 : ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
 40:31-40:35 Path( ⇒ Path(Nat, a, b) : Type @40:31-40:46
 40:36-40:38 Nat ⇒ Nat : Type @40:36-40:39
 40:39-40:39 , ⇒ Path(Nat, a, b) : Type @40:31-40:46
@@ -154,14 +154,14 @@
 40:42-40:42 , ⇒ Path(Nat, a, b) : Type @40:31-40:46
 40:44-40:44 b ⇒ b : Nat @40:44-40:45
 40:45-40:45 ) ⇒ Path(Nat, a, b) : Type @40:31-40:46
-40:46-40:46 , ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
+40:46-40:46 , ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
 40:48-40:48 v ⇒ v : Nat -> -F Nat @40:48-40:49
-40:49-40:49 : ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
+40:49-40:49 : ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
 40:51-40:53 Nat ⇒ Nat : Type @40:51-40:54
-40:54-40:57 ) -> ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
+40:54-40:57 ) -> ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
 40:59-40:60 -F ⇒ -F Nat : Type[-] @40:59-40:65
 40:62-40:64 Nat ⇒ Nat : Type @40:62-40:65
-40:66-41:8 {⏎  become ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @40:1-42:2
+40:66-41:8 {⏎  become ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A lift whose path is not over `q` is refused. @40:1-42:2
 41:10-41:19 transport( ⇒ ?⏎⏎checked against⏎⏎-F Nat @41:10-41:100
 41:20-41:23 +U ( ⇒ +U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat) : Type @41:20-41:69
 41:24-41:24 ( ⇒ (y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat : Type[-] @41:24-41:68
@@ -196,20 +196,20 @@
 41:94-41:94 ) ⇒ Path(Nat, a, a) @41:88-41:95
 41:95-41:95 ) ⇒ Path(Path(Nat, a, a), here(a), here(a)) @41:83-41:96
 41:96-41:99 , v) ⇒ ?⏎⏎checked against⏎⏎-F Nat @41:10-41:100
-42:1-42:1 } ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @40:1-42:2
-45:1-45:29 @[ refuses("ShapeMismatc… ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @45:1-46:1
-46:1-46:3 def ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
-46:5-46:9 flat( ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:5-46:9
+42:1-42:1 } ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A lift whose path is not over `q` is refused. @40:1-42:2
+45:1-45:29 @[ refuses("ShapeMismatc… ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A family that reads no path is the wrong shape for a dependent transport. @45:1-46:1
+46:1-46:3 def ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
+46:5-46:9 flat( ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:5-46:9
 46:10-46:10 a ⇒ a : (a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat @46:10-46:11
-46:11-46:11 : ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
+46:11-46:11 : ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
 46:13-46:15 Nat ⇒ Nat : Type @46:13-46:16
-46:16-46:16 , ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
+46:16-46:16 , ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
 46:18-46:18 b ⇒ b : (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat @46:18-46:19
-46:19-46:19 : ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
+46:19-46:19 : ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
 46:21-46:23 Nat ⇒ Nat : Type @46:21-46:24
-46:24-46:24 , ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
+46:24-46:24 , ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
 46:26-46:26 q ⇒ q : Path(Nat, a, b) @46:26-46:27
-46:27-46:27 : ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
+46:27-46:27 : ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
 46:29-46:33 Path( ⇒ Path(Nat, a, b) : Type @46:29-46:44
 46:34-46:36 Nat ⇒ Nat : Type @46:34-46:37
 46:37-46:37 , ⇒ Path(Nat, a, b) : Type @46:29-46:44
@@ -217,14 +217,14 @@
 46:40-46:40 , ⇒ Path(Nat, a, b) : Type @46:29-46:44
 46:42-46:42 b ⇒ b : Nat @46:42-46:43
 46:43-46:43 ) ⇒ Path(Nat, a, b) : Type @46:29-46:44
-46:44-46:44 , ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
+46:44-46:44 , ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
 46:46-46:46 v ⇒ v : Nat -> -F Nat @46:46-46:47
-46:47-46:47 : ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
+46:47-46:47 : ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
 46:49-46:51 Nat ⇒ Nat : Type @46:49-46:52
-46:52-46:55 ) -> ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
+46:52-46:55 ) -> ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
 46:57-46:58 -F ⇒ -F Nat : Type[-] @46:57-46:63
 46:60-46:62 Nat ⇒ Nat : Type @46:60-46:63
-46:64-47:8 {⏎  become ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-48:2
+46:64-47:8 {⏎  become ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-48:2
 47:10-47:19 transport( ⇒ ?⏎⏎checked against⏎⏎-F Nat @47:10-47:57
 47:20-47:23 +U ( ⇒ +U ((y : Nat) -> -F Nat) : Type @47:20-47:44
 47:24-47:24 ( ⇒ (y : Nat) -> -F Nat : Type[-] @47:24-47:43
@@ -238,4 +238,4 @@
 47:44-47:44 , ⇒ ?⏎⏎checked against⏎⏎-F Nat @47:10-47:57
 47:46-47:46 q ⇒ q : Path(Nat, a, b) @47:46-47:47
 47:47-47:56 , v, v, v) ⇒ ?⏎⏎checked against⏎⏎-F Nat @47:10-47:57
-48:1-48:1 } ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-48:2
+48:1-48:1 } ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-48:2

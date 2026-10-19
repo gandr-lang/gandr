@@ -44,11 +44,11 @@ module SetoidCat : Model(CatShape) {
 
   /// The interface's identity runs to a function that applies `ident`, which
   /// the signature hides, so the run is opaque at the model.
-  @[ runs("⟨opaque at SetoidCat⟩ : +U ((a : Type) -> -F (a => a))") ]
+  @[ runs("⟨opaque at SetoidCat⟩ : (a : Type) => a => a") ]
   def id(t : Type) -> -F (+U[ω] (t -> -F t)) { return thunk { become ident(t) } }
 
   /// Composition likewise runs through the hidden `compose`.
-  @[ runs("⟨opaque at SetoidCat⟩ : +U ((a : Type) -> (b : Type) -> (c : Type) -> (a => b) -> (b => c) -> -F (a => c))") ]
+  @[ runs("⟨opaque at SetoidCat⟩ : (a : Type, b : Type, c : Type, a => b, b => c) => a => c") ]
   def comp(
     t : Type,
     u : Type,
