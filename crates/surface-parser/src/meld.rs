@@ -3023,6 +3023,13 @@ impl<'pbg> MeldState<'pbg>
             reason = "bounded: walks the grammar's candidate menus of `labels`, which the grammar fixes; the slope is never read"
         )
     )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `labels` holds one token's candidate labels, which the labeler caps"
+        )
+    )]
     #[spec(ensures: |ret| bool::from(ret) == <&[&'static str]>::from(labels).iter().any(|&label| self.pbg.candidates(TileLabel(label)).iter().any(|&right| self.pbg.adjacencies().binary_search(&(mold, right)).is_ok())))]
     fn successor_label_in(
         &self,
@@ -5488,7 +5495,9 @@ impl<'pbg> MeldState<'pbg>
                     .is_some_and(|&last| self.emit_span(last).end == self.emit_span(between).start)
                     && self.emit_span(between).end == self.emit_span(line).start
                     && written(between).trim().is_empty()
-                    && written(between).matches('\n').count() == 1
+                    && written(between)
+                        .split_once('\n')
+                        .is_some_and(|(_, after)| !after.contains('\n'))
                     && is_doc_line(line);
                 if !joined {
                     break;

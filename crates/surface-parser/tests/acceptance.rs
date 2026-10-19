@@ -1664,6 +1664,13 @@ fn corpus_files_cold_parse_within_p99_latency_budget() -> Result<(), Box<dyn Err
 }
 
 #[test]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        linear_search_in_loop,
+        reason = "bounded: `excess` holds one prefix's obligation classes, matched off one by one as a multiset"
+    )
+)]
 fn expected_agrees_with_committed_finalize() -> Result<(), Box<dyn Error>>
 {
     // The completion `expected()` reports bounds the obligation material a

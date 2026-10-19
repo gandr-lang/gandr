@@ -2328,6 +2328,13 @@ impl<'pbg> Molder<'pbg>
     ///   Dropping the prefix, crossing to another form or ignoring the label
     ///   changes it.
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `labels` holds one token's candidate labels, at most `LABEL_CAPACITY`"
+        )
+    )]
     #[spec(captures: before = self.candidates.len(), ensures: |_| self.candidates.get(before ..).is_some_and(|tail| tail.iter().all(|right| self.pbg.adjacencies().binary_search(&(open, *right)).is_ok() && self.pbg.mold(*right).is_ok_and(|def| labels.iter().any(|label| label.0 == def.label)))))]
     fn push_form_successors(
         &mut self,
@@ -2457,6 +2464,13 @@ impl<'pbg> Molder<'pbg>
         expect(
             spec_clause_traversal,
             reason = "parity: the body ranks every eligible candidate and pushes each tie; the clause walks the ties, searching the eligible list"
+        )
+    )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `pushes` holds the push classes of one decision's candidates, a buffer reused across decisions"
         )
     )]
     #[spec(captures: before = state.obligations().len(), ensures: |_| state.obligations().len() == before && self.tied.iter().all(|mold| self.eligible.binary_search(mold).is_ok()) && self.tied.is_empty() == self.eligible.is_empty() && self.tied.iter().zip(self.tied.iter().skip(1)).all(|(left, right)| left < right))]
@@ -2707,6 +2721,13 @@ impl<'pbg> Molder<'pbg>
         expect(
             spec_clause_traversal,
             reason = "parity: the body walks the same candidate menu to filter it by admissibility"
+        )
+    )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `completions` holds the push classes of one decision's ties, a buffer reused across decisions"
         )
     )]
     #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), ensures: |ret| ret.map_or_else(|| self.candidates.is_empty(), |mold| self.candidates.contains(&mold)))]
@@ -3094,6 +3115,13 @@ impl<'pbg> Molder<'pbg>
             reason = "parity: the body walks the same candidate menu to filter it by admissibility"
         )
     )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `windowed` holds the opener classes of one decision, a buffer reused across decisions"
+        )
+    )]
     #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), captures: before = (self.candidates.len(), tokens.get(index.0).is_some()), ensures: |ret| ret.is_some() == (before.1 && before.0 > 0) && ret.is_none_or(|mold| self.pbg.mold(mold).is_ok()))]
     fn choose_stream_by<'src>(
         &mut self,
@@ -3380,6 +3408,13 @@ impl<'pbg> Molder<'pbg>
             reason = "parity: the body walks the same successor or candidate menus"
         )
     )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `labels` holds one token's candidate labels, at most `LABEL_CAPACITY`"
+        )
+    )]
     #[spec(ensures: |ret| (ret == Follow::Refuted) == if matches!(self.pbg.bounds(mold), Ok((_, Bound::Root))) {
         !bool::from(self.pbg.mold_is_form_last(mold)) && !self.pbg.mold_successors(mold).iter().any(|&(_, right)| self.pbg.mold(right).is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label))))
     } else {
@@ -3510,6 +3545,13 @@ impl<'pbg> Molder<'pbg>
             reason = "parity: the body walks the same openers and their successor menus"
         )
     )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `labels` holds one token's candidate labels, at most `LABEL_CAPACITY`"
+        )
+    )]
     #[spec(ensures: |ret| {
         let pbg = self.pbg;
         let continued = |mold: MoldId| pbg.mold_successors(mold).iter().any(|&(_, right)| pbg.mold(right).is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label))));
@@ -3577,6 +3619,13 @@ impl<'pbg> Molder<'pbg>
         expect(
             spec_clause_traversal,
             reason = "parity: the body walks the same openers and their successor menus"
+        )
+    )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `labels` holds one token's candidate labels, at most `LABEL_CAPACITY`"
         )
     )]
     #[spec(ensures: |ret| {
