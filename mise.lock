@@ -17,6 +17,14 @@ version = "6.0.4"
 backend = "cargo:dylint-link"
 specifiers = ["6.0.4"]
 
+[[tools."cargo:hotpath"]]
+version = "0.28.6"
+backend = "cargo:hotpath"
+specifiers = ["0.28.6"]
+
+[tools."cargo:hotpath".options]
+features = "hotpath hotpath-mcp tui"
+
 [[tools."cargo:sizelint"]]
 version = "0.1.5"
 backend = "cargo:sizelint"

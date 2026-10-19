@@ -22,7 +22,7 @@ ENV RUSTUP_HOME=/opt/ci/.rustup \
     PATH=/opt/ci/.local/bin:/opt/ci/.cargo/bin:$PATH
 
 # This must match ci.yml: workstation-only tools never enter CI installs.
-ENV MISE_DISABLE_TOOLS=github:orhun/git-cliff,github:max-sixty/worktrunk,github:j178/prek,github:nektos/act \
+ENV MISE_DISABLE_TOOLS=cargo:hotpath,github:j178/prek,github:max-sixty/worktrunk,github:nektos/act,github:orhun/git-cliff \
     MISE_CARGO_BINSTALL_QUICKINSTALL=true \
     MISE_CARGO_BINSTALL_NATIVE=true
 

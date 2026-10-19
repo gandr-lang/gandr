@@ -44,26 +44,27 @@ includes = [".config/mise/tasks"]
 # resolution misses, and that hazard recurs with every upstream default
 # change.
 [tools]
-# Release-only rendering; formatting never reads Git history.
-"github:orhun/git-cliff" = "2.14.2"
 "cargo:dylint-link" = "6.0.4"
+"cargo:hotpath" = { version = "0.28.6", features = ["hotpath", "hotpath-mcp", "tui"] }
 "github:aubepkg/aube" = "2.2.4"
 "github:crate-ci/typos" = "v1.50.0"
-"github:max-sixty/worktrunk" = "v0.75.0"
-"github:nextest-rs/nextest" = "cargo-nextest-0.9.143"
-"github:taiki-e/cargo-llvm-cov" = "0.9.1"
-"github:numtide/treefmt" = "2.5.0"
 "github:j178/prek" = "v0.5.0"
 "github:koalaman/shellcheck" = "0.11.0"
+"github:max-sixty/worktrunk" = "v0.75.0"
+"github:nextest-rs/nextest" = "cargo-nextest-0.9.143"
+"github:numtide/treefmt" = "2.5.0"
+# Release-only rendering; formatting never reads Git history.
+"github:orhun/git-cliff" = "2.14.2"
 "github:rvben/rumdl" = "0.2.62"
+"github:taiki-e/cargo-llvm-cov" = "0.9.1"
 "github:tombi-toml/tombi" = "1.5.0"
 # Workflow and composite-action lint belongs to the treefmt wall.
 "github:zizmorcore/zizmor" = "1.30.1"
 "npm:@commitlint/cli" = "21.2.2"
 "npm:oxfmt" = "0.72.0"
+"npm:oxlint-tsgolint" = "7.0.2004"
 # Type-aware oxlint runs its rules and the TypeScript checker through tsgolint.
 "npm:oxlint" = "1.87.0"
-"npm:oxlint-tsgolint" = "7.0.2004"
 node = "26.8.1"
 
 # Dylint driver and linker; both match the library's `dylint_linting` and

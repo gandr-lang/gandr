@@ -33,7 +33,7 @@ env:
   MISE_CARGO_BINSTALL_QUICKINSTALL: "true"
   MISE_CARGO_BINSTALL_NATIVE: "true"
   # Must match ci.yml and the image. The image checks the list at build time.
-  MISE_DISABLE_TOOLS: "github:orhun/git-cliff,github:max-sixty/worktrunk,github:j178/prek,github:nektos/act"
+  MISE_DISABLE_TOOLS: "cargo:hotpath,github:j178/prek,github:max-sixty/worktrunk,github:nektos/act,github:orhun/git-cliff"
   # Empty selects the bare runner. A set value selects the pin-file tag,
   # and only a published tag is used: this workflow does not publish.
   GANDR_CI_IMAGE: ${{ vars.GANDR_CI_IMAGE }}
