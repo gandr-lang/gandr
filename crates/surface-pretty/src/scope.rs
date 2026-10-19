@@ -243,6 +243,16 @@ impl<Node: Copy + Eq + Hash> Scopes<Node>
             .map(|(at, binder)| (BinderIndex(at), binder))
     }
 
+    /// Every node reached from the roots, in no fixed order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn reached(&self) -> impl Iterator<Item = Node> + '_
+    {
+        self.standing.keys().copied()
+    }
+
     /// The innermost binder `node` stands under: none outside every binder,
     /// absent for a node no root reaches.
     ///

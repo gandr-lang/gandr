@@ -35,6 +35,21 @@ use crate::tokens::TokenStream;
 /// The scheme prefix of a URI naming a local file.
 const FILE_SCHEME: &str = "file://";
 
+/// The bytes a path keeps escaped in a `file` URI: the controls, the space,
+/// the delimiters a URI reads around a path, and the escape itself, so the
+/// path decodes back to itself.
+const PATH_ESCAPED: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'#')
+    .add(b'%')
+    .add(b'<')
+    .add(b'>')
+    .add(b'?')
+    .add(b'`')
+    .add(b'{')
+    .add(b'}');
+
 /// The name every diagnostic's `source` and the server's `serverInfo` carry.
 const SOURCE: &str = "gandr";
 
@@ -127,6 +142,39 @@ impl DocumentUri
             .decode_utf8()
             .map(|path| PathBuf::from(path.as_ref()))
             .unwrap_or_default()
+    }
+
+    /// The `file` URI naming the absolute path `path`.
+    ///
+    /// # Specification
+    /// - requires: nothing; any path is admissible input.
+    /// - ensures: for a path that is UTF-8 and starts at the root, `file://`
+    ///   followed by the path with its controls, spaces, URI delimiters and
+    ///   percent signs escaped, which [`Self::path`] reads back as `path`; none
+    ///   for any other path.
+    /// - provides: the URI a definition in a sibling the document imports
+    ///   names.
+    /// - fails: never; a path no URI spells answers none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a plain path, one with a space, a percent sign and a
+    ///   non-ASCII letter, and a relative path, each asserted at its exact URI
+    ///   or none.
+    /// - witness: `protocol::tests::a_path_names_the_file_uri_that_reads_back_to_it`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|uri| uri.path() == path))]
+    #[inline]
+    #[must_use]
+    pub fn of_path(path: &std::path::Path) -> Option<Self>
+    {
+        let spelled = path.to_str()?;
+        if !spelled.starts_with('/') {
+            return None;
+        }
+        Some(Self(format!(
+            "{FILE_SCHEME}{}",
+            percent_encoding::utf8_percent_encode(spelled, PATH_ESCAPED)
+        )))
     }
 }
 
@@ -257,8 +305,8 @@ pub struct DocumentIdentifier
 }
 
 /// The parameters of `initialize` the server reads: the client's `gandr`
-/// settings, passed as its initialization options, and the HTML tags its
-/// markdown renderer keeps.
+/// settings, passed as its initialization options, the HTML tags its
+/// markdown renderer keeps, and whether it takes a definition as a link.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct InitializeParams
@@ -267,7 +315,7 @@ pub struct InitializeParams
     #[serde(default)]
     pub initialization_options: Option<Settings>,
     /// The client's capabilities, of which the server reads the markdown
-    /// renderer's.
+    /// renderer's and the definition request's.
     #[serde(default)]
     pub capabilities: Option<ClientCapabilities>,
 }
@@ -293,16 +341,65 @@ impl InitializeParams
             .unwrap_or_default();
         Markup::of(tags)
     }
+
+    /// How a definition is answered to this client: as links from the name
+    /// asked about when it declares `textDocument.definition.linkSupport`, as
+    /// locations otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn links(&self) -> Linked
+    {
+        Linked(
+            self.capabilities
+                .as_ref()
+                .and_then(|capabilities| capabilities.text_document.as_ref())
+                .and_then(|text_document| text_document.definition.as_ref())
+                .and_then(|definition| definition.link_support)
+                .unwrap_or(false),
+        )
+    }
 }
+
+/// Whether a client takes a definition as links from the name asked about.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Linked(pub bool);
 
 /// The client capabilities the server reads.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
-#[repr(transparent)]
+#[serde(rename_all = "camelCase")]
 pub struct ClientCapabilities
 {
     /// `general`.
     #[serde(default)]
     pub general: Option<GeneralCapabilities>,
+    /// `textDocument`.
+    #[serde(default)]
+    pub text_document: Option<TextDocumentCapabilities>,
+}
+
+/// The text document client capabilities the server reads.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct TextDocumentCapabilities
+{
+    /// `textDocument.definition`.
+    #[serde(default)]
+    pub definition: Option<DefinitionCapabilities>,
+}
+
+/// What the client takes in answer to a definition request.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct DefinitionCapabilities
+{
+    /// `textDocument.definition.linkSupport`: whether it takes links.
+    #[serde(default)]
+    pub link_support: Option<bool>,
 }
 
 /// The general client capabilities the server reads.
@@ -625,10 +722,11 @@ impl InitializeResult
     ///   synchronisation with open and close notifications; semantic tokens
     ///   over the whole document and over a range, under the legend of
     ///   [`TOKEN_TYPES`] and [`TOKEN_MODIFIERS`]; inline completion; document
-    ///   symbols, folding ranges and selection ranges; hover; formatting over
-    ///   the whole document and over a range; code lenses, resolved in the
-    ///   answer, and code actions; the server named `gandr` at this crate's
-    ///   version. Nothing else: no completion list.
+    ///   symbols, folding ranges and selection ranges; hover; definition and
+    ///   type definition; formatting over the whole document and over a range;
+    ///   code lenses, resolved in the answer, and code actions; the server
+    ///   named `gandr` at this crate's version. Nothing else: no completion
+    ///   list.
     /// - provides: the one capabilities answer, written by `initialize` and by
     ///   the driver's `gandr lsp --capabilities` alike.
     /// - fails: never.
@@ -651,6 +749,8 @@ impl InitializeResult
             && ret.capabilities.folding_range_provider.0
             && ret.capabilities.selection_range_provider.0
             && ret.capabilities.hover_provider.0
+            && ret.capabilities.definition_provider.0
+            && ret.capabilities.type_definition_provider.0
             && ret.capabilities.document_formatting_provider.0
             && ret.capabilities.document_range_formatting_provider.0
             && ret.capabilities.code_action_provider.0
@@ -679,6 +779,8 @@ impl InitializeResult
                 folding_range_provider: Provider::ANSWERED,
                 selection_range_provider: Provider::ANSWERED,
                 hover_provider: Provider::ANSWERED,
+                definition_provider: Provider::ANSWERED,
+                type_definition_provider: Provider::ANSWERED,
                 document_formatting_provider: Provider::ANSWERED,
                 document_range_formatting_provider: Provider::ANSWERED,
                 code_lens_provider: CodeLensOptions {
@@ -715,6 +817,12 @@ pub struct ServerCapabilities
     pub selection_range_provider: Provider,
     /// Hovers are answered.
     pub hover_provider: Provider,
+    /// Definitions are answered: where what a written name refers to is
+    /// written.
+    pub definition_provider: Provider,
+    /// Type definitions are answered: where the families a node's type names
+    /// are declared.
+    pub type_definition_provider: Provider,
     /// Formatting the whole document is answered.
     pub document_formatting_provider: Provider,
     /// Formatting a range is answered.
@@ -815,6 +923,12 @@ pub enum Answer
     Selections(Vec<SelectionRange>),
     /// What a hover request answers over a declaration's name.
     Hover(Hover),
+    /// What a definition or type-definition request answers to a client that
+    /// takes links.
+    Links(Vec<LocationLink>),
+    /// What a definition or type-definition request answers to a client that
+    /// takes none.
+    Locations(Vec<Location>),
     /// What a formatting request answers for an open document: the edits that
     /// lay it out, in document order.
     Edits(Vec<TextEdit>),
@@ -825,6 +939,22 @@ pub enum Answer
     /// `null`: what `shutdown` answers, a request about a document that is not
     /// open, and a hover over nothing the server knows.
     Nothing,
+}
+
+/// A link from the name a request was made at to where what it names is
+/// written.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocationLink
+{
+    /// The name the request was made at.
+    pub origin_selection_range: Range,
+    /// The document the target is written in.
+    pub target_uri: DocumentUri,
+    /// The whole target: a binder, or its declaring form.
+    pub target_range: Range,
+    /// The target's name, inside the whole target.
+    pub target_selection_range: Range,
 }
 
 /// The result of a semantic-tokens request.
@@ -1256,6 +1386,7 @@ pub struct Location
 #[cfg(test)]
 mod tests
 {
+    use std::path::Path;
     use std::path::PathBuf;
 
     use super::DocumentSymbol;
@@ -1287,6 +1418,35 @@ mod tests
                 PathBuf::from(path),
                 "{uri} names {path:?}"
             );
+        }
+    }
+
+    #[test]
+    fn a_path_names_the_file_uri_that_reads_back_to_it()
+    {
+        let cases = [
+            ("/tmp/c.gandr", Some("file:///tmp/c.gandr")),
+            (
+                "/tmp/a b/50%/xé.gandr",
+                Some("file:///tmp/a%20b/50%25/x%C3%A9.gandr"),
+            ),
+            ("/tmp/q?#.gandr", Some("file:///tmp/q%3F%23.gandr")),
+            ("relative/c.gandr", None),
+        ];
+        for (path, uri) in cases {
+            let named = DocumentUri::of_path(Path::new(path));
+            assert_eq!(
+                named.as_ref().map(ToString::to_string).as_deref(),
+                uri,
+                "{path:?} is named {uri:?}"
+            );
+            if let Some(named) = named {
+                assert_eq!(
+                    named.path(),
+                    PathBuf::from(path),
+                    "{uri:?} reads back {path:?}"
+                );
+            }
         }
     }
 

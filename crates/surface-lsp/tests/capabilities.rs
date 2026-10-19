@@ -32,6 +32,8 @@ fn advertised_capabilities_name_the_token_legend()
                 "foldingRangeProvider": true,
                 "selectionRangeProvider": true,
                 "hoverProvider": true,
+                "definitionProvider": true,
+                "typeDefinitionProvider": true,
                 "documentFormattingProvider": true,
                 "documentRangeFormattingProvider": true,
                 "codeLensProvider": {"resolveProvider": false},

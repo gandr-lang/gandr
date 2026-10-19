@@ -128,12 +128,13 @@
 //! | selection ranges | `textDocument/selectionRange` | served |
 //! | hover | `textDocument/hover` | served |
 //! | inlay hints | `textDocument/inlayHint` | blocked: a face that reads each binder's type off the hover's type table, which is built on demand rather than per revision |
-//! | signature help | `textDocument/signatureHelp` | blocked: the declaration a call applies, which the use-to-binder map keys for local binders but not for constants |
+//! | signature help | `textDocument/signatureHelp` | blocked: a face reading the declaration a call applies off the referent index the type table keeps |
 //! | completion | `textDocument/completion` | blocked: goals whose types the checker spells |
-//! | definition, declaration, type definition, implementation | `textDocument/definition`, `declaration`, `typeDefinition`, `implementation` | blocked: the lowering's origin table keys each local use to its binder's span, but no face reads it and constants are not keyed |
-//! | references, document highlight | `textDocument/references`, `documentHighlight` | blocked: the same use-to-binder map |
-//! | rename, linked editing | `textDocument/prepareRename`, `rename`, `linkedEditingRange` | blocked: the same use-to-binder map |
-//! | call hierarchy | `textDocument/prepareCallHierarchy`, `callHierarchy/*` | blocked: the same use-to-binder map |
+//! | definition, type definition | `textDocument/definition`, `typeDefinition` | served: what the use at the position refers to, and the families the type there names, as links when the client takes them |
+//! | declaration, implementation | `textDocument/declaration`, `implementation` | declined: a signature and its definition make one declaration, which definition answers at its first form, and the core has no interfaces to implement |
+//! | references, document highlight | `textDocument/references`, `documentHighlight` | blocked: the referent index read from referent to uses |
+//! | rename, linked editing | `textDocument/prepareRename`, `rename`, `linkedEditingRange` | blocked: the same reverse reading |
+//! | call hierarchy | `textDocument/prepareCallHierarchy`, `callHierarchy/*` | blocked: the same reverse reading |
 //! | type hierarchy | `textDocument/prepareTypeHierarchy`, `typeHierarchy/*` | declined: the core has no subtyping to arrange types by |
 //! | formatting | `textDocument/formatting`, `rangeFormatting` | served |
 //! | on-type formatting | `textDocument/onTypeFormatting` | declined: a form's layout is decided once the form is whole, which range formatting at the cursor already serves on request |
@@ -183,7 +184,7 @@
 //! | syntax tree view: `rust-analyzer/viewSyntaxTree` | rust-analyzer | **adopt** as `gandr/syntaxTree`: the molded tree of a document, its molds, tiles, layout and repairs, as text | the tree exists for every request already, and grammar and parser work reads it; a debugging aid, advertised as one |
 //! | snippet text edits | rust-analyzer | **adopt** with code actions: a repair the parser recorded becomes a fix whose holes are tab stops | inline completion already writes snippets, and code actions are served for model proposals; waits on the parser's repairs becoming fixes |
 //! | runnables: `experimental/runnables` | rust-analyzer | **decline** the method; a code lens over each declaration that evaluates, running it as `gandr run` does, once commands exist | the specification's lenses and commands carry it, so Helix and Zed see it too |
-//! | hover actions | rust-analyzer | **decline** until definition and references exist | its actions are go-to and find-references links, which wait on the use-to-binder map |
+//! | hover actions | rust-analyzer | **decline** until references exist | its actions are go-to and find-references links, and find-references waits on the referent index read in reverse |
 //! | matching brace: `experimental/matchingBrace` | rust-analyzer | **decline** | selection ranges already grow from a tile to its form, and the client matches brackets itself |
 //! | join lines: `experimental/joinLines`; on enter | rust-analyzer | **decline** | layout belongs to the source formatter, which formatting serves |
 //! | server status: `experimental/serverStatus` | rust-analyzer | **adopt** as `gandr/serverStatus`: whether the latest revision's kernel admission is pending, done or refused | the admission runs after the diagnostics are published, and an editor cannot otherwise tell a revision the kernel has yet to admit from one it admitted |
@@ -348,6 +349,7 @@ use core::fmt;
 #[cfg(unix)]
 mod bus;
 mod format;
+mod goto;
 mod hover;
 #[cfg(unix)]
 mod hub;

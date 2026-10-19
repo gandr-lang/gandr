@@ -146,6 +146,7 @@ use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::PatternReading;
 use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::Role;
+use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::SplitComponent;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::coincide::CallText;
@@ -181,6 +182,12 @@ use crate::compose::judge_lowering;
 use crate::compose::lower_parsed_unit;
 use crate::compose::lower_unit_source;
 use crate::evaluate::Evaluation;
+use crate::typed::referent::Referents;
+
+mod referent;
+
+pub use crate::typed::referent::Referent;
+pub use crate::typed::referent::referred;
 
 quenchant_shape::reason_enum! {
     /// Why a position or a declaration has no type in the table.
@@ -821,6 +828,8 @@ pub struct TypeTable
     unit: Unit,
     /// Where the source's own text starts in the unit's.
     base: ByteOffset,
+    /// Each written use the lowering resolved, with what it refers to.
+    referents: Referents,
 }
 
 /// The intuitionistic binder at or around `at`.
@@ -1524,7 +1533,10 @@ impl TypeTable
         // A part whose type names the parts before it answers under them, by
         // the names its pattern writes for them.
         let text = <&str>::from(source);
-        for (span, ty, within, earlier) in matched(&module, &mut arena, &scrutinised) {
+        let mut constructed = Vec::new();
+        for (span, ty, within, earlier) in
+            matched(&module, &mut arena, &scrutinised, &mut constructed)
+        {
             if binders.contains(&span) {
                 continue;
             }
@@ -1827,6 +1839,7 @@ impl TypeTable
                 })
             })
             .collect();
+        let referents = Referents::of(&module, &arena, unit, base, &constructed, &hidden);
         Ok(Self {
             entries,
             declared,
@@ -1840,6 +1853,7 @@ impl TypeTable
             orientations,
             signatures,
             opened,
+            referents,
         })
     }
 
@@ -1932,6 +1946,152 @@ impl TypeTable
     ) -> Option<ByteSpan>
     {
         self.chosen(offset).map(|entry| entry.span)
+    }
+
+    /// The written name holding `offset` and what it refers to: the binder or
+    /// the declaration the lowering resolved it to.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the narrowest use holding `offset` that the table's referent
+    ///   index keeps, at its span in the source's own text, with its referent,
+    ///   as `Referents::of` states; absent as [`referred::Absent::Unreferred`]
+    ///   when no use holds it.
+    /// - provides: the answer to a definition request.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parameter's use, a declaration's use, a family in a
+    ///   signature, constructors in a term and in a pattern, and a name a
+    ///   sibling declares each answer their own site; a binder's own name and a
+    ///   keyword answer nothing.
+    /// - witness: `typed::tests::a_use_refers_to_its_binder_and_its_declaration_795`
+    /// - witness: `typed::tests::an_imported_name_refers_to_its_sibling_795`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present((span, _)) => span.start() <= offset && offset < span.end(),
+        Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn referent(
+        &self,
+        offset: ByteOffset,
+    ) -> Maybe<(ByteSpan, Referent), referred::Absent>
+    {
+        self.referents.at(offset).map_or(
+            Maybe::Absent(referred::Absent::Unreferred),
+            |&(span, target)| Maybe::Present((span, target.referent())),
+        )
+    }
+
+    /// The declarations of the data families the type of the node at `offset`
+    /// names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for a written type, the family the narrowest use holding
+    ///   `offset` names, when that use is a written type naming one; for any
+    ///   other entry [`Self::at`] chooses at `offset`, the declaration of each
+    ///   data family reached from that entry's type through the printer's child
+    ///   table, a staged type read at the type its stage refines, once each,
+    ///   ascending by constant; empty when no entry holds `offset`.
+    /// - provides: the answer to a type-definition request.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the families are read off the type's core graph,
+    ///   which only a second walk of that graph could restate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a recursion's staged parameter answers the family its
+    ///   stage refines, a function's use every family its type names, and a
+    ///   written family answers itself.
+    /// - witness: `typed::tests::a_use_s_type_refers_to_the_families_it_names_795`
+    #[inline]
+    #[must_use]
+    pub fn type_referents(
+        &self,
+        offset: ByteOffset,
+    ) -> Vec<Referent>
+    {
+        let Some(entry) = self.chosen(offset)
+        else {
+            return Vec::new();
+        };
+        if entry.subject == Subject::Type {
+            return self
+                .referents
+                .at(offset)
+                .and_then(|&(_, target)| target.family())
+                .map(|family| Vec::from([family]))
+                .unwrap_or_default();
+        }
+        let names: Vec<Name<'_>> = self
+            .names
+            .iter()
+            .map(|name| Name::from(name.as_str()))
+            .collect();
+        let printer = CoreSource::new(&self.arena, &names);
+        // The printer writes no stage, so its child table stops at one: a
+        // staged type is walked again from the type its stage refines.
+        let mut families: Vec<ConstantIndex> = Vec::new();
+        let mut walked: Vec<CoreNode> = Vec::new();
+        let mut pending = Vec::from([root(entry.ty)]);
+        while let Some(from) = pending.pop() {
+            if walked.contains(&from) {
+                continue;
+            }
+            walked.push(from);
+            for node in Scopes::of(&printer, [from]).reached() {
+                let CoreNode::ValueType(ty) = node
+                else {
+                    continue;
+                };
+                match self.arena.value_type(ty) {
+                    Some(&ValueType::Data { declaration, .. }) => families.push(declaration),
+                    Some(&ValueType::Staged { base, .. }) => {
+                        pending.push(CoreNode::ValueType(base));
+                    },
+                    Some(_) | None => {},
+                }
+            }
+        }
+        families.sort_unstable();
+        families.dedup();
+        families
+            .into_iter()
+            .filter_map(|family| self.referents.declared(family))
+            .collect()
+    }
+
+    /// The source of the table's unit that the table types.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn own_source(&self) -> SourceIndex
+    {
+        self.unit.source_at(self.base)
+    }
+
+    /// The text of the unit's source `source`: from where it starts to where
+    /// the next one starts, or to the unit's end.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn source_text(
+        &self,
+        source: SourceIndex,
+    ) -> Option<SourceText<'_>>
+    {
+        let sources = self.unit.sources();
+        let start = usize::from(sources.get(usize::from(source))?.start());
+        let end = sources
+            .get(usize::from(source).saturating_add(1_usize))
+            .map_or(self.naming.text.len(), |next| usize::from(next.start()));
+        self.naming.text.get(start .. end).map(SourceText::from)
     }
 
     /// The span of every entry, in table order, unspelled.
@@ -3140,8 +3300,11 @@ quenchant_shape::reason_enum! {
 ///   every part inside it; a span carries the spans of every binder its type
 ///   stands under, outermost first. A span under an earlier part not written as
 ///   a binder answers nothing. A part whose place no rule above types, and
-///   every span inside it, answers nothing.
-/// - provides: the pattern half of [`TypeTable::of`].
+///   every span inside it, answers nothing. Each constructor name read at a
+///   data family's type is pushed onto `constructed` with the family's constant
+///   and the constructor's tag.
+/// - provides: the pattern half of [`TypeTable::of`], and the constructor names
+///   its referents read.
 /// - fails: never; an untyped pattern answers nothing.
 /// - panics: none.
 ///
@@ -3150,15 +3313,18 @@ quenchant_shape::reason_enum! {
 ///   data constructor pattern's name and field, in a declaration the run
 ///   settled and in one it refused, and a constructor pattern on a staged
 ///   scrutinee, are asserted at their types; and a record pattern inside a
-///   dependent pair's second component, at its type under the first.
+///   dependent pair's second component, at its type under the first; a
+///   constructor pattern's name refers to the constructor it names.
 /// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match_385`
 /// - witness: `typed::tests::an_unused_dependent_part_answers_in_its_arms_context`
 /// - witness: `typed::tests::a_pattern_inside_a_dependent_pair_s_second_component_answers_558`
+/// - witness: `typed::tests::a_use_refers_to_its_binder_and_its_declaration_795`
 #[spec(ensures: |ret| ret.iter().all(|&(_, ty, _, _)| arena.value_type(ty).is_some()))]
 fn matched(
     module: &LoweredModule<'_>,
     arena: &mut CoreArena,
     scrutinised: &BTreeMap<NodeIndex, Scrutinised>,
+    constructed: &mut Vec<(ByteSpan, ConstantIndex, ConstructorTag)>,
 ) -> Vec<(ByteSpan, ValueTypeId, Within, Vec<ByteSpan>)>
 {
     let mut signatures: BTreeMap<ConstantIndex, &DataSignature> = BTreeMap::new();
@@ -3208,6 +3374,13 @@ fn matched(
             else {
                 continue;
             };
+            if written.reading == PatternReading::Constructor
+                && let Some(&Pattern::Constructor { tag, .. }) =
+                    case.patterns.pattern(written.pattern)
+                && let Some(&ValueType::Data { declaration, .. }) = arena.value_type(ty)
+            {
+                constructed.push((written.span, declaration, tag));
+            }
             // The binders the type stands under, gathered innermost first
             // from each pattern around the part.
             let mut earlier = Vec::new();
@@ -3571,6 +3744,241 @@ mod tests
             ty: String::from(<&str>::from(ty)),
             expected: Maybe::Absent(checked_against::Absent::Agreed),
         })
+    }
+
+    /// Where a referent stands: its source, the offset of its name in that
+    /// source's text, and the name as written.
+    #[derive(Debug, Eq, PartialEq)]
+    struct Site
+    {
+        /// The unit's source the referent is written in.
+        source: gandr_surface_lowering::SourceIndex,
+        /// The offset of its name in that source's text.
+        at: ByteOffset,
+        /// The name as written.
+        name: String,
+    }
+
+    /// The offset of the first occurrence of `needle` in `source`; panics when
+    /// `needle` does not occur.
+    ///
+    /// # Specification
+    /// trivial.
+    fn found(
+        source: SourceText<'_>,
+        needle: SourceText<'_>,
+    ) -> ByteOffset
+    {
+        ByteOffset::from(
+            <&str>::from(source)
+                .find(<&str>::from(needle))
+                .expect("the needle occurs"),
+        )
+    }
+
+    /// The site of the name `name` written at the first occurrence of
+    /// `needle` in `text`, the text of the unit's first source.
+    ///
+    /// # Specification
+    /// trivial.
+    fn site(
+        text: SourceText<'_>,
+        needle: SourceText<'_>,
+        name: SourceText<'_>,
+    ) -> Site
+    {
+        Site {
+            source: gandr_surface_lowering::SourceIndex::from(0_usize),
+            at: found(text, needle),
+            name: String::from(<&str>::from(name)),
+        }
+    }
+
+    /// Where the referent `table` answers at the first byte of the first
+    /// occurrence of `needle` in `source` stands.
+    ///
+    /// # Specification
+    /// trivial.
+    fn refers(
+        table: &TypeTable,
+        source: SourceText<'_>,
+        needle: SourceText<'_>,
+    ) -> Option<Site>
+    {
+        let Maybe::Present((_, referent)) = table.referent(found(source, needle))
+        else {
+            return None;
+        };
+        written(table, referent)
+    }
+
+    /// Where `referent` stands.
+    ///
+    /// # Specification
+    /// trivial.
+    fn written(
+        table: &TypeTable,
+        referent: super::Referent,
+    ) -> Option<Site>
+    {
+        let named = referent.named();
+        let text = <&str>::from(table.source_text(referent.source())?);
+        let name = text.get(usize::from(named.start()) .. usize::from(named.end()))?;
+        Some(Site {
+            source: referent.source(),
+            at: named.start(),
+            name: String::from(name),
+        })
+    }
+
+    /// The source the referent witnesses read: a family, a function matching
+    /// on it, and a numeral built of its constructors.
+    const REFERRED: &str = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
+                            def rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero \
+                            => n,\n    Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef two : Nat ;\n\
+                            def two = Succ(Succ(Zero)) ;";
+
+    /// #795: each written use answers the site of what it names — a binder,
+    /// a declaration, a family, a constructor in a term and in a pattern — and
+    /// a position in no use answers nothing.
+    #[test]
+    fn a_use_refers_to_its_binder_and_its_declaration_795()
+    {
+        let referred = SourceText::from(REFERRED);
+        let table = table(referred);
+        let at = |needle: &'static str| refers(&table, referred, SourceText::from(needle));
+        let named = |needle: &'static str, name: &'static str| {
+            Some(site(
+                referred,
+                SourceText::from(needle),
+                SourceText::from(name),
+            ))
+        };
+        assert_eq!(
+            at("m {"),
+            named("m : Nat)", "m"),
+            "a parameter's use, its binder"
+        );
+        assert_eq!(
+            at("n,\n"),
+            named("n : Nat,", "n"),
+            "the other parameter's use, its binder"
+        );
+        assert_eq!(
+            at("p))"),
+            named("p) =>", "p"),
+            "a pattern variable's use, its pattern"
+        );
+        assert_eq!(
+            at("plus[<]"),
+            named("plus(n", "plus"),
+            "a declaration's use, its name"
+        );
+        assert_eq!(
+            at("Succ(plus"),
+            named("Succ : (n", "Succ"),
+            "a constructor in a term, its name in the family"
+        );
+        assert_eq!(
+            at("Succ(p)"),
+            named("Succ : (n", "Succ"),
+            "a constructor in a pattern, its name in the family"
+        );
+        assert_eq!(
+            at("Zero))"),
+            named("Zero : Nat", "Zero"),
+            "a constructor inside another's argument answers itself"
+        );
+        assert_eq!(
+            at("Nat ;"),
+            named("Nat : Type", "Nat"),
+            "a written family, its declaration"
+        );
+        assert_eq!(at("case"), None, "a keyword refers to nothing");
+        assert_eq!(at("m : Nat)"), None, "a binder is no use of itself");
+    }
+
+    /// #795: the type of a node answers the families it names, and a written
+    /// family answers itself.
+    #[test]
+    fn a_use_s_type_refers_to_the_families_it_names_795()
+    {
+        let referred = SourceText::from(REFERRED);
+        let table = table(referred);
+        let at = |needle: &'static str| {
+            table
+                .type_referents(found(referred, SourceText::from(needle)))
+                .into_iter()
+                .filter_map(|referent| written(&table, referent))
+                .collect::<Vec<_>>()
+        };
+        let nat = Vec::from([site(
+            referred,
+            SourceText::from("Nat : Type"),
+            SourceText::from("Nat"),
+        )]);
+        assert_eq!(at("m {"), nat, "a parameter's use, at its type's family");
+        assert_eq!(
+            at("plus[<]"),
+            nat,
+            "a function's use, at the family its type names"
+        );
+        assert_eq!(at("Nat ;"), nat, "a written family, at itself");
+        assert_eq!(at("\ndef two : Nat"), Vec::new(), "no node, no family");
+    }
+
+    /// #795: a name a sibling declares refers to the sibling's own text.
+    #[test]
+    fn an_imported_name_refers_to_its_sibling_795()
+    {
+        use gandr_surface_lowering::ImportTarget;
+        use gandr_surface_lowering::SourceIndex;
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_lowering::UnitSource;
+
+        let sibling = SourceText::from(
+            "data Point : Type {\n  Here : Point;\n}\ndef here : Point ;\ndef here = Here ;",
+        );
+        let importer =
+            SourceText::from("import \"./point.gandr\" ;\ndef there : Point ;\ndef there = here ;");
+        let laid = format!("{}\n{}", <&str>::from(sibling), <&str>::from(importer));
+        let base = ByteOffset::from(<&str>::from(sibling).len().saturating_add(1_usize));
+        let unit = Unit::new(vec![
+            UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+            UnitSource::new(base, vec![ImportTarget::Source(SourceIndex::from(0_usize))]),
+        ])
+        .expect("the unit's sources start in order");
+        let grammar = built_in().expect("the built-in grammar builds");
+        let table = TypeTable::of_unit(&grammar, SourceText::from(laid.as_str()), &unit, base)
+            .expect("the unit parses");
+        assert_eq!(
+            usize::from(table.own_source()),
+            1_usize,
+            "the importer is the unit's last"
+        );
+        let at = |needle: &'static str| refers(&table, importer, SourceText::from(needle));
+        let in_sibling = |needle: &'static str, name: &'static str| {
+            Some(site(
+                sibling,
+                SourceText::from(needle),
+                SourceText::from(name),
+            ))
+        };
+        assert_eq!(
+            at("here ;"),
+            in_sibling("here : Point", "here"),
+            "the sibling's declaration, in the sibling's own text"
+        );
+        assert_eq!(
+            at("Point ;"),
+            in_sibling("Point : Type", "Point"),
+            "the sibling's family, in the sibling's own text"
+        );
+        assert_eq!(
+            at("there = "),
+            None,
+            "the importer's own declaration's name is no use"
+        );
     }
 
     #[test]

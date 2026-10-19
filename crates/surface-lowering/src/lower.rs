@@ -13426,8 +13426,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   obligation this module owes; a definition alone yields the bodiless
     ///   outcome. A held slot holding no refusal yields nothing, and neither
     ///   does a witness whose member refused: there is no member to state a
-    ///   second type for. Each declaration keeps its container and its role,
-    ///   and takes its own origin token, handed out in admission order.
+    ///   second type for. Each declaration keeps its container, its role and
+    ///   where its name tile is written, and takes its own origin token, handed
+    ///   out in admission order.
     /// - provides: the declaration list a checker drives.
     /// - fails: never — a slot with neither half lowered and no refusal
     ///   contributes no declaration, which the classification makes unreachable
@@ -13464,6 +13465,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             row.role(),
                             row.constant(),
                             row.span(),
+                            row.named(),
                             row.signature(),
                             row.definition(),
                             row.duplicate(),
@@ -13480,6 +13482,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                 slot.role,
                                 slot.constant,
                                 slot.introduced_by.span,
+                                slot.named.span,
                                 slot.signature
                                     .map(|half| self.key_at(half.declaration.node)),
                                 slot.definition
@@ -13514,6 +13517,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 role: slot.role,
                 constant: slot.constant,
                 span: introduced.span,
+                named: slot.named.span,
                 origin,
                 signature: slot
                     .signature
