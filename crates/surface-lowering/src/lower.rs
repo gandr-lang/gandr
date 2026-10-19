@@ -6233,17 +6233,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
 
     /// The domain and the answered codomain of the arrow the lambda at `site`
     /// answers: a written arrow `A -> C`, parentheses stripped, or the next
-    /// arrow a value function space `(A1, …, An) => B` stands for.
+    /// arrow a value function space `(A1, …, An) => B` stands for. A binder
+    /// the arrow or the space names, `(x : A)`, answers its type `A`.
     ///
     /// # Specification
     /// - requires: `site` is a lambda in term position.
     /// - ensures: for a position answering a written type that unwraps to an
-    ///   arrow of two operands, the domain's node and the codomain answered
-    ///   under the arrow's frame; for a position answering an alias's arrows
-    ///   past `t` domains, its domain `t + 1` and, under the same frame, the
-    ///   arrows past `t + 1` domains, or `B` returning past the last; nothing
-    ///   for an unanswered position, an answer over a loop or a returner, a
-    ///   telescope alias, an alias with no domain left and any other type.
+    ///   arrow of two operands, the domain's node — the type a dependent
+    ///   arrow's binder declares — and the codomain answered under the arrow's
+    ///   frame; for a position answering an alias's arrows past `t` domains,
+    ///   its domain `t + 1` — the type a telescope's entry `t + 1` declares —
+    ///   and, under the same frame, the arrows past `t + 1` domains, or `B`
+    ///   returning past the last; nothing for an unanswered position, an answer
+    ///   over a loop or a returner, an alias with no domain left and any other
+    ///   type.
     /// - fails: as [`Self::unwrapped`] and [`Self::alias_domains`].
     /// - panics: none.
     ///
@@ -6253,10 +6256,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a lambda signed `+U (Empty -> -F Integer)` matches no
     ///   arm on its binder, as a parameter of the same type does, and a lambda
-    ///   signed `Empty => Integer` or `(Empty, Integer) => Integer` lowers as
-    ///   under the thunked arrow the alias stands for.
+    ///   signed `Empty => Integer`, `(Empty, Integer) => Integer` or the
+    ///   telescope `(a : One) => Path(One, a, a)` lowers as under the thunked
+    ///   arrows the alias stands for.
     /// - witness: `lower::native::tests::a_match_of_no_arms_switches_on_a_lambda_binder_its_arrow_types`
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
+    /// - witness: `lower::native::tests::a_lambda_under_a_telescope_alias_lowers_as_under_its_dependent_arrows_815`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |arrow| arrow.is_none_or(|(_, codomain)| matches!(codomain.over, native::Over::Written | native::Over::Returning | native::Over::Valued { .. }))))]
     fn answered_arrow(
         &mut self,
@@ -6287,12 +6292,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
         let Some(taken) = taken
         else {
-            return Ok(
-                (former == Former::ArrowType).then_some((domain, native::Answer {
-                    node: codomain,
-                    ..answer
-                })),
-            );
+            if former != Former::ArrowType {
+                return Ok(None);
+            }
+            let bound = self.binder_type(domain, answer.frame)?.unwrap_or(domain);
+            return Ok(Some((bound, native::Answer {
+                node: codomain,
+                ..answer
+            })));
         };
         if former != Former::ValueFunctionType {
             return Ok(None);
