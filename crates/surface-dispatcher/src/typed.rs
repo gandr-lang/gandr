@@ -150,6 +150,7 @@ use gandr_surface_lowering::SplitComponent;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::coincide::CallText;
 use gandr_surface_lowering::described::DescribedRole;
+use gandr_surface_parser::ParseResult;
 use gandr_surface_parser::parse;
 use gandr_surface_pretty::BinderIndex;
 use gandr_surface_pretty::ChildSlot;
@@ -177,6 +178,7 @@ use crate::compose::Lowering;
 use crate::compose::LoweringCount;
 use crate::compose::adapt;
 use crate::compose::judge_lowering;
+use crate::compose::lower_parsed_unit;
 use crate::compose::lower_unit_source;
 use crate::evaluate::Evaluation;
 
@@ -1134,6 +1136,22 @@ impl TypeTable
         Self::of_unit(grammar, source, &Unit::single(), ByteOffset::from(0_usize))
     }
 
+    /// [`of`](Self::of) over the tree `parsed` committed for a source alone.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`of_parsed_unit`](Self::of_parsed_unit).
+    #[inline]
+    pub fn of_parsed<'source>(
+        grammar: &Pbg,
+        parsed: ParseResult<'source>,
+    ) -> Result<Self, ComposeFault<'source>>
+    {
+        Self::of_parsed_unit(grammar, parsed, &Unit::single(), ByteOffset::from(0_usize))
+    }
+
     /// Type every node of the source starting at `base` in `source`, the text
     /// `unit` lays out: [`of`](Self::of) over a source lowered beside the
     /// siblings it imports.
@@ -1179,7 +1197,44 @@ impl TypeTable
         base: ByteOffset,
     ) -> Result<Self, ComposeFault<'source>>
     {
-        let lowering = lower_unit_source(grammar, source, unit, &mut LoweringCount::default())?;
+        let parsed = parse(grammar, source).map_err(ComposeFault::Parse)?;
+        Self::of_parsed_unit(grammar, parsed, unit, base)
+    }
+
+    /// [`of_unit`](Self::of_unit) over the tree `parsed` committed for the
+    /// text `unit` lays out: a face that holds a parse of the text — an
+    /// editor's session, whose form store takes up every form it molded
+    /// before — types it without parsing it again.
+    ///
+    /// # Specification
+    /// - requires: `grammar` is the checked grammar `parsed` was committed
+    ///   under, over the text `unit` lays out, its last source starting at
+    ///   `base`.
+    /// - ensures: what [`of_unit`](Self::of_unit) ensures of `parsed`'s source.
+    /// - provides: the hover table of a document, typed over the parse its
+    ///   session's form store answers.
+    /// - fails: [`ComposeFault::Lowering`] for a lowering engine fault.
+    /// - panics: none.
+    /// - executable: none — [`of_unit`](Self::of_unit) states the clause and
+    ///   types through this.
+    ///
+    /// # Errors
+    /// [`ComposeFault::Lowering`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`of_unit`](Self::of_unit), every witness of which
+    ///   types through this.
+    /// - witness: `typed::tests::an_imported_name_types_at_its_use`
+    #[inline]
+    pub fn of_parsed_unit<'source>(
+        grammar: &Pbg,
+        parsed: ParseResult<'source>,
+        unit: &Unit,
+        base: ByteOffset,
+    ) -> Result<Self, ComposeFault<'source>>
+    {
+        let source = parsed.tree().source();
+        let lowering = lower_parsed_unit(grammar, parsed, unit, &mut LoweringCount::default())?;
         let Lowered::Module { module, mut arena } = lowering.into_lowered()
         else {
             return Ok(Self::default());

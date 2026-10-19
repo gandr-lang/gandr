@@ -43,12 +43,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `CheckRefusal::classify` assigns producer-failure classes ([`refusal`](src/refusal.rs)).
 - `CheckRefusal::compared`, `Compared` and `compared::Absent`: the types a refusal sets against each other, the one its rule expected and the one it found, as nodes a face spells.
 - `Failure`, `Obligation`, `FrameRole`, `FoldPremise`, `Pursuit`, `Stage`, `judged` and `ModuleReport::failures`: what the checking machine held when it refused, kept per refused body by position ([`failure`](src/failure.rs)).
-- `bridge::readmit` and `bridge::Readmission`: independent admission of accepted declarations into a fresh kernel environment.
-- `bridge::Readmitted` and `bridge::Outcome`: each origin and its defined-value, admitted-data, assumed-hole, static-definition, marked, suspended, refused or rejected outcome.
-- `bridge::ArtifactAudit`: owed-hole and native-runtime assumptions used by admitted declarations.
-- `bridge::Replayed` and `bridge::Readmitted::certificates`: kernel replay results for distinct reduction instances.
-- `bridge::Readmission::export`: canonical artifacts with crossed declarations and producer names.
-- `bridge::Refusal` and its classification retain why an accepted declaration did not cross.
+- `bridge`: independent readmission of accepted declarations into a fresh kernel environment — `readmit` and `Readmission`; `readmit_resuming` and `Crossed`, resuming leading declarations from an earlier record; `Readmitted` and `Outcome`, each origin's defined-value, admitted-data, assumed-hole, static-definition, marked, suspended, refused or rejected outcome; `ArtifactAudit`, the owed-hole and native-runtime assumptions admitted declarations use; `Replayed` and `Readmitted::certificates`, kernel replays of distinct reduction instances; `Readmission::export`, canonical artifacts with crossed declarations and producer names; `Refusal` and its classification, why an accepted declaration did not cross.
 - The hole surface: term holes, marks and the unknown type in the faces; `elaborate_value`, `elaborate_comp`, `Elaboration`, `MarkEntry` and `Direction`; `cover`, `Coverage`, `Exhaustiveness`, `Redundancy` and `CoverageFault`; `bridge::Refusal::Hole` and `bridge::Refusal::Unknown`.
 - `fork::Fork` and `fork::Serial`: the shape a program check forks by, and the serial reference.
 - `staging::check`, `staging::Program`, `staging::Allowance`, `staging::Checked`, `staging::Readmission`, `staging::Stages`, `staging::ProgramError` and `staging::SourceIndex`: a staged program checked end to end on the caller's fork.

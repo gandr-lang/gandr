@@ -95,6 +95,24 @@
 //! pending set, whose sources carry a refusal no expectation can state.
 //! A path under no root is strict.
 //!
+//! # The corpus runs through the walk
+//!
+//! The corpus's two roots are run through the walk:
+//! `tests::corpus::the_strict_root_checks_owing_nothing`,
+//! `tests::corpus::the_fixture_root_settles_every_fixture`,
+//! `tests::corpus::the_two_roots_exercise_every_row`,
+//! `tests::corpus::a_run_lowers_each_source_once`; the identity subject's base
+//! is lowered once in its importers' component:
+//! `tests::corpus::the_identity_base_is_lowered_once_for_its_importers`; every
+//! run outcome they state, and the focusing of every declaration they accept:
+//! `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`,
+//! `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_pathological_corpus`,
+//! `tests::corpus::focusing_is_total_on_the_model_corpus`,
+//! `tests::corpus::focusing_is_total_on_the_pathological_corpus`; and the
+//! registration witness (`gandr-surface-corpus`'s `root` module, § One walk
+//! registers every source): `tests::corpus::every_corpus_source_is_registered`,
+//! `tests::corpus::a_planted_orphan_is_not_registered`.
+//!
 //! Each decision, with the alternative it was chosen over and what would
 //! reverse it, is in the module that owns it.
 //!
@@ -148,6 +166,7 @@ pub use crate::compose::Judged;
 pub use crate::compose::Lowered;
 pub use crate::compose::Lowering;
 pub use crate::compose::LoweringCount;
+pub use crate::compose::Resumption;
 pub use crate::compose::SpellingCount;
 pub use crate::compose::adapt;
 pub use crate::compose::admitted;

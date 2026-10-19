@@ -66,6 +66,7 @@ use gandr_surface_pretty::Spelling;
 use gandr_surface_render_remote::DocId;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_render_remote::RenderFrame;
+use gandr_surface_session::Session;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
@@ -317,17 +318,19 @@ impl HeldText
         self.reading.get_or_init(|| Reading::of(self.source()))
     }
 
-    /// What the hovers of the text held, the document at `path`, read, made
-    /// now when no hover has asked since it last changed.
+    /// What the hovers of the text held, the document at `path` that `session`
+    /// judges, read, made now when no hover has asked since it last changed.
     ///
     /// # Specification
     /// trivial.
-    fn hovering(
+    fn hovering<Store, Blocks>(
         &self,
         path: &Path,
+        session: &Session<Store, Blocks>,
     ) -> &Hovering
     {
-        self.hovering.get_or_init(|| hovering(self.source(), path))
+        self.hovering
+            .get_or_init(|| hovering(self.source(), path, session))
     }
 }
 
@@ -2122,7 +2125,7 @@ impl Workspace
                     document.text.source(),
                     session,
                     document.text.reading(),
-                    document.text.hovering(&uri.path()),
+                    document.text.hovering(&uri.path(), session),
                     position,
                     style,
                 )

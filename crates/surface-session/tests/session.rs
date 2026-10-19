@@ -1005,3 +1005,109 @@ fn documentation_is_kept_by_declaration_identity()
         matches!(session.documentation(answer), Maybe::Present(text) if text.as_ref() == "The answer,\ntwice over.")
     );
 }
+
+/// #776: a document laid out after its import closure offers the kernel its
+/// own declarations alone once the closure was admitted, exporting what a
+/// whole admission of the revision exports, and offers the whole closure again
+/// once a source of it changed.
+#[test]
+fn an_edit_to_its_own_text_readmits_the_document_alone_776()
+{
+    use gandr_core_checker::HostGrant;
+    use gandr_surface_corpus::CorpusRoot;
+    use gandr_surface_dispatcher::Lowered;
+    use gandr_surface_dispatcher::LoweringCount;
+    use gandr_surface_dispatcher::judge_member;
+    use gandr_surface_dispatcher::lay_out;
+    use gandr_surface_dispatcher::lower_unit_source;
+    use gandr_surface_syntax::SourceText;
+
+    let directory =
+        std::env::temp_dir().join(format!("gandr-session-closure-776-{}", std::process::id()));
+    let _cleared = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+    let directory =
+        std::fs::canonicalize(&directory).expect("the scratch directory has a canonical path");
+    let sibling = directory.join("base.gandr");
+    let document = directory.join("document.gandr");
+    std::fs::write(
+        &sibling,
+        "/// #776: the closure.\ndef one : Integer ;\ndef one = 1 ;\ndef two : Integer ;\ndef two \
+         = one ;\n",
+    )
+    .expect("the sibling is written");
+    // The editor's buffer is what is judged; the file only has to exist.
+    std::fs::write(&document, "").expect("the document is written");
+    let grammar = &*crate::common::GRAMMAR;
+    let mut session = session(SourceRoot::Strict);
+    // Each revision of the document, judged and admitted laid out after the
+    // sibling: what the admission counted, and whether its artifact is what a
+    // whole admission of the same text exports.
+    let mut admit = |own: &str| {
+        let laid = lay_out(grammar, &document, SourceRoot::Strict, own.into());
+        let Maybe::Present(laid) = laid
+        else {
+            panic!("the document is laid out after its sibling: {laid:?}");
+        };
+        let text = SourceText::from(laid.text.as_str());
+        let _judged = session
+            .judge_unit_reading(text, &laid.unit, laid.base, |_| ())
+            .expect("the revision is judged");
+        let Ok(Maybe::Present(admitted)) = session.admit()
+        else {
+            panic!("the judgement left its admission");
+        };
+        let Lowered::Module { module, arena } =
+            lower_unit_source(grammar, text, &laid.unit, &mut LoweringCount::default())
+                .expect("the revision lowers")
+                .into_lowered()
+        else {
+            panic!("the revision is not refused whole");
+        };
+        let whole = judge_member(
+            CorpusRoot::Strict,
+            (module, text),
+            arena,
+            &HostGrant::UNBOUNDED,
+            laid.base,
+        )
+        .into_parts()
+        .1
+        .admit()
+        .expect("the kernel re-derives the revision");
+        (
+            usize::from(admitted.crossed()),
+            usize::from(admitted.judged()),
+            *admitted.kernel() == whole,
+        )
+    };
+    let first = "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = two ;\n";
+    let second = format!("{first}def four : Integer ;\ndef four = three ;\n");
+    assert_eq!(
+        admit(first),
+        (3_usize, 3_usize, true),
+        "the closure's first admission offers the kernel every declaration"
+    );
+    assert_eq!(
+        admit(&second),
+        (2_usize, 4_usize, true),
+        "an edit to the document's own text offers its own declarations alone"
+    );
+    std::fs::write(
+        &sibling,
+        "/// #776: the closure, changed.\ndef one : Integer ;\ndef one = 2 ;\ndef two : Integer \
+         ;\ndef two = one ;\n",
+    )
+    .expect("the sibling is rewritten");
+    assert_eq!(
+        admit(&second),
+        (4_usize, 4_usize, true),
+        "a changed sibling offers the whole closure again"
+    );
+    assert_eq!(
+        admit(first),
+        (1_usize, 3_usize, true),
+        "and the changed closure is resumed thereafter"
+    );
+    let _removed = std::fs::remove_dir_all(&directory);
+}
