@@ -312,13 +312,12 @@ fn an_importing_source_is_rewritten_beside_its_imports()
     assert_eq!(alone.into_text(), source);
 }
 
-/// #812: a rewrite whose own declaration keeps its meaning but changes how
-/// a declaration that reads it lowers is withdrawn for that reader, and the
-/// source still formats. Desugaring `stay`'s alias leaves `stay` itself
-/// alone, but `stayUp`'s call reads the alias and not the explicit thunk, so
-/// `stayUp` is withdrawn, still differs, and `stay` is withdrawn for it.
+/// #812: desugaring `stay`'s dependent alias once changed how `stayUp`'s
+/// call lowered, since the call read the alias and not the explicit thunk,
+/// so `stay` was withdrawn for its reader. The call now reads either
+/// spelling, so `stay` is rewritten and no reader withdraws it.
 #[test]
-fn a_rewrite_a_reader_reads_otherwise_is_withdrawn_for_it_812()
+fn a_rewrite_of_a_dependent_alias_keeps_its_readers_812()
 {
     let grammar = grammar();
     let source = "\
@@ -349,17 +348,14 @@ def stayUp(a : Nat) -> -F Path(Nat, Succ(a), Succ(a)) {
         .iter()
         .map(|withdrawal| (withdrawal.declaration.as_str(), &withdrawal.reason))
         .collect();
-    assert!(
-        kept.iter()
-            .any(|&(name, reason)| name == "stay"
-                && *reason == Withdrawn::Read(String::from("stayUp"))),
-        "{kept:?}"
-    );
+    assert!(kept.iter().all(|&(name, _)| name != "stay"), "{kept:?}");
     assert!(
         formatted
             .text()
             .as_ref()
-            .contains("def stay : (a : Nat) => Path(Nat, a, a) ;")
+            .contains("def stay : +U ((a : Nat) -> -F Path(Nat, a, a)) ;"),
+        "{}",
+        formatted.text()
     );
 }
 

@@ -998,6 +998,37 @@ fn a_derived_operation_reads_a_parameter_or_a_call()
     );
 }
 
+/// #812: before the fix, a call read its callee's dependent result through
+/// the alias `(a : A) => B` but not through the thunk it stands for, `+U ((a
+/// : A) -> -F B)`, so the explicit spelling refused the call as unannotated.
+#[test]
+fn a_call_reads_a_dependent_result_through_either_spelling_812()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n}\n",
+            "def up(n : Int) -> -F Int {\n  S(n)\n}\n",
+            "def sugared : (a : Int) => Path(Int, a, a) ;\n",
+            "def thunked : +U ((a : Int) -> -F Path(Int, a, a)) ;\n",
+            "def overSugared(a : Int) -> -F Path(Int, S(a), S(a)) {\n  cong(up, sugared(a)) then here(S(a))\n}\n",
+            "def overThunked(a : Int) -> -F Path(Int, S(a), S(a)) {\n  cong(up, thunked(a)) then here(S(a))\n}\n",
+            "def pair : +U ((a : Int) -> (b : Int) -> -F Path(Int, b, b)) ;\n",
+            "def overPair(a : Int, b : Int) -> -F Path(Int, S(b), S(b)) {\n  cong(up, pair(a, b)) then here(S(b))\n}\n",
+        )),
+        &mut arena,
+    );
+    for name in ["overSugared", "overThunked", "overPair"] {
+        assert!(
+            matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` reads its call's path type"
+        );
+    }
+}
+
 /// #791: before the fix, a `cong` whose answer is synthesised read its map's
 /// codomain only off `+U (A -> -F B)`, so a parameter stated as `A => B`, the
 /// same type, refused the operation as unannotated.
