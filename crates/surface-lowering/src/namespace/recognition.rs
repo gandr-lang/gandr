@@ -388,6 +388,13 @@ impl SeedTable
         ret.entries().iter().filter(|entry| entry.kind == SeedKind::Primitive(*primitive)).count() == 1))]
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `entries` holds the seeds of the constant `PRELUDE` table"
+        )
+    )]
     pub fn prelude() -> Self
     {
         let mut entries: Vec<SeedEntry> = Vec::new();

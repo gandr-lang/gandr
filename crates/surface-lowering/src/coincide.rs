@@ -136,6 +136,7 @@
 
 use alloc::borrow::Cow;
 use alloc::boxed::Box;
+use alloc::collections::BTreeSet;
 use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString as _;
@@ -673,13 +674,14 @@ pub(crate) fn rewriting_store<'store>(
     circuits: &[CircuitCell],
 ) -> Cow<'store, CellStore>
 {
-    let left_out: Vec<CellId> = circuits
+    let shared: BTreeSet<CellId> = faces.iter().map(|&(_, face)| face).collect();
+    let left_out: BTreeSet<CellId> = circuits
         .iter()
         .filter_map(|circuit| match *circuit {
             CircuitCell::Admitted { cell, .. } => Some(cell),
             CircuitCell::Refused(_) => None,
         })
-        .filter(|&cell| !faces.iter().any(|&(_, face)| face == cell))
+        .filter(|cell| !shared.contains(cell))
         .collect();
     if left_out.is_empty() {
         return Cow::Borrowed(store);

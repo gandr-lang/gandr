@@ -355,6 +355,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::session::tests::a_session_type_lowers_to_its_protocol`
     /// - witness: `lower::session::tests::a_malformed_protocol_is_refused_where_it_is_written`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Session(..))))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `binders` holds the recursion binders open around one protocol node"
+        )
+    )]
     pub(super) fn session_type(
         &mut self,
         site: Site,

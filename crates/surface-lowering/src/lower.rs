@@ -11308,6 +11308,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Maybe::Absent(_) => true,
         },
     )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `runs` holds the runs among one call's arguments"
+        )
+    )]
     fn mint_called(
         &self,
         function: Code,

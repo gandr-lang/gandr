@@ -1922,6 +1922,13 @@ impl<'source> Lowerer<'_, 'source>
         | Ok(Maybe::Present(found)) => found == classifier || matches!(found, Classifier::Written(_)),
         | Ok(Maybe::Absent(_)) | Err(_) => true,
     })]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `named` holds one data declaration's parameter names"
+        )
+    )]
     fn field_classifier(
         &mut self,
         at: FieldAt,
@@ -3353,6 +3360,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   a loop arm over a case with no loop arm owed is refused.
     /// - witness: `lower::native::tests::a_loop_arm_follows_the_constructors_branches`
     #[spec(captures: count = written.len(), ensures: |ret| ret.as_ref().map_or(true, |ordered| ordered.len() <= count))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `owed` holds the loop arms one family's words declare"
+        )
+    )]
     fn loop_arms(
         &self,
         site: Site,
@@ -4735,6 +4749,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
     /// - witness: `lower::identity::tests::an_unwritten_field_is_named_by_its_label_670`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |test| matches!(*test, Test::Split { arity: held, dependent: split, .. } if held == width.0 && split == dependent)))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: the unwritten labels of one tuple pattern's components"
+        )
+    )]
     fn switch_tuple(
         &mut self,
         patterns: &Written,
@@ -6188,6 +6209,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_pattern_variable_names_its_field_binder`
     /// - witness: `lower::identity::tests::a_relation_split_names_each_written_component_665`
     /// - witness: `lower::identity::tests::an_unwritten_field_is_named_by_its_label_670`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `unwritten` holds the components one split leaves unwritten"
+        )
+    )]
     fn name_fields(
         &self,
         form: &CaseForm,
@@ -8635,6 +8663,13 @@ quenchant_shape::reason_enum! {
     Maybe::Present(ref nodes) => !nodes.is_empty(),
     Maybe::Absent(_) => true,
 })]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        linear_search_in_loop,
+        reason = "bounded: `variables` holds one rule side's variables and `names` one family's constructors"
+    )
+)]
 fn rule_side(
     side: &gandr_theory_levitation::FreeTerm,
     names: &[SourceFragment<'_>],
