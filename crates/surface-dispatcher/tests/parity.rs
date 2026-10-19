@@ -698,8 +698,10 @@ struct Read
     unfaithful: Vec<String>,
 }
 
-/// Each completed declaration `written` writes, read by the printer in both
-/// forms; nothing when the source does not lower.
+/// Each completed declaration `written` writes as a `def`, read by the
+/// printer in both forms; nothing when the source does not lower. A
+/// `theory` block is left out: the parity writes a declaration back as
+/// `def name : T ; def name = …`, a form its name cannot take.
 ///
 /// # Specification
 /// trivial.
@@ -755,6 +757,17 @@ fn read(
             else {
                 continue;
             };
+            let defined = text
+                .get(usize::from(span.start()) .. usize::from(span.end()))
+                .is_some_and(|own| {
+                    tokens(SourceFragment::from(own))
+                        .first()
+                        .is_some_and(|first| first == "def")
+                });
+            if !defined {
+                forms.clear();
+                break;
+            }
             let (Some(start), Some(end)) = (
                 usize::from(span.start()).checked_sub(base),
                 usize::from(span.end()).checked_sub(base),
