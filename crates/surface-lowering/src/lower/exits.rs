@@ -396,15 +396,15 @@ impl<'source> Lowerer<'_, 'source>
             self.leaves.len() == before.1
                 && (ret.is_err()
                     || self.fuel.remaining
-                        <= before.0.saturating_sub(usize::from(self.tree.node_count())))
+                        <= before.0.saturating_sub(self.own.len()))
         },
     )]
     pub(super) fn survey(&mut self) -> Result<(), LoweringRefusal<'source>>
     {
         let mut pieces = core::mem::take(&mut self.pieces);
-        let mut remaining = usize::from(self.tree.node_count());
+        let mut remaining = self.own.len();
         let mut breaks = Vec::new();
-        breaks.resize(remaining, Breaks::Never);
+        breaks.resize(usize::from(self.tree.node_count()), Breaks::Never);
         let mut outcome = Ok(());
         while let Some(next) = remaining.checked_sub(1_usize) {
             remaining = next;
@@ -412,11 +412,15 @@ impl<'source> Lowerer<'_, 'source>
                 outcome = Err(refusal);
                 break;
             }
-            let (leaves, broken) = self.leaves_of(NodeIndex::from(next), &mut pieces, &breaks);
-            if let Some(held) = self.leaves.get_mut(next) {
+            let Some(&position) = self.own.get(next)
+            else {
+                continue;
+            };
+            let (leaves, broken) = self.leaves_of(position, &mut pieces, &breaks);
+            if let Some(held) = self.leaves.get_mut(usize::from(position)) {
                 *held = leaves;
             }
-            if let Some(held) = breaks.get_mut(next) {
+            if let Some(held) = breaks.get_mut(usize::from(position)) {
                 *held = broken;
             }
         }

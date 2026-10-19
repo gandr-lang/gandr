@@ -103,8 +103,36 @@
 //! The tree is laid out in level order, so ascending position order visits
 //! every parent before its children and descending order visits every child
 //! before its parent. Lowering classifies on the way down and mints on the way
-//! up, each as a plain loop: no descent, no explicit frame stack, and no depth
-//! a real module can overflow.
+//! up, each as a plain loop over one source's positions: no descent, no
+//! explicit frame stack, and no depth a real module can overflow.
+//!
+//! # A unit is lowered a source at a time
+//!
+//! **Choice.** [`lower_unit`] lowers a unit's sources one at a time, in the
+//! unit's order: a source's top-level forms are collected after the earlier
+//! sources' and every pass runs over that source alone, against what the
+//! earlier sources left (the names, modules, data, constructors, signatures
+//! and exported paths), before the next source is collected. The arena is
+//! one; each source mints into it after the sources it imports. What a source
+//! lowers to — its declarations and its arena rows, ids included — is
+//! therefore the same whether or not other sources follow it, and a unit's
+//! lowering starts with the lowering of its leading sources.
+//!
+//! **Why.** Run pass by pass over the whole unit, every source's types were
+//! minted before any source's terms, so an importer's nodes stood among its
+//! imports' and nothing lowered for an import closure could be kept across
+//! edits to the importer: on the λ-calculus model record of #776, 11 of the
+//! 109 declarations of a 19-source unit kept their ids when the last source
+//! followed, against all 107 of the closure's matching by name and outcome.
+//! Imports point only backward, so no pass over a source needs a later one.
+//!
+//! **Alternatives.** Keeping a snapshot of the pass-by-pass lowering cannot
+//! resume, since its ids depend on the last source. Lowering each source
+//! alone against an interface of external constants would give the lowering
+//! and the checker a second way to name an imported declaration.
+//!
+//! **Reversal.** A pass that must read a later source, a forward import, would
+//! run its share of the unit after the sources it reads.
 //!
 //! # Early exits leave by a direct cut
 //!

@@ -14,6 +14,7 @@ use super::Sink;
 use super::Universe;
 use crate::module::Role;
 use crate::module::Sealing;
+use crate::module::SlotIndex;
 
 /// Whether a pass refused a slot it had not refused before.
 ///
@@ -66,7 +67,11 @@ impl Lowerer<'_, '_>
     pub(super) fn refuse_unrepresented(&mut self) -> Refused
     {
         let mut refused = false;
-        for (&slot, recorded) in &self.collected.abstracts {
+        for (&slot, recorded) in self
+            .collected
+            .abstracts
+            .range(SlotIndex::from(self.current.slots) ..)
+        {
             let Maybe::Present(represented) = recorded.representation
             else {
                 continue;
@@ -129,7 +134,11 @@ impl Lowerer<'_, '_>
         sink: &mut Sink<'_>,
     )
     {
-        for (&slot, recorded) in &self.collected.abstracts {
+        for (&slot, recorded) in self
+            .collected
+            .abstracts
+            .range(SlotIndex::from(self.current.slots) ..)
+        {
             let Some(own) = self.collected.slots.get(usize::from(slot))
             else {
                 continue;

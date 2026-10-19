@@ -613,7 +613,7 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     )
     {
-        for position in 0 .. self.collected.instances.len() {
+        for position in self.current.instances .. self.collected.instances.len() {
             let Some(instance) = self.collected.instances.get(position).cloned()
             else {
                 continue;

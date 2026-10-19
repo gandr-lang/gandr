@@ -600,10 +600,13 @@ use crate::module::TypeComponent;
 use crate::module::TypeMeaning;
 use crate::module::ValueComponent;
 use crate::module::WrittenAttribute;
-use crate::module::collect;
+use crate::module::begin_collection;
+use crate::module::collect_source;
 use crate::module::declaration_half;
 use crate::module::manifest_type;
+use crate::module::root_pieces;
 use crate::module::slot_refusal;
+use crate::module::source_pieces;
 use crate::namespace::Binding;
 use crate::namespace::NamePath;
 use crate::namespace::PathResolution;
@@ -2695,8 +2698,12 @@ struct Lowerer<'run, 'source>
     collected: Collected<'source>,
     /// How each node's position reads it.
     readings: Vec<Reading>,
-    /// What the mint sweep does for each node.
+    /// What the mint sweep does for each node, kept once it is done: a later
+    /// source's classification reads an earlier source's plans.
     plans: Vec<Plan>,
+    /// Whether the mint sweep has carried out each node's plan, which it does
+    /// once.
+    taken: Vec<bool>,
     /// What the mint sweep writes over each node's own core node.
     bridges: Vec<Bridge>,
     /// Each node's lowered core node.
@@ -2875,6 +2882,10 @@ struct Lowerer<'run, 'source>
     /// The position each words' signature takes, by its position in the
     /// collection's words list.
     worded: BTreeMap<usize, DataIndex>,
+    /// The path type at each minted words' point and the family the point
+    /// lives in, by its position in the collection's words list: what a later
+    /// source's letters and empty words are labelled at.
+    word_types: BTreeMap<usize, (ValueTypeId, ValueTypeId)>,
     /// Each loop's binding, the path type at its point and the word of its
     /// one letter, by slot.
     looped: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
@@ -2945,6 +2956,139 @@ struct Lowerer<'run, 'source>
     instantiated: BTreeMap<SlotIndex, DeclarationOutcome<'source>>,
     /// The frame of every continuation an operation clause binds.
     resumptions: BTreeSet<ScopeId>,
+    /// Every described family decoded so far, by its description's name: a
+    /// later description, in its own source or one importing it, reads it.
+    described_types:
+        BTreeMap<gandr_theory_levitation::Name, gandr_core_term::description::TypeBinding>,
+    /// Each node's source: the source its top-level form starts in.
+    source_of: Vec<SourceIndex>,
+    /// The source the passes are lowering, and where its share of each list
+    /// they read begins.
+    current: Current,
+    /// The current source's own positions, in level order.
+    own: Vec<NodeIndex>,
+}
+
+/// The source a lowering is at, and where its share of each list the passes
+/// read begins. A unit is lowered a source at a time, in its order, each
+/// source's collection and every pass over it before the
+/// next source's, so what a source lowers to does not depend on the sources
+/// after it.
+///
+/// # Specification
+/// - ensures: each mark is the length its list had when the source's collection
+///   began.
+/// - executable: none — the marks are positions into lists this record does not
+///   hold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source lowers to the same declarations and the same
+///   leading arena rows whether or not another source follows it.
+/// - witness: `tests::namespace::a_source_lowers_alike_whatever_follows_it_776`
+#[derive(Clone, Copy, Debug, Default)]
+struct Current
+{
+    /// The source.
+    source: SourceIndex,
+    /// Where its slots begin.
+    slots: usize,
+    /// Where its modules begin.
+    structures: usize,
+    /// Where its data declarations begin.
+    data: usize,
+    /// Where its words begin.
+    words: usize,
+    /// Where its family members begin.
+    families: usize,
+    /// Where its functors begin.
+    functors: usize,
+    /// Where its functor applications begin.
+    instances: usize,
+    /// Where its mutual blocks begin.
+    blocks: usize,
+    /// Where its decorated modules begin.
+    decorated: usize,
+    /// Where its signature scopes begin.
+    scopes: usize,
+    /// Where its synthesised sites begin.
+    synthesised: usize,
+    /// Where its labels begin.
+    labels: usize,
+    /// Where its letters begin.
+    lettered: usize,
+    /// Where its empty words' points begin.
+    pointed: usize,
+}
+
+/// Whether a node or a slot belongs to the source being lowered.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Ours(bool);
+
+/// Each node's source: a top-level node's is the source its span starts in,
+/// and every other node's is its parent's.
+///
+/// # Specification
+/// - requires: `unit` lays out the text `tree` was parsed from.
+/// - ensures: one source per node; the root and every node under a top-level
+///   form hold that form's source, the root the first.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a two-source unit's nodes split at the second source's
+///   first form.
+/// - witness: `tests::namespace::a_source_lowers_alike_whatever_follows_it_776`
+#[spec(ensures: |ret| ret.len() == usize::from(tree.node_count()))]
+fn sources_of(
+    tree: &SyntaxTree<'_>,
+    unit: &Unit,
+) -> Vec<SourceIndex>
+{
+    let mut of = Vec::new();
+    of.resize(usize::from(tree.node_count()), SourceIndex::default());
+    let root = tree.root();
+    for position in tree.positions() {
+        let own = of.get(usize::from(position)).copied().unwrap_or_default();
+        for child in tree.children(position) {
+            let source = if position == root {
+                tree.node(child)
+                    .map_or(own, |node| unit.source_at(node.span().start()))
+            }
+            else {
+                own
+            };
+            if let Some(held) = of.get_mut(usize::from(child)) {
+                *held = source;
+            }
+        }
+    }
+
+    of
+}
+
+/// The positions `source_of` gives to `source`, in level order.
+///
+/// # Specification
+/// - ensures: exactly the positions whose source is `source`, ascending.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`sources_of`].
+/// - witness: `tests::namespace::a_source_lowers_alike_whatever_follows_it_776`
+#[spec(ensures: |ret| ret.is_sorted() && ret.iter().all(|&position| source_of.get(usize::from(position)) == Some(&source)))]
+fn own_positions(
+    source_of: &[SourceIndex],
+    source: SourceIndex,
+) -> Vec<NodeIndex>
+{
+    source_of
+        .iter()
+        .enumerate()
+        .filter(|&(_, &held)| held == source)
+        .map(|(position, _)| NodeIndex::from(position))
+        .collect()
 }
 
 /// Where the mint sweep writes: the arena and the origin table, with the
@@ -3050,9 +3194,13 @@ pub fn lower_module<'source>(
 ///   unqualified (the `import` module). Every declared name is declared over
 ///   `outermost` in admission order, tagged with its name's bytes, and every
 ///   lambda, parameter and `run` binder is reported against it; the outermost
-///   scope is returned with the module.
-/// - provides: the whole surface-to-core step, in one pass over one tree with
-///   one strictness and one verdict per name.
+///   scope is returned with the module. The sources are lowered one at a time,
+///   in the unit's order — a source's collection and every pass over it before
+///   the next source's — into the one arena, so what a source lowers to, its
+///   declarations and its arena rows, ids included, does not depend on the
+///   sources after it.
+/// - provides: the whole surface-to-core step, a source at a time over one
+///   tree, with one strictness and one verdict per name.
 /// - fails: [`LoweringRefusal::GrammarMismatch`] when the tree was molded under
 ///   another grammar; [`LoweringRefusal::OutOfFragment`] and
 ///   [`LoweringRefusal::MalformedForm`] when the module's own shape is wrong —
@@ -3113,6 +3261,7 @@ pub fn lower_module<'source>(
 /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
 /// - witness: `lower::tests::a_positive_result_gains_a_returner_once`
 /// - witness: `lower::tests::a_self_reference_is_unresolved`
+/// - witness: `tests::namespace::a_source_lowers_alike_whatever_follows_it_776`
 /// - witness: `lower::tests::an_undefined_term_name_is_refused`
 /// - witness: `lower::tests::an_undefined_type_head_is_refused`
 /// - witness: `lower::tests::an_applied_nullary_head_is_refused`
@@ -3237,19 +3386,10 @@ pub fn lower_unit<'source>(
             });
         },
     }
-    let mut fuel = Fuel::new(budget);
-    let collected = collect(pbg, tree, unit, &mut fuel)?;
+    let fuel = Fuel::new(budget);
+    let collected = begin_collection(pbg, tree, unit)?;
+    let pieces = root_pieces(pbg, tree)?;
     let mut lowerer = Lowerer::new(pbg, tree, collected, fuel, outermost);
-    lowerer.refuse_imports();
-    lowerer.declare();
-    lowerer.seed()?;
-    lowerer.survey()?;
-    lowerer.classify()?;
-    lowerer.refuse_unsynthesised()?;
-    lowerer.propagate_manifests();
-    while lowerer.refuse_unrepresented().0 {
-        lowerer.propagate_manifests();
-    }
     let mut origins = OriginTable::new();
     let mut sink = Sink {
         arena,
@@ -3261,16 +3401,29 @@ pub fn lower_unit<'source>(
         breaks: BTreeSet::new(),
         identities: BTreeMap::new(),
     };
-    lowerer.mint(&mut sink)?;
-    lowerer.mint_joints(&mut sink);
-    lowerer.mint_abstracts(&mut sink);
-    lowerer.mint_models(&mut sink);
-    lowerer.check_families(&mut sink);
-    lowerer.mint_data(&mut sink);
-    lowerer.mint_descriptions(&mut sink)?;
-    lowerer.mint_presentations(&mut sink)?;
-    lowerer.mint_operations(&mut sink);
-    lowerer.mint_instances(&mut sink);
+    for (source, own) in source_pieces(unit, pieces).into_iter().enumerate() {
+        lowerer.begin_source(SourceIndex::from(source), own)?;
+        lowerer.refuse_imports();
+        lowerer.declare();
+        lowerer.seed()?;
+        lowerer.survey()?;
+        lowerer.classify()?;
+        lowerer.refuse_unsynthesised()?;
+        lowerer.propagate_manifests();
+        while lowerer.refuse_unrepresented().0 {
+            lowerer.propagate_manifests();
+        }
+        lowerer.mint(&mut sink)?;
+        lowerer.mint_joints(&mut sink);
+        lowerer.mint_abstracts(&mut sink);
+        lowerer.mint_models(&mut sink);
+        lowerer.check_families(&mut sink);
+        lowerer.mint_data(&mut sink);
+        lowerer.mint_descriptions(&mut sink)?;
+        lowerer.mint_presentations(&mut sink)?;
+        lowerer.mint_operations(&mut sink);
+        lowerer.mint_instances(&mut sink);
+    }
     let mut attributes = AttributeTable::new();
     lowerer.attribute(&mut attributes, sink.arena)?;
     let documentation = lowerer.document()?;
@@ -3387,6 +3540,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         readings.resize(count, Reading::Unread);
         let mut plans = Vec::new();
         plans.resize(count, Plan::Unplanned);
+        let mut taken = Vec::new();
+        taken.resize(count, false);
         let mut bridges = Vec::new();
         bridges.resize(count, Bridge::Bare);
         let mut lowered = Vec::new();
@@ -3397,6 +3552,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         scopes.resize(count, Maybe::Absent(scoped::Absent::Unscoped));
         let mut leaves = Vec::new();
         leaves.resize(count, exits::Leaves::Never);
+        let source_of = sources_of(tree, &collected.unit);
+        let own = own_positions(&source_of, SourceIndex::default());
 
         Self {
             pbg,
@@ -3404,6 +3561,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             collected,
             readings,
             plans,
+            taken,
             bridges,
             lowered,
             payload,
@@ -3461,6 +3619,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             cases: Vec::new(),
             signatures: BTreeMap::new(),
             worded: BTreeMap::new(),
+            word_types: BTreeMap::new(),
             looped: BTreeMap::new(),
             lettered: Vec::new(),
             pointed: Vec::new(),
@@ -3484,7 +3643,76 @@ impl<'run, 'source> Lowerer<'run, 'source>
             capabilities: BTreeSet::new(),
             regions: BTreeMap::new(),
             resumptions: BTreeSet::new(),
+            described_types: BTreeMap::new(),
+            source_of,
+            current: Current::default(),
+            own,
         }
+    }
+
+    /// Begin lowering `source`: mark where its share of each list begins and
+    /// collect its top-level forms `pieces`.
+    ///
+    /// # Specification
+    /// - requires: every source before `source` is lowered, and `pieces` are
+    ///   `source`'s root pieces.
+    /// - ensures: the current source is `source`, with its own positions and
+    ///   each mark at the length its list had before the collection; the
+    ///   source's forms are collected after the earlier sources'.
+    /// - provides: the start of each source's lowering.
+    /// - fails: as [`collect_source`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`collect_source`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source lowers to the same declarations and the same
+    ///   leading arena rows whether or not another source follows it.
+    /// - witness: `tests::namespace::a_source_lowers_alike_whatever_follows_it_776`
+    #[spec(ensures: |_| self.current.source == source && self.current.slots <= self.collected.slots.len())]
+    fn begin_source(
+        &mut self,
+        source: SourceIndex,
+        pieces: Vec<Piece>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        self.own = own_positions(&self.source_of, source);
+        self.current = Current {
+            source,
+            slots: self.collected.slots.len(),
+            structures: self.collected.structures.len(),
+            data: self.collected.data.len(),
+            words: self.collected.words.len(),
+            families: self.collected.families.len(),
+            functors: self.collected.functors.len(),
+            instances: self.collected.instances.len(),
+            blocks: self.collected.blocks.len(),
+            decorated: self.collected.decorated.len(),
+            scopes: self.collected.scopes.len(),
+            synthesised: self.synthesised.len(),
+            labels: self.labels.len(),
+            lettered: self.lettered.len(),
+            pointed: self.pointed.len(),
+        };
+        collect_source(
+            (self.pbg, self.tree),
+            &mut self.collected,
+            &mut self.fuel,
+            pieces,
+        )
+    }
+
+    /// Whether `slot` was admitted while lowering the current source.
+    ///
+    /// # Specification
+    /// trivial.
+    fn owns_slot(
+        &self,
+        slot: SlotIndex,
+    ) -> Ours
+    {
+        Ours(usize::from(slot) >= self.current.slots)
     }
 
     /// Refuse what a source's imports forbid: every declaration of a source
@@ -3530,6 +3758,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut refusals: Vec<(SlotIndex, LoweringRefusal<'source>)> = Vec::new();
         for import in collected.imports.declarations() {
             let source = import.source();
+            if source != self.current.source {
+                continue;
+            }
             let (ImportResolution::Path(target), span) = (import.resolution(), import.span())
             else {
                 continue;
@@ -3672,7 +3903,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     )]
     fn declare(&mut self)
     {
-        for slot in &mut self.collected.slots {
+        let (first_slot, first_structure) = (self.current.slots, self.current.structures);
+        for slot in self.collected.slots.iter_mut().skip(first_slot) {
             if !matches!(slot.container, Container::TopLevel(_)) || slot.role != Role::Declared {
                 continue;
             }
@@ -3694,7 +3926,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let mut tops: Vec<StructureIndex> = Vec::new();
         let mut shadowing: Vec<StructureIndex> = Vec::new();
-        for (position, structure) in self.collected.structures.iter().enumerate() {
+        for (position, structure) in self
+            .collected
+            .structures
+            .iter()
+            .enumerate()
+            .skip(first_structure)
+        {
             if !matches!(structure.container, Container::TopLevel(_)) {
                 continue;
             }
@@ -4022,14 +4260,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let mut seeds: Vec<(NodeIndex, Reading)> = Vec::new();
         let mut payloads: Vec<NodeIndex> = Vec::new();
-        for structure in &self.collected.structures {
+        let from = self.current;
+        for structure in self.collected.structures.iter().skip(from.structures) {
             for stated in structure.types.iter().chain(&structure.type_members) {
                 if let TypeMeaning::Manifest(defined) = stated.meaning {
                     seeds.push((defined.node, Reading::ValueType(Frame::Outermost)));
                 }
             }
         }
-        for recorded in self.collected.abstracts.values() {
+        for recorded in self
+            .collected
+            .abstracts
+            .range(SlotIndex::from(from.slots) ..)
+            .map(|(_, recorded)| recorded)
+        {
             if let Maybe::Present(kind) = recorded.kind {
                 seeds.push((kind.node, Reading::ValueType(Frame::Outermost)));
             }
@@ -4038,18 +4282,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .collected
             .functors
             .iter()
+            .skip(from.functors)
             .flat_map(|functor| functor.components.iter())
         {
             if let ParameterForm::Abstract(Maybe::Present(kind)) = component.form {
                 seeds.push((kind.node, Reading::ValueType(Frame::Outermost)));
             }
         }
-        for &(root, seen) in &self.collected.scopes {
+        for &(root, seen) in self.collected.scopes.iter().skip(from.scopes) {
             if let Some(held) = self.scopes.get_mut(usize::from(root)) {
                 *held = Maybe::Present(seen);
             }
         }
-        for slot in &self.collected.slots {
+        for slot in self.collected.slots.iter().skip(from.slots) {
             if let Maybe::Present(half) = slot.signature
                 && let Operand::Written(operand) = half.operand
             {
@@ -4080,11 +4325,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .collected
             .slots
             .iter()
+            .skip(from.slots)
             .flat_map(|slot| slot.attributes.iter())
             .chain(
                 self.collected
                     .decorated
                     .iter()
+                    .skip(from.decorated)
                     .flat_map(|module| module.attributes.iter()),
             );
         for attribute in written {
@@ -4211,12 +4458,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .is_none_or(|refusal| refusal.classify() == FailureClass::EngineFault)
                 && (ret.is_err()
                     || self.fuel.remaining
-                        <= before.0.saturating_sub(usize::from(self.tree.node_count())))
+                        <= before.0.saturating_sub(self.own.len()))
         },
     )]
     fn classify(&mut self) -> Result<(), LoweringRefusal<'source>>
     {
-        for position in self.tree.positions() {
+        for index in 0 .. self.own.len() {
+            let Some(&position) = self.own.get(index)
+            else {
+                continue;
+            };
             self.fuel.spend()?;
             self.inherit_owner(position);
             self.inherit_payload(position);
@@ -9837,7 +10088,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body takes the plan of every node once; the check reads each plan once"
+            reason = "parity: the body carries out the plan of every node once; the check reads each plan once"
         )
     )]
     #[spec(
@@ -9847,6 +10098,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     let position = NodeIndex::from(position);
                     (self.collected.refused(position).0 && !self.in_payload(position).0)
                         || *plan == Plan::Unplanned
+                        || self.taken.get(usize::from(position)) == Some(&true)
                 })
         },
     )]
@@ -9855,10 +10107,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
         sink: &mut Sink<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        let from = self.current;
+        let owns =
+            |position: &NodeIndex| self.source_of.get(usize::from(*position)) == Some(&from.source);
         let mut stated: Vec<Placed> = self
             .collected
             .structures
             .iter()
+            .skip(from.structures)
             .flat_map(|structure| structure.types.iter().chain(&structure.type_members))
             .filter_map(|component| match component.meaning {
                 TypeMeaning::Manifest(defined) => Some(defined),
@@ -9866,7 +10122,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     None
                 },
             })
-            .chain(self.collected.families.iter().flat_map(|family| {
+            .chain(self.collected.families.iter().skip(from.families).flat_map(|family| {
                 family
                     .parameters
                     .iter()
@@ -9877,8 +10133,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             // written as its arguments, wherever those stand in the tree.
             .chain(
                 self.argued
-                    .values()
-                    .filter_map(|argued| self.collected.data.get(argued.form))
+                    .iter()
+                    .filter(|&(argument, _)| owns(argument))
+                    .filter_map(|(_, argued)| self.collected.data.get(argued.form))
                     .flat_map(|form| form.parameters.iter().map(|parameter| parameter.classifier)),
             )
             .collect();
@@ -9886,11 +10143,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
         stated.dedup();
         let mut manifests: Vec<NodeIndex> = stated.iter().map(|defined| defined.node).collect();
         manifests.extend(self.synthesised_types());
-        manifests.extend(self.answers.values().map(|answer| answer.node));
+        manifests.extend(
+            self.answers
+                .iter()
+                .filter(|&(position, _)| owns(position))
+                .map(|(_, answer)| answer.node),
+        );
         manifests.extend(
             self.inherited
-                .values()
-                .filter_map(|inherited| match *inherited {
+                .iter()
+                .filter(|&(position, _)| owns(position))
+                .filter_map(|(_, inherited)| match *inherited {
                     native::Classifier::Written(written) => Some(written),
                     native::Classifier::Answered { .. }
                     | native::Classifier::Slot(_)
@@ -9920,13 +10183,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Absent(functor::renamed_through::Absent::Everything),
             sink,
         );
-        let mut remaining = usize::from(self.tree.node_count());
+        let mut remaining = self.own.len();
         while let Some(next) = remaining.checked_sub(1_usize) {
             remaining = next;
             self.fuel.spend()?;
-            self.mint_at(NodeIndex::from(next), sink);
+            let Some(&position) = self.own.get(next)
+            else {
+                continue;
+            };
+            self.mint_at(position, sink);
         }
-        for (position, slot) in self.collected.slots.iter().enumerate() {
+        for (position, slot) in self.collected.slots.iter().enumerate().skip(from.slots) {
             if let Maybe::Present(Half {
                 declaration,
                 operand: Operand::Member(target),
@@ -9975,7 +10242,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .map(|name| String::from(name.as_ref()))
                 .collect()
         };
-        for site in &self.labels {
+        for site in self.labels.iter().skip(self.current.labels) {
             let labelled = match site.read {
                 LabelRead::ValueType(frame) => match self.value_type_at(site.held) {
                     Maybe::Present(ty) => Labelled::ValueType {
@@ -10026,7 +10293,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: every node the plan names is already minted or absent.
-    /// - ensures: the node's plan is taken and minted, its bridge written over
+    /// - ensures: the node's plan is carried out once, its bridge written over
     ///   it and the result kept as the node's lowered core node; the force over
     ///   the value head of a call of no arguments is that call, so it is minted
     ///   with the call's origin rather than as an insertion at the head; a tail
@@ -10037,19 +10304,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   exit; a `break`'s returner is recorded as a break; a loop end written
     ///   without an exit is bound and its loop run again, as [`Self::rerun`]
     ///   writes it; a constructor awaiting its data family's application is
-    ///   left for that application, which mints it first; a node with no plan
-    ///   left, or under a refused declaration outside a payload, is left as it
-    ///   is.
+    ///   left for that application, which mints it first; a node with no plan,
+    ///   or whose plan was carried out, or under a refused declaration outside
+    ///   a payload, is left as it is.
     /// - provides: the per-position half of [`Self::mint`].
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a refused declaration leaves its ordinary plans
-    ///   untouched but still permits its attribute payloads to mint; consumed
-    ///   plans are not minted twice when a manifest and the full traversal both
-    ///   reach them; a tail of each polarity records its own exit once; a call
-    ///   of no arguments answers at the call, its head at the head.
+    ///   untouched but still permits its attribute payloads to mint;
+    ///   carried-out plans are not minted twice when a manifest and the full
+    ///   traversal both reach them; a tail of each polarity records its own
+    ///   exit once; a call of no arguments answers at the call, its head at the
+    ///   head.
     /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
     /// - witness: `lower::tests::a_call_of_no_arguments_is_the_call_the_source_wrote_364`
     /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
@@ -10062,7 +10330,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             matches!(
                 self.plans.get(usize::from(position)),
                 None | Some(&Plan::Unplanned)
-            ),
+            ) || self.taken.get(usize::from(position)) == Some(&true),
             self.lowered_at(position),
             self.plans.len(),
             self.lowered.len(),
@@ -10073,10 +10341,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.lowered_at(position) == before.2
             }
             else {
-                matches!(
-                    self.plans.get(usize::from(position)),
-                    Some(&Plan::Unplanned)
-                )
+                self.taken.get(usize::from(position)) == Some(&true)
             }),
     )]
     fn mint_at(
@@ -10111,10 +10376,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: every node the plan names is already minted or absent.
-    /// - ensures: the plan is taken and minted as [`Self::mint_at`] states; a
-    ///   type a term quotes is carried from its telescope into the term's
-    ///   context before the quote wraps it, while a value a type reads stays in
-    ///   the type's telescope; a node with no plan left is left as it is.
+    /// - ensures: the plan is carried out once, as [`Self::mint_at`] states,
+    ///   and kept; a type a term quotes is carried from its telescope into the
+    ///   term's context before the quote wraps it, while a value a type reads
+    ///   stays in the type's telescope; a node with no plan, or whose plan was
+    ///   carried out, is left as it is.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -10132,7 +10398,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             matches!(
                 self.plans.get(usize::from(position)),
                 None | Some(&Plan::Unplanned)
-            ),
+            ) || self.taken.get(usize::from(position)) == Some(&true),
             self.lowered_at(position),
             self.plans.len(),
             self.lowered.len(),
@@ -10143,10 +10409,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.lowered_at(position) == before.1
             }
             else {
-                matches!(
-                    self.plans.get(usize::from(position)),
-                    Some(&Plan::Unplanned)
-                )
+                self.taken.get(usize::from(position)) == Some(&true)
             }),
     )]
     fn mint_planned(
@@ -10155,12 +10418,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
         sink: &mut Sink<'_>,
     )
     {
-        let Some(planned) = self.plans.get_mut(usize::from(position))
+        let Some(taken) = self.taken.get_mut(usize::from(position))
         else {
             return;
         };
-        let plan = core::mem::replace(planned, Plan::Unplanned);
-        if plan == Plan::Unplanned {
+        if core::mem::replace(taken, true) {
+            return;
+        }
+        let Some(plan) = self.plans.get(usize::from(position))
+        else {
+            return;
+        };
+        if *plan == Plan::Unplanned {
             return;
         }
         let Maybe::Present(origin) = self.origin_at(position)
@@ -10172,7 +10441,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .get(usize::from(position))
             .copied()
             .unwrap_or(Bridge::Bare);
-        let stands_in = matches!(plan, Plan::Transparent(_) | Plan::Instantiated(..))
+        let stands_in = matches!(*plan, Plan::Transparent(_) | Plan::Instantiated(..))
             && self.stand_ins.contains(&position);
         let minted = self.mint_plan(plan, sink, origin);
         if stands_in && let Maybe::Present(Lowered::ValueType(id)) = minted {
@@ -10324,7 +10593,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
     #[spec(
         captures: promised = (
-            match plan {
+            match *plan {
                 | Plan::Variable(..)
                 | Plan::ValueHole(_)
                 | Plan::Constant(_)
@@ -10385,7 +10654,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 }),
                 | Plan::Unplanned | Plan::Transparent(_) | Plan::Function(_) => None,
             },
-            match plan {
+            match *plan {
                 | Plan::Transparent(child) => Some(self.lowered_at(child)),
                 | _ => None,
             },
@@ -10430,12 +10699,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     )]
     fn mint_plan(
         &self,
-        plan: Plan,
+        plan: &Plan,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        match plan {
+        match *plan {
             Plan::ValueHole(hole) => {
                 let id = sink.arena.value_hole(hole);
                 Maybe::Present(sink.value(id, origin))
@@ -10500,8 +10769,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let id = sink.arena.value_unit();
                 Maybe::Present(sink.value(id, origin))
             },
-            Plan::Literal(literal) => {
-                let id = sink.arena.value_literal(literal);
+            Plan::Literal(ref literal) => {
+                let id = sink.arena.value_literal(literal.clone());
                 Maybe::Present(sink.value(id, origin))
             },
             Plan::Atom(atom) => Maybe::Present(sink.atom(atom, origin)),
@@ -10597,8 +10866,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Self::mint_capability(authority, grade, region, sink, origin)
             },
             Plan::Effectful(ref row, argument) => self.mint_effectful(row, argument, sink, origin),
-            Plan::Exercise(exercised) => self.mint_exercise(exercised, sink, origin),
-            Plan::Scope(scoped) => self.mint_scope(scoped, sink, origin),
+            Plan::Exercise(ref exercised) => self.mint_exercise(exercised, sink, origin),
+            Plan::Scope(ref scoped) => self.mint_scope(scoped, sink, origin),
             Plan::Resume(continuation, reply) => {
                 self.mint_resume(continuation, reply, sink, origin)
             },
@@ -10640,7 +10909,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Return(_)
             | Plan::Force(_)
             | Plan::Run(_)
-            | Plan::Lambda(..) => self.mint_over(&plan, sink, origin),
+            | Plan::Lambda(..) => self.mint_over(plan, sink, origin),
         }
     }
 
@@ -13127,7 +13396,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         sink: &mut Sink<'_>,
     )
     {
-        for (&slot, plan) in &self.collected.operations {
+        for (&slot, plan) in self
+            .collected
+            .operations
+            .range(SlotIndex::from(self.current.slots) ..)
+        {
             let Some(entry) = self.collected.slots.get(usize::from(slot))
             else {
                 continue;
@@ -16849,7 +17122,7 @@ mod tests
         );
         let mut arena = CoreArena::new();
         let mut fuel = Fuel::new(LoweringBudget::DEFAULT);
-        let collected = super::collect(&pbg, &tree, &Unit::single(), &mut fuel).unwrap();
+        let collected = crate::module::collect(&pbg, &tree, &Unit::single(), &mut fuel).unwrap();
         let mut lowerer = super::Lowerer::new(&pbg, &tree, collected, fuel, Recognition::default());
         lowerer.declare();
         lowerer.seed().unwrap();

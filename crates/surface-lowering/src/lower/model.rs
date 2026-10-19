@@ -171,7 +171,7 @@ impl<'source> Lowerer<'_, 'source>
         seeds: &mut Vec<(NodeIndex, Reading)>,
     )
     {
-        for family in &self.collected.families {
+        for family in self.collected.families.iter().skip(self.current.families) {
             let mut frame = Frame::Outermost;
             for parameter in &family.parameters {
                 seeds.push((parameter.classifier.node, Reading::ValueType(frame)));
@@ -187,7 +187,12 @@ impl<'source> Lowerer<'_, 'source>
             }
             seeds.push((family.defined.node, Reading::ValueType(frame)));
         }
-        for check in self.collected.family_checks.values() {
+        for check in self
+            .collected
+            .family_checks
+            .range(SlotIndex::from(self.current.slots) ..)
+            .map(|(_, check)| check)
+        {
             if let FamilyForm::Written(kind) = check.stated {
                 seeds.push((kind.node, Reading::ValueType(Frame::Outermost)));
             }
@@ -376,7 +381,13 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut modelled = BTreeMap::new();
         let mut faults = BTreeMap::new();
-        for (position, slot) in self.collected.slots.iter().enumerate() {
+        for (position, slot) in self
+            .collected
+            .slots
+            .iter()
+            .enumerate()
+            .skip(self.current.slots)
+        {
             let (
                 Maybe::Present(Half {
                     declaration,
@@ -803,7 +814,11 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut faults = BTreeMap::new();
         let mut checks = BTreeMap::new();
-        for (&slot, check) in &self.collected.family_checks {
+        for (&slot, check) in self
+            .collected
+            .family_checks
+            .range(SlotIndex::from(self.current.slots) ..)
+        {
             let (Some(declared), Some(family)) = (
                 self.collected.slots.get(usize::from(slot)),
                 self.collected.families.get(check.family.0),

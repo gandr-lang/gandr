@@ -2408,10 +2408,12 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(captures: before = self.synthesised.len(), ensures: |ret| ret.is_err() || self.synthesised.len() == before)]
     pub(super) fn refuse_unsynthesised(&mut self) -> Result<(), LoweringRefusal<'source>>
     {
-        self.synthesised
-            .sort_unstable_by_key(|site| core::cmp::Reverse(site.at.node));
+        let first = self.current.synthesised;
+        if let Some(own) = self.synthesised.get_mut(first ..) {
+            own.sort_unstable_by_key(|site| core::cmp::Reverse(site.at.node));
+        }
         let mut read = alloc::collections::BTreeSet::new();
-        for index in 0 .. self.synthesised.len() {
+        for index in first .. self.synthesised.len() {
             let Some(&site) = self.synthesised.get(index)
             else {
                 break;
@@ -2530,7 +2532,7 @@ impl<'source> Lowerer<'_, 'source>
     pub(super) fn synthesised_types(&self) -> Vec<NodeIndex>
     {
         let mut types = Vec::new();
-        for site in &self.synthesised {
+        for site in self.synthesised.iter().skip(self.current.synthesised) {
             let Some(&Plan::Derived(Derived {
                 stance: Stance::Synthesised(synthesis, typings),
                 ..
