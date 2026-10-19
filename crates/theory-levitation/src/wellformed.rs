@@ -28,6 +28,7 @@
 //!
 //! [`Code`]: crate::Code
 
+use alloc::collections::BTreeSet;
 use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString as _;
@@ -510,13 +511,14 @@ fn check_sorts<G>(
 )]
 fn check_circuit_rule(
     rule: &CircuitRule,
-    signature: &[Name],
+    signature: &BTreeSet<&Name>,
     diagnostics: &mut Vec<WfDiagnostic>,
 )
 {
     let span = rule.sphere.provenance;
     check_free_term_symbols(&rule.sphere.lhs, signature, span, diagnostics);
     check_free_term_symbols(&rule.sphere.rhs, signature, span, diagnostics);
+    let ports: BTreeSet<&Name> = rule.ports.iter().map(|port| &port.name).collect();
     for node in &rule.body.nodes {
         match *node {
             CircuitNode::Frame(ref frame) => {
@@ -538,8 +540,7 @@ fn check_circuit_rule(
                 // An undeclared telescope means the redex heads are simply not
                 // declared here — not that they are unknown. The check bites
                 // only where a telescope was written.
-                if rule.ports.is_empty() || rule.ports.iter().any(|port| port.name == redex.rewrite)
-                {
+                if rule.ports.is_empty() || ports.contains(&redex.rewrite) {
                     continue;
                 }
                 diagnostics.push(located(
@@ -710,12 +711,12 @@ fn check_attrs(
 ///
 /// # Specification
 /// trivial.
-fn signature_names<G>(desc: &TheoryDesc<G>) -> Vec<Name>
+fn signature_names<G>(desc: &TheoryDesc<G>) -> BTreeSet<&Name>
 {
     desc.ctors
         .iter()
-        .map(|ctor| ctor.name.clone())
-        .chain(desc.opers.iter().map(|op| op.name.clone()))
+        .map(|ctor| &ctor.name)
+        .chain(desc.opers.iter().map(|op| &op.name))
         .collect()
 }
 
@@ -751,14 +752,14 @@ fn signature_names<G>(desc: &TheoryDesc<G>) -> Vec<Name>
 )]
 fn check_rule_face(
     cell: &RuleFace,
-    signature: &[Name],
+    signature: &BTreeSet<&Name>,
     diagnostics: &mut Vec<WfDiagnostic>,
 )
 {
     check_free_term_symbols(&cell.lhs, signature, cell.provenance, diagnostics);
     check_free_term_symbols(&cell.rhs, signature, cell.provenance, diagnostics);
 
-    let lhs_vars = cell.lhs.collect_vars();
+    let lhs_vars: BTreeSet<&Name> = cell.lhs.to_node().vars().collect();
     for var in cell.rhs.collect_vars() {
         if !lhs_vars.contains(&var) {
             diagnostics.push(located(
@@ -811,7 +812,7 @@ fn check_rule_face(
 )]
 fn check_free_term_symbols(
     term: &FreeTerm,
-    signature: &[Name],
+    signature: &BTreeSet<&Name>,
     span: SurfaceSpan,
     diagnostics: &mut Vec<WfDiagnostic>,
 )
@@ -937,9 +938,10 @@ fn check_arity(
 pub fn derive_cell_var_meta(lhs: &FreeTerm) -> Vec<RuleVarMeta>
 {
     let occurrences = lhs.collect_vars();
+    let mut seen: BTreeSet<&Name> = BTreeSet::new();
     let mut meta: Vec<RuleVarMeta> = Vec::new();
     for var in &occurrences {
-        if meta.iter().any(|existing| existing.var == *var) {
+        if !seen.insert(var) {
             continue;
         }
         let count = occurrences.iter().filter(|&other| other == var).count();

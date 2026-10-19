@@ -51,6 +51,8 @@
 //! was.
 
 use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::format;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -280,8 +282,9 @@ pub fn validate<G>(source: &TheoryDesc<G>) -> Result<(), TranslationError>
             return Err(TranslationError::ReservedName(name.clone()));
         }
     }
+    let declared: BTreeSet<&Name> = source.sorts.iter().map(|sort| &sort.name).collect();
     for index in source.sorts.iter().flat_map(|sort| &sort.indices) {
-        if !source.sorts.iter().any(|sort| sort.name == index.sort) {
+        if !declared.contains(&index.sort) {
             return Err(TranslationError::UnknownIndexSort(index.sort.clone()));
         }
     }
@@ -717,10 +720,11 @@ fn structural_equations<G>(
         ),
         variable("b"),
     );
+    let indexed: BTreeSet<&Name> = sort.indices.iter().map(|index| &index.sort).collect();
     for family in source
         .sorts
         .iter()
-        .filter(|family| sort.indices.iter().any(|index| index.sort == family.name))
+        .filter(|family| indexed.contains(&family.name))
     {
         push_equation(
             model,
@@ -797,9 +801,12 @@ fn translate_operation<G>(
     op: &OperDesc,
 )
 {
+    let families: BTreeMap<&Name, &SortDesc> =
+        source.sorts.iter().map(|sort| (&sort.name, sort)).collect();
     let mut inputs = vec![port("G", "$Con", [])];
     let mut natural_arguments = Vec::new();
     for input in &op.arity.inputs {
+        let family = families.get(&input.sort);
         let mut context = variable("G");
         let mut substitution = variable("s");
         let mut arguments = input.arguments.to_vec();
@@ -812,7 +819,7 @@ fn translate_operation<G>(
                 named("extend".into(), &binding.sort),
                 core::iter::once(context.clone()).chain(binding.arguments.iter().cloned()),
             );
-            if let Some(family) = source.sorts.iter().find(|sort| sort.name == input.sort) {
+            if let Some(family) = family {
                 for (argument, index) in arguments.iter_mut().zip(&family.indices) {
                     *argument = action(
                         &index.sort,

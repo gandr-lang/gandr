@@ -233,14 +233,6 @@
     )
 )]
 #![no_std]
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        linear_search_in_loop,
-        reverse_after_build,
-        reason = "12 cost-shape sites (10 linear_search_in_loop, 2 reverse_after_build); #814 lists them"
-    )
-)]
 
 extern crate alloc;
 
