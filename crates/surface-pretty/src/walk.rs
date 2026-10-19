@@ -4989,9 +4989,10 @@ impl Walk<'_, '_>
         }
     }
 
-    /// The first generated name ([`Binders::name_at`]) no binder below the
-    /// one `offset` past the innermost open binder holds; none once the names
-    /// ran out.
+    /// The generated name ([`Binders::name_at`]) of the binder `offset` past
+    /// the innermost open binder: the first no binder below it holds, past
+    /// one more for each binder between it and the last named one, which
+    /// takes the earlier ones in order; none once the names ran out.
     ///
     /// # Specification
     /// trivial.
@@ -5005,12 +5006,14 @@ impl Walk<'_, '_>
             .names
             .get(.. position.min(self.names.len()))
             .unwrap_or_default();
+        let unnamed = position.saturating_sub(self.names.len());
         (0_usize ..)
             .map_while(|at| match self.binders.name_at(OpenBinders(at)) {
                 Maybe::Present(name) => Some(name.clone()),
                 Maybe::Absent(_) => None,
             })
-            .find(|name| !outer.iter().flatten().any(|held| held.0 == name.0))
+            .filter(|name| !outer.iter().flatten().any(|held| held.0 == name.0))
+            .nth(unnamed)
     }
 
     /// Open a binder in `zone`, named as the source writes it for `opener`
