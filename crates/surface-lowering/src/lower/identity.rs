@@ -2117,9 +2117,9 @@ impl<'source> Lowerer<'_, 'source>
             // A loop arm answers the path over its loop, whatever its case
             // answers.
             let answered = match answer.over {
-                super::native::Over::Written | super::native::Over::Returning => {
-                    self.answers_path(site, answer.node)?
-                },
+                super::native::Over::Written
+                | super::native::Over::Returning
+                | super::native::Over::Valued { .. } => self.answers_path(site, answer.node)?,
                 super::native::Over::Loop { .. } => Answered::Path,
             };
             if answered == Answered::Flow {
