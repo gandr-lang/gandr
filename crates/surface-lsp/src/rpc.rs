@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use crate::protocol::Answer;
 use crate::protocol::PublishParams;
+use crate::protocol::RegistrationParams;
 use crate::transport::Body;
 
 /// The version every envelope names.
@@ -19,6 +20,10 @@ const VERSION: &str = "2.0";
 
 /// The method diagnostics are published under.
 const PUBLISH_DIAGNOSTICS: &str = "textDocument/publishDiagnostics";
+
+/// The method a server registers a capability with the client under, and the
+/// identifier of the one such request it sends.
+const REGISTER_CAPABILITY: &str = "client/registerCapability";
 
 /// A request's identifier, echoed in its response: a number, a string, or
 /// null for a message whose identifier could not be read.
@@ -232,6 +237,19 @@ pub enum Outgoing
         /// Its parameters.
         params: PublishParams,
     },
+    /// A request of the server's to the client, whose response the server
+    /// reads as a response and leaves.
+    Request
+    {
+        /// Always `2.0`.
+        jsonrpc: &'static str,
+        /// The request's identifier.
+        id: RequestId,
+        /// The method called.
+        method: &'static str,
+        /// Its parameters.
+        params: RegistrationParams,
+    },
 }
 
 /// The error object of a refusing response.
@@ -372,6 +390,23 @@ pub const fn publish(params: PublishParams) -> Outgoing
     Outgoing::Notification {
         jsonrpc: VERSION,
         method: PUBLISH_DIAGNOSTICS,
+        params,
+    }
+}
+
+/// The request registering `params` with the client, its identifier the
+/// method's own name.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn register(params: RegistrationParams) -> Outgoing
+{
+    Outgoing::Request {
+        jsonrpc: VERSION,
+        id: RequestId(Value::from(REGISTER_CAPABILITY)),
+        method: REGISTER_CAPABILITY,
         params,
     }
 }

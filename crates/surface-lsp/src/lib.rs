@@ -145,7 +145,8 @@
 //! | inline values | `textDocument/inlineValue` | declined: they serve a debugger, and gandr has no debug adapter |
 //! | monikers | `textDocument/moniker` | declined: no cross-repository index reads them |
 //! | workspace symbols | `workspace/symbol` | blocked: a workspace of more than the open documents |
-//! | workspace folders, file watching, file operations | `workspace/didChangeWorkspaceFolders`, `didChangeWatchedFiles`, `willCreateFiles` and the other file operations | blocked: a workspace of more than the open documents |
+//! | file watching | `client/registerCapability`, `workspace/didChangeWatchedFiles` | served: a client that registers watchers dynamically is asked at `initialized` to watch `**/*.gandr`; a changed file rechecks and republishes every open copy whose closure named it at its last judgement, a missing import written included, as the `server` module states; the editor's own copy of the changed file stays authoritative |
+//! | workspace folders, file operations | `workspace/didChangeWorkspaceFolders`, `willCreateFiles` and the other file operations | blocked: a workspace of more than the open documents |
 //! | configuration | `workspace/didChangeConfiguration` | served: the `gandr` section's `diagnostics.verbosity`, as the `recheck` module states, `diagnostics.quiet`, as the `quiet` module states, `presentation.form`, which every later hover reads, and `presentation.spelling`, which every later hover reads and which republishes the diagnostics |
 //! | pulled configuration | `workspace/configuration` | declined: the settings are pushed; reverses for a client that only answers pulls |
 //! | window messages and progress | `window/showMessage`, `logMessage`, `workDoneProgress/*` | declined: the timing line goes to the server's log; reverses for a client that reads only the protocol stream |

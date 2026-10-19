@@ -146,6 +146,7 @@
 use core::fmt;
 use core::time::Duration;
 use std::path::Path;
+use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::time::Instant;
 
@@ -501,7 +502,7 @@ impl fmt::Display for Timing
 }
 
 /// What one recheck produced: the diagnostics to publish, the form under the
-/// caret it was asked about, and its timing.
+/// caret it was asked about, the paths its closure named, and its timing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Rechecked
 {
@@ -510,6 +511,9 @@ pub struct Rechecked
     /// The innermost form of the judged revision holding the caret, read
     /// off the tree the judgement parsed.
     pub form: Maybe<ByteSpan, formless::Absent>,
+    /// Every path the document's closure's imports name, as `lay_out` names
+    /// them, sorted; none for a document judged alone.
+    pub named: Vec<PathBuf>,
     /// What the recheck cost.
     pub timing: Timing,
 }
@@ -574,9 +578,10 @@ pub fn recheck(
 ) -> Rechecked
 {
     let started = Instant::now();
-    let unchecked = |diagnostic: Diagnostic| Rechecked {
+    let unchecked = |diagnostic: Diagnostic, named: Vec<PathBuf>| Rechecked {
         diagnostics: vec![diagnostic],
         form: Maybe::Absent(formless::Absent::Unparsed),
+        named,
         timing: Timing {
             forms: FormCensus::default(),
             judged: Maybe::Absent(judged::Absent::Unchecked),
@@ -588,19 +593,20 @@ pub fn recheck(
     let session = match *session {
         Ok(ref mut session) => session,
         Err(fault) => {
-            return unchecked(Diagnostic::at_origin(format!(
-                "the built-in grammar did not build: {fault}"
-            )));
+            return unchecked(
+                Diagnostic::at_origin(format!("the built-in grammar did not build: {fault}")),
+                Vec::new(),
+            );
         },
     };
     let mut form = Maybe::Absent(formless::Absent::Unparsed);
     // A document that imports a sibling is judged over it, laid out as the
     // walk lays its file out; the caret and the form it is in are measured
     // from the document's own start.
-    let laid = laid_out(uri, session.root(), text);
-    let base = match laid {
-        Maybe::Present(ref laid) => laid.base,
-        Maybe::Absent(_) => SyntaxOffset::from(0_usize),
+    let mut laid = laid_out(uri, session.root(), text);
+    let (base, named) = match laid {
+        Maybe::Present(ref mut laid) => (laid.base, core::mem::take(&mut laid.named)),
+        Maybe::Absent(_) => (SyntaxOffset::from(0_usize), Vec::new()),
     };
     let read = |tree: &SyntaxTree<'_>| {
         form = match caret {
@@ -625,7 +631,7 @@ pub fn recheck(
     };
     let submission = match outcome {
         Ok(submission) => submission,
-        Err(fault) => return unchecked(Diagnostic::at_origin(fault.to_string())),
+        Err(fault) => return unchecked(Diagnostic::at_origin(fault.to_string()), named),
     };
     let forms = submission.forms();
     let (judged, pending) = match submission.resumed() {
@@ -639,6 +645,7 @@ pub fn recheck(
     Rechecked {
         diagnostics,
         form,
+        named,
         timing: Timing {
             forms,
             judged,

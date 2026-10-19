@@ -56,11 +56,13 @@ use core::time::Duration;
 use std::io::BufRead;
 use std::io::Write;
 use std::path::Path;
+use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 use std::time::Instant;
 
 use anodized::spec;
 use gandr_surface_diagnostics::Verbosity;
+use gandr_surface_dispatcher::named_path;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_render_remote::DocId;
@@ -113,10 +115,13 @@ use crate::protocol::MarkupContent;
 use crate::protocol::PositionParams;
 use crate::protocol::PublishParams;
 use crate::protocol::RangeParams;
+use crate::protocol::RegistrationParams;
 use crate::protocol::SelectionRangeParams;
 use crate::protocol::SemanticTokens;
 use crate::protocol::Settings;
 use crate::protocol::StringValue;
+use crate::protocol::WatchedFilesParams;
+use crate::protocol::WatchesFiles;
 use crate::quiet::Holding;
 use crate::quiet::Met;
 use crate::quiet::QUIET;
@@ -140,6 +145,7 @@ use crate::rpc::RequestId;
 use crate::rpc::classify;
 use crate::rpc::failure;
 use crate::rpc::publish;
+use crate::rpc::register;
 use crate::rpc::success;
 use crate::signature::help;
 use crate::tokens::encode;
@@ -201,6 +207,10 @@ struct Document
     /// The diagnostics its session judged at its version, every one; those
     /// published and those the quiet publication holds.
     checked: Vec<Diagnostic>,
+    /// Every path its closure's imports named at its last judgement, as
+    /// `lay_out` names them, sorted: a change to one of those files changes
+    /// the judgement.
+    named: Vec<PathBuf>,
     /// The diagnostics last published at its version.
     published: Vec<Diagnostic>,
     /// The checked proposals kept for its version, in the order kept.
@@ -225,6 +235,7 @@ impl Document
             session: open(uri),
             caret: Maybe::Absent(uncareted::Absent::Unranged),
             checked: Vec::new(),
+            named: Vec::new(),
             published: Vec::new(),
             proposals: Vec::new(),
         }
@@ -1027,6 +1038,7 @@ impl Workspace
             },
             linked: Linked(true),
             offsets: LabelOffsets(true),
+            watching: WatchesFiles(false),
         };
         let answer = match classify(request) {
             Err(malformed) => malformed.response(),
@@ -1149,8 +1161,8 @@ impl Workspace
 /// Where it stands in the lifecycle, which connection it is, how much of
 /// each report its diagnostics carry, how long a diagnostic of the form under
 /// the caret waits, how its hovers spell types and are written, whether its
-/// client takes a definition as links, and whether it takes a signature's
-/// parameters as their places in the label.
+/// client takes a definition as links, whether it takes a signature's
+/// parameters as their places in the label, and whether it watches files.
 pub struct Server
 {
     /// Where the connection stands in the lifecycle.
@@ -1173,6 +1185,9 @@ pub struct Server
     /// Whether its client takes a signature's parameters as their places in
     /// the label, read at `initialize`.
     offsets: LabelOffsets,
+    /// Whether its client watches files for it once asked, read at
+    /// `initialize`.
+    watching: WatchesFiles,
 }
 
 /// The style a connection hovers in until `initialize` says otherwise: the
@@ -1214,6 +1229,7 @@ impl Server
             style: STYLE,
             linked: Linked(false),
             offsets: LabelOffsets(false),
+            watching: WatchesFiles(false),
         }
     }
 
@@ -1479,7 +1495,7 @@ impl Server
     /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
     #[spec(
         captures: [phase = self.phase, initial = initial_settings(&params), markup = initial_markup(&params),
-            linked = initial_links(&params), offsets = initial_offsets(&params)],
+            linked = initial_links(&params), offsets = initial_offsets(&params), watching = initial_watching(&params)],
         ensures: |ret| match (phase, method.as_ref()) {
             (Phase::Waiting, "initialize") => self.phase == Phase::Running
                 && self.verbosity == initial.verbosity().unwrap_or_default()
@@ -1491,6 +1507,7 @@ impl Server
                 }
                 && self.linked == linked
                 && self.offsets == offsets
+                && self.watching == watching
                 && matches!(ret, Outgoing::Success { result: Answer::Initialize(_), .. }),
             (Phase::Waiting, _) => self.phase == phase && matches!(ret,
                 Outgoing::Failure { ref error, .. } if error.code == ErrorCode::SERVER_NOT_INITIALIZED),
@@ -1502,56 +1519,56 @@ impl Server
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Tokens(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
                 },
             (Phase::Running, "textDocument/completion") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Completions(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
                 },
             (Phase::Running, "textDocument/signatureHelp") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Signatures(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
                 },
             (Phase::Running, "textDocument/inlineCompletion") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Inline(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
                 },
             (Phase::Running, "textDocument/documentSymbol" | "textDocument/foldingRange" | "textDocument/selectionRange") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
                 },
             (Phase::Running, "textDocument/hover") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Hover(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
                 },
             (Phase::Running, "textDocument/definition" | "textDocument/typeDefinition") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Links(_) | Answer::Locations(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
                 },
             (Phase::Running, "textDocument/codeLens" | "textDocument/codeAction") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Lenses(_) | Answer::Actions(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
                 },
             (Phase::Running, "textDocument/formatting" | "textDocument/rangeFormatting") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Edits(_), .. } => true,
                     Outgoing::Failure { ref error, .. } =>
                         error.code == ErrorCode::INVALID_PARAMS || error.code == ErrorCode::REQUEST_FAILED,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
                 },
             (Phase::Running, _) => self.phase == phase && matches!(ret,
                 Outgoing::Failure { ref error, .. } if error.code == ErrorCode::METHOD_NOT_FOUND),
@@ -1579,6 +1596,7 @@ impl Server
                 };
                 self.linked = initial_links(&params);
                 self.offsets = initial_offsets(&params);
+                self.watching = initial_watching(&params);
                 success(
                     id,
                     Answer::Initialize(Box::new(InitializeResult::advertised())),
@@ -1808,9 +1826,18 @@ impl Server
     ///   holds, in URI order, at its version, to this connection alone, logging
     ///   one timing line each; otherwise, one that names a zero interval
     ///   publishes what each copy holds back, as [`Server::release`] states,
-    ///   and one naming neither changes nothing. Unknown, malformed and
-    ///   out-of-phase notifications leave documents alone.
-    /// - provides: document synchronization, configuration and termination.
+    ///   and one naming neither changes nothing. A running-state `initialized`
+    ///   from a client that watches files asks it, in one
+    ///   `client/registerCapability` request, to watch every gandr source for
+    ///   `workspace/didChangeWatchedFiles`; from any other client it sends
+    ///   nothing. A running-state watched-files change rechecks every copy this
+    ///   connection holds whose closure, at its last judgement, named a changed
+    ///   file, as [`named_path`] names it, and republishes each in URI order,
+    ///   at its version, to this connection alone, logging one timing line
+    ///   each; a copy whose closure names none is untouched. Unknown, malformed
+    ///   and out-of-phase notifications leave documents alone.
+    /// - provides: document synchronization, configuration, file watching and
+    ///   termination.
     /// - fails: unreadable parameters and changes to documents this connection
     ///   holds no copy of are ignored.
     /// - panics: none.
@@ -1819,7 +1846,9 @@ impl Server
     /// - hypothesis: L3 — open/change/close, empty change lists, unknown URIs,
     ///   malformed notifications and each lifecycle phase distinguish extra
     ///   responses, wrong versions and destructive updates through exact token
-    ///   streams, publications and endings.
+    ///   streams, publications and endings; a watched sibling's change, a
+    ///   missing import written and an unrelated file distinguish the copies
+    ///   rechecked through exact publications.
     /// - witness: `server::tests::synchronisation_publishes_and_close_clears`
     /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
     /// - witness: `server::tests::ignored_messages_and_empty_changes_preserve_document_text`
@@ -1828,20 +1857,25 @@ impl Server
     /// - witness: `server::tests::a_configuration_change_reanswers_hovers_in_its_form`
     /// - witness: `server::tests::a_presentation_spelling_respells_hovers_and_diagnostics_782`
     /// - witness: `server::tests::two_connections_hold_their_own_copies`
+    /// - witness: `server::tests::a_watching_client_is_asked_to_watch_every_source`
+    /// - witness: `server::tests::a_changed_file_rechecks_the_copies_whose_closure_names_it`
     #[spec(
         captures: [phase = self.phase, count = workspace.documents.len()],
         ensures: |ret| self.phase == phase
-            && (ret.messages.len() <= 1 || method.as_ref() == "workspace/didChangeConfiguration")
+            && (ret.messages.len() <= 1
+                || matches!(method.as_ref(), "workspace/didChangeConfiguration" | "workspace/didChangeWatchedFiles"))
             && match method.as_ref() {
                 "textDocument/didOpen" | "textDocument/didChange" => ret.log.len() == usize::from(!ret.messages.is_empty()),
                 "workspace/didChangeConfiguration" => ret.log.len() <= ret.messages.len(),
+                "workspace/didChangeWatchedFiles" => ret.log.len() == ret.messages.len(),
                 _ => ret.log.is_empty(),
             }
             && ret.flow == if method.as_ref() == "exit" { Flow::Exit(self.closed()) } else { Flow::Continue }
             && if ret.messages.is_empty() { workspace.documents.len() == count } else {
                 phase == Phase::Running && ret.messages.iter().all(|message| match *message {
                     Outgoing::Notification { ref params, .. } => match method.as_ref() {
-                        "textDocument/didOpen" | "textDocument/didChange" | "workspace/didChangeConfiguration" =>
+                        "textDocument/didOpen" | "textDocument/didChange" | "workspace/didChangeConfiguration"
+                        | "workspace/didChangeWatchedFiles" =>
                             workspace.documents.get(&params.uri).is_some_and(|held| matches!(held.own(self.peer),
                                 Maybe::Present(document) if params.version == Some(document.version))),
                         "textDocument/didClose" => params.version.is_none() && params.diagnostics.is_empty()
@@ -1849,6 +1883,8 @@ impl Server
                                 .is_none_or(|held| matches!(held.own(self.peer), Maybe::Absent(_))),
                         _ => false,
                     },
+                    Outgoing::Request { method: called, .. } => method.as_ref() == "initialized"
+                        && called == "client/registerCapability" && self.watching.0,
                     Outgoing::Success { .. } | Outgoing::Failure { .. } => false,
                 })
             },
@@ -1993,6 +2029,48 @@ impl Server
                     );
                     outcome.messages.extend(republished.messages);
                     outcome.log.extend(republished.log);
+                }
+                for message in &outcome.messages {
+                    workspace.published_by(peer, message);
+                }
+                outcome
+            },
+            (Phase::Running, "initialized") if self.watching.0 => {
+                Outcome::say(register(RegistrationParams::watched_files()))
+            },
+            (Phase::Running, "workspace/didChangeWatchedFiles") => {
+                let Ok(WatchedFilesParams { changes }) = serde_json::from_value(params)
+                else {
+                    return Outcome::quiet();
+                };
+                let mut changed: Vec<PathBuf> = changes
+                    .iter()
+                    .map(|change| named_path(&change.uri.path()))
+                    .collect();
+                changed.sort_unstable();
+                changed.dedup();
+                let names = |named: &[PathBuf]| {
+                    changed.iter().any(|path| named.binary_search(path).is_ok())
+                };
+                let mut outcome = Outcome::quiet();
+                let peer = self.peer;
+                for (uri, held) in &mut workspace.documents {
+                    let Maybe::Present(document) = held.own_mut(peer)
+                    else {
+                        continue;
+                    };
+                    if !names(&document.named) {
+                        continue;
+                    }
+                    let rechecked = synchronised(
+                        uri,
+                        document,
+                        self.verbosity,
+                        self.style.spelling,
+                        self.quiet,
+                    );
+                    outcome.messages.extend(rechecked.messages);
+                    outcome.log.extend(rechecked.log);
                 }
                 for message in &outcome.messages {
                     workspace.published_by(peer, message);
@@ -2397,7 +2475,7 @@ impl Workspace
         Outgoing::Success { result: Answer::Nothing, .. } => !self.documents.contains_key(uri),
         Outgoing::Success { result: Answer::Edits(_), .. } => self.documents.contains_key(uri),
         Outgoing::Failure { ref error, .. } => error.code == ErrorCode::REQUEST_FAILED,
-        Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
+        Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
     })]
     fn format(
         &self,
@@ -2510,6 +2588,18 @@ fn initial_offsets(params: &Value) -> LabelOffsets
         .unwrap_or_default()
 }
 
+/// Whether the client `initialize` names in `params` watches files for the
+/// server once asked; not when the parameters do not read.
+///
+/// # Specification
+/// trivial.
+fn initial_watching(params: &Value) -> WatchesFiles
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.watches_files())
+        .unwrap_or_default()
+}
+
 /// The range of `form`, the form under `document`'s caret in the revision
 /// its session judged.
 ///
@@ -2590,6 +2680,7 @@ fn synchronised(
     let form = caret_range(document, rechecked.form);
     let (published, holding) = publishable(&rechecked.diagnostics, &form);
     document.checked = rechecked.diagnostics;
+    document.named = rechecked.named;
     Outcome {
         messages: vec![publish(PublishParams {
             uri: uri.clone(),
@@ -3155,6 +3246,123 @@ mod tests
             )),
             "a parameter typed by a function, by its written type"
         );
+    }
+
+    #[test]
+    fn a_watching_client_is_asked_to_watch_every_source()
+    {
+        let started = |watching: &str| {
+            let mut server = Connected::default();
+            let initialize = format!(
+                r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
+                {{"workspace":{{"didChangeWatchedFiles":{{"dynamicRegistration":{watching}}}}}}}}}}}"#
+            );
+            let _answered = send(&mut server, Json(&initialize));
+            server
+        };
+        let initialized = Json(r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#);
+        let mut watching = started("true");
+        assert_eq!(
+            send(&mut watching, initialized),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":"client/registerCapability","method":"client/registerCapability",
+                    "params":{"registrations":[{"id":"workspace/didChangeWatchedFiles",
+                        "method":"workspace/didChangeWatchedFiles",
+                        "registerOptions":{"watchers":[{"globPattern":"**/*.gandr"}]}}]}}]"#
+            )),
+            "a client that registers watchers dynamically is asked to watch every gandr source"
+        );
+        assert_eq!(
+            send(
+                &mut watching,
+                Json(r#"{"jsonrpc":"2.0","id":"client/registerCapability","result":null}"#)
+            ),
+            wire(Json("[]")),
+            "the client's answer is read and left"
+        );
+        assert_eq!(
+            send(&mut started("false"), initialized),
+            wire(Json("[]")),
+            "a client that does not is asked nothing"
+        );
+    }
+
+    #[test]
+    fn a_changed_file_rechecks_the_copies_whose_closure_names_it()
+    {
+        let directory = std::env::temp_dir().join(format!("gandr-watched-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let sources = [
+            ("base.gandr", "def one : Integer ;\ndef one = 1 ;\n"),
+            (
+                "importer.gandr",
+                "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n",
+            ),
+            (
+                "waiting.gandr",
+                "import \"./later.gandr\" ;\ndef three : Integer ;\ndef three = four ;\n",
+            ),
+            ("alone.gandr", "def five : Integer ;\ndef five = 5 ;\n"),
+        ];
+        for (file, text) in sources {
+            std::fs::write(directory.join(file), text).expect("the source is written");
+        }
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        let mut server = initialized();
+        for (file, text) in sources.into_iter().skip(1) {
+            let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                "textDocument": {"uri": uri(file), "languageId": "gandr", "version": 1_i32, "text": text}}});
+            let _published = send(&mut server, Json(&open.to_string()));
+        }
+        let changed = |server: &mut Connected, file: &str, kind: u8| {
+            let notification = serde_json::json!({"jsonrpc": "2.0",
+                "method": "workspace/didChangeWatchedFiles",
+                "params": {"changes": [{"uri": uri(file), "type": kind}]}});
+            let published = send(server, Json(&notification.to_string()));
+            published
+                .as_array()
+                .map(|messages| {
+                    messages
+                        .iter()
+                        .map(|message| {
+                            (
+                                message["params"]["uri"].as_str().map(String::from),
+                                message["params"]["diagnostics"]
+                                    .as_array()
+                                    .map_or(0_usize, Vec::len),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        std::fs::write(
+            directory.join("base.gandr"),
+            "def uno : Integer ;\ndef uno = 1 ;\n",
+        )
+        .expect("the sibling is rewritten");
+        let rewritten = changed(&mut server, "base.gandr", 2);
+        assert!(
+            matches!(rewritten.as_slice(), [(Some(published), errors)] if *published == uri("importer.gandr") && *errors > 0),
+            "a sibling rewritten without `one` republishes its importer alone, now refused: {rewritten:?}"
+        );
+        std::fs::write(
+            directory.join("later.gandr"),
+            "def four : Integer ;\ndef four = 4 ;\n",
+        )
+        .expect("the missing import is written");
+        assert_eq!(
+            changed(&mut server, "later.gandr", 1),
+            [(Some(uri("waiting.gandr")), 0_usize)],
+            "a missing import written republishes the copy that waited for it, now clean"
+        );
+        assert_eq!(
+            changed(&mut server, "elsewhere.gandr", 1),
+            [],
+            "a file no closure names rechecks nothing"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
     }
 
     #[test]

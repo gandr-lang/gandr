@@ -177,6 +177,7 @@ pub use crate::component::Laid;
 pub use crate::component::ParsedBytes;
 pub use crate::component::laid;
 pub use crate::component::lay_out;
+pub use crate::component::named_path;
 pub use crate::compose::Admission;
 pub use crate::compose::ComposeFault;
 pub use crate::compose::Composed;
