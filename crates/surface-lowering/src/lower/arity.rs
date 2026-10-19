@@ -2493,10 +2493,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `domain` is the operand written before `=>`.
-    /// - ensures: the domains [`Self::domains`] lists, left to right; nothing
-    ///   for a domain list naming a binder, a telescope, whose lambdas
-    ///   [`Self::telescope_function`] binds, or for a node the tree does not
-    ///   hold. The operand store is left as found.
+    /// - ensures: for a domain list naming a binder, a telescope `(x : A, …)`,
+    ///   the type each entry declares, left to right; otherwise the domains
+    ///   [`Self::domains`] lists, left to right; nothing for a node the tree
+    ///   does not hold. The operand store is left as found.
     /// - fails: the list's refusal.
     /// - panics: none.
     ///
@@ -2505,9 +2505,11 @@ impl<'source> Lowerer<'_, 'source>
     /// and [`LoweringRefusal::BudgetExceeded`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a lambda under `A => B` binds `A`, and two nested
-    ///   under `(A, C) => B` bind `A` then `C`.
+    /// - hypothesis: L3 — a lambda under `A => B` binds `A`, two nested under
+    ///   `(A, C) => B` bind `A` then `C`, and two nested under the telescope
+    ///   `(a : A, C) => B` bind `A` then `C`.
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
+    /// - witness: `lower::native::tests::a_lambda_under_a_telescope_alias_lowers_as_under_its_dependent_arrows_815`
     #[spec(
         captures: before = self.operands.len(),
         ensures: self.operands.len() == before,
@@ -2523,12 +2525,14 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(None);
         };
         let placed = Placed::of(domain, tree);
-        if self
-            .domain_entries(placed, frame)?
+        let entries = self.domain_entries(placed, frame)?;
+        if entries
             .iter()
             .any(|entry| matches!(entry.key, Key::Label(..)))
         {
-            return Ok(None);
+            return Ok(Some(
+                entries.iter().map(|entry| entry.held.at().node).collect(),
+            ));
         }
         let start = self.operands.len();
         let listed = self.domains(placed);
@@ -2536,6 +2540,43 @@ impl<'source> Lowerer<'_, 'source>
         listed?;
 
         Ok(Some(domains))
+    }
+
+    /// The type the binder of a dependent arrow's domain `domain` declares,
+    /// read under `frame`: the `A` of `(x : A) -> C`.
+    ///
+    /// # Specification
+    /// - requires: `domain` is the operand written before `->`.
+    /// - ensures: the entry's type when `domain` is a parenthesised type
+    ///   holding exactly one entry, `k : A`; nothing otherwise.
+    /// - fails: the list's refusal.
+    /// - panics: none.
+    /// - executable: none — the entry is read off the syntax tree, which a
+    ///   predicate could check only by repeating the read.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`], [`LoweringRefusal::UnknownMold`]
+    /// and [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda under `(a : Empty) -> C` binds `Empty`, as
+    ///   one under `Empty -> C` does.
+    /// - witness: `lower::native::tests::a_lambda_under_a_telescope_alias_lowers_as_under_its_dependent_arrows_815`
+    pub(super) fn binder_type(
+        &mut self,
+        domain: NodeIndex,
+        frame: Frame,
+    ) -> Result<Option<NodeIndex>, LoweringRefusal<'source>>
+    {
+        let Some(tree) = self.tree.node(domain)
+        else {
+            return Ok(None);
+        };
+        let entries = self.domain_entries(Placed::of(domain, tree), frame)?;
+        Ok(match *entries.as_slice() {
+            [ref entry] if matches!(entry.key, Key::Label(..)) => Some(entry.held.at().node),
+            [] | [_] | [_, _, ..] => None,
+        })
     }
 
     /// Classify a computation arrow whose domain names its binder: the

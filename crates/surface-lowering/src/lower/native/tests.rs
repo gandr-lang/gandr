@@ -1968,6 +1968,44 @@ fn a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808()
 }
 
 #[test]
+fn a_lambda_under_a_telescope_alias_lowers_as_under_its_dependent_arrows_815()
+{
+    for (alias, arrow, body) in [
+        (
+            "(a : Empty, b : Integer) => Integer",
+            "+U ((a : Empty) -> (b : Integer) -> -F Integer)",
+            "thunk { fn (a) { fn (b) { case a {} } } }",
+        ),
+        (
+            "(a : One) => Path(One, a, a)",
+            "+U ((a : One) -> -F Path(One, a, a))",
+            "thunk { fn (a) { case a { Only => here(Only) } } }",
+        ),
+        (
+            "(a : One, Integer) => Path(One, a, a)",
+            "+U ((a : One) -> Integer -> -F Path(One, a, a))",
+            "thunk { fn (x) { fn (n) { case x { Only => here(Only) } } } }",
+        ),
+    ] {
+        let mut arena = CoreArena::new();
+        let source = alloc::format!(
+            "data Empty : Type {{}}\ndata One : Type {{\n  Only : One;\n}}\ndef aliased : {alias} ;\ndef aliased = {body} ;\ndef thunked : {arrow} ;\ndef thunked = {body} ;\n"
+        );
+        let module = lowered(SourceText::from(source.as_str()), &mut arena);
+        assert_eq!(
+            gandr_core_term::equal_certificate_syntax(
+                &arena,
+                body_named(&module, SurfaceName::from("aliased")),
+                body_named(&module, SurfaceName::from("thunked")),
+            ),
+            gandr_core_term::CertificateEquality::Equal,
+            "`{body}` under `{alias}` lowers as under `{arrow}`"
+        );
+        assert_accepted(&judged(&module, &mut arena));
+    }
+}
+
+#[test]
 fn an_or_pattern_settles_each_alternative()
 {
     let mut arena = CoreArena::new();
