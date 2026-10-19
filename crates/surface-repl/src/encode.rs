@@ -18,7 +18,11 @@ use alloc::vec::Vec;
 use std::path::Path;
 
 use anodized::spec;
+use gandr_core_incremental::ContentNode;
+use gandr_core_incremental::ItemCheckpoint;
+use gandr_core_incremental::Reference;
 use gandr_core_incremental::Resume;
+use gandr_core_incremental::Typing;
 use gandr_core_incremental::submitted;
 use gandr_surface_corpus::Outcome;
 use gandr_surface_diagnostics::Diagnostic;
@@ -135,13 +139,16 @@ pub enum Subject<'name>
         name: &'name str,
     },
     /// The probe declaration the prompt wraps an expression or a type in:
-    /// its type and, where the session evaluates it, its value answer the
-    /// line, and it is kept when nothing is refused, so the next line may use
-    /// the name.
+    /// its type answers the line, and, where the session evaluates it, its
+    /// value answers too — a type answers its sort alone, the session not
+    /// evaluating a universe — and it is kept when nothing is refused, so the
+    /// next line may use the name.
     Prompt
     {
         /// The probe's name.
         name: &'name str,
+        /// The line's offset within the wrapped probe text.
+        line_start: ByteOffset,
     },
 }
 
@@ -226,6 +233,102 @@ fn typed_line(
         Maybe::Present(ref spelling) => format!("{name} : {spelling}"),
         Maybe::Absent(_) => name.to_string(),
     }
+}
+
+/// The class of the type the probe synthesized, read off the type value.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Synthesis
+{
+    /// A sort — the probe's type is a universe node, so it answers its
+    /// sort alone, unevaluated.
+    Sort,
+    /// A type the session evaluates.
+    Type,
+}
+
+/// The class of the type the probe synthesized: a sort the probe answers
+/// alone, or a type the session evaluates.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Synthesis::Sort` when the probe's synthesized type is a universe
+///   node (`ContentNode::Universe`); `Synthesis::Type` for any other node, or
+///   for no checkpoint at all.
+/// - provides: the discriminator for skipping evaluation of a type at the
+///   prompt.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a universe's node is a `ContentNode::Universe`; a
+///   non-universe type's node is not.
+/// - witness: `tests::repl_loop::a_type_reports_its_sort`
+#[spec(ensures: |ret| ret == match resume {
+    Maybe::Absent(_) => Synthesis::Type,
+    Maybe::Present(resume) => {
+        let wanted = AsRef::<str>::as_ref(&name).as_bytes();
+        let named = |checkpoint: &&ItemCheckpoint| {
+            matches!(
+                checkpoint.content().reference(),
+                Reference::Item { key, .. } if key.as_ref() == wanted
+            )
+        };
+        resume
+            .checkpoints()
+            .items()
+            .iter()
+            .rfind(named)
+            .map_or(Synthesis::Type, |checkpoint| match *checkpoint.typing() {
+                Typing::Synthesised { ref produced, .. } => produced
+                    .nodes()
+                    .first()
+                    .map_or(Synthesis::Type, |node| {
+                        if matches!(node.former(), ContentNode::Universe { .. }) {
+                            Synthesis::Sort
+                        } else {
+                            Synthesis::Type
+                        }
+                    }),
+                Typing::Data
+                | Typing::Checked { .. }
+                | Typing::Owed
+                | Typing::Suspended
+                | Typing::Refused(_) => Synthesis::Type,
+            })
+    }
+})]
+fn synthesis(
+    resume: Maybe<&Resume, submitted::Absent>,
+    name: SourceFragment<'_>,
+) -> Synthesis
+{
+    let Maybe::Present(resume) = resume
+    else {
+        return Synthesis::Type;
+    };
+    let wanted = AsRef::<str>::as_ref(&name).as_bytes();
+    let named = |checkpoint: &&ItemCheckpoint| {
+        matches!(
+            checkpoint.content().reference(),
+            Reference::Item { key, .. } if key.as_ref() == wanted
+        )
+    };
+    let Some(checkpoint) = resume.checkpoints().items().iter().rfind(named)
+    else {
+        return Synthesis::Type;
+    };
+    let Typing::Synthesised { ref produced, .. } = *checkpoint.typing()
+    else {
+        return Synthesis::Type;
+    };
+    produced.nodes().first().map_or(Synthesis::Type, |node| {
+        if matches!(node.former(), ContentNode::Universe { .. }) {
+            Synthesis::Sort
+        }
+        else {
+            Synthesis::Type
+        }
+    })
 }
 
 /// A repair card as one diagnostic line.
@@ -314,18 +417,24 @@ fn evaluation_line(evaluation: &Evaluation<'_>) -> (OutKind, String)
 /// - ensures: the diagnostic's spans, annotations, contexts and fix are clamped
 ///   to the line's bytes, and its excerpt is the line at `line_start` on line
 ///   one, so the renderer quotes the line and marks the line's bytes; a span
-///   that fell outside the line is left unlocated.
+///   that fell outside the line is left unlocated, and an annotation that fell
+///   outside the line is clamped to a zero-width span at the line's start, the
+///   same way the primary span and the context locus are unlocated.
 /// - provides: the line's coordinates for a probe's refusal.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the in-place re-ranging has no return-value observer;
 ///   the clamped spans are witnessed end to end by
-///   `tests::repl_loop::a_malformed_expression_carries_the_line_s_range`.
+///   `tests::repl_loop::a_malformed_expression_carries_the_line_s_range`, and
+///   the annotation's clamp is witnessed by
+///   `encode::tests::an_out_of_line_annotation_is_clamped_to_the_line`.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a refusal at the prompt carries the line's range, not the
-///   probe's.
+///   probe's, and an out-of-line annotation is clamped to the line the same way
+///   the primary span and the context locus are unlocated.
 /// - witness: `tests::repl_loop::a_malformed_expression_carries_the_line_s_range`
+/// - witness: `encode::tests::an_out_of_line_annotation_is_clamped_to_the_line`
 fn re_range(
     diagnostic: &mut Diagnostic,
     line: SourceText<'_>,
@@ -350,7 +459,9 @@ fn re_range(
         Maybe::Absent(reason) => Maybe::Absent(reason),
     };
     for annotation in &mut diagnostic.annotations {
-        annotation.locus.span = clamp(annotation.locus.span).unwrap_or(annotation.locus.span);
+        annotation.locus.span = clamp(annotation.locus.span).unwrap_or_else(|| {
+            ByteSpan::new(line_start, line_start).unwrap_or(annotation.locus.span)
+        });
     }
     for context in &mut diagnostic.contexts {
         context.locus = match context.locus {
@@ -412,9 +523,10 @@ fn re_range(
 ///   inside the chunk. A probe answers instead with the one type line `: T`. A
 ///   prompt probe answers with the declaration's type line and, where the
 ///   session evaluates it, its value line, and its refusal is re-ranged to the
-///   line. The disposition keeps the chunk, with the standings of the whole
-///   revision, exactly when the subject is declarations or a prompt probe and
-///   nothing was refused.
+///   line; a type at the prompt answers its sort alone — the session does not
+///   evaluate a universe, so no stuck note follows. The disposition keeps the
+///   chunk, with the standings of the whole revision, exactly when the subject
+///   is declarations or a prompt probe and nothing was refused.
 /// - provides: the one encoding every face draws, so the batch transcript, the
 ///   terminal and a later interface show the same lines.
 /// - fails: never.
@@ -480,13 +592,13 @@ pub fn encode_submission(
     let mut refused = false;
     for diagnostic in entries(&step, Verb::Check(Goals::Reported)).spelling(spelling) {
         let mut diagnostic = diagnostic;
-        if let Subject::Prompt { name } = subject {
-            let line_start =
-                ByteOffset::from(usize::from(chunk).saturating_add(format!("def {name} = ").len()));
+        if let Subject::Prompt { line_start, .. } = subject {
+            let absolute =
+                ByteOffset::from(usize::from(chunk).saturating_add(usize::from(line_start)));
             re_range(
                 &mut diagnostic,
                 SourceText::from(echo.source.as_str()),
-                line_start,
+                absolute,
             );
         }
         let rendered = render(&diagnostic, style, Verbosity::User).to_string();
@@ -552,14 +664,14 @@ pub fn encode_submission(
                         }
                     },
                     (
-                        Subject::Prompt { name: probe },
+                        Subject::Prompt { name: probe, .. },
                         &(Outcome::Checks(_) | Outcome::Runs(_) | Outcome::Normalizes(_)),
                     ) if probe == name => {
-                        lines.push((
-                            OutKind::Type,
-                            typed_line(fragment, &type_of(resume, fragment)),
-                        ));
-                        if let Maybe::Present(evaluation) = evaluate(declaration, program) {
+                        let spelling = type_of(resume, fragment);
+                        lines.push((OutKind::Type, typed_line(fragment, &spelling)));
+                        if synthesis(resume, fragment) != Synthesis::Sort
+                            && let Maybe::Present(evaluation) = evaluate(declaration, program)
+                        {
                             lines.push(evaluation_line(&evaluation));
                         }
                     },
@@ -589,5 +701,95 @@ pub fn encode_submission(
             lines,
         },
         disposition,
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec::Vec;
+    use std::path::PathBuf;
+
+    use gandr_surface_diagnostics::AnnotationKind;
+    use gandr_surface_diagnostics::Class;
+    use gandr_surface_diagnostics::Compared;
+    use gandr_surface_diagnostics::DiagnosticAnnotation;
+    use gandr_surface_diagnostics::DiagnosticDetail;
+    use gandr_surface_diagnostics::Message;
+    use gandr_surface_diagnostics::MessageKey;
+    use gandr_surface_diagnostics::Unsettlement;
+    use gandr_surface_diagnostics::fix;
+    use gandr_surface_diagnostics::producer;
+    use gandr_surface_diagnostics::report_note;
+    use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::ByteSpan;
+    use gandr_surface_syntax::SourceText;
+    use quenchant_shape::shape::Maybe;
+
+    use super::re_range;
+
+    /// An out-of-line annotation is clamped to the line the same way the
+    /// primary span and the context locus are unlocated: the primary span
+    /// becomes `OutsideText`, and the annotation's span becomes a zero-width
+    /// span at the line's start, not the probe's offset.
+    #[test]
+    fn an_out_of_line_annotation_is_clamped_to_the_line()
+    {
+        let line = SourceText::from("nope");
+        let line_start = ByteOffset::from(11_usize);
+        let mut diagnostic = gandr_surface_diagnostics::Diagnostic {
+            path: PathBuf::new(),
+            severity: gandr_surface_diagnostics::Severity::Error,
+            identifier: Maybe::Absent(
+                gandr_surface_diagnostics::report_identifier::Absent::Statement,
+            ),
+            message: Message {
+                key: MessageKey::Unsettled(Unsettlement::Obligations),
+                text: String::from("`nope` is not defined"),
+            },
+            detail: DiagnosticDetail {
+                class: Class::Unsettled(Unsettlement::Obligations),
+                title: String::from("unsettled"),
+                compared: Compared {
+                    expected: Maybe::Absent(gandr_surface_diagnostics::spelling::Absent::Unspelled),
+                    found: Maybe::Absent(gandr_surface_diagnostics::spelling::Absent::Unspelled),
+                },
+                producer: Maybe::Absent(producer::Absent::Statement),
+            },
+            span: Maybe::Present(
+                ByteSpan::new(ByteOffset::from(8_usize), ByteOffset::from(9_usize)).unwrap(),
+            ),
+            annotations: Vec::new(),
+            contexts: Vec::new(),
+            hypotheses: Vec::new(),
+            note: Maybe::Absent(report_note::Absent::Statement),
+            expression: Maybe::Absent(gandr_surface_diagnostics::expression::Absent::Unlocated),
+            excerpt: Maybe::Absent(gandr_surface_diagnostics::report_span::Absent::OutsideText),
+            fix: Maybe::Absent(fix::Absent::Unproposed),
+        };
+        diagnostic.annotations.push(DiagnosticAnnotation {
+            kind: AnnotationKind::Context,
+            locus: gandr_surface_diagnostics::Locus {
+                span: ByteSpan::new(ByteOffset::from(4_usize), ByteOffset::from(7_usize)).unwrap(),
+                line: 1_usize,
+                column: 5_usize,
+            },
+            label: String::from("context"),
+        });
+        re_range(&mut diagnostic, line, line_start);
+        assert!(
+            matches!(
+                diagnostic.span,
+                Maybe::Absent(gandr_surface_diagnostics::report_span::Absent::OutsideText)
+            ),
+            "the primary span is unlocated: {:?}",
+            diagnostic.span
+        );
+        let annotation = &diagnostic.annotations[0];
+        assert_eq!(
+            annotation.locus.span,
+            ByteSpan::new(ByteOffset::from(11_usize), ByteOffset::from(11_usize)).unwrap(),
+            "the annotation is clamped to the line's start, not the probe's offset"
+        );
     }
 }
