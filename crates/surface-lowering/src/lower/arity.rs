@@ -196,6 +196,7 @@ use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::origin::Origin;
+use crate::resolve::Mentioned;
 use crate::resolve::OperandCount;
 use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
@@ -2108,8 +2109,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `site` is a projection; `pieces` is its reading.
     /// - ensures: planned when the selection is one link off a name whose
     ///   binder or declaration was written with the type `#{l : A, …}`: the
-    ///   entry the label names, projected along the nesting, the name read as a
-    ///   value under the form's frame; nothing is planned otherwise.
+    ///   entry the label names, the name read as a value under the form's
+    ///   frame, with the stated type and the label, so the mint projects a
+    ///   record by its label and a dependent record along the nesting; nothing
+    ///   is planned otherwise.
     /// - fails: the unresolved-name refusal for a label the type lacks; the
     ///   wrong-sort refusal where no computation is read; the name's own
     ///   resolution refusals.
@@ -2151,8 +2154,8 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
-        let Maybe::Present(stated) =
-            self.stated_entries(site, declared, Former::TelescopeType, Thunked(false))?
+        let Maybe::Present((form, stated)) =
+            self.stated_form(site, declared, Former::TelescopeType, Thunked(false))?
         else {
             return Ok(Planned(false));
         };
@@ -2163,14 +2166,19 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Planned(false));
         }
         let (Place(index), _) = Self::labelled_in(&stated, self.name_at(selected), selected)?;
+        let label = FieldLabel::from(String::from(self.name_at(selected).as_ref()));
         let frame = self.require(site, Produced::Computation)?;
         self.read(target.node, Reading::Value(frame));
         self.plan(
             site,
-            Plan::Select(target.node, Observed {
-                index,
-                count: stated.len(),
-            }),
+            Plan::Select(
+                target.node,
+                Observed {
+                    index,
+                    count: stated.len(),
+                },
+                Some((form, label)),
+            ),
         );
 
         Ok(Planned(true))
@@ -2196,7 +2204,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — both positions of a dependent pair, the second's type
     ///   reading the first, and a third position refused.
     /// - witness: `lower::arity::tests::a_selection_by_position_projects_a_pair_401`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Select(_, Observed { count: 2, .. }))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Select(_, Observed { count: 2, .. }, None))))]
     pub(super) fn positional(
         &mut self,
         site: Site,
@@ -2222,10 +2230,14 @@ impl<'source> Lowerer<'_, 'source>
         self.read(target.node, Reading::Value(frame));
         self.plan(
             site,
-            Plan::Select(target.node, Observed {
-                index,
-                count: 2_usize,
-            }),
+            Plan::Select(
+                target.node,
+                Observed {
+                    index,
+                    count: 2_usize,
+                },
+                None,
+            ),
         );
 
         Ok(Planned(true))
@@ -2701,13 +2713,10 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = stretch(&self.parameters, binders);
-        if !written
-            .iter()
-            .any(|parameter| bool::from(self.names_own_binder(last, parameter.frame)))
-        {
+        if !bool::from(self.binds_any(binders, last)) {
             return self.mint_record_type(fields, sink, origin);
         }
+        let written = stretch(&self.parameters, binders);
         let mut nested = match self.value_type_at(last) {
             Maybe::Present(nested) => nested,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -2995,12 +3004,16 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(Lowered::Computation(observing))
     }
 
-    /// Mint a selection: the dependent record projected along the nesting to
-    /// the entry it selects.
+    /// Mint a selection: a record projected at the label it selects, or the
+    /// dependent record projected along the nesting to the entry it selects.
     ///
     /// # Specification
-    /// - requires: the subject is already minted or absent.
-    /// - ensures: the subject projected at component one once per entry before
+    /// - requires: the subject is already minted or absent; `labelled`, when
+    ///   present, is the type over labels the subject is stated with and the
+    ///   label selected.
+    /// - ensures: when the stated type mints as a record, as
+    ///   [`Self::binds_any`] reads it, the record projection at the label;
+    ///   otherwise the subject projected at component one once per entry before
     ///   the selected one, each projection but the last read as the value it
     ///   returns, then at component zero unless the entry is the last;
     ///   component zero of a type of one entry; every node with the written
@@ -3009,13 +3022,16 @@ impl<'source> Lowerer<'_, 'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::selection`].
+    /// - hypothesis: L3 — as [`Self::selection`], and a selection off a record
+    ///   no field depends on.
     /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
+    /// - witness: `lower::arity::tests::a_selection_off_a_record_projects_its_label_855`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
     pub(super) fn mint_select(
         &self,
         subject: NodeIndex,
         selected: Observed,
+        labelled: Option<&(NodeIndex, FieldLabel)>,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
@@ -3024,6 +3040,16 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(held) => held,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
+        if let Some(&(stated, ref label)) = labelled
+            && let Some(&Plan::RecordType(_, binders, last)) = self.plans.get(usize::from(stated))
+            && !bool::from(self.binds_any(binders, last))
+        {
+            let id = sink
+                .arena
+                .computation_record_projection(held, label.clone());
+            sink.origins.record_computation(id, origin);
+            return Maybe::Present(Lowered::Computation(id));
+        }
         let mut sides = path(selected);
         if sides.is_empty() {
             sides.push(Side::Left);
@@ -3046,6 +3072,37 @@ impl<'source> Lowerer<'_, 'source>
         projected.map_or(Maybe::Absent(lowered::Absent::Unminted), |id| {
             Maybe::Present(Lowered::Computation(id))
         })
+    }
+
+    /// Whether the entries of a type over labels, `binders` its written
+    /// binders and `last` its last entry's type, name any of the binders: a
+    /// type over labels that does mints as dependent pairs, one that does not
+    /// as a record.
+    ///
+    /// # Specification
+    /// - requires: every mention in the entries has been recorded.
+    /// - ensures: whether [`Self::names_own_binder`] reads some binder of
+    ///   `binders` named from `last`.
+    /// - provides: the one record-or-pairs decision the type's mint and a
+    ///   selection's mint share.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::mint_labelled_type`].
+    /// - witness: `lower::arity::tests::a_later_label_reading_an_earlier_one_lowers_to_nested_pairs`
+    #[spec(ensures: |ret| bool::from(ret) == stretch(&self.parameters, binders).iter().any(|parameter| bool::from(self.names_own_binder(last, parameter.frame))))]
+    fn binds_any(
+        &self,
+        binders: Stretch,
+        last: NodeIndex,
+    ) -> Mentioned
+    {
+        stretch(&self.parameters, binders)
+            .iter()
+            .map(|parameter| self.names_own_binder(last, parameter.frame))
+            .find(|&mentioned| bool::from(mentioned))
+            .unwrap_or_default()
     }
 
     /// Mint a telescope Π: its entries' dependent arrows over the returner of

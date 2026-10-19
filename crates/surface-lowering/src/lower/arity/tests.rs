@@ -201,6 +201,10 @@ fn shown(
                         Root::Value(tuple),
                     ])
                 },
+                Some(&Computation::RecordProjection(record, ref label)) => (
+                    format!("field.{}", label.as_ref()),
+                    vec![Root::Value(record)],
+                ),
                 Some(&Computation::Project(side, body)) => {
                     (format!("project-{side:?}"), vec![Root::Computation(body)])
                 },
@@ -560,6 +564,25 @@ fn a_selection_projects_a_dependent_record_along_its_nesting()
     assert!(
         matches!(refused(source), LoweringRefusal::UnresolvedName { .. }),
         "a label the type lacks names nothing"
+    );
+}
+
+/// A selection off a name written with a record no field depends on, which
+/// mints as the record type, projects the record at its label, as a record
+/// pattern does; a dependent record still projects along its nesting (#855).
+#[test]
+fn a_selection_off_a_record_projects_its_label_855()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def by_label(r : #{n : Integer, s : String}) -> -F String { return r.s }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "by_label"),
+        ["thunk", "lambda", "return", "nested", "field.s", "#0"],
+        "the record is projected at the label"
     );
 }
 

@@ -35,3 +35,15 @@ def numbered = thunk { become renamed(#{n = 3, s = "x"}) } ;
 @[ runs("4") ]
 def widened : +U (-F Integer) ;
 def widened = thunk { become renamed(#{.a = unit, .n = 4, .s = "y"}) } ;
+
+/// A field selected by its label off a record no field depends on reads the
+/// field the pattern `#{.n = m}` reads (#855).
+@[ checks ]
+def selected(r : #{n : Integer, s : String}) -> -F Integer {
+  r.n
+}
+
+/// `selected` answers the field its label names.
+@[ runs("3") ]
+def picked : +U (-F Integer) ;
+def picked = thunk { become selected(#{.s = "x", .n = 3}) } ;
