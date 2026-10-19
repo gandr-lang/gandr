@@ -102,6 +102,7 @@ use crate::protocol::InitializeParams;
 use crate::protocol::InitializeResult;
 use crate::protocol::InlineCompletionItem;
 use crate::protocol::InlineCompletionList;
+use crate::protocol::Location;
 use crate::protocol::MarkupContent;
 use crate::protocol::PositionParams;
 use crate::protocol::PublishParams;
@@ -1464,6 +1465,12 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
                 },
+            (Phase::Running, "textDocument/definition" | "textDocument/typeDefinition") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Definition(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
+                },
             (Phase::Running, "textDocument/codeLens" | "textDocument/codeAction") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Lenses(_) | Answer::Actions(_), .. } => true,
@@ -1596,6 +1603,15 @@ impl Server
                             params.position,
                             self.style,
                         ),
+                    ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "textDocument/definition" | "textDocument/typeDefinition") => {
+                match serde_json::from_value::<PositionParams>(params) {
+                    Ok(params) => success(
+                        id,
+                        workspace.definition(&params.text_document.uri, self.peer, params.position),
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
@@ -1906,7 +1922,7 @@ impl Workspace
             && tokens.data.as_ref().len().is_multiple_of(5)
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), Window::Whole | Window::Within(_) => true },
         Answer::Initialize(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
-            | Answer::Hover(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Actions(_) => false,
+            | Answer::Hover(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Actions(_) | Answer::Definition(_) => false,
     })]
     fn tokens(
         &self,
@@ -1959,7 +1975,7 @@ impl Workspace
             list.items.len() <= held.view(peer).proposals.len().saturating_add(8))
             && list.items.iter().all(|item| item.range.start <= position && position <= item.range.end),
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
-            | Answer::Hover(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Actions(_) => false,
+            | Answer::Hover(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Actions(_) | Answer::Definition(_) => false,
     })]
     fn inline(
         &self,
@@ -2089,6 +2105,55 @@ impl Workspace
             }),
             (Maybe::Absent(_), None) => Answer::Nothing,
         }
+    }
+
+    /// The definition of the copy of the document at `uri` that `peer` is
+    /// answered from, at `position`: the location of the head of the
+    /// declaration whose name holds the position.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI and any position are admitted.
+    /// - ensures: an unknown document yields Nothing; a held document yields
+    ///   the location of the head of the declaration whose name holds the
+    ///   position, or Nothing when no declaration's name holds it.
+    /// - provides: the answers to `textDocument/definition` and
+    ///   `textDocument/typeDefinition`, which read the document's text alone.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a position inside a declaration's name, at its end,
+    ///   inside its body and over an unknown document are asserted at their
+    ///   exact wire answers.
+    /// - witness: `server::tests::definition_answers_a_known_declaration`
+    #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Definition(_))
+        && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
+    fn definition(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        position: Position,
+    ) -> Answer
+    {
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Answer::Nothing;
+        };
+        let Maybe::Present(found) = document.text.reading().declarations()
+        else {
+            return Answer::Nothing;
+        };
+        let Some(named) = found.iter().find(|found| {
+            found.symbol.selection_range.start <= position
+                && position <= found.symbol.selection_range.end
+        })
+        else {
+            return Answer::Nothing;
+        };
+        Answer::Definition(Location {
+            uri: uri.clone(),
+            range: named.head,
+        })
     }
 
     /// The answer to a formatting request `id` over `window` of the copy of
@@ -2670,7 +2735,9 @@ mod tests
                         "documentFormattingProvider":true,
                         "documentRangeFormattingProvider":true,
                         "codeLensProvider":{"resolveProvider":false},
-                        "codeActionProvider":true},
+                        "codeActionProvider":true,
+                        "definitionProvider":true,
+                        "typeDefinitionProvider":true},
                     "serverInfo":{"name":"gandr","version":""#,
                 env!("CARGO_PKG_VERSION"),
                 r#""}}}]"#
@@ -2817,6 +2884,76 @@ mod tests
                     "file:///tmp/closed.gandr",
                     r#","positions":[]"#
                 ),
+                wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":null}]"#)),
+                "{method} about a document the server does not hold answers null"
+            );
+        }
+    }
+
+    #[test]
+    fn definition_answers_a_known_declaration()
+    {
+        let mut server = server_over_the_known_document();
+        let ask = |server: &mut Connected, method: &str, uri: &str, character: u32| {
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":9,"method":"{method}","params":{{
+                    "textDocument":{{"uri":"{uri}"}},
+                    "position":{{"line":0,"character":{character}}}}}}}"#
+            );
+            send(server, Json(&request))
+        };
+        let known = "file:///tmp/example.gandr";
+        // `def f = 42 ;` has no brace, so the head is the whole form.
+        assert_eq!(
+            ask(&mut server, "textDocument/definition", known, 4),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":9,"result":{
+                    "uri":"file:///tmp/example.gandr",
+                    "range":{"start":{"line":0,"character":0},"end":{"line":0,"character":12}}}}]"#
+            )),
+            "on the name: the declaration's head, the whole form for a brace-less declaration"
+        );
+        assert_eq!(
+            ask(&mut server, "textDocument/typeDefinition", known, 4),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":9,"result":{
+                    "uri":"file:///tmp/example.gandr",
+                    "range":{"start":{"line":0,"character":0},"end":{"line":0,"character":12}}}}]"#
+            )),
+            "type definition answers the same head"
+        );
+        // A position in the body, not the name, answers nothing.
+        assert_eq!(
+            ask(&mut server, "textDocument/definition", known, 8),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":null}]"#)),
+            "inside `42`: no declaration's name holds the position"
+        );
+        // A braced form's head spans from the form's start to its opening brace.
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/braced.gandr","languageId":"gandr","version":1,
+                     "text":"def g(x: Integer) -> -F Integer { return x }\n"}}}"#,
+            ),
+        );
+        assert_eq!(
+            ask(
+                &mut server,
+                "textDocument/definition",
+                "file:///tmp/braced.gandr",
+                4
+            ),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":9,"result":{
+                    "uri":"file:///tmp/braced.gandr",
+                    "range":{"start":{"line":0,"character":0},"end":{"line":0,"character":32}}}}]"#
+            )),
+            "on the name of a braced form: the head spans to the opening brace"
+        );
+        for method in ["textDocument/definition", "textDocument/typeDefinition"] {
+            assert_eq!(
+                ask(&mut server, method, "file:///tmp/closed.gandr", 0),
                 wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":null}]"#)),
                 "{method} about a document the server does not hold answers null"
             );
