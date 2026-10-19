@@ -22,6 +22,8 @@
 //!   surface's tree-sitter grammar is realised.
 //! - [`RoleTable`] is the mold highlighter: one highlight role per mold, read
 //!   off the grammar, and the spans of a molded tree's tiles read through it.
+//! - [`SPELLED`] pairs each glyph tile with its ASCII spelling, and
+//!   [`Spelling`] chooses which a printer writes (§ Spellings).
 //!
 //! The crate is `no_std` and depends on `core`, `alloc`,
 //! `gandr-surface-render-remote`, `gandr-surface-syntax` and
@@ -43,6 +45,19 @@
 //! declaration so the elaborator can decline it by name, and a grammar is never
 //! extended at run time. Adding them adds an extension entry point together
 //! with its fixity vocabulary.
+//!
+//! # Spellings
+//!
+//! Every construct has an ASCII spelling and may have a Unicode one. A glyph
+//! tile (`≃`, `⇝`, `≅`, `∷`, `ω`) is the Unicode spelling of its construct, and
+//! [`SPELLED`] names its ASCII spelling: a token the labeler molds as the
+//! glyph's tile (`<~>`, `~~>`, `::`, `inf`), or a head whose call the lowering
+//! reads as the glyph's former (`Iso(A, B)` for `A ≅ B`). No tile is
+//! Unicode-only:
+//! `tests::spelling::every_glyph_tile_of_the_grammar_has_an_ascii_spelling`
+//! holds the built-in grammar to it. The identifier prime `′` is no tile and
+//! has no ASCII spelling; a printer asked for ASCII refuses a name holding it.
+//! The `spelling` module's docs state the decision and its alternative.
 //!
 //! # Specification evidence
 //!
@@ -99,6 +114,7 @@ mod highlight;
 mod model;
 mod mold;
 mod parity;
+mod spelling;
 mod surface;
 mod walk;
 
@@ -152,6 +168,13 @@ pub use crate::parity::NamedKindEntry;
 pub use crate::parity::NamedKindRealization;
 pub use crate::parity::named_kind_parity;
 pub use crate::parity::named_kind_realization;
+pub use crate::spelling::Ascii;
+pub use crate::spelling::PRIME;
+pub use crate::spelling::SPELLED;
+pub use crate::spelling::Spelled;
+pub use crate::spelling::Spelling;
+pub use crate::spelling::aliased;
+pub use crate::spelling::spelled;
 pub use crate::surface::PBG_ONLY_KINDS;
 pub use crate::surface::TREE_SITTER_NAMED_KINDS;
 pub use crate::surface::built_in;
