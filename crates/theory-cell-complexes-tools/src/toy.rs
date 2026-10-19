@@ -124,7 +124,7 @@ impl From<&str> for ToyVar
 }
 
 /// One node of a toy term.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum ToyHead
 {
     /// A metavariable leaf.
@@ -699,6 +699,7 @@ where
         .collect();
     let mut suffix = ToyCount(0);
     let mut stood: Vec<(ToyVar, Vec<&[ToyHead]>)> = Vec::new();
+    let mut stood_at: BTreeMap<Vec<&[ToyHead]>, ToyVar> = BTreeMap::new();
     let mut patterns = Vec::with_capacity(first.len());
     for (component, term) in first.iter().enumerate() {
         let members: Vec<&Toy> = core::iter::once(term)
@@ -740,8 +741,8 @@ where
                         .unwrap_or_default()
                 })
                 .collect();
-            if let Some(seen) = stood.iter().find(|seen| seen.1 == column) {
-                nodes.push(ToyHead::Var(seen.0.clone()));
+            if let Some(seen) = stood_at.get(&column) {
+                nodes.push(ToyHead::Var(seen.clone()));
                 continue;
             }
             let fresh = loop {
@@ -751,6 +752,7 @@ where
                     break name;
                 }
             };
+            stood_at.insert(column.clone(), fresh.clone());
             stood.push((fresh.clone(), column));
             nodes.push(ToyHead::Var(fresh));
         }
@@ -965,6 +967,7 @@ impl CellAlphabet for ToyAlphabet
         vars: &[Self::Var],
     ) -> Self::Subst
     {
+        let vars: BTreeSet<&ToyVar> = vars.iter().collect();
         ToySubst(
             subst
                 .0
@@ -1303,9 +1306,10 @@ impl CellAlphabet for ToyAlphabet
         invertible: CellInvertibility,
     ) -> Self::Meta
     {
+        let mut seen: BTreeSet<&ToyVar> = BTreeSet::new();
         let mut vars: Vec<ToyVar> = Vec::new();
         for var in lhs.vars().chain(rhs.vars()) {
-            if !vars.contains(var) {
+            if seen.insert(var) {
                 vars.push(var.clone());
             }
         }

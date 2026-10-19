@@ -106,8 +106,12 @@ fn match_binds_every_metavariable<A>(
     A: CellAlphabet,
 {
     let subst = matched::<A>(pattern, target);
-    let left_free = A::metavariables(&A::apply_subst(&subst, pattern));
-    let target_vars = A::metavariables(target);
+    let left_free: std::collections::HashSet<A::Var> =
+        A::metavariables(&A::apply_subst(&subst, pattern))
+            .into_iter()
+            .collect();
+    let target_vars: std::collections::HashSet<A::Var> =
+        A::metavariables(target).into_iter().collect();
     for var in A::metavariables(pattern) {
         assert!(
             target_vars.contains(&var) || !left_free.contains(&var),
