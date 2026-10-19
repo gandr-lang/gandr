@@ -880,6 +880,15 @@ pub(super) enum Over
     /// The returner over the written value type, `-F B`: the answer of a
     /// thunk's body whose signature writes the alias `() => B`.
     Returning,
+    /// The arrows the value function space `(A1, …, An) => B` the node writes
+    /// stands for, past its first `taken` domains: `Aₜ₊₁ -> … -> An -> -F B`.
+    /// The answer of a thunk's body whose signature writes the alias, and of
+    /// each lambda under it but the last, which answers `B` returning.
+    Valued
+    {
+        /// How many domains the lambdas around the position took.
+        taken: usize,
+    },
 }
 
 /// Where a constructor takes its whole classifier from.
@@ -2004,11 +2013,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: the collection has read every slot.
     /// - ensures: for each slot whose signature and definition are both written
     ///   types and terms: a signature `+U C`, its parentheses stripped, answers
-    ///   the definition's thunk body with `C`, and the alias `() => B` with `-F
-    ///   B`, each read under the outermost frame; any other signature
-    ///   classifies the definition.
+    ///   the definition's thunk body with `C`, the alias `() => B` with `-F B`
+    ///   and any other alias `(A1, …, An) => B` with the arrows it stands for,
+    ///   each read under the outermost frame; any other signature classifies
+    ///   the definition.
     /// - provides: the expected type a constructor takes its classifier from
-    ///   where the source states one only in the signature.
+    ///   where the source states one only in the signature, and the binder
+    ///   types and answers of the lambdas a thunk signed with an alias opens.
     /// - fails: as [`Self::unwrapped`].
     /// - panics: none.
     ///
@@ -2017,8 +2028,11 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a thunk signed `+U (-F T)` and `() => T`, and a
-    ///   definition signed `T`, each over a parameterised family's constructor.
+    ///   definition signed `T`, each over a parameterised family's constructor;
+    ///   a lambda signed `A => B` and `(A, C) => B` lowering as under the
+    ///   thunked arrow.
     /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
+    /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
     #[spec(
         captures: before = (self.inherited.len(), self.thunked.len()),
         ensures: |ret| ret.is_err() || (self.inherited.len() >= before.0 && self.thunked.len() >= before.1),
@@ -2074,7 +2088,11 @@ impl<'source> Lowerer<'_, 'source>
                             frame: Frame::Outermost,
                             over: Over::Returning,
                         }),
-                        Maybe::Present(_) | Maybe::Absent(_) => None,
+                        Maybe::Present(_) | Maybe::Absent(_) => Some(Answer {
+                            node: written.node,
+                            frame: Frame::Outermost,
+                            over: Over::Valued { taken: 0_usize },
+                        }),
                     }
                 },
                 _ => None,
@@ -5730,22 +5748,31 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The computation type `answer` states, read under its own frame: the
-    /// written computation type, or the returner over a written value type
-    /// the position returns.
+    /// written computation type, the returner over a written value type the
+    /// position returns, or the arrows an alias stands for past the domains
+    /// taken.
     ///
     /// # Specification
     /// - requires: the answer's node is already minted or absent.
     /// - ensures: the node's computation type for a written answer and a loop
-    ///   arm's, and a returner newly minted over the node's value type for a
-    ///   returning one; the node's absence when it did not lower.
+    ///   arm's, a returner newly minted over the node's value type for a
+    ///   returning one, and for a valued one the computation type the alias's
+    ///   thunk holds, its first `taken` arrows peeled; the node's absence when
+    ///   it did not lower, and the other-sort absence for an alias holding
+    ///   fewer arrows.
     /// - provides: the one reading every consumer of an answer mints it by.
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Termination
+    /// The peeling loop runs `taken` times.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a function result and a thunk signed `() => T`, each
-    ///   answering a constructor's classifier.
+    ///   answering a constructor's classifier, and a match under a lambda
+    ///   signed `A => B` answering `-F B`.
     /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
+    /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.comp_type(id).is_some()))]
     pub(super) fn answered_type(
         &self,
@@ -5758,6 +5785,25 @@ impl<'source> Lowerer<'_, 'source>
             Over::Returning => match self.value_type_at(answer.node) {
                 Maybe::Present(result) => Maybe::Present(sink.arena.comp_type_returner(result)),
                 Maybe::Absent(reason) => Maybe::Absent(reason),
+            },
+            Over::Valued { taken } => {
+                let alias = match self.value_type_at(answer.node) {
+                    Maybe::Present(alias) => alias,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                };
+                let Some(&gandr_core_term::ValueType::Thunk(mut held)) =
+                    sink.arena.value_type(alias)
+                else {
+                    return Maybe::Absent(lowered::Absent::OtherSort);
+                };
+                for _taken in 0 .. taken {
+                    let Some(&CompType::Arrow { codomain, .. }) = sink.arena.comp_type(held)
+                    else {
+                        return Maybe::Absent(lowered::Absent::OtherSort);
+                    };
+                    held = codomain;
+                }
+                Maybe::Present(held)
             },
         }
     }

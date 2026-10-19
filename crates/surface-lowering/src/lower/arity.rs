@@ -2379,28 +2379,7 @@ impl<'source> Lowerer<'_, 'source>
         codomain: Placed,
     ) -> Result<Planned, LoweringRefusal<'source>>
     {
-        let Some((name, Former::ParenthesizedType)) = self.form_at(domain)?
-        else {
-            return Ok(Planned(false));
-        };
-        let list = Site {
-            at: domain,
-            name,
-            reading: Reading::ValueType(frame),
-        };
-        let mut scratch = core::mem::take(&mut self.scratch);
-        let read = read_pieces(self.pbg, self.tree, domain.node, &mut scratch).and_then(|()| {
-            if let Maybe::Present(_) = scratch.repair {
-                return Ok(Vec::new());
-            }
-            let mut cursor = Cursor::new(&scratch.pieces, domain.span);
-            if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
-                return Ok(Vec::new());
-            }
-            self.type_entries(list, &mut cursor, TileName::PAREN_CLOSE)
-        });
-        self.scratch = scratch;
-        let entries = read?;
+        let entries = self.domain_entries(domain, frame)?;
         if !entries
             .iter()
             .any(|entry| matches!(entry.key, Key::Label(..)))
@@ -2456,6 +2435,107 @@ impl<'source> Lowerer<'_, 'source>
         );
 
         Ok(Planned(true))
+    }
+
+    /// The entries of the parenthesised domain list `domain` of a value
+    /// function space under `frame`, as written.
+    ///
+    /// # Specification
+    /// - requires: `domain` is the operand written before `=>`.
+    /// - ensures: the list's entries in written order, a binder's keyed by its
+    ///   label; none for a domain that is no parenthesised type or whose pieces
+    ///   were repaired.
+    /// - fails: a misplaced key; a hole's own fault.
+    /// - panics: none.
+    /// - executable: none — the entries are read off the syntax tree, which a
+    ///   predicate could check only by repeating the read.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`], [`LoweringRefusal::UnknownMold`]
+    /// and [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::telescope_function`].
+    /// - witness: `lower::arity::tests::a_telescope_binds_each_entry_in_the_ones_after_it`
+    fn domain_entries(
+        &mut self,
+        domain: Placed,
+        frame: Frame,
+    ) -> Result<Vec<Entry<'source>>, LoweringRefusal<'source>>
+    {
+        let Some((name, Former::ParenthesizedType)) = self.form_at(domain)?
+        else {
+            return Ok(Vec::new());
+        };
+        let list = Site {
+            at: domain,
+            name,
+            reading: Reading::ValueType(frame),
+        };
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, domain.node, &mut scratch).and_then(|()| {
+            if let Maybe::Present(_) = scratch.repair {
+                return Ok(Vec::new());
+            }
+            let mut cursor = Cursor::new(&scratch.pieces, domain.span);
+            if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
+                return Ok(Vec::new());
+            }
+            self.type_entries(list, &mut cursor, TileName::PAREN_CLOSE)
+        });
+        self.scratch = scratch;
+
+        read
+    }
+
+    /// The domains of the value function space whose domain operand is
+    /// `domain`, read under `frame`: what a lambda under it binds, in order.
+    ///
+    /// # Specification
+    /// - requires: `domain` is the operand written before `=>`.
+    /// - ensures: the domains [`Self::domains`] lists, left to right; nothing
+    ///   for a domain list naming a binder, a telescope, whose lambdas
+    ///   [`Self::telescope_function`] binds, or for a node the tree does not
+    ///   hold. The operand store is left as found.
+    /// - fails: the list's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`], [`LoweringRefusal::UnknownMold`]
+    /// and [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda under `A => B` binds `A`, and two nested
+    ///   under `(A, C) => B` bind `A` then `C`.
+    /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
+    #[spec(
+        captures: before = self.operands.len(),
+        ensures: self.operands.len() == before,
+    )]
+    pub(super) fn alias_domains(
+        &mut self,
+        domain: NodeIndex,
+        frame: Frame,
+    ) -> Result<Option<Vec<NodeIndex>>, LoweringRefusal<'source>>
+    {
+        let Some(tree) = self.tree.node(domain)
+        else {
+            return Ok(None);
+        };
+        let placed = Placed::of(domain, tree);
+        if self
+            .domain_entries(placed, frame)?
+            .iter()
+            .any(|entry| matches!(entry.key, Key::Label(..)))
+        {
+            return Ok(None);
+        }
+        let start = self.operands.len();
+        let listed = self.domains(placed);
+        let domains = self.operands.split_off(start);
+        listed?;
+
+        Ok(Some(domains))
     }
 
     /// Classify a computation arrow whose domain names its binder: the

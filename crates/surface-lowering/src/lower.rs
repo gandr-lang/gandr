@@ -5980,16 +5980,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// The domain and the answered codomain of the written arrow `A -> C` the
-    /// lambda at `site` answers, parentheses stripped.
+    /// The domain and the answered codomain of the arrow the lambda at `site`
+    /// answers: a written arrow `A -> C`, parentheses stripped, or the next
+    /// arrow a value function space `(A1, …, An) => B` stands for.
     ///
     /// # Specification
     /// - requires: `site` is a lambda in term position.
     /// - ensures: for a position answering a written type that unwraps to an
     ///   arrow of two operands, the domain's node and the codomain answered
-    ///   under the arrow's frame; nothing for an unanswered position, an answer
-    ///   over a loop or a returner, and any other type.
-    /// - fails: as [`Self::unwrapped`].
+    ///   under the arrow's frame; for a position answering an alias's arrows
+    ///   past `t` domains, its domain `t + 1` and, under the same frame, the
+    ///   arrows past `t + 1` domains, or `B` returning past the last; nothing
+    ///   for an unanswered position, an answer over a loop or a returner, a
+    ///   telescope alias, an alias with no domain left and any other type.
+    /// - fails: as [`Self::unwrapped`] and [`Self::alias_domains`].
     /// - panics: none.
     ///
     /// # Errors
@@ -5997,9 +6001,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a lambda signed `+U (Empty -> -F Integer)` matches no
-    ///   arm on its binder, as a parameter of the same type does.
+    ///   arm on its binder, as a parameter of the same type does, and a lambda
+    ///   signed `Empty => Integer` or `(Empty, Integer) => Integer` lowers as
+    ///   under the thunked arrow the alias stands for.
     /// - witness: `lower::native::tests::a_match_of_no_arms_switches_on_a_lambda_binder_its_arrow_types`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |arrow| arrow.is_none_or(|(_, codomain)| codomain.over == native::Over::Written)))]
+    /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |arrow| arrow.is_none_or(|(_, codomain)| matches!(codomain.over, native::Over::Written | native::Over::Returning | native::Over::Valued { .. }))))]
     fn answered_arrow(
         &mut self,
         site: Site,
@@ -6009,23 +6016,60 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Ok(None);
         };
-        if answer.over != native::Over::Written {
+        let taken = match answer.over {
+            native::Over::Written => None,
+            native::Over::Valued { taken } => Some(taken),
+            native::Over::Loop { .. } | native::Over::Returning => return Ok(None),
+        };
+        let unwrapped = self.unwrapped(answer.node)?;
+        let Maybe::Present(native::Unwrapped {
+            former,
+            ref operands,
+            ..
+        }) = unwrapped
+        else {
             return Ok(None);
-        }
-        Ok(match self.unwrapped(answer.node)? {
-            Maybe::Present(native::Unwrapped {
-                former: Former::ArrowType,
-                ref operands,
-                ..
-            }) => match *operands.as_slice() {
-                [domain, codomain] => Some((domain, native::Answer {
+        };
+        let &[domain, codomain] = operands.as_slice()
+        else {
+            return Ok(None);
+        };
+        let Some(taken) = taken
+        else {
+            return Ok(
+                (former == Former::ArrowType).then_some((domain, native::Answer {
                     node: codomain,
                     ..answer
                 })),
-                _ => None,
-            },
-            Maybe::Present(_) | Maybe::Absent(_) => None,
-        })
+            );
+        };
+        if former != Former::ValueFunctionType {
+            return Ok(None);
+        }
+        let Some(domains) = self.alias_domains(domain, answer.frame)?
+        else {
+            return Ok(None);
+        };
+        let Some(&bound) = domains.get(taken)
+        else {
+            return Ok(None);
+        };
+        let next = taken.saturating_add(1_usize);
+        let rest = if next < domains.len() {
+            native::Answer {
+                over: native::Over::Valued { taken: next },
+                ..answer
+            }
+        }
+        else {
+            native::Answer {
+                node: codomain,
+                frame: answer.frame,
+                over: native::Over::Returning,
+            }
+        };
+
+        Ok(Some((bound, rest)))
     }
 
     /// Classify a block standing as a computation, `{ run x <- c ; … c }`.
