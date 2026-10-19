@@ -2,6 +2,7 @@
 //! sort tags, its adaptation records, and the completion shape of its type
 //! formers.
 
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::format;
 use core::error::Error;
@@ -453,7 +454,10 @@ fn every_mold_resolves_to_its_rule_and_named_kind() -> Result<(), Box<dyn Error>
         .chain(PBG_ONLY_KINDS)
         .copied()
         .collect();
-    let positions: Vec<&str> = pbg.rules().iter().map(|rule| rule.name).collect();
+    let mut positions: BTreeMap<&str, usize> = BTreeMap::new();
+    for (position, rule) in pbg.rules().iter().enumerate() {
+        let _first = positions.entry(rule.name).or_insert(position);
+    }
     let mut previous = 0_usize;
     for (id, def) in pbg.iter_molds() {
         let rule = pbg.rule_of(id)?;
@@ -462,9 +466,8 @@ fn every_mold_resolves_to_its_rule_and_named_kind() -> Result<(), Box<dyn Error>
             (def.sort, def.prec),
             "mold {id:?} carries its rule's sort and precedence"
         );
-        let position = positions
-            .iter()
-            .position(|&name| name == rule.name)
+        let position = *positions
+            .get(rule.name)
             .expect("the rule is one of the grammar's");
         assert!(position >= previous, "ids meet the rules in order");
         previous = position;

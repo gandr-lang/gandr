@@ -1073,6 +1073,13 @@ mod tests
     /// closes, so the bracket stack is checked where it pops; a closer never
     /// stands outside every bracket.
     #[test]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `closes` holds one row per closing bracket the grammar spells"
+        )
+    )]
     fn mold_provenance_alignment()
     {
         let pbg = built_in().expect("the built-in surface builds");
