@@ -609,6 +609,8 @@ impl InitializeResult
             && ret.capabilities.document_formatting_provider.0
             && ret.capabilities.document_range_formatting_provider.0
             && ret.capabilities.code_action_provider.0
+            && ret.capabilities.definition_provider.0
+            && ret.capabilities.type_definition_provider.0
             && !ret.capabilities.code_lens_provider.resolve_provider)]
     #[inline]
     #[must_use]
@@ -640,6 +642,8 @@ impl InitializeResult
                     resolve_provider: false,
                 },
                 code_action_provider: Provider::ANSWERED,
+                definition_provider: Provider::ANSWERED,
+                type_definition_provider: Provider::ANSWERED,
             },
             server_info: ServerInfo {
                 name: SOURCE,
@@ -678,6 +682,10 @@ pub struct ServerCapabilities
     pub code_lens_provider: CodeLensOptions,
     /// Code actions are answered.
     pub code_action_provider: Provider,
+    /// Definition is answered for a declaration's name.
+    pub definition_provider: Provider,
+    /// Type definition is answered for a declaration's name.
+    pub type_definition_provider: Provider,
 }
 
 /// Whether a request is answered, advertised as a provider with no options.
@@ -777,6 +785,9 @@ pub enum Answer
     Lenses(Vec<CodeLens>),
     /// What a code-action request answers over a range of an open document.
     Actions(Vec<CodeAction>),
+    /// What a definition or type-definition request answers over a
+    /// declaration's name: the location of the declaration's head.
+    Definition(Location),
     /// `null`: what `shutdown` answers, a request about a document that is not
     /// open, and a hover over nothing the server knows.
     Nothing,
