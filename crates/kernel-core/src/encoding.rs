@@ -1,5 +1,5 @@
-//! The **canonical content encoding** a memo key is derived from, and the
-//! digest that rides above it.
+//! The **canonical content encoding**, the table that names each distinct
+//! record once, and the memo key built as a name in that table.
 //!
 //! # The key is content, and that is what makes it position-free
 //!
@@ -21,16 +21,28 @@
 //! discipline a caller has to remember, and a support built against one session
 //! is meaningless in another rather than silently wrong in it.
 //!
+//! # The key is a name built from names
+//!
+//! A memo key is the [`ContentId`] of a **goal record**: the goal's direction,
+//! its obligation's id, its expected type's id, and the id of its **cover** —
+//! the set of binders the goal reads, each a **pair** of a de Bruijn index and
+//! its binder type's id, written in index order. Pair, cover and goal records
+//! join the node records in one table under tags no node uses, so each sub-key
+//! is built once and every goal that selects it shares it, and two goals take
+//! one id exactly when every member agrees down to the leaves. This is the
+//! hereditarily finite set reading of a support: the records fix which sets
+//! exist and how they compose, and no set's numeric code is ever formed.
+//!
 //! # The digest is a positive fast path and never a decision
 //!
 //! **Equal digests never decide agreement.** A collision would be a silent
-//! false *agree*, which is the one failure a memo must not admit. So different
-//! digests prove disagreement, and equal digests hand off to byte equality of
-//! the canonical support encodings — the deciding comparison. A collision
-//! therefore costs one comparison and degrades to a miss, priced strictly as
-//! recomputation. Collapsing every digest to one constant changes no verdict
-//! and no count — it costs a linear bucket scan — so only the digest's own unit
-//! witnesses distinguish it.
+//! false *agree*, which is the one failure a memo must not admit. The table
+//! files each record under its digest and decides by comparing the record's
+//! bytes in the stream, so records sharing a digest keep their own ids. The
+//! memo's bucket digest is read off the goal's id, and agreement compares ids,
+//! which the table assigned exactly. Collapsing every digest to one constant
+//! changes no verdict and no count — it costs a linear scan — so only the
+//! digests' own unit witnesses distinguish it.
 //!
 //! # The encoding is injective by construction
 //!
@@ -62,9 +74,11 @@
 //! Each distinct node is encoded once per session, so deriving every key of one
 //! check costs one pass over the distinct nodes — the "hash every node" price
 //! the content key is adopted at, and linear rather than quadratic even on a
-//! chain-deep term a decoder built from bytes. What the content key buys over
-//! an identity key on a real corpus is unmeasured; a measurement showing that
-//! pass dominating the reuse payoff re-keys the memo.
+//! chain-deep term a decoder built from bytes. A goal adds a pair per read
+//! binder, one cover and one goal record, each built once per session. Asking
+//! about content the table already holds allocates nothing. What the content
+//! key buys over an identity key on a real corpus is unmeasured; a measurement
+//! showing that pass dominating the reuse payoff re-keys the memo.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -81,6 +95,7 @@ use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Sign;
@@ -109,6 +124,20 @@ struct EncodedWord(u64);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ContentId(u64);
+
+impl From<ContentId> for DigestWord
+{
+    /// A content id as one digest word. Within its table an id names exactly
+    /// one content, so the word is a function of content.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(id: ContentId) -> Self
+    {
+        Self::from(id.0)
+    }
+}
 
 /// Borrowed text offered to a content encoding.
 #[repr(transparent)]
@@ -171,29 +200,42 @@ fn stage_bound() -> WireTag
     WireTag::from(0x01_u8)
 }
 
-/// Keep the dangling and staged sentinels outside every admitted node tag.
+/// Keep the dangling and staged sentinels, and the key records' tags, outside
+/// every admitted node tag.
 ///
 /// # Specification
-/// - ensures: compilation refuses a table row that uses either reserved byte.
+/// - ensures: compilation refuses a table row that uses a reserved byte.
 /// - panics: no runtime path; a violation fails constant evaluation.
 /// - executable: none — this is an evaluated compile-time assertion, not a
 ///   callable boundary.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — sparse native tags and unreadable references encode
-///   separately; adding a row at a sentinel fails compilation.
+///   separately; adding a row at a reserved byte fails compilation.
 /// - witness: `encoding::tests::an_unreadable_reference_still_encodes`
 /// - witness: `encoding::tests::a_stage_is_part_of_a_type_s_content`
 const _: () = {
     let mut rows = gandr_kernel_term::NODE_TAG_TABLE.as_slice();
     while let &[row, ref rest @ ..] = rows {
-        assert!(
-            row.tag.0 < STAGED_TAG,
-            "node tag overlaps a reserved sentinel"
-        );
+        assert!(row.tag.0 < GOAL_TAG, "node tag overlaps a reserved byte");
         rows = rest;
     }
 };
+
+/// The byte a pair record reserves: one read binder, its index beside its
+/// type's content.
+const PAIR_TAG: u8 = 0xFD;
+
+/// The byte a cover record reserves: the set of pairs one goal reads.
+const COVER_TAG: u8 = 0xFC;
+
+/// The byte a context record reserves: a whole context's types, outermost
+/// first.
+const CONTEXT_TAG: u8 = 0xFB;
+
+/// The byte a goal record reserves: one question, the memo's key. The lowest
+/// reserved byte; every node tag sits below it.
+const GOAL_TAG: u8 = 0xFA;
 
 /// The tag distinguishing an absent optional component from a present one.
 ///
@@ -211,6 +253,39 @@ fn component_absent() -> WireTag
 fn component_present() -> WireTag
 {
     WireTag::from(0x01_u8)
+}
+
+/// The four records the memo key adds to a [`ContentTable`], beside the
+/// nodes' own.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum KeyRecord
+{
+    /// One read binder: its index and its type.
+    Pair,
+    /// The set of pairs one goal reads.
+    Cover,
+    /// A whole context, for a goal whose reads are not known.
+    Context,
+    /// One question: its direction, subject, expected type and binders.
+    Goal,
+}
+
+impl KeyRecord
+{
+    /// This record's tag.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn tag(self) -> WireTag
+    {
+        WireTag::from(match self {
+            Self::Pair => PAIR_TAG,
+            Self::Cover => COVER_TAG,
+            Self::Context => CONTEXT_TAG,
+            Self::Goal => GOAL_TAG,
+        })
+    }
 }
 
 /// Which family an unreadable reference belonged to.
@@ -247,11 +322,10 @@ impl DanglingFamily
     }
 }
 
-/// An owned canonical content encoding: the byte string a memo key decides on.
+/// An owned canonical content encoding: one record's bytes.
 ///
-/// Two supports agree exactly when these compare equal, so this type is the
-/// deciding comparison's whole vocabulary. It is ordered so a table can be
-/// keyed on it.
+/// Records compare equal exactly when their content does, so this type is the
+/// interning's whole vocabulary. It is ordered so a table can be keyed on it.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ContentEncoding(Vec<u8>);
@@ -610,18 +684,58 @@ enum EncodeTask
 /// The table is keyed on a record's own bytes, so two structurally equal
 /// subterms at different arena positions receive one id — which is exactly what
 /// makes a re-minted spine's untouched leaf reuse its answer, and what a memo
-/// keyed on arena identity forfeits.
+/// keyed on arena identity forfeits. Beside the nodes' records it holds the
+/// memo key's — pairs, covers, contexts and goals — so a goal's key is a name
+/// in the same merged graph, built from its members' names.
+///
+/// Every record's bytes are held once, in the stream; the index maps a record's
+/// digest to its id, and a lookup compares the bytes there. Records are built
+/// in one reused buffer and walks run on one reused stack, so asking about
+/// content the table already holds allocates nothing.
 #[derive(Clone, Debug, Default)]
 pub struct ContentTable
 {
-    /// The framed record stream, in id order.
+    /// The framed record stream, in id order: every record's bytes, once.
     stream: ContentEncoding,
-    /// The id already assigned to each record's bytes.
-    interned: BTreeMap<ContentEncoding, ContentId>,
+    /// Where each record's bytes sit in the stream, by id.
+    spans: Vec<RecordSpan>,
+    /// The first id whose record has each digest.
+    interned: BTreeMap<ContentDigest, ContentId>,
+    /// The next id whose record shares this id's digest; empty unless two
+    /// records' digests collide.
+    colliding: BTreeMap<ContentId, ContentId>,
     /// The id already assigned to each arena node.
     placed: BTreeMap<AnyNode, ContentId>,
     /// How many records the stream holds.
     records: u64,
+    /// The record being built.
+    scratch: ContentEncoding,
+    /// The members of the cover or context being built.
+    members: Vec<ContentId>,
+    /// The placement walk's task stack.
+    tasks: Vec<EncodeTask>,
+}
+
+/// Where one record's bytes sit in a [`ContentTable`]'s stream.
+#[derive(Clone, Copy, Debug)]
+struct RecordSpan
+{
+    /// The offset of the record's first byte.
+    start: usize,
+    /// The offset past its last byte.
+    end: usize,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a table holds no id for a record.
+    mod record_held {
+        /// The table has not seen the record.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// No record the table holds has these bytes.
+            Fresh,
+        }
+    }
 }
 
 impl ContentTable
@@ -695,7 +809,11 @@ impl ContentTable
         node: AnyNode,
     ) -> ContentId
     {
-        let mut tasks: Vec<EncodeTask> = Vec::new();
+        if let Some(&held) = self.placed.get(&node) {
+            return held;
+        }
+        let mut tasks = core::mem::take(&mut self.tasks);
+        tasks.clear();
         tasks.push(EncodeTask::Open(node));
         while let Some(task) = tasks.pop() {
             match task {
@@ -710,12 +828,15 @@ impl ContentTable
                     if self.placed.contains_key(&close) {
                         continue;
                     }
-                    let record = self.record_of(arena, close);
-                    let id = self.intern(record);
+                    let mut record = core::mem::take(&mut self.scratch);
+                    self.write_record(&mut record, arena, close);
+                    self.scratch = record;
+                    let id = self.intern_scratch();
                     let _prior = self.placed.insert(close, id);
                 },
             }
         }
+        self.tasks = tasks;
         self.content_of(node)
     }
 
@@ -754,21 +875,92 @@ impl ContentTable
         self.placed.get(&node).copied().unwrap_or(ContentId(0))
     }
 
-    /// Assign `record` an id, reusing the one its bytes already hold.
+    /// The id this table holds for `record`, found by its digest `digest` and
+    /// decided by its bytes.
     ///
     /// # Specification
-    /// - requires: `record` is a complete one-level record whose children's ids
-    ///   are already assigned.
+    /// - requires: `digest` is `record`'s digest.
+    /// - ensures: the id whose record is byte-equal to `record`, or
+    ///   [`record_held::Absent::Fresh`] when the table holds none. A digest
+    ///   narrows the search and never decides it: every record sharing it is
+    ///   compared byte for byte.
+    /// - provides: the lookup every interning step goes through; it reads the
+    ///   stream in place and allocates nothing.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two records filed under one digest stay two ids and
+    ///   are each found again; a record asked twice is found by its first id.
+    /// - witness: `encoding::tests::records_sharing_a_digest_keep_their_own_ids`
+    /// - witness: `encoding::tests::one_table_records_each_distinct_node_once`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(id) => id.0 < self.records,
+        Maybe::Absent(record_held::Absent::Fresh) => true,
+    })]
+    fn held(
+        &self,
+        record: &ContentEncoding,
+        digest: ContentDigest,
+    ) -> Maybe<ContentId, record_held::Absent>
+    {
+        let mut cursor = self.interned.get(&digest).copied();
+        while let Some(id) = cursor {
+            let bytes = usize::try_from(id.0)
+                .ok()
+                .and_then(|index| self.spans.get(index))
+                .and_then(|span| self.stream.0.get(span.start .. span.end));
+            if bytes == Some(record.0.as_slice()) {
+                return Maybe::Present(id);
+            }
+            cursor = self.colliding.get(&id).copied();
+        }
+        Maybe::Absent(record_held::Absent::Fresh)
+    }
+
+    /// Assign the record in the scratch buffer an id, reusing the one its bytes
+    /// already hold.
+    ///
+    /// # Specification
+    /// - requires: the scratch buffer holds one complete record whose members'
+    ///   ids are already assigned.
+    /// - ensures: as [`Self::admit`] under the record's own digest.
+    /// - provides: the canonical content numbering every record goes through.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::admit`].
+    /// - witness: `encoding::tests::one_table_records_each_distinct_node_once`
+    /// - witness: `encoding::tests::one_key_record_per_distinct_question`
+    #[inline]
+    #[spec(captures: records_before = self.records,
+        ensures: |ret| ret.0 < self.records && self.records >= records_before)]
+    fn intern_scratch(&mut self) -> ContentId
+    {
+        let digest = self.scratch.digest();
+        self.admit(digest)
+    }
+
+    /// Assign the record in the scratch buffer an id under the digest `digest`,
+    /// reusing the one its bytes already hold.
+    ///
+    /// # Specification
+    /// - requires: the scratch buffer holds one complete record whose members'
+    ///   ids are already assigned.
     /// - ensures: the id this table already holds for those exact bytes, or a
-    ///   fresh id whose record is appended to the stream; ids are assigned in
-    ///   stream order, and byte-equal records take one id however many nodes
-    ///   spell them. The record count is at most the stream's byte length: each
-    ///   fresh record appends a nonempty length-prefixed image before the count
-    ///   advances. On supported targets that allocation is bounded by
-    ///   `isize::MAX`, below `u64::MAX`; no representable table overflows it.
-    /// - provides: the canonical content numbering — the step that makes a
-    ///   re-minted spine reuse its untouched leaf, which an arena-identity key
-    ///   forfeits.
+    ///   fresh id whose record is appended to the stream and filed under
+    ///   `digest` — first under it, or at the end of the records already
+    ///   sharing it. Ids are assigned in stream order, byte-equal records take
+    ///   one id however many nodes spell them, and records sharing a digest
+    ///   keep their own ids. The record count is at most the stream's byte
+    ///   length: each fresh record appends a nonempty length-prefixed image
+    ///   before the count advances. On supported targets that allocation is
+    ///   bounded by `isize::MAX`, below `u64::MAX`; no representable table
+    ///   overflows it.
+    /// - provides: the step that makes a re-minted spine reuse its untouched
+    ///   leaf, which an arena-identity key forfeits. A held record is found in
+    ///   place; only a fresh one grows the stream, the spans and the index.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -776,50 +968,188 @@ impl ContentTable
     /// - hypothesis: L1/L3 — complete records with placed children enter a
     ///   valid table. Fresh ids, exact-byte reuse and count/stream bounds are
     ///   executable; shared and re-minted depth-16 graphs exercise both
-    ///   branches, not an unallocatable u64 ceiling.
+    ///   branches, and two records forced under one digest exercise the
+    ///   collision chain, not an unallocatable u64 ceiling.
     /// - witness: `encoding::tests::one_table_records_each_distinct_node_once`
+    /// - witness: `encoding::tests::records_sharing_a_digest_keep_their_own_ids`
     #[spec(
-        captures: [held = self.interned.get(&record).copied(), records_before = self.records,
+        captures: [held = self.held(&self.scratch, digest), records_before = self.records,
             stream_before = self.stream.0.len()],
         ensures: |ret| u128::try_from(self.stream.0.len())
             .is_ok_and(|bytes| u128::from(self.records) <= bytes)
-            && u64::try_from(self.interned.len()) == Ok(self.records) && ret.0 < self.records
+            && u64::try_from(self.spans.len()) == Ok(self.records) && ret.0 < self.records
+            && self.held(&self.scratch, digest) == Maybe::Present(ret)
             && match held {
-                Some(prior) => ret == prior && self.records == records_before
+                Maybe::Present(prior) => ret == prior && self.records == records_before
                     && self.stream.0.len() == stream_before,
-                None => ret.0 == records_before && records_before.checked_add(1) == Some(self.records),
+                Maybe::Absent(_) => ret.0 == records_before
+                    && records_before.checked_add(1) == Some(self.records),
             }
     )]
-    fn intern(
+    fn admit(
         &mut self,
-        record: ContentEncoding,
+        digest: ContentDigest,
     ) -> ContentId
     {
-        if let Some(&held) = self.interned.get(&record) {
+        if let Maybe::Present(held) = self.held(&self.scratch, digest) {
             return held;
         }
         let id = ContentId(self.records);
-        self.stream.put_record(&record);
+        self.stream.put_record(&self.scratch);
+        let end = self.stream.0.len();
+        self.spans.push(RecordSpan {
+            start: end.saturating_sub(self.scratch.0.len()),
+            end,
+        });
         // Each record occupies memory, so the allocated table bounds this count.
         self.records = u64::from(arith::add(
             arith::Int::from(self.records),
             arith::Int::from(1_u64),
         ));
-        let _prior = self.interned.insert(record, id);
+        match self.interned.get(&digest).copied() {
+            None => {
+                let _prior = self.interned.insert(digest, id);
+            },
+            Some(first) => {
+                let mut tail = first;
+                while let Some(&next) = self.colliding.get(&tail) {
+                    tail = next;
+                }
+                let _prior = self.colliding.insert(tail, id);
+            },
+        }
         id
     }
 
-    /// The one-level record of `node`: its tag, its inline payload, and its
-    /// children's already-assigned content ids.
+    /// Name one read binder: the index `index` beside its type's content
+    /// `binder`.
+    ///
+    /// # Specification
+    /// - requires: `binder` is an id this table assigned.
+    /// - ensures: two pairs take one id exactly when their indices and their
+    ///   types' contents are equal.
+    /// - provides: the pair layer of the key, built once for every cover that
+    ///   reads a type of that content at that position.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one type read at two positions, and two types read at
+    ///   one, key apart; one type at one position keys alike.
+    /// - witness: `encoding::tests::the_read_positions_are_part_of_the_key`
+    #[inline]
+    #[spec(requires: binder.0 < self.records, ensures: |ret| ret.0 < self.records)]
+    fn pair(
+        &mut self,
+        index: DeBruijnIndex,
+        binder: ContentId,
+    ) -> ContentId
+    {
+        self.scratch.0.clear();
+        self.scratch.put_tag(KeyRecord::Pair.tag());
+        self.scratch
+            .put_word(EncodedWord(u64::from(u32::from(index))));
+        self.scratch.put_content(binder);
+        self.intern_scratch()
+    }
+
+    /// Name the set of binders one goal reads: the pair of each read index
+    /// with its binder's type.
+    ///
+    /// # Specification
+    /// - requires: `read`'s indices ascend strictly, and each type is a node of
+    ///   `arena`. A read out of order names another cover, which can only split
+    ///   a support and never merge two.
+    /// - ensures: two reads take one id exactly when they read the same
+    ///   positions and find types of equal content at each. Members are written
+    ///   in index order, which is canonical because a cover reads each index
+    ///   once.
+    /// - provides: the cover layer of the key, built once for every goal whose
+    ///   node reads the same binders.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the empty read, one read at two positions, two types
+    ///   swapped between two positions, and the same read under two subjects
+    ///   separate a dropped member, a position-blind member and a lost share.
+    /// - witness: `encoding::tests::the_read_positions_are_part_of_the_key`
+    /// - witness: `encoding::tests::one_key_record_per_distinct_question`
+    #[spec(ensures: |ret| ret.0 < self.records
+        && read.iter().all(|&(_, entry)| self.placed.contains_key(&AnyNode::ValueType(entry))))]
+    fn cover(
+        &mut self,
+        arena: &TermArena,
+        read: &[(DeBruijnIndex, ValueTypeId)],
+    ) -> ContentId
+    {
+        let mut members = core::mem::take(&mut self.members);
+        members.clear();
+        for &(index, entry) in read {
+            let binder = self.place(arena, AnyNode::ValueType(entry));
+            members.push(self.pair(index, binder));
+        }
+        self.scratch.0.clear();
+        self.scratch.put_tag(KeyRecord::Cover.tag());
+        self.scratch.put_count(ComponentCount(members.len()));
+        for &member in &members {
+            self.scratch.put_content(member);
+        }
+        self.members = members;
+        self.intern_scratch()
+    }
+
+    /// Name a whole context: its types' contents, outermost first.
+    ///
+    /// # Specification
+    /// - requires: each type is a node of `arena`.
+    /// - ensures: two contexts take one id exactly when they have one length
+    ///   and types of equal content at every position; never the id of a cover.
+    /// - provides: the key's binders for a goal whose reads are not known.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a permuted context, a longer one and a read one of
+    ///   the same types key apart.
+    /// - witness: `encoding::tests::the_telescope_is_folded_in_order`
+    /// - witness: `encoding::tests::the_read_positions_are_part_of_the_key`
+    #[spec(ensures: |ret| ret.0 < self.records
+        && context.iter().all(|&entry| self.placed.contains_key(&AnyNode::ValueType(entry))))]
+    fn context(
+        &mut self,
+        arena: &TermArena,
+        context: &[ValueTypeId],
+    ) -> ContentId
+    {
+        let mut members = core::mem::take(&mut self.members);
+        members.clear();
+        for &entry in context {
+            members.push(self.place(arena, AnyNode::ValueType(entry)));
+        }
+        self.scratch.0.clear();
+        self.scratch.put_tag(KeyRecord::Context.tag());
+        self.scratch.put_count(ComponentCount(members.len()));
+        for &member in &members {
+            self.scratch.put_content(member);
+        }
+        self.members = members;
+        self.intern_scratch()
+    }
+
+    /// Write the one-level record of `node` into `record`, replacing what it
+    /// held: its tag, its inline payload, and its children's already-assigned
+    /// content ids.
     ///
     /// # Specification
     /// - requires: every child of `node` has already been placed.
-    /// - ensures: the node's own one-level record — its tag, its inline
-    ///   payload, and its children's content ids — and the reserved dangling
-    ///   record for a reference that resolved to nothing, tagged with the
-    ///   family it belonged to.
-    /// - provides: the record `intern` numbers, so a walk that cannot read a
-    ///   node still produces a record and stays total.
+    /// - ensures: `record` holds the node's own one-level record — its tag, its
+    ///   inline payload, and its children's content ids — or the reserved
+    ///   dangling record for a reference that resolved to nothing, tagged with
+    ///   the family it belonged to.
+    /// - provides: the record [`Self::intern_scratch`] numbers, so a walk that
+    ///   cannot read a node still produces a record and stays total; written
+    ///   into a buffer the table reuses.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -831,43 +1161,44 @@ impl ContentTable
     /// - witness: `encoding::tests::an_unreadable_reference_still_encodes`
     /// - witness: `encoding::tests::a_transposed_product_encodes_differently`
     /// - witness: `encoding::tests::each_case_child_changes_canonical_content`
-    #[spec(ensures: |ret| {
+    #[spec(ensures: {
         let (readable, family) = match node { AnyNode::Value(id) => (arena.value(id).is_some(), 0_u8),
 AnyNode::Computation(id) => (arena.computation(id).is_some(), 1_u8),
 AnyNode::ValueType(id) => (arena.value_type(id).is_some(), 2_u8),
 AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
         if readable {
-            ret.0.first().is_some_and(|&tag| tag != DANGLING_TAG)
+            record.0.first().is_some_and(|&tag| tag != DANGLING_TAG)
         } else {
-            ret.0.as_slice() == [DANGLING_TAG, family]
+            record.0.len() == 2 && record.0.first() == Some(&DANGLING_TAG)
+                && record.0.get(1) == Some(&family)
         }
     })]
-    fn record_of(
+    fn write_record(
         &self,
+        record: &mut ContentEncoding,
         arena: &TermArena,
         node: AnyNode,
-    ) -> ContentEncoding
+    )
     {
-        let mut record = ContentEncoding::new();
+        record.0.clear();
         match node {
             AnyNode::Value(id) => match arena.value(id) {
-                None => put_dangling(&mut record, DanglingFamily::Value),
-                Some(value) => self.put_value(&mut record, value),
+                None => put_dangling(record, DanglingFamily::Value),
+                Some(value) => self.put_value(record, value),
             },
             AnyNode::Computation(id) => match arena.computation(id) {
-                None => put_dangling(&mut record, DanglingFamily::Computation),
-                Some(computation) => self.put_computation(&mut record, computation),
+                None => put_dangling(record, DanglingFamily::Computation),
+                Some(computation) => self.put_computation(record, computation),
             },
             AnyNode::ValueType(id) => match arena.value_type(id) {
-                None => put_dangling(&mut record, DanglingFamily::ValueType),
-                Some(value_type) => self.put_value_type(&mut record, value_type),
+                None => put_dangling(record, DanglingFamily::ValueType),
+                Some(value_type) => self.put_value_type(record, value_type),
             },
             AnyNode::CompType(id) => match arena.comp_type(id) {
-                None => put_dangling(&mut record, DanglingFamily::CompType),
-                Some(comp_type) => self.put_comp_type(&mut record, comp_type),
+                None => put_dangling(record, DanglingFamily::CompType),
+                Some(comp_type) => self.put_comp_type(record, comp_type),
             },
         }
-        record
     }
 
     /// Write a value node's record.
@@ -2506,80 +2837,116 @@ impl SupportGoal
     }
 }
 
-/// Encode one goal's whole support: the direction, the obligation's content,
-/// the expected type's content, and the binder telescope's, folded in telescope
-/// order.
+/// The binders a support folds in.
+#[derive(Clone, Copy, Debug)]
+pub enum Telescope<'context>
+{
+    /// The binders the goal reads: each read index beside the type of the
+    /// binder it names, the indices ascending.
+    Read(&'context [(DeBruijnIndex, ValueTypeId)]),
+    /// Every binder of the context, outermost first: the goal's reads are not
+    /// known, or one names no binder of the context.
+    Whole(&'context [ValueTypeId]),
+}
+
+impl Telescope<'_>
+{
+    /// The binder types the telescope folds in.
+    ///
+    /// # Specification
+    /// trivial.
+    fn types(self) -> Vec<ValueTypeId>
+    {
+        match self {
+            Self::Read(read) => read.iter().map(|&(_, entry)| entry).collect(),
+            Self::Whole(context) => context.to_vec(),
+        }
+    }
+}
+
+/// Name one goal's whole support: the goal record of its direction, its
+/// obligation's content, its expected type's content and its binders.
+///
+/// The key is a name in the session's merged graph, built from its members'
+/// names: a goal names its subject, its expected type and its cover; a cover
+/// names its pairs; a pair names a type. Each record is interned once, so a
+/// type, a pair or a cover recurring under many goals is built once and shared
+/// by every goal that reads it, and two goals take one name exactly when every
+/// member agrees, down to the leaves.
 ///
 /// # Specification
-/// - requires: `table` is this checking session's; `telescope` is the binder
-///   slice the goal's node can actually reach, outermost first. A longer slice
-///   is admissible and can only split a support, never merge two.
-/// - ensures: a byte string that is a function of content alone within the
-///   session — no arena id, allocation order, or context length outside the
-///   reached slice reaches it. Two goals encode alike exactly when they are the
-///   same question.
-/// - provides: the memo key in direction, subject, expected-type and telescope
-///   order. The predicate checks direction and placement of every component;
-///   session provenance and equality across goals have the finite witnesses
-///   below rather than another content walk.
+/// - requires: `table` is this checking session's; a [`Telescope::Read`] holds
+///   every binder the goal's node reads, ascending by index, and a
+///   [`Telescope::Whole`] the whole context, outermost first. A whole context
+///   in place of the reads is admissible and can only split a support, never
+///   merge two.
+/// - ensures: two goals take one id exactly when they ask the same direction of
+///   subjects of equal content, against expected types of equal content,
+///   reading the same positions and finding types of equal content there — or
+///   under whole contexts of equal content. No arena id, allocation order or
+///   binder the node does not read reaches the id.
+/// - provides: the memo key. The predicate checks that every component was
+///   placed; equality across goals has the finite witnesses below rather than
+///   another content walk.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L1/L2/L3 — one append-only session and the supplied telescope
-///   slice bound the domain. Direction and component placement are executable.
-///   Finite trap pairs separate field order, family, sign normalization and
-///   text framing; other pairs vary expected types and telescope order or
-///   re-mint equal content. They do not enumerate every support graph.
+///   bound the domain. Component placement is executable. Finite trap pairs
+///   separate field order, family, sign normalization and text framing; other
+///   pairs vary the direction, expected types, the read positions and telescope
+///   order, re-mint equal content, and ask one question twice. They do not
+///   enumerate every support graph.
 /// - witness: `encoding::tests::a_transposed_product_encodes_differently`
 /// - witness: `encoding::tests::two_families_with_one_payload_encode_differently`
 /// - witness: `encoding::tests::signed_zeroes_collapse_and_signed_ones_do_not`
 /// - witness: `encoding::tests::the_length_prefix_separates_a_split_pair`
 /// - witness: `encoding::tests::the_direction_is_part_of_the_key`
 /// - witness: `encoding::tests::the_telescope_is_folded_in_order`
+/// - witness: `encoding::tests::the_read_positions_are_part_of_the_key`
 /// - witness: `encoding::tests::structurally_equal_nodes_encode_alike`
 /// - witness: `encoding::tests::an_unreadable_reference_still_encodes`
 /// - witness: `encoding::tests::expected_type_content_changes_checking_keys`
+/// - witness: `encoding::tests::one_key_record_per_distinct_question`
 #[inline]
 #[must_use]
-#[spec(ensures: |ret| ret.0.first() == Some(&u8::from(goal.direction()))
+#[spec(ensures: |ret| ret.0 < table.records
     && table.placed.contains_key(&goal.subject())
     && match goal.expected() {
         Maybe::Present(node) => table.placed.contains_key(&node),
         Maybe::Absent(_) => true,
     }
-    && telescope.iter().all(|&entry| table.placed.contains_key(&AnyNode::ValueType(entry))))]
-pub fn encode_support(
+    && telescope.types().iter().all(|&entry| table.placed.contains_key(&AnyNode::ValueType(entry))))]
+pub fn support_key(
     table: &mut ContentTable,
     arena: &TermArena,
     goal: SupportGoal,
-    telescope: &[ValueTypeId],
-) -> ContentEncoding
+    telescope: Telescope<'_>,
+) -> ContentId
 {
     let subject = table.place(arena, goal.subject());
     let expected = goal.expected().map(|node| table.place(arena, node));
-    let mut folded: Vec<ContentId> = Vec::with_capacity(telescope.len());
-    for &entry in telescope {
-        folded.push(table.place(arena, AnyNode::ValueType(entry)));
-    }
-
-    let mut encoding = ContentEncoding::new();
-    encoding.put_tag(goal.direction());
-    encoding.put_content(subject);
+    let binders = match telescope {
+        Telescope::Read(read) => table.cover(arena, read),
+        Telescope::Whole(context) => table.context(arena, context),
+    };
+    let record = &mut table.scratch;
+    record.0.clear();
+    record.put_tag(KeyRecord::Goal.tag());
+    record.put_tag(goal.direction());
+    record.put_content(subject);
     match expected {
         Maybe::Present(id) => {
-            encoding.put_tag(component_present());
-            encoding.put_content(id);
+            record.put_tag(component_present());
+            record.put_content(id);
         },
         Maybe::Absent(expected_type::Absent::Synthesis | expected_type::Absent::Formation) => {
-            encoding.put_tag(component_absent());
+            record.put_tag(component_absent());
         },
     }
-    encoding.put_count(ComponentCount(folded.len()));
-    for id in folded {
-        encoding.put_content(id);
-    }
-    encoding
+    record.put_content(binders);
+    table.intern_scratch()
 }
 
 /// One rewrite obligation, as the key derivation names it.
@@ -2819,9 +3186,10 @@ mod tests
     use super::EncodedWord;
     use super::RewriteGoal;
     use super::SupportGoal;
+    use super::Telescope;
     use super::content_digest;
     use super::encode_rewrite;
-    use super::encode_support;
+    use super::support_key;
 
     /// A magnitude from digit text, for a literal fixture.
     ///
@@ -2995,13 +3363,17 @@ mod tests
         let backward = arena.value_type_product(&[base, unit]);
         let mut table = ContentTable::new();
         assert_ne!(
-            encode_support(&mut table, &arena, SupportGoal::ValueTypeLevel(forward), &[
-            ]),
-            encode_support(
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::ValueTypeLevel(forward),
+                Telescope::Whole(&[])
+            ),
+            support_key(
                 &mut table,
                 &arena,
                 SupportGoal::ValueTypeLevel(backward),
-                &[]
+                Telescope::Whole(&[])
             ),
             "A x B and B x A are different types and must be different keys"
         );
@@ -3037,7 +3409,14 @@ mod tests
         let mut table = ContentTable::new();
         let keys: alloc::vec::Vec<_> = types
             .iter()
-            .map(|&id| encode_support(&mut table, &arena, SupportGoal::ValueTypeLevel(id), &[]))
+            .map(|&id| {
+                support_key(
+                    &mut table,
+                    &arena,
+                    SupportGoal::ValueTypeLevel(id),
+                    Telescope::Whole(&[]),
+                )
+            })
             .collect();
         for (index, key) in keys.iter().enumerate() {
             for later in keys.iter().skip(index.saturating_add(1)) {
@@ -3045,7 +3424,12 @@ mod tests
             }
         }
         assert_eq!(
-            encode_support(&mut table, &arena, SupportGoal::ValueTypeLevel(again), &[]),
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::ValueTypeLevel(again),
+                Telescope::Whole(&[])
+            ),
             keys[1],
             "one stage over one base is one key"
         );
@@ -3062,12 +3446,17 @@ mod tests
         let unit_type = arena.value_type_unit();
         let mut table = ContentTable::new();
         assert_ne!(
-            encode_support(&mut table, &arena, SupportGoal::SynthValue(unit_value), &[]),
-            encode_support(
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::SynthValue(unit_value),
+                Telescope::Whole(&[])
+            ),
+            support_key(
                 &mut table,
                 &arena,
                 SupportGoal::ValueTypeLevel(unit_type),
-                &[]
+                Telescope::Whole(&[])
             ),
             "a payload-free value and a payload-free type are different questions"
         );
@@ -3103,32 +3492,32 @@ mod tests
         )));
         let mut table = ContentTable::new();
         assert_eq!(
-            encode_support(
+            support_key(
                 &mut table,
                 &arena,
                 SupportGoal::SynthValue(positive_zero),
-                &[]
+                Telescope::Whole(&[])
             ),
-            encode_support(
+            support_key(
                 &mut table,
                 &arena,
                 SupportGoal::SynthValue(negative_zero),
-                &[]
+                Telescope::Whole(&[])
             ),
             "one number has one key, whichever way it was spelled"
         );
         assert_ne!(
-            encode_support(
+            support_key(
                 &mut table,
                 &arena,
                 SupportGoal::SynthValue(positive_one),
-                &[]
+                Telescope::Whole(&[])
             ),
-            encode_support(
+            support_key(
                 &mut table,
                 &arena,
                 SupportGoal::SynthValue(negative_one),
-                &[]
+                Telescope::Whole(&[])
             ),
             "and the sign is genuinely in the key where it changes the value"
         );
@@ -3158,8 +3547,18 @@ mod tests
         )));
         let mut table = ContentTable::new();
         assert_ne!(
-            encode_support(&mut table, &arena, SupportGoal::SynthValue(first), &[]),
-            encode_support(&mut table, &arena, SupportGoal::SynthValue(second), &[]),
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::SynthValue(first),
+                Telescope::Whole(&[])
+            ),
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::SynthValue(second),
+                Telescope::Whole(&[])
+            ),
             "the two splittings concatenate alike and must still key apart"
         );
 
@@ -3173,8 +3572,18 @@ mod tests
         let right = arena.value_literal(text(String::from("bc")));
         let split = arena.value_tuple(&[left, right]);
         assert_ne!(
-            encode_support(&mut table, &arena, SupportGoal::SynthValue(joined), &[]),
-            encode_support(&mut table, &arena, SupportGoal::SynthValue(split), &[]),
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::SynthValue(joined),
+                Telescope::Whole(&[])
+            ),
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::SynthValue(split),
+                Telescope::Whole(&[])
+            ),
             "and two literals in two records are separated by the record framing"
         );
     }
@@ -3187,12 +3596,17 @@ mod tests
         let unit_type = arena.value_type_unit();
         let mut table = ContentTable::new();
         assert_ne!(
-            encode_support(&mut table, &arena, SupportGoal::SynthValue(unit), &[]),
-            encode_support(
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::SynthValue(unit),
+                Telescope::Whole(&[])
+            ),
+            support_key(
                 &mut table,
                 &arena,
                 SupportGoal::CheckValue(unit, unit_type),
-                &[]
+                Telescope::Whole(&[])
             ),
             "synthesizing a value and checking it are different questions"
         );
@@ -3267,22 +3681,166 @@ mod tests
         let base = arena.value_type_base(BaseType::Integer);
         let mut table = ContentTable::new();
         assert_ne!(
-            encode_support(&mut table, &arena, SupportGoal::SynthValue(variable), &[
-                unit, base
-            ]),
-            encode_support(&mut table, &arena, SupportGoal::SynthValue(variable), &[
-                base, unit
-            ]),
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::SynthValue(variable),
+                Telescope::Whole(&[unit, base])
+            ),
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::SynthValue(variable),
+                Telescope::Whole(&[base, unit])
+            ),
             "dependency order is part of the content, so a permuted telescope is another key"
         );
         assert_ne!(
-            encode_support(&mut table, &arena, SupportGoal::SynthValue(variable), &[
-                unit
-            ]),
-            encode_support(&mut table, &arena, SupportGoal::SynthValue(variable), &[
-                unit, base
-            ]),
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::SynthValue(variable),
+                Telescope::Whole(&[unit])
+            ),
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::SynthValue(variable),
+                Telescope::Whole(&[unit, base])
+            ),
             "and a longer telescope is another key, since the length is written"
+        );
+    }
+
+    #[test]
+    fn the_read_positions_are_part_of_the_key()
+    {
+        let mut arena = TermArena::new();
+        let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let unit = arena.value_type_unit();
+        let base = arena.value_type_base(BaseType::Integer);
+        let at = DeBruijnIndex::from;
+        let mut table = ContentTable::new();
+        let mut key = |telescope: Telescope<'_>| {
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::SynthValue(variable),
+                telescope,
+            )
+        };
+        let innermost = key(Telescope::Read(&[(at(0_u32), unit)]));
+        assert_eq!(
+            innermost,
+            key(Telescope::Read(&[(at(0_u32), unit)])),
+            "one binder of one type read at one position is one key"
+        );
+        assert_ne!(
+            innermost,
+            key(Telescope::Read(&[(at(1_u32), unit)])),
+            "the same type read one binder further out is another key"
+        );
+        assert_ne!(
+            innermost,
+            key(Telescope::Read(&[(at(64_u32), unit)])),
+            "and so at a distant one"
+        );
+        assert_ne!(
+            innermost,
+            key(Telescope::Read(&[])),
+            "reading nothing is another key"
+        );
+        assert_ne!(
+            key(Telescope::Read(&[(at(0_u32), unit), (at(1_u32), base)])),
+            key(Telescope::Read(&[(at(0_u32), base), (at(1_u32), unit)])),
+            "each type is keyed at its own position"
+        );
+        assert_ne!(
+            innermost,
+            key(Telescope::Whole(&[unit])),
+            "and a whole context is never a read one"
+        );
+    }
+
+    #[test]
+    fn records_sharing_a_digest_keep_their_own_ids()
+    {
+        let forced = gandr_kernel_check_memo::ContentDigest::new(
+            gandr_kernel_check_memo::DigestWord::from(7_u64),
+            gandr_kernel_check_memo::DigestWord::from(7_u64),
+        );
+        let admit = |table: &mut ContentTable, tag: u8| {
+            table.scratch = ContentEncoding::new();
+            table.scratch.put_tag(super::WireTag::from(tag));
+            table.admit(forced)
+        };
+        let mut table = ContentTable::new();
+        let first = admit(&mut table, 0x01);
+        let second = admit(&mut table, 0x02);
+        let third = admit(&mut table, 0x03);
+        assert_ne!(first, second, "one digest never merges two records");
+        assert_ne!(second, third, "nor a third filed behind them");
+        assert_eq!(
+            admit(&mut table, 0x03),
+            third,
+            "the end of the chain is found again"
+        );
+        assert_eq!(admit(&mut table, 0x01), first, "and so is its head");
+        assert_eq!(admit(&mut table, 0x02), second, "and its middle");
+        assert_eq!(table.records, 3_u64, "and asking again adds no record");
+    }
+
+    #[test]
+    fn one_key_record_per_distinct_question()
+    {
+        let mut arena = TermArena::new();
+        let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let pair = arena.value_tuple(&[variable, variable]);
+        let unit = arena.value_type_unit();
+        let read = [(DeBruijnIndex::from(0_u32), unit)];
+        let mut table = ContentTable::new();
+        let first = support_key(
+            &mut table,
+            &arena,
+            SupportGoal::SynthValue(variable),
+            Telescope::Read(&read),
+        );
+        assert_eq!(
+            table.records, 5_u64,
+            "the subject, the binder's type, its pair, the cover and the goal"
+        );
+        assert_eq!(
+            first,
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::SynthValue(variable),
+                Telescope::Read(&read)
+            ),
+            "asking again names the same goal"
+        );
+        assert_eq!(table.records, 5_u64, "and adds no record");
+        let checked = support_key(
+            &mut table,
+            &arena,
+            SupportGoal::CheckValue(variable, unit),
+            Telescope::Read(&read),
+        );
+        assert_ne!(checked, first, "checking is another question");
+        assert_eq!(
+            table.records, 6_u64,
+            "whose expected type and cover are already named: only its goal record is new"
+        );
+        let _reading = support_key(
+            &mut table,
+            &arena,
+            SupportGoal::SynthValue(pair),
+            Telescope::Read(&read),
+        );
+        assert_eq!(
+            table.records, 8_u64,
+            "another subject reading the same binder adds its node and its goal, and shares the \
+             pair and the cover"
         );
     }
 
@@ -3295,8 +3853,18 @@ mod tests
         assert_ne!(first, second, "the fixture mints two distinct arena nodes");
         let mut table = ContentTable::new();
         assert_eq!(
-            encode_support(&mut table, &arena, SupportGoal::SynthValue(first), &[]),
-            encode_support(&mut table, &arena, SupportGoal::SynthValue(second), &[]),
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::SynthValue(first),
+                Telescope::Whole(&[])
+            ),
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::SynthValue(second),
+                Telescope::Whole(&[])
+            ),
             "equal content is one key however many arena nodes spell it - which is what an \
              identity key forfeits and what makes a re-minted spine's leaf collapse"
         );
@@ -3332,8 +3900,10 @@ mod tests
         ];
         let mut table = ContentTable::new();
         let keys = cases.map(|(node, goal, family)| {
-            let key = encode_support(&mut table, &arena, goal, &[]);
-            assert_eq!(table.record_of(&arena, node).as_ref(), &[0xff_u8, family]);
+            let key = support_key(&mut table, &arena, goal, Telescope::Whole(&[]));
+            let mut record = ContentEncoding::new();
+            table.write_record(&mut record, &arena, node);
+            assert_eq!(record.as_ref(), &[0xff_u8, family]);
             assert_eq!(
                 content_digest(&arena, node),
                 ContentEncoding(vec![2_u8, 0xff, family]).digest()
@@ -3364,8 +3934,14 @@ mod tests
             arena.computation_case(left, &[returns_unit, returns_variable]),
         ];
         let mut table = ContentTable::new();
-        let keys =
-            roots.map(|root| encode_support(&mut table, &arena, SupportGoal::SynthComp(root), &[]));
+        let keys = roots.map(|root| {
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::SynthComp(root),
+                Telescope::Whole(&[]),
+            )
+        });
         for (index, key) in keys.iter().enumerate() {
             for other in keys.iter().skip(index.saturating_add(1)) {
                 assert_ne!(
@@ -3387,8 +3963,14 @@ mod tests
         let code = arena.value_variable(DeBruijnIndex::from(0_u32));
         let element = arena.comp_type_element(code, super::Level::zero());
         let mut table = ContentTable::new();
-        let keys = [returner, arrow, dependent, element]
-            .map(|root| encode_support(&mut table, &arena, SupportGoal::CompTypeLevel(root), &[]));
+        let keys = [returner, arrow, dependent, element].map(|root| {
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::CompTypeLevel(root),
+                Telescope::Whole(&[]),
+            )
+        });
         for (index, key) in keys.iter().enumerate() {
             for other in keys.iter().skip(index.saturating_add(1)) {
                 assert_ne!(
@@ -3411,31 +3993,31 @@ mod tests
         let integer_returner = arena.comp_type_returner(integer_type);
         let mut table = ContentTable::new();
         assert_ne!(
-            encode_support(
+            support_key(
                 &mut table,
                 &arena,
                 SupportGoal::CheckValue(unit, unit_type),
-                &[]
+                Telescope::Whole(&[])
             ),
-            encode_support(
+            support_key(
                 &mut table,
                 &arena,
                 SupportGoal::CheckValue(unit, integer_type),
-                &[]
+                Telescope::Whole(&[])
             )
         );
         assert_ne!(
-            encode_support(
+            support_key(
                 &mut table,
                 &arena,
                 SupportGoal::CheckComp(comp, unit_returner),
-                &[]
+                Telescope::Whole(&[])
             ),
-            encode_support(
+            support_key(
                 &mut table,
                 &arena,
                 SupportGoal::CheckComp(comp, integer_returner),
-                &[]
+                Telescope::Whole(&[])
             )
         );
     }
@@ -3510,9 +4092,15 @@ mod tests
             body = arena.value_tuple(&[body, body]);
         }
         let mut table = ContentTable::new();
-        let key = encode_support(&mut table, &arena, SupportGoal::SynthValue(body), &[]);
-        assert_eq!(table.records, 17_u64);
-        assert_eq!(table.interned.len(), 17_usize);
+        let key = support_key(
+            &mut table,
+            &arena,
+            SupportGoal::SynthValue(body),
+            Telescope::Whole(&[]),
+        );
+        // The 17 distinct nodes, then the key's empty context and its goal.
+        assert_eq!(table.records, 19_u64);
+        assert_eq!(table.interned.len(), 19_usize);
         assert_eq!(table.placed.len(), 17_usize);
         let length = usize::from(table.stream().length());
         assert!(
@@ -3522,9 +4110,14 @@ mod tests
         );
         // Asking again costs nothing: the session's table already holds it.
         let before = usize::from(table.stream().length());
-        let again = encode_support(&mut table, &arena, SupportGoal::SynthValue(body), &[]);
+        let again = support_key(
+            &mut table,
+            &arena,
+            SupportGoal::SynthValue(body),
+            Telescope::Whole(&[]),
+        );
         assert_eq!(again, key);
-        assert_eq!(table.records, 17_u64);
+        assert_eq!(table.records, 19_u64);
         assert_eq!(table.placed.len(), 17_usize);
         assert_eq!(
             before,
@@ -3536,11 +4129,15 @@ mod tests
         for _step in 0 .. 16_u32 {
             reminted = arena.value_tuple(&[reminted, reminted]);
         }
-        let reminted_key =
-            encode_support(&mut table, &arena, SupportGoal::SynthValue(reminted), &[]);
+        let reminted_key = support_key(
+            &mut table,
+            &arena,
+            SupportGoal::SynthValue(reminted),
+            Telescope::Whole(&[]),
+        );
         assert_eq!(reminted_key, key);
-        assert_eq!(table.records, 17_u64);
-        assert_eq!(table.interned.len(), 17_usize);
+        assert_eq!(table.records, 19_u64);
+        assert_eq!(table.interned.len(), 19_usize);
         assert_eq!(table.placed.len(), 34_usize);
         assert_eq!(usize::from(table.stream().length()), before);
     }

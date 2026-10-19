@@ -1116,6 +1116,65 @@ fn memoized_checking_agrees_with_memoless_checking()
     );
 }
 
+/// `def _ : U (Integer → F (U (Unit → F Integer) × U (String → F Integer)))
+/// = thunk λx. return (thunk λy. return x, thunk λz. return x)`: the one node
+/// `return x` — index 1, not index 0 — is checked under `[Integer, Unit]` and
+/// under `[Integer, String]`, contexts differing only at index 0.
+///
+/// # Specification
+/// trivial.
+fn outer_read_under_two_inner_binders(arena: &mut TermArena) -> (ValueTypeId, ValueId)
+{
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit_type = arena.value_type_unit();
+    let text = arena.value_type_base(BaseType::String);
+    let returns_integer = arena.comp_type_returner(integer);
+    let from_unit = arena.comp_type_arrow(unit_type, returns_integer);
+    let from_text = arena.comp_type_arrow(text, returns_integer);
+    let first_type = arena.value_type_thunk(from_unit);
+    let second_type = arena.value_type_thunk(from_text);
+    let pair = arena.value_type_product(&[first_type, second_type]);
+    let returns_pair = arena.comp_type_returner(pair);
+    let outer = arena.comp_type_arrow(integer, returns_pair);
+    let declared = arena.value_type_thunk(outer);
+    let outer_binder = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let read_outer = arena.computation_return(outer_binder);
+    let inner = arena.computation_lambda(read_outer);
+    let suspended = arena.value_thunk(inner);
+    let both = arena.value_tuple(&[suspended, suspended]);
+    let returned = arena.computation_return(both);
+    let lambda = arena.computation_lambda(returned);
+    (declared, arena.value_thunk(lambda))
+}
+
+#[test]
+fn a_node_reading_one_binder_takes_one_entry_under_contexts_differing_elsewhere()
+{
+    assert_eq!(
+        Ok(()),
+        verdicts_agree(outer_read_under_two_inner_binders).0,
+        "memoized and memoless checking agree"
+    );
+    let (mut arena, declaration) = stage(outer_read_under_two_inner_binders);
+    let mut memo: DefaultMemo = DefaultMemo::new();
+    let (verdict, census) = check_with(&mut arena, &declaration, &mut memo);
+    assert_eq!(Ok(()), verdict, "the definition checks");
+    assert_eq!(
+        ExpansionCount::from(1),
+        census.plane_recalls(SupportPlane::Term),
+        "`return x` under `[Integer, String]` is served by its entry under `[Integer, Unit]`: \
+         it reads index 1, and the contexts differ only at index 0"
+    );
+    assert_eq!(
+        MemoEntryCount::from(
+            usize::try_from(u64::from(census.plane_expansions(SupportPlane::Term)))
+                .unwrap_or(usize::MAX)
+        ),
+        memo.plane_entry_count(SupportPlane::Term),
+        "every expansion left one entry, so the two checks of `return x` took one"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Poisoned entries: both directions, both planes, all permanent suite members
 // ---------------------------------------------------------------------------

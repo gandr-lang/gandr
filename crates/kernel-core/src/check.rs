@@ -1204,8 +1204,8 @@ where
     let mut frames: Vec<TypeLevelFrame> = Vec::new();
     let mut goal = root;
     'expand: loop {
-        // A type's level depends on the type node and on the binder slice its
-        // codes reach, so the support carries the same reached telescope a term
+        // A type's level depends on the type node and on the binders its codes
+        // read, so the support carries the same read binders a term
         // goal's does. When the memo is inactive this whole block is a
         // constant-false branch that monomorphization removes.
         let mut recalled: Option<Level> = None;

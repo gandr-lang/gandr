@@ -29,7 +29,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - **Conversion replay.** `replay`: a conversion trace replayed against an engine's `EngineClaim` for two `ReplaySides`, answering a `KernelVerdict` — certified convertible, certified not convertible, or declined with a `ReplayDecline`; `read_step`: an open returned code's step re-derived by the kernel's own reading, with no trace.
 - **Native formers.** Nominal data and structural records, recursive data with the structural fixpoint, the native List former, universe paths, session codes, element and function identity and the bridge (`element_identity`), and the directed family (`flow_universe`: `Flow`, `stay`, `then`, `ride` and its telescope form, with forward, function and session certificates replayed on readmission), all through ordinary admission.
 - **Rule languages beside admission.** Identity and bridge recursion (`identity_recursion`), guarded higher fields (`higher_field`), the experimental stage universe (`stage`) and guarded admission of staging-equation families (`admission`); none of them admits a declaration on its own authority.
-- **The content key.** `ContentTable`, `encode_support`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, canonical support encodings and their digests.
+- **The content key.** `ContentTable`, `support_key`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, the memo key as one name in the content table built from its members' names, and content digests.
 - **The rewrites.** `shift_value_type` and `substitute_comp_type`, de Bruijn shifting and substitution as memoized machines.
 - **Accounting.** `ExpansionCensus`: goal expansions and memo recalls per plane, the observation every measurement here is asserted through.
 - **Errors.** `KernelError`, whose payloads are content — a head former and the offending node's content digest — because admission truncates the arena and an arena id would dangle.
@@ -99,7 +99,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 | The seal rule: a manifest atom read as its representation | [`src/seal.rs`](src/seal.rs) |
 | Conversion and its discharged set | [`src/conv.rs`](src/conv.rs) |
 | Conversion replay, its decisions and laws | [`src/replay.rs`](src/replay.rs) |
-| The content key, the digest and the binder slice | [`src/encoding.rs`](src/encoding.rs), [`src/support.rs`](src/support.rs) |
+| The content table, the memo key and the binders a goal reads | [`src/encoding.rs`](src/encoding.rs), [`src/support.rs`](src/support.rs) |
 | Shifting and substitution | [`src/rewrite.rs`](src/rewrite.rs) |
 | Universe paths | [`src/path_universe.rs`](src/path_universe.rs) |
 | The directed family: formation, `stay`, `then`, `ride` and its telescope form, the covariance gate, certificate admission and the permanent refusals | [`src/flow_universe.rs`](src/flow_universe.rs) |

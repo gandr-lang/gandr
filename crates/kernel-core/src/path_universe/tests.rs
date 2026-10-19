@@ -1341,17 +1341,17 @@ fn certificate_identity_stays_out_of_conversion()
     );
     let mut table = crate::encoding::ContentTable::new();
     assert_ne!(
-        crate::encoding::encode_support(
+        crate::encoding::support_key(
             &mut table,
             staging.arena(),
             crate::encoding::SupportGoal::SynthValue(first),
-            &[]
+            crate::encoding::Telescope::Whole(&[])
         ),
-        crate::encoding::encode_support(
+        crate::encoding::support_key(
             &mut table,
             staging.arena(),
             crate::encoding::SupportGoal::SynthValue(different_evidence),
-            &[]
+            crate::encoding::Telescope::Whole(&[])
         ),
         "erased conversion evidence still changes admission content"
     );
