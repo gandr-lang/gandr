@@ -20,11 +20,15 @@ path = "tests/lib.rs"
 
 # The layout engine lays each top-level form out; the parser reads the
 # formatted text back for the meaning check; the grammar names the forms
-# kept verbatim; the syntax tree is the input.
+# kept verbatim; the syntax tree is the input. A rewrite between the
+# spellings is checked by lowering the source and the rewritten text into
+# one core arena and comparing what each declaration lowered to.
 [dependencies]
 anodized.workspace = true
+gandr-core-term.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-layout.workspace = true
+gandr-surface-lowering.workspace = true
 gandr-surface-parser.workspace = true
 gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true

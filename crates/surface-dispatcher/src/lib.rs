@@ -176,6 +176,7 @@ pub use crate::exercised::Row;
 pub use crate::format::FormatFault;
 pub use crate::format::FormatStep;
 pub use crate::format::Formatting;
+pub use crate::format::Kept;
 pub use crate::format::Rewrite;
 pub use crate::ledger::ExemplarFault;
 pub use crate::ledger::ExemplarFinding;

@@ -704,6 +704,42 @@ fn fmt_rewrites_what_check_reports()
     );
 }
 
+/// #791: `fmt --form sugared` names the declaration that kept its explicit
+/// spelling, where it starts and why, on standard error; the source is still
+/// formatted and the exit is the change's.
+#[test]
+fn fmt_names_each_declaration_that_kept_its_spelling_791()
+{
+    let scratch = Scratch::new(Path::new("fmt-kept"));
+    let source = scratch.file(
+        Path::new("pick.gandr"),
+        Text::from(
+            "def pair : #{Integer, String} ;\n\ndef pick(t : +{Integer, Integer}) -> -F Integer \
+             {\n  case t {\n    +{.1 = x} => return x,\n    _ => return 0\n  }\n}\n",
+        ),
+    );
+    let (fmt, form) = (Path::new("fmt"), Path::new("--form=sugared"));
+    let sugared = ran(gandr(&[fmt, form, &source]));
+    assert_eq!(code(&sugared), Code(0_i32), "{}", stderr(&sugared));
+    assert_eq!(
+        (stdout(&sugared), stderr(&sugared)),
+        (
+            format!("{}\n", source.display()),
+            format!(
+                "gandr: {}:3:1: `pick` keeps its spelling: the lowering reads its stated sum or \
+                 function type in the explicit spelling only (#791)\n",
+                source.display()
+            )
+        )
+    );
+    assert!(
+        std::fs::read_to_string(&source)
+            .expect("the source is readable")
+            .starts_with("def pair : Integer * String ;\n\ndef pick(t : +{Integer, Integer})"),
+        "the declaration beside it is sugared"
+    );
+}
+
 #[test]
 fn the_syntax_ledger_is_written_and_reproduced()
 {

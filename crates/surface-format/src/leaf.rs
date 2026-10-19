@@ -8,6 +8,7 @@ use anodized::spec;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_parser::ObligationInstance;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::MoldId;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
@@ -162,19 +163,12 @@ pub fn flatten<'source>(
             continue;
         };
         let material = match node.label() {
-            NodeLabel::Meld(mold) => {
-                let verbatim = grammar.rule_of(mold).is_ok_and(|rule| {
-                    let name = rule.name().0;
-                    let base = name.split_once('.').map_or(name, |(base, _)| base);
-                    VERBATIM_RULES.contains(&base)
-                });
-                if verbatim {
-                    Material::Verbatim
-                }
-                else {
+            NodeLabel::Meld(mold) => match copied(grammar, mold) {
+                Copied::Verbatim => Material::Verbatim,
+                Copied::LaidOut => {
                     pending.extend(tree.children(at).map(|child| (child, owner, documentation)));
                     continue;
-                }
+                },
             },
             NodeLabel::Wald => {
                 pending.extend(tree.children(at).map(|child| (child, owner, documentation)));
@@ -240,6 +234,39 @@ pub fn flatten<'source>(
     Leaves {
         leaves: kept,
         repaired,
+    }
+}
+
+/// Whether a form is laid out or copied byte for byte.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Copied
+{
+    /// A form [`VERBATIM_RULES`] names: copied as written.
+    Verbatim,
+    /// Any other form: laid out.
+    LaidOut,
+}
+
+/// Whether the form `mold` molds is copied byte for byte: its grammar rule's
+/// name before any sort suffix is one [`VERBATIM_RULES`] names.
+///
+/// # Specification
+/// trivial.
+pub fn copied(
+    grammar: &Pbg,
+    mold: MoldId,
+) -> Copied
+{
+    let verbatim = grammar.rule_of(mold).is_ok_and(|rule| {
+        let name = rule.name().0;
+        let base = name.split_once('.').map_or(name, |(base, _)| base);
+        VERBATIM_RULES.contains(&base)
+    });
+    if verbatim {
+        Copied::Verbatim
+    }
+    else {
+        Copied::LaidOut
     }
 }
 
