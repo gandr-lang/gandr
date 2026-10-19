@@ -698,7 +698,7 @@ impl<'source> Program<'source>
                         &source,
                         CoreNode::ValueType(declared),
                         PageWidth::from(u32::from(u16::MAX)),
-                        Form::Sugared,
+                        Form::Sugared.into(),
                     )
                     .ok()
                     .map(|spelled| (judged.constant(), spelled.to_string()))
@@ -1448,7 +1448,7 @@ impl<'source> Program<'source>
             .collect();
         let constructors = self.families.naming(&names);
         let source = CoreSource::new(core, &names).naming(&constructors);
-        present_computation_line(&source, CoreNode::Computation(read), Form::Sugared)
+        present_computation_line(&source, CoreNode::Computation(read), Form::Sugared.into())
             .map(ValueSpelling)
             .map_err(|_refusal| Unfinished::Unspelled)
     }

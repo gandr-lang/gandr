@@ -1,6 +1,6 @@
 # gandr-surface-pretty
 
-The presentation printer: a checked core type, a normal-form value or an elaborated body, written in a surface spelling — sugared or explicit — and laid out at a page width through `gandr-surface-layout`.
+The presentation printer: a checked core type, a normal-form value or an elaborated body, written in a surface spelling — sugared or explicit, in Unicode or ASCII — and laid out at a page width through `gandr-surface-layout`.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -13,7 +13,7 @@ The presentation printer: a checked core type, a normal-form value or an elabora
 
 ## Synopsis
 
-**What.** `present_type`, `present_value` and `present_computation` take a `Source` — a store that answers, for one node, the `Former` it carries — a root, a `PageWidth` and a `Form`, and return a `Presentation`: the laid-out text and its `Fidelity`, which says whether every node was written in full. `CoreSource` reads the core arena and `ContentSource` an incremental checkpoint's content table; a face with a store of its own implements `Source` beside them. The crate uses `core` and `alloc` under `no_std`.
+**What.** `present_type`, `present_value` and `present_computation` take a `Source` — a store that answers, for one node, the `Former` it carries — a root, a `PageWidth` and a `Style`, and return a `Presentation`: the laid-out text and its `Fidelity`, which says whether every node was written in full. `CoreSource` reads the core arena and `ContentSource` an incremental checkpoint's content table; a face with a store of its own implements `Source` beside them. The crate uses `core` and `alloc` under `no_std`.
 
 **Why.** A transcript line, a hover and a diagnostic operand each name a type or show a value, and each must say it the same way, in the syntax a reader can type back. One producer of that spelling, laid out by one engine, keeps every face in agreement on both the words and where a line breaks. The sugared form writes the sugar a reader writes — `A => B`, `A * B`, `A + B`, `C & D`, `(a, b)` — where the core's shape is exactly the one it stands for; the explicit form writes the formers the core is made of.
 
@@ -32,7 +32,8 @@ The presentation printer: a checked core type, a normal-form value or an elabora
 - `DEPTH_LIMIT`, `ValueDepth`: the value depth at which the printer writes `<deep>`.
 - `PresentationError`: a layout ceiling reached while building or rendering, or a defect in the walk's own bookkeeping.
 - `PageWidth`, re-exported from `gandr-surface-layout`.
-- `Form`: `Sugared` or `Explicit`, the spelling every entry point writes. Witnesses: `tests::goldens::the_sugared_form_writes_every_sugar_its_shape_admits`, `tests::goldens::the_sugared_form_breaks_its_infix_and_lists_at_the_narrow_page`.
+- `Form`: `Sugared` or `Explicit`, which of the grammar's spellings a former takes. Witnesses: `tests::goldens::the_sugared_form_writes_every_sugar_its_shape_admits`, `tests::goldens::the_sugared_form_breaks_its_infix_and_lists_at_the_narrow_page`.
+- `Spelling`, re-exported from `gandr-surface-grammar`, and `Style`, a form and a spelling: Unicode writes the grammar's glyphs, ASCII their ASCII spellings — `<~>`, `~~>`, `Iso(A, B)`, `::` — and writes a name holding the prime `′` as `?`, recorded `Unspelled::Primed`. Witnesses: `tests::goldens::each_glyph_former_is_written_in_the_spelling_asked_782`, `tests::goldens::a_primed_name_has_no_ascii_spelling_782`.
 
 ## Expected features
 
@@ -73,11 +74,11 @@ fn main() -> Result<(), PresentationError> {
 
     let source = CoreSource::new(&core, &[]);
     let root = CoreNode::CompType(pi_outer);
-    let explicit = present_type(&source, root, PageWidth::from(100_u32), Form::Explicit)?;
+    let explicit = present_type(&source, root, PageWidth::from(100_u32), Form::Explicit.into())?;
     assert_eq!(explicit.as_ref(), "(a : Type) -> (b : Type) -> +U (a -> -F b) -> a -> -F b");
-    let sugared = present_type(&source, root, PageWidth::from(100_u32), Form::Sugared)?;
+    let sugared = present_type(&source, root, PageWidth::from(100_u32), Form::Sugared.into())?;
     assert_eq!(sugared.as_ref(), "(a : Type) -> (b : Type) -> (a => b) -> a -> -F b");
-    let narrow = present_type(&source, root, PageWidth::from(40_u32), Form::Explicit)?;
+    let narrow = present_type(&source, root, PageWidth::from(40_u32), Form::Explicit.into())?;
     assert_eq!(narrow.as_ref(), "(a : Type) -> (b : Type) -> +U (a ->\n  -F b) -> a -> -F b");
     Ok(())
 }
@@ -97,7 +98,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 
 | Topic | Module |
 | ----- | ------ |
-| Two forms of one walk, a body's canonical form with its exits elided, the answers the lint wall checks at compile time, tests and their limits, references | [`src/lib.rs`](src/lib.rs) |
+| Two forms of one walk, two spellings, a body's canonical form with its exits elided, the answers the lint wall checks at compile time, tests and their limits, references | [`src/lib.rs`](src/lib.rs) |
 | The input is a source | [`former`](src/former.rs) |
 | Products, sums and tuples between their braces, native universe paths, break points, a body's statements breaking together, binder names, bounds | [`walk`](src/walk.rs) |
 

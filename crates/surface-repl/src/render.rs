@@ -119,7 +119,7 @@ pub fn spell(
         &ContentSource::from(nodes),
         root,
         PageWidth::from(TRANSCRIPT_WIDTH),
-        Form::Sugared,
+        Form::Sugared.into(),
     )
 }
 

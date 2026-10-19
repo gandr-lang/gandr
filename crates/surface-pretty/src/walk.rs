@@ -206,12 +206,14 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Sign;
+use gandr_surface_grammar as grammar;
 use gandr_surface_layout::units::NestAmount;
 use quenchant_shape::shape::Maybe;
 
 use crate::DEPTH_LIMIT;
 use crate::Fidelity;
 use crate::Form;
+use crate::Style;
 use crate::ValueDepth;
 use crate::compose::Compose;
 use crate::compose::Doc;
@@ -225,19 +227,69 @@ use crate::former::Source;
 use crate::former::Unreadable;
 use crate::former::Unspelled;
 
-/// The glyph written between a relation's operands, after the space before
-/// it: the equivalence `≃`, the quasi-inverse `≅` and the flow between types
-/// `⇝`, one glyph per former, so the ASCII aliases never print.
+/// The relation `relation` names, as the grammar's spelling table pairs its
+/// glyph with its ASCII spelling: the equivalence `≃`, the quasi-inverse `≅`
+/// and the flow between types `⇝`, one entry per former.
 ///
 /// # Specification
 /// trivial.
-const fn relation_glyph(relation: Relation) -> Glyphs<'static>
+const fn relation_spelled(relation: Relation) -> grammar::Spelled
 {
-    Glyphs(match relation {
-        Relation::Isomorphism => writes(Production("isomorphism_type"), " ≅"),
-        Relation::Equivalence => writes(Production("equivalence_type"), " ≃"),
-        Relation::Flow => writes(Production("universe_flow_type"), " ⇝"),
-    })
+    match relation {
+        Relation::Isomorphism => writes(Production("isomorphism_type"), grammar::ISOMORPHISM),
+        Relation::Equivalence => writes(Production("equivalence_type"), grammar::EQUIVALENCE),
+        Relation::Flow => writes(Production("universe_flow_type"), grammar::FLOW),
+    }
+}
+
+/// Why `text`, a name, cannot be written in `spelling`, if it cannot.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Unspelled::Unprintable`] for an empty name and one holding a
+///   line feed, a carriage return or a tab; else [`Unspelled::Primed`] for a
+///   name holding the prime in [`grammar::Spelling::Ascii`]; else none.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an empty name, a primed one in each spelling and a plain
+///   one distinguish the three answers.
+/// - witness: `walk::tests::unprintable_names_are_approximate_atoms`
+/// - witness: `tests::goldens::a_primed_name_has_no_ascii_spelling_782`
+#[spec(ensures: |ret| {
+    let text: &str = name.as_ref();
+    match ret {
+        Some(Unspelled::Unprintable) => text.is_empty() || text.contains(['\n', '\r', '\t']),
+        Some(Unspelled::Primed) => spelling == grammar::Spelling::Ascii && text.contains(grammar::PRIME.0),
+        Some(_) => false,
+        None => !text.is_empty() && !text.contains(['\n', '\r', '\t'])
+            && (spelling == grammar::Spelling::Unicode || !text.contains(grammar::PRIME.0)),
+    }
+})]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        answer_totality,
+        reason = "a name a line cannot hold, or a primed name in ASCII, has no spelling: each \
+                  caller writes `?` for the reason answered"
+    )
+)]
+fn unwritable(
+    name: Name<'_>,
+    spelling: grammar::Spelling,
+) -> Option<Unspelled>
+{
+    let text: &str = name.as_ref();
+    if text.is_empty() || text.contains(['\n', '\r', '\t']) {
+        Some(Unspelled::Unprintable)
+    }
+    else if spelling == grammar::Spelling::Ascii && text.contains(grammar::PRIME.0) {
+        Some(Unspelled::Primed)
+    }
+    else {
+        None
+    }
 }
 
 quenchant_shape::reason_enum! {
@@ -2635,6 +2687,8 @@ struct Walk<'walk, 'names>
     forms: Vec<Vec<Part>>,
     /// Whether the sugar the grammar parses is written where it fits.
     form: Form,
+    /// Which glyphs the walk writes where a construct has two spellings.
+    spelling: grammar::Spelling,
     /// The node reads the walk may still make: one per visit, and one per
     /// link the alias's look-ahead reads.
     remaining: u32,
@@ -2793,12 +2847,13 @@ impl Walk<'_, '_>
         self.atom(glyphs)
     }
 
-    /// Pushes a name, or `?` for a name a line cannot hold.
+    /// Pushes a name, or `?` for a name the walk's spelling cannot write.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: an atom holding the name; `?`, approximate, for an empty name
-    ///   and one holding a line feed, a carriage return or a tab.
+    /// - ensures: an atom holding the name; `?`, approximate, for an empty
+    ///   name, one holding a line feed, a carriage return or a tab, and in
+    ///   ASCII one holding the prime.
     /// - provides: the spelling of constants and abstract types.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -2808,15 +2863,17 @@ impl Walk<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — ordinary names, a literal question mark, empty names
-    ///   and each forbidden control distinguish content from approximation.
-    ///   Other Unicode names are outside these finite fixtures.
+    ///   and each forbidden control distinguish content from approximation; a
+    ///   primed name in each spelling distinguishes the ASCII refusal. Other
+    ///   Unicode names are outside these finite fixtures.
     /// - witness: `tests::goldens::fidelity_follows_nodes_not_the_characters_of_a_name`
+    /// - witness: `tests::goldens::a_primed_name_has_no_ascii_spelling_782`
     /// - witness: `walk::tests::unprintable_names_are_approximate_atoms`
     #[spec(
         captures: [entry = self.pieces.len(), fidelity = self.fidelity],
         ensures: |ref ret| {
             let text: &str = name.as_ref();
-            self.fidelity == if text.is_empty() || text.contains(['\r', '\n', '\t']) { Fidelity::Approximate } else { fidelity }
+            self.fidelity == if unwritable(name, self.spelling).is_some() { Fidelity::Approximate } else { fidelity }
                 && match *ret {
                     | Ok(()) => entry.checked_add(1_usize) == Some(self.pieces.len())
                     && self.pieces.last().is_some_and(|piece| piece.binding == if text.contains('.') { Binding::Qualified } else { Binding::Atom }),
@@ -2831,16 +2888,8 @@ impl Walk<'_, '_>
     ) -> Result<(), PresentationError>
     {
         let text: &str = name.as_ref();
-        if text.is_empty() || text.contains(['\n', '\r', '\t']) {
-            #[cfg_attr(
-                dylint_lib = "quenchant_dylints",
-                expect(
-                    answer_totality,
-                    reason = "a name a line cannot hold, empty or with a line break or a tab, has \
-                              no one-line spelling"
-                )
-            )]
-            return self.unspell(Unspelled::Unprintable);
+        if let Some(reason) = unwritable(name, self.spelling) {
+            return self.unspell(reason);
         }
         if text.contains('.') {
             let doc = self.leaf(Glyphs(text))?;
@@ -2861,8 +2910,8 @@ impl Walk<'_, '_>
     /// - requires: nothing; a source may answer no label.
     /// - ensures: one atom piece: the field label the source answers for `of`
     ///   at `index`, or the summand `index` in decimal, then its separator; `?`
-    ///   in place of a label the source does not answer or a line cannot hold,
-    ///   which makes the presentation approximate.
+    ///   in place of a label the source does not answer, a line cannot hold or,
+    ///   primed, ASCII cannot write, which makes the presentation approximate.
     /// - provides: the labelled entries of records and injections.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -2892,8 +2941,8 @@ impl Walk<'_, '_>
         dylint_lib = "quenchant_dylints",
         expect(
             answer_totality,
-            reason = "a label the source does not answer, a malformed source, or a line cannot \
-                      hold has no spelling"
+            reason = "a label the source does not answer, a malformed source, or a line or the \
+                      spelling cannot hold has no spelling"
         )
     )]
     fn label<S>(
@@ -2911,13 +2960,13 @@ impl Walk<'_, '_>
             Label::Field | Label::Assignment => {
                 let held = source.label(of, index);
                 let mut text: &str = held.as_ref().map_or("", AsRef::as_ref);
-                if text.is_empty() || text.contains(['\n', '\r', '\t']) {
+                if let Some(reason) = unwritable(Name::from(text), self.spelling) {
                     self.fidelity = Fidelity::Approximate;
                     let _fresh = self.unspelled.insert(if text.is_empty() {
                         Unspelled::Missing
                     }
                     else {
-                        Unspelled::Unprintable
+                        reason
                     });
                     text = "?";
                 }
@@ -2940,7 +2989,8 @@ impl Walk<'_, '_>
     ///   intuitionistic variable reads as the context binder it counts out to,
     ///   innermost last; `?`, approximate and recorded unbound, for a linear
     ///   variable past every open binder, one past the context, and a context
-    ///   binder the source cannot name, and recorded exhausted when the
+    ///   binder the source cannot name, recorded primed for a context binder
+    ///   whose prime ASCII cannot write, and recorded exhausted when the
     ///   generated names ran out.
     /// - provides: the spelling of a bound variable and of an endpoint.
     /// - fails: the builder's refusal.
@@ -2993,18 +3043,20 @@ impl Walk<'_, '_>
                 }
             },
             None => match zone {
-                Zone::Intuitionistic => self
+                Zone::Intuitionistic => match self
                     .context
                     .len()
                     .checked_sub(remaining)
                     .and_then(|outer| outer.checked_sub(1_usize))
                     .and_then(|position| self.context.get(position).copied().flatten())
-                    .filter(|name| {
-                        let text: &str = name.as_ref();
-                        !text.is_empty() && !text.contains(['\n', '\r', '\t'])
-                    })
-                    .map(|name| String::from(name.as_ref()))
-                    .ok_or(Unspelled::Unbound),
+                {
+                    Some(name) => match unwritable(name, self.spelling) {
+                        None => Ok(String::from(name.as_ref())),
+                        Some(Unspelled::Primed) => Err(Unspelled::Primed),
+                        Some(_) => Err(Unspelled::Unbound),
+                    },
+                    None => Err(Unspelled::Unbound),
+                },
                 Zone::Linear => Err(Unspelled::Unbound),
             },
         };
@@ -4974,10 +5026,11 @@ impl Walk<'_, '_>
     /// - requires: nothing.
     /// - ensures: one binder more is open, in `zone`; its position takes the
     ///   name `opener`'s source writes ([`Source::arrow_binder`]) when it is a
-    ///   printable name the term mentions nowhere else and no open binder
-    ///   holds, else the first generated name ([`Binders::name_at`]) no open
-    ///   binder holds, else none. With no written names, the binder at position
-    ///   `p` takes the `p`-th generated name, as it always did.
+    ///   name the walk's spelling writes, the term mentions nowhere else and no
+    ///   open binder holds, else the first generated name
+    ///   ([`Binders::name_at`]) no open binder holds, else none. With no
+    ///   written names, the binder at position `p` takes the `p`-th generated
+    ///   name, as it always did.
     /// - provides: the name each occurrence of the binder and its former's join
     ///   read.
     /// - fails: never.
@@ -4987,8 +5040,9 @@ impl Walk<'_, '_>
     /// - hypothesis: L3 — a declared type spells its parameters' names; a
     ///   written name a constant of the type holds, or an outer binder's, falls
     ///   back to a generated one; generated names skip a written name an outer
-    ///   binder took.
+    ///   binder took; a primed name in ASCII falls back to a generated one.
     /// - witness: `tests::goldens::an_arrow_binder_spells_as_the_source_names_it`
+    /// - witness: `tests::goldens::a_primed_name_has_no_ascii_spelling_782`
     #[spec(
         captures: [opened = self.opened.len()],
         ensures: self.opened.len() == opened.saturating_add(1_usize)
@@ -5008,10 +5062,9 @@ impl Walk<'_, '_>
         let taken = |name: &str| outer.iter().flatten().any(|held| held.0 == name);
         let written = opener
             .and_then(|node| source.arrow_binder(node))
-            .filter(|name| {
+            .filter(|&name| {
                 let text: &str = name.as_ref();
-                !text.is_empty()
-                    && !text.contains(['\n', '\r', '\t'])
+                unwritable(name, self.spelling).is_none()
                     && !self.binders.mentioned.contains(text)
                     && !taken(text)
             })
@@ -5023,30 +5076,33 @@ impl Walk<'_, '_>
         self.opened.push(zone);
     }
 
-    /// `name` as a part's text, or `?` for a name a line cannot hold or the
-    /// source does not answer, recorded as unprintable or as `missing`.
+    /// `name` as a part's text, or `?` for a name a line or the walk's
+    /// spelling cannot hold or the source does not answer, recorded as the
+    /// reason it is unwritable or as `missing`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the name itself when it is non-empty and holds no line feed,
-    ///   carriage return or tab; `?` otherwise, the presentation approximate
-    ///   and the reason recorded.
+    /// - ensures: the name itself when it is non-empty, holds no line feed,
+    ///   carriage return or tab and, in ASCII, no prime; `?` otherwise, the
+    ///   presentation approximate and the reason recorded.
     /// - provides: every name a former spelled by parts writes.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a handler's clause names and a data case's
-    ///   constructors spell as written; an unnamed constructor spells `?`.
+    ///   constructors spell as written; an unnamed constructor spells `?`; a
+    ///   primed constructor in ASCII spells `?`.
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_primed_name_has_no_ascii_spelling_782`
     /// - witness: `walk::tests::unprintable_names_are_approximate_atoms`
     #[spec(ensures: |ref ret| !ret.0.contains(['\n', '\r', '\t']) && !ret.0.is_empty())]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
             answer_totality,
-            reason = "a name the source does not hold or a line cannot hold has no spelling: the \
-                      caller states which"
+            reason = "a name the source does not hold or a line or the spelling cannot hold has \
+                      no spelling: the caller states which"
         )
     )]
     fn spelled(
@@ -5055,19 +5111,16 @@ impl Walk<'_, '_>
         missing: Unspelled,
     ) -> Written
     {
-        match name.as_ref().map(AsRef::as_ref) {
-            Some(text) if !text.is_empty() && !text.contains(['\n', '\r', '\t']) => {
-                Written(Cow::Owned(String::from(text)))
+        let reason = match name {
+            Some(name) => match unwritable(name, self.spelling) {
+                None => return Written(Cow::Owned(String::from(name.as_ref()))),
+                Some(reason) => reason,
             },
-            Some(_) | None => {
-                self.fidelity = Fidelity::Approximate;
-                let _fresh = self.unspelled.insert(match name {
-                    Some(_) => Unspelled::Unprintable,
-                    None => missing,
-                });
-                Written(Cow::Borrowed("?"))
-            },
-        }
+            None => missing,
+        };
+        self.fidelity = Fidelity::Approximate;
+        let _fresh = self.unspelled.insert(reason);
+        Written(Cow::Borrowed("?"))
     }
 
     /// Pushes the parts `former`, a former spelled by parts, is written in,
@@ -5166,12 +5219,23 @@ impl Walk<'_, '_>
                 writes(Production("type_application"), Binding::Atom)
             },
             Former::Relation { relation, .. } => {
-                let _ = parts
-                    .piece(Binding::Lazy)
-                    .text(relation_glyph(relation).0)
-                    .part(Part::Space)
-                    .piece(Binding::Relation);
-                Binding::Relation
+                let spelled = relation_spelled(relation);
+                match (self.spelling, spelled.ascii) {
+                    (grammar::Spelling::Ascii, grammar::Ascii::Head(head)) => {
+                        let _ = parts.text(head.0).arguments(Arity(2_usize));
+                        writes(Production("type_application"), Binding::Atom)
+                    },
+                    (grammar::Spelling::Unicode, _)
+                    | (grammar::Spelling::Ascii, grammar::Ascii::Token(_)) => {
+                        let _ = parts
+                            .piece(Binding::Lazy)
+                            .text(" ")
+                            .text(spelled.written(self.spelling).0)
+                            .part(Part::Space)
+                            .piece(Binding::Relation);
+                        Binding::Relation
+                    },
+                }
             },
             Former::Recorded { moves, .. } => {
                 let _ = parts.text("recorded(");
@@ -5204,7 +5268,12 @@ impl Walk<'_, '_>
                 ..
             } => {
                 let name = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
-                let _ = parts.text(name).text(" ∷ ").piece(Binding::Cons);
+                let _ = parts
+                    .text(name)
+                    .text(" ")
+                    .text(grammar::CONS.written(self.spelling).0)
+                    .text(" ")
+                    .piece(Binding::Cons);
                 writes(Production("binary_expression.cons"), Binding::Cons)
             },
             Former::Data { name, arity } => {
@@ -6274,7 +6343,7 @@ pub fn walk<S>(
     source: &S,
     root: S::Node,
     admits: Admits,
-    form: Form,
+    style: Style,
     builder: &mut dyn Compose,
 ) -> Result<Walked, PresentationError>
 where
@@ -6302,7 +6371,8 @@ where
         bodies: Bodies::of(admits),
         protocols: Vec::new(),
         forms: Vec::new(),
-        form,
+        form: style.form,
+        spelling: style.spelling,
         remaining: VISIT_BUDGET,
     };
     let mut tasks = Vec::from([Task::Visit {
@@ -6491,7 +6561,7 @@ mod tests
             &source,
             ChangingNode,
             PageWidth::from(80_u32),
-            crate::Form::Sugared,
+            crate::Form::Sugared.into(),
         );
         assert!(
             source.reads.get() <= VISIT_BUDGET.saturating_add(1_u32),
@@ -6606,6 +6676,7 @@ mod tests
             protocols: super::Vec::new(),
             forms: super::Vec::new(),
             form: crate::Form::Sugared,
+            spelling: super::grammar::Spelling::Unicode,
             remaining: super::VISIT_BUDGET,
         };
         let refusal = super::PresentationError::Build(
@@ -6685,6 +6756,7 @@ mod tests
             protocols: super::Vec::new(),
             forms: super::Vec::new(),
             form: crate::Form::Sugared,
+            spelling: super::grammar::Spelling::Unicode,
             remaining: super::VISIT_BUDGET,
         };
         walk.atom(super::Glyphs("x")).expect("one operand builds");
@@ -6735,7 +6807,7 @@ mod tests
                 &source,
                 crate::core_source::CoreNode::Value(constant),
                 PageWidth::from(80_u32),
-                crate::Form::Sugared,
+                crate::Form::Sugared.into(),
             )
             .expect("malformed names are approximated");
             assert_eq!(result.as_ref(), "?");
@@ -6744,7 +6816,7 @@ mod tests
                 &source,
                 crate::core_source::CoreNode::ValueType(family),
                 PageWidth::from(80_u32),
-                crate::Form::Sugared,
+                crate::Form::Sugared.into(),
             )
             .expect("malformed names are approximated");
             assert_eq!(typed.as_ref(), "?", "a family named {invalid:?}");
