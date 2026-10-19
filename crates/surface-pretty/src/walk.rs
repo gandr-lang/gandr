@@ -1775,6 +1775,10 @@ enum Join
     /// returner returns, and the rest under the bind's binder, named as a
     /// dependent arrow's is: `run x : A <- c ; rest`.
     TypedSequence,
+    /// A bind of what an endpoint receives over the receive and the rest,
+    /// its binder named as a dependent arrow's is: `recv(e) as x ; rest`,
+    /// the one spelling the surface reads a receive in.
+    Received,
     /// A lambda over its body, its binder named as a dependent arrow's is.
     Lambda,
     /// A thunk over its body.
@@ -4494,6 +4498,9 @@ impl Walk<'_, '_>
                     ]));
                     Some(writes(Production("bind_statement"), Join::TypedSequence))
                 },
+                None if matches!(source.read(bound), Former::Receive(_)) => {
+                    Some(writes(Production("recv_statement"), Join::Received))
+                },
                 None => Some(writes(Production("bind_statement"), Join::Sequence)),
             },
             // An ascription outside a typed bind has no spelling of its own:
@@ -5901,7 +5908,7 @@ impl Walk<'_, '_>
                 | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) => Some(count),
             Join::ValueFunction(Arity(domains), _) => domains.checked_add(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
-            Join::Arrow | Join::Pi | Join::Sigma | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Arrow) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::Sigma | Join::Sequence | Join::Received | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Arrow) => Some(2_usize),
             Join::TypedSequence => Some(3_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
@@ -5913,7 +5920,7 @@ impl Walk<'_, '_>
                     // A dependent pair naming no binder is the product it
                     // reads as.
                     Join::Sigma if piece.binding == Binding::Product => Binding::Product,
-                    Join::Sequence | Join::TypedSequence => Binding::Sequence,
+                    Join::Sequence | Join::TypedSequence | Join::Received => Binding::Sequence,
                     Join::Infix { infix, .. } => infix.binding(),
                     Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Sigma | Join::Ua(_) | Join::Tuple(_) => Binding::Atom,
                     Join::Session { binding, .. } | Join::Form { binding, .. } => binding,
@@ -6166,6 +6173,19 @@ impl Walk<'_, '_>
                 (
                     self.builder
                         .concat_all(&[run, binder, arrow, bound, semicolon, line, rest.doc])?,
+                    Binding::Sequence,
+                )
+            },
+            Join::Received => {
+                let rest = self.pop()?;
+                let bound = self.pop()?;
+                let binder = self.binder(OpenBinders(0_usize))?;
+                let bind = self.leaf(Glyphs(" as "))?;
+                let semicolon = self.leaf(Glyphs(" ;"))?;
+                let line = Doc::LINE;
+                (
+                    self.builder
+                        .concat_all(&[bound.doc, bind, binder, semicolon, line, rest.doc])?,
                     Binding::Sequence,
                 )
             },
