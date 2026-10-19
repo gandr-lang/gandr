@@ -1045,14 +1045,15 @@ pub trait Source
     ) -> Option<Name<'_>>;
 
     /// The constructor branch `index` of the data case `node` names matches,
-    /// and how many fields it binds.
+    /// how many fields it binds, and where its name stands to them.
     ///
     /// # Specification
     /// - requires: nothing; any handle and any position are admissible.
-    /// - ensures: the name and the field count of the constructor at tag
-    ///   `index` of the family `node`'s scrutinee belongs to, when [`read`]
-    ///   answers a [`Former::DataCase`] and the source knows the family; none
-    ///   otherwise, which the printer spells `?`. The default knows no family.
+    /// - ensures: the name a pattern writes, the field count and the placement
+    ///   of the constructor at tag `index` of the family `node`'s scrutinee
+    ///   belongs to, when [`read`] answers a [`Former::DataCase`] and the
+    ///   source knows the family; none otherwise, which the printer spells `?`.
+    ///   The default knows no family.
     /// - provides: the patterns a data case's branches are written under, which
     ///   the core, matching by tag, does not hold.
     /// - fails: never.
@@ -1064,14 +1065,16 @@ pub trait Source
     /// # Adequacy
     /// - hypothesis: L3 — a data case over a family of a nullary and a unary
     ///   constructor spells each branch under its constructor's pattern, its
-    ///   field bound; a shifted tag changes the golden.
+    ///   field bound; a shifted tag changes the golden. A case over words
+    ///   writes the empty word bare and each letter before its rest.
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_case_over_words_writes_each_arm_as_the_surface_does_815`
     #[inline]
     fn constructor(
         &self,
         node: Self::Node,
         index: Component,
-    ) -> Option<(Name<'_>, Arity)>
+    ) -> Option<(Name<'_>, Arity, Placement)>
     {
         let _ = (node, index);
         None

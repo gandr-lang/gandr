@@ -3,7 +3,6 @@
 //! through its [`Restoration`].
 
 use alloc::collections::BTreeMap;
-use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -147,7 +146,8 @@ const UNRESTORED: &Restoration = &Restoration(BTreeMap::new());
 /// order with each one's field count, and a data case's family by the case.
 /// Two families of one name keep the first one recorded. A family of words
 /// is recorded consed: each of its one-field constructors is a letter, written
-/// before the rest of the word.
+/// before the rest of the word, and its nullary constructor, the empty word,
+/// is written as a value at its point, `here(a)`, and as a pattern bare.
 ///
 /// # Specification
 /// - requires: the families are named as the source names a family and the
@@ -169,8 +169,9 @@ pub struct Constructors<'text>
 {
     /// Each family's constructors in tag order, with their field counts.
     families: BTreeMap<Name<'text>, Vec<(Name<'text>, Arity)>>,
-    /// The families whose one-field constructors are letters of a word.
-    consed: BTreeSet<Name<'text>>,
+    /// The families whose one-field constructors are letters of a word, each
+    /// with its empty word as a value is written.
+    consed: BTreeMap<Name<'text>, Name<'text>>,
     /// The family each data case eliminates.
     cases: BTreeMap<ComputationId, Name<'text>>,
 }
@@ -207,11 +208,13 @@ impl<'text> Constructors<'text>
 
     /// The family `family` of words, its constructors in tag order with
     /// their field counts: each one-field constructor is a letter, consed
-    /// onto the rest of the word.
+    /// onto the rest of the word, and the nullary one the empty word, which
+    /// a value writes as `empty`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: as [`Self::family`]; the family is consed.
+    /// - ensures: as [`Self::family`]; the family is consed, its empty word
+    ///   written `empty` as a value.
     /// - provides: the letters a source spells a word with.
     /// - fails: never.
     /// - panics: none.
@@ -219,17 +222,19 @@ impl<'text> Constructors<'text>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Placement`](crate::Placement).
     /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
-    #[spec(ensures: self.families.contains_key(&family) && self.consed.contains(&family))]
+    /// - witness: `tests::goldens::a_case_over_words_writes_each_arm_as_the_surface_does_815`
+    #[spec(ensures: self.families.contains_key(&family) && self.consed.contains_key(&family))]
     #[inline]
     pub fn words<I>(
         &mut self,
         family: Name<'text>,
         constructors: I,
+        empty: Name<'text>,
     ) where
         I: IntoIterator<Item = (Name<'text>, Arity)>,
     {
         self.family(family, constructors);
-        let _fresh = self.consed.insert(family);
+        let _first = self.consed.entry(family).or_insert(empty);
     }
 
     /// The data case `case` eliminates a value of `family`.
@@ -255,13 +260,34 @@ impl<'text> Constructors<'text>
         let _first = self.cases.entry(case).or_insert(family);
     }
 
-    /// The constructor of `family` at `tag`, and its field count.
+    /// The constructor of `family` at `tag` as a value is written under, and
+    /// its field count: a word's empty word at its point.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
     pub fn constructor(
+        &self,
+        family: Name<'_>,
+        tag: Component,
+    ) -> Option<(Name<'text>, Arity)>
+    {
+        let (name, arity) = self.pattern(family, tag)?;
+        match self.consed.get(family.as_ref()) {
+            Some(&empty) if usize::from(arity) == 0_usize => Some((empty, arity)),
+            Some(_) | None => Some((name, arity)),
+        }
+    }
+
+    /// The constructor of `family` at `tag` as a pattern names it, and its
+    /// field count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn pattern(
         &self,
         family: Name<'_>,
         tag: Component,
@@ -287,7 +313,7 @@ impl<'text> Constructors<'text>
         arity: Arity,
     ) -> crate::Placement
     {
-        if usize::from(arity) == 1 && self.consed.contains(family.as_ref()) {
+        if usize::from(arity) == 1 && self.consed.contains_key(family.as_ref()) {
             crate::Placement::Consed
         }
         else {
@@ -299,7 +325,7 @@ impl<'text> Constructors<'text>
 /// The constructor table that names nothing.
 const UNNAMED: &Constructors<'static> = &Constructors {
     families: BTreeMap::new(),
-    consed: BTreeSet::new(),
+    consed: BTreeMap::new(),
     cases: BTreeMap::new(),
 };
 
@@ -1909,12 +1935,13 @@ impl Source for CoreSource<'_>
     }
 
     /// The constructor of the family the data case `node` eliminates at tag
-    /// `index`, and its field count.
+    /// `index`, its field count and its placement.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: for a held data case the constructor table records a family
-    ///   for, the family's constructor at `index`; none otherwise.
+    ///   for, the family's constructor at `index` as a pattern names it; none
+    ///   otherwise.
     /// - provides: a data case's patterns.
     /// - fails: never.
     /// - panics: none.
@@ -1922,20 +1949,22 @@ impl Source for CoreSource<'_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Source::constructor`].
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_case_over_words_writes_each_arm_as_the_surface_does_815`
     #[spec(ensures: |ret| ret.is_none() || matches!(self.restoration.restored(node), CoreNode::Computation(_)))]
     #[inline]
     fn constructor(
         &self,
         node: CoreNode,
         index: Component,
-    ) -> Option<(Name<'_>, Arity)>
+    ) -> Option<(Name<'_>, Arity, crate::Placement)>
     {
         let CoreNode::Computation(id) = self.restoration.restored(node)
         else {
             return None;
         };
         let family = *self.constructors.cases.get(&id)?;
-        self.constructors.constructor(family, index)
+        let (name, arity) = self.constructors.pattern(family, index)?;
+        Some((name, arity, self.constructors.placement(family, arity)))
     }
 
     /// The names of the binders the root stands under.

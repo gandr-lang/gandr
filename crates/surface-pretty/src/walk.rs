@@ -766,8 +766,8 @@ impl<Node> Slot<Node>
 }
 
 /// One branch of a data case as the printer reads it: its body below the
-/// lambdas binding its constructor's fields, the constructor's name, and how
-/// many fields the body stands under.
+/// lambdas binding its constructor's fields, the constructor's name, how
+/// many fields the body stands under, and where the name stands to them.
 #[derive(Clone, Copy, Debug)]
 struct Arm<'source, Node>
 {
@@ -779,6 +779,9 @@ struct Arm<'source, Node>
     name: Option<Name<'source>>,
     /// How many field binders the body stands under.
     fields: usize,
+    /// Where the name stands to its field binders: a letter of a word
+    /// before the rest, `loop ∷ p`.
+    placement: Placement,
 }
 
 /// Branch `index` of the data case `case`.
@@ -815,8 +818,9 @@ where
         body: branch,
         name: None,
         fields: 0_usize,
+        placement: Placement::Applied,
     };
-    let (Some(branch), Some((name, fields))) = (branch, source.constructor(case, index))
+    let (Some(branch), Some((name, fields, placement))) = (branch, source.constructor(case, index))
     else {
         return unknown;
     };
@@ -836,6 +840,7 @@ where
         body: Some(body),
         name: Some(name),
         fields,
+        placement,
     }
 }
 
@@ -5508,19 +5513,30 @@ impl Walk<'_, '_>
                     let arm = arm(source, node, Component::from(index));
                     let name = self.spelled(arm.name, Unspelled::Unreadable(Unreadable::Unnamed));
                     let _ = parts.separated(Component::from(index)).text(name);
-                    if arm.fields > 0_usize {
+                    if arm.placement == Placement::Consed {
+                        let _ = parts
+                            .text(" ")
+                            .text(grammar::CONS.written(self.spelling).0)
+                            .text(" ")
+                            .binders(Arity(arm.fields));
+                    }
+                    else if arm.fields > 0_usize {
                         let _ = parts.text("(").binders(Arity(arm.fields)).text(")");
                     }
                     let _ = parts.text(" => ").piece(Binding::Arrow);
                 }
                 let _ = parts.part(Part::Close);
                 // An arm's pattern is its constructor, applied to its field
-                // binders when it has fields.
+                // binders when it has fields, or a letter of a word before
+                // the rest of the word.
                 writes(
                     Production("case_expression"),
                     writes(
                         Production("constructor_pattern"),
-                        writes(Production("constructor.pattern"), Binding::Prefix),
+                        writes(
+                            Production("cons_pattern"),
+                            writes(Production("constructor.pattern"), Binding::Prefix),
+                        ),
                     ),
                 )
             },

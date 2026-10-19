@@ -81,7 +81,6 @@ use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
-use gandr_surface_pretty::Placement;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_pretty::Style;
@@ -661,10 +660,11 @@ fn words_point(
 ///
 /// Each constructor is kept by its name and field count in tag order, and
 /// a family records whether it is the words of a family's loops, whose empty
-/// word is spelled `here(a)` at their point `a` and whose letters cons onto
-/// the rest of a word. The core names a constructor by its family and its
-/// tag, and a data case matches by tag alone, so a printer reads the names
-/// here, owned so a table outliving the lowered module keeps them.
+/// word is spelled `here(a)` at their point `a` as a value and `here` as a
+/// pattern, and whose letters cons onto the rest of a word. The core names a
+/// constructor by its family and its tag, and a data case matches by tag
+/// alone, so a printer reads the names here, owned so a table outliving the
+/// lowered module keeps them.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Families
 {
@@ -686,8 +686,9 @@ struct Family
     constant: usize,
     /// Each constructor's name and field count, in tag order.
     constructors: Vec<(String, usize)>,
-    /// Where each constructor's name stands to its fields.
-    placement: Placement,
+    /// The empty word as a value is written, `here(a)`, when the family is
+    /// the words of a family's loops.
+    empty: Option<String>,
 }
 
 impl Families
@@ -738,8 +739,8 @@ impl Families
     /// - ensures: one family per data declaration whose signature the module
     ///   holds, at its constant's position, its constructors named as written
     ///   in tag order with the field count the signature gives each; the words
-    ///   of a family's loops are consed, their empty word named `here(a)` at
-    ///   their point `a`; no case.
+    ///   of a family's loops are consed, their empty word written `here(a)` as
+    ///   a value at their point `a`; no case.
     /// - provides: the constructor names a [`CoreSource`] over any arena spells
     ///   a constructor value with.
     /// - fails: never.
@@ -769,26 +770,22 @@ impl Families
                     return None;
                 };
                 let point = words_point(module, declaration);
-                let constructors = module
-                    .constructors(index)
+                let names = module.constructors(index);
+                let constructors = names
                     .iter()
                     .zip(signature.constructors())
-                    .enumerate()
-                    .map(|(tag, (name, fields))| match point {
-                        Maybe::Present((_, ref point)) if tag == 0 => {
-                            (alloc::format!("{name}({point})"), fields.len())
-                        },
-                        Maybe::Present(_) | Maybe::Absent(_) => (name.clone(), fields.len()),
-                    })
+                    .map(|(name, fields)| (name.clone(), fields.len()))
                     .collect();
-                let placement = match point {
-                    Maybe::Present(_) => Placement::Consed,
-                    Maybe::Absent(_) => Placement::Applied,
+                let empty = match point {
+                    Maybe::Present((_, ref point)) => {
+                        names.first().map(|name| alloc::format!("{name}({point})"))
+                    },
+                    Maybe::Absent(_) => None,
                 };
                 Some(Family {
                     constant: usize::from(declaration.constant()),
                     constructors,
-                    placement,
+                    empty,
                 })
             })
             .collect();
@@ -832,9 +829,11 @@ impl Families
                     .constructors
                     .iter()
                     .map(|&(ref name, fields)| (Name::from(name.as_str()), Arity::from(fields)));
-                match family.placement {
-                    Placement::Applied => constructors.family(named, members),
-                    Placement::Consed => constructors.words(named, members),
+                match family.empty {
+                    Some(ref empty) => {
+                        constructors.words(named, members, Name::from(empty.as_str()));
+                    },
+                    None => constructors.family(named, members),
                 }
             }
         }
