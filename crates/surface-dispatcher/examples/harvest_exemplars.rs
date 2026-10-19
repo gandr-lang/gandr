@@ -16,14 +16,10 @@
 //! Only sources that parse with no obligation are read, so a seed never
 //! carries grout.
 
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(linear_search_in_loop, reason = "1 cost-shape site; #814 lists it")
-)]
-
 extern crate alloc;
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use std::io::Write as _;
 use std::path::Path;
 use std::path::PathBuf;
@@ -147,6 +143,7 @@ fn rules_under(
 ) -> Vec<RuleName>
 {
     let mut rules = Vec::new();
+    let mut seen = BTreeSet::new();
     let mut pending = vec![form];
     while let Some(position) = pending.pop() {
         if let Some(node) = tree.node(position)
@@ -154,7 +151,7 @@ fn rules_under(
             && let Ok(rule) = pbg.rule_of(mold)
         {
             let name = RuleName(rule.name);
-            if !rules.contains(&name) {
+            if seen.insert(name) {
                 rules.push(name);
             }
         }

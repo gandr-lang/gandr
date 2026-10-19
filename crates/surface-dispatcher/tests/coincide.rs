@@ -11,6 +11,7 @@
 //! The differential, in a `cfg(test)` module so the crate's lint wall reads
 //! it as test code rather than as shipping code.
 
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use std::path::PathBuf;
 
@@ -246,11 +247,15 @@ fn every_run_through_a_described_operation_is_its_calls_normal_form()
         else {
             panic!("{shown}: the module was refused whole");
         };
+        let mut declared = BTreeMap::new();
+        for declaration in report.declarations() {
+            let _first = declared
+                .entry(declaration.constant())
+                .or_insert(declaration);
+        }
         for (constant, name, call, engine) in calls {
-            let stated = report
-                .declarations()
-                .iter()
-                .find(|declaration| declaration.constant() == constant)
+            let stated = declared
+                .get(&constant)
                 .map(|declaration| declaration.stated().clone());
             if !matches!(stated, Some(Stated::Verdict(Outcome::Runs(_)))) {
                 continue;
