@@ -2,6 +2,7 @@
 
 use alloc::borrow::Cow;
 use alloc::boxed::Box;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -206,17 +207,17 @@ fn compose_renaming(
     g: &SigMorphism,
 ) -> SigMorphism
 {
-    let mut domain: Vec<Name> = Vec::new();
-    for pair in f.map.iter().chain(g.map.iter()) {
-        if !domain.contains(&pair.0) {
-            domain.push(pair.0.clone());
-        }
-    }
+    let domain: BTreeSet<&Name> = f
+        .map
+        .iter()
+        .chain(g.map.iter())
+        .map(|pair| &pair.0)
+        .collect();
     let mut pairs: Vec<(Name, Name)> = Vec::with_capacity(domain.len());
     for name in domain {
         let moved = f.apply_name(NameRef::from(name.as_ref()));
         let image = g.apply_name(NameRef::from(moved.as_ref()));
-        pairs.push((name, image));
+        pairs.push((name.clone(), image));
     }
     SigMorphism {
         src: f.src.clone(),
