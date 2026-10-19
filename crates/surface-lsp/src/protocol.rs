@@ -385,6 +385,25 @@ impl InitializeParams
                 .unwrap_or(false),
         )
     }
+
+    /// Whether this client watches files for the server once asked: when it
+    /// declares `workspace.didChangeWatchedFiles.dynamicRegistration`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn watches_files(&self) -> WatchesFiles
+    {
+        WatchesFiles(
+            self.capabilities
+                .as_ref()
+                .and_then(|capabilities| capabilities.workspace)
+                .and_then(|workspace| workspace.did_change_watched_files)
+                .and_then(|watched| watched.dynamic_registration)
+                .unwrap_or(false),
+        )
+    }
 }
 
 /// Whether a client takes a definition as links from the name asked about.
@@ -397,6 +416,11 @@ pub struct Linked(pub bool);
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct LabelOffsets(pub bool);
 
+/// Whether a client watches files for the server once asked to.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct WatchesFiles(pub bool);
+
 /// The client capabilities the server reads.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -408,6 +432,124 @@ pub struct ClientCapabilities
     /// `textDocument`.
     #[serde(default)]
     pub text_document: Option<TextDocumentCapabilities>,
+    /// `workspace`.
+    #[serde(default)]
+    pub workspace: Option<WorkspaceCapabilities>,
+}
+
+/// The workspace client capabilities the server reads.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct WorkspaceCapabilities
+{
+    /// `workspace.didChangeWatchedFiles`.
+    #[serde(default)]
+    pub did_change_watched_files: Option<WatchedFilesCapabilities>,
+}
+
+/// What the client offers of watching files.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct WatchedFilesCapabilities
+{
+    /// `workspace.didChangeWatchedFiles.dynamicRegistration`: whether it
+    /// watches the files a server registers watchers for.
+    #[serde(default)]
+    pub dynamic_registration: Option<bool>,
+}
+
+/// The glob of the files the server has the client watch: every gandr source.
+pub const WATCHED_FILES: &str = "**/*.gandr";
+
+/// The parameters of `client/registerCapability`: the registrations asked
+/// for.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct RegistrationParams
+{
+    /// The registrations.
+    pub registrations: Vec<Registration>,
+}
+
+/// One registration: the method registered under an identifier, with its
+/// options.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Registration
+{
+    /// The identifier a later unregistration names.
+    pub id: &'static str,
+    /// The method registered.
+    pub method: &'static str,
+    /// What the client watches.
+    pub register_options: WatchedFilesOptions,
+}
+
+/// The files a client is asked to watch.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct WatchedFilesOptions
+{
+    /// One watcher per glob.
+    pub watchers: Vec<FileWatcher>,
+}
+
+/// A watcher over every file a glob matches, for creation, change and
+/// deletion.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct FileWatcher
+{
+    /// The glob.
+    pub glob_pattern: &'static str,
+}
+
+impl RegistrationParams
+{
+    /// The one registration that has the client watch every gandr source,
+    /// [`WATCHED_FILES`], for `workspace/didChangeWatchedFiles`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn watched_files() -> Self
+    {
+        Self {
+            registrations: Vec::from([Registration {
+                id: "workspace/didChangeWatchedFiles",
+                method: "workspace/didChangeWatchedFiles",
+                register_options: WatchedFilesOptions {
+                    watchers: Vec::from([FileWatcher {
+                        glob_pattern: WATCHED_FILES,
+                    }]),
+                },
+            }]),
+        }
+    }
+}
+
+/// The parameters of `workspace/didChangeWatchedFiles`: each file created,
+/// changed or deleted, of which the server reads the URI.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct WatchedFilesParams
+{
+    /// The changes.
+    #[serde(default)]
+    pub changes: Vec<FileEvent>,
+}
+
+/// One file created, changed or deleted.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct FileEvent
+{
+    /// The file's URI.
+    pub uri: DocumentUri,
 }
 
 /// The text document client capabilities the server reads.

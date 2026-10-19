@@ -251,6 +251,9 @@ pub struct Laid
     pub base: ByteOffset,
     /// Each source's canonical path, by its position in the unit.
     pub paths: Vec<PathBuf>,
+    /// Every path an import of a source the closure read names, resolved or
+    /// not, sorted, as [`lay_out`] states.
+    pub named: Vec<PathBuf>,
 }
 
 quenchant_shape::reason_enum! {
@@ -457,10 +460,55 @@ struct Graph
     read: Vec<Read>,
     /// The position of each canonical path read.
     index: BTreeMap<PathBuf, Position>,
+    /// Every path an import of a source read names, whether it resolved or
+    /// not, as [`Graph::resolve`] names it.
+    named: BTreeSet<PathBuf>,
     /// How each source's imports are read.
     reading: Reading,
     /// The bytes parsed reading the graph.
     parsed: ParsedBytes,
+}
+
+/// The path `target` will have once a file is written there: its directory's
+/// canonical path joined with its file name, or `target` itself when its
+/// directory has none.
+///
+/// # Specification
+/// trivial.
+fn missing(target: &Path) -> PathBuf
+{
+    match (
+        target.parent().map(std::fs::canonicalize),
+        target.file_name(),
+    ) {
+        (Some(Ok(directory)), Some(name)) => directory.join(name),
+        (Some(Err(_)) | None, _) | (Some(Ok(_)), None) => target.to_path_buf(),
+    }
+}
+
+/// The path a laid-out closure names the file at `path` by: its canonical
+/// path when it exists, else the path a file written there will have, as
+/// [`lay_out`] states for [`Laid::named`].
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `path` canonicalised when it canonicalises; else its directory's
+///   canonical path joined with its file name; else `path` as given.
+/// - provides: the key a consumer looks a changed file up by in
+///   [`Laid::named`].
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the answer reads the file system.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a file that exists and one that does not are each named
+///   as the closure that imports them names them.
+/// - witness: `component::tests::a_closure_names_every_path_its_imports_name_844`
+#[inline]
+#[must_use]
+pub fn named_path(path: &Path) -> PathBuf
+{
+    std::fs::canonicalize(path).unwrap_or_else(|_| missing(path))
 }
 
 /// One component's sources, by position in the graph, in admission order.
@@ -482,7 +530,9 @@ struct Laying(Vec<Position>);
 ///   order, each after every source it imports, the importer last at
 ///   [`Laid::base`], one newline apart; a source no resolved import reaches is
 ///   not laid out. This is the component [`group`] lays out for the source
-///   given alone.
+///   given alone. [`Laid::named`] holds, sorted and once each, every path an
+///   import of a source the closure read names, resolved or not: canonical when
+///   it exists, else its directory's canonical path joined with its file name.
 /// - provides: the unit the session judges a document in.
 /// - fails: never; a source that writes no path import, or does not parse, is
 ///   [`laid::Absent::Alone`].
@@ -491,14 +541,16 @@ struct Laying(Vec<Position>);
 ///   source of the closure is read and parsed once; recursion-free.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a two-source closure, a cycle, a missing path and a
-///   source importing nothing, each laid out exactly.
+/// - hypothesis: L3 — a two-source closure, a cycle, a missing path, a sibling
+///   that does not parse and a source importing nothing, each laid out exactly.
 /// - witness: `component::tests::an_importer_is_laid_after_what_it_imports`
 /// - witness: `component::tests::a_cycle_and_a_missing_path_leave_their_imports_unresolved`
+/// - witness: `component::tests::a_closure_names_every_path_its_imports_name_844`
 /// - witness: `component::tests::a_source_importing_nothing_is_alone`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref laid) => laid.text.get(usize::from(laid.base) ..) == Some(text.as_ref())
-        && laid.paths.len() == laid.unit.sources().len(),
+        && laid.paths.len() == laid.unit.sources().len()
+        && laid.named.windows(2).all(|pair| matches!(*pair, [ref first, ref second] if first < second)),
     Maybe::Absent(_) => true,
 })]
 #[inline]
@@ -533,6 +585,7 @@ pub fn lay_out(
         .iter()
         .filter_map(|position| graph.read.get(position.0).map(|read| read.path.clone()))
         .collect();
+    let named = core::mem::take(&mut graph.named).into_iter().collect();
     match graph.lay(&laying) {
         Maybe::Present(component) => {
             let base = component
@@ -544,6 +597,7 @@ pub fn lay_out(
                 unit: component.unit,
                 base,
                 paths,
+                named,
             })
         },
         Maybe::Absent(absent) => Maybe::Absent(absent),
@@ -803,7 +857,8 @@ impl Graph
     /// - ensures: the position of the source at `target`'s canonical path, read
     ///   and appended when new; [`Edge::Unresolved`] when the path cannot be
     ///   canonicalised or read, or names a source under a root other than
-    ///   `root`.
+    ///   `root`. Either way the graph names `target`: canonical when it exists,
+    ///   else its directory's canonical path joined with its file name.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -823,8 +878,10 @@ impl Graph
     {
         let Ok(canonical) = std::fs::canonicalize(target)
         else {
+            let _named = self.named.insert(missing(target));
             return Edge::Unresolved;
         };
+        let _named = self.named.insert(canonical.clone());
         if let Some(&known) = self.index.get(&canonical) {
             return if self.read.get(known.0).is_some_and(|read| read.root == root) {
                 Edge::To(known)
@@ -1560,6 +1617,7 @@ mod tests
     use super::Reading;
     use super::group;
     use super::lay_out;
+    use super::named_path;
     use crate::root::SourceRoot;
 
     /// A scratch directory, removed when dropped.
@@ -1723,6 +1781,49 @@ mod tests
                 "{reading:?}: each source of a cycle is lowered apart"
             );
         }
+    }
+
+    /// #844: a closure names every path its imports name, though only the
+    /// importer is laid out: the edge of a cycle and a missing path.
+    #[test]
+    fn a_closure_names_every_path_its_imports_name_844()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let first = SourceText::from(
+            "import \"./second.gandr\" ;\nimport \"./missing.gandr\" ;\ndef one : Integer ;\ndef \
+             one = 1 ;",
+        );
+        let tree = Scratch::new(Path::new("named-844"), &[
+            (Path::new("first.gandr"), first),
+            (
+                Path::new("second.gandr"),
+                SourceText::from("import \"./first.gandr\" ;\ndef two : Integer ;\ndef two = 2 ;"),
+            ),
+        ]);
+        let Maybe::Present(laid) = lay_out(
+            &grammar,
+            &tree.0.join("first.gandr"),
+            SourceRoot::Strict,
+            first,
+        )
+        else {
+            panic!("an importer is laid out, whatever its imports came to");
+        };
+        assert_eq!(
+            laid.paths,
+            [tree.0.join("first.gandr")],
+            "the importer alone is laid out"
+        );
+        assert_eq!(
+            laid.named,
+            ["first.gandr", "missing.gandr", "second.gandr"].map(|file| tree.0.join(file)),
+            "each path an import names, the missing one where it would be written"
+        );
+        assert_eq!(
+            ["missing.gandr", "second.gandr"].map(|file| named_path(&tree.0.join(".").join(file))),
+            ["missing.gandr", "second.gandr"].map(|file| tree.0.join(file)),
+            "a file is looked up by the path the closure names it by, written or not"
+        );
     }
 
     /// #776: a source read whole is parsed once per text in a process. A
