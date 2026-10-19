@@ -654,9 +654,22 @@ impl SessionLoop
         let probe = self.probe_name();
         let highlights = highlight_source(self.session.grammar(), &self.roles, chunk);
         let echo = Echo::new(<&str>::from(chunk).to_owned(), highlights);
-        let wrapped = format!("def {probe} = {} ;", <&str>::from(chunk));
+        let capacity = probe
+            .len()
+            .saturating_add(<&str>::from(chunk).len())
+            .saturating_add("def ".len())
+            .saturating_add(" = ".len())
+            .saturating_add(" ;".len());
+        let mut wrapped = String::with_capacity(capacity);
+        wrapped.push_str("def ");
+        wrapped.push_str(&probe);
+        wrapped.push_str(" = ");
+        let line_start = ByteOffset::from(wrapped.len());
+        wrapped.push_str(<&str>::from(chunk));
+        wrapped.push_str(" ;");
         self.submit(echo, SourceText::from(wrapped.as_str()), Subject::Prompt {
             name: &probe,
+            line_start,
         })
     }
 
