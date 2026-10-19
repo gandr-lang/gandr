@@ -40,7 +40,7 @@
 //! | static dispatch on a null-object seam that compiles away | [`check::check_declaration_with_memo`] is generic; every memo interaction is behind a compile-time activity constant |
 //! | the public admission entry cannot reach the opt-in entry | [`env::Environment::add_decl`] takes no memo and builds its own; the memo-taking entry admits nothing and returns no receipt |
 //! | a lifetime of one check call                            | [`check::check_declaration`] builds a memo and drops it; nothing stores one                        |
-//! | the content-only key                                    | [`encoding`] and [`support`]: `(direction, obligation content, expected content, telescope content)`, arena-free |
+//! | the content-only key                                    | [`encoding`] and [`support`]: the id of the goal's record in the session's content table — direction, obligation, expected type, and the read binders as pairs of position and type — arena-free |
 //! | storage and policy outside the kernel crate             | the seam crate owns the table and its ordering; this crate holds a type parameter                  |
 //! | no authority and no persistence in a hit                | a hit claims only that this process already computed this answer for this support                   |
 //!
@@ -666,7 +666,7 @@ pub use crate::encoding::RewriteGoal;
 pub use crate::encoding::SupportGoal;
 pub use crate::encoding::content_digest;
 pub use crate::encoding::encode_rewrite;
-pub use crate::encoding::encode_support;
+pub use crate::encoding::support_key;
 pub use crate::env::Admission;
 pub use crate::env::AdmittedDeclaration;
 pub use crate::env::ArtifactRefusal;

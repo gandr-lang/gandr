@@ -15,15 +15,16 @@
 //!   and against `B` are different questions, and synthesis is a third.
 //! - **the binder telescope's content** — variables are de Bruijn indices
 //!   resolved against the machine's context, so the same node under two
-//!   different contexts means two different things. Only the slice the node can
-//!   actually reach is folded in, and it is folded *in telescope order* so
-//!   dependency order is part of the content.
+//!   different contexts means two different things. Only the binders the node
+//!   actually reads are folded in — its exact support, the free indices it
+//!   mentions — each at its position, in telescope order so dependency order is
+//!   part of the content.
 //!
 //! The key is therefore `(obligation content, telescope content, direction)`,
-//! and it is **arena-free**: no arena id, no allocation order, and no context
-//! length outside the reached slice reaches it. Content is named by the
-//! canonical numbering [`SupportContext`] holds, so two structurally equal
-//! nodes key alike however many arena positions spell them.
+//! and it is **arena-free**: no arena id, no allocation order, and no binder
+//! the node does not read reaches it. Content is named by the canonical
+//! numbering [`SupportContext`] holds, so two structurally equal nodes key
+//! alike however many arena positions spell them.
 //!
 //! The declaration's level parameters and the environment's admission log are
 //! *not* in the key. They are fixed for the whole of one declaration's check,
@@ -38,16 +39,19 @@
 //! families rather than over the two term ones, which is what keeps a type
 //! formed under two different binders from collapsing onto one entry.
 //!
-//! # The binder slice is computed, not guessed
+//! # The read binders are computed, not guessed
 //!
-//! [`LooseDepths`] computes one more than each node's largest free de Bruijn
-//! index, bottom-up over the graph, iteratively, cached per node — so the
-//! computation is itself sharing-aware and costs one pass per *distinct* node
-//! rather than per occurrence. Where it cannot answer it returns the maximum,
-//! which widens the slice to the whole context: **the failure direction is
-//! always more context in the key, never less**, so a defect here costs
-//! collapse and cannot manufacture a hit.
+//! [`Reaches`] computes each node's reach bottom-up over the graph,
+//! iteratively, cached per node — so the computation is itself sharing-aware
+//! and costs one pass per *distinct* node rather than per occurrence. The key
+//! reads [`Reads`], the exact set of free indices; [`LooseDepths`] keeps one
+//! more than the largest, for the checks that ask only how far a node reaches.
+//! Where the walk cannot answer it returns the widest reach, which takes the
+//! whole context into the key: **the failure direction is always more context
+//! in the key, never less**, so a defect here costs collapse and cannot
+//! manufacture a hit.
 
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
@@ -55,6 +59,7 @@ use anodized::spec;
 use gandr_kernel_check_memo::CheckMemo as _;
 use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::ContentDigest;
+use gandr_kernel_check_memo::DigestWord;
 use gandr_kernel_check_memo::MemoEntryCount;
 use gandr_kernel_check_memo::MemoKey;
 use gandr_kernel_strata::Level;
@@ -62,22 +67,26 @@ use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 use quenchant_arith::arith;
+use quenchant_shape::shape::Maybe;
 
-use crate::encoding::ContentEncoding;
+use crate::encoding::ContentId;
 use crate::encoding::ContentTable;
 use crate::encoding::SupportGoal;
-use crate::encoding::encode_support;
+use crate::encoding::Telescope;
+use crate::encoding::support_key;
 use crate::rewrite::RewriteMemo;
 use crate::rewrite::RewritePlane;
 
 /// The state one checking session derives its memo keys against: the canonical
-/// content numbering and the per-node binder reach.
+/// content numbering, the per-node read binders, and the buffer one goal's
+/// read binders are gathered in.
 ///
 /// **The session is the memo's lifetime, made structural.** A support is
 /// meaningful against the session that built it and against no other, so a
@@ -87,10 +96,12 @@ use crate::rewrite::RewritePlane;
 #[derive(Clone, Debug, Default)]
 pub struct SupportContext
 {
-    /// The canonical content numbering.
+    /// The canonical content numbering, the key's records among it.
     table: ContentTable,
-    /// The per-node binder reach.
-    reaches: LooseDepths,
+    /// The per-node read binders.
+    reads: Reaches<Reads>,
+    /// The read binders of the goal being keyed, reused across goals.
+    read: Vec<(DeBruijnIndex, ValueTypeId)>,
     /// The session's shifting and substitution memo.
     rewrites: RewriteMemo,
 }
@@ -123,7 +134,8 @@ impl SupportContext
         (&mut self.table, &mut self.rewrites)
     }
 
-    /// The binder reach of a computation-type node, cached for the session.
+    /// The binder reach of a computation-type node, read off its binders as
+    /// cached for the session.
     ///
     /// # Specification
     /// trivial.
@@ -134,7 +146,7 @@ impl SupportContext
         root: CompTypeId,
     ) -> LooseDepth
     {
-        self.reaches.comp_type_reach(arena, root)
+        self.reads.comp_type_reach(arena, root).depth()
     }
 
     /// How many rewrites of `plane` this session has recorded.
@@ -172,8 +184,8 @@ impl SupportContext
 /// One more than the largest free de Bruijn index a node mentions; zero for a
 /// closed node.
 ///
-/// This is the number of enclosing binders the node can reach, so it is exactly
-/// the length of the context slice its meaning depends on.
+/// This is the number of enclosing binders the node can reach, which is what
+/// the checks that ask only how far a node reaches read.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct LooseDepth(u32);
@@ -206,16 +218,117 @@ impl From<LooseDepth> for u32
 
 impl LooseDepth
 {
-    /// The saturated maximum — the conservative answer, widening the key's
-    /// slice to the whole context.
+    /// The saturated maximum — the conservative answer, a reach past every
+    /// binder.
     const WIDEST: Self = Self(u32::MAX);
+}
+
+/// What the reach walk computes for a node from its children's: the lattice
+/// [`Reaches`] runs over.
+///
+/// # Specification
+/// - requires: `join` is a least upper bound, with [`Reach::closed`] its unit
+///   and [`Reach::widest`] absorbing; `under_binder` keeps the widest reach
+///   widest. The walk relies on these laws and checks none of them.
+/// - executable: none — laws over an implementor's values; each implementor's
+///   witnesses observe them on the values the walk builds.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each implementor's join, binder step and widest
+///   absorption are asserted exactly on closed, open and unreadable nodes.
+/// - witness: `support::tests::a_variable_reaches_one_more_than_its_index`
+/// - witness: `support::tests::reads_are_exactly_the_free_indices`
+pub trait Reach: Clone + Eq
+{
+    /// A closed node's reach: no binder.
+    ///
+    /// # Specification
+    /// trivial.
+    fn closed() -> Self;
+
+    /// The conservative reach of a node the walk could not read: every
+    /// binder.
+    ///
+    /// # Specification
+    /// trivial.
+    fn widest() -> Self;
+
+    /// The reach of a variable at `index`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn variable(index: DeBruijnIndex) -> Self;
+
+    /// The reach of a node whose children reach `self` and `other`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Clause cost
+    /// - bound: every implementation keeps it to one word operation, or, for a
+    ///   set holding an index past the word's width, one merge pass over the
+    ///   two sets' indices; no node is read.
+    #[must_use]
+    fn join(
+        self,
+        other: Self,
+    ) -> Self;
+
+    /// The reach seen from outside one binder.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Clause cost
+    /// - bound: every implementation keeps it to one word operation, or, for a
+    ///   set holding an index past the word's width, one pass over its indices;
+    ///   no node is read.
+    #[must_use]
+    fn under_binder(self) -> Self;
+}
+
+impl Reach for LooseDepth
+{
+    /// Zero binders.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn closed() -> Self
+    {
+        Self(0)
+    }
+
+    /// The saturated maximum.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn widest() -> Self
+    {
+        Self::WIDEST
+    }
+
+    /// One more than `index`, saturating to the widest reach.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn variable(index: DeBruijnIndex) -> Self
+    {
+        // reason: an unrepresentable reach conservatively uses the whole context.
+        Self(u32::from(arith::saturating_add(
+            arith::Int::from(u32::from(index)),
+            arith::Int::from(1_u32),
+        )))
+    }
 
     /// The larger of two reaches.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    const fn join(
+    fn join(
         self,
         other: Self,
     ) -> Self
@@ -257,53 +370,278 @@ impl LooseDepth
             arith::Int::from(1_u32),
         )))
     }
+}
 
-    /// Where the reached slice of `context` starts — the offset of the first
-    /// slot this reach can see, saturating to the whole context when the reach
-    /// is at or past its length.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the offset of the first slot this reach can see, and zero for
-    ///   the widest sentinel or a reach at or past the context's length.
-    /// - provides: the failure direction of the whole reach computation: an
-    ///   over-estimate widens the key's telescope to the entire context, so it
-    ///   can split a support and never merge two.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 on empty and two-slot telescopes at zero, interior,
-    ///   exact, excessive and saturated reach; exact ordered slices separate
-    ///   clipping and reversal faults.
-    /// - witness: `support::tests::telescope_clipping_keeps_binder_order_at_reach_boundaries`
-    #[spec(ensures: |ret| ret.0 == if self.0 == u32::MAX {
-        0
-    } else {
-        context.len().saturating_sub(usize::try_from(self.0).unwrap_or(usize::MAX))
-    })]
-    #[inline]
-    fn start_in(
-        self,
-        context: &[ValueTypeId],
-    ) -> ContextOffset
-    {
-        if self == Self::WIDEST {
-            return ContextOffset(0);
+/// How many indices a word of [`Reads`] holds.
+const WORD_INDICES: u32 = u64::BITS;
+
+/// The binders a node reads: exactly the free de Bruijn indices it mentions.
+///
+/// A set of indices all below 64 is one word, bit `i` for index `i`; a set
+/// holding a larger index keeps its indices ascending behind one pointer. The
+/// form is canonical, so equality compares sets.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct Reads(ReadSet);
+
+/// The forms of [`Reads`].
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum ReadSet
+{
+    /// Every index is below 64: bit `i` set for index `i`.
+    Word(u64),
+    /// Some index is 64 or more: the indices, ascending, none repeated.
+    Spilled(Box<[DeBruijnIndex]>),
+    /// A node the walk could not read, which reads every binder.
+    Widest,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a read set lists no indices.
+    mod read_indices {
+        /// The set is not a list of indices.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// The walk could not read the node, which reads every binder.
+            Widest,
         }
-        let wanted = usize::try_from(self.0).unwrap_or(usize::MAX);
-        // reason: an overestimated reach widens the slice to the whole context.
-        ContextOffset(usize::from(arith::saturating_sub(
-            arith::Int::from(context.len()),
-            arith::Int::from(wanted),
-        )))
     }
 }
 
-/// An offset into the machine's typing context.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct ContextOffset(usize);
+impl Reads
+{
+    /// The set of `indices`, in canonical form.
+    ///
+    /// # Specification
+    /// - requires: `indices` ascend strictly.
+    /// - ensures: [`Self::indices`] yields `indices`.
+    /// - provides: the one constructor of a spilled set, which keeps the form
+    ///   canonical.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the witness reads back every set it builds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — sets on both sides of the word's width, joined and
+    ///   stepped out across it, read back and compared.
+    /// - witness: `support::tests::reads_are_exactly_the_free_indices`
+    #[inline]
+    fn of(indices: Vec<DeBruijnIndex>) -> Self
+    {
+        match indices.last() {
+            Some(&last) if u32::from(last) >= WORD_INDICES => {
+                Self(ReadSet::Spilled(indices.into_boxed_slice()))
+            },
+            Some(_) | None => Self(ReadSet::Word(indices.iter().fold(0_u64, |word, &index| {
+                word | 1_u64.unbounded_shl(u32::from(index))
+            }))),
+        }
+    }
+
+    /// The indices read, ascending, or the widest reach's reason for a node the
+    /// walk could not read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn indices(&self) -> Maybe<ReadIndices<'_>, read_indices::Absent>
+    {
+        match self.0 {
+            ReadSet::Word(word) => Maybe::Present(ReadIndices::Word(word)),
+            ReadSet::Spilled(ref indices) => Maybe::Present(ReadIndices::Spilled(indices.iter())),
+            ReadSet::Widest => Maybe::Absent(read_indices::Absent::Widest),
+        }
+    }
+
+    /// One more than the largest index read, zero for none, and the widest
+    /// reach for a node the walk could not read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn depth(&self) -> LooseDepth
+    {
+        match self.0 {
+            ReadSet::Word(word) => LooseDepth(WORD_INDICES.saturating_sub(word.leading_zeros())),
+            ReadSet::Spilled(ref indices) => LooseDepth(
+                indices
+                    .last()
+                    .map_or(0, |&last| u32::from(last).saturating_add(1)),
+            ),
+            ReadSet::Widest => LooseDepth::WIDEST,
+        }
+    }
+}
+
+impl Reach for Reads
+{
+    /// No index.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn closed() -> Self
+    {
+        Self(ReadSet::Word(0))
+    }
+
+    /// Every binder.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn widest() -> Self
+    {
+        Self(ReadSet::Widest)
+    }
+
+    /// The one index `index`: one bit of a word below the word's width, so a
+    /// variable's set allocates nothing there.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn variable(index: DeBruijnIndex) -> Self
+    {
+        let position = u32::from(index);
+        if position < WORD_INDICES {
+            Self(ReadSet::Word(1_u64.unbounded_shl(position)))
+        }
+        else {
+            Self(ReadSet::Spilled(Box::new([index])))
+        }
+    }
+
+    /// The union of two sets.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the indices either set reads; the widest reach when either
+    ///   is.
+    /// - provides: a former's reads as its children's.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the witness reads back unions inside and across the
+    ///   word's width.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Reads::of`].
+    /// - witness: `support::tests::reads_are_exactly_the_free_indices`
+    #[inline]
+    fn join(
+        self,
+        other: Self,
+    ) -> Self
+    {
+        match (self.0, other.0) {
+            (ReadSet::Word(left), ReadSet::Word(right)) => Self(ReadSet::Word(left | right)),
+            (ReadSet::Widest, _) | (_, ReadSet::Widest) => Self(ReadSet::Widest),
+            (left, right) => {
+                let (left, right) = (Self(left), Self(right));
+                let (Maybe::Present(mut first), Maybe::Present(mut second)) =
+                    (left.indices(), right.indices())
+                else {
+                    return Self(ReadSet::Widest);
+                };
+                let mut merged = Vec::new();
+                let (mut next_first, mut next_second) = (first.next(), second.next());
+                loop {
+                    match (next_first, next_second) {
+                        (Some(one), Some(two)) if one < two => {
+                            merged.push(one);
+                            next_first = first.next();
+                        },
+                        (Some(one), Some(two)) if two < one => {
+                            merged.push(two);
+                            next_second = second.next();
+                        },
+                        (Some(one), Some(_)) => {
+                            merged.push(one);
+                            next_first = first.next();
+                            next_second = second.next();
+                        },
+                        (Some(one), None) => {
+                            merged.push(one);
+                            next_first = first.next();
+                        },
+                        (None, Some(two)) => {
+                            merged.push(two);
+                            next_second = second.next();
+                        },
+                        (None, None) => return Self::of(merged),
+                    }
+                }
+            },
+        }
+    }
+
+    /// The set seen from outside one binder: index zero dropped, every other
+    /// one lower.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `i` for every `i + 1` the set reads; the widest reach stays
+    ///   widest.
+    /// - provides: a binding former's reads of its body.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the witness steps sets out across the word's width
+    ///   and reads them back.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Reads::of`].
+    /// - witness: `support::tests::reads_are_exactly_the_free_indices`
+    #[inline]
+    fn under_binder(self) -> Self
+    {
+        match self.0 {
+            ReadSet::Word(word) => Self(ReadSet::Word(word.unbounded_shr(1))),
+            ReadSet::Spilled(indices) => Self::of(
+                indices
+                    .iter()
+                    .filter_map(|&index| u32::from(index).checked_sub(1).map(DeBruijnIndex::from))
+                    .collect(),
+            ),
+            ReadSet::Widest => Self(ReadSet::Widest),
+        }
+    }
+}
+
+/// The indices a [`Reads`] holds, ascending.
+#[derive(Clone, Debug)]
+pub enum ReadIndices<'reads>
+{
+    /// The indices still to come of a word: its set bits.
+    Word(u64),
+    /// The indices still to come of a spilled set.
+    Spilled(core::slice::Iter<'reads, DeBruijnIndex>),
+}
+
+impl Iterator for ReadIndices<'_>
+{
+    type Item = DeBruijnIndex;
+
+    /// The next index, the lowest bit or entry not yet yielded.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn next(&mut self) -> Option<DeBruijnIndex>
+    {
+        match *self {
+            Self::Word(ref mut word) => {
+                if *word == 0 {
+                    return None;
+                }
+                let index = word.trailing_zeros();
+                *word &= word.wrapping_sub(1);
+                Some(DeBruijnIndex::from(index))
+            },
+            Self::Spilled(ref mut indices) => indices.next().copied(),
+        }
+    }
+}
 
 /// Which of the two machines a support belongs to.
 ///
@@ -350,42 +688,42 @@ pub enum NodeOutcome
     ),
 }
 
-/// The complete support of one goal expansion, as content.
+/// The complete support of one goal expansion, as the name of its goal record.
 ///
-/// The support holds no arena id: what it carries is the canonical encoding of
-/// the obligation, the expected type, and the reached binder telescope, plus
-/// the digest of that encoding. Equality is byte equality of the encoding — the
-/// deciding comparison — and the digest is a bucket selector that narrows and
-/// never decides.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// The support holds no arena id: it carries the name the session's content
+/// table gives the goal's record — its direction, obligation, expected type and
+/// the binders it reads — so two supports agree exactly when they name one
+/// record, and the table names one record exactly when the content agrees. The
+/// digest is read off that name: a bucket selector that narrows and never
+/// decides.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NodeSupport
 {
     /// Which machine asked.
     plane: SupportPlane,
-    /// The canonical content encoding: the deciding comparison's subject.
-    encoding: ContentEncoding,
-    /// The digest of that encoding: the positive fast path.
-    digest: ContentDigest,
+    /// The goal record's name in the session's table.
+    goal: ContentId,
 }
 
 impl NodeSupport
 {
-    /// Build the support of `goal` under `context`, taking only the binder
-    /// slice the goal's node reaches.
+    /// Build the support of `goal` under `context`, taking only the binders
+    /// the goal's node reads.
     ///
     /// A type-formation goal reads binders exactly as a term goal does, because
     /// a type can carry a code and a code can be a variable. A type that
-    /// carries none reaches nothing and takes the empty telescope, which is
-    /// what keeps the closed-type case free.
+    /// carries none reads nothing and takes the empty telescope, which is what
+    /// keeps the closed-type case free.
     ///
     /// # Specification
     /// - requires: `context` is the machine's typing context at the expansion,
     ///   outermost first; `session` is this check's own, and every support a
     ///   memo holds was built against the same one.
     /// - ensures: two supports are equal exactly when the goals ask the same
-    ///   question of the same content under the same reached telescope. A wider
-    ///   reach yields a longer telescope, so an over-estimate can only split a
-    ///   support and never merge two.
+    ///   question of the same content under binders that agree at every
+    ///   position the node reads. A node whose reads are unknown, or name a
+    ///   position past the context, takes the whole context, so an
+    ///   over-estimate can only split a support and never merge two.
     /// - provides: the memo key, with the goal's plane checked by the
     ///   predicate. Provenance and agreement across independent goals need a
     ///   second goal and remain obligations of the paired witnesses below.
@@ -393,15 +731,18 @@ impl NodeSupport
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the decision surfaces are the plane split, the reach
-    ///   lookup, and the slice offset, separated by a closed node under a
+    /// - hypothesis: L3 — the decision surfaces are the plane split, the reads
+    ///   lookup, and the positions read, separated by a closed node under a
     ///   non-empty context (empty telescope), a binder-reading node under two
     ///   differing contexts (two supports), a binder-reading node under two
-    ///   contexts agreeing where it looks (one support), and a type goal under
-    ///   a non-empty context (empty telescope), each asserted exactly.
+    ///   contexts agreeing where it looks (one support), a node reading index
+    ///   one and not zero under contexts differing only at zero (one support),
+    ///   and a type goal under a non-empty context (empty telescope), each
+    ///   asserted exactly.
     /// - witness: `support::tests::a_closed_node_takes_no_telescope`
-    /// - witness: `support::tests::a_binder_reading_node_splits_on_its_slice`
-    /// - witness: `support::tests::a_binder_reading_node_collapses_where_its_slice_agrees`
+    /// - witness: `support::tests::a_binder_reading_node_splits_on_what_it_reads`
+    /// - witness: `support::tests::a_binder_reading_node_collapses_where_its_reads_agree`
+    /// - witness: `support::tests::an_unread_binder_is_not_in_the_key`
     /// - witness: `support::tests::a_closed_type_goal_reads_no_binder`
     /// - witness: `support::tests::a_code_carrying_type_reads_its_binder`
     #[spec(ensures: |ret| ret.plane == match goal {
@@ -418,31 +759,27 @@ impl NodeSupport
         context: &[ValueTypeId],
     ) -> Self
     {
-        let (plane, telescope) = match goal {
-            SupportGoal::ValueTypeLevel(id) => {
-                let reach = session.reaches.value_type_reach(arena, id);
-                (SupportPlane::Type, reached_slice(context, reach))
-            },
+        let (plane, reads) = match goal {
+            SupportGoal::ValueTypeLevel(id) => (
+                SupportPlane::Type,
+                session.reads.value_type_reach(arena, id),
+            ),
             SupportGoal::CompTypeLevel(id) => {
-                let reach = session.reaches.comp_type_reach(arena, id);
-                (SupportPlane::Type, reached_slice(context, reach))
+                (SupportPlane::Type, session.reads.comp_type_reach(arena, id))
             },
             SupportGoal::SynthValue(id) | SupportGoal::CheckValue(id, _) => {
-                let reach = session.reaches.value_reach(arena, id);
-                (SupportPlane::Term, reached_slice(context, reach))
+                (SupportPlane::Term, session.reads.value_reach(arena, id))
             },
             SupportGoal::SynthComp(id) | SupportGoal::CheckComp(id, _) => {
-                let reach = session.reaches.comp_reach(arena, id);
-                (SupportPlane::Term, reached_slice(context, reach))
+                (SupportPlane::Term, session.reads.comp_reach(arena, id))
             },
         };
-        let encoding = encode_support(&mut session.table, arena, goal, telescope.as_slice());
-        let digest = encoding.digest();
-        Self {
-            plane,
-            encoding,
-            digest,
-        }
+        let telescope = match read_binders(context, &reads, &mut session.read) {
+            Maybe::Present(read) => Telescope::Read(read),
+            Maybe::Absent(_) => Telescope::Whole(context),
+        };
+        let named = support_key(&mut session.table, arena, goal, telescope);
+        Self { plane, goal: named }
     }
 }
 
@@ -460,62 +797,54 @@ impl MemoKey for NodeSupport
         self.plane
     }
 
-    /// The digest of this support's canonical encoding.
+    /// The digest of this support: its plane, and its goal record's name.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     fn digest(&self) -> ContentDigest
     {
-        self.digest
+        ContentDigest::new(DigestWord::from(self.plane), DigestWord::from(self.goal))
     }
 
-    /// The deciding comparison: byte equality of the canonical encodings.
+    /// The deciding comparison: the goal records' names, which the session's
+    /// table assigns exactly when the records' content agrees.
     ///
-    /// The digest is never consulted here, which is the positive-fast-path-only
-    /// discipline expressed rather than documented — a collision reaches this
-    /// comparison and loses.
+    /// The digest is never consulted here. It is read off the same name, so a
+    /// bucket holds one support, and this comparison is what serves a hit.
     ///
     /// **The plane comparison is redundant and kept deliberately.** Deleting it
-    /// is an inert mutation: the encoding's first byte is the goal's direction
-    /// tag, and the two type-formation directions draw from a disjoint part of
-    /// that alphabet, so the encodings already separate the planes. The
-    /// redundancy is defence in depth against a future direction tag that does
-    /// not, and the finding is that the plane field is load-bearing for
-    /// *accounting* rather than for agreement.
+    /// is an inert mutation: the goal record carries the goal's direction, and
+    /// the two type-formation directions draw from a disjoint part of that
+    /// alphabet, so the names already separate the planes. The redundancy is
+    /// defence in depth against a future direction tag that does not, and the
+    /// plane field is load-bearing for *accounting* rather than for agreement.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: both supports were built against one session.
     /// - ensures: `ContentAgreement::Agree` exactly when the two supports carry
-    ///   the same plane and byte-equal canonical encodings; the digest is not
-    ///   read, so a collision reaches this comparison and loses.
+    ///   the same plane and name the same goal record.
     /// - provides: the deciding comparison every hit the checker adopts is
     ///   served on.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 on equal and differing reached telescopes, disjoint
-    ///   planes and deliberately colliding digests; agreement observes content
-    ///   rather than the bucket selector.
-    /// - witness: `support::tests::a_binder_reading_node_splits_on_its_slice`
-    /// - witness: `support::tests::a_binder_reading_node_collapses_where_its_slice_agrees`
-    /// - witness: `support::tests::a_digest_collision_cannot_decide_support_agreement`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body compares the two encodings byte for byte, as the check does"
-        )
-    )]
+    /// - hypothesis: L3 on equal and differing read binders, an unread binder
+    ///   and disjoint planes; agreement observes the goal's content through its
+    ///   name.
+    /// - witness: `support::tests::a_binder_reading_node_splits_on_what_it_reads`
+    /// - witness: `support::tests::a_binder_reading_node_collapses_where_its_reads_agree`
+    /// - witness: `support::tests::an_unread_binder_is_not_in_the_key`
+    /// - witness: `support::tests::a_term_support_never_agrees_with_a_type_support`
     #[spec(ensures: |ret| matches!(ret, ContentAgreement::Agree)
-        == (self.plane == other.plane && self.encoding == other.encoding))]
+        == (self.plane == other.plane && self.goal == other.goal))]
     #[inline]
     fn agreement(
         &self,
         other: &Self,
     ) -> ContentAgreement
     {
-        if self.plane == other.plane && self.encoding == other.encoding {
+        if self.plane == other.plane && self.goal == other.goal {
             ContentAgreement::Agree
         }
         else {
@@ -524,47 +853,130 @@ impl MemoKey for NodeSupport
     }
 }
 
-/// The innermost `reach` entries of `context`, outermost first.
+impl From<SupportPlane> for DigestWord
+{
+    /// A plane as one digest word, so the two machines' supports fall in
+    /// separate buckets.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(plane: SupportPlane) -> Self
+    {
+        Self::from(match plane {
+            SupportPlane::Term => 0_u64,
+            SupportPlane::Type => 1_u64,
+        })
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a support takes the whole context rather than the binders read.
+    mod read_telescope {
+        /// The node's reads do not place every binder it reads.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// The walk could not read the node.
+            Unread,
+            /// The node reads an index past the context.
+            PastTheContext,
+        }
+    }
+}
+
+/// The binders `reads` names in `context`, gathered in `read`: each read index
+/// beside the type of the binder it names, the indices ascending.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: the innermost `reach` slots of `context`, outermost first, and
-///   the whole context where the reach is at or past its length.
-/// - provides: the telescope a support folds in, in telescope order, so
-///   dependency order is part of the content.
+/// - requires: nothing; `read`'s prior contents are discarded.
+/// - ensures: for every index `i` that `reads` holds, `(i, context[len - 1 -
+///   i])`, ascending; absent when `reads` is the widest reach or holds an index
+///   at or past the context's length.
+/// - provides: the telescope a support folds in, borrowed from `read`, which a
+///   session reuses so that gathering allocates only when a goal reads more
+///   binders than any before it.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 on ordered empty and two-slot contexts with reaches on both
-///   sides of the length boundary; exact slices distinguish reversal,
-///   off-by-one clipping and dropping a reached binder.
-/// - witness: `support::tests::telescope_clipping_keeps_binder_order_at_reach_boundaries`
-#[spec(ensures: |ret| context.get(reach.start_in(context).0 ..) == Some(ret.as_slice()))]
+/// - hypothesis: L3 on reads inside, at and past the context's length and the
+///   widest reach, gathered into a buffer holding an earlier read; exact
+///   selections distinguish a reversed position, an off-by-one, a dropped index
+///   and a stale member.
+/// - witness: `support::tests::the_read_binders_are_placed_by_index`
+#[spec(ensures: |ret| match (reads.indices(), &ret) {
+    (Maybe::Present(indices), &Maybe::Present(gathered)) => indices.collect::<Vec<_>>()
+        == gathered.iter().map(|&(index, _)| index).collect::<Vec<_>>()
+        && gathered.iter().all(|&(index, entry)| usize::try_from(u32::from(index)).ok()
+            .and_then(|index| context.len().checked_sub(index)?.checked_sub(1))
+            .and_then(|position| context.get(position)) == Some(&entry)),
+    (Maybe::Present(mut indices), &Maybe::Absent(read_telescope::Absent::PastTheContext)) => indices
+        .any(|index| usize::try_from(u32::from(index)).map_or(true, |index| index >= context.len())),
+    (Maybe::Absent(read_indices::Absent::Widest), &Maybe::Absent(read_telescope::Absent::Unread)) => true,
+    _ => false,
+})]
 #[inline]
-fn reached_slice(
+fn read_binders<'buffer>(
     context: &[ValueTypeId],
-    reach: LooseDepth,
-) -> Vec<ValueTypeId>
+    reads: &Reads,
+    read: &'buffer mut Vec<(DeBruijnIndex, ValueTypeId)>,
+) -> Maybe<&'buffer [(DeBruijnIndex, ValueTypeId)], read_telescope::Absent>
 {
-    let ContextOffset(start) = reach.start_in(context);
-    context
-        .get(start ..)
-        .map_or_else(|| context.to_vec(), <[ValueTypeId]>::to_vec)
+    read.clear();
+    let Maybe::Present(indices) = reads.indices()
+    else {
+        return Maybe::Absent(read_telescope::Absent::Unread);
+    };
+    for index in indices {
+        let Some(&entry) = usize::try_from(u32::from(index))
+            .ok()
+            .and_then(|index| context.len().checked_sub(index)?.checked_sub(1))
+            .and_then(|position| context.get(position))
+        else {
+            return Maybe::Absent(read_telescope::Absent::PastTheContext);
+        };
+        read.push((index, entry));
+    }
+    Maybe::Present(read.as_slice())
 }
 
-/// The per-node binder reach, computed once per distinct node and cached.
-#[derive(Clone, Debug, Default)]
-pub struct LooseDepths
+/// The per-node binder reach in the lattice `R`, computed once per distinct
+/// node and cached.
+#[derive(Clone, Debug)]
+pub struct Reaches<R>
 {
     /// Reaches already computed for value nodes.
-    values: BTreeMap<ValueId, LooseDepth>,
+    values: BTreeMap<ValueId, R>,
     /// Reaches already computed for computation nodes.
-    computations: BTreeMap<ComputationId, LooseDepth>,
+    computations: BTreeMap<ComputationId, R>,
     /// Reaches already computed for value-type nodes.
-    value_types: BTreeMap<ValueTypeId, LooseDepth>,
+    value_types: BTreeMap<ValueTypeId, R>,
     /// Reaches already computed for computation-type nodes.
-    comp_types: BTreeMap<CompTypeId, LooseDepth>,
+    comp_types: BTreeMap<CompTypeId, R>,
+    /// The walk's task stack, reused across walks.
+    tasks: Vec<ReachTask>,
+}
+
+/// How far each node reaches: one more than its largest free index.
+pub type LooseDepths = Reaches<LooseDepth>;
+
+impl<R> Default for Reaches<R>
+{
+    /// Nothing computed.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self {
+            values: BTreeMap::new(),
+            computations: BTreeMap::new(),
+            value_types: BTreeMap::new(),
+            comp_types: BTreeMap::new(),
+            tasks: Vec::new(),
+        }
+    }
 }
 
 /// One step of the iterative bottom-up reach walk.
@@ -590,7 +1002,7 @@ enum ReachTask
     CloseCompType(CompTypeId),
 }
 
-impl LooseDepths
+impl<R: Reach> Reaches<R>
 {
     /// An empty cache.
     ///
@@ -608,12 +1020,14 @@ impl LooseDepths
     /// # Specification
     /// - requires: cached positions still denote the same nodes in this arena;
     ///   unreadable roots are allowed and answered conservatively.
-    /// - ensures: one more than the largest free de Bruijn index when exact;
-    ///   unreadable or saturated reach stays widest through enclosing binders.
-    ///   The walk is iterative and combines each distinct node at most once.
-    /// - provides: the telescope length of a value goal's support. The
-    ///   predicate checks the recorded answer and unreadable-root boundary;
-    ///   binder recurrence and sharing are witnessed without a second walk.
+    /// - ensures: the node's reach in `R` — for [`LooseDepth`] one more than
+    ///   the largest free de Bruijn index, for [`Reads`] exactly the free
+    ///   indices; an unreadable node reaches widest, and stays widest through
+    ///   enclosing binders. The walk is iterative and combines each distinct
+    ///   node at most once.
+    /// - provides: the reads of a value goal's support. The predicate checks
+    ///   the recorded answer and unreadable-root boundary; binder recurrence
+    ///   and sharing are witnessed without a second walk.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -626,14 +1040,15 @@ impl LooseDepths
     /// - witness: `support::tests::a_variable_reaches_one_more_than_its_index`
     /// - witness: `support::tests::a_binder_closes_its_body`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
+    /// - witness: `support::tests::reads_are_exactly_the_free_indices`
     #[spec(ensures: |ret| self.values.get(&root) == Some(&ret)
-        && (arena.value(root).is_some() || ret == LooseDepth::WIDEST))]
+        && (arena.value(root).is_some() || ret == R::widest()))]
     #[inline]
     pub fn value_reach(
         &mut self,
         arena: &TermArena,
         root: ValueId,
-    ) -> LooseDepth
+    ) -> R
     {
         self.run(arena, ReachTask::OpenValue(root));
         self.cached_value(root)
@@ -644,8 +1059,8 @@ impl LooseDepths
     /// # Specification
     /// - requires: cached positions still denote the same nodes in this arena.
     /// - ensures: as [`Self::value_reach`], over the computation families.
-    /// - provides: the telescope length of a computation goal's support; the
-    ///   predicate checks cache agreement and the unreadable-root boundary.
+    /// - provides: the reads of a computation goal's support; the predicate
+    ///   checks cache agreement and the unreadable-root boundary.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -655,13 +1070,13 @@ impl LooseDepths
     /// - witness: `support::tests::a_binder_closes_its_body`
     /// - witness: `support::tests::a_bind_closes_only_its_body`
     #[spec(ensures: |ret| self.computations.get(&root) == Some(&ret)
-        && (arena.computation(root).is_some() || ret == LooseDepth::WIDEST))]
+        && (arena.computation(root).is_some() || ret == R::widest()))]
     #[inline]
     pub fn comp_reach(
         &mut self,
         arena: &TermArena,
         root: ComputationId,
-    ) -> LooseDepth
+    ) -> R
     {
         self.run(arena, ReachTask::OpenComp(root));
         self.cached_comp(root)
@@ -673,8 +1088,8 @@ impl LooseDepths
     /// - requires: cached positions still denote the same nodes in this arena.
     /// - ensures: as [`Self::value_reach`], over the value-type family, where
     ///   the reach comes entirely from the codes the type carries.
-    /// - provides: the telescope length of a value-type formation goal's
-    ///   support, with cache agreement and unreadable roots checked directly.
+    /// - provides: the reads of a value-type formation goal's support, with
+    ///   cache agreement and unreadable roots checked directly.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -685,13 +1100,13 @@ impl LooseDepths
     ///   only its own binder (closed from outside).
     /// - witness: `support::tests::a_type_reaches_through_its_codes`
     #[spec(ensures: |ret| self.value_types.get(&root) == Some(&ret)
-        && (arena.value_type(root).is_some() || ret == LooseDepth::WIDEST))]
+        && (arena.value_type(root).is_some() || ret == R::widest()))]
     #[inline]
     pub fn value_type_reach(
         &mut self,
         arena: &TermArena,
         root: ValueTypeId,
-    ) -> LooseDepth
+    ) -> R
     {
         self.run(arena, ReachTask::OpenValueType(root));
         self.cached_value_type(root)
@@ -704,8 +1119,8 @@ impl LooseDepths
     /// - requires: cached positions still denote the same nodes in this arena.
     /// - ensures: as [`Self::value_type_reach`], over the computation-type
     ///   family.
-    /// - provides: the telescope length of a computation-type formation goal's
-    ///   support, with cache agreement and unreadable roots checked directly.
+    /// - provides: the reads of a computation-type formation goal's support,
+    ///   with cache agreement and unreadable roots checked directly.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -715,13 +1130,13 @@ impl LooseDepths
     ///   not.
     /// - witness: `support::tests::a_type_reaches_through_its_codes`
     #[spec(ensures: |ret| self.comp_types.get(&root) == Some(&ret)
-        && (arena.comp_type(root).is_some() || ret == LooseDepth::WIDEST))]
+        && (arena.comp_type(root).is_some() || ret == R::widest()))]
     #[inline]
     pub fn comp_type_reach(
         &mut self,
         arena: &TermArena,
         root: CompTypeId,
-    ) -> LooseDepth
+    ) -> R
     {
         self.run(arena, ReachTask::OpenCompType(root));
         self.cached_comp_type(root)
@@ -773,7 +1188,8 @@ impl LooseDepths
         root: ReachTask,
     )
     {
-        let mut tasks: Vec<ReachTask> = Vec::new();
+        let mut tasks = core::mem::take(&mut self.tasks);
+        tasks.clear();
         tasks.push(root);
         while let Some(task) = tasks.pop() {
             match task {
@@ -783,7 +1199,7 @@ impl LooseDepths
                     }
                     let Some(node) = arena.value(id)
                     else {
-                        let _prior = self.values.insert(id, LooseDepth::WIDEST);
+                        let _prior = self.values.insert(id, R::widest());
                         continue;
                     };
                     tasks.push(ReachTask::CloseValue(id));
@@ -902,7 +1318,7 @@ impl LooseDepths
                     }
                     let Some(node) = arena.computation(id)
                     else {
-                        let _prior = self.computations.insert(id, LooseDepth::WIDEST);
+                        let _prior = self.computations.insert(id, R::widest());
                         continue;
                     };
                     tasks.push(ReachTask::CloseComp(id));
@@ -1036,7 +1452,7 @@ impl LooseDepths
                     }
                     let Some(node) = arena.value_type(id)
                     else {
-                        let _prior = self.value_types.insert(id, LooseDepth::WIDEST);
+                        let _prior = self.value_types.insert(id, R::widest());
                         continue;
                     };
                     tasks.push(ReachTask::CloseValueType(id));
@@ -1109,7 +1525,7 @@ impl LooseDepths
                     }
                     let Some(node) = arena.comp_type(id)
                     else {
-                        let _prior = self.comp_types.insert(id, LooseDepth::WIDEST);
+                        let _prior = self.comp_types.insert(id, R::widest());
                         continue;
                     };
                     tasks.push(ReachTask::CloseCompType(id));
@@ -1137,6 +1553,7 @@ impl LooseDepths
                 },
             }
         }
+        self.tasks = tasks;
     }
 
     /// A cached value reach, conservatively widest when absent.
@@ -1157,14 +1574,14 @@ impl LooseDepths
     /// - witness: `support::tests::a_closed_value_reaches_no_binder`
     /// - witness: `support::tests::a_variable_reaches_one_more_than_its_index`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
-    #[spec(ensures: |ret| ret == self.values.get(&id).copied().unwrap_or(LooseDepth::WIDEST))]
+    #[spec(ensures: |ret| ret == self.values.get(&id).cloned().unwrap_or_else(R::widest))]
     #[inline]
     fn cached_value(
         &self,
         id: ValueId,
-    ) -> LooseDepth
+    ) -> R
     {
-        self.values.get(&id).copied().unwrap_or(LooseDepth::WIDEST)
+        self.values.get(&id).cloned().unwrap_or_else(R::widest)
     }
 
     /// A cached computation reach, conservatively widest when absent.
@@ -1182,17 +1599,17 @@ impl LooseDepths
     ///   a missing answer.
     /// - witness: `support::tests::a_binder_closes_its_body`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
-    #[spec(ensures: |ret| ret == self.computations.get(&id).copied().unwrap_or(LooseDepth::WIDEST))]
+    #[spec(ensures: |ret| ret == self.computations.get(&id).cloned().unwrap_or_else(R::widest))]
     #[inline]
     fn cached_comp(
         &self,
         id: ComputationId,
-    ) -> LooseDepth
+    ) -> R
     {
         self.computations
             .get(&id)
-            .copied()
-            .unwrap_or(LooseDepth::WIDEST)
+            .cloned()
+            .unwrap_or_else(R::widest)
     }
 
     /// A cached value-type reach, conservatively widest when absent.
@@ -1210,17 +1627,14 @@ impl LooseDepths
     ///   and fallback faults.
     /// - witness: `support::tests::a_type_reaches_through_its_codes`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
-    #[spec(ensures: |ret| ret == self.value_types.get(&id).copied().unwrap_or(LooseDepth::WIDEST))]
+    #[spec(ensures: |ret| ret == self.value_types.get(&id).cloned().unwrap_or_else(R::widest))]
     #[inline]
     fn cached_value_type(
         &self,
         id: ValueTypeId,
-    ) -> LooseDepth
+    ) -> R
     {
-        self.value_types
-            .get(&id)
-            .copied()
-            .unwrap_or(LooseDepth::WIDEST)
+        self.value_types.get(&id).cloned().unwrap_or_else(R::widest)
     }
 
     /// A cached computation-type reach, conservatively widest when absent.
@@ -1238,17 +1652,14 @@ impl LooseDepths
     ///   conservative fallback.
     /// - witness: `support::tests::a_type_reaches_through_its_codes`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
-    #[spec(ensures: |ret| ret == self.comp_types.get(&id).copied().unwrap_or(LooseDepth::WIDEST))]
+    #[spec(ensures: |ret| ret == self.comp_types.get(&id).cloned().unwrap_or_else(R::widest))]
     #[inline]
     fn cached_comp_type(
         &self,
         id: CompTypeId,
-    ) -> LooseDepth
+    ) -> R
     {
-        self.comp_types
-            .get(&id)
-            .copied()
-            .unwrap_or(LooseDepth::WIDEST)
+        self.comp_types.get(&id).cloned().unwrap_or_else(R::widest)
     }
 
     /// Combine one value-type node's children's reaches into its own.
@@ -1277,13 +1688,13 @@ impl LooseDepths
     /// - witness: `support::tests::a_type_reaches_through_its_codes`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
     /// - witness: `support::tests::a_closed_type_goal_reads_no_binder`
-    #[spec(ensures: |ret| ret == arena.value_type(id).map_or(LooseDepth::WIDEST, |matched_native_node| match *matched_native_node {
-ValueType::Data { ref arguments, .. } => arguments.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
-ValueType::Record(ref fields) => fields.values().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value_type(*id))),
-ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => LooseDepth(0),
+    #[spec(ensures: |ret| ret == arena.value_type(id).map_or_else(R::widest, |matched_native_node| match *matched_native_node {
+ValueType::Data { ref arguments, .. } => arguments.iter().fold(R::closed(), |depth, id| depth.join(self.cached_value(*id))),
+ValueType::Record(ref fields) => fields.values().fold(R::closed(), |depth, id| depth.join(self.cached_value_type(*id))),
+ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => R::closed(),
 ValueType::PathUniverse(a, b) | ValueType::FlowUniverse(a, b) => self.cached_value(a).join(self.cached_value(b)),
 ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } | ValueType::Bridge { domain, left, right } => self.cached_value_type(domain).join(self.cached_value(left)).join(self.cached_value(right)),
-ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value_type(*id))),
+ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().fold(R::closed(), |depth, id| depth.join(self.cached_value_type(*id))),
 ValueType::StaticPi { domain: a, codomain: b } => self.cached_value_type(a).join(self.cached_value_type(b)),
 ValueType::Sigma { first, second } => self.cached_value_type(first).join(self.cached_value_type(second).under_binder()),
 ValueType::Session { payloads: inner, .. } | ValueType::Lift { inner, .. } | ValueType::List(inner) | ValueType::Staged { base: inner, .. } => self.cached_value_type(inner),
@@ -1294,19 +1705,17 @@ ValueType::Element { code, .. } => self.cached_value(code),
         &self,
         arena: &TermArena,
         id: ValueTypeId,
-    ) -> LooseDepth
+    ) -> R
     {
         let Some(node) = arena.value_type(id)
         else {
-            return LooseDepth::WIDEST;
+            return R::widest();
         };
         match *node {
-            ValueType::Data { ref arguments, .. } => {
-                arguments.iter().fold(LooseDepth(0), |depth, id| {
-                    depth.join(self.cached_value(*id))
-                })
-            },
-            ValueType::Record(ref fields) => fields.values().fold(LooseDepth(0), |depth, id| {
+            ValueType::Data { ref arguments, .. } => arguments
+                .iter()
+                .fold(R::closed(), |depth, id| depth.join(self.cached_value(*id))),
+            ValueType::Record(ref fields) => fields.values().fold(R::closed(), |depth, id| {
                 depth.join(self.cached_value_type(*id))
             }),
             ValueType::PathUniverse(source, target) | ValueType::FlowUniverse(source, target) => {
@@ -1330,11 +1739,9 @@ ValueType::Element { code, .. } => self.cached_value(code),
                 .cached_value_type(domain)
                 .join(self.cached_value(left))
                 .join(self.cached_value(right)),
-            ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => {
-                LooseDepth(0)
-            },
+            ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => R::closed(),
             ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
-                parts.iter().fold(LooseDepth(0), |depth, id| {
+                parts.iter().fold(R::closed(), |depth, id| {
                     depth.join(self.cached_value_type(*id))
                 })
             },
@@ -1381,7 +1788,7 @@ ValueType::Element { code, .. } => self.cached_value(code),
     ///   binder from an unbound domain and conservative refusal.
     /// - witness: `support::tests::a_type_reaches_through_its_codes`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
-    #[spec(ensures: |ret| ret == arena.comp_type(id).map_or(LooseDepth::WIDEST, |node| match *node {
+    #[spec(ensures: |ret| ret == arena.comp_type(id).map_or_else(R::widest, |node| match *node {
         CompType::Returner(result) => self.cached_value_type(result),
         CompType::Arrow { domain, codomain } => self.cached_value_type(domain).join(self.cached_comp_type(codomain)),
         CompType::Pi { domain, codomain } => self.cached_value_type(domain).join(self.cached_comp_type(codomain).under_binder()),
@@ -1392,11 +1799,11 @@ ValueType::Element { code, .. } => self.cached_value(code),
         &self,
         arena: &TermArena,
         id: CompTypeId,
-    ) -> LooseDepth
+    ) -> R
     {
         let Some(node) = arena.comp_type(id)
         else {
-            return LooseDepth::WIDEST;
+            return R::widest();
         };
         match *node {
             CompType::Returner(result) => self.cached_value_type(result),
@@ -1415,13 +1822,13 @@ ValueType::Element { code, .. } => self.cached_value(code),
 
     /// Combine one value node's children's reaches into its own.
     ///
-    /// A variable at index `i` reaches `i + 1` binders — index zero names the
-    /// innermost slot. No value former binds, so every other case is the join
-    /// of its children.
+    /// A variable at index `i` reaches that index: `i + 1` binders as a depth,
+    /// `{i}` as a read — index zero names the innermost slot. No value former
+    /// binds, so every other case is the join of its children.
     ///
     /// # Specification
     /// - requires: this node's children already have their reaches cached.
-    /// - ensures: one more than a variable's own index, zero for a closed
+    /// - ensures: a variable's own index's reach, the closed reach for a closed
     ///   former, the quoted type's reach for a quote, and the join of the
     ///   children's reaches otherwise; the widest reach where the node could
     ///   not be read. No value former binds.
@@ -1438,20 +1845,21 @@ ValueType::Element { code, .. } => self.cached_value(code),
     /// - witness: `support::tests::a_variable_reaches_one_more_than_its_index`
     /// - witness: `support::tests::saturated_reach_remains_conservative_beneath_a_binder`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
-    /// - witness: `support::tests::a_binder_reading_node_splits_on_its_slice`
-    #[spec(ensures: |ret| ret == arena.value(id).map_or(LooseDepth::WIDEST, |matched_native_node| match *matched_native_node {
+    /// - witness: `support::tests::a_binder_reading_node_splits_on_what_it_reads`
+    /// - witness: `support::tests::reads_are_exactly_the_free_indices`
+    #[spec(ensures: |ret| ret == arena.value(id).map_or_else(R::widest, |matched_native_node| match *matched_native_node {
 Value::Constructor { datatype, ref fields, .. } => fields.iter().fold(self.cached_value_type(datatype), |depth, id| depth.join(self.cached_value(*id))),
-Value::Record(ref fields) => fields.values().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
-Value::Variable(index) => LooseDepth(u32::from(index).saturating_add(1)),
-Value::ListNil | Value::Constant(_) | Value::Literal(_) => LooseDepth(0),
-Value::Tuple(ref components) => components.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
+Value::Record(ref fields) => fields.values().fold(R::closed(), |depth, id| depth.join(self.cached_value(*id))),
+Value::Variable(index) => R::variable(index),
+Value::ListNil | Value::Constant(_) | Value::Literal(_) => R::closed(),
+Value::Tuple(ref components) => components.iter().fold(R::closed(), |depth, id| depth.join(self.cached_value(*id))),
 Value::PathEquiv { path_type, forward, backward, .. } => self.cached_value_type(path_type).join(self.cached_value(forward)).join(self.cached_value(backward)),
 Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => self.cached_value_type(classifier).join(self.cached_value(payload_paths)),
 Value::PathRefl(body) | Value::Univalence(body) | Value::Here { point: body, .. } | Value::Stay { point: body, .. } | Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),
 Value::ForwardFlow { flow_type, translator, ref outputs, .. } => outputs.iter().fold(self.cached_value_type(flow_type).join(self.cached_value(translator)), |depth, id| depth.join(self.cached_value(*id))),
 Value::FunctionFlow { flow_type, domain, codomain } => self.cached_value_type(flow_type).join(self.cached_value(domain)).join(self.cached_value(codomain)),
-Value::Higher { evidence: ref values, .. } | Value::QuantifiedEvaluation { children: ref values, .. } => values.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
-Value::HigherEvaluation { ref components, .. } => components.iter().fold(LooseDepth(0), |depth, component| depth.join(self.cached_value(component.left)).join(self.cached_value(component.right)).join(self.cached_value(component.evidence))),
+Value::Higher { evidence: ref values, .. } | Value::QuantifiedEvaluation { children: ref values, .. } => values.iter().fold(R::closed(), |depth, id| depth.join(self.cached_value(*id))),
+Value::HigherEvaluation { ref components, .. } => components.iter().fold(R::closed(), |depth, component| depth.join(self.cached_value(component.left)).join(self.cached_value(component.right)).join(self.cached_value(component.evidence))),
 Value::ListCons(a, b) | Value::PathProduct(a, b) | Value::FlowProduct(a, b) | Value::StaticApplication(a, b) | Value::Then { first: a, second: b, .. } => self.cached_value(a).join(self.cached_value(b)),
 Value::Thunk(body) | Value::Returned(body) => self.cached_comp(body),
 Value::Quote(ty) => self.cached_value_type(ty),
@@ -1461,11 +1869,11 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
         &self,
         arena: &TermArena,
         id: ValueId,
-    ) -> LooseDepth
+    ) -> R
     {
         let Some(node) = arena.value(id)
         else {
-            return LooseDepth::WIDEST;
+            return R::widest();
         };
         match *node {
             Value::Constructor {
@@ -1477,20 +1885,14 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 .fold(self.cached_value_type(datatype), |depth, id| {
                     depth.join(self.cached_value(*id))
                 }),
-            Value::Record(ref fields) => fields.values().fold(LooseDepth(0), |depth, id| {
-                depth.join(self.cached_value(*id))
-            }),
-            Value::Variable(index) => {
-                // reason: an unrepresentable reach conservatively uses the whole context.
-                LooseDepth(u32::from(arith::saturating_add(
-                    arith::Int::from(u32::from(index)),
-                    arith::Int::from(1_u32),
-                )))
-            },
-            Value::ListNil | Value::Constant(_) | Value::Literal(_) => LooseDepth(0),
-            Value::Tuple(ref components) => components.iter().fold(LooseDepth(0), |depth, id| {
-                depth.join(self.cached_value(*id))
-            }),
+            Value::Record(ref fields) => fields
+                .values()
+                .fold(R::closed(), |depth, id| depth.join(self.cached_value(*id))),
+            Value::Variable(index) => R::variable(index),
+            Value::ListNil | Value::Constant(_) | Value::Literal(_) => R::closed(),
+            Value::Tuple(ref components) => components
+                .iter()
+                .fold(R::closed(), |depth, id| depth.join(self.cached_value(*id))),
             Value::PathEquiv {
                 path_type,
                 forward,
@@ -1541,11 +1943,11 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
             | Value::QuantifiedEvaluation {
                 children: ref values,
                 ..
-            } => values.iter().fold(LooseDepth(0), |depth, id| {
-                depth.join(self.cached_value(*id))
-            }),
+            } => values
+                .iter()
+                .fold(R::closed(), |depth, id| depth.join(self.cached_value(*id))),
             Value::HigherEvaluation { ref components, .. } => {
-                components.iter().fold(LooseDepth(0), |depth, component| {
+                components.iter().fold(R::closed(), |depth, component| {
                     depth
                         .join(self.cached_value(component.left))
                         .join(self.cached_value(component.right))
@@ -1600,7 +2002,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
         Some(&Computation::DataCase { scrutinee, motive, ref branches }) => branches.iter().fold(self.cached_value(scrutinee).join(self.cached_comp_type(motive).under_binder()), |depth, id| depth.join(self.cached_comp(*id))),
         Some(&Computation::SigmaSplit { scrutinee, motive, body }) => self.cached_value(scrutinee).join(self.cached_comp_type(motive).under_binder()).join(self.cached_comp(body).under_binder().under_binder()),
         Some(&(Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _))) => self.cached_value(record),
-        None => LooseDepth::WIDEST,
+        None => R::widest(),
         Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => self.cached_value_type(element).join(self.cached_value_type(result)).join(self.cached_value(list)).join(self.cached_comp(on_nil)).join(self.cached_comp(on_cons).under_binder().under_binder()),
         Some(&Computation::Transport(path, value)) => self.cached_value(path).join(self.cached_value(value)),
         Some(&(Computation::PathTransport { motive, path, value } | Computation::Ride { motive, flow: path, value })) => self.cached_value_type(motive).under_binder().join(self.cached_value(path)).join(self.cached_value(value)),
@@ -1618,11 +2020,11 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
         &self,
         arena: &TermArena,
         id: ComputationId,
-    ) -> LooseDepth
+    ) -> R
     {
         let Some(node) = arena.computation(id)
         else {
-            return LooseDepth::WIDEST;
+            return R::widest();
         };
         match *node {
             Computation::DataCase {
@@ -1744,13 +2146,97 @@ mod tests
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::TermArena;
+    use quenchant_shape::shape::Maybe;
 
     use super::LooseDepth;
     use super::LooseDepths;
     use super::NodeSupport;
+    use super::Reach as _;
+    use super::Reaches;
+    use super::Reads;
     use super::SupportContext;
     use super::SupportPlane;
+    use super::read_telescope;
     use crate::encoding::SupportGoal;
+
+    #[test]
+    fn reads_are_exactly_the_free_indices()
+    {
+        let mut arena = TermArena::new();
+        let at =
+            |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
+        let listed = |reads: &Reads| match reads.indices() {
+            Maybe::Present(read) => Maybe::Present(read.collect::<alloc::vec::Vec<_>>()),
+            Maybe::Absent(absent) => Maybe::Absent(absent),
+        };
+        let set = |indices: &[u32]| {
+            Maybe::Present(indices.iter().copied().map(DeBruijnIndex::from).collect())
+        };
+        let leaves = [0_u32, 3, 63, 64, 70].map(|index| at(&mut arena, index));
+        let tuple = arena.value_tuple(&leaves);
+        let body = arena.computation_return(tuple);
+        let lambda = arena.computation_lambda(body);
+        let far = at(&mut arena, 64);
+        let returned = arena.computation_return(far);
+        let stepped = arena.computation_lambda(returned);
+        let mut reads: Reaches<Reads> = Reaches::default();
+        let mut depths = LooseDepths::new();
+        assert_eq!(
+            set(&[0, 3, 63, 64, 70]),
+            listed(&reads.value_reach(&arena, tuple)),
+            "a former reads every index its children read, on both sides of the word"
+        );
+        assert_eq!(
+            set(&[2, 62, 63, 69]),
+            listed(&reads.comp_reach(&arena, lambda)),
+            "a binder drops index zero and lowers the rest"
+        );
+        assert_eq!(
+            Reads::variable(DeBruijnIndex::from(63_u32)),
+            reads.comp_reach(&arena, stepped),
+            "a spilled set stepped back inside the word takes the word's form"
+        );
+        assert_eq!(
+            set(&[1, 63, 64]),
+            listed(
+                &Reads::variable(DeBruijnIndex::from(64_u32))
+                    .join(Reads::variable(DeBruijnIndex::from(1_u32)))
+                    .join(Reads::variable(DeBruijnIndex::from(63_u32)))
+            ),
+            "a union of a word and a spilled set is ascending and repeats nothing"
+        );
+        assert_eq!(
+            depths.value_reach(&arena, tuple),
+            reads.value_reach(&arena, tuple).depth(),
+            "the depth is one more than the largest index read"
+        );
+        for node in [lambda, stepped] {
+            assert_eq!(
+                depths.comp_reach(&arena, node),
+                reads.comp_reach(&arena, node).depth()
+            );
+        }
+        let floor = arena.watermark();
+        let gone = arena.value_unit();
+        arena.truncate_to(floor);
+        let unread = reads.value_reach(&arena, gone);
+        assert_eq!(
+            Maybe::Absent(super::read_indices::Absent::Widest),
+            listed(&unread),
+            "an unreadable node reads every binder"
+        );
+        assert_eq!(LooseDepth::WIDEST, unread.depth());
+        assert_eq!(
+            unread,
+            Reads::variable(DeBruijnIndex::from(0_u32)).join(Reads::widest()),
+            "and absorbs a join"
+        );
+        assert_eq!(
+            unread,
+            Reads::widest().under_binder(),
+            "and survives a binder"
+        );
+    }
 
     #[test]
     fn saturated_reach_remains_conservative_beneath_a_binder()
@@ -1860,7 +2346,7 @@ mod tests
         assert_eq!(
             LooseDepth::from(u32::MAX),
             reaches.value_reach(&arena, unit),
-            "an unreadable node widens the slice to the whole context rather than narrowing it"
+            "an unreadable node widens the reach to the whole context rather than narrowing it"
         );
     }
 
@@ -1885,7 +2371,7 @@ mod tests
     }
 
     #[test]
-    fn a_binder_reading_node_splits_on_its_slice()
+    fn a_binder_reading_node_splits_on_what_it_reads()
     {
         let mut arena = TermArena::new();
         let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -1913,7 +2399,7 @@ mod tests
     }
 
     #[test]
-    fn a_binder_reading_node_collapses_where_its_slice_agrees()
+    fn a_binder_reading_node_collapses_where_its_reads_agree()
     {
         let mut arena = TermArena::new();
         let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -1930,8 +2416,41 @@ mod tests
         assert_eq!(
             ContentAgreement::Agree,
             shallow.agreement(&deep),
-            "only the reached slice is in the key, so contexts agreeing where the node looks are \
+            "only the binders read are in the key, so contexts agreeing where the node looks are \
              one question"
+        );
+    }
+
+    #[test]
+    fn an_unread_binder_is_not_in_the_key()
+    {
+        let mut arena = TermArena::new();
+        let variable = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let unit_type = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let text = arena.value_type_base(BaseType::String);
+        let mut session = SupportContext::new();
+        let mut under = |context: &[_]| {
+            NodeSupport::build(
+                &arena,
+                &mut session,
+                SupportGoal::SynthValue(variable),
+                context,
+            )
+        };
+        let over_unit = under(&[integer, unit_type]);
+        let over_text = under(&[integer, text]);
+        let elsewhere = under(&[text, unit_type]);
+        assert_eq!(
+            ContentAgreement::Agree,
+            over_unit.agreement(&over_text),
+            "a node reading index one and not zero is one question under contexts differing only \
+             at zero"
+        );
+        assert_eq!(
+            ContentAgreement::Differ,
+            over_unit.agreement(&elsewhere),
+            "and two where they differ at the index it reads"
         );
     }
 
@@ -1966,7 +2485,7 @@ mod tests
         );
     }
 
-    /// A type-formation goal splits on the binder slice its codes reach, the
+    /// A type-formation goal splits on the binders its codes read, the
     /// same way a term goal does — so one type formed under two different
     /// binders is two entries rather than one.
     #[test]
@@ -2034,47 +2553,43 @@ mod tests
     }
 
     #[test]
-    fn telescope_clipping_keeps_binder_order_at_reach_boundaries()
+    fn the_read_binders_are_placed_by_index()
     {
         let mut arena = TermArena::new();
         let unit = arena.value_type_unit();
         let base = arena.value_type_base(BaseType::Integer);
         let context = [unit, base];
-        for (reach, start) in [(0_u32, 2_usize), (1, 1), (2, 0), (3, 0), (u32::MAX, 0)] {
-            let depth = LooseDepth::from(reach);
-            assert_eq!(depth.start_in(&context).0, start);
-            assert_eq!(
-                super::reached_slice(&context, depth).as_slice(),
-                &context[start ..]
-            );
-            assert_eq!(super::reached_slice(&[], depth).as_slice(), &[]);
-        }
-    }
-
-    #[test]
-    fn a_digest_collision_cannot_decide_support_agreement()
-    {
-        let mut arena = TermArena::new();
-        let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let unit = arena.value_type_unit();
-        let integer = arena.value_type_base(BaseType::Integer);
-        let mut session = SupportContext::new();
-        let left = NodeSupport::build(&arena, &mut session, SupportGoal::SynthValue(variable), &[
-            unit,
-        ]);
-        let mut right =
-            NodeSupport::build(&arena, &mut session, SupportGoal::SynthValue(variable), &[
-                integer,
-            ]);
-        right.digest = left.digest;
-        assert_eq!(left.agreement(&right), ContentAgreement::Differ);
-        let mut same_content = left.clone();
-        same_content.digest =
-            NodeSupport::build(&arena, &mut session, SupportGoal::SynthValue(variable), &[
-                integer,
-            ])
-            .digest;
-        assert_eq!(left.agreement(&same_content), ContentAgreement::Agree);
+        let at = |index: u32| DeBruijnIndex::from(index);
+        // The buffer holds an earlier goal's read, which gathering discards.
+        let mut buffer = alloc::vec![(at(5), unit)];
+        let mut read =
+            |reads: Reads| super::read_binders(&context, &reads, &mut buffer).map(<[_]>::to_vec);
+        assert_eq!(Maybe::Present(alloc::vec![]), read(Reads::closed()));
+        assert_eq!(
+            Maybe::Present(alloc::vec![(at(0), base)]),
+            read(Reads::variable(at(0))),
+            "index zero names the innermost binder"
+        );
+        assert_eq!(
+            Maybe::Present(alloc::vec![(at(1), unit)]),
+            read(Reads::variable(at(1))),
+            "and the last index the outermost"
+        );
+        assert_eq!(
+            Maybe::Present(alloc::vec![(at(0), base), (at(1), unit)]),
+            read(Reads::variable(at(1)).join(Reads::variable(at(0)))),
+            "ascending by index"
+        );
+        assert_eq!(
+            Maybe::Absent(read_telescope::Absent::PastTheContext),
+            read(Reads::variable(at(2))),
+            "an index past the context takes the whole context"
+        );
+        assert_eq!(
+            Maybe::Absent(read_telescope::Absent::Unread),
+            read(Reads::widest()),
+            "and so does a node the walk could not read"
+        );
     }
 
     #[test]
