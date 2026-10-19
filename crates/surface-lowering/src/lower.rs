@@ -16721,16 +16721,31 @@ mod tests
             ["Unit"],
             "and `Unit` its type"
         );
-        let matched = refusal(SourceText::from(
-            "def g(x : Unit) -> -F Integer { case x { unit => return 1 } }",
-        ));
-        assert!(
-            matches!(matched, LoweringRefusal::OutOfFragment {
-                form: FormName::UNIT,
-                boundary: FragmentBoundary::Unadmitted,
-                ..
-            }),
-            "the unit pattern molds, and a match does not admit it yet: {matched:?}"
+    }
+
+    /// #815: the printer writes a match on the unit as `unit`; before the
+    /// fix the lowering refused that pattern as unadmitted, so the printed
+    /// body did not read back.
+    #[test]
+    fn the_unit_pattern_is_the_empty_products_815()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(concat!(
+                "def g(x : Unit) -> -F Integer { case x { unit => return 1 } }\n",
+                "def h(x : Unit) -> -F Integer { case x { #{} => return 1 } }\n",
+            )),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        assert_eq!(
+            gandr_core_term::equal_certificate_syntax(
+                &arena,
+                body_of(lowered[0]),
+                body_of(lowered[1]),
+            ),
+            gandr_core_term::CertificateEquality::Equal,
+            "the unit pattern is the empty product's"
         );
     }
 

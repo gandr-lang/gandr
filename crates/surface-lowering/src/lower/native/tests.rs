@@ -2793,6 +2793,56 @@ fn a_sum_pattern_reads_a_sum_stated_as_a_chain_791()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// #815: the printer writes `+{Unit, Unit}` as `Bool` and a match on it with
+/// sum patterns; before the fix a match read summands only off a written
+/// sum, so a sum pattern under a stated `Bool` was refused as unannotated
+/// and the printed body did not read back.
+#[test]
+fn a_sum_pattern_reads_bool_as_its_sum_815()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def braced(b : +{Unit, Unit}) -> -F +{Unit, Unit} { case b { +{.0 = u} => return +{.1 = u}, +{.1 = u} => return +{.0 = u} } }\n",
+            "def atom(b : Bool) -> -F Bool { case b { +{.0 = u} => return +{.1 = u}, +{.1 = u} => return +{.0 = u} } }\n",
+            "def past(b : Bool) -> -F Integer { case b { +{.2 = u} => return 0, _ => return 1 } }\n",
+            "def bracedLambda : +U (+{Unit, Unit} -> -F Bool) ;\n",
+            "def bracedLambda = thunk { fn (b) { case b { +{.0 = u} => return +{.1 = u}, +{.1 = u} => return +{.0 = u} } } } ;\n",
+            "def atomLambda : +U (Bool -> -F Bool) ;\n",
+            "def atomLambda = thunk { fn (b) { case b { +{.0 = u} => return +{.1 = u}, +{.1 = u} => return +{.0 = u} } } } ;\n",
+        )),
+        &mut arena,
+    );
+    assert_eq!(
+        gandr_core_term::equal_certificate_syntax(
+            &arena,
+            body_named(&module, SurfaceName::from("braced")),
+            body_named(&module, SurfaceName::from("atom")),
+        ),
+        gandr_core_term::CertificateEquality::Equal,
+        "a match cases on `Bool` as on the sum it stands for"
+    );
+    assert_eq!(
+        gandr_core_term::equal_certificate_syntax(
+            &arena,
+            body_named(&module, SurfaceName::from("bracedLambda")),
+            body_named(&module, SurfaceName::from("atomLambda")),
+        ),
+        gandr_core_term::CertificateEquality::Equal,
+        "and a lambda under a separate signature reads its arrow's `Bool`"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("past")),
+            LoweringRefusal::MalformedForm {
+                form: FormName::LABELLED_SUM_PATTERN,
+                ..
+            }
+        ),
+        "an index past `Bool`'s two summands names none"
+    );
+}
+
 #[test]
 fn a_loop_mints_the_words_at_its_point()
 {

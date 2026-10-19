@@ -373,9 +373,11 @@ use crate::resolve::OperandCount;
 use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
+use crate::resolve::TypeAtom;
 use crate::resolve::TypeFormer;
 use crate::resolve::binder_site;
 use crate::resolve::binder_type;
+use crate::resolve::type_atom;
 use crate::resolve::type_former;
 
 #[cfg(test)]
@@ -3582,6 +3584,11 @@ impl<'source> Lowerer<'_, 'source>
             })?;
             return Ok(Matcher::Hole(HoleId::from(identity)));
         }
+        if name == FormName::UNIT {
+            // `unit` is the empty product's pattern, `#{}` spelled as the
+            // value it matches.
+            return self.components(here, queued, &[], patterns, work);
+        }
         if name == FormName::IDENTIFIER {
             if self.text_at(at).as_ref() == super::identity::HERE {
                 return match self.collected.words.len() {
@@ -4141,7 +4148,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the injection into the summand the key's index names, or its
     ///   label names among the stated sum's entries, of as many summands as the
     ///   stated sum has; the payload queued with the summand's type, and the
-    ///   key spelled at the payload, which it names.
+    ///   key spelled at the payload, which it names. A position stating the
+    ///   atom `Bool`, through parentheses, states the sum `+{Unit, Unit}` it
+    ///   stands for, whose summands write no type to queue the payload with.
     /// - fails: the unannotated refusal where the position states no sum; a
     ///   misplaced tile at an index past the sum; the unresolved-name refusal
     ///   for a label the sum lacks.
@@ -4152,8 +4161,9 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — labelled and indexed sum patterns under a stated sum,
-    ///   nested in a telescope pattern, and with no stated sum.
+    ///   nested in a telescope pattern, under `Bool`, and with no stated sum.
     /// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
+    /// - witness: `lower::native::tests::a_sum_pattern_reads_bool_as_its_sum_815`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |shape| matches!(*shape, Matcher::Injection { summand, arity, .. } if summand < arity)))]
     fn injected(
         &mut self,
@@ -4171,21 +4181,30 @@ impl<'source> Lowerer<'_, 'source>
             },
             Maybe::Absent(_) => Maybe::Absent(arity::stated_labels::Absent::Otherwise),
         };
-        let Maybe::Present(summands) = summands
-        else {
-            return Err(here.out(FragmentBoundary::Unannotated));
+        let summands = match summands {
+            Maybe::Present(summands) => summands,
+            Maybe::Absent(_) if self.stated_atom(stated)? == Some(TypeAtom::Boolean) => Vec::new(),
+            Maybe::Absent(_) => return Err(here.out(FragmentBoundary::Unannotated)),
         };
-        let (summand, entry, keyed) = match key {
-            arity::Key::Index(index, _, written) => {
-                let Some(&entry) = summands.get(index)
-                else {
-                    return Err(here.fault(written.span, FormFault::MisplacedTile));
-                };
-                (index, entry, written.span)
+        // `Bool` writes no summand, so its two are read off the atom.
+        let arity = if summands.is_empty() {
+            2_usize
+        }
+        else {
+            summands.len()
+        };
+        let (summand, held, keyed) = match key {
+            arity::Key::Index(index, _, written) if index < arity => (
+                index,
+                summands.get(index).map(|entry| entry.held.at().node),
+                written.span,
+            ),
+            arity::Key::Index(_, _, written) => {
+                return Err(here.fault(written.span, FormFault::MisplacedTile));
             },
             arity::Key::Label(name, written) => {
                 let (arity::Place(index), entry) = Self::labelled_in(&summands, name, written)?;
-                (index, entry, written.span)
+                (index, Some(entry.held.at().node), written.span)
             },
             arity::Key::Positional => {
                 return Err(here.fault(payload.span, FormFault::MisplacedTile));
@@ -4194,7 +4213,7 @@ impl<'source> Lowerer<'_, 'source>
         let queued = [Queued {
             at: payload,
             slot: UNWRITTEN,
-            stated: Maybe::Present(entry.held.at().node),
+            stated: held.map_or(Maybe::Absent(binder_type::Absent::Untyped), Maybe::Present),
             related: Maybe::Absent(related::Absent::Otherwise),
             punned: Punned(false),
         }];
@@ -4210,8 +4229,78 @@ impl<'source> Lowerer<'_, 'source>
 
         Ok(Matcher::Injection {
             summand,
-            arity: summands.len(),
+            arity,
             field,
+        })
+    }
+
+    /// The type atom `stated` names, through parentheses.
+    ///
+    /// # Specification
+    /// - requires: `stated` is a type's syntax node.
+    /// - ensures: the atom when `stated` is present and plans, through
+    ///   transparent nodes, as a type atom; or, not yet classified, as a
+    ///   signature the sweep has not reached is, names an atom with no
+    ///   constructor or outermost declaration of that name to shadow it;
+    ///   nothing otherwise.
+    /// - fails: the name's own resolution refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::resolve_name`].
+    ///
+    /// # Termination
+    /// Every turn steps to the operand of a transparent node, strictly deeper
+    /// in a finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::injected`], a parameter's `Bool` and a
+    ///   lambda's under a separate signature.
+    /// - witness: `lower::native::tests::a_sum_pattern_reads_bool_as_its_sum_815`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Some(_))) || matches!(stated, Maybe::Present(_)))]
+    fn stated_atom(
+        &mut self,
+        stated: Maybe<NodeIndex, binder_type::Absent>,
+    ) -> Result<Option<TypeAtom>, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(mut at) = stated
+        else {
+            return Ok(None);
+        };
+        while let Some(&Plan::Transparent(inner)) = self.plans.get(usize::from(at)) {
+            at = inner;
+        }
+        match self.plans.get(usize::from(at)) {
+            Some(&Plan::Atom(atom)) => return Ok(Some(atom)),
+            Some(&Plan::Unplanned) | None => {},
+            Some(_) => return Ok(None),
+        }
+        let Some(tree) = self.tree.node(at)
+        else {
+            return Ok(None);
+        };
+        let placed = Placed::of(at, tree);
+        let Some((form, Former::Constructor | Former::TypeHead)) = self.form_at(placed)?
+        else {
+            return Ok(None);
+        };
+        let name = self.name_at(placed);
+        let Maybe::Present(atom) = type_atom(name)
+        else {
+            return Ok(None);
+        };
+        let named = Site {
+            at: placed,
+            name: form,
+            reading: Reading::ValueType(Frame::Outermost),
+        };
+        if let Maybe::Present(_) = self.constructor_named(named, name) {
+            return Ok(None);
+        }
+
+        Ok(match self.resolve_name(named, Frame::Outermost, name)? {
+            Maybe::Present(_) => None,
+            Maybe::Absent(_) => Some(atom),
         })
     }
 
