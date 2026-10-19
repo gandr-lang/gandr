@@ -898,6 +898,30 @@ pub struct PositionParams
     pub position: Position,
 }
 
+/// The parameters of `textDocument/references`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferenceParams
+{
+    /// The document addressed.
+    pub text_document: DocumentIdentifier,
+    /// The cursor the request is about.
+    pub position: Position,
+    /// What the answer holds besides the uses.
+    #[serde(default)]
+    pub context: ReferenceContext,
+}
+
+/// What a reference request's answer holds besides the uses.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferenceContext
+{
+    /// Whether the declaring name is answered too.
+    pub include_declaration: bool,
+}
+
 /// The parameters of `textDocument/selectionRange`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -967,6 +991,7 @@ impl InitializeResult
             && ret.capabilities.code_action_provider.0
             && ret.capabilities.workspace_symbol_provider.0
             && ret.capabilities.document_highlight_provider.0
+            && ret.capabilities.references_provider.0
             && !ret.capabilities.code_lens_provider.resolve_provider
             && !ret.capabilities.completion_provider.resolve_provider)]
     #[inline]
@@ -1010,6 +1035,7 @@ impl InitializeResult
                 code_action_provider: Provider::ANSWERED,
                 workspace_symbol_provider: Provider::ANSWERED,
                 document_highlight_provider: Provider::ANSWERED,
+                references_provider: Provider::ANSWERED,
             },
             server_info: ServerInfo {
                 name: SOURCE,
@@ -1065,6 +1091,9 @@ pub struct ServerCapabilities
     /// Document highlights are answered: the declaring name and the uses of
     /// the name at a position, within the document.
     pub document_highlight_provider: Provider,
+    /// References are answered: the uses the open documents make of the name
+    /// at a position, and its declaring name when asked.
+    pub references_provider: Provider,
 }
 
 /// Whether a request is answered, advertised as a provider with no options.

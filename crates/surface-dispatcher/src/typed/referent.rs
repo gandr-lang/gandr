@@ -477,16 +477,16 @@ impl Referents
         }
     }
 
-    /// The span of every use referring to the name `referent` names, by where
-    /// that name is written, one per start, ascending.
+    /// The span of every use referring to the name written at `named` of
+    /// `source`, one per start, ascending.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the narrowest of the uses starting at each offset whose
-    ///   referent's source and name are `referent`'s, ascending by start: a
-    ///   recursive declaration's call refers to its name as a binder, every
-    ///   other use as the declaration, and both are the one name; none for a
-    ///   name no use refers to.
+    ///   referent's source and name are `source` and `named`, ascending by
+    ///   start: a recursive declaration's call refers to its name as a binder,
+    ///   every other use as the declaration, and both are the one name; none
+    ///   for a name no use refers to.
     /// - provides: what a highlight, a reference search and a rename read.
     /// - fails: never.
     /// - panics: none.
@@ -497,14 +497,15 @@ impl Referents
     ///   and a constructor's uses in a term and in a pattern are each found
     ///   once, and no use of another name is.
     /// - witness: `typed::tests::each_name_is_found_with_every_use_referring_to_it`
-    #[spec(ensures: |ret| ret.iter().all(|&(held, _)| (held.source, held.named) == (referent.source, referent.named))
+    #[spec(ensures: |ret| ret.iter().all(|&(held, _)| (held.source, held.named) == (source, named))
         && ret.windows(2).all(|pair| matches!(pair, [(_, earlier), (_, later)] if earlier.start() < later.start())))]
     pub(super) fn uses_of(
         &self,
-        referent: Referent,
+        source: SourceIndex,
+        named: ByteSpan,
     ) -> &[(Referent, ByteSpan)]
     {
-        let key = (referent.source, referent.named);
+        let key = (source, named);
         let first = self
             .by_referent
             .partition_point(|&(held, _)| (held.source, held.named) < key);

@@ -133,7 +133,7 @@
 //! | definition, type definition | `textDocument/definition`, `typeDefinition` | served: what the use at the position refers to, and the families the type there names, as links when the client takes them |
 //! | declaration, implementation | `textDocument/declaration`, `implementation` | declined: a signature and its definition make one declaration, which definition answers at its first form, and the core has no interfaces to implement |
 //! | document highlight | `textDocument/documentHighlight` | served: the declaring name and every use of the name at a position, within the document, read off the type table's reverse use index, as the `uses` module states; a recursive call's use spans its marker with its name |
-//! | references | `textDocument/references` | planned: the same reverse use index, read in every open document's import closure |
+//! | references | `textDocument/references` | served: the declaring name when asked, then every open document's own uses of the name at a position, matched by its source's path and its span, as the `uses` module states; a source no document has open is not read |
 //! | rename, linked editing | `textDocument/prepareRename`, `rename`, `linkedEditingRange` | blocked: a binder's rename is planned on the reverse use index; a declaration's needs the importers of its source, which the path table finds |
 //! | call hierarchy | `textDocument/prepareCallHierarchy`, `callHierarchy/*` | blocked: the declaration enclosing each use |
 //! | type hierarchy | `textDocument/prepareTypeHierarchy`, `typeHierarchy/*` | declined: the core has no subtyping to arrange types by |
@@ -186,7 +186,7 @@
 //! | syntax tree view: `rust-analyzer/viewSyntaxTree` | rust-analyzer | **adopt** as `gandr/syntaxTree`: the molded tree of a document, its molds, tiles, layout and repairs, as text | the tree exists for every request already, and grammar and parser work reads it; a debugging aid, advertised as one |
 //! | snippet text edits | rust-analyzer | **adopt** with code actions: a repair the parser recorded becomes a fix whose holes are tab stops | inline completion already writes snippets, and code actions are served for model proposals; waits on the parser's repairs becoming fixes |
 //! | runnables: `experimental/runnables` | rust-analyzer | **decline** the method; a code lens over each declaration that evaluates, running it as `gandr run` does, once commands exist | the specification's lenses and commands carry it, so Helix and Zed see it too |
-//! | hover actions | rust-analyzer | **decline** until references exist | its actions are go-to and find-references links, and find-references waits on the referent index read in reverse |
+//! | hover actions | rust-analyzer | **decline** | its actions are go-to and find-references links, which every client offers from its own commands over the definitions and references the server answers |
 //! | matching brace: `experimental/matchingBrace` | rust-analyzer | **decline** | selection ranges already grow from a tile to its form, and the client matches brackets itself |
 //! | join lines: `experimental/joinLines`; on enter | rust-analyzer | **decline** | layout belongs to the source formatter, which formatting serves |
 //! | server status: `experimental/serverStatus` | rust-analyzer | **adopt** as `gandr/serverStatus`: whether the latest revision's kernel admission is pending, done or refused | the admission runs after the diagnostics are published, and an editor cannot otherwise tell a revision the kernel has yet to admit from one it admitted |
