@@ -89,6 +89,7 @@ use crate::proposal::ghosts;
 use crate::proposal::lenses;
 use crate::proposal::notes;
 use crate::protocol::Answer;
+use crate::protocol::CompletionItem;
 use crate::protocol::ConfigurationParams;
 use crate::protocol::ContentChange;
 use crate::protocol::Diagnostic;
@@ -1471,6 +1472,12 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
                 },
+            (Phase::Running, "textDocument/completion") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Completion(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
+                },
             (Phase::Running, "textDocument/codeLens" | "textDocument/codeAction") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Lenses(_) | Answer::Actions(_), .. } => true,
@@ -1612,6 +1619,15 @@ impl Server
                     Ok(params) => success(
                         id,
                         workspace.definition(&params.text_document.uri, self.peer, params.position),
+                    ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "textDocument/completion") => {
+                match serde_json::from_value::<PositionParams>(params) {
+                    Ok(params) => success(
+                        id,
+                        workspace.completion(&params.text_document.uri, self.peer),
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
@@ -1922,7 +1938,8 @@ impl Workspace
             && tokens.data.as_ref().len().is_multiple_of(5)
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), Window::Whole | Window::Within(_) => true },
         Answer::Initialize(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
-            | Answer::Hover(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Actions(_) | Answer::Definition(_) => false,
+            | Answer::Hover(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Actions(_) | Answer::Definition(_)
+            | Answer::Completion(_) => false,
     })]
     fn tokens(
         &self,
@@ -1975,7 +1992,8 @@ impl Workspace
             list.items.len() <= held.view(peer).proposals.len().saturating_add(8))
             && list.items.iter().all(|item| item.range.start <= position && position <= item.range.end),
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
-            | Answer::Hover(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Actions(_) | Answer::Definition(_) => false,
+            | Answer::Hover(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Actions(_) | Answer::Definition(_)
+            | Answer::Completion(_) => false,
     })]
     fn inline(
         &self,
@@ -2154,6 +2172,65 @@ impl Workspace
             uri: uri.clone(),
             range: named.head,
         })
+    }
+
+    /// The completion of the copy of the document at `uri` that `peer` is
+    /// answered from: the document's declared names, then the grammar's
+    /// top-level keywords.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI is admitted.
+    /// - ensures: an unknown document yields Nothing; a held document yields
+    ///   its declared names, each a completion of its symbol's kind, then the
+    ///   grammar's top-level keywords, each a completion of kind 14; Nothing
+    ///   when the grammar did not build.
+    /// - provides: the answer to `textDocument/completion`, which reads the
+    ///   document's text and the grammar's forms alone.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the known document's declared name and the grammar's
+    ///   top-level keywords are asserted at their exact wire answers, and so is
+    ///   an unknown document.
+    /// - witness: `server::tests::completion_answers_the_known_names_and_keywords`
+    #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Completion(_))
+        && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
+    fn completion(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+    ) -> Answer
+    {
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Answer::Nothing;
+        };
+        let Ok(forms) = forms()
+        else {
+            return Answer::Nothing;
+        };
+        let mut items = Vec::new();
+        if let Maybe::Present(declared) = document.text.reading().declarations() {
+            for declaration in declared {
+                if declaration.symbol.name.is_empty() {
+                    continue;
+                }
+                items.push(CompletionItem {
+                    label: declaration.symbol.name.clone(),
+                    kind: declaration.symbol.kind.0,
+                    insert_text: declaration.symbol.name.clone(),
+                });
+            }
+        }
+        for keyword in forms.item_keywords() {
+            items.push(CompletionItem {
+                label: keyword.clone(),
+                kind: 14,
+                insert_text: keyword,
+            });
+        }
+        Answer::Completion(items)
     }
 
     /// The answer to a formatting request `id` over `window` of the copy of
@@ -2737,7 +2814,8 @@ mod tests
                         "codeLensProvider":{"resolveProvider":false},
                         "codeActionProvider":true,
                         "definitionProvider":true,
-                        "typeDefinitionProvider":true},
+                        "typeDefinitionProvider":true,
+                        "completionProvider":true},
                     "serverInfo":{"name":"gandr","version":""#,
                 env!("CARGO_PKG_VERSION"),
                 r#""}}}]"#
@@ -2763,17 +2841,6 @@ mod tests
                      "result":{"data":[0,0,3,0,0, 0,4,1,2,1, 0,4,2,9,0]}}]"#
             )),
             "the known document's tokens: `def`, `f` a declared function, `42`"
-        );
-        let request = r#"{"jsonrpc":"2.0","id":4,"method":"textDocument/completion","params":{
-            "textDocument":{"uri":"file:///tmp/example.gandr"},
-            "position":{"line":0,"character":4}}}"#;
-        assert_eq!(
-            send(&mut server, Json(request)),
-            wire(Json(
-                r#"[{"jsonrpc":"2.0","id":4,
-                     "error":{"code":-32601,"message":"`textDocument/completion` is not served"}}]"#
-            )),
-            "completion is not advertised, so it is not served"
         );
     }
 
@@ -2958,6 +3025,58 @@ mod tests
                 "{method} about a document the server does not hold answers null"
             );
         }
+    }
+
+    #[test]
+    fn completion_answers_the_known_names_and_keywords()
+    {
+        let mut server = server_over_the_known_document();
+        let request = r#"{"jsonrpc":"2.0","id":4,"method":"textDocument/completion","params":{
+            "textDocument":{"uri":"file:///tmp/example.gandr"},
+            "position":{"line":0,"character":4}}}"#;
+        assert_eq!(
+            send(&mut server, Json(request)),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":4,"result":[
+                    {"label":"f","kind":12,"insertText":"f"},
+                    {"label":"def","kind":14,"insertText":"def"},
+                    {"label":"data","kind":14,"insertText":"data"},
+                    {"label":"codata","kind":14,"insertText":"codata"},
+                    {"label":"module","kind":14,"insertText":"module"},
+                    {"label":"import","kind":14,"insertText":"import"},
+                    {"label":"world","kind":14,"insertText":"world"},
+                    {"label":"op","kind":14,"insertText":"op"},
+                    {"label":"rec","kind":14,"insertText":"rec"},
+                    {"label":"@[","kind":14,"insertText":"@["},
+                    {"label":"extern","kind":14,"insertText":"extern"},
+                    {"label":"val","kind":14,"insertText":"val"},
+                    {"label":"run","kind":14,"insertText":"run"},
+                    {"label":"leta","kind":14,"insertText":"leta"},
+                    {"label":"hold","kind":14,"insertText":"hold"},
+                    {"label":"recv","kind":14,"insertText":"recv"},
+                    {"label":"acquire","kind":14,"insertText":"acquire"},
+                    {"label":"release","kind":14,"insertText":"release"},
+                    {"label":"fork","kind":14,"insertText":"fork"},
+                    {"label":"fork","kind":14,"insertText":"fork"},
+                    {"label":"theory","kind":14,"insertText":"theory"},
+                    {"label":"oper","kind":14,"insertText":"oper"},
+                    {"label":"rule","kind":14,"insertText":"rule"}]}]"#
+            )),
+            "the known document's declared name, then the grammar's top-level keywords"
+        );
+        // A document the server does not hold answers null.
+        assert_eq!(
+            send(
+                &mut server,
+                Json(
+                    r#"{"jsonrpc":"2.0","id":4,"method":"textDocument/completion","params":{
+                        "textDocument":{"uri":"file:///tmp/closed.gandr"},
+                        "position":{"line":0,"character":0}}}"#
+                ),
+            ),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":4,"result":null}]"#)),
+            "completion about a document the server does not hold answers null"
+        );
     }
 
     #[test]

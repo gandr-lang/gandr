@@ -1240,6 +1240,49 @@ impl Forms
         Self(found)
     }
 
+    /// The top-level keywords the grammar offers, in mold order.
+    ///
+    /// # Specification
+    /// - ensures: the opening tile label of each form of the [`Sort::Item`]
+    ///   sort, in mold order — the sort the outline reads its symbols from, and
+    ///   the only sort a position at the start of a form can be in.
+    /// - provides: the keywords a completion offers beside a document's
+    ///   declared names.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the completion witness asserts the known document's
+    ///   keywords at their exact labels; a keyword added to or removed from the
+    ///   grammar's item sort changes them.
+    /// - witness: `server::tests::completion_answers_the_known_names_and_keywords`
+    #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans the item-sort forms once; the check scans them once more to compare the kept labels"
+        )
+    )]
+    #[spec(ensures: |ret| {
+        let items: Vec<&Form> = self.0.iter().filter(|form| form.sort == Sort::Item).collect();
+        ret.len() == items.len()
+            && items.iter().enumerate().all(|(index, form)| {
+                matches!(form.material.first(), Some(&Part::Tile(label))
+                    if Some(&String::from(label.0)) == ret.get(index))
+            })
+    })]
+    pub fn item_keywords(&self) -> Vec<String>
+    {
+        let mut found = Vec::new();
+        for form in self.0.iter().filter(|form| form.sort == Sort::Item) {
+            if let Some(&Part::Tile(label)) = form.material.first() {
+                found.push(String::from(label.0));
+            }
+        }
+        found
+    }
+
     /// The forms a hole of `sort` can open, in mold order.
     ///
     /// # Specification

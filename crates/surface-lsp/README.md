@@ -41,6 +41,7 @@ The gandr language server: diagnostics, semantic tokens, inline completion, the 
 - The outline: document symbols nesting each declaration inside the one that holds it, folding ranges over multi-line forms, documentation and block comments, and selection ranges growing from the innermost node around a position to the whole document.
 - Hover: the type of the innermost node under the cursor, and a declaration's documentation or refusal; see [`hover`](src/hover.rs).
 - Definition and type definition: the head of the declaration whose name holds the cursor, answered for a declaration's name and nothing for a position no name holds; the head spans to the brace opening a form's body, or to the name's end for a form without one.
+- Completion: the document's declared names and the grammar's top-level keywords, each at its kind; the typed ranking against the checker's goal type at the cursor is the part it does not cover.
 - Formatting: the whole document as one edit trimmed to the span its layout changes, and a range as one edit per top-level form it touches, each from `gandr-surface-format`.
 - Positions in UTF-16 code units, a position past a line's end or past the last line clamped.
 - `Capabilities`: the `initialize` result as one line of JSON.
