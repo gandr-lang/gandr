@@ -9,7 +9,6 @@ use std::path::Path;
 
 use expect_test::expect_file;
 use gandr_surface_format::Form;
-use gandr_surface_format::FormatError;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::Formatted;
 use gandr_surface_format::Layout;
@@ -300,36 +299,6 @@ fn an_explicit_source_keeps_its_explicit_spelling()
                 "{form}: the explicit spelling is kept, its declaration after any import"
             );
         }
-    }
-}
-
-/// #492: a form the source does not declare is refused by name, since
-/// laying the source out in it would change its tokens.
-#[test]
-fn a_form_the_source_does_not_declare_is_refused()
-{
-    let grammar = grammar();
-    let undeclared = EXPLICIT
-        .strip_prefix("@[ form(explicit) ]\n")
-        .unwrap_or_default();
-    let parsed = parse(&grammar, SourceText::from(undeclared)).expect("the source parses");
-    let laid = |form: Form| {
-        let options = FormatOptions {
-            form,
-            ..FormatOptions::default()
-        };
-        format(&grammar, &parsed, options).map(Formatted::into_text)
-    };
-    assert!(
-        laid(Form::Source).is_ok(),
-        "the source's own spelling is laid out"
-    );
-    for form in [Form::Explicit, Form::Sugared] {
-        assert_eq!(
-            laid(form),
-            Err(FormatError::Form(form)),
-            "{form} is refused"
-        );
     }
 }
 

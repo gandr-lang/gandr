@@ -63,6 +63,7 @@ use std::sync::OnceLock;
 use anodized::spec;
 use gandr_surface_format::FormatError;
 use gandr_surface_format::FormatOptions;
+use gandr_surface_format::Withdrawal;
 use gandr_surface_format::format;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
@@ -137,6 +138,8 @@ pub enum FormatStep<'formatting>
     {
         /// The source's path, as the formatting reached it.
         path: &'formatting Path,
+        /// Each declaration that kept the source's spelling, and why.
+        withdrawn: Vec<Kept>,
     },
     /// A source whose layout the formatter changes: written back under
     /// [`Rewrite::InPlace`], reported alone under [`Rewrite::Check`].
@@ -144,6 +147,8 @@ pub enum FormatStep<'formatting>
     {
         /// The source's path, as the formatting reached it.
         path: &'formatting Path,
+        /// Each declaration that kept the source's spelling, and why.
+        withdrawn: Vec<Kept>,
     },
     /// A path the formatting could not lay out.
     Fault
@@ -153,6 +158,69 @@ pub enum FormatStep<'formatting>
         /// Why.
         fault: FormatFault<'formatting>,
     },
+}
+
+/// A declaration the formatter left in the source's spelling because a
+/// rewrite would have changed what it lowers to, where the source writes it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Kept
+{
+    /// The declaration, its span and the reason.
+    pub withdrawal: Withdrawal,
+    /// The one-based line its introducing form starts on.
+    pub line: usize,
+    /// The one-based column, in characters, its introducing form starts at.
+    pub column: usize,
+}
+
+impl Kept
+{
+    /// `withdrawal`, located in `text`, the source it was found in.
+    ///
+    /// # Specification
+    /// trivial.
+    fn located(
+        withdrawal: Withdrawal,
+        text: SourceText<'_>,
+    ) -> Self
+    {
+        let before = text
+            .as_ref()
+            .get(.. usize::from(withdrawal.span.start()))
+            .unwrap_or_default();
+        let line_start = before.rfind('\n').map_or(0, |at| at.saturating_add(1));
+        Self {
+            line: before.matches('\n').count().saturating_add(1),
+            column: before
+                .get(line_start ..)
+                .unwrap_or_default()
+                .chars()
+                .count()
+                .saturating_add(1),
+            withdrawal,
+        }
+    }
+}
+
+impl core::fmt::Display for Kept
+{
+    /// The line and column, the declaration's name in backticks, then
+    /// `keeps its spelling: ` and the reason.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        write!(
+            f,
+            "{}:{}: `{}` keeps its spelling: {}",
+            self.line, self.column, self.withdrawal.declaration, self.withdrawal.reason
+        )
+    }
 }
 
 /// The format verb over the paths it was given, laying out its sources in
@@ -397,8 +465,8 @@ where
 {
     let fault = match reached {
         Reached::Source => match lay() {
-            Ok(Laid::Unchanged) => return FormatStep::Unchanged { path },
-            Ok(Laid::Changed) => return FormatStep::Changed { path },
+            Ok(Laid::Unchanged(withdrawn)) => return FormatStep::Unchanged { path, withdrawn },
+            Ok(Laid::Changed(withdrawn)) => return FormatStep::Changed { path, withdrawn },
             Err(fault) => fault,
         },
         Reached::Unreadable(error) => FormatFault::Unreadable(error),
@@ -407,14 +475,15 @@ where
     FormatStep::Fault { path, fault }
 }
 
-/// Whether a source's layout changed.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Whether a source's layout changed, beside the declarations that kept
+/// their spelling.
+#[derive(Debug, Eq, PartialEq)]
 enum Laid
 {
     /// The formatted text is the source's own.
-    Unchanged,
+    Unchanged(Vec<Kept>),
     /// The formatted text differs from the source's.
-    Changed,
+    Changed(Vec<Kept>),
 }
 
 /// Read the source at `path`, format it under `grammar` at `options`, and
@@ -449,14 +518,19 @@ fn lay_out<'formatting>(
     let grammar = grammar.map_err(FormatFault::Grammar)?;
     let parsed = parse(grammar, SourceText::from(text.as_str())).map_err(FormatFault::Parse)?;
     let formatted = format(grammar, &parsed, options).map_err(FormatFault::Refused)?;
+    let withdrawn = formatted
+        .withdrawn()
+        .iter()
+        .map(|withdrawal| Kept::located(withdrawal.clone(), SourceText::from(text.as_str())))
+        .collect();
     let laid = <&str>::from(formatted.text());
     if laid == text {
-        return Ok(Laid::Unchanged);
+        return Ok(Laid::Unchanged(withdrawn));
     }
     if rewrite == Rewrite::InPlace {
         std::fs::write(path, laid).map_err(FormatFault::Unwritable)?;
     }
-    Ok(Laid::Changed)
+    Ok(Laid::Changed(withdrawn))
 }
 
 #[cfg(test)]
@@ -520,8 +594,8 @@ mod tests
         let mut seen = Vec::new();
         let visited = formatting.visit(|step| {
             let (path, row) = match step {
-                FormatStep::Unchanged { path } => (path, Seen::Unchanged),
-                FormatStep::Changed { path } => (path, Seen::Changed),
+                FormatStep::Unchanged { path, .. } => (path, Seen::Unchanged),
+                FormatStep::Changed { path, .. } => (path, Seen::Changed),
                 FormatStep::Fault {
                     path,
                     fault: FormatFault::NoSource,

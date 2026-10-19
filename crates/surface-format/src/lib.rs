@@ -46,36 +46,78 @@
 //!
 //! # The form a source is spelled in
 //!
-//! A source is spelled in the surface's sugared form or in the core's
-//! explicit form, every thunk, force, run and exit written out. Since the
-//! formatter keeps every token, it lays a source out in the spelling the
-//! source was written in and never re-sugars an explicit source: that is the
-//! invariant the corpus's formatting gate rests on. [`FormatOptions::form`]
+//! A source is spelled in the surface's sugared form, `A * B`, `(a, b)`,
+//! `A => B`, or in the explicit form, every former the sugar stands for
+//! written out: `#{A, B}`, `#{a, b}`, `+U (A -> -F B)`. [`FormatOptions::form`]
 //! asks for a [`Form`] — [`Form::Explicit`] or [`Form::Sugared`], or
 //! [`Form::Source`], the source's own spelling, by default — and a source
 //! states its own at its head, as an entry of an attribute block on its first
 //! declaration, after its imports: `@[ form(explicit) ]` or
 //! `@[ form(sugared) ]`, an attribute the lowering registers and files
-//! without lowering its word. The declaration wins
-//! over the option, so one command lays out sources of both spellings. An
-//! option asking for a form a source does not declare is refused with
-//! [`FormatError::Form`], naming the form: no layout here changes a source's
-//! tokens, so a form the source does not state cannot be kept.
+//! without lowering its word. The declaration wins over the option, so one
+//! command lays out sources of both spellings.
 //!
-//! - Choice: the form is the source's to state, and the formatter keeps it.
-//! - Alternative: a sugaring layout, rewriting the explicit form into the
-//!   sugared one; it would change tokens and digests, and the gate could no
-//!   longer tell a layout from an edit.
-//! - Reversal: a layout that sugars or desugars lands with its own digest
-//!   check, and the option then selects it for a source declaring no form.
+//! [`Form::Source`] keeps every token: the layout is the only change, and
+//! the content digest is its check. Either other form runs the rewrites of
+//! its direction from [`REWRITES`], the table of every pair of spellings the
+//! presentation printer (`gandr-surface-pretty`) tells apart — the eager
+//! product, the sum, the lazy product, the tuple and the value function —
+//! each moving one form between its two spellings on the concrete syntax
+//! tree: its operands and their comments are kept, its own tiles are the
+//! other spelling's, each comment it owns goes before the operand it
+//! preceded, and an operand is parenthesised or unwrapped as its new
+//! position's binding needs, as the printer writes it. [`Selection`] narrows
+//! the rewrites by [`RewriteName`]; there is no other knob.
+//!
+//! | rewrite          | explicit                | sugared         |
+//! | ---------------- | ----------------------- | --------------- |
+//! | `product`        | `#{A, B, …}`            | `A * B * …`     |
+//! | `sum`            | `+{A, B, …}`            | `A + B + …`     |
+//! | `lazy-product`   | `&{C, D}`               | `C & D`         |
+//! | `tuple`          | `#{a, b, …}`            | `(a, b, …)`     |
+//! | `value-function` | `+U (A -> B -> -F C)`   | `(A, B) => C`   |
+//!
+//! A rewrite changes tokens, so its check is the meaning, never the digest:
+//! the source and the rewritten text are each lowered into one core arena
+//! and every declaration must lower to the same core. A declaration that
+//! lowers otherwise has its top-level forms — signature and definition —
+//! written again without rewrites, until every declaration agrees; text
+//! whose declarations do not pair up is refused with [`Change::Meaning`]. A
+//! withdrawal is never silent: [`Formatted::withdrawn`] names each such
+//! declaration, its span and the reason ([`Withdrawn`]), and `gandr fmt`
+//! prints one line for each. Today's reason is the lowering, which reads a
+//! stated sum's labels and a thunked function's arity from the explicit
+//! spelling only (#791). A rewrite never applies where its other spelling
+//! reads otherwise: a parenthesised list after a rule's `<=>` is the rule's
+//! outputs, not a tuple, and `A => B` is the value-function alias only in a
+//! type. A declaration the lowering refuses in the source has no meaning to
+//! compare, so no rewrite enters its forms. A labelled entry, a binder in a
+//! domain, a comment inside a chain of arrows and a thunk with a grade keep
+//! their spelling too, since no sugar spells them.
+//!
+//! - Choice: rewrites on the tree, each named, checked by meaning and withdrawn
+//!   from a declaration whose meaning they would change, so every comment is
+//!   kept, no spelling changes what a source means, and the sugar a source may
+//!   write grows rule by rule until it is the printer's.
+//! - Alternative: printing each declaration through the presentation printer,
+//!   one printing per form; the printer reads the core, so a comment inside a
+//!   declaration, a binder's written name and every spelling the core does not
+//!   keep would be lost. Refusing the whole source on one disagreeing
+//!   declaration was the other alternative; it leaves a source with one such
+//!   declaration unformattable in either form.
+//! - Reversal: a printer that carries the source's comments and names, at which
+//!   point one printing serves both and this table retires.
 //!
 //! | item              | what it is                                              |
 //! | ----------------- | ------------------------------------------------------- |
 //! | [`format`]        | a parsed source formatted at a page width               |
 //! | [`Formatted`]     | the formatted text and where each top-level form landed |
+//! | [`Withdrawal`]    | a declaration that kept its spelling, and why           |
 //! | [`Piece`]         | one top-level form's source span and formatted span     |
-//! | [`FormatOptions`] | the page width and the form                             |
+//! | [`FormatOptions`] | the page width, the form and the rewrites               |
 //! | [`Form`]          | the spelling a source is laid out in                    |
+//! | [`REWRITES`]      | every rewrite: its name, direction, form and spellings  |
+//! | [`Selection`]     | the rewrites a form runs                                |
 //! | [`FormatError`]   | why a source was not formatted                          |
 //! | [`comments`]      | every comment of a source beside the node it belongs to |
 //! | [`Comment`]       | one comment, its owner, role, kind, column and width    |
@@ -87,12 +129,15 @@ extern crate alloc;
 mod attach;
 mod layout;
 mod leaf;
+mod meaning;
+mod rewrite;
 
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use gandr_core_term::CoreArena;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_layout::ComputationWidth;
 use gandr_surface_layout::LayoutOptions;
@@ -100,13 +145,16 @@ pub use gandr_surface_layout::PageWidth;
 use gandr_surface_layout::PhysicalLineEnding;
 use gandr_surface_layout::RenderError;
 use gandr_surface_layout::error::BuildError;
+use gandr_surface_lowering::LoweredModule;
 use gandr_surface_parser::MeldError;
 use gandr_surface_parser::ParseResult;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeKey;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
+use gandr_surface_syntax::SyntaxTree;
 
 pub use crate::attach::Attachment;
 pub use crate::attach::Column;
@@ -120,6 +168,17 @@ use crate::leaf::Integrity;
 use crate::leaf::Leaf;
 use crate::leaf::Material;
 use crate::leaf::Owner;
+use crate::meaning::Agreement;
+use crate::rewrite::Chosen;
+pub use crate::rewrite::Direction;
+pub use crate::rewrite::Enabled;
+pub use crate::rewrite::MoldName;
+pub use crate::rewrite::REWRITES;
+use crate::rewrite::Respelled;
+pub use crate::rewrite::Rewrite;
+pub use crate::rewrite::RewriteName;
+pub use crate::rewrite::Selection;
+pub use crate::rewrite::Spelling;
 
 /// How a source is formatted.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -129,11 +188,14 @@ pub struct FormatOptions
     pub page: PageWidth,
     /// The spelling the source is laid out in, unless its head declares one.
     pub form: Form,
+    /// The rewrites of the form's direction that run.
+    pub rewrites: Selection,
 }
 
 impl Default for FormatOptions
 {
-    /// A page of 100 columns, in the source's own spelling.
+    /// A page of 100 columns, in the source's own spelling, every rewrite
+    /// selected.
     ///
     /// # Specification
     /// trivial.
@@ -143,26 +205,25 @@ impl Default for FormatOptions
         Self {
             page: PageWidth::from(100_u32),
             form: Form::Source,
+            rewrites: Selection::Every,
         }
     }
 }
 
 /// The spelling a source is laid out in.
 ///
-/// The formatter keeps every token the source wrote, so the one spelling it
-/// lays out is the source's own. A source states which spelling it keeps with
-/// `@[ form(explicit) ]` or `@[ form(sugared) ]` in an attribute block of its
-/// first form; the declaration wins over [`FormatOptions::form`]. A form asked
-/// for by the options that the source does not declare is refused with
-/// [`FormatError::Form`]: laying a source out in a spelling it was not written
-/// in would change its tokens, and no layout here does.
+/// [`Form::Source`] keeps every token the source wrote; the other two run
+/// the rewrites of their direction (crate docs, § The form a source is
+/// spelled in). A source states its spelling with `@[ form(explicit) ]` or
+/// `@[ form(sugared) ]` in an attribute block of its first form; the
+/// declaration wins over [`FormatOptions::form`].
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Form
 {
     /// The source's own spelling, every token kept.
     #[default]
     Source,
-    /// The core's explicit spelling: every binder, run and exit written out.
+    /// The explicit spelling: every former a sugar stands for written out.
     Explicit,
     /// The surface's sugared spelling.
     Sugared,
@@ -202,16 +263,14 @@ pub enum FormatError
     Reparse(MeldError),
     /// The formatted text would have changed the source.
     Changed(Change),
-    /// The options asked for a spelling the source does not declare, which
-    /// the formatter cannot lay out without changing its tokens.
-    Form(Form),
 }
 
 /// What formatting would have changed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Change
 {
-    /// The content digest: the formatted text means something else.
+    /// What the source means: its content digest under [`Form::Source`], its
+    /// lowering under a rewrite.
     Meaning,
     /// The tokens or comments, or their order.
     Material,
@@ -262,11 +321,6 @@ impl fmt::Display for FormatError
             Self::Build(ref error) => write!(f, "the layout could not be built: {error}"),
             Self::Render(ref error) => write!(f, "the layout could not be rendered: {error}"),
             Self::Reparse(ref error) => write!(f, "the formatted text does not parse: {error}"),
-            Self::Form(form) => write!(
-                f,
-                "the source does not declare the {form} form, and the formatter keeps the \
-                 source's own spelling"
-            ),
             Self::Changed(Change::Meaning) => {
                 write!(f, "formatting would change what the source means")
             },
@@ -291,6 +345,9 @@ pub struct Formatted
     text: String,
     /// Each top-level form, in source order.
     pieces: Vec<Piece>,
+    /// Each declaration whose rewrites were withdrawn, in the order the
+    /// checks found them.
+    withdrawn: Vec<Withdrawal>,
 }
 
 impl Formatted
@@ -317,6 +374,19 @@ impl Formatted
         &self.pieces
     }
 
+    /// Each declaration that keeps the source's spelling because a rewrite
+    /// would have changed what it lowers to: never silent, so a caller can
+    /// say which declarations kept their spelling and why.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn withdrawn(&self) -> &[Withdrawal]
+    {
+        &self.withdrawn
+    }
+
     /// The formatted text, owned.
     ///
     /// # Specification
@@ -326,6 +396,57 @@ impl Formatted
     pub fn into_text(self) -> String
     {
         self.text
+    }
+}
+
+/// A declaration whose rewrites were withdrawn: its top-level forms keep the
+/// source's spelling.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Withdrawal
+{
+    /// The declaration's name.
+    pub declaration: String,
+    /// The span, in the source, of the form that introduced it.
+    pub span: ByteSpan,
+    /// Why its rewrites were withdrawn.
+    pub reason: Withdrawn,
+}
+
+/// Why a declaration's rewrites were withdrawn.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Withdrawn
+{
+    /// Rewritten, a form that reads its labels or arity from the
+    /// declaration's stated type was refused: the lowering reads a stated
+    /// sum or thunked function in the explicit spelling only (#791).
+    StatedSugar,
+    /// Rewritten, the declaration is refused: the refusal, as the lowering
+    /// writes it.
+    Refused(String),
+    /// Rewritten, the declaration lowers to other core.
+    Lowered,
+}
+
+impl fmt::Display for Withdrawn
+{
+    /// Why the declaration kept its spelling, in one clause.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::StatedSugar => f.write_str(
+                "the lowering reads its stated sum or function type in the explicit spelling only \
+                 (#791)",
+            ),
+            Self::Refused(ref refusal) => write!(f, "rewritten, it is refused: {refusal}"),
+            Self::Lowered => f.write_str("rewritten, it would lower to other core"),
+        }
     }
 }
 
@@ -360,38 +481,46 @@ pub enum Layout
 /// [`FormatError::Reparse`] when it does not parse; either is a defect in
 /// the formatter, and no text is returned. A form whose brackets do not pair
 /// is [`FormatError::Unbalanced`]; a layout ceiling is
-/// [`FormatError::Build`] or [`FormatError::Render`]. Options asking for a
-/// [`Form`] the source's head does not declare are [`FormatError::Form`].
+/// [`FormatError::Build`] or [`FormatError::Render`].
 ///
 /// # Specification
 /// - requires: `parsed` was parsed under `grammar`.
-/// - ensures: the text keeps every token and comment of the source, in order,
-///   each comment with the node it belongs to and in its role there; each
-///   top-level form starts on a line of its own, and the source's blank lines
-///   between them are kept, one at most; a comment the source wrote on a
-///   top-level form's last line stays there, as does a separator ending a
-///   top-level statement; the text ends in one line break unless it is empty,
-///   and uses the line ending most of the source's breaks use. A form the
-///   parser repaired, or that an obligation touches, is copied as written. Each
-///   other form is laid out at `options.page` as the crate root describes. The
-///   text parses under `grammar` to the source's root digest, and formatting it
-///   again returns it unchanged. One piece per top-level form, in order, spans
-///   it in the source and in the text. The spelling is the source's own: a form
-///   the source declares wins over `options.form`, and `options.form` other
-///   than [`Form::Source`] with no declaration is refused.
+/// - ensures: the form is the one the source's head declares, else
+///   `options.form`. Under [`Form::Source`], the text keeps every token and
+///   comment of the source, in order, each comment with the node it belongs to
+///   and in its role there, and parses under `grammar` to the source's root
+///   digest. Under either other form, each form a selected rewrite of its
+///   direction reads is respelled, every comment kept in order and in its role,
+///   outside the top-level forms of the declarations the lowering refuses in
+///   the source or would lower otherwise once respelled; the text lowers to the
+///   source's lowering, declaration by declaration, and each declaration that
+///   would have lowered otherwise is in [`Formatted::withdrawn`] with its name,
+///   span and reason, none under [`Form::Source`]. Either way, each top-level
+///   form starts on a line of its own, and the source's blank lines between
+///   them are kept, one at most; a comment the source wrote on a top-level
+///   form's last line stays there, as does a separator ending a top-level
+///   statement; the text ends in one line break unless it is empty, and uses
+///   the line ending most of the source's breaks use. A form the parser
+///   repaired, or that an obligation touches, is copied as written. Each other
+///   form is laid out at `options.page` as the crate root describes, and
+///   formatting the text again returns it unchanged. One piece per top-level
+///   form, in order, spans it in the source and in the text.
 /// - provides: the text `gandr fmt` writes and the language server's formatting
 ///   edits.
 /// - fails: as `# Errors` states.
 /// - panics: none.
 /// - intension: one walk of the tree, one layout per top-level form, one parse
-///   of the result.
+///   of the result; under a rewrite, one walk per form respelled and two
+///   lowerings.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every corpus source is formatted at three widths and
 ///   formatted again unchanged, the formatter checking each against the
-///   source's digest and material; goldens fix each layout rule at a narrow and
-///   a wide page, and exact texts fix the top-level joins, the verbatim forms,
-///   a repaired form, the line ending and the pieces.
+///   source's digest and material, and into either form, the formatter checking
+///   each against the source's lowering; goldens fix each layout rule at a
+///   narrow and a wide page and each rewrite both ways, and exact texts fix the
+///   top-level joins, the verbatim forms, a repaired form, the line ending, the
+///   pieces and the declaration's precedence over the option.
 /// - witness: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`
 /// - witness: `tests::format::a_block_breaks_one_item_per_line_when_it_does_not_fit`
 /// - witness: `tests::format::top_level_forms_and_comments_keep_their_lines`
@@ -402,8 +531,14 @@ pub enum Layout
 /// - witness: `tests::format::a_separator_written_on_the_next_line_joins_its_statement`
 /// - witness: `tests::format::a_source_split_evenly_between_endings_keeps_line_feeds`
 /// - witness: `tests::format::an_explicit_source_keeps_its_explicit_spelling`
-/// - witness: `tests::format::a_form_the_source_does_not_declare_is_refused`
 /// - witness: `tests::attach::a_layout_that_breaks_or_joins_a_group_keeps_each_comment_with_its_owner`
+/// - witness: `tests::rewrite::each_rewrite_moves_its_pair_both_ways`
+/// - witness: `tests::rewrite::a_sugared_source_keeps_every_comment_with_its_construct`
+/// - witness: `tests::rewrite::a_declared_form_wins_over_the_option`
+/// - witness: `tests::rewrite::a_selection_runs_only_the_rewrites_it_names`
+/// - witness: `tests::rewrite::sweeps::every_source_formats_into_either_form_and_keeps_its_meaning`
+/// - witness: `rewrite::tests::a_rewrite_that_changes_what_a_source_means_is_withdrawn`
+/// - witness: `tests::rewrite::a_withdrawn_declaration_is_reported_with_its_reason_791`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |formatted| formatted.pieces.windows(2).all(|pair| matches!(pair, [left, right] if left.source.end() <= right.source.start() && left.formatted.end() <= right.formatted.start()))))]
 #[inline]
 pub fn format(
@@ -415,18 +550,147 @@ pub fn format(
     let tree = parsed.tree();
     let source = tree.source();
     let flat = leaf::flatten(grammar, tree, parsed.obligations());
-    if options.form != Form::Source && declared(&flat.leaves).is_none() {
-        return Err(FormatError::Form(options.form));
-    }
+    let chosen = Chosen::of(
+        declared(&flat.leaves).unwrap_or(options.form),
+        options.rewrites,
+    );
+    let mut arena = CoreArena::new();
+    let lowered = chosen.and_then(|_| meaning::lowered(grammar, tree, &mut arena));
+    let mut withdrawn = lowered.as_ref().map(meaning::refused).unwrap_or_default();
     let ending = Ending::of(source);
     let layout = LayoutOptions::try_new(
         options.page,
         ComputationWidth::from(u32::from(options.page).saturating_mul(2_u32)),
         ending.physical(),
     )?;
+    let mut reports: Vec<Withdrawal> = Vec::new();
+    loop {
+        let spans = forms_of(tree, &withdrawn);
+        let rewrites = match (chosen, lowered.as_ref()) {
+            (Some(chosen), Some(_)) => Some((chosen, spans.as_slice())),
+            (Some(_) | None, _) => None,
+        };
+        let laid = write(grammar, tree, &flat, rewrites, &layout, ending)?;
+        let text = SourceText::from(laid.text.as_str());
+        let Some(ref lowered) = lowered
+        else {
+            verify(grammar, parsed, &flat.leaves, text)?;
+            return Ok(laid.formatted(reports));
+        };
+        if laid.rewritten == Rewritten::No {
+            verify(grammar, parsed, &flat.leaves, text)?;
+            return Ok(laid.formatted(reports));
+        }
+        match verify_rewritten(grammar, parsed, &laid.leaves, text, (&mut arena, lowered))? {
+            Agreement::Same => return Ok(laid.formatted(reports)),
+            Agreement::Declarations(differing) => {
+                let before = withdrawn.len();
+                for declaration in differing {
+                    let fresh: Vec<NodeKey> = declaration
+                        .keys
+                        .into_iter()
+                        .filter(|key| !withdrawn.contains(key))
+                        .collect();
+                    if !fresh.is_empty() {
+                        withdrawn.extend(fresh);
+                        reports.push(declaration.withdrawal);
+                    }
+                }
+                if withdrawn.len() == before {
+                    return Err(FormatError::Changed(Change::Meaning));
+                }
+            },
+            Agreement::Unpaired => return Err(FormatError::Changed(Change::Meaning)),
+        }
+    }
+}
+
+/// The spans of the top-level forms of `tree` holding a form, at any depth,
+/// whose key is among `keys`: a declaration's rules and clauses may sit
+/// beside the form the lowering keys it by, so the top-level form is the
+/// unit a rewrite is withdrawn from.
+///
+/// # Specification
+/// trivial.
+fn forms_of(
+    tree: &SyntaxTree<'_>,
+    keys: &[NodeKey],
+) -> Vec<ByteSpan>
+{
+    let mut spans = Vec::new();
+    if keys.is_empty() {
+        return spans;
+    }
+    for form in tree.children(tree.root()) {
+        let mut pending = Vec::from([form]);
+        while let Some(at) = pending.pop() {
+            if tree.key(at).is_some_and(|key| keys.contains(&key)) {
+                if let Some(node) = tree.node(form) {
+                    spans.push(node.span());
+                }
+                break;
+            }
+            pending.extend(tree.children(at));
+        }
+    }
+    spans
+}
+
+/// One writing of a source: its text, its pieces, the leaves it was laid out
+/// from, and whether a rewrite respelled any.
+struct Written<'source>
+{
+    /// The text.
+    text: String,
+    /// Where each top-level form landed.
+    pieces: Vec<Piece>,
+    /// The leaves laid out, in order.
+    leaves: Vec<Leaf<'source>>,
+    /// Whether a rewrite respelled a form.
+    rewritten: Rewritten,
+}
+
+impl Written<'_>
+{
+    /// The writing as the caller receives it, beside the declarations whose
+    /// rewrites were withdrawn.
+    ///
+    /// # Specification
+    /// trivial.
+    fn formatted(
+        self,
+        withdrawn: Vec<Withdrawal>,
+    ) -> Formatted
+    {
+        Formatted {
+            text: self.text,
+            pieces: self.pieces,
+            withdrawn,
+        }
+    }
+}
+
+/// The source whose leaves are `flat` written at `layout`, each clean form
+/// respelled by `rewrites` — the rewrites chosen and the spans they do not
+/// enter — when given.
+///
+/// # Specification
+/// trivial.
+fn write<'source>(
+    grammar: &Pbg,
+    tree: &SyntaxTree<'source>,
+    flat: &leaf::Leaves<'source>,
+    rewrites: Option<(Chosen, &[ByteSpan])>,
+    layout: &LayoutOptions,
+    ending: Ending,
+) -> Result<Written<'source>, FormatError>
+{
+    let source = tree.source();
     let breaks = <&str>::from(ending.spelling());
     let mut text = String::with_capacity(<&str>::from(source).len());
     let mut pieces = Vec::new();
+    let mut written: Vec<Leaf<'source>> = Vec::with_capacity(flat.leaves.len());
+    let mut rewritten = Rewritten::No;
     for unit in units(&flat.leaves) {
         let Some(first) = unit.leaves.first()
         else {
@@ -450,17 +714,33 @@ pub fn format(
         let Owner::Form(form) = first.owner
         else {
             text.push_str(<&str>::from(first.text));
+            written.extend_from_slice(unit.leaves);
             continue;
         };
         let laid = match flat.integrity(form) {
             Integrity::Clean => {
-                text.push_str(&layout::lay_out(unit.leaves, &layout, ending.spelling())?);
+                let respelled = match rewrites {
+                    Some((chosen, withdrawn)) => {
+                        rewrite::respell(grammar, tree, form, unit.leaves, chosen, withdrawn)
+                    },
+                    None => Respelled::Kept,
+                };
+                let leaves = match respelled {
+                    Respelled::Changed(ref leaves) => {
+                        rewritten = Rewritten::Yes;
+                        leaves.as_slice()
+                    },
+                    Respelled::Kept => unit.leaves,
+                };
+                text.push_str(&layout::lay_out(leaves, layout, ending.spelling())?);
+                written.extend_from_slice(leaves);
                 Layout::Formatted
             },
             Integrity::Repaired => {
-                if let Ok(written) = source.fragment(span) {
-                    text.push_str(<&str>::from(written));
+                if let Ok(as_written) = source.fragment(span) {
+                    text.push_str(<&str>::from(as_written));
                 }
+                written.extend_from_slice(unit.leaves);
                 Layout::Repaired
             },
         };
@@ -476,13 +756,22 @@ pub fn format(
     if !text.is_empty() {
         text.push_str(breaks);
     }
-    verify(
-        grammar,
-        parsed,
-        &flat.leaves,
-        SourceText::from(text.as_str()),
-    )?;
-    Ok(Formatted { text, pieces })
+    Ok(Written {
+        text,
+        pieces,
+        leaves: written,
+        rewritten,
+    })
+}
+
+/// Whether a rewrite respelled a form of the source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Rewritten
+{
+    /// None did: the tokens are the source's.
+    No,
+    /// One did.
+    Yes,
 }
 
 /// One top-level unit of the source: a form, or a comment or shebang at the
@@ -655,6 +944,51 @@ fn verify(
     Ok(())
 }
 
+/// Check that `text`, the source rewritten, spells the tokens and comments of
+/// `written`, the leaves it was laid out from, in order, and keeps each
+/// comment in its role; then lower it into `arena` beside `lowered`, the
+/// source's lowering, and say which declarations lowered otherwise.
+///
+/// # Specification
+/// trivial.
+fn verify_rewritten(
+    grammar: &Pbg,
+    parsed: &ParseResult<'_>,
+    written: &[Leaf<'_>],
+    text: SourceText<'_>,
+    (arena, lowered): (&mut CoreArena, &LoweredModule<'_>),
+) -> Result<Agreement, FormatError>
+{
+    let reparsed = parse(grammar, text).map_err(FormatError::Reparse)?;
+    let again = leaf::flatten(grammar, reparsed.tree(), reparsed.obligations());
+    if material(written).ne(material(&again.leaves)) {
+        return Err(FormatError::Changed(Change::Material));
+    }
+    if comments(parsed.tree())
+        .iter()
+        .map(kept)
+        .ne(comments(reparsed.tree()).iter().map(kept))
+    {
+        return Err(FormatError::Changed(Change::Attachment));
+    }
+    let Some(respelled) = meaning::lowered(grammar, reparsed.tree(), arena)
+    else {
+        return Err(FormatError::Changed(Change::Meaning));
+    };
+    Ok(meaning::agree(arena, lowered, &respelled))
+}
+
+/// What a rewrite keeps of a comment: its text, its kind and its role, the
+/// owner being a node the rewrite may have replaced.
+///
+/// # Specification
+/// trivial.
+fn kept<'source>(comment: &Comment<'source>) -> (SourceFragment<'source>, CommentKind, Role)
+{
+    let attachment = comment.attachment();
+    (attachment.text, attachment.kind, attachment.role)
+}
+
 /// The tokens and comments of `leaves`, in order.
 ///
 /// # Specification
@@ -686,10 +1020,10 @@ fn material<'leaves, 'source>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a source declaring the explicit form keeps it under
-///   either option, after an import as at its first line; the same source with
-///   no declaration is refused a form.
+///   either option, after an import as at its first line; a source declaring
+///   either form is written in it whatever the option asks.
 /// - witness: `tests::format::an_explicit_source_keeps_its_explicit_spelling`
-/// - witness: `tests::format::a_form_the_source_does_not_declare_is_refused`
+/// - witness: `tests::rewrite::a_declared_form_wins_over_the_option`
 fn declared(leaves: &[Leaf<'_>]) -> Option<Form>
 {
     let tokens: Vec<&str> = leaves
