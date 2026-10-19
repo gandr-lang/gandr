@@ -56,13 +56,29 @@ pub enum Spaced
     No,
 }
 
+/// How the lowering holds a transport the source writes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Standing
+{
+    /// Returned as a value: the printer writes it `p then q`.
+    Returned,
+    /// Otherwise, a body's last step among them: the printer writes it as
+    /// written.
+    Run,
+}
+
 /// The motive of each path composite the source writes, by the composite's
-/// span in the source.
+/// span in the source, and the spans of the transports the lowering returns
+/// as values.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Motives
 {
     /// The motives the lowering derived and the printer spells.
     derived: Vec<(ByteSpan, Vec<Token>)>,
+    /// The spans of the transports, written or derived, the lowering returns
+    /// as values: those the printer writes as `p then q`. A transport standing
+    /// as a computation, a body's last step, it writes as written.
+    returned: Vec<ByteSpan>,
     /// Which composites have one.
     reach: Reach,
 }
@@ -90,7 +106,29 @@ impl Motives
     {
         Self {
             derived: Vec::new(),
+            returned: Vec::new(),
             reach: Reach::Any,
+        }
+    }
+
+    /// How the lowering holds the transport spanning exactly `span`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn standing(
+        &self,
+        span: ByteSpan,
+    ) -> Standing
+    {
+        let returned = match self.reach {
+            Reach::Derived => self.returned.contains(&span),
+            Reach::Any => true,
+        };
+        if returned {
+            Standing::Returned
+        }
+        else {
+            Standing::Run
         }
     }
 
@@ -118,7 +156,8 @@ impl Motives
 /// The motives of the path composites `module`, lowered into `arena` from a
 /// unit whose source starts at `base`, derived: each returned transport the
 /// lowering inserted as a composite's endpoint, spelled in the explicit form,
-/// by its span in the source.
+/// by its span in the source; and the span of every transport it returns as
+/// a value.
 ///
 /// # Specification
 /// trivial.
@@ -138,10 +177,8 @@ pub fn motives(
         spelling: Spelling::Ascii,
     };
     let mut found = Vec::new();
+    let mut returned = Vec::new();
     for &(id, origin) in module.origins().values() {
-        if origin.provenance() != Provenance::Inserted(Insertion::Endpoint) {
-            continue;
-        }
         let span = origin.span();
         let (Some(start), Some(end)) = (
             usize::from(span.start()).checked_sub(usize::from(base)),
@@ -154,10 +191,18 @@ pub fn motives(
         else {
             continue;
         };
+        let Ok(span) = ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end))
+        else {
+            continue;
+        };
         if !matches!(
             arena.computation(transport),
             Some(&Computation::PathTransport { .. })
         ) {
+            continue;
+        }
+        returned.push(span);
+        if origin.provenance() != Provenance::Inserted(Insertion::Endpoint) {
             continue;
         }
         let Ok(spelled) = present_value(
@@ -172,10 +217,7 @@ pub fn motives(
         if spelled.fidelity() != Fidelity::Faithful || !spelled.unspelled().is_empty() {
             continue;
         }
-        let (Some(tokens), Ok(span)) = (
-            motive(SourceFragment::from(spelled.as_ref())),
-            ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)),
-        )
+        let Some(tokens) = motive(SourceFragment::from(spelled.as_ref()))
         else {
             continue;
         };
@@ -183,6 +225,7 @@ pub fn motives(
     }
     Motives {
         derived: found,
+        returned,
         reach: Reach::Derived,
     }
 }
