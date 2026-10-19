@@ -323,6 +323,11 @@
 //! - Zed Industries. "Language Extensions." <https://zed.dev/docs/extensions/languages>
 //!   — what a Zed extension adds to a language server.
 
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(linear_search_in_loop, reason = "2 cost-shape sites; #814 lists them")
+)]
+
 extern crate alloc;
 
 use core::fmt;

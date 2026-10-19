@@ -3,6 +3,15 @@
 //! One target rather than one per area, so a contract's witness path names the
 //! area it belongs to (`tests::session::…`) instead of a file.
 
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        count_against_constant,
+        linear_search_in_loop,
+        reason = "3 cost-shape sites (2 linear_search_in_loop, 1 count_against_constant); #814 lists them"
+    )
+)]
+
 extern crate alloc;
 
 #[cfg(test)]

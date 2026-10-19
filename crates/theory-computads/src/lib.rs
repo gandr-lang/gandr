@@ -111,6 +111,10 @@
 //!   overlapping inside a left-hand side, which the term reading's check reads.
 
 #![no_std]
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(linear_search_in_loop, reason = "4 cost-shape sites; #814 lists them")
+)]
 
 extern crate alloc;
 

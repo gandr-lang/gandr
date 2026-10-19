@@ -336,6 +336,17 @@
 //! outermost versus innermost redex selection and ordered-sibling preservation.
 
 #![no_std]
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(reverse_after_build, reason = "1 cost-shape site; #814 lists it")
+)]
+#![cfg_attr(
+    all(test, dylint_lib = "quenchant_dylints"),
+    expect(
+        linear_search_in_loop,
+        reason = "2 cost-shape sites in test modules; #814 lists them"
+    )
+)]
 
 extern crate alloc;
 

@@ -141,6 +141,15 @@
 //! Each decision, with the alternative it was chosen over and what would
 //! reverse it, is stated in the documentation of the module it governs.
 
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        linear_search_in_loop,
+        reverse_after_build,
+        reason = "5 cost-shape sites (4 linear_search_in_loop, 1 reverse_after_build); #814 lists them"
+    )
+)]
+
 extern crate alloc;
 
 mod boundary;

@@ -120,6 +120,11 @@
 //! through `libc`: `rustix`, already in the graph, exposes neither `MAP_JIT`
 //! nor `pthread_jit_write_protect_np`; the choice reverses if it grows both.
 
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(linear_search_in_loop, reason = "2 cost-shape sites; #814 lists them")
+)]
+
 extern crate alloc;
 
 mod executor;

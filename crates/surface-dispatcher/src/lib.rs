@@ -130,6 +130,11 @@
 //! destination becomes an explicit API requirement, rather than an incidental
 //! side effect of dispatch.
 
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(linear_search_in_loop, reason = "1 cost-shape site; #814 lists it")
+)]
+
 extern crate alloc;
 
 mod component;

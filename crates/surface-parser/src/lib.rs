@@ -93,6 +93,14 @@
 //!   — the obligation taxonomy and `Delta.compare`, whose order `Delta` ports.
 
 #![no_std]
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        count_against_constant,
+        linear_search_in_loop,
+        reason = "10 cost-shape sites (9 linear_search_in_loop, 1 count_against_constant); #814 lists them"
+    )
+)]
 
 extern crate alloc;
 #[cfg(test)]
