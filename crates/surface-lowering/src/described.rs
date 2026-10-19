@@ -1129,6 +1129,10 @@ impl Typer<'_>
                 (&rewrite.left.name, &rewrite.right.name),
             );
         }
+        let mut operations = BTreeMap::new();
+        for operation in &members.operations {
+            let _first = operations.entry(&operation.name).or_insert(operation);
+        }
         for _round in 0 ..= circuit.frames.len().saturating_add(circuit.rewrites.len()) {
             let before = wires.len();
             for &(left, right) in rewrites.values() {
@@ -1167,11 +1171,7 @@ impl Typer<'_>
                             .map(|_| sort.clone())
                             .collect()
                     }
-                    else if let Some(operation) = members
-                        .operations
-                        .iter()
-                        .find(|operation| operation.name == frame.head.name)
-                    {
+                    else if let Some(operation) = operations.get(&frame.head.name) {
                         operation
                             .inputs
                             .iter()

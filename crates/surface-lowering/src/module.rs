@@ -5859,6 +5859,7 @@ impl<'source> Collector<'_, 'source>
             return Ok(());
         };
         let mut exports = Vec::new();
+        let mut exported = BTreeSet::new();
         let mut types = Vec::new();
         for (ordinal, component) in components.into_iter().enumerate() {
             self.fuel.spend()?;
@@ -5926,7 +5927,7 @@ impl<'source> Collector<'_, 'source>
                 ComponentForm::Derived => {
                     if let Maybe::Present(found) =
                         self.derived_component(structure, component, ComponentPlace(ordinal), scope)
-                        && !exports.contains(&found)
+                        && exported.insert(found)
                     {
                         exports.push(found);
                     }
@@ -5950,7 +5951,7 @@ impl<'source> Collector<'_, 'source>
             };
             if let Maybe::Present(found) =
                 self.state_component(container, module, component, stated, scope, layers)?
-                && !exports.contains(&found)
+                && exported.insert(found)
             {
                 exports.push(found);
             }
@@ -6394,6 +6395,7 @@ impl<'source> Collector<'_, 'source>
             return Ok(());
         };
         let mut kept = Vec::new();
+        let mut retained = BTreeSet::new();
         for field in fields {
             let found = exports
                 .iter()
@@ -6444,7 +6446,7 @@ impl<'source> Collector<'_, 'source>
                 },
             }
             if let Some(export) = found
-                && !kept.contains(&export)
+                && retained.insert(export)
             {
                 kept.push(export);
             }

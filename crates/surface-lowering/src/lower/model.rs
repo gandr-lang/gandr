@@ -707,13 +707,12 @@ impl<'source> Lowerer<'_, 'source>
                         .len()
                         .checked_sub(usize::from(count))
                         .ok_or(Missing::Unlowered)?;
-                    let arguments: Vec<ValueId> = built.drain(start ..).collect();
                     let constant = self.operation_constant(minting, name)?;
                     let head = sink.arena.value_constant(constant);
                     sink.origins.record_value(head, origin);
                     let mut applied = sink.arena.computation_force(head);
                     sink.origins.record_computation(applied, origin);
-                    for argument in arguments {
+                    for argument in built.drain(start ..) {
                         applied = sink.arena.computation_application(applied, argument);
                         sink.origins.record_computation(applied, origin);
                     }

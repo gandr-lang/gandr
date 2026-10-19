@@ -1146,6 +1146,13 @@ impl Reader<'_, '_>
     /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
     /// - witness: `description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`
     #[spec(ensures: |result| result.as_ref().map_or(true, |code| code.recursive_sorts().all(|sort| sort == family)))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `bound` holds the binders written before one field"
+        )
+    )]
     fn field(
         &self,
         at: Placed,

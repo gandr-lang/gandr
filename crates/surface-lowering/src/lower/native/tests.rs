@@ -1522,6 +1522,13 @@ fn a_constructor_takes_its_slot_as_a_family_argument_421()
 }
 
 #[test]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        linear_search_in_loop,
+        reason = "bounded: the fixture's few binders, searched once per branch of one match"
+    )
+)]
 fn a_pattern_variable_names_its_field_binder()
 {
     let mut arena = CoreArena::new();

@@ -1192,6 +1192,13 @@ impl<'source> Collector<'_, 'source>
             == self.collected.operations.len().saturating_sub(before.1)
             && appended(&self.collected.slots, before.0).iter().all(|slot| slot.role == Role::Operation),
     )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: one family's operation frames and declined faces, searched once per operation it routes"
+        )
+    )]
     pub(super) fn route_operations(
         &mut self,
         declaration: Placed,

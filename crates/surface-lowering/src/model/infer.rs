@@ -1131,12 +1131,15 @@ impl Engine
     }
 
     /// Append to `order` every item reachable from `roots` that `admit`
-    /// binds, each after the items its sort mentions.
+    /// binds, each after the items its sort mentions; `placed` holds the items
+    /// of `order`.
     ///
     /// # Specification
+    /// - requires: `placed` holds exactly the items of `order`.
     /// - ensures: each admitted item reached is appended once, after every
     ///   admitted item its sort mentions, in the order a left-to-right walk of
-    ///   `roots` meets them; an item already in `order` is skipped.
+    ///   `roots` meets them; an item already in `order` is skipped. `placed`
+    ///   still holds exactly the items of `order`.
     /// - executable: none — the order is the walk's.
     ///
     /// # Termination
@@ -1152,6 +1155,7 @@ impl Engine
         roots: &[Item],
         admit: &dyn Fn(Item) -> Admission,
         order: &mut Vec<Item>,
+        placed: &mut BTreeSet<Item>,
     )
     {
         /// One pending step of the walk.
@@ -1167,7 +1171,7 @@ impl Engine
         while let Some(step) = pending.pop() {
             match step {
                 Step::Finish(item) => {
-                    if admit(item) == Admission::Bound && !order.contains(&item) {
+                    if admit(item) == Admission::Bound && placed.insert(item) {
                         order.push(item);
                     }
                 },
@@ -1437,6 +1441,7 @@ pub(super) fn derive_head(
         }
     }
     let mut order = Vec::new();
+    let mut placed = BTreeSet::new();
     engine.emit(
         &roots,
         &|item| {
@@ -1448,6 +1453,7 @@ pub(super) fn derive_head(
             }
         },
         &mut order,
+        &mut placed,
     );
     order.extend(explicit);
     let (binders, names) = engine.telescope(&order)?;
@@ -1518,6 +1524,7 @@ pub(super) fn derive_law(
         indexing.extend(engine.sort_leaves(Item::Variable(VariableId(variable))));
     }
     let mut order = Vec::new();
+    let mut placed = BTreeSet::new();
     engine.emit(
         &written,
         &|item| {
@@ -1529,6 +1536,7 @@ pub(super) fn derive_law(
             }
         },
         &mut order,
+        &mut placed,
     );
     let mut implicit: Vec<Item> = engine.leaves(left);
     implicit.extend(engine.leaves(right));
@@ -1539,9 +1547,10 @@ pub(super) fn derive_law(
             Item::Variable(_) => Admission::Deferred,
         },
         &mut order,
+        &mut placed,
     );
     for item in written {
-        if !order.contains(&item) {
+        if placed.insert(item) {
             order.push(item);
         }
     }

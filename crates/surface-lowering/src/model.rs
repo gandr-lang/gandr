@@ -822,6 +822,13 @@ pub(crate) enum Tail<'form>
 ///   every binder of `unitL` binds.
 /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
 #[spec(ensures: |ret| ret.len() == telescope.len())]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        linear_search_in_loop,
+        reason = "bounded: `named` holds the variables one operation's telescope and result mention"
+    )
+)]
 pub(crate) fn dependence(
     telescope: &[Binder],
     tail: Tail<'_>,

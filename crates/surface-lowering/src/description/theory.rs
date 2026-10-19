@@ -930,6 +930,13 @@ impl Reader<'_, '_>
     /// - witness: `description::theory::tests::the_cat_shape_laws_are_written_faces`
     /// - witness: `description::theory::tests::a_many_out_frame_binds_every_port_and_roots_the_body`
     /// - witness: `description::theory::tests::a_coherence_between_composites_is_a_higher_cell`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `boundary.rewrites` holds the rewrite ports one rule's boundary writes"
+        )
+    )]
     fn signature_rule(
         &self,
         run: &mut Run<'_>,
@@ -1209,6 +1216,13 @@ impl Reader<'_, '_>
     /// - witness: `description::theory::tests::an_expression_kind_signature_endpoint_is_refused_by_the_description_route`
     /// - witness: `description::theory::tests::a_pinned_rewrite_endpoint_reads_as_a_variable`
     /// - witness: `description::theory::tests::a_rendered_signature_reparses_to_itself`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `sorts` holds the sorts one signature declares, searched once per written rule"
+        )
+    )]
     fn port_side(
         &self,
         run: &mut Run<'_>,
