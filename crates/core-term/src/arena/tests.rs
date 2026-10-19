@@ -15,6 +15,7 @@ use crate::control::StackFrame;
 use crate::memory::MemoryForm;
 use crate::session::SessionAction;
 use crate::support::Thinning;
+use crate::support::ThinningRef;
 use crate::syntax::CompType;
 use crate::syntax::ComponentCount;
 use crate::syntax::Value;
@@ -656,7 +657,9 @@ fn every_binder_former_carries_its_bodys_support_past_its_binders()
         "a lambda",
         vec![1],
         vec![],
-        arena.computation_support(lambda).cloned(),
+        arena
+            .computation_support(lambda)
+            .map(ThinningRef::to_thinning),
     ));
     // λ. return #3: a body ignoring its binder still lowers past it.
     let body = returning(&mut arena, int, &[3]);
@@ -665,7 +668,9 @@ fn every_binder_former_carries_its_bodys_support_past_its_binders()
         "an unused binder",
         vec![2],
         vec![],
-        arena.computation_support(ignoring).cloned(),
+        arena
+            .computation_support(ignoring)
+            .map(ThinningRef::to_thinning),
     ));
     // bind (return #1) (return (#0, #3)): the continuation alone crosses.
     let bound = returning(&mut arena, int, &[1]);
@@ -675,7 +680,9 @@ fn every_binder_former_carries_its_bodys_support_past_its_binders()
         "a bind",
         vec![1, 2],
         vec![],
-        arena.computation_support(bind).cloned(),
+        arena
+            .computation_support(bind)
+            .map(ThinningRef::to_thinning),
     ));
     // case #0 of [return #0, return #2]: each branch crosses one binder.
     let scrutinee = variable(&mut arena, 0);
@@ -686,7 +693,9 @@ fn every_binder_former_carries_its_bodys_support_past_its_binders()
         "a case",
         vec![0, 1],
         vec![],
-        arena.computation_support(case).cloned(),
+        arena
+            .computation_support(case)
+            .map(ThinningRef::to_thinning),
     ));
     // split #4 into two, then return (#0, #1, #3): the body crosses both.
     let scrutinee = variable(&mut arena, 4);
@@ -696,7 +705,9 @@ fn every_binder_former_carries_its_bodys_support_past_its_binders()
         "a split",
         vec![1, 4],
         vec![],
-        arena.computation_support(split).cloned(),
+        arena
+            .computation_support(split)
+            .map(ThinningRef::to_thinning),
     ));
     // fold #5 with [] and (h t ↦ return (#1, #3)): the cell branch crosses two.
     let integer = arena.value_type_base(BaseType::Integer);
@@ -708,7 +719,9 @@ fn every_binder_former_carries_its_bodys_support_past_its_binders()
         "a fold",
         vec![1, 5],
         vec![],
-        arena.computation_support(fold).cloned(),
+        arena
+            .computation_support(fold)
+            .map(ThinningRef::to_thinning),
     ));
     // reify [apply #0, bind (return #2)]: the bind frame crosses one.
     let argument = variable(&mut arena, 0);
@@ -721,7 +734,7 @@ fn every_binder_former_carries_its_bodys_support_past_its_binders()
         "a reified stack",
         vec![0, 1],
         vec![],
-        arena.value_support(stack).cloned(),
+        arena.value_support(stack).map(ThinningRef::to_thinning),
     ));
     // Λ. #1: a static lambda's body crosses one.
     let one = variable(&mut arena, 1);
@@ -730,7 +743,9 @@ fn every_binder_former_carries_its_bodys_support_past_its_binders()
         "a static lambda",
         vec![0],
         vec![],
-        arena.value_support(static_lambda).cloned(),
+        arena
+            .value_support(static_lambda)
+            .map(ThinningRef::to_thinning),
     ));
     // Σ (El #0) (El #2): the second factor crosses one.
     let code = variable(&mut arena, 0);
@@ -742,7 +757,9 @@ fn every_binder_former_carries_its_bodys_support_past_its_binders()
         "a sigma",
         vec![0, 1],
         vec![],
-        arena.value_type_support(sigma).cloned(),
+        arena
+            .value_type_support(sigma)
+            .map(ThinningRef::to_thinning),
     ));
     // U (Π (_ : El #3). El #0 → F (El #2)): the domain's #3 stays, the
     // codomain's #0 is the Π's binder and its #2 is the subject's #1.
@@ -760,7 +777,9 @@ fn every_binder_former_carries_its_bodys_support_past_its_binders()
         "a pi",
         vec![1, 3],
         vec![],
-        arena.value_type_support(dependent).cloned(),
+        arena
+            .value_type_support(dependent)
+            .map(ThinningRef::to_thinning),
     ));
     // El #1 × El #1 × El #0: a repeat is one member.
     let factors: Vec<_> = [1_u32, 1, 0]
@@ -775,13 +794,17 @@ fn every_binder_former_carries_its_bodys_support_past_its_binders()
         "a repeat",
         vec![0, 1],
         vec![],
-        arena.value_type_support(repeated).cloned(),
+        arena
+            .value_type_support(repeated)
+            .map(ThinningRef::to_thinning),
     ));
     cases.push((
         "a closed type",
         vec![],
         vec![],
-        arena.value_type_support(integer).cloned(),
+        arena
+            .value_type_support(integer)
+            .map(ThinningRef::to_thinning),
     ));
     // fork (c : 1) { close(c) } as d ; send(d, #2): each half crosses one
     // linear binder and the intuitionistic #2 crosses none.
@@ -803,7 +826,9 @@ fn every_binder_former_carries_its_bodys_support_past_its_binders()
         "a fork",
         vec![2],
         vec![0],
-        arena.computation_support(fork).cloned(),
+        arena
+            .computation_support(fork)
+            .map(ThinningRef::to_thinning),
     ));
     // hold x = #0 ; access x as w { resume(w, #1) } unwind { abort(ℓ1) }: the
     // access names its held slot, its body crosses the view's linear binder
@@ -825,7 +850,9 @@ fn every_binder_former_carries_its_bodys_support_past_its_binders()
         "an access",
         vec![1],
         vec![0, 1],
-        arena.computation_support(access).cloned(),
+        arena
+            .computation_support(access)
+            .map(ThinningRef::to_thinning),
     ));
     let held = variable(&mut arena, 0);
     let hold = arena.computation_memory(MemoryForm::Hold {
@@ -836,7 +863,9 @@ fn every_binder_former_carries_its_bodys_support_past_its_binders()
         "a hold",
         vec![0, 1],
         vec![0],
-        arena.computation_support(hold).cloned(),
+        arena
+            .computation_support(hold)
+            .map(ThinningRef::to_thinning),
     ));
 
     for (reading, intuitionistic, linear, support) in cases {
@@ -868,6 +897,56 @@ fn every_binder_former_carries_its_bodys_support_past_its_binders()
     assert_eq!(wide, closed, "the slot is reused");
     assert_eq!(
         Vec::<u32>::new(),
-        selected(arena.value_support(closed), Zone::Intuitionistic)
+        selected(
+            arena
+                .value_support(closed)
+                .map(ThinningRef::to_thinning)
+                .as_ref(),
+            Zone::Intuitionistic
+        )
+    );
+}
+
+/// A support wider than a slot is kept in the arena's words and read back
+/// whole, a support in both zones reads back in both, and truncation drops
+/// the words with their node and keeps every node before the mark.
+#[test]
+fn a_wide_support_is_kept_in_the_word_arena()
+{
+    let mut arena = CoreArena::new();
+    let int = Zone::Intuitionistic;
+    let at = DeBruijnIndex::from;
+    let owned = |support: Option<ThinningRef<'_>>| support.map(ThinningRef::to_thinning);
+    let near = arena.value_variable(int, at(3));
+    let deep = arena.value_variable(Zone::Linear, at(5000));
+    let pair = arena.value_tuple(&[near, deep]);
+    assert_eq!(
+        owned(arena.value_support(pair)),
+        Some(Thinning::from_ascending(&[at(3)], &[at(5000)]).expect("ascending"))
+    );
+    let mark = arena.watermark();
+    let words = arena.words.mark();
+    let scattered = [0_u32, 100, 5000, 9000, 20000, 40000];
+    let components: Vec<ValueId> = scattered
+        .iter()
+        .map(|&index| arena.value_variable(int, at(index)))
+        .collect();
+    let wide = arena.value_tuple(&components);
+    let expected = Thinning::from_ascending(&scattered.map(at), &[]).expect("ascending");
+    assert!(
+        usize::from(expected.view().words()) > 1,
+        "the code spans words"
+    );
+    assert!(
+        arena.words.mark() > words,
+        "the wide code takes the word arena"
+    );
+    assert_eq!(owned(arena.value_support(wide)), Some(expected));
+    arena.truncate_to(mark);
+    assert_eq!(arena.words.mark(), words, "the wide code's words are gone");
+    assert!(arena.value_support(wide).is_none());
+    assert_eq!(
+        owned(arena.value_support(near)),
+        Some(Thinning::leaf(int, at(3)))
     );
 }

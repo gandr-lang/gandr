@@ -36,7 +36,7 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - `hole::matched_thunk`, `matched_product` and `matched_sum` (answering `hole::Components`), `matched_static_pi`, `matched_list`, `matched_stack`, `matched_returner`, `matched_function` and `matched_with`, with `hole::Knowledge` and `hole::matching::Absent`: a type's former, or unknown components when the type is unknown. Witnesses: `hole::tests::the_unknown_type_matches_every_former_with_unknown_components`, `hole::tests::a_known_type_matches_only_its_own_former`, `hole::tests::the_decode_of_a_hole_is_unknown_and_of_a_variable_is_not`.
 - `fill_hole`, `wrap_marks` and `substitute_environment`: filling by name, marking by node, and closing a suspended body over its environment. Witnesses: `rewrite::tests::a_fill_replaces_exactly_the_named_holes`, `rewrite::tests::a_wrap_marks_exactly_the_named_nodes`, `rewrite::tests::an_environment_substitution_replaces_every_free_index`.
 - `pattern::Pattern`, `pattern::Patterns`, `pattern::PatternId` and `pattern::BranchStatus`: patterns, pattern holes among them, and a branch's three answers. Witnesses: `pattern::tests::a_pattern_names_its_parts_in_order`, `pattern::tests::a_conjunction_refutes_first_and_doubts_second`.
-- `support::Thinning`, `support::ThinningRef`, `support::ThinningPair`, `support::Union`, `support::Scope`, `support::Crossing`, `support::Cover` and `support::check_cover`: the co-de Bruijn carrier — two-zone selections, their unions and covers, and placement back to the de Bruijn term, refusing an index past `u32`. Every arena node carries its support from its mint (`CoreArena::value_support` and its three siblings). Witnesses: `support::tests::placing_each_edge_recovers_its_child`, `support::tests::a_cover_refuses_every_forged_edge`, `support::tests::selections_past_the_inline_width_spill`, `arena::tests::every_binder_former_carries_its_bodys_support_past_its_binders`.
+- `support::Thinning`, `support::ThinningRef`, `support::Union`, `support::Scope`, `support::Crossing`, `support::Cover` and `support::check_cover`: the co-de Bruijn carrier — two-zone selections in a tiered code, their unions and covers, and placement back to the de Bruijn term, refusing an index past `u32`. Every arena node carries its support from its mint (`CoreArena::value_support` and its three siblings), a code wider than a word behind a `support::Slot` handle into a `support::WordArena`. Witnesses: `support::tests::placing_each_edge_recovers_its_child`, `support::tests::a_cover_refuses_every_forged_edge`, `support::tests::one_encoding_per_selection`, `arena::tests::every_binder_former_carries_its_bodys_support_past_its_binders`.
 
 ## Expected features
 
@@ -123,7 +123,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Definition heights and per-scope transparency | [`definition`](src/definition.rs) |
 | The failure vocabulary | [`failure`](src/failure.rs) |
 | Effects, handlers and control | [`effect`](src/effect.rs), [`control`](src/control.rs) |
-| The co-de Bruijn carrier and the fence; supports carried on arena nodes | [`support`](src/support.rs), [`arena`](src/arena.rs) |
+| The co-de Bruijn carrier, its tiered code and the fence; supports carried on arena nodes | [`support`](src/support.rs), [`arena`](src/arena.rs) |
 | Temporary access: hold, access, resume and abort | [`memory`](src/memory.rs) |
 | References and specification attributes | [`src/lib.rs`](src/lib.rs) |
 

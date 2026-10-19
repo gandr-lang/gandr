@@ -65,6 +65,7 @@ use crate::il::Opens;
 use crate::il::ProducerId;
 use crate::il::ProducerNode;
 use crate::il::Scoping;
+use crate::il::Slots;
 use crate::il::command_annotations;
 use crate::il::command_children;
 use crate::il::command_named;
@@ -259,7 +260,7 @@ impl FreeSet
     ///
     /// # Specification
     /// trivial.
-    fn of(scope: &NodeScope) -> Self
+    fn of(scope: NodeScope<'_>) -> Self
     {
         let producers = [Zone::Intuitionistic, Zone::Linear]
             .into_iter()
@@ -758,8 +759,8 @@ impl Walk<'_>
         Ok(())
     }
 
-    /// Add a child's carried scope, past the binders its node opens over it,
-    /// to the walk's scope being rebuilt, and schedule the child.
+    /// Add a child's scope, past the binders its node opens over it, to the
+    /// walk's scope being rebuilt, and schedule the child.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -784,18 +785,15 @@ impl Walk<'_>
         opens: Opens,
     ) -> Result<(), CheckRefusal>
     {
-        let scope = self
-            .arena
-            .node_scope(child)
-            .ok_or_else(|| dangling(child))?;
-        self.scoping.child(scope, opens);
+        let slots = self.arena.slots(child).ok_or_else(|| dangling(child))?;
+        self.scoping.child(slots, self.arena.words(), opens);
         self.stack.push(child);
         Ok(())
     }
 
-    /// Hold `carried`, the scope `node` carries, to the one the walk rebuilt
-    /// from what it names and its children's carried scopes, and empty the
-    /// walk's scoping for the next node.
+    /// Hold `carried`, the scope `node` stores, to the one the walk rebuilt
+    /// from what it names and its children's scopes, and empty the walk's
+    /// scoping for the next node.
     ///
     /// # Specification
     /// - requires: the walk's scoping holds the node's own occurrences, its
@@ -822,16 +820,17 @@ impl Walk<'_>
     fn held(
         &mut self,
         node: NodeAddress,
-        carried: &NodeScope,
+        carried: Slots,
     ) -> Result<(), CheckRefusal>
     {
-        match self.scoping.holds(carried) {
+        match self.scoping.holds(carried, self.arena.words()) {
             Agreement::Same => {
                 self.scoping.clear();
                 Ok(())
             },
             Agreement::Different => {
-                forged(node, carried, &core::mem::take(&mut self.scoping).finish())
+                let rebuilt = core::mem::take(&mut self.scoping).finish();
+                forged(node, self.arena.scope_at(carried), rebuilt.view())
             },
         }
     }
@@ -858,8 +857,8 @@ impl Walk<'_>
 #[cold]
 fn forged(
     node: NodeAddress,
-    carried: &NodeScope,
-    rebuilt: &NodeScope,
+    carried: NodeScope<'_>,
+    rebuilt: NodeScope<'_>,
 ) -> Result<(), CheckRefusal>
 {
     space(

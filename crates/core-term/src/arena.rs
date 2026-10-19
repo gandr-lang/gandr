@@ -63,26 +63,35 @@
 //!
 //! # Carried supports
 //!
-//! Every node carries its support — a [`Thinning`] of the binders in scope
-//! where it stands — minted with it as the union of what the node names and
-//! its children's carried supports, each lowered past the binders the node
-//! opens over that child: a lambda's body past one intuitionistic binder, a
-//! split's body past one per component, a fork's halves past one linear
-//! binder. A primitive value is a leaf. The supports sit in a table per family
-//! at the node's index, so truncation drops them with their nodes and a
-//! support is read in constant time. Edges are not stored: an edge is a
-//! function of the node's support, the child's and the crossing, derived where
-//! a reader needs it.
+//! Every node carries its support — a [`crate::support::Thinning`] of the
+//! binders in scope where it stands — minted with it as the union of what the
+//! node names and its children's carried supports, each lowered past the
+//! binders the node opens over that child: a lambda's body past one
+//! intuitionistic binder, a split's body past one per component, a fork's
+//! halves past one linear binder. A primitive value is a leaf. The support
+//! sits in the node's row as one slot, the code itself when it is one word and
+//! a handle into the arena's word arena otherwise
+//! ([`crate::support::WordArena`]), so truncation drops each support with its
+//! node and a read is an index. Edges are not stored: an edge is a function of
+//! the node's support, the child's and the crossing, derived where a reader
+//! needs it. The `carried` module states the scoping.
 //!
-//! - Choice: supports carried on every node and computed once at mint from the
-//!   children's, which the append-only discipline makes final; a reader that
-//!   needs one — an annotation's in the command IL, a capture's — reads it
+//! - Choice: a support computed once at mint from the children's, which the
+//!   append-only discipline makes final, kept in every node's row; a reader
+//!   that needs one — an annotation's in the command IL, a capture's — reads it
 //!   rather than walking the term.
-//! - Alternatives: a walk computing a support on demand, linear in the term at
-//!   every read; supports and edges both stored, `McBride`'s relevant cover,
-//!   which spends a thinning per child that no current reader reads.
-//! - Reversal: a reader that needs an edge per child at a cost a derivation
-//!   cannot meet stores the edges.
+//! - Alternatives: supports stored only where a union makes them, a leaf's and
+//!   a pass-through's derived where they are read. Measured on the
+//!   differential's generated terms it saved about a tenth of the arena's
+//!   bytes, and it cost the corpus roots instructions at every mint and read
+//!   and a rank table and its directory per family, which do not fit the arena
+//!   that is held and moved by value. A walk computing a support on demand,
+//!   linear in the term at every read; supports and edges both stored,
+//!   `McBride`'s relevant cover, which spends a thinning per child that no
+//!   current reader reads.
+//! - Reversal: arena bytes measured as the cost that binds, where the rows of
+//!   leaves and pass-throughs come back out; a reader that needs an edge per
+//!   child at a cost a derivation cannot meet stores the edges.
 
 use alloc::vec::Vec;
 
@@ -97,7 +106,10 @@ use gandr_kernel_term::Summand;
 use crate::classifier::Sort;
 use crate::hole::HoleId;
 use crate::hole::MarkIndex;
-use crate::support::Thinning;
+use crate::support::Slot;
+use crate::support::ThinningRef;
+use crate::support::WordArena;
+use crate::support::WordMark;
 use crate::syntax::CompType;
 use crate::syntax::ComponentCount;
 use crate::syntax::Computation;
@@ -195,10 +207,10 @@ fn id_offset(index: ArenaIndex) -> ArenaLength
     ArenaLength(usize::try_from(index.0).unwrap_or(usize::MAX))
 }
 
-/// A snapshot of the four family lengths.
+/// A snapshot of the four family lengths and of the supports' word arena.
 ///
 /// Restoring an arena to a watermark drops exactly the nodes allocated after
-/// it, as four flat vector truncations. The default is the empty arena's
+/// it, as flat vector truncations. The default is the empty arena's
 /// watermark.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ArenaWatermark
@@ -211,34 +223,45 @@ pub struct ArenaWatermark
     value_types: usize,
     /// The [`CompType`] family length.
     comp_types: usize,
+    /// The supports' word arena length.
+    words: WordMark,
+}
+
+/// A node beside the slot its support is kept in: one row of its family's
+/// table.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Row<Node>
+{
+    /// The node.
+    node: Node,
+    /// The support minting gathered for it.
+    support: Slot,
 }
 
 /// The append-only arena owning every core term and type node of one run.
 ///
 /// The four families are parallel append-only vectors and a node's children are
 /// ids into the same arena, so cloning or dropping a whole arena is a flat
-/// per-family vector operation, total on any term depth. Beside each family
-/// stands its nodes' carried supports, one per node at the node's index,
-/// built when the node is minted.
+/// per-family vector operation, total on any term depth. Each node's support
+/// sits beside it, in its family's row, recorded when the node is minted, and
+/// the word arena holds the codes wider than a slot.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CoreArena
 {
-    /// The value nodes, in allocation order, which is child-before-parent.
-    values: Vec<Value>,
-    /// The computation nodes.
-    computations: Vec<Computation>,
-    /// The value-type nodes.
-    value_types: Vec<ValueType>,
-    /// The computation-type nodes.
-    comp_types: Vec<CompType>,
-    /// Each value's support, at its index.
-    value_supports: Vec<Thinning>,
-    /// Each computation's support, at its index.
-    computation_supports: Vec<Thinning>,
-    /// Each value type's support, at its index.
-    value_type_supports: Vec<Thinning>,
-    /// Each computation type's support, at its index.
-    comp_type_supports: Vec<Thinning>,
+    /// The value nodes and their supports, in allocation order, which is
+    /// child-before-parent.
+    values: Vec<Row<Value>>,
+    /// The computation nodes and their supports.
+    computations: Vec<Row<Computation>>,
+    /// The value-type nodes and their supports.
+    value_types: Vec<Row<ValueType>>,
+    /// The computation-type nodes and their supports.
+    comp_types: Vec<Row<CompType>>,
+    /// The words of every support wider than a slot.
+    words: WordArena,
 }
 
 impl CoreArena
@@ -252,7 +275,7 @@ impl CoreArena
     {
         self.values
             .iter()
-            .filter_map(|value| match *value {
+            .filter_map(|row| match row.node {
                 Value::Primitive { primitive, .. } => Some(primitive),
                 Value::PathRefl(_)
                 | Value::PathProduct(..)
@@ -291,44 +314,40 @@ impl CoreArena
                 | Value::Mark { .. }
                 | Value::Reify(_) => None,
             })
-            .chain(
-                self.computations
-                    .iter()
-                    .filter_map(|computation| match *computation {
-                        Computation::Primitive { primitive, .. } => Some(primitive),
-                        Computation::Transport(..)
-                        | Computation::PathTransport { .. }
-                        | Computation::Ride { .. }
-                        | Computation::TelescopeTransport { .. }
-                        | Computation::Lambda(_)
-                        | Computation::Fixpoint { .. }
-                        | Computation::Application(..)
-                        | Computation::Return(_)
-                        | Computation::Bind(..)
-                        | Computation::Ascribe { .. }
-                        | Computation::Force(_)
-                        | Computation::Case { .. }
-                        | Computation::Split { .. }
-                        | Computation::DataCase { .. }
-                        | Computation::RecordProjection(..)
-                        | Computation::TupleProjection(..)
-                        | Computation::Hole(_)
-                        | Computation::Mark { .. }
-                        | Computation::ListFold { .. }
-                        | Computation::Perform { .. }
-                        | Computation::Handle { .. }
-                        | Computation::Exercise { .. }
-                        | Computation::Scope { .. }
-                        | Computation::Resume(..)
-                        | Computation::Reset(_)
-                        | Computation::Shift(_)
-                        | Computation::With(..)
-                        | Computation::Project(..)
-                        | Computation::Session(_)
-                        | Computation::Memory(_)
-                        | Computation::World(_) => None,
-                    }),
-            )
+            .chain(self.computations.iter().filter_map(|row| match row.node {
+                Computation::Primitive { primitive, .. } => Some(primitive),
+                Computation::Transport(..)
+                | Computation::PathTransport { .. }
+                | Computation::Ride { .. }
+                | Computation::TelescopeTransport { .. }
+                | Computation::Lambda(_)
+                | Computation::Fixpoint { .. }
+                | Computation::Application(..)
+                | Computation::Return(_)
+                | Computation::Bind(..)
+                | Computation::Ascribe { .. }
+                | Computation::Force(_)
+                | Computation::Case { .. }
+                | Computation::Split { .. }
+                | Computation::DataCase { .. }
+                | Computation::RecordProjection(..)
+                | Computation::TupleProjection(..)
+                | Computation::Hole(_)
+                | Computation::Mark { .. }
+                | Computation::ListFold { .. }
+                | Computation::Perform { .. }
+                | Computation::Handle { .. }
+                | Computation::Exercise { .. }
+                | Computation::Scope { .. }
+                | Computation::Resume(..)
+                | Computation::Reset(_)
+                | Computation::Shift(_)
+                | Computation::With(..)
+                | Computation::Project(..)
+                | Computation::Session(_)
+                | Computation::Memory(_)
+                | Computation::World(_) => None,
+            }))
     }
     /// An empty arena.
     ///
@@ -341,7 +360,7 @@ impl CoreArena
         Self::default()
     }
 
-    /// The current watermark: the four family lengths.
+    /// The current watermark: the four family lengths and the word arena's.
     ///
     /// # Specification
     /// trivial.
@@ -354,6 +373,7 @@ impl CoreArena
             computations: self.computations.len(),
             value_types: self.value_types.len(),
             comp_types: self.comp_types.len(),
+            words: self.words.mark(),
         }
     }
 
@@ -469,16 +489,18 @@ impl CoreArena
     ///   watermark.values.min(entry.values), computations:
     ///   watermark.computations.min(entry.computations), value_types:
     ///   watermark.value_types.min(entry.value_types), comp_types:
-    ///   watermark.comp_types.min(entry.comp_types) }` — each family holds
-    ///   exactly its watermark-many leading nodes, and a mark above the entry
-    ///   lengths leaves that family where it was. Removed nodes no longer
-    ///   resolve immediately after truncation; later allocation can reuse their
+    ///   watermark.comp_types.min(entry.comp_types), words:
+    ///   watermark.words.min(entry.words) }` — each family holds exactly its
+    ///   watermark-many leading nodes, and a mark above the entry lengths
+    ///   leaves that family where it was. Removed nodes no longer resolve
+    ///   immediately after truncation; later allocation can reuse their
     ///   indices, so the caller discards the corresponding ids.
     /// - provides: the wholesale truncation a per-run arena is torn down by.
-    ///   The clause checks the four family lengths, including the documented
-    ///   stale-mark no-op. Arena provenance and the unreachability the
-    ///   requirement names stay prose: a watermark carries no arena identity,
-    ///   and what the caller still retains is not an observation of the arena.
+    ///   The clause checks the four family lengths and the word arena's,
+    ///   including the documented stale-mark no-op. Arena provenance and the
+    ///   unreachability the requirement names stay prose: a watermark carries
+    ///   no arena identity, and what the caller still retains is not an
+    ///   observation of the arena.
     /// - fails: never — a truncation past the end is a no-op, so a stale
     ///   watermark cannot grow the arena.
     /// - panics: none.
@@ -498,6 +520,7 @@ impl CoreArena
                 computations: watermark.computations.min(entry.computations),
                 value_types: watermark.value_types.min(entry.value_types),
                 comp_types: watermark.comp_types.min(entry.comp_types),
+                words: watermark.words.min(entry.words),
             },
     )]
     pub fn truncate_to(
@@ -509,10 +532,7 @@ impl CoreArena
         self.computations.truncate(watermark.computations);
         self.value_types.truncate(watermark.value_types);
         self.comp_types.truncate(watermark.comp_types);
-        self.value_supports.truncate(watermark.values);
-        self.computation_supports.truncate(watermark.computations);
-        self.value_type_supports.truncate(watermark.value_types);
-        self.comp_type_supports.truncate(watermark.comp_types);
+        self.words.truncate(watermark.words);
     }
 
     /// Resolve a value id, or `None` when it dangles.
@@ -531,7 +551,7 @@ impl CoreArena
     ///   lookup, surviving removed nodes and accidental growth.
     /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
     #[spec(ensures: |ret| match (ret, self.values.get(id_offset(ArenaIndex(id.0)).0)) {
-        | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), core::ptr::from_ref(expected)),
+        | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), &raw const expected.node),
         | (None, None) => true,
         | (Some(_), None) | (None, Some(_)) => false,
     })]
@@ -542,7 +562,9 @@ impl CoreArena
         id: ValueId,
     ) -> Option<&Value>
     {
-        self.values.get(id_offset(ArenaIndex(id.0)).0)
+        self.values
+            .get(id_offset(ArenaIndex(id.0)).0)
+            .map(|row| &row.node)
     }
 
     /// Resolve a computation id, or `None` when it dangles.
@@ -561,7 +583,7 @@ impl CoreArena
     ///   lookup, surviving removed nodes and accidental growth.
     /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
     #[spec(ensures: |ret| match (ret, self.computations.get(id_offset(ArenaIndex(id.0)).0)) {
-        | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), core::ptr::from_ref(expected)),
+        | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), &raw const expected.node),
         | (None, None) => true,
         | (Some(_), None) | (None, Some(_)) => false,
     })]
@@ -572,7 +594,9 @@ impl CoreArena
         id: ComputationId,
     ) -> Option<&Computation>
     {
-        self.computations.get(id_offset(ArenaIndex(id.0)).0)
+        self.computations
+            .get(id_offset(ArenaIndex(id.0)).0)
+            .map(|row| &row.node)
     }
 
     /// Resolve a value-type id, or `None` when it dangles.
@@ -591,7 +615,7 @@ impl CoreArena
     ///   lookup, surviving removed nodes and accidental growth.
     /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
     #[spec(ensures: |ret| match (ret, self.value_types.get(id_offset(ArenaIndex(id.0)).0)) {
-        | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), core::ptr::from_ref(expected)),
+        | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), &raw const expected.node),
         | (None, None) => true,
         | (Some(_), None) | (None, Some(_)) => false,
     })]
@@ -602,7 +626,9 @@ impl CoreArena
         id: ValueTypeId,
     ) -> Option<&ValueType>
     {
-        self.value_types.get(id_offset(ArenaIndex(id.0)).0)
+        self.value_types
+            .get(id_offset(ArenaIndex(id.0)).0)
+            .map(|row| &row.node)
     }
 
     /// Resolve a computation-type id, or `None` when it dangles.
@@ -621,7 +647,7 @@ impl CoreArena
     ///   lookup, surviving removed nodes and accidental growth.
     /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
     #[spec(ensures: |ret| match (ret, self.comp_types.get(id_offset(ArenaIndex(id.0)).0)) {
-        | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), core::ptr::from_ref(expected)),
+        | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), &raw const expected.node),
         | (None, None) => true,
         | (Some(_), None) | (None, Some(_)) => false,
     })]
@@ -632,7 +658,9 @@ impl CoreArena
         id: CompTypeId,
     ) -> Option<&CompType>
     {
-        self.comp_types.get(id_offset(ArenaIndex(id.0)).0)
+        self.comp_types
+            .get(id_offset(ArenaIndex(id.0)).0)
+            .map(|row| &row.node)
     }
 
     /// The support a value carries, or `None` when its id dangles: the
@@ -641,8 +669,8 @@ impl CoreArena
     /// # Specification
     /// - requires: nothing; a dangling id is admissible.
     /// - ensures: `Some` exactly when [`Self::value`] resolves `id`; then the
-    ///   support minting built from the node's children.
-    /// - provides: a node's support read off the node, never a walk below it.
+    ///   support minting gathered for it.
+    /// - provides: a node's support read off its row, never a walk below it.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -650,15 +678,18 @@ impl CoreArena
     ///   from absence; L2 — the carried support equals the shift machine's free
     ///   indices on every generated node.
     /// - witness: `arena::tests::every_binder_former_carries_its_bodys_support_past_its_binders`
+    /// - witness: `arena::tests::a_wide_support_is_kept_in_the_word_arena`
     #[spec(ensures: |ret| ret.is_some() == self.value(id).is_some())]
     #[inline]
     #[must_use]
     pub fn value_support(
         &self,
         id: ValueId,
-    ) -> Option<&Thinning>
+    ) -> Option<ThinningRef<'_>>
     {
-        self.value_supports.get(id_offset(ArenaIndex(id.0)).0)
+        self.values
+            .get(id_offset(ArenaIndex(id.0)).0)
+            .map(|row| self.support_of(row.support))
     }
 
     /// The support a computation carries, or `None` when its id dangles.
@@ -677,9 +708,11 @@ impl CoreArena
     pub fn computation_support(
         &self,
         id: ComputationId,
-    ) -> Option<&Thinning>
+    ) -> Option<ThinningRef<'_>>
     {
-        self.computation_supports.get(id_offset(ArenaIndex(id.0)).0)
+        self.computations
+            .get(id_offset(ArenaIndex(id.0)).0)
+            .map(|row| self.support_of(row.support))
     }
 
     /// The support a value type carries, or `None` when its id dangles.
@@ -698,9 +731,11 @@ impl CoreArena
     pub fn value_type_support(
         &self,
         id: ValueTypeId,
-    ) -> Option<&Thinning>
+    ) -> Option<ThinningRef<'_>>
     {
-        self.value_type_supports.get(id_offset(ArenaIndex(id.0)).0)
+        self.value_types
+            .get(id_offset(ArenaIndex(id.0)).0)
+            .map(|row| self.support_of(row.support))
     }
 
     /// The support a computation type carries, or `None` when its id
@@ -720,9 +755,11 @@ impl CoreArena
     pub fn comp_type_support(
         &self,
         id: CompTypeId,
-    ) -> Option<&Thinning>
+    ) -> Option<ThinningRef<'_>>
     {
-        self.comp_type_supports.get(id_offset(ArenaIndex(id.0)).0)
+        self.comp_types
+            .get(id_offset(ArenaIndex(id.0)).0)
+            .map(|row| self.support_of(row.support))
     }
 
     /// Append a value node and return its fresh id.
@@ -731,7 +768,7 @@ impl CoreArena
     /// - requires: every child of `value` is minted in this arena.
     /// - ensures: appends `value` to the value family and returns the id at the
     ///   family's previous end, which is above every value id already minted;
-    ///   appends the support built from the children's at the same index.
+    ///   records its support beside it.
     /// - provides: the single append point every value constructor goes
     ///   through.
     /// - panics: none.
@@ -745,9 +782,8 @@ impl CoreArena
     #[spec(
         captures: [entry = self.values.len(), kind = core::mem::discriminant(&value)],
         ensures: |ret| entry.checked_add(1) == Some(self.values.len())
-            && self.value_supports.len() == self.values.len()
             && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
-            && self.values.last().is_some_and(|node| core::mem::discriminant(node) == kind),
+            && self.values.last().is_some_and(|row| core::mem::discriminant(&row.node) == kind),
     )]
     #[inline]
     pub(crate) fn alloc_value(
@@ -757,8 +793,10 @@ impl CoreArena
     {
         let id = ValueId(id_index(ArenaLength(self.values.len())).0);
         let support = self.value_carried(&value);
-        self.values.push(value);
-        self.value_supports.push(support);
+        self.values.push(Row {
+            node: value,
+            support,
+        });
         id
     }
 
@@ -768,8 +806,7 @@ impl CoreArena
     /// - requires: every child of `computation` is minted in this arena.
     /// - ensures: appends `computation` to the computation family and returns
     ///   the id at the family's previous end, which is above every computation
-    ///   id already minted; appends the support built from the children's at
-    ///   the same index.
+    ///   id already minted; records its support beside it.
     /// - provides: the single append point every computation constructor goes
     ///   through.
     /// - panics: none.
@@ -783,9 +820,8 @@ impl CoreArena
     #[spec(
         captures: [entry = self.computations.len(), kind = core::mem::discriminant(&computation)],
         ensures: |ret| entry.checked_add(1) == Some(self.computations.len())
-            && self.computation_supports.len() == self.computations.len()
             && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
-            && self.computations.last().is_some_and(|node| core::mem::discriminant(node) == kind),
+            && self.computations.last().is_some_and(|row| core::mem::discriminant(&row.node) == kind),
     )]
     #[inline]
     pub(crate) fn alloc_computation(
@@ -795,8 +831,10 @@ impl CoreArena
     {
         let id = ComputationId(id_index(ArenaLength(self.computations.len())).0);
         let support = self.computation_carried(&computation);
-        self.computations.push(computation);
-        self.computation_supports.push(support);
+        self.computations.push(Row {
+            node: computation,
+            support,
+        });
         id
     }
 
@@ -837,8 +875,7 @@ impl CoreArena
     /// - requires: every child of `value_type` is minted in this arena.
     /// - ensures: appends `value_type` to the value-type family and returns the
     ///   id at the family's previous end, which is above every value-type id
-    ///   already minted; appends the support built from the children's at the
-    ///   same index.
+    ///   already minted; records its support beside it.
     /// - provides: the single append point every value-type constructor goes
     ///   through.
     /// - panics: none.
@@ -852,9 +889,8 @@ impl CoreArena
     #[spec(
         captures: [entry = self.value_types.len(), kind = core::mem::discriminant(&value_type)],
         ensures: |ret| entry.checked_add(1) == Some(self.value_types.len())
-            && self.value_type_supports.len() == self.value_types.len()
             && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
-            && self.value_types.last().is_some_and(|node| core::mem::discriminant(node) == kind),
+            && self.value_types.last().is_some_and(|row| core::mem::discriminant(&row.node) == kind),
     )]
     #[inline]
     pub(crate) fn alloc_value_type(
@@ -864,8 +900,10 @@ impl CoreArena
     {
         let id = ValueTypeId(id_index(ArenaLength(self.value_types.len())).0);
         let support = self.value_type_carried(&value_type);
-        self.value_types.push(value_type);
-        self.value_type_supports.push(support);
+        self.value_types.push(Row {
+            node: value_type,
+            support,
+        });
         id
     }
 
@@ -875,8 +913,7 @@ impl CoreArena
     /// - requires: every child of `comp_type` is minted in this arena.
     /// - ensures: appends `comp_type` to the computation-type family and
     ///   returns the id at the family's previous end, which is above every
-    ///   computation-type id already minted; appends the support built from the
-    ///   children's at the same index.
+    ///   computation-type id already minted; records its support beside it.
     /// - provides: the single append point every computation-type constructor
     ///   goes through.
     /// - panics: none.
@@ -890,9 +927,8 @@ impl CoreArena
     #[spec(
         captures: [entry = self.comp_types.len(), kind = core::mem::discriminant(&comp_type)],
         ensures: |ret| entry.checked_add(1) == Some(self.comp_types.len())
-            && self.comp_type_supports.len() == self.comp_types.len()
             && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
-            && self.comp_types.last().is_some_and(|node| core::mem::discriminant(node) == kind),
+            && self.comp_types.last().is_some_and(|row| core::mem::discriminant(&row.node) == kind),
     )]
     #[inline]
     pub(crate) fn alloc_comp_type(
@@ -902,8 +938,10 @@ impl CoreArena
     {
         let id = CompTypeId(id_index(ArenaLength(self.comp_types.len())).0);
         let support = self.comp_type_carried(&comp_type);
-        self.comp_types.push(comp_type);
-        self.comp_type_supports.push(support);
+        self.comp_types.push(Row {
+            node: comp_type,
+            support,
+        });
         id
     }
 

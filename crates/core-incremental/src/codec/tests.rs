@@ -2546,8 +2546,12 @@ fn supported_tables_round_trip_and_reject_forged_support()
     };
     let select = |indices: &[u32]| {
         Thinning::from_ascending(
-            indices.iter().copied().map(DeBruijnIndex::from).collect(),
-            Vec::new(),
+            &indices
+                .iter()
+                .copied()
+                .map(DeBruijnIndex::from)
+                .collect::<Vec<_>>(),
+            &[],
         )
         .expect("ascending")
     };

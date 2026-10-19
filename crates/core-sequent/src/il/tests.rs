@@ -587,19 +587,56 @@ fn variable(
         .expect("a leaf mints")
 }
 
-/// The scope `node` carries.
+/// The scope `node` has.
 ///
 /// # Specification
 /// trivial.
 fn scope_of(
     arena: &CommandArena,
     node: NodeAddress,
-) -> NodeScope
+) -> NodeScope<'_>
 {
-    arena
-        .node_scope(node)
-        .cloned()
-        .expect("a minted node carries a scope")
+    arena.node_scope(node).expect("a minted node has a scope")
+}
+
+/// A scope wider than a slot is kept in the arena's words and read back
+/// whole, and truncation drops the words with their node.
+#[test]
+fn a_wide_scope_is_kept_in_the_word_arena()
+{
+    let mut arena = CommandArena::new();
+    let at = DeBruijnIndex::from;
+    let mark = arena.watermark();
+    let words = arena.words.mark();
+    let scattered = [0_u32, 100, 5000, 9000, 20000, 40000];
+    let fields: Vec<ProducerId> = scattered
+        .iter()
+        .map(|&index| variable(&mut arena, Zone::Intuitionistic, at(index)))
+        .collect();
+    let wide = arena
+        .mint_producer(ProducerNode::Constructor {
+            tag: ConstructorTag::Tuple(ProducerArity::from(scattered.len())),
+            producers: fields.into_boxed_slice(),
+            consumers: Box::from([]),
+        })
+        .expect("the fields resolve");
+    let expected = Thinning::from_ascending(&scattered.map(at), &[]).expect("ascending");
+    assert!(
+        usize::from(expected.view().words()) > 1,
+        "the code spans words"
+    );
+    assert!(
+        arena.words.mark() > words,
+        "the wide scope takes the word arena"
+    );
+    assert_eq!(
+        scope_of(&arena, NodeAddress::Producer(wide)).producers(),
+        expected.view()
+    );
+
+    arena.truncate_to(mark);
+    assert_eq!(arena.words.mark(), mark.words, "the words are gone");
+    assert!(arena.node_scope(NodeAddress::Producer(wide)).is_none());
 }
 
 /// A binder's body selects its bound name exactly when it names it, and the

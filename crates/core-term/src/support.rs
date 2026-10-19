@@ -48,42 +48,60 @@
 //! **Reversal.** A consumer outside the core vocabulary — one whose zones are
 //! not `Γ; Σ` — moves the carrier into its own crate.
 //!
-//! # Bit selections
+//! # The tiered code
 //!
-//! A thinning is one machine word and one optional spill: the word holds one
-//! bit per index for the innermost 48 intuitionistic and 16 linear binders,
-//! and a selection naming an index past either width moves to two sorted
-//! index lists behind one pointer. The form is canonical — the spill is
-//! present exactly when some index passes its zone's inline width — so the
-//! derived equality and hashing compare selections. A thinning is 16 bytes
-//! and allocates nothing for a support inside the inline widths, which is
-//! every support the corpus and the generators build; the union a cover
-//! takes is word-wise shifts and disjunctions, and rank and select are
-//! population counts.
+//! A thinning is written in one self-describing code per zone it selects
+//! from, each a whole number of 64-bit words whose first word opens with an
+//! eight-bit header naming the form, the zone and the length. Three forms
+//! carry a selection — a dense bitset, an Elias–Fano sequence for a sparse
+//! one and a run for a contiguous one — and the encoder writes the shortest,
+//! dense on a tie, so each selection has exactly one code and the derived
+//! equality and hashing compare selections. A one-word dense code holds the
+//! 56 innermost binders; the empty selection is the zero word; a variable's
+//! support is one word wherever its binder stands, dense inside the word and
+//! a run of one past it. A [`Thinning`] is three words: its code's first word
+//! inline and the rest behind one pointer, present exactly when the code
+//! spans more than one word, so a one-word support allocates nothing. Rank
+//! and select are population counts over the dense form and over the sparse
+//! form's unary upper bits, and arithmetic over a run. The code is defined in
+//! the `code` module.
 //!
-//! **Choice.** The inline bitset with a sparse spill, measured against the
-//! sparse form alone — two index vectors, 48 bytes and an allocation per
-//! non-empty zone — on the command IL's differential terms, where a node's
-//! carried scope went from 144 bytes and an allocation per selection to 16
-//! bytes per zone pair. The linear zone gets the narrower half: no former
-//! binds more than one linear binder at a time, and the linear zone holds
-//! session endpoints and memory slots, never a definition's parameters.
-//! **Alternatives.** The sparse form alone; a run-length form, one
-//! `(start, length)` pair per run of selected indices, which is as small for
-//! a contiguous support and larger for a scattered one, and whose union is a
-//! merge rather than a disjunction. **Reversal.** A measured workload whose
-//! supports name binders past the inline widths often enough that the spill's
-//! allocation dominates, which moves the split or widens the word.
+//! **Choice.** The tiered code with a header word, as designed for the
+//! carrier: forms chosen by size, so a deep, sparse support costs bits per
+//! index rather than bits per binder of depth, and a contiguous one costs a
+//! word. Three refinements, each where that design assumed one zone or left
+//! the order open: the header names the zone, so a thinning writes up to two
+//! codes and reads either without decoding the other; the length field is
+//! five bits with a long form past 31 words, so the header stays one byte and
+//! the one-word dense code keeps 56 binders; and a run wins a tie with a
+//! sparse code, since a run decodes in constant time.
+//! **Alternatives.** The fixed form it replaced — 48 intuitionistic and 16
+//! linear bits in one word, sorted index lists behind a pointer past either —
+//! which allocates for any support naming a binder past 48 and costs a word
+//! per 64 binders of depth; a dense bitset alone, whose size is the scope's
+//! depth; Roaring containers, whose per-container headers outweigh supports
+//! of a few indices. **Reversal.** A measured workload whose supports span
+//! more than one word often enough that decoding dominates their reads, which
+//! adds a dense accumulator to the union or widens the inline word.
 //!
 //! A [`Union`] builds a support from what a node names and its children's
-//! supports past their crossings, in any order and with repeats: an uncrossed
-//! child is one disjunction, a crossed one two shifts and a disjunction, while
-//! every index fits the word. [`ThinningRef`] reads a stored thinning in place
-//! — its word by value, its spill by reference — so a hot read neither clones
-//! nor drops one. [`ThinningPair`] stores two thinnings in three words, both
-//! words beside each other and one pointer shared by their spills: the row a
-//! table keeps per node when a node carries a support in each of two spaces,
-//! as the command IL's producer and covariable supports are.
+//! supports past their crossings, in any order and with repeats: while every
+//! index lands in the intuitionistic zone's one-word dense code, an uncrossed
+//! child is one disjunction and a crossed one a shift, a mask and a
+//! disjunction. Past that word it gathers each zone's indices and writes the
+//! code once when finished. The design states the union as a word-wise
+//! disjunction in the dense tier; a dense accumulator for a deep, sparse
+//! support takes the scope's width, which is the cost the sparse form
+//! removes, so past the word the union gathers indices instead.
+//! [`ThinningRef`] reads a code in place — its first word by value, the rest
+//! by reference — so a hot read neither clones nor drops a thinning.
+//!
+//! # Where supports are kept
+//!
+//! A table keeps a support as a [`Slot`] in the node's row: one word, the
+//! code itself when the code is one word and otherwise a handle to its words
+//! in a [`WordArena`], so the row grows by one word and the wide case stays
+//! off it.
 //!
 //! # The fence
 //!
@@ -104,6 +122,17 @@
 //!   2018)_, EPTCS 275, pages 53–69. `doi:10.4204/EPTCS.275.6` — co-de Bruijn
 //!   representation: thinnings, covers and relevant pairs, with every variable
 //!   a bare leaf.
+//! - Peter Elias. "Efficient Storage and Retrieval by Content and Address of
+//!   Static Files." _Journal of the ACM_ 21(2), 1974, pages 246–260.
+//!   `doi:10.1145/321812.321820` — the monotone sequence split into lower bits
+//!   and unary upper bits that the sparse form writes.
+//! - Robert M. Fano. "On the Number of Bits Required to Implement an
+//!   Associative Memory." Memorandum 61, Computer Structures Group, Project
+//!   MAC, MIT, 1971 — the same split, found independently.
+//! - Sebastiano Vigna. "Quasi-Succinct Indices." _Proceedings of the Sixth ACM
+//!   International Conference on Web Search and Data Mining (WSDM 2013)_, pages
+//!   83–92. `doi:10.1145/2433396.2433409` — Elias–Fano sequences read by rank
+//!   and select over the upper bits, and the lower width `⌊log₂(u / n)⌋`.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -112,8 +141,24 @@ use anodized::spec;
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
+use self::code::Buffer;
+pub use self::code::Coding;
+use self::code::Raw;
+use self::code::Seq;
+use self::code::Walk;
+use self::code::Word;
+pub use self::code::WordCount;
+use self::code::omitted;
+use self::code::walked;
+pub use self::store::Slot;
+pub use self::store::WordArena;
+pub use self::store::WordMark;
+pub use self::store::unstored;
 use crate::context::BinderDepth;
 use crate::syntax::Zone;
+
+mod code;
+mod store;
 
 /// Why a selection holds no index at a position.
 pub mod unselected
@@ -139,235 +184,105 @@ mod bound
     }
 }
 
-/// How many intuitionistic indices the inline word holds, from bit 0.
-const INTUITIONISTIC_WIDTH: u32 = 48;
-
-/// How many linear indices the inline word holds, above the intuitionistic
-/// bits.
-const LINEAR_WIDTH: u32 = 16;
-
-/// The inline word's intuitionistic bits.
-const INTUITIONISTIC_MASK: u64 = 0x0000_FFFF_FFFF_FFFF;
-
-/// The inline word's width in bits: a lowering at least this far empties it.
-const WORD_BITS: usize = 64;
-
-/// One zone's inline selection: bit `i` selects index `i`.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Bits(u64);
-
-impl Bits
-{
-    /// The selection of `index` alone, when it is inside `zone`'s inline
-    /// width.
-    ///
-    /// # Specification
-    /// - ensures: one bit, at `index`, when the index is inside the width;
-    ///   `unselected::Absent::Unselected` past it.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the last inline index and the first past it, in each
-    ///   zone, separate the inline word from the spill.
-    /// - witness: `support::tests::selections_past_the_inline_width_spill`
-    #[spec(ensures: |ret| match ret {
-        Maybe::Present(Self(bits)) => bits.is_power_of_two() && bits.trailing_zeros() == u32::from(index),
-        Maybe::Absent(unselected::Absent::Unselected) => index >= inline_width(zone),
-    })]
-    #[inline]
-    fn single(
-        zone: Zone,
-        index: DeBruijnIndex,
-    ) -> Maybe<Self, unselected::Absent>
-    {
-        if index < inline_width(zone) {
-            Maybe::Present(Self(1_u64.unbounded_shl(u32::from(index))))
-        }
-        else {
-            Maybe::Absent(unselected::Absent::Unselected)
-        }
-    }
-
-    /// The selection read past `crossed` binders: every index inside the
-    /// crossing dropped, every other lowered by it.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn lowered(
-        self,
-        crossed: BinderDepth,
-    ) -> Self
-    {
-        let crossed = usize::from(crossed);
-        if crossed >= WORD_BITS {
-            return Self(0);
-        }
-        // reason: `crossed` is below the word's width, so it fits a `u32`
-        // and the shift drops exactly the crossed bits.
-        Self(
-            self.0
-                .wrapping_shr(u32::try_from(crossed).unwrap_or(u32::MAX)),
-        )
-    }
-
-    /// The indices below `index`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn below(
-        self,
-        index: DeBruijnIndex,
-    ) -> Self
-    {
-        Self(self.0 & 1_u64.unbounded_shl(u32::from(index)).wrapping_sub(1))
-    }
-
-    /// How many indices the selection holds.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn count(self) -> BinderDepth
-    {
-        // reason: a population count of a 64-bit word is at most 64.
-        BinderDepth::from(usize::try_from(self.0.count_ones()).unwrap_or(usize::MAX))
-    }
-}
-
-/// The inline width of `zone`: the first index the word cannot hold.
-///
-/// # Specification
-/// trivial.
-#[inline]
-fn inline_width(zone: Zone) -> DeBruijnIndex
-{
-    DeBruijnIndex::from(match zone {
-        Zone::Intuitionistic => INTUITIONISTIC_WIDTH,
-        Zone::Linear => LINEAR_WIDTH,
-    })
-}
-
-/// The selections a spilled thinning holds: every selected index of each
-/// zone, strictly ascending.
-#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Spill
-{
-    /// The intuitionistic indices.
-    intuitionistic: Vec<DeBruijnIndex>,
-    /// The linear indices.
-    linear: Vec<DeBruijnIndex>,
-}
-
-impl Spill
-{
-    /// The indices of `zone`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn zone(
-        &self,
-        zone: Zone,
-    ) -> &[DeBruijnIndex]
-    {
-        match zone {
-            Zone::Intuitionistic => &self.intuitionistic,
-            Zone::Linear => &self.linear,
-        }
-    }
-
-    /// The indices of `zone`, to extend.
-    ///
-    /// # Specification
-    /// trivial.
-    fn zone_mut(
-        &mut self,
-        zone: Zone,
-    ) -> &mut Vec<DeBruijnIndex>
-    {
-        match zone {
-            Zone::Intuitionistic => &mut self.intuitionistic,
-            Zone::Linear => &mut self.linear,
-        }
-    }
-}
-
 /// An order-preserving selection from a two-zone scope.
 ///
 /// # Specification
-/// - executable: none — a data declaration. Every constructor keeps the form
-///   canonical: the spill is present exactly when some selected index passes
-///   its zone's inline width, and then the inline word is empty and each spill
-///   list strictly ascends.
+/// - executable: none — a data declaration. Every constructor writes the
+///   encoder's one code for the selection: `head` is the code's first word, and
+///   `tail` holds the rest, present exactly when the code spans more than one
+///   word.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — exhaustive small scopes and the unordered near-misses
-///   separate dropped, repeated and misordered selections in either zone; the
-///   indices on both sides of each inline width separate the word from the
-///   spill and keep equality canonical across them.
+///   separate dropped, repeated and misordered selections in either zone;
+///   selections on both sides of each form's boundary keep equality canonical
+///   across the forms.
 /// - witness: `support::tests::selections_refuse_unordered_indices`
 /// - witness: `support::tests::placing_each_edge_recovers_its_child`
-/// - witness: `support::tests::selections_past_the_inline_width_spill`
+/// - witness: `support::tests::one_encoding_per_selection`
 #[derive(Clone, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Thinning
 {
-    /// The intuitionistic bits below [`INTUITIONISTIC_WIDTH`] and, above
-    /// them, the linear bits below [`LINEAR_WIDTH`]; empty when spilled.
-    inline: Bits,
-    /// Both zones' indices, when one passes its inline width.
-    spill: Option<Box<Spill>>,
+    /// The code's first word.
+    head: Word,
+    /// The code's other words, when it spans more than one.
+    tail: Option<Box<[u64]>>,
 }
 
-/// A thinning read in place: its inline word by value and its spill, when
-/// it has one, by reference.
+/// A thinning read in place: its code's first word by value and the rest by
+/// reference.
 ///
 /// It is `Copy`, so a hot read of a stored support neither clones nor drops
-/// one, and a [`ThinningPair`] hands out its members without holding them
-/// as whole thinnings.
+/// one; equality compares the words, which the encoder makes one per
+/// selection.
 ///
 /// # Specification
-/// - executable: none — a data declaration; it is made only from a canonical
-///   [`Thinning`] or pair, so its form is canonical too.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// - executable: none — a data declaration; it is made only from a
+///   [`Thinning`], a stored [`Slot`] or a one-word code, so its words are the
+///   encoder's code.
+#[repr(transparent)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub struct ThinningRef<'thinning>
 {
-    /// As the thinning's inline word.
-    inline: Bits,
-    /// The thinning's spill, by reference.
-    spill: Option<&'thinning Spill>,
-}
-
-/// Two thinnings stored as one row: both inline words side by side and,
-/// when either spills, both whole behind one pointer.
-///
-/// Three words where two [`Thinning`]s take four: the row a table keeps per
-/// node when each node carries two supports.
-///
-/// # Specification
-/// - executable: none — a data declaration. Every constructor keeps the form
-///   canonical: the pointer is present exactly when either member spills, and
-///   then both words are empty; equality is therefore the members'.
-///
-/// # Adequacy
-/// - hypothesis: L3 — pairs inline in both members, spilled in one and spilled
-///   in both read back their members and compare as those members.
-/// - witness: `support::tests::a_pair_reads_back_its_members`
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
-pub struct ThinningPair
-{
-    /// The first member's inline word, while neither spills.
-    first: Bits,
-    /// The second member's inline word, while neither spills.
-    second: Bits,
-    /// Both members, once either spills.
-    spilled: Option<Box<[Thinning; 2]>>,
+    /// The code's words.
+    seq: Seq<'thinning>,
 }
 
 impl<'thinning> ThinningRef<'thinning>
 {
+    /// The empty selection, read in place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn empty() -> Self
+    {
+        Self {
+            seq: Seq {
+                head: Word(0),
+                tail: &[],
+            },
+        }
+    }
+
+    /// The selection of `index` in `zone` alone, read in place: a variable's
+    /// support, one word wherever its binder stands.
+    ///
+    /// # Specification
+    /// - ensures: the view of [`Thinning::leaf`] of the same index.
+    /// - panics: none.
+    /// - executable: none — the witness compares it with the encoder's code.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the last index the one-word dense code holds and the
+    ///   first past it, in either zone.
+    /// - witness: `support::tests::the_mode_switches_at_its_boundaries`
+    #[inline]
+    #[must_use]
+    pub fn leaf(
+        zone: Zone,
+        index: DeBruijnIndex,
+    ) -> Self
+    {
+        Self {
+            seq: Seq {
+                head: code::single(zone, index),
+                tail: &[],
+            },
+        }
+    }
+
+    /// The code `seq` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn of_seq(seq: Seq<'thinning>) -> Self
+    {
+        Self { seq }
+    }
+
     /// The indices selected in `zone`, innermost first.
     ///
     /// # Specification
@@ -379,10 +294,7 @@ impl<'thinning> ThinningRef<'thinning>
         zone: Zone,
     ) -> Indices<'thinning>
     {
-        Indices(self.spill.map_or_else(
-            || Walk::Bits(self.zone_bits(zone)),
-            |spill| Walk::Listed(spill.zone(zone).iter()),
-        ))
+        Indices(self.seq.walk(zone, Raw(0)))
     }
 
     /// The indices selected in `zone` at or past `crossed`, as they stand:
@@ -394,8 +306,9 @@ impl<'thinning> ThinningRef<'thinning>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — selections below, at and past a crossing of zero to
-    ///   two binders, inline and spilled, separate the cut from its neighbours.
+    /// - hypothesis: L3 — selections of every form below, at and past a
+    ///   crossing of zero to two binders, and past the one-word code, separate
+    ///   the cut from its neighbours.
     /// - witness: `support::tests::outside_cuts_at_the_crossing`
     #[spec(ensures: |ret| ret.clone().eq(self.indices(zone).filter(|&index| {
         BinderDepth::from(usize::try_from(u32::from(index)).unwrap_or(usize::MAX)) >= crossed
@@ -408,18 +321,8 @@ impl<'thinning> ThinningRef<'thinning>
         crossed: BinderDepth,
     ) -> Indices<'thinning>
     {
-        let crossed = u32::try_from(usize::from(crossed)).unwrap_or(u32::MAX);
-        Indices(self.spill.map_or_else(
-            || {
-                let bits = self.zone_bits(zone);
-                Walk::Bits(Bits(bits.0 & !bits.below(DeBruijnIndex::from(crossed)).0))
-            },
-            |spill| {
-                let listed = spill.zone(zone);
-                let local = listed.partition_point(|&index| u32::from(index) < crossed);
-                Walk::Listed(listed.get(local ..).unwrap_or_default().iter())
-            },
-        ))
+        let from = u64::try_from(usize::from(crossed)).unwrap_or(u64::MAX);
+        Indices(self.seq.walk(zone, Raw(from)))
     }
 
     /// The position `index` takes in the compact scope: how many selected
@@ -433,9 +336,9 @@ impl<'thinning> ThinningRef<'thinning>
     /// # Adequacy
     /// - hypothesis: L3 — exhaustive small selections: every selected index
     ///   ranks to its position and every unselected one is absent; the same
-    ///   held past an inline width ranks through the spill.
+    ///   held in every form ranks through that form.
     /// - witness: `support::tests::rank_and_select_are_inverse`
-    /// - witness: `support::tests::selections_past_the_inline_width_spill`
+    /// - witness: `support::tests::one_encoding_per_selection`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(rank) => self.indices(zone).nth(usize::try_from(u32::from(rank)).unwrap_or(usize::MAX)) == Some(index),
         Maybe::Absent(unselected::Absent::Unselected) => self.indices(zone).all(|held| held != index),
@@ -447,23 +350,55 @@ impl<'thinning> ThinningRef<'thinning>
         index: DeBruijnIndex,
     ) -> Maybe<DeBruijnIndex, unselected::Absent>
     {
-        let rank = self.spill.map_or_else(
-            || {
-                let bits = self.zone_bits(zone);
-                match Bits::single(zone, index) {
-                    Maybe::Present(bit) if bits.0 & bit.0 != 0 => {
-                        Some(usize::from(bits.below(index).count()))
-                    },
-                    Maybe::Present(_) | Maybe::Absent(_) => None,
-                }
-            },
-            |spill| spill.zone(zone).binary_search(&index).ok(),
-        );
-        rank.map_or(Maybe::Absent(unselected::Absent::Unselected), |rank| {
+        match self.seq.rank(zone, index) {
             // reason: a rank counts distinct `u32` indices below another `u32`
             // index, so it fits; the clamp keeps the conversion total.
-            Maybe::Present(DeBruijnIndex::from(u32::try_from(rank).unwrap_or(u32::MAX)))
-        })
+            Maybe::Present(rank) => Maybe::Present(DeBruijnIndex::from(
+                u32::try_from(rank.0).unwrap_or(u32::MAX),
+            )),
+            Maybe::Absent(omitted::Absent::Omitted) => {
+                Maybe::Absent(unselected::Absent::Unselected)
+            },
+        }
+    }
+
+    /// The form the code of `zone` takes.
+    ///
+    /// # Specification
+    /// - ensures: [`Coding::Omitted`] exactly when the selection writes no code
+    ///   for `zone` — a zone that selects nothing, save the intuitionistic zone
+    ///   of the empty selection, which is the empty dense code — and the code's
+    ///   form otherwise.
+    /// - panics: none.
+    /// - executable: none — the form is read off the header the predicate would
+    ///   read; the witnesses hold it to an independent sizing.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — selections at either side of each form's boundary, in
+    ///   either zone.
+    /// - witness: `support::tests::the_mode_switches_at_its_boundaries`
+    #[inline]
+    #[must_use]
+    pub fn coding(
+        self,
+        zone: Zone,
+    ) -> Coding
+    {
+        match self.seq.zone(zone) {
+            Maybe::Present(code) => code.coding(),
+            Maybe::Absent(omitted::Absent::Omitted) => Coding::Omitted,
+        }
+    }
+
+    /// How many words the selection's codes span together.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn words(self) -> WordCount
+    {
+        self.seq.len()
     }
 
     /// The thinning read, owned.
@@ -475,145 +410,46 @@ impl<'thinning> ThinningRef<'thinning>
     pub fn to_thinning(self) -> Thinning
     {
         Thinning {
-            inline: self.inline,
-            spill: self.spill.map(|spill| Box::new(spill.clone())),
-        }
-    }
-
-    /// The inline bits of `zone`, with the zone's lowest index at bit 0.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    const fn zone_bits(
-        self,
-        zone: Zone,
-    ) -> Bits
-    {
-        match zone {
-            Zone::Intuitionistic => Bits(self.inline.0 & INTUITIONISTIC_MASK),
-            Zone::Linear => Bits(self.inline.0.unbounded_shr(INTUITIONISTIC_WIDTH)),
+            head: self.seq.head,
+            tail: if self.seq.tail.is_empty() {
+                None
+            }
+            else {
+                Some(Box::from(self.seq.tail))
+            },
         }
     }
 }
 
-impl ThinningPair
+impl core::fmt::Debug for ThinningRef<'_>
 {
-    /// The pair of `first` and `second`.
+    /// Writes each zone's selected indices, as [`Thinning`]'s does.
     ///
     /// # Specification
-    /// - ensures: [`Self::first`] reads `first` and [`Self::second`] reads
-    ///   `second`.
+    /// - ensures: writes the intuitionistic and the linear indices, ascending.
+    /// - fails: propagates the formatter's write failure.
     /// - panics: none.
+    /// - executable: none — the formatter exposes no readable sink.
+    ///
+    /// # Errors
+    /// Returns the formatter's error when its sink refuses a write.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as the type's.
-    /// - witness: `support::tests::a_pair_reads_back_its_members`
-    #[spec(
-        captures: [expected = (first.clone(), second.clone())],
-        ensures: |ret| ret.first() == expected.0.view() && ret.second() == expected.1.view(),
-    )]
+    /// - hypothesis: L3 — as [`Thinning`]'s.
+    /// - witness: `support::tests::a_thinning_prints_its_indices_in_either_form`
     #[inline]
-    #[must_use]
-    pub fn new(
-        first: Thinning,
-        second: Thinning,
-    ) -> Self
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
     {
-        if first.spill.is_none() && second.spill.is_none() {
-            return Self {
-                first: first.inline,
-                second: second.inline,
-                spilled: None,
-            };
-        }
-        Self {
-            first: Bits(0),
-            second: Bits(0),
-            spilled: Some(Box::new([first, second])),
-        }
-    }
-
-    /// The pair two unions finish to, without building either thinning
-    /// while both are inline.
-    ///
-    /// # Specification
-    /// - ensures: exactly `Self::new(first.finish(), second.finish())`.
-    /// - panics: none.
-    /// - executable: none — this runs once per node on the mint path; the
-    ///   instrumented body is a closure the test profile does not inline, and
-    ///   the witness reads both members back.
-    /// - intension: two words moved while both unions are inline.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as the type's.
-    /// - witness: `support::tests::a_pair_reads_back_its_members`
-    #[inline]
-    #[must_use]
-    pub fn of(
-        first: Union,
-        second: Union,
-    ) -> Self
-    {
-        match (first.listed, second.listed) {
-            (None, None) => Self {
-                first: first.inline,
-                second: second.inline,
-                spilled: None,
-            },
-            (first_listed, second_listed) => Self::new(
-                Union {
-                    inline: first.inline,
-                    listed: first_listed,
-                }
-                .finish(),
-                Union {
-                    inline: second.inline,
-                    listed: second_listed,
-                }
-                .finish(),
-            ),
-        }
-    }
-
-    /// The first member.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn first(&self) -> ThinningRef<'_>
-    {
-        self.spilled.as_ref().map_or(
-            ThinningRef {
-                inline: self.first,
-                spill: None,
-            },
-            |both| {
-                let [ref first, _] = **both;
-                first.view()
-            },
-        )
-    }
-
-    /// The second member.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn second(&self) -> ThinningRef<'_>
-    {
-        self.spilled.as_ref().map_or(
-            ThinningRef {
-                inline: self.second,
-                spill: None,
-            },
-            |both| {
-                let [_, ref second] = **both;
-                second.view()
-            },
-        )
+        f.debug_struct("Thinning")
+            .field(
+                "intuitionistic",
+                &Listing(self.indices(Zone::Intuitionistic)),
+            )
+            .field("linear", &Listing(self.indices(Zone::Linear)))
+            .finish()
     }
 }
 
@@ -624,16 +460,6 @@ impl ThinningPair
 #[derive(Clone, Debug)]
 #[repr(transparent)]
 pub struct Indices<'thinning>(Walk<'thinning>);
-
-/// Where a zone's indices are read from.
-#[derive(Clone, Debug)]
-enum Walk<'thinning>
-{
-    /// The bits not yet read, of an inline selection.
-    Bits(Bits),
-    /// The rest of a spilled selection.
-    Listed(core::slice::Iter<'thinning, DeBruijnIndex>),
-}
 
 impl Iterator for Indices<'_>
 {
@@ -646,16 +472,9 @@ impl Iterator for Indices<'_>
     #[inline]
     fn next(&mut self) -> Option<DeBruijnIndex>
     {
-        match self.0 {
-            Walk::Bits(ref mut bits) => {
-                if bits.0 == 0 {
-                    return None;
-                }
-                let at = bits.0.trailing_zeros();
-                bits.0 &= bits.0.wrapping_sub(1);
-                Some(DeBruijnIndex::from(at))
-            },
-            Walk::Listed(ref mut listed) => listed.next().copied(),
+        match self.0.front() {
+            Maybe::Present(index) => Some(index),
+            Maybe::Absent(walked::Absent::Exhausted) => None,
         }
     }
 
@@ -666,10 +485,7 @@ impl Iterator for Indices<'_>
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>)
     {
-        let left = match self.0 {
-            Walk::Bits(bits) => usize::from(bits.count()),
-            Walk::Listed(ref listed) => listed.len(),
-        };
+        let left = usize::try_from(self.0.left().0).unwrap_or(usize::MAX);
         (left, Some(left))
     }
 }
@@ -683,93 +499,15 @@ impl DoubleEndedIterator for Indices<'_>
     #[inline]
     fn next_back(&mut self) -> Option<DeBruijnIndex>
     {
-        match self.0 {
-            Walk::Bits(ref mut bits) => {
-                if bits.0 == 0 {
-                    return None;
-                }
-                let at = u64::BITS
-                    .wrapping_sub(1)
-                    .wrapping_sub(bits.0.leading_zeros());
-                bits.0 &= !1_u64.unbounded_shl(at);
-                Some(DeBruijnIndex::from(at))
-            },
-            Walk::Listed(ref mut listed) => listed.next_back().copied(),
+        match self.0.back() {
+            Maybe::Present(index) => Some(index),
+            Maybe::Absent(walked::Absent::Exhausted) => None,
         }
     }
 }
 
 impl ExactSizeIterator for Indices<'_>
 {
-}
-
-/// A thinning under construction, fed each zone's indices in ascending
-/// order.
-#[derive(Debug, Default)]
-struct Builder
-{
-    /// The inline word while every index fits it.
-    inline: Bits,
-    /// The spill, once one index did not fit.
-    spill: Option<Spill>,
-}
-
-impl Builder
-{
-    /// Add `index` to `zone`'s selection.
-    ///
-    /// # Specification
-    /// - requires: `index` passes every index already added to `zone`.
-    /// - ensures: the selection holds `index` in `zone`; an index past the
-    ///   zone's inline width moves every earlier index to the spill.
-    /// - panics: none.
-    /// - executable: none — the builder is read only by finishing it, which
-    ///   consumes it; the witness finishes it.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — selections on both sides of each inline width, added
-    ///   in either zone order, separate the spill from the word.
-    /// - witness: `support::tests::selections_past_the_inline_width_spill`
-    fn push(
-        &mut self,
-        zone: Zone,
-        index: DeBruijnIndex,
-    )
-    {
-        if let Some(ref mut spill) = self.spill {
-            spill.zone_mut(zone).push(index);
-            return;
-        }
-        if let Maybe::Present(bit) = Bits::single(zone, index) {
-            self.inline.0 |= match zone {
-                Zone::Intuitionistic => bit.0,
-                Zone::Linear => bit.0.unbounded_shl(INTUITIONISTIC_WIDTH),
-            };
-            return;
-        }
-        let held = Thinning {
-            inline: core::mem::take(&mut self.inline),
-            spill: None,
-        };
-        let mut spill = Spill {
-            intuitionistic: held.indices(Zone::Intuitionistic).collect(),
-            linear: held.indices(Zone::Linear).collect(),
-        };
-        spill.zone_mut(zone).push(index);
-        self.spill = Some(spill);
-    }
-
-    /// The thinning built.
-    ///
-    /// # Specification
-    /// trivial.
-    fn finish(self) -> Thinning
-    {
-        Thinning {
-            inline: self.inline,
-            spill: self.spill.map(Box::new),
-        }
-    }
 }
 
 /// Whether a union, finished, is a given thinning.
@@ -797,8 +535,9 @@ pub enum Agreement
 #[derive(Debug, Default)]
 pub struct Union
 {
-    /// The inline word while every index fits it.
-    inline: Bits,
+    /// The intuitionistic zone's one-word dense code, while every index fits
+    /// it.
+    inline: Word,
     /// Each zone's gathered indices, once one did not fit; boxed so the
     /// common, inline union is two words.
     listed: Option<Box<[Vec<DeBruijnIndex>; 2]>>,
@@ -815,7 +554,7 @@ impl Union
     pub const fn new() -> Self
     {
         Self {
-            inline: Bits(0),
+            inline: Word(0),
             listed: None,
         }
     }
@@ -823,16 +562,18 @@ impl Union
     /// Add `index`, which the node names itself, to `zone`.
     ///
     /// # Specification
-    /// - ensures: the union holds `index` in `zone`; an index past the zone's
-    ///   inline width moves every earlier index to the gathered lists.
+    /// - ensures: the union holds `index` in `zone`; a linear index, or an
+    ///   intuitionistic index past the one-word code, moves every earlier index
+    ///   to the gathered lists.
     /// - panics: none.
     /// - executable: none — the union is read only by finishing it, which
     ///   consumes it, and this runs once per name on the mint path; the witness
     ///   finishes it.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — occurrences on both sides of each inline width.
-    /// - witness: `support::tests::selections_past_the_inline_width_spill`
+    /// - hypothesis: L3 — occurrences on both sides of the one-word code's
+    ///   width, in either zone.
+    /// - witness: `support::tests::union_is_canonical`
     #[inline]
     pub fn name(
         &mut self,
@@ -841,12 +582,10 @@ impl Union
     )
     {
         if self.listed.is_none()
-            && let Maybe::Present(bit) = Bits::single(zone, index)
+            && zone == Zone::Intuitionistic
+            && let Maybe::Present(bit) = Word::inline_bit(index)
         {
-            self.inline.0 |= match zone {
-                Zone::Intuitionistic => bit.0,
-                Zone::Linear => bit.0.unbounded_shl(INTUITIONISTIC_WIDTH),
-            };
+            self.inline.0 |= bit.0;
             return;
         }
         self.name_listed(zone, index);
@@ -880,8 +619,9 @@ impl Union
     /// - executable: none — the union is read only by finishing it, which
     ///   consumes it, and this runs once per child on the mint and check paths;
     ///   the witness finishes it.
-    /// - intension: one disjunction for an uncrossed child, two shifts and a
-    ///   disjunction for a crossed one, while both are inline.
+    /// - intension: one disjunction for an uncrossed child, a shift, a mask and
+    ///   a disjunction for a crossed one, while both are one-word dense
+    ///   intuitionistic codes.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Thinning::covering`].
@@ -893,25 +633,18 @@ impl Union
         crossing: Crossing,
     )
     {
-        if self.listed.is_none() && child.spill.is_none() {
-            self.inline.0 |= if crossing == Crossing::default() {
-                child.inline.0
-            }
-            else {
-                let intuitionistic = child
-                    .zone_bits(Zone::Intuitionistic)
-                    .lowered(crossing.depth(Zone::Intuitionistic));
-                let linear = child
-                    .zone_bits(Zone::Linear)
-                    .lowered(crossing.depth(Zone::Linear));
-                intuitionistic.0 | linear.0.unbounded_shl(INTUITIONISTIC_WIDTH)
-            };
+        if self.listed.is_none()
+            && child.seq.tail.is_empty()
+            && let Maybe::Present(word) = child.seq.head.inline_dense()
+        {
+            self.inline.0 |= word.lowered(crossing.depth(Zone::Intuitionistic)).0;
             return;
         }
         self.child_listed(child, crossing);
     }
 
-    /// Add a child's outer indices one at a time, once either side has spilled.
+    /// Add a child's outer indices one at a time, once either side is past
+    /// the one-word code.
     ///
     /// # Specification
     /// trivial.
@@ -938,12 +671,12 @@ impl Union
     /// trivial.
     fn lists(&mut self) -> &mut [Vec<DeBruijnIndex>; 2]
     {
-        let inline = &mut self.inline;
+        let inline = core::mem::take(&mut self.inline);
         self.listed.get_or_insert_with(|| {
-            let held = Thinning {
-                inline: core::mem::take(inline),
-                spill: None,
-            };
+            let held = ThinningRef::of_seq(Seq {
+                head: inline,
+                tail: &[],
+            });
             Box::new([
                 held.indices(Zone::Intuitionistic).collect(),
                 held.indices(Zone::Linear).collect(),
@@ -961,8 +694,8 @@ impl Union
     {
         match self.listed {
             None => Thinning {
-                inline: self.inline,
-                spill: None,
+                head: self.inline,
+                tail: None,
             },
             Some(lists) => Self::finish_listed(*lists),
         }
@@ -981,7 +714,7 @@ impl Union
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an inline union against its own thinning, one with an
-    ///   index more, and a spilled union against its own thinning separate the
+    ///   index more, and a gathered union against its own thinning separate the
     ///   inline answer from the gathered one.
     /// - witness: `support::tests::a_union_equals_exactly_its_finished_thinning`
     #[inline]
@@ -992,7 +725,9 @@ impl Union
     ) -> Agreement
     {
         match self.listed {
-            None if thinning.spill.is_none() && self.inline == thinning.inline => Agreement::Same,
+            None if thinning.seq.tail.is_empty() && thinning.seq.head == self.inline => {
+                Agreement::Same
+            },
             None => Agreement::Different,
             Some(ref lists) => Self::equals_listed(lists, thinning),
         }
@@ -1024,7 +759,7 @@ impl Union
     #[inline]
     pub fn clear(&mut self)
     {
-        self.inline = Bits(0);
+        self.inline = Word(0);
         if self.listed.is_some() {
             self.listed = None;
         }
@@ -1043,7 +778,7 @@ impl Union
             list.sort_unstable();
             list.dedup();
         }
-        Thinning::from_lists(intuitionistic, linear)
+        Thinning::from_lists(&intuitionistic, &linear)
     }
 }
 
@@ -1410,12 +1145,13 @@ impl Thinning
     pub const fn empty() -> Self
     {
         Self {
-            inline: Bits(0),
-            spill: None,
+            head: Word(0),
+            tail: None,
         }
     }
 
-    /// The selection of `index` in `zone` alone: a variable's support.
+    /// The selection of `index` in `zone` alone: a variable's support, one word
+    /// wherever its binder stands.
     ///
     /// # Specification
     /// trivial.
@@ -1426,9 +1162,7 @@ impl Thinning
         index: DeBruijnIndex,
     ) -> Self
     {
-        let mut leaf = Builder::default();
-        leaf.push(zone, index);
-        leaf.finish()
+        ThinningRef::leaf(zone, index).to_thinning()
     }
 
     /// The thinning selecting `intuitionistic` and `linear`, as a reader that
@@ -1449,24 +1183,23 @@ impl Thinning
     ///   alone.
     /// - witness: `support::tests::selections_refuse_unordered_indices`
     #[spec(
-        captures: [given_intuitionistic = intuitionistic.clone(), given_linear = linear.clone()],
         ensures: |ret| match ret {
-            | Ok(ref thinning) => thinning.indices(Zone::Intuitionistic).eq(given_intuitionistic.iter().copied())
-                && thinning.indices(Zone::Linear).eq(given_linear.iter().copied()),
-            | Err(SelectionError::Unordered(Zone::Intuitionistic)) => given_intuitionistic.windows(2).any(|pair| pair.first() >= pair.last()),
-            | Err(SelectionError::Unordered(Zone::Linear)) => given_intuitionistic.windows(2).all(|pair| pair.first() < pair.last())
-                && given_linear.windows(2).any(|pair| pair.first() >= pair.last()),
+            | Ok(ref thinning) => thinning.indices(Zone::Intuitionistic).eq(intuitionistic.iter().copied())
+                && thinning.indices(Zone::Linear).eq(linear.iter().copied()),
+            | Err(SelectionError::Unordered(Zone::Intuitionistic)) => intuitionistic.windows(2).any(|pair| pair.first() >= pair.last()),
+            | Err(SelectionError::Unordered(Zone::Linear)) => intuitionistic.windows(2).all(|pair| pair.first() < pair.last())
+                && linear.windows(2).any(|pair| pair.first() >= pair.last()),
         },
     )]
     #[inline]
     pub fn from_ascending(
-        intuitionistic: Vec<DeBruijnIndex>,
-        linear: Vec<DeBruijnIndex>,
+        intuitionistic: &[DeBruijnIndex],
+        linear: &[DeBruijnIndex],
     ) -> Result<Self, SelectionError>
     {
         for (zone, indices) in [
-            (Zone::Intuitionistic, &intuitionistic),
-            (Zone::Linear, &linear),
+            (Zone::Intuitionistic, intuitionistic),
+            (Zone::Linear, linear),
         ] {
             if indices.windows(2).any(|pair| pair.first() >= pair.last()) {
                 return Err(SelectionError::Unordered(zone));
@@ -1475,8 +1208,8 @@ impl Thinning
         Ok(Self::from_lists(intuitionistic, linear))
     }
 
-    /// The thinning selecting two strictly ascending lists, inline when both
-    /// fit and as the lists themselves otherwise.
+    /// The thinning selecting two strictly ascending lists: the encoder's code
+    /// of each zone that selects something.
     ///
     /// # Specification
     /// - requires: each list strictly ascends.
@@ -1484,41 +1217,76 @@ impl Thinning
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — lists ending on both sides of each inline width.
-    /// - witness: `support::tests::selections_past_the_inline_width_spill`
+    /// - hypothesis: L3 — lists on both sides of each form's boundary, in
+    ///   either zone and in both.
+    /// - witness: `support::tests::one_encoding_per_selection`
     #[spec(
         requires: intuitionistic.windows(2).all(|pair| pair.first() < pair.last())
             && linear.windows(2).all(|pair| pair.first() < pair.last()),
-        captures: [expected = (intuitionistic.clone(), linear.clone())],
-        ensures: |ret| ret.indices(Zone::Intuitionistic).eq(expected.0.iter().copied())
-            && ret.indices(Zone::Linear).eq(expected.1.iter().copied()),
+        ensures: |ret| ret.indices(Zone::Intuitionistic).eq(intuitionistic.iter().copied())
+            && ret.indices(Zone::Linear).eq(linear.iter().copied()),
     )]
     fn from_lists(
-        intuitionistic: Vec<DeBruijnIndex>,
-        linear: Vec<DeBruijnIndex>,
+        intuitionistic: &[DeBruijnIndex],
+        linear: &[DeBruijnIndex],
     ) -> Self
     {
-        let fits = |list: &[DeBruijnIndex], zone: Zone| {
-            list.last().is_none_or(|&last| last < inline_width(zone))
-        };
-        if fits(&intuitionistic, Zone::Intuitionistic) && fits(&linear, Zone::Linear) {
-            let mut built = Builder::default();
-            for (zone, list) in [
-                (Zone::Intuitionistic, &intuitionistic),
-                (Zone::Linear, &linear),
-            ] {
-                for &index in list {
-                    built.push(zone, index);
+        match (intuitionistic.last(), linear.last()) {
+            (None, None) => return Self::empty(),
+            (Some(_), None) | (None, Some(_)) => {
+                let (zone, list) = if linear.is_empty() {
+                    (Zone::Intuitionistic, intuitionistic)
                 }
-            }
-            return built.finish();
+                else {
+                    (Zone::Linear, linear)
+                };
+                let mut word = 0_u64;
+                let mut inline = true;
+                for &index in list {
+                    match Word::inline_bit(index) {
+                        Maybe::Present(bit) => word |= bit.0,
+                        Maybe::Absent(omitted::Absent::Omitted) => {
+                            inline = false;
+                            break;
+                        },
+                    }
+                }
+                if inline {
+                    return Self {
+                        head: Word(word).in_zone(zone),
+                        tail: None,
+                    };
+                }
+            },
+            (Some(_), Some(_)) => {},
         }
+        let mut words = Buffer(Vec::new());
+        if !intuitionistic.is_empty() {
+            code::encode(Zone::Intuitionistic, intuitionistic, &mut words);
+        }
+        if !linear.is_empty() {
+            code::encode(Zone::Linear, linear, &mut words);
+        }
+        Self::from_buffer(words)
+    }
+
+    /// The thinning whose code is `words`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn from_buffer(words: Buffer) -> Self
+    {
+        let Buffer(mut words) = words;
+        if words.len() <= 1 {
+            return Self {
+                head: Word(words.first().copied().unwrap_or(0)),
+                tail: None,
+            };
+        }
+        let head = Word(words.remove(0));
         Self {
-            inline: Bits(0),
-            spill: Some(Box::new(Spill {
-                intuitionistic,
-                linear,
-            })),
+            head,
+            tail: Some(words.into_boxed_slice()),
         }
     }
 
@@ -1530,10 +1298,10 @@ impl Thinning
     #[must_use]
     pub fn view(&self) -> ThinningRef<'_>
     {
-        ThinningRef {
-            inline: self.inline,
-            spill: self.spill.as_deref(),
-        }
+        ThinningRef::of_seq(Seq {
+            head: self.head,
+            tail: self.tail.as_deref().unwrap_or_default(),
+        })
     }
 
     /// The indices selected in `zone`, innermost first.
@@ -1599,9 +1367,9 @@ impl Thinning
     /// # Adequacy
     /// - hypothesis: L3 — exhaustive small selections: every selected index
     ///   ranks to its position and every unselected one is absent; the same
-    ///   held past an inline width ranks through the spill.
+    ///   held in every form ranks through that form.
     /// - witness: `support::tests::rank_and_select_are_inverse`
-    /// - witness: `support::tests::selections_past_the_inline_width_spill`
+    /// - witness: `support::tests::one_encoding_per_selection`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(rank) => self.indices(zone).nth(usize::try_from(u32::from(rank)).unwrap_or(usize::MAX)) == Some(index),
         Maybe::Absent(unselected::Absent::Unselected) => self.indices(zone).all(|held| held != index),
@@ -1662,18 +1430,18 @@ impl Thinning
     /// - executable: none — `children` is consumed by the call, so a predicate
     ///   has no second walk of it; the witnesses compare the union with an
     ///   independent reference union.
-    /// - intension: a shift and a disjunction per child while every selection
-    ///   is inline; one sort per zone otherwise.
+    /// - intension: a shift, a mask and a disjunction per child while every
+    ///   selection is a one-word dense code; one sort per zone otherwise.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — exhaustive one-child and two-child unions over small
     ///   scopes and crossings of up to two binders per zone separate a lost
     ///   union member, a crossing applied to the wrong zone and an unlowered
-    ///   index; a child and an occurrence past the inline widths take the
-    ///   spilled path to the same union.
+    ///   index; a child and an occurrence past the one-word code take the
+    ///   gathered path to the same union.
     /// - witness: `support::tests::placing_each_edge_recovers_its_child`
     /// - witness: `support::tests::a_cover_unions_its_children`
-    /// - witness: `support::tests::selections_past_the_inline_width_spill`
+    /// - witness: `support::tests::union_is_canonical`
     #[inline]
     pub fn covering<'child, Own, Children>(
         own: Own,
@@ -1733,7 +1501,7 @@ impl Thinning
         crossing: Crossing,
     ) -> Result<Self, PlacementError>
     {
-        let mut placed = Builder::default();
+        let mut placed = Union::new();
         for zone in [Zone::Intuitionistic, Zone::Linear] {
             let crossed = crossing.depth(zone);
             for slot in edge.indices(zone) {
@@ -1744,7 +1512,7 @@ impl Thinning
                         inner(selected, crossed)?
                     },
                 };
-                placed.push(zone, ambient);
+                placed.name(zone, ambient);
             }
         }
         Ok(placed.finish())
@@ -1765,8 +1533,8 @@ impl core::fmt::Debug for Thinning
     /// Returns the formatter's error when its sink refuses a write.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an inline selection and a spilled one print the same
-    ///   listing of their indices, so the form never shows.
+    /// - hypothesis: L3 — selections in every form print the same listing of
+    ///   their indices, so the form never shows.
     /// - witness: `support::tests::a_thinning_prints_its_indices_in_either_form`
     #[inline]
     fn fmt(
@@ -1868,7 +1636,7 @@ impl Cover
         let edges = children
             .clone()
             .map(|(child, crossing)| {
-                let mut edge = Builder::default();
+                let mut edge = Union::new();
                 for zone in [Zone::Intuitionistic, Zone::Linear] {
                     let crossed = crossing.depth(zone);
                     for index in child.indices(zone) {
@@ -1884,7 +1652,7 @@ impl Cover
                                 Maybe::Absent(unselected::Absent::Unselected) => index,
                             },
                         };
-                        edge.push(zone, slot);
+                        edge.name(zone, slot);
                     }
                 }
                 edge.finish()

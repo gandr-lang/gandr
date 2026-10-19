@@ -8,6 +8,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
 use super::Agreement;
+use super::Coding;
 use super::Cover;
 use super::CoverError;
 use super::Crossing;
@@ -15,10 +16,12 @@ use super::PlacementError;
 use super::Scope;
 use super::SelectionError;
 use super::Thinning;
-use super::ThinningPair;
+use super::ThinningRef;
 use super::Union;
+use super::WordArena;
 use super::check_cover;
 use super::unselected;
+use super::unstored;
 use crate::context::BinderDepth;
 use crate::syntax::Zone;
 
@@ -68,8 +71,7 @@ fn thinning(
     linear: &[DeBruijnIndex],
 ) -> Thinning
 {
-    Thinning::from_ascending(intuitionistic.to_vec(), linear.to_vec())
-        .expect("fixture selections ascend")
+    Thinning::from_ascending(intuitionistic, linear).expect("fixture selections ascend")
 }
 
 /// The support a node naming `own` with one child `child` under `crossing`
@@ -467,23 +469,22 @@ fn selections_refuse_unordered_indices()
         (alloc::vec![index(2), index(0)], "descending"),
     ] {
         assert_eq!(
-            Thinning::from_ascending(unordered.clone(), ascending.clone()),
+            Thinning::from_ascending(&unordered, &ascending),
             Err(SelectionError::Unordered(Zone::Intuitionistic)),
             "{case} intuitionistic"
         );
         assert_eq!(
-            Thinning::from_ascending(ascending.clone(), unordered.clone()),
+            Thinning::from_ascending(&ascending, &unordered),
             Err(SelectionError::Unordered(Zone::Linear)),
             "{case} linear"
         );
         assert_eq!(
-            Thinning::from_ascending(unordered.clone(), unordered),
+            Thinning::from_ascending(&unordered, &unordered),
             Err(SelectionError::Unordered(Zone::Intuitionistic)),
             "{case} both"
         );
     }
-    let accepted =
-        Thinning::from_ascending(ascending.clone(), ascending.clone()).expect("strictly ascending");
+    let accepted = Thinning::from_ascending(&ascending, &ascending).expect("strictly ascending");
     assert!(
         accepted
             .indices(Zone::Intuitionistic)
@@ -514,94 +515,564 @@ fn every_refusal_renders_its_rule()
     assert_eq!(rendered.len(), 12);
 }
 
-#[test]
-fn selections_past_the_inline_width_spill()
+/// Selections of every form: rows at each form's boundaries, and
+/// pseudo-random ones whose gaps run from contiguous to millions of binders.
+///
+/// # Specification
+/// - ensures: strictly ascending selections, the empty one first.
+/// - provides: the domain the encoding rows range over.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the generator is the rows' domain; the boundary row
+///   checks that it reaches every form.
+/// - witness: `support::tests::one_encoding_per_selection`
+/// - witness: `support::tests::the_mode_switches_at_its_boundaries`
+#[spec(ensures: |ret| ret.first().is_some_and(Vec::is_empty)
+    && ret.iter().all(|listed| listed.windows(2).all(|pair| pair.first() < pair.last())))]
+fn selections() -> Vec<Vec<DeBruijnIndex>>
 {
     let index = DeBruijnIndex::from;
-    for (zone, width) in [(Zone::Intuitionistic, 48_u32), (Zone::Linear, 16)] {
-        let other = match zone {
-            Zone::Intuitionistic => Zone::Linear,
-            Zone::Linear => Zone::Intuitionistic,
-        };
-        for (held, spilled, reading) in [
-            (
-                alloc::vec![index(0), index(width.saturating_sub(1))],
-                false,
-                "the last inline index stays in the word",
-            ),
-            (
-                alloc::vec![index(0), index(width)],
-                true,
-                "the first index past the word spills",
-            ),
-            (
-                alloc::vec![index(width), index(width.saturating_mul(4))],
-                true,
-                "a selection wholly past the word spills",
-            ),
-        ] {
-            let beside = alloc::vec![index(1)];
-            let (intuitionistic, linear) = match zone {
-                Zone::Intuitionistic => (held.clone(), beside.clone()),
-                Zone::Linear => (beside.clone(), held.clone()),
-            };
-            let built = Thinning::from_ascending(intuitionistic.clone(), linear.clone())
-                .expect("fixture selections ascend");
-            assert_eq!(built.spill.is_some(), spilled, "{zone:?}: {reading}");
-            assert!(
-                built.indices(zone).eq(held.iter().copied()),
-                "{zone:?}: {reading}"
-            );
-            assert!(
-                built.indices(other).eq(beside.iter().copied()),
-                "{zone:?}: {reading}"
-            );
-            // Fed descending and twice over, the union is the same value.
-            let mut union = Union::new();
-            for &named in intuitionistic.iter().rev().chain(&intuitionistic) {
-                union.name(Zone::Intuitionistic, named);
+    let mut out: Vec<Vec<DeBruijnIndex>> = alloc::vec![
+        Vec::new(),
+        alloc::vec![index(0)],
+        alloc::vec![index(55)],
+        alloc::vec![index(56)],
+        alloc::vec![index(0), index(56)],
+        (0 .. 56).map(index).collect(),
+        (0 .. 57).map(index).collect(),
+        (56 .. 120).map(index).collect(),
+        (0 .. 2001).step_by(2).map(index).collect(),
+        alloc::vec![index(1000), index(5000), index(9000)],
+        alloc::vec![index(u32::MAX)],
+        alloc::vec![index(0), index(u32::MAX)],
+        (u32::MAX.wrapping_sub(3) ..= u32::MAX).map(index).collect(),
+    ];
+    let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+    for max_gap in [1_u64, 2, 3, 8, 40, 300, 5_000, 100_000] {
+        for count in [3_usize, 40, 500] {
+            let mut at = state.wrapping_rem(100);
+            let mut listed = Vec::with_capacity(count);
+            for _ in 0 .. count {
+                listed.push(index(u32::try_from(at).expect("the gaps stay inside u32")));
+                state ^= state.wrapping_shl(13);
+                state ^= state.wrapping_shr(7);
+                state ^= state.wrapping_shl(17);
+                at = at
+                    .wrapping_add(1)
+                    .wrapping_add(state.checked_rem(max_gap).expect("every gap is positive"));
             }
-            for &named in linear.iter().rev() {
-                union.name(Zone::Linear, named);
+            out.push(listed);
+        }
+    }
+    out
+}
+
+/// A code's length in words, as the reference sizing counts it.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Words(usize);
+
+/// The form and length the encoder's rule gives `listed`, each form's length
+/// summed from its fields.
+///
+/// # Specification
+/// - ensures: the shortest code the selection admits — dense, a run when it is
+///   contiguous, sparse while it holds at most `2^24` indices — dense on a tie
+///   and run before sparse, with its length in words.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the rule restated over the forms' field widths, which the
+///   boundary row checks against hand-computed sizes.
+/// - witness: `support::tests::the_mode_switches_at_its_boundaries`
+#[spec(ensures: |ret| ret.1.0 >= 1)]
+fn sized(listed: &[DeBruijnIndex]) -> (Coding, Words)
+{
+    let words = |payload: u64| {
+        let short = payload.saturating_add(8).div_ceil(64);
+        if short <= 31 {
+            short
+        }
+        else {
+            payload.div_ceil(64).saturating_add(1)
+        }
+    };
+    let (Some(&first), Some(&last)) = (listed.first(), listed.last())
+    else {
+        return (Coding::Dense, Words(1));
+    };
+    let count = u64::try_from(listed.len()).expect("a listed count fits");
+    let (first, last) = (u64::from(u32::from(first)), u64::from(u32::from(last)));
+    let universe = last.saturating_add(1);
+    let mut best = (Coding::Dense, words(universe));
+    let admitted = count <= 1_u64 << 24_u32;
+    if admitted && last.saturating_sub(first).saturating_add(1) == count && best.1 > 1 {
+        best = (Coding::Run, 1);
+    }
+    if admitted {
+        let width = if universe <= count {
+            0
+        }
+        else {
+            universe.checked_div(count).map_or(0, u64::ilog2)
+        };
+        let sparse = words(
+            30_u64
+                .saturating_add(count.saturating_mul(u64::from(width)))
+                .saturating_add(count)
+                .saturating_add(last.wrapping_shr(width)),
+        );
+        if sparse < best.1 {
+            best = (Coding::Sparse, sparse);
+        }
+    }
+    (
+        best.0,
+        Words(usize::try_from(best.1).expect("a code's length fits")),
+    )
+}
+
+#[test]
+fn one_encoding_per_selection()
+{
+    let generated = selections();
+    let mut built: Vec<Thinning> = Vec::new();
+    for (position, intuitionistic) in generated.iter().enumerate() {
+        let partner = generated
+            .get(position.wrapping_mul(7).wrapping_rem(generated.len()))
+            .expect("a partner row");
+        for (int, lin) in [
+            (intuitionistic, &Vec::new()),
+            (&Vec::new(), intuitionistic),
+            (intuitionistic, partner),
+        ] {
+            let held = thinning(int, lin);
+            for (zone, listed) in [(Zone::Intuitionistic, int), (Zone::Linear, lin)] {
+                let reading = alloc::format!("{zone:?} of {held:?}");
+                assert_eq!(
+                    held.indices(zone).len(),
+                    listed.len(),
+                    "{reading}: its length"
+                );
+                assert!(
+                    held.indices(zone).eq(listed.iter().copied()),
+                    "{reading}: ascending"
+                );
+                assert!(
+                    held.indices(zone).rev().eq(listed.iter().rev().copied()),
+                    "{reading}: descending"
+                );
+                for (rank, &named) in listed.iter().enumerate() {
+                    let rank = DeBruijnIndex::from(u32::try_from(rank).expect("a small rank"));
+                    assert_eq!(
+                        held.rank(zone, named),
+                        Maybe::Present(rank),
+                        "{reading}: rank"
+                    );
+                    assert_eq!(held.select(zone, rank), Ok(named), "{reading}: select");
+                }
+                for unselected in [0_u32, 1, 56, 57, 1001, u32::MAX] {
+                    let unselected = DeBruijnIndex::from(unselected);
+                    if !listed.contains(&unselected) {
+                        assert_eq!(
+                            held.rank(zone, unselected),
+                            Maybe::Absent(unselected::Absent::Unselected),
+                            "{reading}: an unselected index ranks absent"
+                        );
+                    }
+                }
+                let cuts = listed.iter().flat_map(|&named| {
+                    let named = u64::from(u32::from(named));
+                    [named, named.saturating_add(1)]
+                });
+                for cut in iter::once(0_u64).chain(cuts.step_by(17)) {
+                    let crossed = BinderDepth::from(usize::try_from(cut).expect("a cut fits"));
+                    assert!(
+                        held.outside(zone, crossed).eq(listed
+                            .iter()
+                            .copied()
+                            .filter(|&named| u64::from(u32::from(named)) >= cut)),
+                        "{reading}: cut past {cut}"
+                    );
+                }
+            }
+            assert_eq!(held.view().to_thinning(), held, "owned again");
+            // Fed descending and twice over, the union is the same code.
+            let mut union = Union::new();
+            for (zone, listed) in [(Zone::Intuitionistic, int), (Zone::Linear, lin)] {
+                for &named in listed.iter().rev().chain(listed.iter()) {
+                    union.name(zone, named);
+                }
             }
             assert_eq!(
-                union.finish(),
-                built,
-                "{zone:?}: {reading}: the union is canonical"
+                union.equals(held.view()),
+                Agreement::Same,
+                "the union agrees"
             );
-            for (position, &named) in held.iter().enumerate() {
-                let position = u32::try_from(position).expect("small selection");
+            assert_eq!(union.finish(), held, "the union is the same code");
+            built.push(held);
+        }
+    }
+    // Distinct selections have distinct codes.
+    for (position, held) in built.iter().enumerate() {
+        for other in built.iter().skip(position.saturating_add(1)) {
+            let same_selection = ZONES
+                .into_iter()
+                .all(|zone| held.indices(zone).eq(other.indices(zone)));
+            assert_eq!(held == other, same_selection, "{held:?} against {other:?}");
+        }
+    }
+}
+
+#[test]
+fn the_mode_switches_at_its_boundaries()
+{
+    let index = DeBruijnIndex::from;
+    let every = |step: usize| (0_u32 .. 128).step_by(step).map(index).collect::<Vec<_>>();
+    // Each row's form and length, sized by hand from the fields.
+    for (listed, coding, words, reading) in [
+        (
+            alloc::vec![index(55)],
+            Coding::Dense,
+            1,
+            "the last binder the word holds",
+        ),
+        (
+            alloc::vec![index(56)],
+            Coding::Run,
+            1,
+            "the first binder past it",
+        ),
+        (
+            (0 .. 56).map(index).collect(),
+            Coding::Dense,
+            1,
+            "a full word ties a run",
+        ),
+        (
+            (0 .. 57).map(index).collect(),
+            Coding::Run,
+            1,
+            "one binder more is a run",
+        ),
+        (
+            (56 .. 120).map(index).collect(),
+            Coding::Run,
+            1,
+            "a run past the word",
+        ),
+        (
+            alloc::vec![index(0), index(56)],
+            Coding::Sparse,
+            1,
+            "two indices a word apart",
+        ),
+        (
+            alloc::vec![index(1000), index(5000), index(9000)],
+            Coding::Sparse,
+            2,
+            "a deep sparse support",
+        ),
+        (every(2), Coding::Dense, 3, "every second binder of 128"),
+        (every(4), Coding::Dense, 3, "every fourth ties sparse"),
+        (every(8), Coding::Sparse, 2, "every eighth is sparse"),
+        (
+            (0 .. 2001).step_by(2).map(index).collect(),
+            Coding::Dense,
+            33,
+            "a dense code past 31 words takes the long form",
+        ),
+    ] {
+        assert_eq!(
+            sized(&listed),
+            (coding, Words(words)),
+            "{reading}: the reference sizing"
+        );
+        for zone in ZONES {
+            let (int, lin) = match zone {
+                Zone::Intuitionistic => (listed.clone(), Vec::new()),
+                Zone::Linear => (Vec::new(), listed.clone()),
+            };
+            let owned = thinning(&int, &lin);
+            let held = owned.view();
+            assert_eq!(held.coding(zone), coding, "{zone:?}: {reading}");
+            assert_eq!(
+                usize::from(held.words()),
+                words,
+                "{zone:?}: {reading}: words"
+            );
+        }
+    }
+    // Every generated selection takes the reference form, in either zone and
+    // after a code in the other one.
+    let mut reached = BTreeSet::new();
+    for listed in selections() {
+        let (coding, Words(words)) = sized(&listed);
+        reached.insert(coding);
+        let both = thinning(&[index(3)], &listed);
+        let both = both.view();
+        let expected_words = if listed.is_empty() {
+            1
+        }
+        else {
+            words.saturating_add(1)
+        };
+        assert_eq!(
+            usize::from(both.words()),
+            expected_words,
+            "{listed:?} after a code"
+        );
+        let alone = thinning(&listed, &[]);
+        let alone = alone.view();
+        assert_eq!(alone.coding(Zone::Intuitionistic), coding, "{listed:?}");
+        assert_eq!(usize::from(alone.words()), words, "{listed:?}: words");
+        if !listed.is_empty() {
+            assert_eq!(both.coding(Zone::Linear), coding, "{listed:?}: second");
+        }
+    }
+    assert_eq!(
+        reached,
+        BTreeSet::from([Coding::Dense, Coding::Sparse, Coding::Run]),
+        "the generator reaches every form"
+    );
+    // The empty selection is the empty dense code of the intuitionistic zone.
+    let empty = Thinning::empty();
+    assert_eq!(empty.view().coding(Zone::Intuitionistic), Coding::Dense);
+    assert_eq!(empty.view().coding(Zone::Linear), Coding::Omitted);
+    assert_eq!(usize::from(empty.view().words()), 1);
+    assert_eq!(ThinningRef::empty(), empty.view());
+    // A variable's support is one word wherever its binder stands.
+    for zone in ZONES {
+        for named in [0_u32, 55, 56, 1000, u32::MAX] {
+            let leaf = ThinningRef::leaf(zone, index(named));
+            let listed = alloc::vec![index(named)];
+            let (int, lin) = match zone {
+                Zone::Intuitionistic => (listed, Vec::new()),
+                Zone::Linear => (Vec::new(), listed),
+            };
+            assert_eq!(leaf, thinning(&int, &lin).view(), "{zone:?} {named}");
+            assert_eq!(usize::from(leaf.words()), 1, "{zone:?} {named}: one word");
+            assert_eq!(
+                Thinning::leaf(zone, index(named)).view(),
+                leaf,
+                "{zone:?} {named}"
+            );
+        }
+    }
+}
+
+#[test]
+fn union_is_canonical()
+{
+    let index = DeBruijnIndex::from;
+    for listed in selections() {
+        for zone in ZONES {
+            let other = match zone {
+                Zone::Intuitionistic => Zone::Linear,
+                Zone::Linear => Zone::Intuitionistic,
+            };
+            let beside = alloc::vec![index(1)];
+            let (int, lin) = match zone {
+                Zone::Intuitionistic => (listed.clone(), beside.clone()),
+                Zone::Linear => (beside.clone(), listed.clone()),
+            };
+            let expected = thinning(&int, &lin);
+            // Split between two children: one uncrossed, one standing under
+            // `crossed` more binders, which selects every index raised past
+            // them and binders of its own below them.
+            let crossed = 3_u32;
+            let half = listed.len().div_ceil(2);
+            let (near, far) = listed.split_at(half);
+            let raised: Vec<DeBruijnIndex> = [index(0), index(2)]
+                .into_iter()
+                .chain(
+                    far.iter()
+                        .filter_map(|&named| u32::from(named).checked_add(crossed).map(index)),
+                )
+                .collect();
+            if raised.len() != far.len().saturating_add(2) {
+                continue;
+            }
+            let near = thinning(near, &[]);
+            let raised = thinning(&raised, &[]);
+            let (near, raised) = match zone {
+                Zone::Intuitionistic => (near, raised),
+                Zone::Linear => (
+                    thinning(&[], &near.indices(Zone::Intuitionistic).collect::<Vec<_>>()),
+                    thinning(
+                        &[],
+                        &raised.indices(Zone::Intuitionistic).collect::<Vec<_>>(),
+                    ),
+                ),
+            };
+            let depth = BinderDepth::from(usize::try_from(crossed).expect("small"));
+            for order in [false, true] {
+                let mut union = Union::new();
+                if order {
+                    union.child(raised.view(), Crossing::of(zone, depth));
+                    union.name(other, index(1));
+                }
+                else {
+                    union.name(other, index(1));
+                    union.child(near.view(), Crossing::default());
+                    union.child(raised.view(), Crossing::of(zone, depth));
+                }
+                union.child(near.view(), Crossing::default());
                 assert_eq!(
-                    built.rank(zone, named),
-                    Maybe::Present(index(position)),
-                    "{zone:?}: {reading}: ranks through either form"
+                    union.equals(expected.view()),
+                    Agreement::Same,
+                    "{zone:?} {listed:?}: agrees"
+                );
+                assert_eq!(
+                    union.finish(),
+                    expected,
+                    "{zone:?} {listed:?}: order {order}"
                 );
             }
             assert_eq!(
-                built.rank(zone, index(width.saturating_add(1))),
-                Maybe::Absent(unselected::Absent::Unselected),
-                "{zone:?}: {reading}: an unselected index past the word ranks absent"
+                Thinning::covering(iter::once((other, index(1))), [
+                    (&raised, Crossing::of(zone, depth)),
+                    (&near, Crossing::default()),
+                ]),
+                expected,
+                "{zone:?} {listed:?}: covering"
             );
-            // Lowered past `width` binders, the child comes back canonical:
-            // in the word when every index left fits it.
-            let crossed = BinderDepth::from(usize::try_from(width).expect("small width"));
-            let lowered = Thinning::covering(
-                iter::empty(),
-                iter::once((&built, Crossing::of(zone, crossed))),
-            );
-            let past: Vec<DeBruijnIndex> = held
-                .iter()
-                .filter_map(|&named| u32::from(named).checked_sub(width).map(index))
-                .collect();
-            let expected = match zone {
-                Zone::Intuitionistic => Thinning::from_ascending(past, beside),
-                Zone::Linear => Thinning::from_ascending(beside, past),
+        }
+    }
+    // An inline union that turns gathered keeps what it held.
+    let mut union = Union::new();
+    union.name(Zone::Intuitionistic, index(4));
+    union.child(thinning(&[index(9)], &[]).view(), Crossing::default());
+    union.name(Zone::Linear, index(0));
+    union.name(Zone::Intuitionistic, index(4000));
+    assert_eq!(
+        union.finish(),
+        thinning(&[index(4), index(9), index(4000)], &[index(0)])
+    );
+}
+
+#[test]
+fn a_stored_support_reads_back()
+{
+    let generated = selections();
+    let (before, after) = generated.split_at(generated.len().div_ceil(2));
+    let mut arena = WordArena::new();
+    let store = |listed: &[DeBruijnIndex], arena: &mut WordArena| {
+        let held = thinning(listed, &[DeBruijnIndex::from(0)]);
+        let mark = arena.mark();
+        let slot = arena.store(&held);
+        assert_eq!(
+            arena.mark() == mark,
+            usize::from(held.view().words()) == 1,
+            "{held:?}: only a wide code takes the arena's words"
+        );
+        let mut union = Union::new();
+        for zone in ZONES {
+            for named in held.indices(zone) {
+                union.name(zone, named);
             }
-            .expect("lowered selections ascend");
-            assert_eq!(
-                lowered, expected,
-                "{zone:?}: {reading}: lowering is canonical"
-            );
+        }
+        let from_union = arena.store_union(union);
+        assert_eq!(
+            arena.read(from_union),
+            arena.read(slot),
+            "{held:?}: from a union"
+        );
+        (slot, held)
+    };
+    let kept: Vec<_> = before
+        .iter()
+        .map(|listed| store(listed, &mut arena))
+        .collect();
+    let mark = arena.mark();
+    let dropped: Vec<_> = after
+        .iter()
+        .map(|listed| store(listed, &mut arena))
+        .collect();
+    for &(slot, ref held) in kept.iter().chain(&dropped) {
+        assert_eq!(arena.read(slot), Maybe::Present(held.view()), "{held:?}");
+    }
+    arena.truncate(mark);
+    for &(slot, ref held) in &kept {
+        assert_eq!(
+            arena.read(slot),
+            Maybe::Present(held.view()),
+            "{held:?}: kept"
+        );
+    }
+    for &(slot, ref held) in &dropped {
+        let expected = if usize::from(held.view().words()) == 1 {
+            Maybe::Present(held.view())
+        }
+        else {
+            Maybe::Absent(unstored::Absent::Unstored)
+        };
+        assert_eq!(arena.read(slot), expected, "{held:?}: truncated");
+    }
+}
+
+#[test]
+fn a_slot_unions_and_compares_as_its_support()
+{
+    let index = DeBruijnIndex::from;
+    let depth = |binders: usize| BinderDepth::from(binders);
+    let crossings = [
+        Crossing::default(),
+        Crossing::of(Zone::Intuitionistic, depth(1)),
+        Crossing::of(Zone::Intuitionistic, depth(3)),
+        Crossing::of(Zone::Linear, depth(1)),
+    ];
+    // Unions before the child: empty, holding one inline name, and gathered
+    // by a linear name.
+    let starts: [&[(Zone, u32)]; 3] = [&[], &[(Zone::Intuitionistic, 2)], &[(Zone::Linear, 0)]];
+    let start = |names: &[(Zone, u32)]| {
+        let mut union = Union::new();
+        for &(zone, named) in names {
+            union.name(zone, index(named));
+        }
+        union
+    };
+    let mut arena = WordArena::new();
+    for listed in selections() {
+        for held in [
+            thinning(&listed, &[]),
+            thinning(&[], &listed),
+            thinning(&listed, &[index(0)]),
+        ] {
+            let slot = arena.store(&held);
+            for names in starts {
+                for crossing in crossings {
+                    let mut by_view = start(names);
+                    by_view.child(held.view(), crossing);
+                    let mut by_slot = start(names);
+                    by_slot.stored_child(slot, &arena, crossing);
+                    assert_eq!(
+                        by_slot.finish(),
+                        by_view.finish(),
+                        "{held:?} {names:?} {crossing:?}"
+                    );
+                }
+                let mut same = start(names);
+                same.child(held.view(), Crossing::default());
+                let expected = same.equals(held.view());
+                assert_eq!(
+                    same.equals_stored(slot, &arena),
+                    expected,
+                    "{held:?} {names:?}"
+                );
+                let mut wider = start(names);
+                wider.child(held.view(), Crossing::default());
+                wider.name(Zone::Intuitionistic, index(70));
+                assert_eq!(
+                    wider.equals_stored(slot, &arena),
+                    wider.equals(held.view()),
+                    "{held:?} {names:?}: wider"
+                );
+            }
         }
     }
 }
@@ -704,48 +1175,6 @@ fn a_union_equals_exactly_its_finished_thinning()
 }
 
 #[test]
-fn a_pair_reads_back_its_members()
-{
-    let index = DeBruijnIndex::from;
-    let inline = thinning(&[index(0), index(3)], &[index(1)]);
-    let other = thinning(&[index(2)], &[]);
-    let spilled = thinning(&[index(0), index(100)], &[index(1)]);
-    for (first, second, reading) in [
-        (&inline, &other, "both inline"),
-        (&spilled, &inline, "the first spilled"),
-        (&inline, &spilled, "the second spilled"),
-        (&spilled, &spilled, "both spilled"),
-    ] {
-        let pair = ThinningPair::new(first.clone(), second.clone());
-        assert_eq!(pair.first(), first.view(), "{reading}: the first member");
-        assert_eq!(pair.second(), second.view(), "{reading}: the second member");
-        assert_eq!(pair.first().to_thinning(), *first, "{reading}: owned again");
-        // Built from unions, the pair is the same value.
-        let union_of = |member: &Thinning| {
-            let mut union = Union::new();
-            for zone in ZONES {
-                for named in member.indices(zone) {
-                    union.name(zone, named);
-                }
-            }
-            union
-        };
-        assert_eq!(
-            ThinningPair::of(union_of(first), union_of(second)),
-            pair,
-            "{reading}: from unions"
-        );
-        // Equality is the members': swapping them changes the pair exactly
-        // when they differ.
-        assert_eq!(
-            ThinningPair::new(second.clone(), first.clone()) == pair,
-            first == second,
-            "{reading}: equal exactly as the members are"
-        );
-    }
-}
-
-#[test]
 fn a_thinning_prints_its_indices_in_either_form()
 {
     let index = DeBruijnIndex::from;
@@ -758,9 +1187,19 @@ fn a_thinning_prints_its_indices_in_either_form()
         (
             thinning(&[index(0), index(100)], &[index(1)]),
             "Thinning { intuitionistic: [DeBruijnIndex(0), DeBruijnIndex(100)], linear: [DeBruijnIndex(1)] }",
-            "a spilled selection",
+            "a sparse selection",
+        ),
+        (
+            thinning(&[index(56)], &[index(1)]),
+            "Thinning { intuitionistic: [DeBruijnIndex(56)], linear: [DeBruijnIndex(1)] }",
+            "a run",
         ),
     ] {
         assert_eq!(alloc::format!("{selection:?}"), printed, "{reading}");
+        assert_eq!(
+            alloc::format!("{:?}", selection.view()),
+            printed,
+            "{reading}: in place"
+        );
     }
 }

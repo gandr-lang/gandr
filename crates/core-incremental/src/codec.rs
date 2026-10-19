@@ -4147,7 +4147,7 @@ fn read_selection(
             selected.push(DeBruijnIndex::from(index));
         }
     }
-    let [intuitionistic, linear] = zones;
+    let [ref intuitionistic, ref linear] = zones;
     Thinning::from_ascending(intuitionistic, linear).map_err(|_unordered| CodecError::Corrupt)
 }
 

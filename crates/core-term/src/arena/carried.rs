@@ -12,7 +12,11 @@
 //!
 //! A child is read through the support it carries, so minting a node is one
 //! union over its children rather than a walk below them; a dangling child
-//! adds nothing, as a dangling child resolves to nothing everywhere else.
+//! adds nothing, as a dangling child resolves to nothing everywhere else. The
+//! union is kept as one slot in the node's row, its wide words in the arena's
+//! word arena.
+
+use quenchant_shape::shape::Maybe;
 
 use super::ArenaIndex;
 use super::CoreArena;
@@ -26,7 +30,8 @@ use crate::control::StackFrame;
 use crate::rewrite::Binders;
 use crate::session::SessionAction;
 use crate::support::Crossing;
-use crate::support::Thinning;
+use crate::support::Slot;
+use crate::support::ThinningRef;
 use crate::support::Union;
 use crate::syntax::CompType;
 use crate::syntax::Computation;
@@ -81,8 +86,8 @@ impl CoreArena
         crossing: Crossing,
     )
     {
-        if let Some(support) = self.value_supports.get(id_offset(ArenaIndex(child.0)).0) {
-            union.child(support.view(), crossing);
+        if let Some(row) = self.values.get(id_offset(ArenaIndex(child.0)).0) {
+            union.stored_child(row.support, &self.words, crossing);
         }
     }
 
@@ -97,11 +102,8 @@ impl CoreArena
         crossing: Crossing,
     )
     {
-        if let Some(support) = self
-            .computation_supports
-            .get(id_offset(ArenaIndex(child.0)).0)
-        {
-            union.child(support.view(), crossing);
+        if let Some(row) = self.computations.get(id_offset(ArenaIndex(child.0)).0) {
+            union.stored_child(row.support, &self.words, crossing);
         }
     }
 
@@ -116,11 +118,8 @@ impl CoreArena
         crossing: Crossing,
     )
     {
-        if let Some(support) = self
-            .value_type_supports
-            .get(id_offset(ArenaIndex(child.0)).0)
-        {
-            union.child(support.view(), crossing);
+        if let Some(row) = self.value_types.get(id_offset(ArenaIndex(child.0)).0) {
+            union.stored_child(row.support, &self.words, crossing);
         }
     }
 
@@ -136,11 +135,8 @@ impl CoreArena
         crossing: Crossing,
     )
     {
-        if let Some(support) = self
-            .comp_type_supports
-            .get(id_offset(ArenaIndex(child.0)).0)
-        {
-            union.child(support.view(), crossing);
+        if let Some(row) = self.comp_types.get(id_offset(ArenaIndex(child.0)).0) {
+            union.stored_child(row.support, &self.words, crossing);
         }
     }
 
@@ -164,9 +160,9 @@ impl CoreArena
     ///   generated term to the free indices the shift machine finds.
     /// - witness: `arena::tests::every_binder_former_carries_its_bodys_support_past_its_binders`
     pub(super) fn value_carried(
-        &self,
+        &mut self,
         value: &Value,
-    ) -> Thinning
+    ) -> Slot
     {
         let at = Crossing::default();
         let mut union = Union::new();
@@ -261,7 +257,7 @@ impl CoreArena
                 }
             },
         }
-        union.finish()
+        self.words.store_union(union)
     }
 
     /// The support a computation about to be minted carries.
@@ -290,9 +286,9 @@ impl CoreArena
     ///   indices the shift machine finds.
     /// - witness: `arena::tests::every_binder_former_carries_its_bodys_support_past_its_binders`
     pub(super) fn computation_carried(
-        &self,
+        &mut self,
         computation: &Computation,
-    ) -> Thinning
+    ) -> Slot
     {
         let at = Crossing::default();
         let mut union = Union::new();
@@ -504,7 +500,7 @@ impl CoreArena
                 }
             },
         }
-        union.finish()
+        self.words.store_union(union)
     }
 
     /// The support a value type about to be minted carries.
@@ -524,9 +520,9 @@ impl CoreArena
     ///   generated term to the free indices the shift machine finds.
     /// - witness: `arena::tests::every_binder_former_carries_its_bodys_support_past_its_binders`
     pub(super) fn value_type_carried(
-        &self,
+        &mut self,
         value_type: &ValueType,
-    ) -> Thinning
+    ) -> Slot
     {
         let at = Crossing::default();
         let mut union = Union::new();
@@ -604,7 +600,7 @@ impl CoreArena
                 }
             },
         }
-        union.finish()
+        self.words.store_union(union)
     }
 
     /// The support a computation type about to be minted carries.
@@ -624,9 +620,9 @@ impl CoreArena
     ///   generated term to the free indices the shift machine finds.
     /// - witness: `arena::tests::every_binder_former_carries_its_bodys_support_past_its_binders`
     pub(super) fn comp_type_carried(
-        &self,
+        &mut self,
         comp_type: &CompType,
-    ) -> Thinning
+    ) -> Slot
     {
         let at = Crossing::default();
         let mut union = Union::new();
@@ -655,6 +651,24 @@ impl CoreArena
                 self.comp_type_into(&mut union, second, at);
             },
         }
-        union.finish()
+        self.words.store_union(union)
+    }
+
+    /// The support `slot` keeps, read in place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(super) fn support_of(
+        &self,
+        slot: Slot,
+    ) -> ThinningRef<'_>
+    {
+        match self.words.read(slot) {
+            Maybe::Present(support) => support,
+            // reason: every handle a row holds names words this arena wrote,
+            // and a truncation drops the row with them.
+            Maybe::Absent(_) => ThinningRef::empty(),
+        }
     }
 }

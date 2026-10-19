@@ -910,14 +910,14 @@ fn a_forged_scope_is_refused_by_name()
     let zero = Thinning::leaf(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let one = Thinning::leaf(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
     let wide = Thinning::from_ascending(
-        alloc::vec![DeBruijnIndex::from(0_u32), DeBruijnIndex::from(1_u32)],
-        Vec::new(),
+        &[DeBruijnIndex::from(0_u32), DeBruijnIndex::from(1_u32)],
+        &[],
     )
     .expect("ascending");
-    let honest = NodeScope::new(zero.clone(), zero.clone());
-    let forged_root = |forged: NodeScope| {
+    let honest = (zero.clone(), zero.clone());
+    let forged_root = |(producers, covariables): (Thinning, Thinning)| {
         let mut arena = arena.clone();
-        arena.forge_scope(NodeAddress::Command(root), forged);
+        arena.forge_scope(NodeAddress::Command(root), &producers, &covariables);
         check_command(&arena, root)
     };
     let refusal = |space, fault| {
@@ -932,31 +932,31 @@ fn a_forged_scope_is_refused_by_name()
         (
             BindingSpace::Producers,
             ScopeFault::Unselected,
-            NodeScope::new(one.clone(), zero.clone()),
+            (one.clone(), zero.clone()),
             "a support selecting x1 for the child's x0",
         ),
         (
             BindingSpace::Producers,
             ScopeFault::Unselected,
-            NodeScope::new(none.clone(), zero.clone()),
+            (none.clone(), zero.clone()),
             "a support missing the child's x0",
         ),
         (
             BindingSpace::Producers,
             ScopeFault::Unused,
-            NodeScope::new(wide.clone(), zero.clone()),
+            (wide.clone(), zero.clone()),
             "a support selecting an x1 nothing names",
         ),
         (
             BindingSpace::Covariables,
             ScopeFault::Unselected,
-            NodeScope::new(zero.clone(), one),
+            (zero.clone(), one),
             "a support selecting α1 for the child's α0",
         ),
         (
             BindingSpace::Covariables,
             ScopeFault::Unused,
-            NodeScope::new(zero.clone(), wide),
+            (zero.clone(), wide),
             "a support selecting an α1 nothing names",
         ),
     ] {
@@ -964,8 +964,8 @@ fn a_forged_scope_is_refused_by_name()
     }
 
     let mut forged = arena.clone();
-    forged.forge_scope(NodeAddress::Producer(variable), NodeScope::default());
-    forged.forge_scope(NodeAddress::Command(root), NodeScope::new(none, zero));
+    forged.forge_scope(NodeAddress::Producer(variable), &none, &none);
+    forged.forge_scope(NodeAddress::Command(root), &none, &zero);
     assert_eq!(
         Err(CheckRefusal::ForgedScope {
             node: NodeAddress::Producer(variable),
