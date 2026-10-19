@@ -261,6 +261,7 @@ use gandr_surface_dispatcher::Formatting;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::Invocation;
+use gandr_surface_dispatcher::Kept;
 use gandr_surface_dispatcher::LedgerRun;
 use gandr_surface_dispatcher::LedgerTask;
 use gandr_surface_dispatcher::Lints;
@@ -543,10 +544,10 @@ enum Command
         /// The page width, in columns. Defaults to 100.
         #[arg(long, value_name = "COLUMNS")]
         width: Option<u32>,
-        /// The spelling each source is laid out in; a source's own
-        /// `@[ form(…) ]` declaration wins. A source declaring none is
-        /// refused a form, since the formatter keeps every token as written.
-        /// Defaults to each source's own spelling.
+        /// The spelling each source is laid out in, explicit or sugared,
+        /// through the formatter's named rewrites; a source's own
+        /// `@[ form(…) ]` declaration wins. Defaults to each source's own
+        /// spelling, every token kept.
         #[arg(long, value_enum)]
         form: Option<FormName>,
         /// The threads the sources are laid out on.
@@ -851,6 +852,7 @@ fn main() -> ExitCode
                         Some(FormName::Explicit) => Form::Explicit,
                         Some(FormName::Sugared) => Form::Sugared,
                     },
+                    ..FormatOptions::default()
                 },
                 rewrite: if check {
                     Rewrite::Check
@@ -1608,10 +1610,13 @@ fn ledger(
 ///   `fmt --check`. A source already in layout prints nothing. Each path that
 ///   cannot be read or written back, names no source, or holds a source the
 ///   formatter refuses is `gandr: <path>: <fault>` on standard error, and the
-///   formatting continues past it. The exit is two when any path faulted;
-///   otherwise one under `fmt --check` when any source is out of layout, and
-///   zero. Every byte written, every source rewritten and the exit are the same
-///   at every width.
+///   formatting continues past it. Each declaration of a laid-out source that
+///   kept its spelling because a rewrite would have changed what it lowers to
+///   is ``gandr: <path>:<line>:<column>: `<name>` keeps its spelling:
+///   <reason>`` on standard error, after the source's path if any, and changes
+///   no exit. The exit is two when any path faulted; otherwise one under `fmt
+///   --check` when any source is out of layout, and zero. Every byte written,
+///   every source rewritten and the exit are the same at every width.
 /// - provides: `gandr fmt` and `gandr fmt --check`.
 /// - fails: the first write error on either stream, printing nothing after it;
 ///   at one thread no source after it is laid out, and at a wider one every
@@ -1629,6 +1634,7 @@ fn ledger(
 ///   each distinguished. Formatter refusals and unwritable sources are outside
 ///   these fixtures.
 /// - witness: `tests::cli::fmt_rewrites_what_check_reports`
+/// - witness: `tests::cli::fmt_names_each_declaration_that_kept_its_spelling_791`
 #[spec(captures: [checking = formatting.rewrite() == Rewrite::Check],
     ensures: |ref ret| ret.as_ref().map_or(true, |exit|
         *exit == ExitCode::SUCCESS || *exit == ExitCode::from(FAULTED)
@@ -1643,10 +1649,10 @@ fn fmt(
     let (mut changed, mut faulted) = (false, false);
     let visited = formatting.visit(|step| {
         let written = match step {
-            FormatStep::Unchanged { .. } => Ok(()),
-            FormatStep::Changed { path } => {
+            FormatStep::Unchanged { path, withdrawn } => kept(stderr, path, &withdrawn),
+            FormatStep::Changed { path, withdrawn } => {
                 changed = true;
-                writeln!(stdout, "{}", path.display())
+                writeln!(stdout, "{}", path.display()).and_then(|()| kept(stderr, path, &withdrawn))
             },
             FormatStep::Fault { path, fault } => {
                 faulted = true;
@@ -1666,6 +1672,23 @@ fn fmt(
         (false, true, Rewrite::Check) => ExitCode::from(UNFORMATTED),
         (false, false, _) | (false, true, Rewrite::InPlace) => ExitCode::SUCCESS,
     })
+}
+
+/// Print each declaration of the source at `path` that kept its spelling as
+/// ``gandr: <path>:<line>:<column>: `<name>` keeps its spelling: <reason>``.
+///
+/// # Specification
+/// trivial.
+fn kept(
+    stderr: &mut dyn std::io::Write,
+    path: &std::path::Path,
+    withdrawn: &[Kept],
+) -> std::io::Result<()>
+{
+    for declaration in withdrawn {
+        writeln!(stderr, "gandr: {}:{declaration}", path.display())?;
+    }
+    Ok(())
 }
 
 /// Check `staging`'s programs, printing one line per program, then the run's

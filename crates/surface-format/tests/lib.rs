@@ -6,3 +6,6 @@ mod attach;
 
 #[cfg(test)]
 mod format;
+
+#[cfg(test)]
+mod rewrite;

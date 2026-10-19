@@ -325,6 +325,7 @@ path = "crates/core-session"
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
+# - surface-format
 # - surface-lowering
 # - surface-pretty
 # - surface-repl
@@ -532,6 +533,7 @@ path = "crates/surface-layout"
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
+# - surface-format
 # - surface-render-terminal (dev)
 # - surface-session
 [workspace.dependencies.gandr-surface-lowering]
