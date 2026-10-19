@@ -173,8 +173,10 @@ impl Target
 /// # Specification
 /// - requires: built by [`Referents::of`].
 /// - ensures: the uses ascend by start, each span in the source's own text;
-///   `widest` is at least the width of every use; the declarations ascend by
-///   constant; the offered names ascend by referent.
+///   `widest` is at least the width of every use; `by_referent` holds the
+///   narrowest use per written name and start, ascending by the name's source
+///   and span then the use's; the declarations ascend by constant; the offered
+///   names ascend by referent.
 /// - panics: none.
 /// - executable: none — a carrier; [`Referents::of`] and [`Referents::at`]
 ///   carry the predicates.
@@ -185,6 +187,8 @@ pub(super) struct Referents
     uses: Vec<(ByteSpan, Target)>,
     /// The widest use's width in bytes.
     widest: usize,
+    /// The narrowest use per written name and start, by that name.
+    by_referent: Vec<(Referent, ByteSpan)>,
     /// Each declaration's referent, by the constant it admits.
     declarations: Vec<(ConstantIndex, Referent)>,
     /// Each name the unit declares, a family's constructors included, with
@@ -453,12 +457,111 @@ impl Referents
             .map(|&(span, _)| usize::from(span.end()).saturating_sub(usize::from(span.start())))
             .max()
             .unwrap_or(0_usize);
+        let mut by_referent: Vec<(Referent, ByteSpan)> = uses
+            .iter()
+            .map(|&(span, target)| (target.referent, span))
+            .collect();
+        // A constructor applied keeps its name and its application as two uses
+        // starting together; the narrower, kept first, is the name.
+        by_referent.sort_unstable_by_key(|&(referent, span)| {
+            (referent.source, referent.named, span.start(), span.end())
+        });
+        by_referent
+            .dedup_by_key(|&mut (referent, span)| (referent.source, referent.named, span.start()));
         Self {
             uses,
             widest,
+            by_referent,
             declarations,
             offered,
         }
+    }
+
+    /// The span of every use referring to the name `referent` names, by where
+    /// that name is written, one per start, ascending.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the narrowest of the uses starting at each offset whose
+    ///   referent's source and name are `referent`'s, ascending by start: a
+    ///   recursive declaration's call refers to its name as a binder, every
+    ///   other use as the declaration, and both are the one name; none for a
+    ///   name no use refers to.
+    /// - provides: what a highlight, a reference search and a rename read.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: two binary searches.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parameter's uses, a recursive declaration's call
+    ///   and a constructor's uses in a term and in a pattern are each found
+    ///   once, and no use of another name is.
+    /// - witness: `typed::tests::each_name_is_found_with_every_use_referring_to_it`
+    #[spec(ensures: |ret| ret.iter().all(|&(held, _)| (held.source, held.named) == (referent.source, referent.named))
+        && ret.windows(2).all(|pair| matches!(pair, [(_, earlier), (_, later)] if earlier.start() < later.start())))]
+    pub(super) fn uses_of(
+        &self,
+        referent: Referent,
+    ) -> &[(Referent, ByteSpan)]
+    {
+        let key = (referent.source, referent.named);
+        let first = self
+            .by_referent
+            .partition_point(|&(held, _)| (held.source, held.named) < key);
+        let rest = self.by_referent.get(first ..).unwrap_or_default();
+        let taken = rest.partition_point(|&(held, _)| (held.source, held.named) == key);
+        rest.get(.. taken).unwrap_or_default()
+    }
+
+    /// The referent whose name, written in `source`, holds `offset`: a
+    /// declaration's, a constructor's, or a binder some use refers to.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a referent written in `source` whose name starts at or before
+    ///   `offset` and ends after it, among the offered names and the referents
+    ///   of the uses; none when no such name holds it.
+    /// - provides: what a request at a declaring name means.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: a binary search in each of two sorted lists.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration's name, a constructor's name and a used
+    ///   parameter's name each answer themselves; a use answers nothing here.
+    /// - witness: `typed::tests::each_name_is_found_with_every_use_referring_to_it`
+    #[spec(ensures: |ret| ret.is_none_or(|found| found.source == source
+        && found.named.start() <= offset && offset < found.named.end()))]
+    pub(super) fn named_at(
+        &self,
+        source: SourceIndex,
+        offset: ByteOffset,
+    ) -> Option<Referent>
+    {
+        let holding = |referent: &Referent| {
+            referent.source == source
+                && referent.named.start() <= offset
+                && offset < referent.named.end()
+        };
+        let before =
+            |referent: &Referent| (referent.source, referent.named.start()) <= (source, offset);
+        let offered = self
+            .offered
+            .partition_point(|&(referent, _)| before(&referent));
+        let used = self
+            .by_referent
+            .partition_point(|&(referent, _)| before(&referent));
+        offered
+            .checked_sub(1_usize)
+            .and_then(|at| self.offered.get(at))
+            .map(|&(referent, _)| referent)
+            .filter(holding)
+            .or_else(|| {
+                used.checked_sub(1_usize)
+                    .and_then(|at| self.by_referent.get(at))
+                    .map(|&(referent, _)| referent)
+                    .filter(holding)
+            })
     }
 
     /// Each name the unit declares, a family's constructors included, with

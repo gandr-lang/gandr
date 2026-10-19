@@ -159,6 +159,7 @@ use crate::tokens::overlapping;
 use crate::transport::Body;
 use crate::transport::TransportFault;
 use crate::transport::write_frame;
+use crate::uses::highlights;
 use crate::view::report;
 
 /// Where the server stands in the protocol's lifecycle.
@@ -1553,6 +1554,12 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
                 },
+            (Phase::Running, "textDocument/documentHighlight") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Highlights(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
+                },
             (Phase::Running, "textDocument/documentSymbol" | "textDocument/foldingRange" | "textDocument/selectionRange") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_), .. } => true,
@@ -1689,6 +1696,15 @@ impl Server
                     Ok(params) => success(
                         id,
                         workspace.symbols(self.peer, SourceText::from(params.query.as_str())),
+                    ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "textDocument/documentHighlight") => {
+                match serde_json::from_value::<PositionParams>(params) {
+                    Ok(params) => success(
+                        id,
+                        workspace.highlight(&params.text_document.uri, self.peer, params.position),
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
@@ -2153,7 +2169,7 @@ impl Workspace
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), Window::Whole | Window::Within(_) => true },
         Answer::Initialize(_) | Answer::Completions(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
-            | Answer::Actions(_) | Answer::Found(_) => false,
+            | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) => false,
     })]
     fn tokens(
         &self,
@@ -2207,7 +2223,7 @@ impl Workspace
             && list.items.iter().all(|item| item.range.start <= position && position <= item.range.end),
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Signatures(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
-            | Answer::Actions(_) | Answer::Found(_) => false,
+            | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) => false,
     })]
     fn inline(
         &self,
@@ -2570,6 +2586,48 @@ impl Workspace
                     position,
                     goto,
                     linked,
+                )
+            })
+    }
+
+    /// What a highlight request at `position` of the copy of the document at
+    /// `uri` that `peer` is answered from answers.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI and any position are admitted.
+    /// - ensures: an unknown document, and one whose session holds no grammar,
+    ///   yields Nothing; otherwise the highlights [`highlights`] answers off
+    ///   the copy's text and what it keeps for its hovers, made now when no
+    ///   request has asked since the text last changed.
+    /// - provides: the answer to `textDocument/documentHighlight`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`highlights`], and an unknown document answers
+    ///   `null`.
+    /// - witness: `server::tests::a_highlight_marks_a_name_s_declaration_and_its_uses`
+    #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Highlights(_))
+        && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
+    fn highlight(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        position: Position,
+    ) -> Answer
+    {
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Answer::Nothing;
+        };
+        document
+            .session
+            .as_ref()
+            .map_or(Answer::Nothing, |session| {
+                highlights(
+                    document.text.source(),
+                    document.text.hovering(&uri.path(), session),
+                    position,
                 )
             })
     }
@@ -3205,7 +3263,8 @@ mod tests
                         "documentRangeFormattingProvider":true,
                         "codeLensProvider":{"resolveProvider":false},
                         "codeActionProvider":true,
-                        "workspaceSymbolProvider":true},
+                        "workspaceSymbolProvider":true,
+                        "documentHighlightProvider":true},
                     "serverInfo":{"name":"gandr","version":""#,
                 env!("CARGO_PKG_VERSION"),
                 r#""}}}]"#
@@ -3985,6 +4044,70 @@ mod tests
                 &DocumentUri::from("file:///tmp/closed.gandr"),
                 position(0, 0)
             ),
+            Value::Null,
+            "a document the server does not hold answers null"
+        );
+    }
+
+    #[test]
+    fn a_highlight_marks_a_name_s_declaration_and_its_uses()
+    {
+        let mut server = referring(Linked(true));
+        let mut highlight = |uri: &str, line: u32, character: u32| {
+            let request = serde_json::json!({
+                "jsonrpc": "2.0", "id": 7_i32, "method": "textDocument/documentHighlight",
+                "params": {"textDocument": {"uri": uri},
+                    "position": at(Line::from(line), Character::from(character))},
+            });
+            send(&mut server, Json(&request.to_string()))
+                .pointer("/0/result")
+                .cloned()
+                .unwrap_or(Value::Null)
+        };
+        let mark = |kind: u8, line: u32, start: u32, end: u32| {
+            serde_json::json!({"range": Range {
+                start: at(Line::from(line), Character::from(start)),
+                end: at(Line::from(line), Character::from(end)),
+            }, "kind": kind})
+        };
+        let uri = "file:///tmp/referred.gandr";
+        let n = Value::Array(vec![mark(1, 4, 13, 14), mark(2, 6, 12, 13)]);
+        assert_eq!(
+            highlight(uri, 6, 12),
+            n,
+            "a parameter's use marks its binder and its use"
+        );
+        assert_eq!(highlight(uri, 4, 13), n, "the binder marks the same");
+        assert_eq!(
+            highlight(uri, 6, 13),
+            n,
+            "a caret just past a name marks it"
+        );
+        let plus = Value::Array(vec![mark(1, 4, 8, 12), mark(2, 7, 20, 27)]);
+        assert_eq!(
+            highlight(uri, 4, 9),
+            plus,
+            "a recursive declaration marks its name and its call"
+        );
+        assert_eq!(highlight(uri, 7, 21), plus, "its call marks the same");
+        assert_eq!(
+            highlight(uri, 7, 5),
+            Value::Array(vec![
+                mark(1, 2, 2, 6),
+                mark(2, 7, 4, 8),
+                mark(2, 7, 15, 19),
+                mark(2, 11, 10, 14),
+                mark(2, 11, 15, 19),
+            ]),
+            "a constructor marks its name in the family, its pattern and its terms"
+        );
+        assert_eq!(
+            highlight(uri, 4, 1),
+            Value::Array(vec![]),
+            "a keyword marks nothing"
+        );
+        assert_eq!(
+            highlight("file:///tmp/closed.gandr", 0, 0),
             Value::Null,
             "a document the server does not hold answers null"
         );

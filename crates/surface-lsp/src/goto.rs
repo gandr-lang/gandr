@@ -51,7 +51,7 @@ pub enum Goto
 ///
 /// # Specification
 /// trivial.
-fn ranged(
+pub fn ranged(
     index: &LineIndex<'_>,
     span: ByteSpan,
 ) -> Option<Range>

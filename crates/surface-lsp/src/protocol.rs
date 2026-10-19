@@ -966,6 +966,7 @@ impl InitializeResult
             && ret.capabilities.document_range_formatting_provider.0
             && ret.capabilities.code_action_provider.0
             && ret.capabilities.workspace_symbol_provider.0
+            && ret.capabilities.document_highlight_provider.0
             && !ret.capabilities.code_lens_provider.resolve_provider
             && !ret.capabilities.completion_provider.resolve_provider)]
     #[inline]
@@ -1008,6 +1009,7 @@ impl InitializeResult
                 },
                 code_action_provider: Provider::ANSWERED,
                 workspace_symbol_provider: Provider::ANSWERED,
+                document_highlight_provider: Provider::ANSWERED,
             },
             server_info: ServerInfo {
                 name: SOURCE,
@@ -1060,6 +1062,9 @@ pub struct ServerCapabilities
     /// Workspace symbols are answered: the names the open documents' import
     /// closures declare.
     pub workspace_symbol_provider: Provider,
+    /// Document highlights are answered: the declaring name and the uses of
+    /// the name at a position, within the document.
+    pub document_highlight_provider: Provider,
 }
 
 /// Whether a request is answered, advertised as a provider with no options.
@@ -1173,6 +1178,9 @@ pub enum Answer
     /// What a workspace-symbol request answers: the names found, each where
     /// its name is written.
     Found(Vec<SymbolInformation>),
+    /// What a document-highlight request answers: the name at the position,
+    /// where it is declared and every use of it in the document.
+    Highlights(Vec<DocumentHighlight>),
     /// `null`: what `shutdown` answers, a request about a document that is not
     /// open, and a hover over nothing the server knows.
     Nothing,
@@ -1765,6 +1773,30 @@ pub struct WorkspaceSymbolParams
     /// The query; empty asks for every name.
     #[serde(default)]
     pub query: String,
+}
+
+/// A range of a document a highlight request marks.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DocumentHighlight
+{
+    /// The range: a name's declaring name or one of its uses.
+    pub range: Range,
+    /// Whether it declares the name or reads it.
+    pub kind: HighlightKind,
+}
+
+/// What a highlighted range does with the name, as the protocol numbers it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct HighlightKind(u8);
+
+impl HighlightKind
+{
+    /// Neither reads nor writes: a declaring name.
+    pub const TEXT: Self = Self(1);
+    /// Reads the name: a use.
+    pub const READ: Self = Self(2);
 }
 
 #[cfg(test)]
