@@ -1713,6 +1713,45 @@ fn nested_constructor_patterns_compile_to_nested_cases()
 }
 
 #[test]
+fn a_data_case_names_the_family_it_eliminates_809()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}data Inner : Type {{ No : Inner; Yes : (n : Integer) --> Inner; }}\ndef depth(m : Maybe(Inner)) -> -F Integer {{ case m {{ Some(Yes(n)) => return n, Some(No) => return 0, None => return 1 }} }}\ndef nested(m : Maybe(Inner)) -> -F Integer {{ case m {{ None => return 1, Some(i) => case i {{ No => return 0, Yes(n) => return n }} }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let constant = |wanted: &str| {
+        module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name().as_ref() == wanted)
+            .map(|declaration| Maybe::Present(declaration.constant()))
+    };
+    for (name, expected) in [
+        (
+            "depth",
+            "the switch on a family of parameters and the switch on its field each name their family",
+        ),
+        (
+            "nested",
+            "a match written in an arm binding a field names its family in the leaf's copy",
+        ),
+    ] {
+        let root = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
+        let eliminated: Vec<_> = reachable(&arena, root)
+            .into_iter()
+            .filter(|&at| matches!(arena.computation(at), Some(&Computation::DataCase { .. })))
+            .map(|at| Some(module.origins().elimination(at)))
+            .collect();
+        assert_eq!(
+            eliminated,
+            [constant("Maybe"), constant("Inner")],
+            "{expected}"
+        );
+    }
+}
+
+#[test]
 fn literal_patterns_compare_and_branch()
 {
     let mut arena = CoreArena::new();

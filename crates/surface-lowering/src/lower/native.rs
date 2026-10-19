@@ -507,6 +507,24 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
+    /// Why a data switch names no declaration whose constructors it splits
+    /// into.
+    pub mod eliminated {
+        /// The switch's constructors are named by no declaration it records.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The family holds no slot the switch reads: the presentation
+            /// code in a module that mints no `Theory`, or a declaration the
+            /// collection filed no slot for.
+            Unslotted,
+            /// The switch has no branch to name: a match of no arms over a
+            /// family the bare family type does not classify.
+            Armless,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
     /// Why a match of no arms switches on no data.
     pub mod switched {
         /// Its scrutinee states no data type and no path type.
@@ -1144,6 +1162,9 @@ enum Test
         /// The family, when the family over no arguments classifies its
         /// constructors.
         family: Maybe<ConstantIndex, bare::Absent>,
+        /// The data declaration whose constructors the branches are, by
+        /// which a printer names them.
+        eliminated: Maybe<ConstantIndex, eliminated::Absent>,
         /// Each constructor's arity and child.
         branches: Vec<(usize, TestAt)>,
     },
@@ -2950,6 +2971,10 @@ impl<'source> Lowerer<'_, 'source>
                 level: TreeLevel::default(),
                 depth: Depth::default(),
                 family,
+                eliminated: match family {
+                    Maybe::Present(family) => Maybe::Present(family),
+                    Maybe::Absent(_) => Maybe::Absent(eliminated::Absent::Armless),
+                },
                 branches: Vec::new(),
             }]),
             loops: Vec::new(),
@@ -4357,27 +4382,38 @@ impl<'source> Lowerer<'_, 'source>
                 arities
             },
         };
-        let family = match form {
-            Generators::Written(position) => match self.collected.data.get(position) {
-                Some(written) if written.parameters.is_empty() => self
-                    .collected
-                    .slots
-                    .get(usize::from(written.slot))
-                    .map_or(Maybe::Absent(bare::Absent::Parameterised), |slot| {
-                        Maybe::Present(slot.constant)
-                    }),
-                _ => Maybe::Absent(bare::Absent::Parameterised),
+        let declared = match form {
+            Generators::Written(position) => self
+                .collected
+                .data
+                .get(position)
+                .map(|written| (written.slot, written.parameters.is_empty())),
+            // The presentation code's constructors need a written classifier,
+            // so the switch reads it as a family of parameters would.
+            Generators::Presentation => match self.collected.theory {
+                Maybe::Present(ref theory) => Some((theory.slot, false)),
+                Maybe::Absent(_) => None,
             },
-            Generators::Presentation => Maybe::Absent(bare::Absent::Parameterised),
             Generators::Words(words) => self
                 .collected
                 .words
                 .get(words)
-                .and_then(|written| self.collected.slots.get(usize::from(written.slot)))
-                .map_or(Maybe::Absent(bare::Absent::Parameterised), |slot| {
-                    Maybe::Present(slot.constant)
-                }),
+                .map(|written| (written.slot, true)),
         };
+        let declared = declared.and_then(|(slot, bare)| {
+            self.collected
+                .slots
+                .get(usize::from(slot))
+                .map(|slot| (slot.constant, bare))
+        });
+        let family = match declared {
+            Some((constant, true)) => Maybe::Present(constant),
+            Some((_, false)) | None => Maybe::Absent(bare::Absent::Parameterised),
+        };
+        let eliminated = declared.map_or(
+            Maybe::Absent(eliminated::Absent::Unslotted),
+            |(constant, _)| Maybe::Present(constant),
+        );
         let mut branches = Vec::with_capacity(arities.len());
         for (tag, &arity) in arities.iter().enumerate() {
             let mut specialised = Vec::new();
@@ -4431,6 +4467,7 @@ impl<'source> Lowerer<'_, 'source>
             level: switch.level,
             depth: item.depth,
             family,
+            eliminated,
             branches,
         })
     }
@@ -6193,7 +6230,11 @@ impl<'source> Lowerer<'_, 'source>
             copies.extend_from_slice(&rewritten);
             all.push(instantiated);
         }
-        Maybe::Present(sink.arena.computation_data_case(scrutinee, motive, all))
+        let extended = sink.arena.computation_data_case(scrutinee, motive, all);
+        if let Maybe::Present(family) = sink.origins.elimination(root) {
+            sink.origins.record_elimination(extended, family);
+        }
+        Maybe::Present(extended)
     }
 }
 
@@ -6325,6 +6366,7 @@ fn tracked_motives(
                 depth,
                 family,
                 ref branches,
+                ..
             } => {
                 let motive = match family {
                     Maybe::Present(_) => {
@@ -6759,6 +6801,7 @@ fn mint_test(
         Test::Data {
             level,
             depth,
+            eliminated,
             ref branches,
             ..
         } => {
@@ -6778,10 +6821,13 @@ fn mint_test(
                 lowered_branches.push(branch);
             }
             let scrutinee = level_value(sink.arena, scrutinised, depth, level);
-            Maybe::Present(
-                sink.arena
-                    .computation_data_case(scrutinee, motive, lowered_branches),
-            )
+            let case = sink
+                .arena
+                .computation_data_case(scrutinee, motive, lowered_branches);
+            if let Maybe::Present(family) = eliminated {
+                sink.origins.record_elimination(case, family);
+            }
+            Maybe::Present(case)
         },
         Test::Boolean {
             level,

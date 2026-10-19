@@ -228,6 +228,8 @@ enum PlanNode
         level: Level,
         /// The binders around the case.
         depth: Depth,
+        /// The constant of the family whose constructors the branches are.
+        family: ConstantIndex,
         /// Each constructor's field count and branch.
         branches: Vec<(Width, NodeAt)>,
     },
@@ -525,6 +527,7 @@ fn switch<'face>(
     Ok(PlanNode::Switch {
         level,
         depth: next.depth,
+        family,
         branches,
     })
 }
@@ -828,7 +831,8 @@ impl Mint<'_>
 ///   declared before the declaration it mints.
 /// - ensures: `U (D₁ → … → Dₙ → F R)` with `R` the output family or the product
 ///   of the output families, and a thunk of one partial fixpoint over `n`
-///   lambdas around the tree; every minted node records `origin`.
+///   lambdas around the tree; every minted node records `origin`, and each case
+///   the family it switches on.
 /// - panics: none.
 /// - executable: none — the minted terms' meaning is the checker's and the
 ///   machine's, which the witnesses run.
@@ -881,6 +885,7 @@ pub fn mint_operation(
             PlanNode::Switch {
                 level,
                 depth,
+                family,
                 ref branches,
             } => {
                 let mut lowered = Vec::with_capacity(branches.len());
@@ -896,6 +901,7 @@ pub fn mint_operation(
                 }
                 let scrutinee = mint.variable(level, depth);
                 let case = mint.arena.computation_data_case(scrutinee, motive, lowered);
+                mint.origins.record_elimination(case, family);
                 mint.computation(case)
             },
         };
