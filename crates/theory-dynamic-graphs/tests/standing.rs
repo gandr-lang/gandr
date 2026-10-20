@@ -174,6 +174,7 @@ fn three_offer_systems_agree_with_independent_relaxation()
             }
         }
     }
+    let mut admitted = Vec::with_capacity(3);
     for &first in &catalog {
         for &second in &catalog {
             for &third in &catalog {
@@ -181,7 +182,7 @@ fn three_offer_systems_agree_with_independent_relaxation()
                 system
                     .insert_constraint(edge(nodes[2], nodes[2]), Offset::from(0_i64))
                     .expect("create the complete fixture domain");
-                let mut admitted = Vec::with_capacity(3);
+                admitted.clear();
                 for offer in [first, second, third] {
                     let before = nodes.map(|node| system.value(node));
                     admitted.push(offer);
@@ -197,12 +198,14 @@ fn three_offer_systems_agree_with_independent_relaxation()
                     if let ConstraintVerdict::Refuted(cycle) = actual {
                         assert_eq!(cycle.nodes.first(), cycle.nodes.last());
                         assert!(cycle.edges.contains(&offer.0));
-                        let walked: Vec<_> = cycle
-                            .nodes
-                            .array_windows::<2>()
-                            .map(|&[source, target]| edge(source, target))
-                            .collect();
-                        assert_eq!(walked, cycle.edges);
+                        assert!(
+                            cycle
+                                .nodes
+                                .array_windows::<2>()
+                                .map(|&[source, target]| edge(source, target))
+                                .eq(cycle.edges.iter().copied()),
+                            "the cycle's edges follow its walk"
+                        );
                         let weight: i64 = cycle
                             .edges
                             .iter()
