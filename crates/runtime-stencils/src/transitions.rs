@@ -9,6 +9,7 @@
 //! | a binder loaded as a continuation | `pushk`, `bind`, `alias`, `alias_top` |
 //! | constructor dispatch | `match`, `field`, `match_tag`, `select_field` |
 //! | constructor introduction | `push`, `ctor1`, `ctor2`, `ctor3`, `ctor_n`, `const` |
+//! | two transitions fused | `const_bind` |
 //! | a variable read | `var` |
 //! | a closure introduced and entered | `closure`, `enter_apply`, `enter_force`, `enter_fix` |
 //! | an observation | `invoke_apply`, `invoke_force`, `invoke_force_value`, `apply_frame`, `argument_frame` |
@@ -120,6 +121,39 @@ pub extern "rust-preserve-none" fn stencil_bind(
         *slot = value;
     }
     become hole_next(runtime, heap, frames, environment, value)
+}
+
+/// Load a constant's address and bind it to slot B: `const` then `bind`, one
+/// dispatch for the two, the constant handed over in the value register.
+///
+/// # Specification
+/// - requires: slot B lies inside the window.
+/// - ensures: slot B and the value register hold address operand A.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the agreement differential runs every program fused on
+///   both executors and unfused beside it; a wrong slot or constant changes a
+///   later variable read.
+/// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+/// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_const_bind(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    _value: Word,
+) -> Word
+{
+    let constant = address!(runtime, A);
+    let slot = environment.wrapping_add(operand!(runtime, B));
+    // SAFETY: the lowering assigned slot B inside the window.
+    unsafe {
+        *slot = constant;
+    }
+    become hole_next(runtime, heap, frames, environment, constant)
 }
 
 /// Push the value in hand as a constructor field awaiting its siblings.

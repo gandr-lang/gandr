@@ -37,7 +37,12 @@ use gandr_kernel_term::Side;
 use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::PATCHER;
 use gandr_runtime_emitter::Tier;
+use gandr_runtime_emitter::dispatches;
 use gandr_runtime_emitter::evaluate_on;
+use gandr_runtime_emitter::evaluate_unfused_on;
+use gandr_runtime_emitter::lower;
+use gandr_runtime_emitter::lower_unfused;
+use gandr_runtime_emitter::replay;
 use gandr_surface_corpus::Stated;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Engine;
@@ -55,6 +60,7 @@ use crate::support::Label;
 use crate::support::Program;
 use crate::support::Verdict;
 use crate::support::agree;
+use crate::support::agree_with;
 use crate::support::focus;
 use crate::support::integer;
 use crate::support::named;
@@ -159,6 +165,72 @@ fn the_generated_programs_agree_on_both_executors()
         }
     }
     assert!(halted > 0, "the generator writes programs that halt");
+}
+
+/// Every named program and the generated programs of every size answer fused
+/// what their unfused lowering answers on the executor. Each fused function
+/// is the replay of its trace over the unfused one and costs one dispatch
+/// fewer per fusion, and fusions occur.
+#[test]
+fn a_fused_program_answers_what_its_unfused_lowering_answers()
+{
+    let mut programs: Vec<Program> = named().into_iter().map(|named| named.program).collect();
+    for budget in [1_usize, 2, 4, 8, 16, 64, 256, 1024] {
+        for seed in 0 .. 64_u64 {
+            let mut core = CoreArena::new();
+            let shape = Shape {
+                seed: seed
+                    .wrapping_mul(7919)
+                    .wrapping_add(u64::try_from(budget).expect("small")),
+                budget,
+            };
+            let root = Generator::program(shape, &mut core);
+            programs.push(Program {
+                name: "generated",
+                core,
+                root,
+            });
+        }
+    }
+    let mut fusions = 0_usize;
+    let mut name = String::new();
+    for (index, program) in programs.iter().enumerate() {
+        let (commands, root) = focus(program);
+        let definitions = Definitions::new();
+        name.clear();
+        write!(name, "{} #{index}", program.name).expect("a name writes");
+        let (Ok(fused), Ok(unfused)) = (
+            lower(&commands, &definitions, root),
+            lower_unfused(&commands, &definitions, root),
+        )
+        else {
+            continue;
+        };
+        assert_eq!(
+            replay(&unfused.function, &fused.fused).as_ref(),
+            Ok(&fused.function),
+            "{name}: the trace replays to the fused function"
+        );
+        assert_eq!(
+            dispatches(&fused.function)
+                .0
+                .saturating_add(fused.fused.len()),
+            dispatches(&unfused.function).0,
+            "{name}: one dispatch fewer per fusion"
+        );
+        fusions = fusions.saturating_add(fused.fused.len());
+        let _verdict = agree_with(Label(&name), &commands, &definitions, root, |store| {
+            evaluate_unfused_on(
+                Tier::Executor,
+                &commands,
+                &definitions,
+                root,
+                Fuel::from(BUDGET),
+                store,
+            )
+        });
+    }
+    assert!(fusions > 0, "the programs fuse a constant bound");
 }
 
 /// Every declaration of the model corpus that states a `runs` outcome,

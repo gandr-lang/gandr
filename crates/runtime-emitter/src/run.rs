@@ -42,6 +42,7 @@ use crate::host::Refused;
 use crate::lower::Form;
 use crate::lower::Lowered;
 use crate::lower::lower;
+use crate::lower::lower_unfused;
 #[cfg(gandr_patcher)]
 use crate::native::EmitRefusal;
 #[cfg(gandr_patcher)]
@@ -395,6 +396,35 @@ pub fn evaluate_on(
 ) -> Result<Outcome, Declined>
 {
     let lowered = lower(arena, definitions, root)?;
+    on_tier(tier, &lowered, arena, fuel, store, None)?.hostless()
+}
+
+/// As [`evaluate_on`], the command's unfused lowering run: every instruction
+/// its own dispatch, the reference a fused function answers to.
+///
+/// # Specification
+/// - requires: as [`evaluate_on`].
+/// - ensures: as [`evaluate_on`], over [`lower_unfused`]'s function.
+/// - executable: none — as [`evaluate_on`].
+///
+/// # Errors
+/// As [`evaluate_on`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — every named, generated and corpus program runs unfused
+///   beside its fused function, with equal outcomes.
+/// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
+#[inline]
+pub fn evaluate_unfused_on(
+    tier: Tier,
+    arena: &CommandArena,
+    definitions: &Definitions,
+    root: CommandId,
+    fuel: Fuel,
+    store: &mut Store,
+) -> Result<Outcome, Declined>
+{
+    let lowered = lower_unfused(arena, definitions, root)?;
     on_tier(tier, &lowered, arena, fuel, store, None)?.hostless()
 }
 

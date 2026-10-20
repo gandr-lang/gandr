@@ -10,6 +10,11 @@
 //! native code is held to; a command the lowering refuses declines by the
 //! form it refused.
 //!
+//! Before either tier runs it, each adjacent pair of instructions a rule
+//! names ([`Rule`]) runs as one superinstruction. Each fusion is a decision
+//! that [`replay`] re-derives from the unfused lowering ([`lower_unfused`]),
+//! and each saves one dispatch ([`dispatches`]).
+//!
 //! # One definition, two tiers
 //!
 //! The L machine's transitions are written once, in the stencil crate. Its
@@ -138,6 +143,7 @@ extern crate alloc;
 
 mod executor;
 mod function;
+mod fuse;
 mod host;
 mod lower;
 #[cfg(gandr_patcher)]
@@ -150,9 +156,17 @@ pub use gandr_runtime_stencils::Fuel;
 pub use gandr_runtime_stencils::Status;
 
 pub use crate::function::Function;
+pub use crate::function::Position;
+pub use crate::fuse::Dispatches;
+pub use crate::fuse::Fused;
+pub use crate::fuse::FusionRefusal;
+pub use crate::fuse::Rule;
+pub use crate::fuse::dispatches;
+pub use crate::fuse::replay;
 pub use crate::lower::Form;
 pub use crate::lower::Lowered;
 pub use crate::lower::lower;
+pub use crate::lower::lower_unfused;
 #[cfg(gandr_patcher)]
 pub use crate::native::EmitRefusal;
 pub use crate::run::Declined;
@@ -162,6 +176,7 @@ pub use crate::run::Tier;
 pub use crate::run::evaluate;
 pub use crate::run::evaluate_on;
 pub use crate::run::evaluate_on_with_host;
+pub use crate::run::evaluate_unfused_on;
 pub use crate::run::evaluate_with_host;
 pub use crate::seam::HostHandler;
 pub use crate::seam::HostOutcome;

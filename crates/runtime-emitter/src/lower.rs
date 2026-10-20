@@ -134,6 +134,8 @@ use crate::function::Operand;
 use crate::function::Position;
 use crate::function::Slots;
 use crate::function::Stub;
+use crate::fuse::Fused;
+use crate::fuse::fuse;
 
 /// A command the lowering does not lay out.
 ///
@@ -654,8 +656,11 @@ pub struct Handler
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Lowered
 {
-    /// The function both tiers run.
+    /// The function both tiers run, its adjacent pairs fused.
     pub function: Function,
+    /// The fusions that ran the function's adjacent pairs as one, ascending;
+    /// [`crate::replay`] re-derives the function from the unfused one by them.
+    pub fused: Vec<Fused>,
     /// Every closure site, in creation order.
     pub sites: Vec<Site>,
     /// Every bind frame of a reified stack, in creation order.
@@ -2297,7 +2302,42 @@ impl Lowering<'_>
     }
 }
 
-/// Lower the closed command `root`.
+/// Lower the closed command `root`, then fuse its adjacent pairs.
+///
+/// # Specification
+/// - ensures: as [`lower_unfused`], each pair a rule fuses run as one
+///   instruction and named in the trace, which [`crate::replay`] replays over
+///   [`lower_unfused`]'s function to this function.
+/// - executable: none — running as the source means is observed only by running
+///   both tiers against stated answers, and fused against unfused.
+///
+/// # Errors
+/// As [`lower_unfused`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — the named, generated and corpus programs run fused on
+///   both tiers and unfused beside them with equal outcomes, each fused
+///   function the replay of its trace, and fusions asserted to occur.
+/// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+/// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
+#[inline]
+pub fn lower(
+    arena: &CommandArena,
+    definitions: &Definitions,
+    root: CommandId,
+) -> Result<Lowered, Form>
+{
+    let lowered = lower_unfused(arena, definitions, root)?;
+    let (function, trace) = fuse(&lowered.function);
+    Ok(Lowered {
+        function,
+        fused: trace,
+        ..lowered
+    })
+}
+
+/// Lower the closed command `root`, every instruction its own dispatch: the
+/// function a fused one's trace is replayed over.
 ///
 /// # Specification
 /// - ensures: the function's entry runs `root` from an empty frame region,
@@ -2305,7 +2345,8 @@ impl Lowering<'_>
 ///   once per run at its first read, each closure site recorded with the
 ///   producer it suspends. A command that suspends a capture is lowered again
 ///   with every cut delivering a variable or a constant to anything but a
-///   binder testing for one first, which runs it against that consumer.
+///   binder testing for one first, which runs it against that consumer. The
+///   trace of fusions is empty.
 /// - executable: none — running as the source means is observed only by running
 ///   both tiers against stated answers.
 ///
@@ -2318,8 +2359,9 @@ impl Lowering<'_>
 ///   application. The stencils' suite runs the generated programs and the
 ///   corpus through this lowering too, each refused form counted by name.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+/// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
 #[inline]
-pub fn lower(
+pub fn lower_unfused(
     arena: &CommandArena,
     definitions: &Definitions,
     root: CommandId,
@@ -2438,6 +2480,7 @@ fn lower_pass(
     }
     let lowered = Lowered {
         function: lowering.function,
+        fused: Vec::new(),
         sites: lowering.sites,
         bounds: lowering.bounds,
         heads: lowering.heads,
