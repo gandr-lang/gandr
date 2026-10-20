@@ -639,14 +639,16 @@ fn form_membership_flags_agree_with_their_lists() -> Result<(), Box<dyn Error>>
         _ => true,
     }));
 
+    let preceded: BTreeSet<MoldId> = adjacencies.iter().map(|&(_, right)| right).collect();
+    let succeeded: BTreeSet<MoldId> = adjacencies.iter().map(|&(left, _)| left).collect();
     let mut required_tails = 0_usize;
     for (mold, _def) in pbg.iter_molds() {
         assert_eq!(
-            adjacencies.iter().any(|&(_, right)| right == mold),
+            preceded.contains(&mold),
             bool::from(pbg.mold_has_predecessor(mold))
         );
         assert_eq!(
-            adjacencies.iter().any(|&(left, _)| left == mold),
+            succeeded.contains(&mold),
             bool::from(pbg.mold_has_successor(mold))
         );
         assert!(
@@ -657,12 +659,12 @@ fn form_membership_flags_agree_with_their_lists() -> Result<(), Box<dyn Error>>
             "mold {mold:?} reads exactly its own successor run"
         );
         assert_eq!(
-            form_first.contains(&mold),
+            form_first.binary_search(&mold).is_ok(),
             bool::from(pbg.mold_is_form_first(mold))
         );
         let complete = bool::from(pbg.mold_is_form_last(mold));
         let required = bool::from(pbg.mold_has_required_tail(mold));
-        if form_last.contains(&mold) {
+        if form_last.binary_search(&mold).is_ok() {
             assert!(complete != required, "mold {mold:?} ends its form one way");
         }
         else {
@@ -688,7 +690,7 @@ fn form_membership_flags_agree_with_their_lists() -> Result<(), Box<dyn Error>>
         assert!(bool::from(pbg.molds_adjacent(left, right)));
         assert_eq!(
             bool::from(pbg.molds_adjacent(right, left)),
-            adjacencies.contains(&(right, left))
+            adjacencies.binary_search(&(right, left)).is_ok()
         );
         assert!(!bool::from(pbg.molds_adjacent(left, past)));
     }
