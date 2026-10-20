@@ -28,9 +28,11 @@ use crate::markup::Markup;
 use crate::position::Line;
 use crate::position::Position;
 use crate::position::Range;
+use crate::tokens::ResultId;
 use crate::tokens::TOKEN_MODIFIERS;
 use crate::tokens::TOKEN_TYPES;
 use crate::tokens::TokenStream;
+use crate::tokens::TokensEdit;
 
 /// The scheme prefix of a URI naming a local file.
 const FILE_SCHEME: &str = "file://";
@@ -1391,6 +1393,17 @@ pub struct RangeParams
     pub range: Range,
 }
 
+/// The parameters of `textDocument/rangesFormatting`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RangesParams
+{
+    /// The document addressed.
+    pub text_document: DocumentIdentifier,
+    /// The ranges to format.
+    pub ranges: Vec<Range>,
+}
+
 /// The parameters of a request about one position of a document:
 /// `textDocument/inlineCompletion` and `textDocument/hover`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -1401,6 +1414,30 @@ pub struct PositionParams
     pub text_document: DocumentIdentifier,
     /// The cursor the request is about.
     pub position: Position,
+}
+
+/// The parameters of `textDocument/onTypeFormatting`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TypedParams
+{
+    /// The document addressed.
+    pub text_document: DocumentIdentifier,
+    /// Where the character was typed: just after it.
+    pub position: Position,
+    /// The character typed.
+    pub ch: String,
+}
+
+/// The parameters of `textDocument/semanticTokens/full/delta`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DeltaParams
+{
+    /// The document addressed.
+    pub text_document: DocumentIdentifier,
+    /// The id of the full answer the client holds.
+    pub previous_result_id: ResultId,
 }
 
 /// The parameters of `textDocument/references`.
@@ -1497,7 +1534,7 @@ impl InitializeResult
         matches!(ret.capabilities.position_encoding.as_bytes(), &[b'u', b't', b'f', b'-', b'1', b'6'])
             && ret.capabilities.text_document_sync.open_close
             && ret.capabilities.text_document_sync.change.0 == SyncKind::INCREMENTAL.0
-            && ret.capabilities.semantic_tokens_provider.full
+            && ret.capabilities.semantic_tokens_provider.full.delta
             && ret.capabilities.semantic_tokens_provider.range
             && ret.capabilities.inline_completion_provider.0
             && ret.capabilities.document_symbol_provider.0
@@ -1507,9 +1544,11 @@ impl InitializeResult
             && matches!(ret.capabilities.signature_help_provider.trigger_characters,
                 [open, comma] if matches!(open.as_bytes(), b"(") && matches!(comma.as_bytes(), b","))
             && ret.capabilities.definition_provider.0
+            && ret.capabilities.declaration_provider.0
             && ret.capabilities.type_definition_provider.0
             && ret.capabilities.document_formatting_provider.0
-            && ret.capabilities.document_range_formatting_provider.0
+            && ret.capabilities.document_range_formatting_provider.ranges_support
+            && matches!(ret.capabilities.document_on_type_formatting_provider.first_trigger_character.as_bytes(), b";")
             && ret.capabilities.code_action_provider.resolve_provider
             && ret.capabilities.workspace_symbol_provider.resolve_provider
             && ret.capabilities.document_highlight_provider.0
@@ -1540,7 +1579,7 @@ impl InitializeResult
                         token_types: TOKEN_TYPES,
                         token_modifiers: TOKEN_MODIFIERS,
                     },
-                    full: true,
+                    full: FullOptions { delta: true },
                     range: true,
                 },
                 completion_provider: ResolveOptions {
@@ -1556,9 +1595,15 @@ impl InitializeResult
                     retrigger_characters: [")"],
                 },
                 definition_provider: Provider::ANSWERED,
+                declaration_provider: Provider::ANSWERED,
                 type_definition_provider: Provider::ANSWERED,
                 document_formatting_provider: Provider::ANSWERED,
-                document_range_formatting_provider: Provider::ANSWERED,
+                document_range_formatting_provider: RangeFormattingOptions {
+                    ranges_support: true,
+                },
+                document_on_type_formatting_provider: OnTypeFormattingOptions {
+                    first_trigger_character: FORM_CLOSER,
+                },
                 code_lens_provider: ResolveOptions {
                     resolve_provider: true,
                 },
@@ -1627,13 +1672,18 @@ pub struct ServerCapabilities
     /// Definitions are answered: where what a written name refers to is
     /// written.
     pub definition_provider: Provider,
+    /// Declarations are answered: where what a written name refers to is
+    /// declared, its signature for a name declared in two halves.
+    pub declaration_provider: Provider,
     /// Type definitions are answered: where the families a node's type names
     /// are declared.
     pub type_definition_provider: Provider,
     /// Formatting the whole document is answered.
     pub document_formatting_provider: Provider,
-    /// Formatting a range is answered.
-    pub document_range_formatting_provider: Provider,
+    /// Formatting a range is answered, and several ranges at once.
+    pub document_range_formatting_provider: RangeFormattingOptions,
+    /// Typing the `;` that closes a top-level form lays that form out.
+    pub document_on_type_formatting_provider: OnTypeFormattingOptions,
     /// Code lenses are answered, each whole, and resolved as it came.
     pub code_lens_provider: ResolveOptions,
     /// Code actions are answered, each with its edit, and resolved as it
@@ -1659,6 +1709,16 @@ pub struct ServerCapabilities
     pub linked_editing_range_provider: Provider,
     /// The workspace features answered.
     pub workspace: WorkspaceOptions,
+}
+
+/// The range-formatting provider, as advertised.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct RangeFormattingOptions
+{
+    /// Several ranges are formatted by one request.
+    pub ranges_support: bool,
 }
 
 /// The rename provider, as advertised.
@@ -1870,10 +1930,20 @@ pub struct SemanticTokensProvider
 {
     /// The token types and modifiers a token's integers index.
     pub legend: Legend,
-    /// Tokens over the whole document are answered.
-    pub full: bool,
+    /// Tokens over the whole document are answered, and as edits of the last
+    /// full answer.
+    pub full: FullOptions,
     /// Tokens over a range are answered.
     pub range: bool,
+}
+
+/// The whole-document semantic tokens, as advertised.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct FullOptions
+{
+    /// A delta request is answered.
+    pub delta: bool,
 }
 
 /// The token legend.
@@ -1907,6 +1977,9 @@ pub enum Answer
     Initialize(Box<InitializeResult>),
     /// What a semantic-tokens request answers for an open document.
     Tokens(SemanticTokens),
+    /// What a semantic-tokens delta request answers for an open document
+    /// whose last full answer the client names.
+    Deltas(SemanticTokensDelta),
     /// What a completion request answers at a position of an open document.
     Completions(CompletionList),
     /// What a completion-item resolution answers: the item, with a declared
@@ -2005,11 +2078,27 @@ pub struct DocumentLink
 
 /// The result of a semantic-tokens request.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[repr(transparent)]
+#[serde(rename_all = "camelCase")]
 pub struct SemanticTokens
 {
+    /// The id a delta request names this answer by: present on a full
+    /// answer, absent on a range answer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_id: Option<ResultId>,
     /// The token stream, five integers per token.
     pub data: TokenStream,
+}
+
+/// The result of a semantic-tokens delta request: the edits turning the
+/// stream the client holds into the current one.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticTokensDelta
+{
+    /// The id a later delta request names the current stream by.
+    pub result_id: ResultId,
+    /// The edits, at most one.
+    pub edits: Vec<TokensEdit>,
 }
 
 /// The result of a completion request: every name and keyword the word at the
@@ -2081,6 +2170,20 @@ impl CompletionItemKind
     pub const KEYWORD: Self = Self(14);
     /// A binder in scope.
     pub const VARIABLE: Self = Self(6);
+}
+
+/// The character whose typing closes a top-level form: what on-type
+/// formatting answers.
+pub const FORM_CLOSER: &str = ";";
+
+/// The on-type-formatting provider, as advertised.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct OnTypeFormattingOptions
+{
+    /// The character that asks for formatting as it is typed.
+    pub first_trigger_character: &'static str,
 }
 
 /// The characters that ask for signature help as they are typed: the `(` that

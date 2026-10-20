@@ -54,6 +54,7 @@ use gandr_surface_render_remote::LineIndex;
 use gandr_surface_render_remote::PositionRow;
 use gandr_surface_render_remote::Utf16Pos;
 use quenchant_shape::shape::Maybe;
+use serde::Deserialize;
 use serde::Serialize;
 
 /// The advertised token types, in the order a token's type integer indexes.
@@ -147,6 +148,117 @@ impl AsRef<[u32]> for TokenStream
     fn as_ref(&self) -> &[u32]
     {
         &self.0
+    }
+}
+
+/// What names a full token stream to a later delta request: the hexadecimal
+/// BLAKE3 digest of its integers, each in little-endian bytes.
+#[repr(transparent)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct ResultId(String);
+
+/// One edit of a token stream: `delete_count` integers from `start` replaced
+/// by `data`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokensEdit
+{
+    /// The first integer replaced.
+    pub start: u32,
+    /// How many integers are replaced.
+    pub delete_count: u32,
+    /// The integers written in their place.
+    pub data: TokenStream,
+}
+
+impl TokenStream
+{
+    /// The id a full answer carrying this stream names it by.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the hexadecimal BLAKE3 digest of the integers, each in
+    ///   little-endian bytes, 64 lowercase digits: equal streams have one id,
+    ///   whichever connection asked.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two equal streams share an id, and a stream with one
+    ///   integer changed has another.
+    /// - witness: `tokens::tests::a_delta_replaces_the_tokens_between_the_shared_ends`
+    #[spec(ensures: |ret| ret.0.len() == 64
+        && ret.0.bytes().all(|digit| digit.is_ascii_digit() || (b'a' ..= b'f').contains(&digit)))]
+    #[inline]
+    #[must_use]
+    pub fn result_id(&self) -> ResultId
+    {
+        let mut hasher = blake3::Hasher::new();
+        for integer in &self.0 {
+            let _hasher = hasher.update(&integer.to_le_bytes());
+        }
+        ResultId(hasher.finalize().to_hex().to_string())
+    }
+
+    /// The edits turning `previous` into this stream.
+    ///
+    /// # Specification
+    /// - requires: nothing; integers past a stream's last whole token are not
+    ///   compared.
+    /// - ensures: no edit when the streams' whole tokens agree; otherwise one
+    ///   edit replacing the tokens between the longest prefix and the longest
+    ///   suffix of whole tokens the streams share with this stream's tokens
+    ///   there, its start and count in integers, each a multiple of five.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a token changed between two kept ones, a token
+    ///   appended, a token removed and equal streams each answer the exact
+    ///   edit, or none.
+    /// - witness: `tokens::tests::a_delta_replaces_the_tokens_between_the_shared_ends`
+    #[spec(ensures: |ret| ret.len() <= 1
+        && ret.iter().all(|edit| edit.start.is_multiple_of(5) && edit.delete_count.is_multiple_of(5)
+            && edit.data.0.len().is_multiple_of(5)))]
+    #[inline]
+    #[must_use]
+    pub fn edits_from(
+        &self,
+        previous: &Self,
+    ) -> Vec<TokensEdit>
+    {
+        let (old, new) = (previous.0.as_chunks::<5>().0, self.0.as_chunks::<5>().0);
+        let prefix = old
+            .iter()
+            .zip(new)
+            .take_while(|&(one, other)| one == other)
+            .count();
+        let (old, new) = (
+            old.get(prefix ..).unwrap_or_default(),
+            new.get(prefix ..).unwrap_or_default(),
+        );
+        let suffix = old
+            .iter()
+            .rev()
+            .zip(new.iter().rev())
+            .take_while(|&(one, other)| one == other)
+            .count();
+        let (old, new) = (
+            old.get(.. old.len().saturating_sub(suffix))
+                .unwrap_or_default(),
+            new.get(.. new.len().saturating_sub(suffix))
+                .unwrap_or_default(),
+        );
+        if old.is_empty() && new.is_empty() {
+            return Vec::new();
+        }
+        let integers = |tokens: usize| u32::try_from(tokens.saturating_mul(5)).unwrap_or(u32::MAX);
+        vec![TokensEdit {
+            start: integers(prefix),
+            delete_count: integers(old.len()),
+            data: Self(new.as_flattened().to_vec()),
+        }]
     }
 }
 
@@ -352,6 +464,7 @@ mod tests
     use super::TOKEN_TYPES;
     use super::TokenModifiers;
     use super::TokenStream;
+    use super::TokensEdit;
     use super::encode;
     use super::token_of_role;
 
@@ -652,6 +765,62 @@ mod tests
                 span(Bytes(4, 5), HlRole::VariableDef),
             ]),
             TokenStream::from(vec![2, 0, 1, 3, 1])
+        );
+    }
+
+    #[test]
+    fn a_delta_replaces_the_tokens_between_the_shared_ends()
+    {
+        let stream = |tokens: &[u32]| {
+            TokenStream::from(
+                tokens
+                    .iter()
+                    .flat_map(|&token| [token, 0, 1, 0, 0])
+                    .collect::<Vec<_>>(),
+            )
+        };
+        let previous = stream(&[1, 2, 3]);
+        assert_eq!(
+            stream(&[1, 9, 3]).edits_from(&previous),
+            vec![TokensEdit {
+                start: 5,
+                delete_count: 5,
+                data: stream(&[9]),
+            }],
+            "a token changed between two kept ones: that token alone"
+        );
+        assert_eq!(
+            stream(&[1, 2, 3, 4]).edits_from(&previous),
+            vec![TokensEdit {
+                start: 15,
+                delete_count: 0,
+                data: stream(&[4]),
+            }],
+            "a token appended: inserted at the end"
+        );
+        assert_eq!(
+            stream(&[1, 3]).edits_from(&previous),
+            vec![TokensEdit {
+                start: 5,
+                delete_count: 5,
+                data: stream(&[]),
+            }],
+            "a token removed: deleted"
+        );
+        assert_eq!(
+            stream(&[1, 2, 3]).edits_from(&previous),
+            Vec::new(),
+            "equal streams: no edit"
+        );
+        assert_eq!(
+            stream(&[1, 2, 3]).result_id(),
+            previous.result_id(),
+            "equal streams share an id"
+        );
+        assert_ne!(
+            stream(&[1, 9, 3]).result_id(),
+            previous.result_id(),
+            "a changed stream has another"
         );
     }
 }

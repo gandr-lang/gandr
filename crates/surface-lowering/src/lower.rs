@@ -586,6 +586,8 @@ use crate::module::DeclarationSlot;
 use crate::module::DecoratedModule;
 use crate::module::FamilyIndex;
 use crate::module::Half;
+use crate::module::HalfAt;
+use crate::module::Halves;
 use crate::module::InstanceIndex;
 use crate::module::LoweredDeclaration;
 use crate::module::LoweredModule;
@@ -3104,6 +3106,18 @@ fn sources_of(
     }
 
     of
+}
+
+/// Where `half` is written: its form's bytes and its name tile's.
+///
+/// # Specification
+/// trivial.
+const fn half_at(half: Half) -> HalfAt
+{
+    HalfAt {
+        span: half.declaration.span,
+        named: half.named.span,
+    }
 }
 
 /// The positions `source_of` gives to `source`, in level order.
@@ -10512,6 +10526,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if let Maybe::Present(Half {
                 declaration,
                 operand: Operand::Member(target),
+                ..
             }) = slot.definition
                 && let Maybe::Absent(_) = slot.refusal
                 && let Some(member) = self.collected.slots.get(usize::from(target))
@@ -13894,6 +13909,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .definition
                     .map(|half| self.key_at(half.declaration.node)),
                 duplicate: self.duplicate_key(slot),
+                halves: Halves {
+                    signature: slot.signature.map(half_at),
+                    definition: slot.definition.map(half_at),
+                },
                 outcome,
             }));
         }

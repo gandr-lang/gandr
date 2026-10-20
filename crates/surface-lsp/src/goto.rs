@@ -1,12 +1,15 @@
-//! Definitions: where what a written name refers to is written, and where the
-//! families the type of a node names are declared.
+//! Definitions and declarations: where what a written name refers to is
+//! written, and where the families the type of a node names are declared.
 //!
-//! A definition request reads the referent index the document's type table
-//! keeps ([`TypeTable::referent`]): every use the lowering resolved, with the
-//! binder or declaration it resolved to, built once per text beside the types
-//! a hover reads. A type-definition request reads the families the chosen
-//! node's type names ([`TypeTable::type_referents`]). Neither resolves a name
-//! again, and neither reads the text for one.
+//! A definition or declaration request reads the referent index the
+//! document's type table keeps ([`TypeTable::referent`]): every use the
+//! lowering resolved, with the binder or declaration it resolved to, built
+//! once per text beside the types a hover reads. A name declared in two
+//! halves answers its definition half to a definition request and its
+//! signature half to a declaration request ([`TypeTable::half`]), and a name
+//! written once answers that form to both. A type-definition request reads the
+//! families the chosen node's type names ([`TypeTable::type_referents`]). None
+//! resolves a name again, and none reads the text for one.
 //!
 //! A referent in a sibling the document imports is answered at the sibling's
 //! path, its position counted in the sibling's text as the closure laid it out.
@@ -14,11 +17,13 @@
 //! end means it.
 //!
 //! [`TypeTable::referent`]: gandr_surface_dispatcher::TypeTable::referent
+//! [`TypeTable::half`]: gandr_surface_dispatcher::TypeTable::half
 //! [`TypeTable::type_referents`]: gandr_surface_dispatcher::TypeTable::type_referents
 
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_surface_dispatcher::DeclaredHalf;
 use gandr_surface_dispatcher::Referent;
 use gandr_surface_render_remote::ByteOffset as RenderOffset;
 use gandr_surface_render_remote::LineIndex;
@@ -40,8 +45,12 @@ use crate::protocol::LocationLink;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Goto
 {
-    /// `textDocument/definition`: what the name at the position refers to.
+    /// `textDocument/definition`: what the name at the position refers to,
+    /// at its definition half.
     Definition,
+    /// `textDocument/declaration`: what the name at the position refers to,
+    /// at its signature half.
+    Declaration,
     /// `textDocument/typeDefinition`: the families the type of the node at
     /// the position names.
     TypeDefinition,
@@ -70,18 +79,21 @@ pub fn ranged(
 ///
 /// # Specification
 /// - requires: `hovering` was read off `text`.
-/// - ensures: for [`Goto::Definition`], the referent of the use holding the
-///   position's byte, or else the byte before it; for [`Goto::TypeDefinition`],
-///   the declaration of each family the type of the node there names, in the
-///   order the table answers them. Each target is named by the request's URI
-///   when it stands in the document itself, and by its source's path as a
-///   `file` URI when it stands in a sibling, its ranges counted in that
-///   source's text: links from the use, or from the node, to the whole binder
-///   or declaring form with its name selected when `linked` holds, the name's
-///   location otherwise. A target whose source names no path or no range is
-///   dropped; none is the empty answer.
-/// - provides: the answer to `textDocument/definition` and
-///   `textDocument/typeDefinition` for a held document.
+/// - ensures: for [`Goto::Definition`] and [`Goto::Declaration`], the referent
+///   of the use holding the position's byte, or else the byte before it, at its
+///   definition half or its signature half respectively, as [`TypeTable::half`]
+///   answers it; for [`Goto::TypeDefinition`], the declaration of each family
+///   the type of the node there names, in the order the table answers them.
+///   Each target is named by the request's URI when it stands in the document
+///   itself, and by its source's path as a `file` URI when it stands in a
+///   sibling, its ranges counted in that source's text: links from the use, or
+///   from the node, to the whole binder or declaring form with its name
+///   selected when `linked` holds, the name's location otherwise. A target
+///   whose source names no path or no range is dropped; none is the empty
+///   answer.
+/// - provides: the answer to `textDocument/definition`,
+///   `textDocument/declaration` and `textDocument/typeDefinition` for a held
+///   document.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -89,10 +101,15 @@ pub fn ranged(
 /// - hypothesis: L3 — a parameter's use, a declaration's use and a constructor
 ///   in a pattern answer their sites, as links and as locations; a caret just
 ///   past a name answers it; a keyword answers nothing; a use's type answers
-///   its family; a name a sibling declares answers the sibling's path.
+///   its family; a name a sibling declares answers the sibling's path; a name
+///   declared in two halves answers its definition to a definition request and
+///   its signature to a declaration request.
 /// - witness: `server::tests::definition_answers_what_a_use_refers_to_795`
+/// - witness: `server::tests::a_two_half_name_answers_each_half_and_renames_both_1034`
 /// - witness: `server::tests::type_definition_answers_the_family_a_use_s_type_names_795`
 /// - witness: `tests::session::a_definition_in_a_sibling_answers_the_sibling_s_path_795`
+///
+/// [`TypeTable::half`]: gandr_surface_dispatcher::TypeTable::half
 #[spec(ensures: |ret| matches!(ret, Answer::Links(_) | Answer::Locations(_))
     && matches!(ret, Answer::Links(_)) == linked.0)]
 #[must_use]
@@ -110,7 +127,7 @@ pub fn targets(
     let at = ByteOffset::from(usize::from(position.byte(&index)));
     let before = usize::from(at).checked_sub(1_usize).map(ByteOffset::from);
     let (origin, referents): (Option<ByteSpan>, Vec<Referent>) = match goto {
-        Goto::Definition => {
+        Goto::Definition | Goto::Declaration => {
             let found = match table.referent(at) {
                 Maybe::Present(found) => Some(found),
                 Maybe::Absent(_) => before.and_then(|before| match table.referent(before) {
@@ -118,8 +135,12 @@ pub fn targets(
                     Maybe::Absent(_) => None,
                 }),
             };
+            let half = match goto {
+                Goto::Declaration => DeclaredHalf::Signature,
+                Goto::Definition | Goto::TypeDefinition => DeclaredHalf::Definition,
+            };
             match found {
-                Some((span, referent)) => (Some(span), Vec::from([referent])),
+                Some((span, referent)) => (Some(span), Vec::from([table.half(referent, half)])),
                 None => (None, Vec::new()),
             }
         },

@@ -182,6 +182,7 @@ use crate::typed::referent::Referents;
 
 mod referent;
 
+pub use crate::typed::referent::DeclaredHalf;
 pub use crate::typed::referent::NameKind;
 pub use crate::typed::referent::Referent;
 pub use crate::typed::referent::referred;
@@ -1631,6 +1632,38 @@ impl TypeTable
             Maybe::Absent(referred::Absent::Unreferred),
             |&(span, target)| Maybe::Present((span, target.referent())),
         )
+    }
+
+    /// The site of the `half` of the declaration `referent` names, as
+    /// written: its own name tile and form.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the answer stands in `referent`'s source; for a declaration
+    ///   written in two halves, it is the asked half's name tile and form; for
+    ///   one written once, or a referent that names no declaration, `referent`
+    ///   itself.
+    /// - provides: the answers to a definition request, which asks for the
+    ///   definition half, and to a declaration request, which asks for the
+    ///   signature half.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name declared in two halves answers each half at
+    ///   its own site, and a function written once and a parameter answer
+    ///   themselves.
+    /// - witness: `typed::tests::each_half_of_a_declaration_answers_its_own_site_1034`
+    #[spec(ensures: |ret| ret.source() == referent.source())]
+    #[inline]
+    #[must_use]
+    pub fn half(
+        &self,
+        referent: Referent,
+        half: DeclaredHalf,
+    ) -> Referent
+    {
+        self.referents.half(referent, half)
     }
 
     /// The span of every written use referring to the name written at `named`
@@ -3775,6 +3808,59 @@ mod tests
         );
     }
 
+    /// #1034: a name declared in two halves answers each half at its own
+    /// site, and its second half's name is a use of it, found with the others.
+    #[test]
+    fn each_half_of_a_declaration_answers_its_own_site_1034()
+    {
+        let referred = SourceText::from(REFERRED);
+        let table = table(referred);
+        let at = |needle: &'static str| found(referred, SourceText::from(needle));
+        let named = |needle: &'static str, name: &'static str| {
+            Some(site(
+                referred,
+                SourceText::from(needle),
+                SourceText::from(name),
+            ))
+        };
+        let Maybe::Present(two) = table.named_at(at("two : Nat"))
+        else {
+            panic!("the signature's name declares `two`");
+        };
+        assert_eq!(
+            written(&table, table.half(two, super::DeclaredHalf::Signature)),
+            named("two : Nat", "two"),
+            "the signature half, at the signature's name"
+        );
+        assert_eq!(
+            written(&table, table.half(two, super::DeclaredHalf::Definition)),
+            named("two = Succ", "two"),
+            "the definition half, at the definition's name"
+        );
+        assert_eq!(
+            refers(&table, referred, SourceText::from("two = Succ")),
+            named("two : Nat", "two"),
+            "the definition's name refers to the declaration"
+        );
+        assert_eq!(
+            table
+                .uses_of(two.source(), two.named())
+                .map(super::ByteSpan::start)
+                .collect::<Vec<_>>(),
+            [at("two = Succ")],
+            "the definition's name is found with the declaration's uses"
+        );
+        let Maybe::Present(plus) = table.named_at(at("plus(n"))
+        else {
+            panic!("the function's name declares `plus`");
+        };
+        assert_eq!(
+            table.half(plus, super::DeclaredHalf::Signature),
+            plus,
+            "a function written once answers itself"
+        );
+    }
+
     /// #795: the type of a node answers the families it names, and a written
     /// family answers itself.
     #[test]
@@ -3853,8 +3939,12 @@ mod tests
         );
         assert_eq!(
             at("there = "),
-            None,
-            "the importer's own declaration's name is no use"
+            Some(Site {
+                source: SourceIndex::from(1_usize),
+                at: found(importer, SourceText::from("there : Point")),
+                name: String::from("there"),
+            }),
+            "the importer's definition half's name, at its signature (#1034)"
         );
     }
 

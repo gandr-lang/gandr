@@ -17,7 +17,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 
 **Why.** An editor should show what `gandr check` prints, where it prints it, while the source is written. The server is a face over the pipeline's own outputs, never a second pipeline: its diagnostics are projections of the diagnostics `gandr-surface-diagnostics` builds for the dispatcher's step, the same ones the terminal lays out, and its tokens are the roles `gandr-surface-grammar`'s highlighter classifies, so an editor, a terminal and a test cannot disagree about a refusal or a token.
 
-**How.** Each connection's copy of an open document holds a `gandr-surface-session` session under the source root its `file` URI's path classifies as. A synchronisation applies the client's changes to the connection's copy and judges the text in the copy's session, reads the judgement's step through `gandr-surface-dispatcher`'s `entries` under `check --goals`, and publishes each diagnostic the model builds as one LSP diagnostic, mapped field by field as [`recheck`](src/recheck.rs) tabulates. Then it runs the kernel admission the judgement left. The first structural request after a change parses the copy's text once, and that reading answers each of them until the next change ([`reading`](src/reading.rs)). Every request about a name reads the dispatcher's `TypeTable`, built once per edit. A formatting request lays the held text out through `gandr-surface-format` and answers the edits that turn the text into that layout.
+**How.** Each connection's copy of an open document holds a `gandr-surface-session` session under the source root its `file` URI's path classifies as. A synchronisation applies the client's changes to the connection's copy and judges the text in the copy's session, reads the judgement's step through `gandr-surface-dispatcher`'s `entries` under `check --goals`, and publishes each diagnostic the model builds as one LSP diagnostic, mapped field by field as [`recheck`](src/recheck.rs) tabulates. Then it runs the kernel admission the judgement left. The first structural request after a change parses the copy's text once, and that reading answers each of them until the next change ([`reading`](src/reading.rs)). Every request about a name reads the dispatcher's `TypeTable`, built once per edit. Formatting lays the held text out through `gandr-surface-format`.
 
 ## Provided features
 
@@ -35,9 +35,9 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - `read_frame`, `read_frame::Absent`, `write_frame`, `Body` and `TransportFault`: the base protocol's framing, with a ceiling on a header line and on a body.
 - The envelope: requests, notifications and responses told apart; a body outside the decoder-supported JSON fragment answered with a parse error; a decoded batch or other invalid message refused as an invalid request.
 - Published diagnostics: one per diagnostic the model builds for the document's step, at its lead range, under its code, with its message and related information; republished at every change, cleared at close.
-- The `gandr.diagnostics.verbosity` and `quiet` settings, read at `initialize`, at each `workspace/didChangeConfiguration` and by `workspace/configuration`: a new verbosity republishes open documents; `quiet` is how long a diagnostic of the form being typed waits ([`quiet`](src/quiet.rs)).
+- The `gandr.diagnostics.verbosity` and `quiet` settings, pushed or pulled: a new verbosity republishes open documents; `quiet` is how long a diagnostic of the form being typed waits ([`quiet`](src/quiet.rs)).
 - Imports read an editor's copy before the disk: an edit, or a `.gandr` file or folder changed, created, deleted or renamed, rechecks every open document whose imports name it.
-- Semantic tokens for the whole document and for a range, and `TOKEN_TYPES` and `TOKEN_MODIFIERS`, the legend.
+- Semantic tokens for the whole document, or as edits of the last answer, and for a range; `TOKEN_TYPES` and `TOKEN_MODIFIERS`, the legend.
 - Completion: the binders in scope, the import closure's names and the keywords the slot at the cursor admits, each starting with the word typed.
 - Cancellation: a request withdrawn by a `$/cancelRequest`, or by a change of the document it reads, before it is handled is answered without being run ([`quiet`](src/quiet.rs)).
 - Progress and trace: an open and a recheck of changed files reported to a client that shows progress; each log line sent as `$/logTrace` at the level the client sets.
@@ -45,11 +45,11 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - Inline completion: ranked snippets closing the form at the cursor or filling its hole, each hole a named tab stop.
 - The outline: document symbols nesting each declaration inside its holder, folding ranges over multi-line forms, documentation and block comments, and selection ranges growing from the innermost node to the whole document.
 - Hover: the type of the innermost node under the cursor, and a declaration's documentation or refusal.
-- Definitions: what the name under the cursor refers to, and the families its type names, here or in an imported sibling; links: path imports to their files.
+- Definitions and declarations: what the name under the cursor refers to, at its definition or its signature, and the families its type names, here or in an imported sibling; links: path imports to their files.
 - Highlights, and linked editing of a local binder: where the name under the cursor is declared and used in the document; references and rename: in every open document and importer under the opened folders; a file renamed: its importers' addresses.
 - Workspace symbols: the names the open documents' import closures declare, each holding the query's characters in order.
-- Formatting: the whole document as one edit trimmed to the span its layout changes, and a range as one edit per top-level form it touches.
-- Positions in UTF-16 code units, a position past a line's end or past the last line clamped.
+- Formatting: the whole document, also before a save, as one edit trimmed to the span its layout changes; ranges, and the form a typed `;` closes, one edit per top-level form.
+- Positions in UTF-16 code units, clamped past a line's end or the last line.
 - `Capabilities`: the `initialize` result as one line of JSON.
 - A `file` URI's percent-decoded path.
 - One grammar per process, built at the first recheck.
@@ -109,7 +109,7 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | Inline completion | [`inline`](src/inline.rs) |
 | The outline | [`outline`](src/outline.rs) |
 | Hover | [`hover`](src/hover.rs) |
-| Definitions | [`goto`](src/goto.rs) |
+| Definitions, declarations | [`goto`](src/goto.rs) |
 | Workspace symbols | [`search`](src/search.rs) |
 | Highlights, references; rename; file moves | [`uses`](src/uses.rs); [`rename`](src/rename.rs); [`relocate`](src/relocate.rs) |
 | UTF-16 positions | [`position`](src/position.rs) |

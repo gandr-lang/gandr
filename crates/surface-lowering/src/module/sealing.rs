@@ -988,9 +988,9 @@ impl<'source> Collector<'_, 'source>
     ///   component's witness each read the expectation on their member.
     /// - witness: `tests::modules::a_component_check_carries_its_members_expectation`
     #[spec(
-        captures: before = self.collected.slots.get(held.0).map(|member| (member.introduced_by, member.attributes.clone())),
+        captures: before = self.collected.slots.get(held.0).map(|member| (member.introduced_by, member.named, member.attributes.clone())),
         ensures: |ret| match before {
-            | Some((form, ref attributes)) => ret.0 == Maybe::Present(Half { declaration: form, operand: Operand::Signature })
+            | Some((form, named, ref attributes)) => ret.0 == Maybe::Present(Half { declaration: form, named, operand: Operand::Signature })
                 && ret.1 == *attributes
                 && self.collected.slots.get(held.0).is_some_and(|member| member.attributes.is_empty()),
             | None => matches!(ret.0, Maybe::Absent(_)) && ret.1.is_empty(),
@@ -1008,6 +1008,7 @@ impl<'source> Collector<'_, 'source>
             Some(member) => (
                 Maybe::Present(Half {
                     declaration: member.introduced_by,
+                    named: member.named,
                     operand: Operand::Signature,
                 }),
                 core::mem::take(&mut member.attributes),

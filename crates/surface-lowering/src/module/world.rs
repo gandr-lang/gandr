@@ -130,7 +130,7 @@ impl<'source> Collector<'_, 'source>
         else {
             Tail::World
         };
-        self.file(slot, declaration, tail, attributes);
+        self.file(slot, declaration, named, tail, attributes);
 
         Ok(())
     }

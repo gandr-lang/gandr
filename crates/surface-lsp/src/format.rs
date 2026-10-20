@@ -66,10 +66,10 @@ use gandr_surface_render_remote::LineIndex;
 use gandr_surface_render_remote::PosOfByteError;
 use gandr_surface_syntax::SourceText;
 
+use crate::position::Position;
 use crate::position::Range;
 use crate::protocol::TextEdit;
 use crate::recheck::grammar;
-use crate::server::Window;
 
 /// Why a document was not formatted.
 #[derive(Debug)]
@@ -113,21 +113,37 @@ impl fmt::Display for Unformatted
     }
 }
 
+/// What a formatting request lays out: the whole document, the top-level
+/// forms some of the ranges touch, or the form a position closes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Scope<'ranges>
+{
+    /// The whole document.
+    Whole,
+    /// The forms these ranges touch.
+    Within(&'ranges [Range]),
+    /// The form whose source ends at this position: the form a character
+    /// typed there closed.
+    Closing(Position),
+}
+
 /// The edits that lay `text` out, over the whole document or the top-level
-/// forms `window` touches.
+/// forms `scope` touches.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: `text` is parsed and laid out by `gandr-surface-format` at its
-///   default page. Over [`Window::Whole`], no edit when the layout is the
-///   text's own, and otherwise one edit. Over [`Window::Within`], one edit per
-///   top-level form, with the comments standing before it, whose source span
-///   overlaps the range, or contains it when the range is empty, and whose
-///   layout differs; the blank lines between forms are never edited. Each edit
-///   replaces the span of its form, or of the document, between the longest
-///   prefix and the longest suffix the source and the layout share, both on
-///   character boundaries, with the layout between them. Edits are in document
-///   order and never overlap.
+///   default page, once whatever the scope. Over [`Scope::Whole`], no edit when
+///   the layout is the text's own, and otherwise one edit. Over
+///   [`Scope::Within`], one edit per top-level form, with the comments standing
+///   before it, whose source span overlaps one of the ranges, or contains it
+///   when that range is empty, and whose layout differs; a form several ranges
+///   touch is edited once, and the blank lines between forms are never edited.
+///   Over [`Scope::Closing`], the edit of the one form whose source ends at the
+///   position, if any. Each edit replaces the span of its form, or of the
+///   document, between the longest prefix and the longest suffix the source and
+///   the layout share, both on character boundaries, with the layout between
+///   them. Edits are in document order and never overlap.
 /// - fails: a grammar that did not build, a parse that did not commit, a
 ///   formatter refusal, or an offset the line index cannot place.
 /// - panics: none.
@@ -137,20 +153,24 @@ impl fmt::Display for Unformatted
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a document with two forms out of layout, formatted whole,
-///   over a range covering one form, and at a cursor inside the other, observes
-///   the trimmed whole edit and the per-form edits exactly; a document in
-///   layout answers no edit, and a repaired form none.
+///   over a range covering one form, at a cursor inside the other, and over two
+///   ranges touching both forms or one form twice, observes the trimmed whole
+///   edit and the per-form edits exactly; a document in layout answers no edit,
+///   and a repaired form none; a position after a form's closing `;` edits that
+///   form, and one inside a form or after a block's statement edits nothing.
 /// - witness: `format::tests::the_whole_document_is_one_trimmed_edit`
 /// - witness: `format::tests::a_range_formats_the_forms_it_touches`
+/// - witness: `format::tests::several_ranges_format_each_form_they_touch_once`
+/// - witness: `format::tests::a_closing_position_formats_the_form_it_ends`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |edits|
     edits.windows(2).all(|pair| match *pair {
         [ref earlier, ref later] => earlier.range.end <= later.range.start,
         _ => false,
     })
-    && (!matches!(window, Window::Whole) || edits.len() <= 1)))]
+    && (matches!(scope, Scope::Within(_)) || edits.len() <= 1)))]
 pub fn edits(
     text: SourceText<'_>,
-    window: Window,
+    scope: Scope<'_>,
 ) -> Result<Vec<TextEdit>, Unformatted>
 {
     let grammar = grammar().map_err(Unformatted::Grammar)?;
@@ -204,24 +224,35 @@ pub fn edits(
         });
         Ok(())
     };
-    match window {
-        Window::Whole => replace(0, source, laid)?,
-        Window::Within(range) => {
-            let (start, end) = (
-                usize::from(range.start.byte(&index)),
-                usize::from(range.end.byte(&index)),
-            );
+    match scope {
+        Scope::Whole => replace(0, source, laid)?,
+        Scope::Within(_) | Scope::Closing(_) => {
+            let at = |position: Position| usize::from(position.byte(&index));
+            let bounds: Vec<(usize, usize)> = match scope {
+                Scope::Within(ranges) => ranges
+                    .iter()
+                    .map(|range| (at(range.start), at(range.end)))
+                    .collect(),
+                Scope::Whole | Scope::Closing(_) => Vec::new(),
+            };
+            let closing = match scope {
+                Scope::Closing(position) => Some(at(position)),
+                Scope::Whole | Scope::Within(_) => None,
+            };
             for piece in formatted.pieces() {
                 let (from, to) = (
                     usize::from(piece.source.start()),
                     usize::from(piece.source.end()),
                 );
-                let touched = if start < end {
-                    from < end && start < to
-                }
-                else {
-                    from <= start && start <= to
-                };
+                let touched = closing == Some(to)
+                    || bounds.iter().any(|&(start, end)| {
+                        if start < end {
+                            from < end && start < to
+                        }
+                        else {
+                            from <= start && start <= to
+                        }
+                    });
                 let (Some(before), Some(after)) = (
                     source.get(from .. to),
                     laid.get(
@@ -245,13 +276,13 @@ mod tests
 {
     use gandr_surface_syntax::SourceText;
 
+    use super::Scope;
     use super::edits;
     use crate::position::Character;
     use crate::position::Line;
     use crate::position::Position;
     use crate::position::Range;
     use crate::protocol::TextEdit;
-    use crate::server::Window;
 
     /// The position at `line` and `character`.
     ///
@@ -291,7 +322,7 @@ mod tests
     fn the_whole_document_is_one_trimmed_edit()
     {
         assert_eq!(
-            edits(SourceText::from(LOOSE), Window::Whole).expect("the document formats"),
+            edits(SourceText::from(LOOSE), Scope::Whole).expect("the document formats"),
             vec![replace(
                 at(0_u32, 4_u32),
                 at(2_u32, 7_u32),
@@ -300,7 +331,7 @@ mod tests
             "one edit, from the first change to the last"
         );
         assert_eq!(
-            edits(SourceText::from("def a = 1 ;\n"), Window::Whole).expect("the document formats"),
+            edits(SourceText::from("def a = 1 ;\n"), Scope::Whole).expect("the document formats"),
             Vec::new(),
             "a document in layout answers no edit"
         );
@@ -314,7 +345,7 @@ mod tests
             end: at(2_u32, 2_u32),
         };
         assert_eq!(
-            edits(SourceText::from(LOOSE), Window::Within(second)).expect("the document formats"),
+            edits(SourceText::from(LOOSE), Scope::Within(&[second])).expect("the document formats"),
             vec![replace(at(2_u32, 6_u32), at(2_u32, 8_u32), "")],
             "a range inside the second form edits it alone, trimmed"
         );
@@ -323,7 +354,7 @@ mod tests
             end: at(0_u32, 6_u32),
         };
         assert_eq!(
-            edits(SourceText::from(LOOSE), Window::Within(cursor)).expect("the document formats"),
+            edits(SourceText::from(LOOSE), Scope::Within(&[cursor])).expect("the document formats"),
             vec![replace(at(0_u32, 4_u32), at(0_u32, 9_u32), "a =")],
             "a cursor formats the form holding it"
         );
@@ -332,7 +363,8 @@ mod tests
             end: at(1_u32, 7_u32),
         };
         assert_eq!(
-            edits(SourceText::from(LOOSE), Window::Within(comment)).expect("the document formats"),
+            edits(SourceText::from(LOOSE), Scope::Within(&[comment]))
+                .expect("the document formats"),
             vec![replace(at(2_u32, 6_u32), at(2_u32, 8_u32), "")],
             "a comment belongs to the form after it"
         );
@@ -343,7 +375,7 @@ mod tests
         assert_eq!(
             edits(
                 SourceText::from("def  a =  1 ;\n\ndef b   = 2 ;\n"),
-                Window::Within(blank)
+                Scope::Within(&[blank])
             )
             .expect("the document formats"),
             Vec::new(),
@@ -356,7 +388,7 @@ mod tests
         assert_eq!(
             edits(
                 SourceText::from("def  a = (1 ;\n"),
-                Window::Within(repaired)
+                Scope::Within(&[repaired])
             )
             .expect("the document formats"),
             Vec::new(),
@@ -367,7 +399,7 @@ mod tests
             end: at(2_u32, 2_u32),
         };
         assert_eq!(
-            edits(SourceText::from(LOOSE), Window::Within(across)).expect("the document formats"),
+            edits(SourceText::from(LOOSE), Scope::Within(&[across])).expect("the document formats"),
             vec![
                 replace(at(0_u32, 4_u32), at(0_u32, 9_u32), "a ="),
                 replace(at(2_u32, 6_u32), at(2_u32, 8_u32), ""),
@@ -379,7 +411,7 @@ mod tests
             end: at(1_u32, 0_u32),
         };
         assert_eq!(
-            edits(SourceText::from(LOOSE), Window::Within(to_the_next))
+            edits(SourceText::from(LOOSE), Scope::Within(&[to_the_next]))
                 .expect("the document formats"),
             vec![replace(at(0_u32, 4_u32), at(0_u32, 9_u32), "a =")],
             "a range ending where the next form starts leaves that form"
@@ -389,7 +421,7 @@ mod tests
             end: at(2_u32, 2_u32),
         };
         assert_eq!(
-            edits(SourceText::from(LOOSE), Window::Within(from_the_end))
+            edits(SourceText::from(LOOSE), Scope::Within(&[from_the_end]))
                 .expect("the document formats"),
             vec![replace(at(2_u32, 6_u32), at(2_u32, 8_u32), "")],
             "a range starting where a form ends leaves that form"
@@ -399,10 +431,79 @@ mod tests
             end: at(1_u32, 0_u32),
         };
         assert_eq!(
-            edits(SourceText::from(LOOSE), Window::Within(at_the_start))
+            edits(SourceText::from(LOOSE), Scope::Within(&[at_the_start]))
                 .expect("the document formats"),
             vec![replace(at(2_u32, 6_u32), at(2_u32, 8_u32), "")],
             "a cursor where a form starts formats it"
+        );
+    }
+
+    #[test]
+    fn several_ranges_format_each_form_they_touch_once()
+    {
+        let first = Range {
+            start: at(0_u32, 6_u32),
+            end: at(0_u32, 6_u32),
+        };
+        let second = Range {
+            start: at(2_u32, 0_u32),
+            end: at(2_u32, 2_u32),
+        };
+        assert_eq!(
+            edits(SourceText::from(LOOSE), Scope::Within(&[second, first]))
+                .expect("the document formats"),
+            vec![
+                replace(at(0_u32, 4_u32), at(0_u32, 9_u32), "a ="),
+                replace(at(2_u32, 6_u32), at(2_u32, 8_u32), ""),
+            ],
+            "two ranges in either order format both forms, in document order"
+        );
+        let again = Range {
+            start: at(2_u32, 4_u32),
+            end: at(2_u32, 9_u32),
+        };
+        assert_eq!(
+            edits(SourceText::from(LOOSE), Scope::Within(&[second, again]))
+                .expect("the document formats"),
+            vec![replace(at(2_u32, 6_u32), at(2_u32, 8_u32), "")],
+            "two ranges in one form edit it once"
+        );
+        assert_eq!(
+            edits(SourceText::from(LOOSE), Scope::Within(&[])).expect("the document formats"),
+            Vec::new(),
+            "no range edits nothing"
+        );
+    }
+
+    #[test]
+    fn a_closing_position_formats_the_form_it_ends()
+    {
+        assert_eq!(
+            edits(SourceText::from(LOOSE), Scope::Closing(at(0_u32, 13_u32)))
+                .expect("the document formats"),
+            vec![replace(at(0_u32, 4_u32), at(0_u32, 9_u32), "a =")],
+            "after the first form's `;`: that form alone"
+        );
+        assert_eq!(
+            edits(SourceText::from(LOOSE), Scope::Closing(at(2_u32, 13_u32)))
+                .expect("the document formats"),
+            vec![replace(at(2_u32, 6_u32), at(2_u32, 8_u32), "")],
+            "after the second form's `;`: that form alone"
+        );
+        assert_eq!(
+            edits(SourceText::from(LOOSE), Scope::Closing(at(0_u32, 6_u32)))
+                .expect("the document formats"),
+            Vec::new(),
+            "inside a form: nothing"
+        );
+        assert_eq!(
+            edits(
+                SourceText::from("def  a = thunk { run x <- pure 1 ; return x } ;\n"),
+                Scope::Closing(at(0_u32, 34_u32))
+            )
+            .expect("the document formats"),
+            Vec::new(),
+            "after a block's statement: nothing"
         );
     }
 }

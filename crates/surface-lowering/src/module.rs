@@ -1058,6 +1058,9 @@ pub struct Half
 {
     /// The declaration form.
     pub declaration: Placed,
+    /// The name tile the form writes, or the form standing where a name
+    /// belongs when it writes none: where a face going to this half lands.
+    pub named: Placed,
     /// The declared type of a signature, or the body of a definition.
     pub operand: Operand,
 }
@@ -3024,6 +3027,7 @@ impl<'source> Collector<'_, 'source>
             if slot.introduced_by.node == child.node {
                 slot.signature = Maybe::Present(Half {
                     declaration: child,
+                    named,
                     operand: Operand::Written(classifier),
                 });
                 slot.attributes.extend(attributes);
@@ -3252,6 +3256,7 @@ impl<'source> Collector<'_, 'source>
             if let Some(slot) = self.collected.slots.get_mut(held.0) {
                 slot.signature = Maybe::Present(Half {
                     declaration: child,
+                    named,
                     operand: Operand::Signature,
                 });
                 slot.refuse(child.node, refusal);
@@ -3342,6 +3347,7 @@ impl<'source> Collector<'_, 'source>
             if slot.introduced_by.node == child.node {
                 slot.definition = Maybe::Present(Half {
                     declaration: child,
+                    named,
                     operand: Operand::Presented,
                 });
                 slot.attributes.extend(attributes);
@@ -3372,6 +3378,7 @@ impl<'source> Collector<'_, 'source>
             if let Some(slot) = self.collected.slots.get_mut(held.0) {
                 slot.signature = Maybe::Present(Half {
                     declaration: child,
+                    named,
                     operand: Operand::Signature,
                 });
                 slot.refuse(child.node, refusal);
@@ -3445,6 +3452,7 @@ impl<'source> Collector<'_, 'source>
         if let Some(entry) = self.collected.slots.get_mut(slot.0) {
             entry.definition = Maybe::Present(Half {
                 declaration: named,
+                named,
                 operand: Operand::Code,
             });
         }
@@ -3720,7 +3728,7 @@ impl<'source> Collector<'_, 'source>
         else {
             read_tail(&mut header, declaration)
         };
-        self.file(slot, declaration, tail, attributes);
+        self.file(slot, declaration, named, tail, attributes);
 
         Ok(())
     }
@@ -3955,7 +3963,8 @@ impl<'source> Collector<'_, 'source>
     /// File one read declaration form into its slot.
     ///
     /// # Specification
-    /// - requires: `slot` names a live slot; `declaration` is the form read.
+    /// - requires: `slot` names a live slot; `declaration` is the form read,
+    ///   and `named` the name tile it writes.
     /// - ensures: a fault is offered to the slot at the form itself; a clean
     ///   form's halves — one for a signature or a definition, the definition
     ///   for a function tail and its signature too when the tail is signed —
@@ -4045,6 +4054,7 @@ impl<'source> Collector<'_, 'source>
             else {
                 let half = Maybe::Present(Half {
                     declaration,
+                    named,
                     operand: incoming,
                 });
                 entry.signature
@@ -4065,6 +4075,7 @@ impl<'source> Collector<'_, 'source>
         &mut self,
         slot: SlotIndex,
         declaration: Placed,
+        named: Placed,
         tail: Tail<'source>,
         attributes: Vec<WrittenAttribute<'source>>,
     )
@@ -4094,6 +4105,7 @@ impl<'source> Collector<'_, 'source>
         };
         let incoming = Half {
             declaration,
+            named,
             operand,
         };
         let mut derived = Maybe::Absent(declaration_half::Absent::Unwritten);
@@ -4252,6 +4264,7 @@ impl<'source> Collector<'_, 'source>
                         && slot.definition
                             == Maybe::Present(Half {
                                 declaration: stated.declaration,
+                                named: stated.named,
                                 operand: Operand::Member(target),
                             })
                         && slot.attributes.is_empty()
@@ -4280,6 +4293,7 @@ impl<'source> Collector<'_, 'source>
             signature: Maybe::Present(stated),
             definition: Maybe::Present(Half {
                 declaration: stated.declaration,
+                named: stated.named,
                 operand: Operand::Member(target),
             }),
             attributes: Vec::new(),
@@ -6225,6 +6239,7 @@ impl<'source> Collector<'_, 'source>
             };
             let half = Half {
                 declaration: at,
+                named: at,
                 operand,
             };
             let written = match operand {
@@ -6292,6 +6307,7 @@ impl<'source> Collector<'_, 'source>
     {
         let half = Half {
             declaration: at,
+            named: at,
             operand,
         };
         let Some(entry) = self.collected.slots.get_mut(member.0)
@@ -7170,6 +7186,27 @@ impl From<usize> for CodataIndex
     }
 }
 
+/// Where one half of a declared name is written: its form, and the name tile
+/// it writes or the form standing where a name belongs.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct HalfAt
+{
+    /// The bytes of the half's form.
+    pub span: ByteSpan,
+    /// The bytes of its name tile.
+    pub named: ByteSpan,
+}
+
+/// Where each half of a declared name is written.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Halves
+{
+    /// The signature, when the name has one.
+    pub signature: Maybe<HalfAt, declaration_half::Absent>,
+    /// The definition, when the name has one.
+    pub definition: Maybe<HalfAt, declaration_half::Absent>,
+}
+
 /// The parts of one lowered declaration, as the pass that assembles a module
 /// gathers them.
 ///
@@ -7216,6 +7253,8 @@ pub struct DeclarationParts<'source>
     /// The unit key of the form that wrote a half of this name a second time,
     /// when that repetition is the name's refusal.
     pub duplicate: Maybe<UnitKey, declaration_half::Absent>,
+    /// Where each of the name's halves is written.
+    pub halves: Halves,
     /// What the name's declarations amount to.
     pub outcome: DeclarationOutcome<'source>,
 }
@@ -7374,6 +7413,19 @@ impl<'source> LoweredDeclaration<'source>
     pub const fn duplicate(&self) -> Maybe<UnitKey, declaration_half::Absent>
     {
         self.parts.duplicate
+    }
+
+    /// Where each of the name's halves is written: a name declared in two
+    /// forms answers both, and one written once answers that form under the
+    /// half it writes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn halves(&self) -> Halves
+    {
+        self.parts.halves
     }
 
     /// What the name's declarations amount to.
@@ -8793,6 +8845,17 @@ mod tests
                 Maybe::Present(at(18_usize, 29_usize))
             ),
             "both halves are paired into the one slot"
+        );
+        assert_eq!(
+            (
+                slot.signature.map(|half| half.named.span),
+                slot.definition.map(|half| half.named.span)
+            ),
+            (
+                Maybe::Present(at(4_usize, 5_usize)),
+                Maybe::Present(at(22_usize, 23_usize))
+            ),
+            "each half keeps the name tile it writes (#1034)"
         );
         assert_eq!(
             slot.refusal,

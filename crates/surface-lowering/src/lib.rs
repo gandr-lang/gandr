@@ -431,6 +431,8 @@ pub use crate::module::DataIndex;
 pub use crate::module::DeclarationCount;
 pub use crate::module::DeclarationOutcome;
 pub use crate::module::FunctorIndex;
+pub use crate::module::HalfAt;
+pub use crate::module::Halves;
 pub use crate::module::InstanceIndex;
 pub use crate::module::LoweredDeclaration;
 pub use crate::module::LoweredModule;

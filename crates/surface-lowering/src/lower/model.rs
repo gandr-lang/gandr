@@ -392,6 +392,7 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Present(Half {
                     declaration,
                     operand: Operand::Model(part),
+                    ..
                 }),
                 Maybe::Absent(_),
                 Container::Module(structure),

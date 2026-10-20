@@ -84,6 +84,7 @@ use serde_json::Value;
 use crate::complete::completions;
 use crate::complete::resolved;
 use crate::files::Files;
+use crate::format::Scope;
 use crate::format::edits;
 use crate::goto::Goto;
 use crate::goto::targets;
@@ -108,12 +109,14 @@ use crate::protocol::ChoiceParams;
 use crate::protocol::CompletionItem;
 use crate::protocol::ConfigurationParams;
 use crate::protocol::ContentChange;
+use crate::protocol::DeltaParams;
 use crate::protocol::Diagnostic;
 use crate::protocol::DidChangeParams;
 use crate::protocol::DidOpenParams;
 use crate::protocol::DocumentParams;
 use crate::protocol::DocumentUri;
 use crate::protocol::DocumentVersion;
+use crate::protocol::FORM_CLOSER;
 use crate::protocol::FileEvent;
 use crate::protocol::FileRename;
 use crate::protocol::FilesParams;
@@ -135,6 +138,7 @@ use crate::protocol::ProgressToken;
 use crate::protocol::PublishParams;
 use crate::protocol::PullsConfiguration;
 use crate::protocol::RangeParams;
+use crate::protocol::RangesParams;
 use crate::protocol::ReferenceContext;
 use crate::protocol::ReferenceParams;
 use crate::protocol::Refreshing;
@@ -144,6 +148,7 @@ use crate::protocol::RenameParams;
 use crate::protocol::Sections;
 use crate::protocol::SelectionRangeParams;
 use crate::protocol::SemanticTokens;
+use crate::protocol::SemanticTokensDelta;
 use crate::protocol::SetTraceParams;
 use crate::protocol::Settings;
 use crate::protocol::Severity;
@@ -152,6 +157,7 @@ use crate::protocol::StringValue;
 use crate::protocol::SymbolInformation;
 use crate::protocol::Trace;
 use crate::protocol::TraceParams;
+use crate::protocol::TypedParams;
 use crate::protocol::UnregistrationParams;
 use crate::protocol::Unresolved;
 use crate::protocol::WatchedFilesParams;
@@ -212,6 +218,8 @@ use crate::rpc::unregister;
 use crate::search::FOUND_HELD;
 use crate::search::kind_of;
 use crate::signature::help;
+use crate::tokens::ResultId;
+use crate::tokens::TokenStream;
 use crate::tokens::encode;
 use crate::tokens::overlapping;
 use crate::transport::Body;
@@ -236,7 +244,7 @@ enum Phase
     ShuttingDown,
 }
 
-/// What a token or formatting request asks about.
+/// What a token request asks about.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Window
 {
@@ -1278,6 +1286,7 @@ impl Workspace
             trace: Trace::Off,
             pulling: PullsConfiguration(false),
             choices: Vec::new(),
+            streams: BTreeMap::new(),
         };
         let answer = match classify(request) {
             Err(malformed) => malformed.response(),
@@ -1515,6 +1524,10 @@ pub struct Server
     /// Each choice this connection put to its user, by the request that put
     /// it, with the answer once read.
     choices: Vec<(RequestId, Choice)>,
+    /// The last full token stream this connection sent for each document,
+    /// with the id it sent it under: what a delta request is answered against.
+    /// A document's entry goes when the connection closes it.
+    streams: BTreeMap<DocumentUri, (ResultId, TokenStream)>,
 }
 
 /// Where a choice put to the user stands.
@@ -1582,6 +1595,7 @@ impl Server
             trace: Trace::Off,
             pulling: PullsConfiguration(false),
             choices: Vec::new(),
+            streams: BTreeMap::new(),
         }
     }
 
@@ -1710,6 +1724,53 @@ impl Server
             .iter()
             .find(|&&(ref asked, _)| asked == id)
             .map(|&(_, ref choice)| choice)
+    }
+
+    /// `answer`, a whole-document token answer for the document at `uri`,
+    /// as this connection sends it: the edits from the stream it last sent
+    /// when `previous` names that stream, and the answer whole otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a token answer carrying an id is kept as the document's last
+    ///   stream, and answered as the edits from the stream kept before it when
+    ///   `previous` is that stream's id; an answer of nothing forgets the
+    ///   document's stream. Edits are answered only for a `previous` given.
+    /// - provides: `textDocument/semanticTokens/full` and its delta.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a full answer, a delta named by its id after an edit,
+    ///   a delta repeated at the same id, a delta named by an unknown id, and a
+    ///   delta after the document closed are each the exact wire answer.
+    /// - witness: `server::tests::a_delta_answers_the_edits_from_the_last_full_stream`
+    #[spec(ensures: |ret| previous.is_some() || !matches!(ret, Answer::Deltas(_)))]
+    fn streamed(
+        &mut self,
+        uri: DocumentUri,
+        previous: Option<&ResultId>,
+        answer: Answer,
+    ) -> Answer
+    {
+        let Answer::Tokens(SemanticTokens {
+            result_id: Some(ref id),
+            ref data,
+        }) = answer
+        else {
+            let _forgotten = self.streams.remove(&uri);
+            return answer;
+        };
+        let held = self.streams.insert(uri, (id.clone(), data.clone()));
+        match (held, previous) {
+            (Some((ref held, ref stream)), Some(previous)) if held == previous => {
+                Answer::Deltas(SemanticTokensDelta {
+                    result_id: id.clone(),
+                    edits: data.edits_from(stream),
+                })
+            },
+            (Some(_) | None, Some(_) | None) => answer,
+        }
     }
 
     /// Whether this connection's client asked to cancel the work under
@@ -2518,6 +2579,12 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
+            (Phase::Running, "textDocument/semanticTokens/full/delta") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Tokens(_) | Answer::Deltas(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
             (Phase::Running, "textDocument/completion") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Completions(_), .. } => true,
@@ -2585,12 +2652,6 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
-            (Phase::Running, "textDocument/willSaveWaitUntil") =>
-                self.phase == phase && match ret {
-                    Outgoing::Success { result: Answer::Edits(ref edits), .. } => edits.is_empty(),
-                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
-                },
             (Phase::Running, "textDocument/documentHighlight") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Highlights(_), .. } => true,
@@ -2600,6 +2661,12 @@ impl Server
             (Phase::Running, "textDocument/linkedEditingRange") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Mirrored(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
+            (Phase::Running, "textDocument/prepareTypeHierarchy" | "typeHierarchy/supertypes" | "typeHierarchy/subtypes") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing, .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
@@ -2615,7 +2682,7 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
-            (Phase::Running, "textDocument/definition" | "textDocument/typeDefinition") =>
+            (Phase::Running, "textDocument/definition" | "textDocument/declaration" | "textDocument/typeDefinition") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Links(_) | Answer::Locations(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
@@ -2627,7 +2694,8 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
-            (Phase::Running, "textDocument/formatting" | "textDocument/rangeFormatting") =>
+            (Phase::Running, "textDocument/formatting" | "textDocument/rangeFormatting" | "textDocument/rangesFormatting"
+                | "textDocument/onTypeFormatting" | "textDocument/willSaveWaitUntil") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Edits(_), .. } => true,
                     Outgoing::Failure { ref error, .. } =>
@@ -2687,10 +2755,28 @@ impl Server
             },
             (Phase::Running, "textDocument/semanticTokens/full") => {
                 match serde_json::from_value::<DocumentParams>(params) {
-                    Ok(params) => success(
-                        id,
-                        workspace.tokens(&params.text_document.uri, self.peer, Window::Whole),
-                    ),
+                    Ok(params) => {
+                        let answer =
+                            workspace.tokens(&params.text_document.uri, self.peer, Window::Whole);
+                        success(id, self.streamed(params.text_document.uri, None, answer))
+                    },
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "textDocument/semanticTokens/full/delta") => {
+                match serde_json::from_value::<DeltaParams>(params) {
+                    Ok(params) => {
+                        let answer =
+                            workspace.tokens(&params.text_document.uri, self.peer, Window::Whole);
+                        success(
+                            id,
+                            self.streamed(
+                                params.text_document.uri,
+                                Some(&params.previous_result_id),
+                                answer,
+                            ),
+                        )
+                    },
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
@@ -2794,6 +2880,19 @@ impl Server
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
+            (Phase::Running, "textDocument/prepareTypeHierarchy") => {
+                // The core has no subtyping, so no position names a type with
+                // a hierarchy to show.
+                match serde_json::from_value::<PositionParams>(params) {
+                    Ok(_) => success(id, Answer::Nothing),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            // Only an item `prepareTypeHierarchy` answered is asked about, and
+            // it answers none.
+            (Phase::Running, "typeHierarchy/supertypes" | "typeHierarchy/subtypes") => {
+                success(id, Answer::Nothing)
+            },
             (Phase::Running, "textDocument/references") => {
                 match serde_json::from_value::<ReferenceParams>(params) {
                     Ok(params) => success(
@@ -2847,12 +2946,6 @@ impl Server
             (Phase::Running, "workspace/willCreateFiles" | "workspace/willDeleteFiles") => {
                 match serde_json::from_value::<FilesParams>(params) {
                     Ok(_) => success(id, Answer::Nothing),
-                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
-                }
-            },
-            (Phase::Running, "textDocument/willSaveWaitUntil") => {
-                match serde_json::from_value::<DocumentParams>(params) {
-                    Ok(_) => success(id, Answer::Edits(Vec::new())),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
@@ -2926,9 +3019,17 @@ impl Server
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
-            (Phase::Running, "textDocument/definition" | "textDocument/typeDefinition") => {
+            (
+                Phase::Running,
+                "textDocument/definition"
+                | "textDocument/declaration"
+                | "textDocument/typeDefinition",
+            ) => {
                 let goto = if name == "textDocument/definition" {
                     Goto::Definition
+                }
+                else if name == "textDocument/declaration" {
+                    Goto::Declaration
                 }
                 else {
                     Goto::TypeDefinition
@@ -2975,10 +3076,10 @@ impl Server
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
-            (Phase::Running, "textDocument/formatting") => {
+            (Phase::Running, "textDocument/formatting" | "textDocument/willSaveWaitUntil") => {
                 match serde_json::from_value::<DocumentParams>(params) {
                     Ok(params) => {
-                        workspace.format(id, &params.text_document.uri, self.peer, Window::Whole)
+                        workspace.format(id, &params.text_document.uri, self.peer, Scope::Whole)
                     },
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
@@ -2989,8 +3090,31 @@ impl Server
                         id,
                         &params.text_document.uri,
                         self.peer,
-                        Window::Within(params.range),
+                        Scope::Within(&[params.range]),
                     ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "textDocument/rangesFormatting") => {
+                match serde_json::from_value::<RangesParams>(params) {
+                    Ok(params) => workspace.format(
+                        id,
+                        &params.text_document.uri,
+                        self.peer,
+                        Scope::Within(&params.ranges),
+                    ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "textDocument/onTypeFormatting") => {
+                match serde_json::from_value::<TypedParams>(params) {
+                    Ok(params) if params.ch == FORM_CLOSER => workspace.format(
+                        id,
+                        &params.text_document.uri,
+                        self.peer,
+                        Scope::Closing(params.position),
+                    ),
+                    Ok(_) => success(id, Answer::Edits(Vec::new())),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
@@ -3234,6 +3358,7 @@ impl Server
                 else {
                     return Outcome::quiet();
                 };
+                let _forgotten = self.streams.remove(&text_document.uri);
                 let named = match workspace.documents.remove_entry(&text_document.uri) {
                     Some((uri, held)) => {
                         // The disk stands in for the last copy, so what its
@@ -3557,6 +3682,7 @@ impl Workspace
     /// - ensures: an unknown document yields Nothing; a held document yields a
     ///   token stream, restricted to overlapping whole spans for a range
     ///   request. Empty and inverted ranges yield an empty stream, not Nothing.
+    ///   A whole-document stream carries its result id; a range's carries none.
     /// - provides: full and range token answers in document coordinates.
     /// - fails: never.
     /// - panics: none.
@@ -3574,11 +3700,12 @@ impl Workspace
         Answer::Nothing => !self.documents.contains_key(uri),
         Answer::Tokens(ref tokens) => self.documents.contains_key(uri)
             && tokens.data.as_ref().len().is_multiple_of(5)
+            && tokens.result_id.is_some() == matches!(window, Window::Whole)
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), Window::Whole | Window::Within(_) => true },
         Answer::Initialize(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
-            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) => false,
+            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) => false,
     })]
     fn tokens(
         &self,
@@ -3599,8 +3726,10 @@ impl Workspace
                 overlapping(spans, range.start.byte(&index), range.end.byte(&index))
             },
         };
+        let data = encode(&index, &spans);
         Answer::Tokens(SemanticTokens {
-            data: encode(&index, &spans),
+            result_id: matches!(window, Window::Whole).then(|| data.result_id()),
+            data,
         })
     }
 
@@ -3633,7 +3762,7 @@ impl Workspace
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
-            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) => false,
+            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) => false,
     })]
     fn inline(
         &self,
@@ -4630,7 +4759,7 @@ impl Workspace
         ))
     }
 
-    /// The answer to a formatting request `id` over `window` of the copy of
+    /// The answer to a formatting request `id` over `scope` of the copy of
     /// the document at `uri` that `peer` is answered from.
     ///
     /// # Specification
@@ -4643,9 +4772,9 @@ impl Workspace
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the known document out of layout, formatted whole and
-    ///   over a range, a closed document and a document in layout observe the
-    ///   edits, `null` and the empty list exactly.
+    /// - hypothesis: L3 — the known document out of layout, formatted whole,
+    ///   over a range and over several ranges, a closed document and a document
+    ///   in layout observe the edits, `null` and the empty list exactly.
     /// - witness: `server::tests::formatting_answers_the_edits_that_lay_a_document_out`
     #[spec(ensures: |ref ret| match *ret {
         Outgoing::Success { result: Answer::Nothing, .. } => !self.documents.contains_key(uri),
@@ -4658,14 +4787,14 @@ impl Workspace
         id: RequestId,
         uri: &DocumentUri,
         peer: Peer,
-        window: Window,
+        scope: Scope<'_>,
     ) -> Outgoing
     {
         let Maybe::Present(document) = self.view(uri, peer)
         else {
             return success(id, Answer::Nothing);
         };
-        match edits(document.text.source(), window) {
+        match edits(document.text.source(), scope) {
             Ok(edits) => success(id, Answer::Edits(edits)),
             Err(unformatted) => failure(id, ErrorCode::REQUEST_FAILED, unformatted.to_string()),
         }
@@ -5435,7 +5564,7 @@ mod tests
                                     "parameter","property","enumMember","type","typeParameter",
                                     "number","string","comment","macro","label"],
                                 "tokenModifiers":["declaration","defaultLibrary"]},
-                            "full":true,
+                            "full":{"delta":true},
                             "range":true},
                         "completionProvider":{"resolveProvider":true},
                         "inlineCompletionProvider":true,
@@ -5445,9 +5574,11 @@ mod tests
                         "hoverProvider":true,
                         "signatureHelpProvider":{"triggerCharacters":["(",","],"retriggerCharacters":[")"]},
                         "definitionProvider":true,
+                        "declarationProvider":true,
                         "typeDefinitionProvider":true,
                         "documentFormattingProvider":true,
-                        "documentRangeFormattingProvider":true,
+                        "documentRangeFormattingProvider":{"rangesSupport":true},
+                        "documentOnTypeFormattingProvider":{"firstTriggerCharacter":";"},
                         "codeLensProvider":{"resolveProvider":true},
                         "codeActionProvider":{"resolveProvider":true},
                         "workspaceSymbolProvider":{"resolveProvider":true},
@@ -5491,9 +5622,82 @@ mod tests
             ),
             wire(Json(
                 r#"[{"jsonrpc":"2.0","id":2,
-                     "result":{"data":[0,0,3,0,0, 0,4,1,2,1, 0,4,2,9,0]}}]"#
+                     "result":{"data":[0,0,3,0,0, 0,4,1,2,1, 0,4,2,9,0],
+                        "resultId":"ac2c5e81f4c6deef122878dc6eb03960e2099f34556da16b15af990a3828c90c"}}]"#
             )),
             "the known document's tokens: `def`, `f` a declared function, `42`"
+        );
+    }
+
+    #[test]
+    fn a_delta_answers_the_edits_from_the_last_full_stream()
+    {
+        let mut server = server_over_the_known_document();
+        let full = |server: &mut Connected| {
+            send(
+                server,
+                Json(
+                    r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full",
+                        "params":{"textDocument":{"uri":"file:///tmp/example.gandr"}}}"#,
+                ),
+            )[0]["result"]
+                .clone()
+        };
+        let delta = |server: &mut Connected, previous: &str| {
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":3,"method":"textDocument/semanticTokens/full/delta",
+                    "params":{{"textDocument":{{"uri":"file:///tmp/example.gandr"}},
+                    "previousResultId":"{previous}"}}}}"#
+            );
+            send(server, Json(&request))[0]["result"].clone()
+        };
+        let before = full(&mut server);
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+                    "textDocument":{"uri":"file:///tmp/example.gandr","version":2},
+                    "contentChanges":[{"text":"def f = 7 ;\n"}]}}"#,
+            ),
+        );
+        let first = before["resultId"]
+            .as_str()
+            .expect("a full answer carries an id");
+        let changed = delta(&mut server, first);
+        assert_eq!(
+            changed["edits"],
+            serde_json::json!([{"start": 10_u32, "deleteCount": 5_u32, "data": [0_u32, 4_u32, 1_u32, 9_u32, 0_u32]}]),
+            "`42` became `7`: the one token that changed"
+        );
+        let after = full(&mut server);
+        assert_eq!(
+            changed["resultId"], after["resultId"],
+            "the delta's id is the full stream's"
+        );
+        let current = after["resultId"]
+            .as_str()
+            .expect("a full answer carries an id");
+        assert_eq!(
+            delta(&mut server, current),
+            serde_json::json!({"resultId": current, "edits": []}),
+            "nothing changed since: no edit"
+        );
+        assert_eq!(
+            delta(&mut server, "stale"),
+            after,
+            "an id the connection did not send: the full stream"
+        );
+        let _closed = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didClose",
+                    "params":{"textDocument":{"uri":"file:///tmp/example.gandr"}}}"#,
+            ),
+        );
+        assert_eq!(
+            delta(&mut server, current),
+            serde_json::Value::Null,
+            "a closed document: null"
         );
     }
 
@@ -7389,6 +7593,59 @@ mod tests
         assert_eq!(
             ask(
                 &mut server,
+                "textDocument/rangesFormatting",
+                "file:///tmp/loose.gandr",
+                r#""ranges":[{"start":{"line":0,"character":5},"end":{"line":0,"character":5}},
+                    {"start":{"line":0,"character":0},"end":{"line":0,"character":3}}],"#
+            ),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":7,"result":[{
+                    "range":{"start":{"line":0,"character":4},"end":{"line":0,"character":9}},
+                    "newText":"f ="}]}]"#
+            )),
+            "two ranges in one form: its edit once"
+        );
+        assert_eq!(
+            ask(
+                &mut server,
+                "textDocument/onTypeFormatting",
+                "file:///tmp/loose.gandr",
+                r#""position":{"line":0,"character":14},"ch":";","#
+            ),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":7,"result":[{
+                    "range":{"start":{"line":0,"character":4},"end":{"line":0,"character":9}},
+                    "newText":"f ="}]}]"#
+            )),
+            "a `;` closing the form: the form laid out"
+        );
+        assert_eq!(
+            ask(
+                &mut server,
+                "textDocument/willSaveWaitUntil",
+                "file:///tmp/loose.gandr",
+                r#""reason":1,"#
+            ),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":7,"result":[{
+                    "range":{"start":{"line":0,"character":4},"end":{"line":0,"character":9}},
+                    "newText":"f ="}]}]"#
+            )),
+            "a save about to happen: the whole document's edits"
+        );
+        assert_eq!(
+            ask(
+                &mut server,
+                "textDocument/onTypeFormatting",
+                "file:///tmp/loose.gandr",
+                r#""position":{"line":0,"character":14},"ch":"x","#
+            ),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":[]}]"#)),
+            "another character: no edit"
+        );
+        assert_eq!(
+            ask(
+                &mut server,
                 "textDocument/formatting",
                 "file:///tmp/example.gandr",
                 ""
@@ -7406,6 +7663,44 @@ mod tests
             ),
             wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":[]}]"#)),
             "a document in layout answers no edit"
+        );
+    }
+
+    #[test]
+    fn no_position_names_a_type_hierarchy()
+    {
+        let mut server = server_over_the_known_document();
+        assert_eq!(
+            send(
+                &mut server,
+                Json(
+                    r#"{"jsonrpc":"2.0","id":7,"method":"textDocument/prepareTypeHierarchy",
+                        "params":{"textDocument":{"uri":"file:///tmp/example.gandr"},
+                        "position":{"line":0,"character":4}}}"#
+                )
+            ),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":null}]"#)),
+            "a declared name: no hierarchy to prepare"
+        );
+        for method in ["typeHierarchy/supertypes", "typeHierarchy/subtypes"] {
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":7,"method":"{method}","params":{{"item":{{}}}}}}"#
+            );
+            assert_eq!(
+                send(&mut server, Json(&request)),
+                wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":null}]"#)),
+                "{method}: none"
+            );
+        }
+        assert_eq!(
+            send(
+                &mut server,
+                Json(
+                    r#"{"jsonrpc":"2.0","id":7,"method":"textDocument/prepareTypeHierarchy","params":{}}"#
+                )
+            )[0]["error"]["code"],
+            serde_json::json!(-32602_i32),
+            "a request naming no position is refused"
         );
     }
 
@@ -7499,6 +7794,7 @@ mod tests
     {
         let method = match goto {
             Goto::Definition => "textDocument/definition",
+            Goto::Declaration => "textDocument/declaration",
             Goto::TypeDefinition => "textDocument/typeDefinition",
         };
         let request = serde_json::json!({
@@ -9124,6 +9420,90 @@ mod tests
                 .and_then(Value::as_str)
                 .is_some_and(|value| value.contains("**Checked fill** `42`: the answer")),
             "{hovered}"
+        );
+    }
+
+    /// #1034: a name declared in two halves answers its definition half to a
+    /// definition request and its signature half to a declaration request,
+    /// and a rename or a reference search reaches both halves' names.
+    #[test]
+    fn a_two_half_name_answers_each_half_and_renames_both_1034()
+    {
+        let mut server = initialized();
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/halves.gandr","languageId":"gandr","version":1,
+                     "text":"def x : Integer ;\ndef x = 3 ;\ndef y = x ;\n"}}}"#,
+            ),
+        );
+        let uri = DocumentUri::from("file:///tmp/halves.gandr");
+        let at = |line: u32, character: u32| Position {
+            line: Line::from(line),
+            character: Character::from(character),
+        };
+        let name = |line: u32| {
+            serde_json::json!([{"uri": "file:///tmp/halves.gandr",
+                "range": {"start": {"line": line, "character": 4_u32},
+                    "end": {"line": line, "character": 5_u32}}}])
+        };
+        assert_eq!(
+            going(&mut server, Goto::Definition, &uri, at(2, 8)),
+            name(1),
+            "a use's definition: the definition half's name"
+        );
+        assert_eq!(
+            going(&mut server, Goto::Declaration, &uri, at(2, 8)),
+            name(0),
+            "a use's declaration: the signature half's name"
+        );
+        assert_eq!(
+            going(&mut server, Goto::Declaration, &uri, at(1, 4)),
+            name(0),
+            "the definition's own name declares at the signature"
+        );
+        let starts = |answer: &Value, pointer: &str| -> Vec<(u64, u64)> {
+            let mut starts: Vec<(u64, u64)> = answer
+                .pointer(pointer)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|edit| {
+                    Some((
+                        edit.pointer("/range/start/line")?.as_u64()?,
+                        edit.pointer("/range/start/character")?.as_u64()?,
+                    ))
+                })
+                .collect();
+            starts.sort_unstable();
+            starts
+        };
+        let renamed = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","id":1,"method":"textDocument/rename","params":{
+                    "textDocument":{"uri":"file:///tmp/halves.gandr"},
+                    "position":{"line":2,"character":8},"newName":"z"}}"#,
+            ),
+        );
+        assert_eq!(
+            starts(&renamed, "/0/result/changes/file:~1~1~1tmp~1halves.gandr"),
+            [(0, 4), (1, 4), (2, 8)],
+            "a rename edits both halves' names and the use"
+        );
+        let found = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/references","params":{
+                    "textDocument":{"uri":"file:///tmp/halves.gandr"},
+                    "position":{"line":2,"character":8},"context":{"includeDeclaration":true}}}"#,
+            ),
+        );
+        assert_eq!(
+            starts(&found, "/0/result"),
+            [(0, 4), (1, 4), (2, 8)],
+            "the references are both halves' names and the use"
         );
     }
 }

@@ -19,6 +19,9 @@
 //!   family's declaration.
 //! - **A constructor pattern's name** refers to the constructor its family and
 //!   tag name, read off the scrutinee's type as the hover types it.
+//! - **A declaration written in two halves**, a signature and a definition,
+//!   refers by the half written first; the other half's name tile is kept as a
+//!   use of it, and [`Referents::half`] answers either half's own site.
 //!
 //! A referent may stand in a sibling the source imports: it names the unit's
 //! source and its span in that source's own text.
@@ -35,6 +38,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueType;
 use gandr_kernel_term::ConstantIndex;
+use gandr_surface_lowering::HalfAt;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::Resolution;
@@ -131,6 +135,27 @@ pub enum NameKind
     Value,
 }
 
+/// Which half of a declared name a request asks for.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum DeclaredHalf
+{
+    /// The signature: where the name's type is declared.
+    Signature,
+    /// The definition: where the name's body is given.
+    Definition,
+}
+
+/// The sites of a declaration's halves, each named by its own name tile and
+/// extended by its own form.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Halved
+{
+    /// The signature's site, when the name has one.
+    signature: Option<Referent>,
+    /// The definition's site, when the name has one.
+    definition: Option<Referent>,
+}
+
 /// What a use refers to, and whether that is a family a type names.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct Target
@@ -194,6 +219,8 @@ pub(super) struct Referents
     /// Each name the unit declares, a family's constructors included, with
     /// what it names.
     offered: Vec<(Referent, NameKind)>,
+    /// The sites of each declaration's halves, by the declaration's referent.
+    halves: Vec<(Referent, Halved)>,
 }
 
 /// `span`, a span of the unit's text, as the source holding its start writes
@@ -245,9 +272,12 @@ impl Referents
     ///   the family's declaration writes for the tag, extended by the family's
     ///   form; and each name the lowering's resolution record holds, a name of
     ///   a declaration it refused included, referring as the origin it would
-    ///   have left does. A use both name at one span is kept once. A referent's
-    ///   spans are in the text of the source holding it. A use whose referent
-    ///   no record places is not kept.
+    ///   have left does; and the name tile of a declaration's half written
+    ///   after the one introducing it, referring to the declaration. A use both
+    ///   name at one span is kept once. Each declaration's halves are kept at
+    ///   their own name tiles and forms. A referent's spans are in the text of
+    ///   the source holding it. A use whose referent no record places is not
+    ///   kept.
     /// - provides: the index a definition request answers from.
     /// - fails: never.
     /// - panics: none.
@@ -297,6 +327,44 @@ impl Referents
                 .and_then(|at| declarations.get(at))
                 .map(|&(_, referent)| referent)
         };
+        // Each declaration's halves at their own sites, and the name tile of a
+        // half written after the one that introduced the name, kept below as a
+        // use of the declaration.
+        let site = |half: Maybe<HalfAt, _>| {
+            let Maybe::Present(half) = half
+            else {
+                return None;
+            };
+            let (source, named) = placed(unit, half.named)?;
+            let (_, extent) = placed(unit, half.span)?;
+            Some(Referent {
+                source,
+                named,
+                extent,
+            })
+        };
+        let mut halves: Vec<(Referent, Halved)> = Vec::new();
+        let mut seconds: Vec<(ByteSpan, ConstantIndex)> = Vec::new();
+        for declaration in module.declarations() {
+            let Some(referent) = declared(declaration.constant())
+            else {
+                continue;
+            };
+            let written = declaration.halves();
+            for half in [written.signature, written.definition] {
+                if let Maybe::Present(half) = half
+                    && half.named != declaration.named()
+                {
+                    seconds.push((half.named, declaration.constant()));
+                }
+            }
+            halves.push((referent, Halved {
+                signature: site(written.signature),
+                definition: site(written.definition),
+            }));
+        }
+        halves.sort_unstable_by_key(|&(referent, _)| referent);
+        halves.dedup_by_key(|&mut (referent, _)| referent);
         // Each family's constructors by tag, where its declaration writes them:
         // the described or native family whose name tile is the declaration's.
         let mut written: BTreeMap<ByteSpan, &[WrittenConstructor]> = BTreeMap::new();
@@ -450,6 +518,9 @@ impl Referents
             };
             keep(span, referent, false);
         }
+        for &(span, constant) in &seconds {
+            keep(span, declared(constant), false);
+        }
         uses.sort_by_key(|&(span, _)| (span.start(), span.end()));
         uses.dedup_by_key(|&mut (span, _)| span);
         let widest = uses
@@ -474,6 +545,7 @@ impl Referents
             by_referent,
             declarations,
             offered,
+            halves,
         }
     }
 
@@ -648,5 +720,28 @@ impl Referents
             .ok()
             .and_then(|at| self.declarations.get(at))
             .map(|&(_, referent)| referent)
+    }
+
+    /// The site of the `half` of the declaration `referent` names: its own
+    /// name tile and form; `referent` itself when it names no declaration or
+    /// one with no such half.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn half(
+        &self,
+        referent: Referent,
+        half: DeclaredHalf,
+    ) -> Referent
+    {
+        self.halves
+            .binary_search_by_key(&referent, |&(held, _)| held)
+            .ok()
+            .and_then(|at| self.halves.get(at))
+            .and_then(|&(_, halved)| match half {
+                DeclaredHalf::Signature => halved.signature,
+                DeclaredHalf::Definition => halved.definition,
+            })
+            .unwrap_or(referent)
     }
 }
