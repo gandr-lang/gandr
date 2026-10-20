@@ -848,15 +848,15 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 ///   a record bracket `#{`, and inside a block `{` of fields or observations. A
 ///   label: a world, where a handle's type names it and where a declaration
 ///   declares it, and the label a `select` names. A named instantiation
-///   argument is a parameter, and an attribute name is [`HlRole::Other`]. The
-///   operation a circuit node applies, between `:` and `(`, is a call. A name
-///   after a defining keyword is a function definition and after a binding
-///   keyword a variable definition, either one a parameter inside a
-///   parenthesised list. Inside `@[…]` a binder before `:` is a parameter and
-///   any other name an attribute; inside `[…]` a grade word is a number, a
-///   migration's world a label, and a decoration [`HlRole::Other`]; every other
-///   identifier inside a parenthesised list is a parameter. An identifier none
-///   of these reach is a variable.
+///   argument and a staged type's stage are parameters, and an attribute name
+///   is [`HlRole::Other`]. The operation a circuit node applies, between `:`
+///   and `(`, is a call. A name after a defining keyword is a function
+///   definition and after a binding keyword a variable definition, either one a
+///   parameter inside a parenthesised list. Inside `@[…]` a binder before `:`
+///   is a parameter and any other name an attribute; inside `[…]` a grade word
+///   is a number, a migration's world a label, and a decoration
+///   [`HlRole::Other`]; every other identifier inside a parenthesised list is a
+///   parameter. An identifier none of these reach is a variable.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -872,7 +872,7 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
     "projection_expression" => HlRole::Member,
     "at_type" | "world_declaration" => HlRole::Label,
     "attribute_block" => HlRole::Other,
-    "instantiation_expression" => HlRole::VariableParam,
+    "instantiation_expression" | "staged_type" => HlRole::VariableParam,
     _ if facts.left.crosses(TileLabel(".")).0 => HlRole::Member,
     _ if facts.left.crosses(TileLabel(":")).0 && facts.right.crosses(TileLabel("(")).0 => HlRole::FunctionCall,
     _ if DEFINERS.iter().any(|&label| facts.left.crosses(TileLabel(label)).0) => if matches!(facts.opener, Opener::Bracket { label: TileLabel("("), .. }) { HlRole::VariableParam } else { HlRole::FunctionDef },
@@ -901,7 +901,7 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
         "projection_expression" => return HlRole::Member,
         "at_type" | "world_declaration" => return HlRole::Label,
         "attribute_block" => return HlRole::Other,
-        "instantiation_expression" => return HlRole::VariableParam,
+        "instantiation_expression" | "staged_type" => return HlRole::VariableParam,
         _ => {},
     }
     let left_crosses = |tile: &'static str| bool::from(facts.left.crosses(TileLabel(tile)));

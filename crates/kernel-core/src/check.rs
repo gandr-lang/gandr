@@ -3750,6 +3750,33 @@ where
                     // A call into a definition whose result follows the
                     // parameter it recurses on returns at the stage of the
                     // argument there, read as the checker reads it.
+                    // A call into a definition quantified over stages reads
+                    // its type at the stages its arguments show: the spine's
+                    // arguments are applied to the re-staged type, and the
+                    // inner applications are not judged one by one.
+                    Computation::Application(head, argument)
+                        if let Maybe::Present((constant, arguments)) =
+                            quantified::spine(arena, head, argument)
+                            && let Some(entry) = judgement.entries.get(usize::from(constant))
+                            && !entry.declaration().stages().bounds().is_empty() =>
+                    {
+                        let signature = entry.declaration().stages();
+                        let declared = entry.declared_id();
+                        let at = quantified::instantiation(
+                            arena,
+                            context.as_slice(),
+                            (declared, signature),
+                            &arguments,
+                        );
+                        let staged = quantified::restaged(arena, declared, signature, &at)?;
+                        let staged =
+                            seal::unseal(arena, judgement.entries, judgement.manifest, staged)?;
+                        for &applied in arguments.iter().rev() {
+                            frames.push(Frame::SynthApply(applied));
+                        }
+                        frames.push(Frame::SynthForce);
+                        Produced::ValueType(staged)
+                    },
                     Computation::Application(head, argument) => {
                         if let Maybe::Present(staged) = recursion::followed(
                             arena,
@@ -6259,12 +6286,24 @@ where
                     _,
                 ) => judgement,
             };
+            // A definition quantified over stages checks its body with each
+            // binder at a stage minted for it, the marked occurrences of its
+            // declared type refined there.
+            let (minted, checked_at) = if declaration.stages().bounds().is_empty() {
+                (StageOrder::default(), unsealed)
+            }
+            else {
+                let mut minted = StageOrder::default();
+                let at = quantified::minted(&mut minted, declaration.stages())?;
+                let staged = quantified::restaged(arena, unsealed, declaration.stages(), &at)?;
+                (minted, staged)
+            };
             let _checked = run(
                 arena,
                 owning,
                 context,
-                Goal::CheckValue(body, unsealed),
-                StageOrder::default(),
+                Goal::CheckValue(body, checked_at),
+                minted,
                 Recording {
                     memo,
                     session,
@@ -8634,6 +8673,8 @@ mod codata;
 mod former;
 
 mod loops;
+
+mod quantified;
 
 mod recursion;
 

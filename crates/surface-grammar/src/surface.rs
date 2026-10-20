@@ -468,6 +468,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "resume_expression",
     "return_expression",
     "run_expression",
+    "staged_type",
     "static_abstraction",
     "telescope_expression",
     "telescope_pattern",

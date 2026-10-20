@@ -176,6 +176,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Type Type+", Standing::Owed(0)),
     ("Type Unit", Standing::Owed(0)),
     ("Type Void", Standing::Owed(0)),
+    ("Type [", Standing::Owed(0)),
     ("Type \\", Standing::Owed(0)),
     (
         "Type at",
@@ -300,7 +301,8 @@ fn kind(
 /// stratum a head's annotation writes, as the module a path qualifies, as
 /// a run literal's move, as an inner link of a product, a sum or a lazy
 /// product chain, as
-/// the value a discarded bind drops, or as an arrow of a data family's kind.
+/// the value a discarded bind drops, as an arrow of a data family's kind, or
+/// as the sort of a stage binder.
 ///
 /// # Specification
 /// trivial.
@@ -345,6 +347,11 @@ enum Placed
     /// index classifiers before its universe, never as a type it forms, so
     /// each classifier and the universe answer.
     Kind,
+    /// The sort `Size` a stage binder of a function's telescope is read at,
+    /// `Size` in `def predAt @[i : Size] (…)`: the lowering reads the binder
+    /// as a stage of the signature and forms no type for its sort, so the
+    /// staged types naming the binder answer.
+    Stage,
 }
 
 /// Every gated node of `tree` with its kind, its span and where it stands.
@@ -519,6 +526,10 @@ fn gated(
         let counted = !melded
             && def.label == "number"
             && parent.is_some_and(|(_, label, headed, ..)| label == "[" && !headed);
+        let sized = !melded
+            && def.label == "type_identifier"
+            && text == "Size"
+            && parent.is_some_and(|(_, label, ..)| label == "def");
         let placed = placed
             .or_else(|| head.then_some(Placed::Head))
             .or_else(|| counted.then_some(Placed::Stratum))
@@ -526,7 +537,8 @@ fn gated(
             .or_else(|| moved.then_some(Placed::Move))
             .or_else(|| chained.then_some(Placed::Chained))
             .or_else(|| dropped.then_some(Placed::Discarded))
-            .or_else(|| kinded.then_some(Placed::Kind));
+            .or_else(|| kinded.then_some(Placed::Kind))
+            .or_else(|| sized.then_some(Placed::Stage));
         gated.push((kind(grammar, tree, position, *def), span, placed));
     }
     gated

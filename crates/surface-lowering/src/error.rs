@@ -991,8 +991,9 @@ pub enum LoweringRefusal<'source>
     },
 
     /// A declaration whose header binds parameters in an implicit telescope
-    /// `@[…]`: the entries are static parameters a use supplies by name, which
-    /// the fragment does not elaborate.
+    /// `@[…]` other than stages: the entries are static parameters a use
+    /// supplies by name, which the fragment does not elaborate; a stage
+    /// binder `i : Size` and its bound `i < n` are the telescope it admits.
     ImplicitTelescope
     {
         /// The bytes the declaration covers.
@@ -1317,8 +1318,8 @@ impl fmt::Display for LoweringRefusal<'_>
             ),
             Self::ImplicitTelescope { .. } => f.write_str(
                 "this declaration binds parameters in an implicit telescope `@[…]`, which the \
-                 fragment does not elaborate; write each entry as an explicit parameter, `(a : \
-                 Type, …)`",
+                 fragment elaborates only for stages, `@[i : Size, i < n]`; write each other \
+                 entry as an explicit parameter, `(a : Type, …)`",
             ),
             Self::NonExhaustiveMatch { .. } => {
                 f.write_str("the match leaves a value of its scrutinee that no arm matches")

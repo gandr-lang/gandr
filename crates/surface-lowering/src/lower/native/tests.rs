@@ -150,12 +150,10 @@ pub(in crate::lower) fn judged(
                 },
                 DeclarationOutcome::Abstract(_) | DeclarationOutcome::Refused(_) => return None,
             };
-            Some(Declaration::new(
-                declaration.constant(),
-                declared,
-                defined,
-                origin,
-            ))
+            Some(
+                Declaration::new(declaration.constant(), declared, defined, origin)
+                    .staged(module.stages(declaration).to_vec()),
+            )
         })
         .collect();
 

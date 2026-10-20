@@ -342,6 +342,9 @@ struct DeclMeta
     /// The rules of the operation a ruled definition lowered from; empty for
     /// every other declaration.
     operation_rules: Vec<crate::operation_rules::OperationRule>,
+    /// The stages a definition's signature quantifies over; empty for every
+    /// other declaration.
+    stages: crate::stage_signature::StageSignature,
     /// The rules a presented data declaration carries; empty for every other
     /// declaration.
     rules: Vec<crate::presented::PresentedRule>,
@@ -1516,6 +1519,7 @@ fn build_declarations(
                     .ruled(crate::operation_rules::OperationRules::new(
                         core::mem::take(&mut meta.operation_rules),
                     ))
+                    .staged(core::mem::take(&mut meta.stages))
             },
             DeclKind::AbstractType => {
                 let (root, extent) = meta.sealed.ok_or(DecodeError::Malformed {
@@ -2239,6 +2243,7 @@ fn decode_declaration(
     let mut laws = Vec::new();
     let mut rules = Vec::new();
     let mut operation_rules = Vec::new();
+    let mut stages = crate::stage_signature::StageSignature::default();
     let mut cells = None;
     let root_body = match kind {
         DeclKind::Data => {
@@ -2313,6 +2318,7 @@ fn decode_declaration(
         },
         DeclKind::Def => {
             let body = decode_root(reader, table, Family::Value)?;
+            stages = decode_stage_signature(reader)?;
             provenance = decode_definition_slots(reader)?;
             // A relating definition closes with its pairs, a lawful one with
             // its pairs and then its laws, and a ruled one with both blocks
@@ -2389,6 +2395,7 @@ fn decode_declaration(
         related,
         laws,
         operation_rules,
+        stages,
         rules,
         cells,
     })
@@ -3961,25 +3968,106 @@ fn decode_structured_name(reader: &mut ByteReader<'_>) -> Result<StructuredName,
     Ok(StructuredName::from(segments))
 }
 
-/// Decode the four per-definition annotation slots, yielding the
-/// sealing-provenance atoms.
+/// Decode a definition's erasure slot: the stages its signature quantifies
+/// over.
 ///
-/// Three of the four stay reserved and are refused when occupied; the third is
-/// live and carries the atoms this declaration's projection rebound. The atoms
-/// are only *read* here — whether they ascend, and whether each occurs in the
-/// declared type, are typing facts decided at a choke point, and this is the
-/// format plane.
+/// Only the format is read here — whether each mark's path reaches a data
+/// type is a typing fact the kernel decides at admission.
 ///
 /// # Specification
-/// - requires: the cursor is positioned at the first of the four per-definition
-///   annotation slots.
-/// - ensures: on `Ok`, the three reserved slots were empty and the returned
-///   atoms are the sealing-provenance slot's, in wire order; the cursor is past
-///   all four.
-/// - provides: the whole slot block read in one place, so the live slot's
-///   position among the reserved ones is stated once. Whether the atoms ascend,
-///   and whether each occurs in the declared type, are typing facts decided at
-///   a choke point.
+/// - requires: the cursor is positioned at the erasure slot.
+/// - ensures: on `Ok`, a binder count of zero is the empty signature; any other
+///   count is followed by that many bounds, each zero or one past an earlier
+///   binder's ordinal, then the marks, each naming a binder the signature
+///   binds; the cursor is past the slot.
+/// - provides: the signature's bounds and marks in wire order; no capacity is
+///   reserved from a declared count.
+/// - fails: [`MalformedSite::StageSignature`] for a bound naming no earlier
+///   binder, a mark naming no binder or a depth past `u32`; the reader's own
+///   failures.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a signature with a bound binder and two marks decodes to
+///   itself; a bound naming a later binder and a mark naming an unbound one are
+///   refused at the slot.
+/// - witness: `encode::tests::a_stage_signature_fills_the_erasure_slot`
+#[spec(
+    captures: start = reader.position,
+    ensures: |ret| reader.position >= start && reader.position <= reader.image.length()
+        && ret.as_ref().ok().is_none_or(|stages| !stages.bounds().is_empty() || reader.position.0 == start.0.saturating_add(1)),
+)]
+fn decode_stage_signature(
+    reader: &mut ByteReader<'_>
+) -> Result<crate::stage_signature::StageSignature, DecodeError>
+{
+    use crate::stage_signature::StageBound;
+    use crate::stage_signature::StageReach;
+    let malformed = DecodeError::Malformed {
+        site: MalformedSite::StageSignature,
+    };
+    let binders = usize::from(reader.read_usize()?);
+    if binders == 0 {
+        return Ok(crate::stage_signature::StageSignature::default());
+    }
+    let mut bounds = Vec::new();
+    for at in 0 .. binders {
+        bounds.push(match usize::from(reader.read_usize()?).checked_sub(1) {
+            None => StageBound::Unbounded,
+            Some(earlier) if earlier < at => {
+                StageBound::Below(crate::stage_signature::StageBinder::from(earlier))
+            },
+            Some(_) => return Err(malformed),
+        });
+    }
+    let count = usize::from(reader.read_usize()?);
+    let mut marks = Vec::new();
+    for _ in 0 .. count {
+        let binder = usize::from(reader.read_usize()?);
+        if binder >= binders {
+            return Err(malformed);
+        }
+        let reach = match u32::try_from(u64::from(reader.read_uvarint()?)) {
+            Ok(depth) => core::num::NonZeroU32::new(depth).map_or(StageReach::At, |depth| {
+                StageReach::Below(crate::term::StageDepth::from(depth))
+            }),
+            Err(_) => return Err(malformed),
+        };
+        let length = usize::from(reader.read_usize()?);
+        let mut path = Vec::new();
+        for _ in 0 .. length {
+            path.push(crate::stage_signature::PlacedChild::from(usize::from(
+                reader.read_usize()?,
+            )));
+        }
+        marks.push(crate::stage_signature::StageMark::new(
+            path,
+            crate::stage_signature::StageBinder::from(binder),
+            reach,
+        ));
+    }
+    Ok(crate::stage_signature::StageSignature::new(bounds, marks))
+}
+
+/// Decode the three per-definition annotation slots after the erasure slot,
+/// yielding the sealing-provenance atoms.
+///
+/// Two of the three stay reserved and are refused when occupied; the second
+/// is live and carries the atoms this declaration's projection rebound. The
+/// atoms are only *read* here — whether they ascend, and whether each occurs
+/// in the declared type, are typing facts decided at a choke point, and this
+/// is the format plane.
+///
+/// # Specification
+/// - requires: the cursor is positioned at the modes-and-grades slot, the
+///   second of the four per-definition annotation slots.
+/// - ensures: on `Ok`, the two reserved slots were empty and the returned atoms
+///   are the sealing-provenance slot's, in wire order; the cursor is past all
+///   three.
+/// - provides: the slot block read in one place, so the live slot's position
+///   among the reserved ones is stated once. Whether the atoms ascend, and
+///   whether each occurs in the declared type, are typing facts decided at a
+///   choke point.
 /// - fails: the slot reads' own failures, and
 ///   [`DecodeError::ReservedSlotOccupied`] naming whichever reserved slot was
 ///   occupied.
@@ -3996,15 +4084,15 @@ fn decode_structured_name(reader: &mut ByteReader<'_>) -> Result<StructuredName,
     captures: start = reader.position,
     ensures: |ret| reader.position >= start
             && reader.position <= reader.image.length()
-            && ret.as_ref().ok().is_none_or(|atoms| reader.image.as_ref().get(start.0 .. start.0.saturating_add(2)) == Some([0_u8, 0].as_slice())
+            && ret.as_ref().ok().is_none_or(|atoms| reader.image.as_ref().get(start.0 .. start.0.saturating_add(1)) == Some([0_u8].as_slice())
             && reader.image.byte_at(ByteOffset::from(reader.position.0.saturating_sub(1))) == Some(WireByte::from(0_u8))
             && { let count = u64::try_from(atoms.len()).unwrap_or(u64::MAX);
         ({ let scalar = count;
         let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
-        reader.image.as_ref().get((start.0.saturating_add(2)) .. (start.0.saturating_add(2)).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+        reader.image.as_ref().get((start.0.saturating_add(1)) .. (start.0.saturating_add(1)).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
         u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
             && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
-            && atoms.iter().try_fold((start.0.saturating_add(2)).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+            && atoms.iter().try_fold((start.0.saturating_add(1)).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
         |position, &atom| { let ordinal = u64::try_from(usize::from(atom)).unwrap_or(u64::MAX);
         ({ let scalar = ordinal;
         let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
@@ -4015,7 +4103,6 @@ fn decode_structured_name(reader: &mut ByteReader<'_>) -> Result<StructuredName,
 #[inline]
 fn decode_definition_slots(reader: &mut ByteReader<'_>) -> Result<Vec<ConstantIndex>, DecodeError>
 {
-    expect_empty_slot(reader, ReservedSlot::ErasureAnnotation)?;
     expect_empty_slot(reader, ReservedSlot::ModeGradeAnnotation)?;
     let provenance = decode_sealing_provenance(reader)?;
     expect_empty_slot(reader, ReservedSlot::DirectednessVariance)?;
@@ -5015,7 +5102,6 @@ mod tests
             assert_eq!(reader.position.0, 1);
         }
         for slot in [
-            super::ReservedSlot::ErasureAnnotation,
             super::ReservedSlot::ModeGradeAnnotation,
             super::ReservedSlot::DirectednessVariance,
             super::ReservedSlot::MintedAtomTable,
@@ -5040,7 +5126,7 @@ mod tests
                 assert_eq!(reader.position.0, bytes.len());
             }
         }
-        let slots = [0_u8, 0, 3, 0x81, 1, 0, 0x80, 1, 0, 0x55];
+        let slots = [0_u8, 3, 0x81, 1, 0, 0x80, 1, 0, 0x55];
         let mut reader = ByteReader::new(ArtifactImage::from(slots.as_slice()));
         assert!(
             super::decode_definition_slots(&mut reader)
@@ -5049,14 +5135,10 @@ mod tests
                 .map(usize::from)
                 .eq([129_usize, 0, 128])
         );
-        assert_eq!(reader.position.0, 9);
+        assert_eq!(reader.position.0, 8);
         for (bytes, slot) in [
-            (&[1_u8][..], super::ReservedSlot::ErasureAnnotation),
-            (&[0_u8, 1][..], super::ReservedSlot::ModeGradeAnnotation),
-            (
-                &[0_u8, 0, 0, 1][..],
-                super::ReservedSlot::DirectednessVariance,
-            ),
+            (&[1_u8][..], super::ReservedSlot::ModeGradeAnnotation),
+            (&[0_u8, 0, 1][..], super::ReservedSlot::DirectednessVariance),
         ] {
             let mut reader = ByteReader::new(ArtifactImage::from(bytes));
             assert_eq!(
@@ -5296,6 +5378,7 @@ mod tests
                     related: vec![],
                     laws: vec![],
                     operation_rules: vec![],
+                    stages: crate::StageSignature::default(),
                     rules: vec![],
                     cells: None,
                 })
@@ -5390,6 +5473,7 @@ mod tests
             )],
             laws: vec![],
             operation_rules: vec![],
+            stages: crate::StageSignature::default(),
             rules: vec![],
             cells: None,
         };
@@ -6218,6 +6302,7 @@ mod tests
                 )],
                 laws: vec![],
                 operation_rules: vec![],
+                stages: crate::StageSignature::default(),
                 rules: vec![],
                 cells: None,
             },
@@ -6239,6 +6324,7 @@ mod tests
                 related: vec![],
                 laws: vec![],
                 operation_rules: vec![],
+                stages: crate::StageSignature::default(),
                 rules: vec![],
                 cells: None,
             },
@@ -6263,6 +6349,7 @@ mod tests
                 related: vec![],
                 laws: vec![],
                 operation_rules: vec![],
+                stages: crate::StageSignature::default(),
                 rules: vec![],
                 cells: None,
             },

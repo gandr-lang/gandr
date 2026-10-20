@@ -3235,6 +3235,7 @@ impl<'source> Collector<'_, 'source>
                 | Former::RelationType
                 | Former::CapabilityType
                 | Former::AtType
+                | Former::StagedType
                 | Former::Scope
                 | Former::Import
                 | Former::Module
@@ -7248,10 +7249,10 @@ const fn misplaced_in<'source>(
 /// - requires: `header` stands just past the form's name.
 /// - ensures: the half the tail writes, when it is a signature or a definition
 ///   whose hole holds exactly one form and which closes with `;` and nothing
-///   after it; a function tail, opening on `(`, with whether it is signed;
-///   every other tail yields its first fault — an implicit telescope declined
-///   by the folded form's own name, an empty or overfull hole, or a tile out of
-///   place.
+///   after it; a function tail, opening on `(` or on a telescope `@[ … ]`
+///   followed by `(`, with whether it is signed; every other tail yields its
+///   first fault — an implicit telescope declined by the folded form's own
+///   name, an empty or overfull hole, or a tile out of place.
 /// - provides: the tail half of a declaration form.
 /// - fails: never; a fault is yielded rather than raised.
 /// - panics: none.
@@ -7270,7 +7271,7 @@ const fn misplaced_in<'source>(
     captures: first = header.peek(),
     ensures: |ret| match ret {
         | Tail::Function(_) => {
-            matches!(first, Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_OPEN)
+            matches!(first, Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_OPEN || label == TileName::ATTRIBUTES)
                 && header.peek() == first
         },
         | Tail::Wrote(kind, _) => {
@@ -7288,8 +7289,18 @@ fn read_tail<'source>(
     declaration: Placed,
 ) -> Tail<'source>
 {
-    if let Maybe::Present(_) = header.at(TileName::PAREN_OPEN) {
-        return Tail::Function(signing(header.clone()));
+    let mut past = header.clone();
+    if let Maybe::Present(_) = past.tile(TileName::ATTRIBUTES) {
+        while let Maybe::Present(piece) = past.read() {
+            if let Piece::Tile { label, .. } = piece
+                && label == TileName::BRACKET_CLOSE
+            {
+                break;
+            }
+        }
+    }
+    if let Maybe::Present(_) = past.at(TileName::PAREN_OPEN) {
+        return Tail::Function(signing(past));
     }
     let kind = if let Maybe::Present(_) = header.tile(TileName::COLON) {
         HalfKind::Signature
@@ -8141,6 +8152,9 @@ pub struct LoweredModule<'source>
     /// The rules each operation's definition was written as, over module
     /// positions, by its position.
     operation_rules: BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
+    /// The bound of each stage binder of each function quantified over
+    /// stages, in written order, by the function's declaration key.
+    stage_bounds: BTreeMap<UnitKey, Vec<gandr_kernel_term::StageBound>>,
 }
 
 impl<'source> LoweredModule<'source>
@@ -8180,6 +8194,7 @@ impl<'source> LoweredModule<'source>
             imports,
             recognition,
             operation_rules: BTreeMap::new(),
+            stage_bounds: BTreeMap::new(),
         }
     }
 
@@ -8229,6 +8244,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.operation_rules = operation_rules;
+        self
+    }
+
+    /// This module, carrying `stage_bounds`, each quantified function's
+    /// binder bounds by its declaration key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_stage_bounds(
+        mut self,
+        stage_bounds: BTreeMap<UnitKey, Vec<gandr_kernel_term::StageBound>>,
+    ) -> Self
+    {
+        self.stage_bounds = stage_bounds;
         self
     }
 
@@ -8859,6 +8890,40 @@ impl<'source> LoweredModule<'source>
                 Maybe::Present(key) => {
                     Some(self.attributes.laws(key)).filter(|laws| !laws.is_empty())
                 },
+                Maybe::Absent(_) => None,
+            })
+            .unwrap_or_default()
+    }
+
+    /// The bound of each stage binder `declaration`'s telescope writes, in
+    /// written order: what the checker's declaration carries as the stages
+    /// its signature is quantified over.
+    ///
+    /// # Specification
+    /// - requires: `declaration` is one of this module's declarations.
+    /// - ensures: the bounds filed under the declaration's definition form,
+    ///   else under its signature form; the empty slice for a declaration no
+    ///   telescope quantifies.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the module's own map, read at the declaration's
+    ///   keys.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a quantified function and a plain one separate the
+    ///   two answers.
+    /// - witness: `lower::staged::tests::a_telescope_files_its_bounds_and_marks_its_stages`
+    #[inline]
+    #[must_use]
+    pub fn stages(
+        &self,
+        declaration: &LoweredDeclaration<'source>,
+    ) -> &[gandr_kernel_term::StageBound]
+    {
+        [declaration.definition(), declaration.signature()]
+            .into_iter()
+            .find_map(|key| match key {
+                Maybe::Present(key) => self.stage_bounds.get(&key).map(Vec::as_slice),
                 Maybe::Absent(_) => None,
             })
             .unwrap_or_default()

@@ -4538,11 +4538,17 @@ where
             ref body,
             ref laws,
             ref rules,
+            ref stages,
         } => {
             // A value naming no law keeps its original tag; a lawful one
             // takes its own, with the laws after the body; a ruled one takes
-            // its own, with the laws, however many, then the rules.
-            writer.tag(Tag(if !rules.is_empty() {
+            // its own, with the laws, however many, then the rules; one
+            // quantified over stages takes its own, with the laws and the
+            // rules, however many, then each binder's bound.
+            writer.tag(Tag(if !stages.is_empty() {
+                6
+            }
+            else if !rules.is_empty() {
                 5
             }
             else if laws.is_empty() {
@@ -4565,17 +4571,28 @@ where
                 },
                 Maybe::Absent(body::Absent::Hole) => writer.tag(Tag(0)),
             }
-            if !laws.is_empty() || !rules.is_empty() {
+            if !laws.is_empty() || !rules.is_empty() || !stages.is_empty() {
                 writer.count(Count(laws.len()))?;
                 for law in laws {
                     write_reference(writer, law)?;
                 }
             }
-            if !rules.is_empty() {
+            if !rules.is_empty() || !stages.is_empty() {
                 writer.count(Count(rules.len()))?;
                 for rule in rules {
                     write_operation_side(writer, &rule.left)?;
                     write_operation_side(writer, &rule.right)?;
+                }
+            }
+            if !stages.is_empty() {
+                writer.count(Count(stages.len()))?;
+                for &bound in stages {
+                    writer.count(Count(match bound {
+                        gandr_kernel_term::StageBound::Unbounded => 0,
+                        gandr_kernel_term::StageBound::Below(binder) => {
+                            usize::from(binder).saturating_add(1)
+                        },
+                    }))?;
                 }
             }
         },
@@ -4777,7 +4794,7 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
 {
     let reference = read_reference(reader)?;
     let declaration = match reader.tag()?.0 {
-        tag @ (0 | 3 | 5) => {
+        tag @ (0 | 3 | 5 | 6) => {
             let signature = match reader.tag()?.0 {
                 0 => Maybe::Absent(signature::Absent::Unsigned),
                 1 => Maybe::Present(read_index(reader)?),
@@ -4799,9 +4816,9 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
                 }
             }
             let mut rules = Vec::new();
-            if tag == 5 {
+            if tag == 5 || tag == 6 {
                 let count = reader.count()?.0;
-                if count == 0 {
+                if count == 0 && tag == 5 {
                     return Err(CodecError::NonCanonical);
                 }
                 for _rule in 0 .. count {
@@ -4810,11 +4827,29 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
                     rules.push(crate::content::RuleRoots { left, right });
                 }
             }
+            let mut stages = Vec::new();
+            if tag == 6 {
+                let count = reader.count()?.0;
+                if count == 0 {
+                    return Err(CodecError::NonCanonical);
+                }
+                for _binder in 0 .. count {
+                    stages.push(reader.count()?.0.checked_sub(1).map_or(
+                        gandr_kernel_term::StageBound::Unbounded,
+                        |bound| {
+                            gandr_kernel_term::StageBound::Below(
+                                gandr_kernel_term::StageBinder::from(bound),
+                            )
+                        },
+                    ));
+                }
+            }
             crate::content::DeclarationRoots::Value {
                 signature,
                 body,
                 laws,
                 rules,
+                stages,
             }
         },
         1 => crate::content::DeclarationRoots::Data(read_data_roots(reader)?),

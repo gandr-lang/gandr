@@ -1037,6 +1037,7 @@ pub fn spine_domains<'source>(
             | Former::RelationType
             | Former::CapabilityType
             | Former::AtType
+            | Former::StagedType
             | Former::Scope
             | Former::Declaration
             | Former::AttributeBlock

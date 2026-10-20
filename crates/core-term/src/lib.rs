@@ -205,6 +205,7 @@ pub mod primitive;
 mod relocation;
 mod rewrite;
 pub mod session;
+pub mod staged;
 pub mod support;
 mod syntax;
 pub mod ua;

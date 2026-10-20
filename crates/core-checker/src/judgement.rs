@@ -4056,7 +4056,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Value::Constant(constant) => match self.context.consult(constant) {
                 Maybe::Present(declared) => {
                     self.located_constant(term, constant, declared.id())?;
-                    produced(declared)
+                    match self.quantified_at(constant, declared.id())? {
+                        Maybe::Present(staged) => {
+                            Ok(Step::Ascend(Produced::ValueType(Relocated::from(staged))))
+                        },
+                        Maybe::Absent(crate::quantified::Unread::Plain) => produced(declared),
+                    }
                 },
                 Maybe::Absent(_) => Err(CheckRefusal::UnknownConstant { at: term, constant }),
             },
@@ -6534,6 +6539,71 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(instantiate_comp_type(arena, codomain, code))
             },
         }
+    }
+
+    /// The type the constant at `constant`, declared `declared`, has where a
+    /// call forces it: for a definition quantified over stages, `declared`
+    /// with each binder at the stage the call's arguments show it at.
+    ///
+    /// # Specification
+    /// - requires: the constant is the term the machine has just synthesised.
+    /// - ensures: present for a definition quantified over stages that a force
+    ///   waits on, re-staged by `crate::quantified::restaged` at the arguments
+    ///   the applications waiting on that force apply, first applied first;
+    ///   absent for a definition quantified over none and for one read outside
+    ///   a call, which reads its plain type.
+    /// - fails: the instantiation's or the re-staging's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a recursion's claim handed to a helper typed at a
+    ///   stage is admitted, and a call on a value at no stage reads the
+    ///   helper's type plain.
+    /// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
+    /// - witness: `quantified::tests::a_call_at_no_stage_reads_its_result_plain`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| match *read {
+        Maybe::Present(staged) => self.context.arena().value_type(staged).is_some(),
+        Maybe::Absent(_) => true,
+    }))]
+    fn quantified_at(
+        &mut self,
+        constant: gandr_kernel_term::ConstantIndex,
+        declared: ValueTypeId,
+    ) -> Result<Maybe<ValueTypeId, crate::quantified::Unread>, CheckRefusal>
+    {
+        let Some(signature) = self.context.stage_signatures().get(&constant).cloned()
+        else {
+            return Ok(Maybe::Absent(crate::quantified::Unread::Plain));
+        };
+        let mut waiting = self.frames.iter().rev();
+        if !matches!(
+            waiting.next().map(|top| &top.frame),
+            Some(Frame::Force { .. })
+        ) {
+            return Ok(Maybe::Absent(crate::quantified::Unread::Plain));
+        }
+        let spine: Vec<ValueId> = waiting
+            .map_while(|waiting| {
+                if let Frame::ApplicationHead { argument, .. } = waiting.frame {
+                    Some(argument)
+                }
+                else {
+                    None
+                }
+            })
+            .collect();
+        let context = &*self.context;
+        let at = crate::quantified::instantiation(
+            context.arena(),
+            (declared, &signature),
+            &spine,
+            |index| context.hypothesis(index),
+        )?;
+        crate::quantified::restaged(self.context.arena_mut(), declared, &signature, &at)
+            .map(Maybe::Present)
     }
 
     /// Note that a type after `value` reads it, so a pure run there stands

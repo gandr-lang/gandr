@@ -767,6 +767,9 @@ pub enum Former
     /// A capability type placed in a scope's region, `Cap {op, …} at c`: the
     /// capability lives until the scope binding `c` ends.
     AtType,
+    /// A data type at a stage a definition's signature binds, `Nat[i]`, or
+    /// one below it, `Nat[<i]`.
+    StagedType,
     /// The capability scope `handle c : I { … } with { … }`: a deep handler
     /// for the host interface `I` whose body holds the capability it
     /// introduces.
@@ -835,7 +838,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 63_usize] = [
+    pub const ALL: [Self; 64_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -883,6 +886,7 @@ impl Former
         Self::PathType,
         Self::RelationType,
         Self::CapabilityType,
+        Self::StagedType,
         Self::Scope,
         Self::Declaration,
         Self::AttributeBlock,
@@ -921,7 +925,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 77_usize] = [
+pub const FORMERS: [(&str, Former); 78_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -976,6 +980,7 @@ pub const FORMERS: [(&str, Former); 77_usize] = [
     ("universe_flow_type", Former::RelationType),
     ("capability_type", Former::CapabilityType),
     ("at_type", Former::AtType),
+    ("staged_type", Former::StagedType),
     ("handle_expression", Former::Scope),
     ("def_value", Former::Declaration),
     ("attribute_block", Former::AttributeBlock),

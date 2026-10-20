@@ -2,8 +2,12 @@
 // function and its argument at one type parameter, and a call instantiates
 // that parameter at the argument's stage (#393). A recursion's claim handed
 // on beside its predecessor takes the predecessor at that stage, one below its
-// own. Its run waits on the machine taking a type code as an argument (#452).
-// What refuses is in `../../pathological/data/sized-higher-order.gandr`.
+// own. `count`'s run waits on the machine taking a type code as an argument
+// (#452). `applyAt` is quantified over a stage instead of a type, and a call
+// instantiates the stage from its arguments (#392); `predAt` states that its
+// result stands at its argument's stage, which a definition with no recursion
+// otherwise opens none for. What refuses is in
+// `../../pathological/data/sized-higher-order.gandr`.
 
 // The naturals the recursion takes apart.
 import "./data-base.gandr" ;
@@ -24,3 +28,52 @@ def rec count(n : Nat) -> -F Nat {
     Succ(p) => Succ(apply(Nat, Nat, count[<], p))
   }
 }
+
+/// A function applied to a number below a stage `i`, which a call
+/// instantiates at the stage its arguments show.
+@[ checks ]
+def applyAt @[i : Size] (f : Nat[<i] => Nat, x : Nat[<i]) -> -F Nat {
+  f(x)
+}
+
+/// A number rebuilt, each predecessor handed through `applyAt`: the
+/// predecessor stands one below the recursion's stage, so the call
+/// instantiates `i` at that stage and `helped[<]` takes the predecessor.
+@[ checks ]
+def rec helped(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(p) => Succ(applyAt(helped[<], p))
+  }
+}
+
+/// Two rebuilt through `applyAt`.
+@[ runs("Succ(Succ(Zero))") ]
+def helpedTwo : () => Nat ;
+def helpedTwo = thunk { helped(Succ(Succ(Zero))) } ;
+
+/// The predecessor of a number at a stage `i`, zero's its own: the result
+/// stands at `i` too, as the signature states.
+@[ checks ]
+def predAt @[i : Size] (n : Nat[i]) -> -F Nat[i] {
+  case n {
+    Zero => Zero,
+    Succ(p) => p
+  }
+}
+
+/// Half a number, rounded up, recursing on its predecessor's predecessor read
+/// through `predAt`: the call instantiates `i` at the field's stage, below the
+/// recursion's, and the result stands there for `halvedAt[<]` to take.
+@[ checks ]
+def rec halvedAt(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(p) => { run q <- predAt(p); Succ(halvedAt[<](q)) }
+  }
+}
+
+/// Half of four: two.
+@[ runs("Succ(Succ(Zero))") ]
+def halvedAtFour : () => Nat ;
+def halvedAtFour = thunk { halvedAt(Succ(three)) } ;

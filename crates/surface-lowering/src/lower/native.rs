@@ -305,6 +305,7 @@ use gandr_core_term::pattern::Patterns;
 use gandr_core_term::primitive::Arguments;
 use gandr_core_term::primitive::Operator;
 use gandr_core_term::primitive::PRELUDE;
+use gandr_core_term::staged::Part;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -6154,9 +6155,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the node's computation type for a written answer and a loop
     ///   arm's, a returner newly minted over the node's value type for a
     ///   returning one, and for a valued one the computation type the alias's
-    ///   thunk holds, its first `taken` arrows peeled; the node's absence when
-    ///   it did not lower, and the other-sort absence for an alias holding
-    ///   fewer arrows.
+    ///   thunk holds, its first `taken` arrows peeled; each with every stage a
+    ///   quantified signature placed erased, since a body's types are plain;
+    ///   the node's absence when it did not lower, and the other-sort absence
+    ///   for an alias holding fewer arrows.
     /// - provides: the one reading every consumer of an answer mints it by.
     /// - fails: never.
     /// - panics: none.
@@ -6170,6 +6172,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   signed `A => B` answering `-F B`.
     /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
+    /// - witness: `lower::staged::tests::a_case_under_a_staged_result_answers_plainly`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.comp_type(id).is_some()))]
     pub(super) fn answered_type(
         &self,
@@ -6177,7 +6180,7 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     ) -> Maybe<CompTypeId, lowered::Absent>
     {
-        match answer.over {
+        let answered = match answer.over {
             Over::Written | Over::Loop { .. } => self.comp_type_at(answer.node),
             Over::Returning => match self.value_type_at(answer.node) {
                 Maybe::Present(result) => Maybe::Present(sink.arena.comp_type_returner(result)),
@@ -6202,6 +6205,15 @@ impl<'source> Lowerer<'_, 'source>
                 }
                 Maybe::Present(held)
             },
+        };
+        match answered {
+            Maybe::Present(written) if !self.stage_marks.is_empty() => {
+                match gandr_core_term::staged::unstaged(sink.arena, Part::Computation(written)) {
+                    Some(Part::Computation(plain)) => Maybe::Present(plain),
+                    Some(Part::Value(_)) | None => Maybe::Absent(lowered::Absent::OtherSort),
+                }
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => answered,
         }
     }
 

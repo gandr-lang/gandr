@@ -259,8 +259,10 @@ pub enum UnadmittedFormer
     /// A memory form: the kernel has no store, so a held value and its
     /// accesses stay on the checker's side.
     Memory,
-    /// A stage of a structural fixpoint named in a term: the kernel mints its
-    /// own fixpoints' stages and reads none a term carries.
+    /// A stage the kernel cannot read: one of a structural fixpoint named in a
+    /// term, since the kernel mints its own fixpoints' stages; one naming no
+    /// binder of its declaration's signature; or one refining no data type,
+    /// which a signature's mark cannot place.
     Stage,
 }
 

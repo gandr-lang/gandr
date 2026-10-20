@@ -2302,7 +2302,8 @@ fn rule_roots(
 pub enum DeclarationRoots
 {
     /// A value declaration's optional signature and body, the laws a fold
-    /// rests on, and the rules of the operation it lowered from.
+    /// rests on, the rules of the operation it lowered from, and the stage
+    /// binders it is quantified over.
     Value
     {
         /// The signature classifier, or why it is absent.
@@ -2317,6 +2318,11 @@ pub enum DeclarationRoots
         /// written order; empty for every other declaration. The kernel
         /// decides them, so a changed rule is changed content.
         rules: Vec<RuleRoots>,
+        /// The bound of each stage binder the declaration is quantified over,
+        /// in binder order; empty for every other declaration. The signature
+        /// names each binder by ordinal, so a changed bound is changed
+        /// content.
+        stages: Vec<gandr_kernel_term::StageBound>,
     },
     /// A complete nominal signature.
     Data(DataRoots),
@@ -2428,11 +2434,13 @@ impl DeclarationRoots
                 ref body,
                 ref laws,
                 ref rules,
+                ref stages,
             } => Self::Value {
                 signature: signature.map(&image),
                 body: body.map(&image),
                 laws: laws.clone(),
                 rules: rules.clone(),
+                stages: stages.clone(),
             },
             Self::Data(ref roots) => Self::Data(roots.renumbered(&image)),
             Self::Abstract(roots) => Self::Abstract(AbstractRoots {
@@ -3342,10 +3350,11 @@ pub struct Encoded
     && match layout.items.get(usize::from(ordinal)) {
         Some(item) => layout.references.get(usize::from(ordinal)) == Some(&ret.content.reference)
             && { let (matched_left_value, matched_right_value) = (item.declaration().content(),&ret.content.declaration);
-if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } = *matched_left_value && let DeclarationRoots::Value { signature:ref actual_signature,body:ref actual_body,laws:ref actual_laws,rules:ref actual_rules } = *matched_right_value { signature.map(|ty| ret.sites.0.get(&ArenaNode::ValueType(ty)).copied()) == actual_signature.map(Some)
+if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } = *matched_left_value && let DeclarationRoots::Value { signature:ref actual_signature,body:ref actual_body,laws:ref actual_laws,rules:ref actual_rules,stages:ref actual_stages } = *matched_right_value { signature.map(|ty| ret.sites.0.get(&ArenaNode::ValueType(ty)).copied()) == actual_signature.map(Some)
                     && body.map(|value| ret.sites.0.get(&ArenaNode::Value(value)).copied()) == actual_body.map(Some)
                     && item.declaration().laws().iter().map(|&law| layout.resolve(law)).eq(actual_laws.iter().cloned())
-                    && *actual_rules == rule_roots(layout, item.declaration().operation_rules()) }
+                    && *actual_rules == rule_roots(layout, item.declaration().operation_rules())
+                    && actual_stages.as_slice() == item.declaration().stages() }
  else if let gandr_core_checker::DeclarationContent::Data(ref signature) = *matched_left_value && let DeclarationRoots::Data(ref roots) = *matched_right_value { ret.sites.0.get(&ArenaNode::ValueType(signature.kind())) == Some(&roots.kind)
                     && signature.parameters().iter().map(|&ty| ret.sites.0.get(&ArenaNode::ValueType(ty))).eq(roots.parameters.iter().map(Some))
                     && signature.constructors().len() == roots.constructors.len()
@@ -3356,7 +3365,7 @@ if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } 
  else { matches!((matched_left_value, matched_right_value), (gandr_core_checker::DeclarationContent::World, DeclarationRoots::World) | (gandr_core_checker::DeclarationContent::Codata(_), DeclarationRoots::Codata)) }
 } && ret.content.locus == layout.locus(),
         None => ret.content.reference == Reference::Unoccupied
-            && matches!(ret.content.declaration,DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Absent(body::Absent::Hole),ref laws,ref rules} if laws.is_empty() && rules.is_empty())
+            && matches!(ret.content.declaration,DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Absent(body::Absent::Hole),ref laws,ref rules,ref stages} if laws.is_empty() && rules.is_empty() && stages.is_empty())
             && ret.content.nodes.is_empty(),
     })]
 pub fn encode_item(
@@ -3373,6 +3382,7 @@ pub fn encode_item(
                 body: Maybe::Absent(body::Absent::Hole),
                 laws: Vec::new(),
                 rules: Vec::new(),
+                stages: Vec::new(),
             })
         },
         |item| {
@@ -3390,6 +3400,7 @@ pub fn encode_item(
                         .map(|&law| layout.resolve(law))
                         .collect(),
                     rules: rule_roots(layout, item.declaration().operation_rules()),
+                    stages: item.declaration().stages().to_vec(),
                 },
                 gandr_core_checker::DeclarationContent::Data(ref signature) => {
                     DeclarationRoots::Data(encoder.data_roots(signature))

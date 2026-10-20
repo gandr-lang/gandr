@@ -3083,6 +3083,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::StaticAbstraction
                 | Former::CapabilityType
                 | Former::AtType
+                | Former::StagedType
                 | Former::Scope
                 | Former::Declaration
                 | Former::AttributeBlock

@@ -694,6 +694,8 @@ mod sealing;
 
 mod session;
 
+mod staged;
+
 mod ua;
 
 mod world;
@@ -1261,7 +1263,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1314,6 +1316,7 @@ fn ending(former: Former) -> Ending
         | Former::RelationType
         | Former::CapabilityType
         | Former::AtType
+        | Former::StagedType
         | Former::Scope
         | Former::Declaration
         | Former::AttributeBlock
@@ -1351,7 +1354,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1448,6 +1451,7 @@ fn iterating(former: Former) -> Ending
                     | Former::RelationType
                     | Former::CapabilityType
                     | Former::AtType
+                    | Former::StagedType
                     | Former::SessionType,
                 Family::Type
             ) | (
@@ -1523,6 +1527,7 @@ const fn family_of(former: Former) -> Family
         | Former::RelationType
         | Former::CapabilityType
         | Former::AtType
+        | Former::StagedType
         | Former::SessionType => Family::Type,
         Former::Declaration
         | Former::AttributeBlock
@@ -2383,6 +2388,9 @@ enum Plan
     /// A located form or type: a handle type `A at w`, a hold or a
     /// migration.
     World(world::Worlded),
+    /// A data type at a stage its function's telescope binds: the type and
+    /// the stage.
+    Staged(NodeIndex, gandr_kernel_term::Stage),
 }
 
 /// A node's lowered core node, at the sort its own form produced.
@@ -2972,6 +2980,12 @@ struct Lowerer<'run, 'source>
     /// Each recursive function's parameter, by the frame it binds: the
     /// function and the parameter's position, which a match on it stages.
     staged_parameters: BTreeMap<ScopeId, native::Scrutiny>,
+    /// Each staged type a quantified function's signature writes, by its
+    /// node: the stage its binder's ordinal names.
+    stage_marks: BTreeMap<NodeIndex, gandr_kernel_term::Stage>,
+    /// The bound of each stage binder of each quantified function, in
+    /// written order, by the function's declaration key.
+    stage_bounds: BTreeMap<UnitKey, Vec<gandr_kernel_term::StageBound>>,
     /// Each `run` binder written with no type, by the frame it binds: the
     /// frame its computation reads under and the computation, whose callee's
     /// written result states the binder's type to a match on it.
@@ -3746,6 +3760,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             constructors,
             codata,
             mut resolutions,
+            stage_bounds,
             ..
         } = self;
         resolutions.extend(collected.declared_uses.iter().filter_map(|&(span, slot)| {
@@ -3786,7 +3801,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_nested_sites(nested)
         .with_in_scope(in_scope)
         .with_resolutions(resolutions)
-        .with_operation_rules(operation_rules))
+        .with_operation_rules(operation_rules)
+        .with_stage_bounds(stage_bounds))
     }
 
     /// Rebind the lowering to `tree`, which lays more nodes after the ones
@@ -4015,6 +4031,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             resolutions: Vec::new(),
             recursions: BTreeMap::new(),
             staged_parameters: BTreeMap::new(),
+            stage_marks: BTreeMap::new(),
+            stage_bounds: BTreeMap::new(),
             ran: BTreeMap::new(),
             holes: Vec::new(),
             pattern_stated: BTreeMap::new(),
@@ -5424,6 +5442,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::RelationType => self.relation_type(site, cursor),
             Former::CapabilityType => self.capability_type(site, cursor),
             Former::AtType => self.at_type(site, cursor),
+            Former::StagedType => self.staged_type(site, cursor),
             Former::Scope => self.capability_scope(site, pieces),
             Former::Instantiation => self.instantiation(site, cursor),
             Former::SessionType => self.session_type(site),
@@ -7126,6 +7145,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let recursive = cursor.tile(TileName::REC);
         let named = cursor.tile(TileName::IDENTIFIER);
+        self.stage_telescope(site, &mut cursor)?;
         closed(function, &mut cursor, TileName::PAREN_OPEN)?;
         let start = self.parameters.len();
         let mut frame = Frame::Outermost;
@@ -11487,7 +11507,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Expansion(..)
                 | Plan::Capability(..)
                 | Plan::Session(..)
-                | Plan::World(world::Worlded::At { .. }) => Some(Produced::ValueType),
+                | Plan::World(world::Worlded::At { .. })
+                | Plan::Staged(..) => Some(Produced::ValueType),
                 | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::With(_) | Plan::Codata(..) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
                     Some(Produced::CompType)
                 },
@@ -11726,6 +11747,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Plan::Access(accessed) => self.mint_access(accessed, sink, origin),
             Plan::World(worlded) => self.mint_world(worlded, sink, origin),
+            Plan::Staged(base, stage) => self.mint_staged(base, stage, sink, origin),
             Plan::Recorded(ref moves) => self.mint_recorded(moves, sink, origin),
             Plan::Ride(motive, flow, value) => self.mint_ride((motive, flow, value), sink, origin),
             Plan::FlowThen(first, second) => self.mint_flow_then(first, second, sink, origin),
@@ -12723,6 +12745,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Action(..)
             | Plan::Access(_)
             | Plan::World(_)
+            | Plan::Staged(..)
             | Plan::TelescopeTransport(_)
             | Plan::Capability(..)
             | Plan::Effectful(..)
@@ -16056,6 +16079,7 @@ pub fn parse_literal(
         | Former::RelationType
         | Former::CapabilityType
         | Former::AtType
+        | Former::StagedType
         | Former::Scope
         | Former::Declaration
         | Former::AttributeBlock
