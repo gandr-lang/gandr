@@ -529,10 +529,12 @@ fn the_exercised_recording_paths_are_asserted_rather_than_reported()
 #[test]
 fn the_kernel_replays_the_trace_without_searching()
 {
+    let mut trace: Vec<ConversionDecision<NodeName>> = Vec::new();
     for case in cases() {
         let mut on: TraceLog<NodeName> = TraceLog::new();
         let engine = convert(&case.left, &case.right, &mut on);
-        let trace: Vec<ConversionDecision<NodeName>> = on.decisions().copied().collect();
+        trace.clear();
+        trace.extend(on.decisions().copied());
         assert_eq!(
             Ok(engine),
             replay(&case.left, &case.right, &trace),
