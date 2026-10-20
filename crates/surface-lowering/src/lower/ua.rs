@@ -28,14 +28,14 @@
 //!   outside the term. Reversal: a catalogue cheap enough at every bound a
 //!   program meets lets `k` be inferred and written only to narrow it.
 //! - **Descriptions are named, translators keyed by generator.** `a` and `b`
-//!   are resolved against the module's `theory` blocks by name — a block's name
-//!   also defines the block's value at `Theory`, but the species is read off
-//!   the block's description — and the record labels are the generator names a
-//!   reader already sees in the block. The alternative, translators listed
-//!   positionally in corolla order, makes the reader recompute the corolla
-//!   catalogue to see which translator moves which generator. Reversal: a
-//!   species read off a `Theory` value lets `a` and `b` be any term that
-//!   normalises to a presentation.
+//!   are resolved as any name is, in the source's own top level and then its
+//!   imports — a block's name also defines the block's value at `Theory`, but
+//!   the species is read off the block's description — and the record labels
+//!   are the generator names a reader already sees in the block. The
+//!   alternative, translators listed positionally in corolla order, makes the
+//!   reader recompute the corolla catalogue to see which translator moves which
+//!   generator. Reversal: a species read off a `Theory` value lets `a` and `b`
+//!   be any term that normalises to a presentation.
 //! - **The lowering reads, the checker decides.** The lowering refuses only
 //!   what it can see in the syntax: a head that is not `ua` at two literals, an
 //!   operand count other than four, a name no `theory` block declares, a block
@@ -300,25 +300,30 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `operand` is an argument of the call at `site`.
-    /// - ensures: the description of the one `theory` block of the module
-    ///   declared under the name `operand` spells.
-    /// - fails: an operand that is no name; a name no `theory` block declares,
-    ///   or several do; a block with a member the description route or the cell
-    ///   gate refused; a block [`Description::read`] refuses.
+    /// - ensures: the description of the `theory` block the name `operand`
+    ///   spells declares, resolved in the call's own source and then in the
+    ///   sources it imports unqualified, so a block another source of the unit
+    ///   declares answers only when an import reaches it.
+    /// - fails: an operand that is no name; a name that resolves to no `theory`
+    ///   block; a name two imports bind; a block with a member the description
+    ///   route or the cell gate refused; a block [`Description::read`] refuses.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::UnresolvedName`] for a name no `theory` block
-    /// declares; [`LoweringRefusal::OutOfFragment`] at the operand otherwise,
-    /// with the indexed boundary for an indexed sort and the unadmitted one for
-    /// every other refusal.
+    /// [`LoweringRefusal::UnresolvedName`] for a name that resolves to no
+    /// `theory` block; [`LoweringRefusal::ImportShadows`] for a name two
+    /// imports bind; [`LoweringRefusal::OutOfFragment`] at the operand
+    /// otherwise, with the indexed boundary for an indexed sort and the
+    /// unadmitted one for every other refusal.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a magma reads at its two corollas; a name no block
     ///   declares, a block with two sorts and an indexed block are refused at
-    ///   the operand.
+    ///   the operand; a block of another source answers through an import of it
+    ///   and not without one.
     /// - witness: `lower::ua::tests::a_statement_lowers_to_univalence_at_its_stratum`
     /// - witness: `lower::ua::tests::a_description_outside_the_stratum_is_refused_at_its_name`
+    /// - witness: `tests::namespace::a_univalence_statement_reads_only_the_blocks_its_source_sees_1078`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |description| !description.name.as_ref().is_empty()))]
     fn description(
         &self,
@@ -340,19 +345,40 @@ impl<'source> Lowerer<'_, 'source>
             return Err(written.out(FragmentBoundary::Unadmitted));
         };
         let name = self.name_at(at);
-        let mut declared = self.collected.descriptions.values().filter(|entry| {
-            matches!(entry.classifier, Maybe::Absent(_))
-                && self.name_at(entry.named).as_ref() == name.as_ref()
-        });
-        let entry = match (declared.next(), declared.next()) {
-            (Some(entry), None) => entry,
-            (None, _) => {
-                return Err(LoweringRefusal::UnresolvedName {
-                    span: at.span,
-                    name,
-                });
+        let local = self
+            .collected
+            .by_name
+            .get(&(self.collected.top(at.span.start()), name))
+            .copied();
+        let position = match local {
+            Some(position) => Some(position),
+            None => {
+                match self
+                    .collected
+                    .imported_slot(self.collected.unit.source_at(at.span.start()), name)
+                {
+                    Ok(Maybe::Present((position, _import))) => Some(position),
+                    Ok(Maybe::Absent(_)) => None,
+                    Err(ambiguity) => {
+                        return Err(LoweringRefusal::ImportShadows {
+                            span: at.span,
+                            name,
+                            import: ambiguity.import,
+                            other: ambiguity.other,
+                        });
+                    },
+                }
             },
-            (Some(_), Some(_)) => return Err(written.out(FragmentBoundary::Unadmitted)),
+        };
+        let Some(entry) = position
+            .and_then(|position| self.collected.slots.get(usize::from(position)))
+            .and_then(|slot| self.collected.descriptions.get(&slot.introduced_by.node))
+            .filter(|entry| matches!(entry.classifier, Maybe::Absent(_)))
+        else {
+            return Err(LoweringRefusal::UnresolvedName {
+                span: at.span,
+                name,
+            });
         };
         let block = entry.at.span;
         let inside = |span: gandr_surface_syntax::ByteSpan| {

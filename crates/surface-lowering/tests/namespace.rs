@@ -1596,6 +1596,143 @@ fn a_source_lowers_alike_whatever_follows_it_776()
     );
 }
 
+/// #1078: a `theory` block names the unit's one `Theory`, whatever the unit
+/// lays before it. Alone, a source naming `Theory` and `Presents` mints the
+/// code; behind a block it does not import, and behind one it imports, it takes
+/// that block's code and every declaration of it stands. A source importing
+/// both names the one code, with no ambiguity. The code a later source's block
+/// took answered no name of that source.
+#[test]
+fn a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078()
+{
+    let pbg = grammar();
+    let first =
+        SourceText::from("theory Magma {\n  sort M : Type;\n  oper one : () --> (z : M);\n}");
+    let counting = "theory Monoid {\n  sort M : Type;\n  oper one : () --> (z : M);\n}\ndef \
+                    count(presented : Theory) -> -F Integer {\n  case presented {\n    \
+                    Presents(sorts, opers, rules) => return 1,\n    _ => return 0\n  }\n}";
+    let importing = format!("import \"./base.gandr\" ;\n{counting}");
+    let both = SourceText::from(
+        "import \"./base.gandr\" ;\nimport \"./counting.gandr\" ;\ndef pick(presented : Theory) \
+         -> -F Theory {\n  return presented\n}",
+    );
+    let declared = |sources: &[(SourceText<'_>, &[ImportTarget])]| -> Vec<(String, bool)> {
+        let (text, unit) = laid(sources);
+        lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+            .expect("the unit lowers")
+            .declarations()
+            .iter()
+            .map(|declaration| {
+                (
+                    String::from(declaration.name().as_ref()),
+                    matches!(declaration.outcome(), DeclarationOutcome::Refused(_)),
+                )
+            })
+            .collect()
+    };
+    let stood = |names: &[&str]| -> Vec<(String, bool)> {
+        names
+            .iter()
+            .map(|&name| (String::from(name), false))
+            .collect()
+    };
+    assert_eq!(
+        declared(&[(SourceText::from(counting), &[])]),
+        stood(&["Theory", "Monoid", "count"]),
+        "alone, the block mints `Theory` and `count` reads it"
+    );
+    assert_eq!(
+        declared(&[(first, &[]), (SourceText::from(counting), &[])]),
+        stood(&["Theory", "Magma", "Monoid", "count"]),
+        "behind a block it does not import, the source names that block's `Theory`"
+    );
+    assert_eq!(
+        declared(&[
+            (first, &[]),
+            (SourceText::from(importing.as_str()), &[
+                ImportTarget::Source(SourceIndex::from(0_usize)),
+            ])
+        ]),
+        stood(&["Theory", "Magma", "Monoid", "count"]),
+        "behind a block it imports, the source names that block's `Theory`"
+    );
+    assert_eq!(
+        declared(&[
+            (first, &[]),
+            (SourceText::from(counting), &[]),
+            (both, &[
+                ImportTarget::Source(SourceIndex::from(0_usize)),
+                ImportTarget::Source(SourceIndex::from(1_usize)),
+            ])
+        ]),
+        stood(&["Theory", "Magma", "Monoid", "count", "pick"]),
+        "a source importing both blocks names one `Theory`"
+    );
+}
+
+/// #1078: a univalence statement reads the `theory` blocks its own source
+/// sees. Behind a source declaring `Monoid` that it does not import, `ua`
+/// naming `Monoid` is refused as an unresolved name, as it is alone; through an
+/// import of that source it reads the block. The statement read every block of
+/// the unit by name.
+#[test]
+fn a_univalence_statement_reads_only_the_blocks_its_source_sees_1078()
+{
+    let pbg = grammar();
+    let monoid = SourceText::from(
+        "theory Monoid {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  oper one : \
+         () --> (z : M);\n}",
+    );
+    let stating = "theory Magma {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  \
+                   oper one : () --> (z : M);\n}\ndef exchange(b : Bool) -> -F Bool {\n  case b \
+                   {\n    true => return +{.1 = unit},\n    false => return +{.0 = unit}\n  \
+                   }\n}\ndef keep(e : +{Unit}) -> -F +{Unit} {\n  return e\n}\ndef unnamed = \
+                   ua[1, 4](Monoid, Magma, #{mul = exchange, one = keep}, #{mul = exchange, one \
+                   = keep}) ;";
+    let importing = format!("import \"./base.gandr\" ;\n{stating}");
+    // Whether `unnamed` is refused, and whether at `Monoid` as an unresolved
+    // name.
+    let unnamed = |sources: &[(SourceText<'_>, &[ImportTarget])]| -> (bool, bool) {
+        let (text, unit) = laid(sources);
+        let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+            .expect("the unit lowers");
+        let outcome = module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name().as_ref() == "unnamed")
+            .expect("`unnamed` is declared")
+            .outcome();
+        (
+            matches!(outcome, DeclarationOutcome::Refused(_)),
+            matches!(
+                outcome,
+                DeclarationOutcome::Refused(LoweringRefusal::UnresolvedName { name, .. })
+                    if name.as_ref() == "Monoid"
+            ),
+        )
+    };
+    assert_eq!(
+        unnamed(&[(SourceText::from(stating), &[])]),
+        (true, true),
+        "alone, `Monoid` names no block"
+    );
+    assert_eq!(
+        unnamed(&[(monoid, &[]), (SourceText::from(stating), &[])]),
+        (true, true),
+        "behind a source it does not import, `Monoid` still names no block"
+    );
+    assert_eq!(
+        unnamed(&[
+            (monoid, &[]),
+            (SourceText::from(importing.as_str()), &[
+                ImportTarget::Source(SourceIndex::from(0_usize),)
+            ]),
+        ]),
+        (false, false),
+        "through an import, `Monoid` reads the imported block"
+    );
+}
+
 /// #1033: a document parsed alone, laid after its closure's tree and resumed
 /// on the closure's lowering lowers as the whole unit does over that tree, the
 /// module and the arena alike, each time it is resumed, the closure's hole and

@@ -1356,6 +1356,10 @@ pub struct Collected<'source>
     /// `Theory`, the presentation code, when a `theory` block that refuses
     /// nothing has minted it.
     pub theory: Maybe<TheorySlot, theory_slot::Absent>,
+    /// The sources whose `theory` blocks take `Theory`: the source that minted
+    /// it and every later source holding a block, each of which enters the
+    /// code's constructors under its own names.
+    pub theory_sources: BTreeSet<SourceIndex>,
     /// The mutual blocks, in source order: each the run of slots its members
     /// took, admitted as one block.
     pub blocks: Vec<MutualBlock>,
@@ -1395,12 +1399,16 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// No `theory` block that refuses nothing stands in the module.
             Unminted,
+            /// No `theory` block stands in the source the name is read in,
+            /// nor in a source it imports unqualified.
+            Unseen,
         }
     }
 }
 
-/// `Theory`, the presentation code, as a module mints it: the slot it takes and
-/// the field count of each of its constructors, in tag order.
+/// `Theory`, the presentation code, as a module mints it: the slot it takes,
+/// the field count of each of its constructors, in tag order, and the name tile
+/// of the block that minted it.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -1411,8 +1419,9 @@ quenchant_shape::reason_enum! {
 /// # Adequacy
 /// - hypothesis: L3 — a module with a theory that refuses nothing mints
 ///   `Theory` once, before the theory's own slot, and a generic program matches
-///   on it.
+///   on it; a later source's block takes the same code.
 /// - witness: `description::theory::tests::a_theory_block_defines_its_presentation`
+/// - witness: `tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TheorySlot
 {
@@ -1420,6 +1429,9 @@ pub struct TheorySlot
     pub slot: SlotIndex,
     /// Each constructor's field count, in tag order.
     pub arities: Vec<usize>,
+    /// The name tile of the block that minted the code, where each of its
+    /// constructors is entered as declared.
+    pub named: Placed,
 }
 
 /// A mutual block `rec { … }` and the run of slots its members took.
@@ -1596,6 +1608,55 @@ impl<'source> Collected<'source>
                 .get(&(Container::TopLevel(target), name))
                 .copied()
         })
+    }
+
+    /// The code the name `Theory` reads in `source`, where no declaration of
+    /// the source or of its imports binds it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the slot of the unit's `Theory` when `source`, or a source
+    ///   one of its unqualified imports resolves to, stands among
+    ///   [`Self::theory_sources`]; [`theory_slot::Absent::Unminted`] when the
+    ///   unit holds no code; [`theory_slot::Absent::Unseen`] otherwise. The
+    ///   answer does not depend on which of those sources minted the code, so a
+    ///   source names `Theory` alike whatever the unit lays before it.
+    /// - provides: the fallback that resolves `Theory` in a source whose block
+    ///   took the code another source minted, and in its importers.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source behind a block it does not import, and one
+    ///   importing two sources that hold blocks, each name the one code.
+    /// - witness: `tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
+    #[spec(ensures: |ref ret| match *ret {
+        Maybe::Present(slot) => matches!(self.theory, Maybe::Present(ref theory) if theory.slot == slot),
+        Maybe::Absent(_) => true,
+    })]
+    pub fn theory_in(
+        &self,
+        source: SourceIndex,
+    ) -> Maybe<SlotIndex, theory_slot::Absent>
+    {
+        let Maybe::Present(ref theory) = self.theory
+        else {
+            return Maybe::Absent(theory_slot::Absent::Unminted);
+        };
+        let holds = |held: SourceIndex| self.theory_sources.contains(&held);
+        let imported = self.imports.of(source).any(|import| {
+            matches!(
+                (import.binding(), import.resolution()),
+                (ImportBinding::Unqualified, ImportResolution::Path(ImportTarget::Source(target)))
+                    if holds(target)
+            )
+        });
+        if holds(source) || imported {
+            Maybe::Present(theory.slot)
+        }
+        else {
+            Maybe::Absent(theory_slot::Absent::Unseen)
+        }
     }
 
     /// The constructor `source`'s unqualified imports answer `name` with, and
@@ -2214,6 +2275,7 @@ pub fn begin_collection<'source>(
         functors: Vec::new(),
         instances: Vec::new(),
         theory: Maybe::Absent(theory_slot::Absent::Unminted),
+        theory_sources: BTreeSet::new(),
         blocks: Vec::new(),
         recursive: BTreeSet::new(),
     })
@@ -3470,17 +3532,21 @@ impl<'source> Collector<'_, 'source>
     }
 
     /// Admit `Theory`, the presentation code, and enter its constructors, at
-    /// the name tile `named` of the `theory` block that first needs it,
-    /// unless the module holds it already.
+    /// the name tile `named` of the `theory` block that first needs it; give a
+    /// later block's source the code the module holds.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on the first call, a declared slot `Theory` introduced at
-    ///   `named`, whose definition half is the code, and each constructor of
-    ///   [`theory_desc`] entered by name with its tag and field count, recorded
-    ///   as the module's `Theory`; on a later call, nothing. When `Theory` or
-    ///   one of its constructors names something the module declared before,
-    ///   nothing is admitted.
+    ///   `named`, whose definition half is the code, recorded as the module's
+    ///   `Theory`. On the first call from each source, each constructor of
+    ///   [`theory_desc`] entered by name in that source with its tag and field
+    ///   count, as the minting block declares it, and the source recorded among
+    ///   [`Collected::theory_sources`]: a later block's source names the one
+    ///   code, and so do its importers ([`Collected::theory_in`]), whatever the
+    ///   unit lays before it. On a later call from a recorded source, nothing.
+    ///   When `Theory` or one of its constructors names something the source
+    ///   declared before, nothing is admitted.
     /// - fails: [`LoweringRefusal::DuplicateDefinition`] naming the first
     ///   declaration of a name `Theory` would take.
     /// - panics: none.
@@ -3490,13 +3556,22 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two clean blocks share one `Theory`, which a program
-    ///   matches on by its constructors' names.
+    ///   matches on by its constructors' names; a block of a source laid after
+    ///   another source's block takes its code and names it.
     /// - witness: `description::theory::tests::a_theory_block_defines_its_presentation`
+    /// - witness: `tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
     #[spec(
         captures: before = self.collected.theory.clone(),
-        ensures: |ret| match before {
-            | Maybe::Present(ref held) => ret.is_ok() && self.collected.theory == Maybe::Present(held.clone()),
-            | Maybe::Absent(_) => ret.is_err() || matches!(self.collected.theory, Maybe::Present(ref theory) if theory.arities.len() == THEORY_CONSTRUCTORS.len()),
+        ensures: |ret| {
+            (ret.is_err()
+                || self
+                    .collected
+                    .theory_sources
+                    .contains(&self.collected.unit.source_at(named.span.start())))
+                && match before {
+                    | Maybe::Present(ref held) => self.collected.theory == Maybe::Present(held.clone()),
+                    | Maybe::Absent(_) => ret.is_err() || matches!(self.collected.theory, Maybe::Present(ref theory) if theory.arities.len() == THEORY_CONSTRUCTORS.len()),
+                }
         },
     )]
     fn mint_theory(
@@ -3504,10 +3579,11 @@ impl<'source> Collector<'_, 'source>
         named: Placed,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        if let Maybe::Present(_) = self.collected.theory {
+        let source = self.collected.unit.source_at(named.span.start());
+        if self.collected.theory_sources.contains(&source) {
             return Ok(());
         }
-        let code = SurfaceName::from("Theory");
+        let code = SurfaceName::from(THEORY_CODE);
         let taken = |name: SurfaceName<'source>, first: ByteSpan| {
             Err(LoweringRefusal::DuplicateDefinition {
                 span: named.span,
@@ -3524,44 +3600,50 @@ impl<'source> Collector<'_, 'source>
         {
             return taken(code, slot.introduced_by.span);
         }
-        let source = self.collected.unit.source_at(named.span.start());
         for constructor in THEORY_CONSTRUCTORS {
             let name = SurfaceName::from(constructor);
             if let Some(entry) = self.collected.constructors.get(&(source, name)) {
                 return taken(name, entry.named.span);
             }
         }
-        let slot = self.admit(top, code, named, named);
-        if let Some(entry) = self.collected.slots.get_mut(slot.0) {
-            entry.definition = Maybe::Present(Half {
-                declaration: named,
-                named,
-                operand: Operand::Code,
-            });
+        let theory = if let Maybe::Present(ref theory) = self.collected.theory {
+            theory.clone()
         }
-        let description = theory_desc(());
-        let mut arities = Vec::with_capacity(description.ctors.len());
-        for (tag, (constructor, name)) in description
-            .ctors
-            .iter()
-            .zip(THEORY_CONSTRUCTORS)
-            .enumerate()
-        {
-            let arity = constructor.arity().inputs.len();
-            arities.push(arity);
-            let source = self.collected.unit.source_at(named.span.start());
+        else {
+            let slot = self.admit(top, code, named, named);
+            if let Some(entry) = self.collected.slots.get_mut(slot.0) {
+                entry.definition = Maybe::Present(Half {
+                    declaration: named,
+                    named,
+                    operand: Operand::Code,
+                });
+            }
+            let arities = theory_desc(())
+                .ctors
+                .iter()
+                .map(|constructor| constructor.arity().inputs.len())
+                .collect();
+            let theory = TheorySlot {
+                slot,
+                arities,
+                named,
+            };
+            self.collected.theory = Maybe::Present(theory.clone());
+            theory
+        };
+        for (tag, (&arity, name)) in theory.arities.iter().zip(THEORY_CONSTRUCTORS).enumerate() {
             let _fresh = self.collected.constructors.insert(
                 (source, SurfaceName::from(name)),
                 Constructor {
-                    family: slot,
+                    family: theory.slot,
                     form: Generators::Presentation,
                     tag,
                     arity,
-                    named,
+                    named: theory.named,
                 },
             );
         }
-        self.collected.theory = Maybe::Present(TheorySlot { slot, arities });
+        let _first = self.collected.theory_sources.insert(source);
 
         Ok(())
     }
@@ -4474,6 +4556,9 @@ impl<'source> Collector<'_, 'source>
 /// a nested module's components with: its labelled entries are the
 /// components.
 const TELESCOPE_TYPE: &str = "telescope_type";
+
+/// The name the presentation code takes.
+pub const THEORY_CODE: &str = "Theory";
 
 /// A module form's header, read.
 ///

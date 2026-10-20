@@ -603,6 +603,7 @@ use crate::module::Sealing;
 use crate::module::SlotIndex;
 use crate::module::Stratum;
 use crate::module::StructureIndex;
+use crate::module::THEORY_CODE;
 use crate::module::TypeComponent;
 use crate::module::TypeMeaning;
 use crate::module::ValueComponent;
@@ -4085,8 +4086,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   import; each top-level declared name, and each family whose
     ///   constructor, a source unqualified-imports from another holds
     ///   [`LoweringRefusal::ImportShadows`] at its name, naming the import and
-    ///   the imported declaration. The import itself, and every source without
-    ///   such an import, is untouched.
+    ///   the imported declaration — except a constructor the import entered as
+    ///   the very same constructor, as every source whose block takes the one
+    ///   `Theory` enters its constructors. The import itself, and every source
+    ///   without such an import, is untouched.
     /// - provides: the per-declaration refusal the corpus pins an import's
     ///   failure by.
     /// - fails: never; a refusal is carried by its declaration.
@@ -4098,6 +4101,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   corpus's pathological twins.
     /// - witness: `tests::namespace::an_unresolved_import_refuses_its_source`
     /// - witness: `tests::namespace::a_declaration_an_import_binds_again_is_refused`
+    /// - witness: `tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() == before,
@@ -4172,7 +4176,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 if owner != source {
                     continue;
                 }
-                if let Some(other) = bound_in_import(name) {
+                let entered = collected.constructors.get(&(imported, name)) == Some(constructor);
+                if !entered && let Some(other) = bound_in_import(name) {
                     refusals.push((constructor.family, LoweringRefusal::ImportShadows {
                         span: constructor.named.span,
                         name,
@@ -5670,6 +5675,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   written type; the data declaration `site` belongs to, untyped, for its
     ///   own name: a family's self reference, whose positivity the checker
     ///   judges; else a callable operation admitted strictly earlier, untyped;
+    ///   else what the source's imports answer; else, for `Theory`, the
+    ///   presentation code admitted strictly earlier, untyped, when the source
+    ///   or one it imports holds a `theory` block ([`Collected::theory_in`]);
     ///   the unresolved absence when nothing answers.
     /// - provides: the one resolution term names, capitalised names and type
     ///   heads share.
@@ -5695,6 +5703,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::native::tests::a_recursive_family_names_itself_in_its_fields`
     /// - witness: `lower::tests::an_earlier_declaration_resolves_as_a_constant`
     /// - witness: `lower::native::tests::an_unmarked_self_reference_is_refused_with_its_claim`
+    /// - witness: `tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
     #[spec(
         captures: before = self.fuel.remaining,
         ensures: |ret| {
@@ -5798,7 +5807,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         declared: Maybe::Absent(binder_type::Absent::Untyped),
                     }));
                 }
-                return self.imported(site, source, name);
+                let imported = self.imported(site, source, name)?;
+                if let Maybe::Absent(_) = imported
+                    && name.as_ref() == THEORY_CODE
+                    && let Maybe::Present(code) = self.collected.theory_in(source)
+                    && code < own
+                    && let Some(entry) = self.collected.slots.get(usize::from(code))
+                {
+                    return Ok(Maybe::Present(Resolved::Declaration {
+                        constant: entry.constant,
+                        declared: Maybe::Absent(binder_type::Absent::Untyped),
+                    }));
+                }
+                return Ok(imported);
             };
             container = self
                 .collected
