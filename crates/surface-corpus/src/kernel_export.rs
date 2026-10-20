@@ -2401,3 +2401,177 @@ mod kernel_loop_elimination_readmission
         );
     }
 }
+
+/// A presentation's rules are decided at readmission as its value states them:
+/// `Unital` readmits, and a twin carrying a second law that rewrites the
+/// unit's call apart is refused naming the pair; `Group` readmits from the
+/// derived rules and peaks its value carries.
+mod kernel_presentation_readmission
+{
+    use alloc::vec;
+    use std::path::Path;
+    use std::path::PathBuf;
+
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::Literal;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::RuleIndex;
+    use gandr_kernel_term::StringLiteral;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::TheoryRuleFault;
+    use gandr_kernel_term::TheoryRuleRefusal;
+    use gandr_kernel_term::TheoryRules;
+    use gandr_kernel_term::Value;
+    use gandr_kernel_term::decode;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    /// The declarations `fixture` exports, and the position of the one named
+    /// `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn exported(
+        fixture: &Path,
+        name: &StructuredName,
+    ) -> (
+        gandr_kernel_term::TermArena,
+        alloc::vec::Vec<MarkedDeclaration>,
+        ConstantIndex,
+    )
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("fixture")
+            .join(fixture);
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("{} lowers", fixture.display());
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let position = declarations
+            .iter()
+            .position(|marked| marked.declaration().name() == name)
+            .unwrap_or_else(|| panic!("`{name:?}` crossed"));
+        (
+            decoded.arena().clone(),
+            declarations,
+            ConstantIndex::from(position),
+        )
+    }
+
+    /// The one-segment name `text`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn named<T>(text: T) -> StructuredName
+    where
+        T: AsRef<str>,
+    {
+        let segment = NameSegment::from_text(text.as_ref().into()).expect("a name segment");
+        StructuredName::from(vec![segment])
+    }
+
+    #[test]
+    fn a_presentations_rules_are_decided_at_readmission_1059()
+    {
+        let (mut arena, declarations, unital) = exported(
+            Path::new("model/desc/sealed-lawful-model.gandr"),
+            &named("Unital"),
+        );
+        Environment::replay(arena.clone(), &declarations)
+            .unwrap_or_else(|refusal| panic!("`Unital` readmits: {refusal:?}"));
+        let marked = &declarations[usize::from(unital)];
+        let DeclarationContent::Def { declared, body } = *marked.declaration().content()
+        else {
+            panic!("`Unital` is a definition");
+        };
+        let Some(Value::Constructor {
+            datatype,
+            tag,
+            fields,
+        }) = arena.value(body).cloned()
+        else {
+            panic!("`Unital` is a presentation");
+        };
+        let &[sorts, operations, unit_law] = fields.as_slice()
+        else {
+            panic!("a presentation holds three chains");
+        };
+        let Some(Value::Constructor {
+            tag: rule,
+            fields: law,
+            ..
+        }) = arena.value(unit_law).cloned()
+        else {
+            panic!("the rule chain opens with `unitL`");
+        };
+        let &[name, left, right, rest] = law.as_slice()
+        else {
+            panic!("a rule holds its name, its sides and the rest");
+        };
+        let Some(Value::Constructor { fields: call, .. }) = arena.value(left).cloned()
+        else {
+            panic!("`unitL`'s left side is a call");
+        };
+        let Some(Value::Constructor {
+            fields: arguments, ..
+        }) = arena.value(call[1]).cloned()
+        else {
+            panic!("the call's arguments");
+        };
+        // The twin's second law rewrites `unitL`'s own call, `mul(e(), x)`, to
+        // its first argument, `e()`, where `unitL` gives `x`.
+        let unit = arguments[0];
+        let twin_name = arena.value_literal(Literal::Text(StringLiteral::new("twin".into())));
+        let parting = arena.value_constructor(datatype, rule, vec![twin_name, left, unit, rest]);
+        let unit_law = arena.value_constructor(datatype, rule, vec![name, left, right, parting]);
+        let forged = arena.value_constructor(datatype, tag, vec![sorts, operations, unit_law]);
+        let twin_declaration = DeclarationBuilder::new(&mut arena)
+            .def(marked.declaration().levels().clone(), declared, forged)
+            .named(marked.declaration().name().clone());
+        let mut twin = declarations.clone();
+        twin[usize::from(unital)] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("the twin's laws rewrite `mul(e(), x)` two ways");
+        assert_eq!(refusal.position(), unital);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::PresentationRulesRefused(TheoryRuleRefusal {
+                rule: RuleIndex::from(0_usize),
+                fault: TheoryRuleFault::Diverges(RuleIndex::from(1_usize)),
+            }),
+            "the kernel names the pair that parts"
+        );
+    }
+
+    #[test]
+    fn a_completed_group_readmits_from_the_peaks_its_value_names_1059()
+    {
+        let (arena, declarations, group) = exported(
+            Path::new("model/identity/group-laws.gandr"),
+            &named("Group"),
+        );
+        let DeclarationContent::Def { body, .. } =
+            *declarations[usize::from(group)].declaration().content()
+        else {
+            panic!("`Group` is a definition");
+        };
+        let rules = TheoryRules::read(&arena, body).expect("`Group`'s rule chain reads");
+        assert!(
+            !rules.peaks().is_empty(),
+            "`Group` crosses with the rules its completion derived"
+        );
+        Environment::replay(arena, &declarations)
+            .unwrap_or_else(|refusal| panic!("`Group` readmits: {refusal:?}"));
+    }
+}

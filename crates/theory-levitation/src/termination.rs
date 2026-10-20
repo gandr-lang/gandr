@@ -359,13 +359,55 @@ impl<'desc> Precedence<'desc>
             .and_then(|position| self.ranks.get(position).copied())
             .unwrap_or_default()
     }
+
+    /// Each declared operation's name and rank, in declaration order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn ranks(&self) -> impl Iterator<Item = (&'desc Name, Rank)> + '_
+    {
+        self.opers
+            .iter()
+            .zip(self.ranks.iter().copied())
+            .map(|(operation, rank)| (&operation.name, rank))
+    }
 }
 
 /// An operation's place in a [`Precedence`]: above every operation of a lower
 /// rank, and beside every operation of its own.
+///
+/// # Specification
+/// trivial.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
-struct Rank(usize);
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Rank(usize);
+
+impl From<usize> for Rank
+{
+    /// The rank `rank`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(rank: usize) -> Self
+    {
+        Self(rank)
+    }
+}
+
+impl From<Rank> for usize
+{
+    /// The rank's number.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(rank: Rank) -> Self
+    {
+        rank.0
+    }
+}
 
 /// Whether the lexicographic path order over `precedence` puts `left` above
 /// `right`.

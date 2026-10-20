@@ -3,8 +3,13 @@ use alloc::vec::Vec;
 
 use quenchant_shape::shape::Maybe;
 
+use super::DerivedFace;
+use super::DerivedPeak;
 use super::IncludeClash;
 use super::OperationKind;
+use super::RuleCertificate;
+use super::RuleTurn;
+use super::SidePlace;
 use super::Tag;
 use super::TheoryBinder;
 use super::TheoryFault;
@@ -16,6 +21,7 @@ use super::TheorySort;
 use super::TheoryValue;
 use super::theory_desc;
 use crate::boundary::ConstructorTag;
+use crate::boundary::RuleIndex;
 use crate::boundary::ShapePoint;
 use crate::boundary::ShapeSize;
 use crate::code::CodeView;
@@ -29,6 +35,7 @@ use crate::desc::shape_parameter;
 use crate::generic::DescValue;
 use crate::generic::Payload;
 use crate::rule::FreeTerm;
+use crate::termination::Rank;
 use crate::test_support::Grade;
 use crate::wellformed::check_desc;
 
@@ -177,7 +184,7 @@ fn cat_like() -> TheoryParts
 }
 
 #[test]
-fn the_code_is_one_data_sort_of_sixteen_constructors()
+fn the_code_is_one_data_sort_of_nineteen_constructors()
 {
     let desc = theory_desc(Grade::One);
     assert_eq!(
@@ -236,7 +243,101 @@ fn the_code_is_one_data_sort_of_sixteen_constructors()
         ("Shape", vec!["String", "String", "Theory", "Theory"]),
         ("Face", vec!["String", "String", "Theory"]),
         ("Obs", vec!["String", "Theory", "Theory", "Theory"]),
+        ("Turned", vec!["String", "Theory", "Theory", "Theory"]),
+        ("Derived", vec![
+            "String", "String", "String", "Theory", "Theory", "Theory"
+        ]),
+        ("Rank", vec!["String", "String", "Theory"]),
     ]);
+    let counted: Vec<(usize, usize)> = fields
+        .iter()
+        .map(|&(_, ref leaves)| {
+            let strings = leaves.iter().filter(|&&leaf| leaf == "String").count();
+            (strings, leaves.len() - strings)
+        })
+        .collect();
+    assert_eq!(
+        counted,
+        gandr_kernel_term::PRESENTATION_CODE,
+        "the kernel recognises the code by this table"
+    );
+}
+
+#[test]
+fn a_certified_presentation_carries_its_rule_certificate()
+{
+    let parts = cat_like();
+    let certificate = RuleCertificate {
+        turns: vec![RuleTurn::AsWritten, RuleTurn::Turned],
+        derived: vec![DerivedFace {
+            left: FreeTerm::op("comp", [FreeTerm::var("g"), FreeTerm::var("f")]),
+            right: FreeTerm::var("g"),
+            peak: DerivedPeak {
+                outer: RuleIndex::from(1_usize),
+                position: SidePlace::from(1_usize),
+                inner: RuleIndex::from(0_usize),
+            },
+        }],
+        ranks: vec![
+            (Name::from("comp"), Rank::from(2_usize)),
+            (Name::from("id"), Rank::from(1_usize)),
+        ],
+    };
+    let value = TheoryValue::encode_certified(&parts, &certificate);
+    assert_eq!(value.certificate(), Ok(certificate));
+    assert_eq!(
+        value.decode(),
+        Ok(parts.clone()),
+        "the written rules decode"
+    );
+    let plain = TheoryValue::encode(&parts);
+    assert_eq!(
+        plain.certificate().map(|read| read.turns),
+        Ok(vec![RuleTurn::AsWritten; 2]),
+        "an uncertified value reads every rule as written"
+    );
+    assert_ne!(plain, value, "the certificate is part of the value");
+    let derived = |outer: &'static [u8], rest: Payload| {
+        node(
+            Tag::Derived,
+            Payload::pair(
+                Payload::leaf(outer),
+                Payload::pair(
+                    Payload::leaf(&b"0"[..]),
+                    Payload::pair(
+                        Payload::leaf(&b"0"[..]),
+                        Payload::pair(var(), Payload::pair(var(), rest)),
+                    ),
+                ),
+            ),
+        )
+    };
+    let rules_of = |chain: DescValue| {
+        TheoryValue::from_value(node(
+            Tag::Presents,
+            Payload::pair(end(), Payload::pair(end(), Payload::rec(chain))),
+        ))
+    };
+    assert_eq!(
+        rules_of(derived(&b"01"[..], end())).certificate(),
+        Err(TheoryFault::Numeral),
+        "a padded peak numeral"
+    );
+    let rank_first = node(
+        Tag::Rank,
+        Payload::pair(
+            Payload::leaf(&b"comp"[..]),
+            Payload::pair(
+                Payload::leaf(&b"1"[..]),
+                Payload::rec(derived(&b"0"[..], end())),
+            ),
+        ),
+    );
+    assert_eq!(
+        rules_of(rank_first).certificate(),
+        Err(TheoryFault::Misplaced(ConstructorTag::from(17_usize))),
+        "a rank before a derived rule"
+    );
 }
 
 #[test]

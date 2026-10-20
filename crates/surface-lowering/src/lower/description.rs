@@ -54,6 +54,7 @@ use gandr_theory_levitation::NameRef;
 use gandr_theory_levitation::PayloadNode;
 use gandr_theory_levitation::PayloadView;
 use gandr_theory_levitation::TheoryFault;
+use gandr_theory_levitation::TheoryValue;
 use gandr_theory_levitation::theory_desc;
 use quenchant_shape::shape::Maybe;
 
@@ -388,6 +389,14 @@ impl<'source> Lowerer<'_, 'source>
             // `Theory` did not decode in the source that declares it.
             return Ok(());
         }
+        let cells_at: BTreeMap<NodeIndex, usize> = self
+            .collected
+            .cells
+            .declarations
+            .iter()
+            .enumerate()
+            .map(|(index, cells)| (cells.at.node, index))
+            .collect();
         for position in self.current.slots .. self.collected.slots.len() {
             self.fuel.spend()?;
             let Some(slot) = self.collected.slots.get(position)
@@ -413,9 +422,21 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 continue;
             };
+            // The core definition carries the rule certificate the
+            // coincidence check's outcome states, so the kernel decides the
+            // rules by replay.
+            let certified = cells_at
+                .get(&block.node)
+                .and_then(|&index| self.collected.cells.declarations.get(index))
+                .and_then(|cells| {
+                    let parts = presentation.value.decode().ok()?;
+                    let certificate = crate::certify::rule_certificate(&entry.description, cells);
+                    Some(TheoryValue::encode_certified(&parts, &certificate))
+                });
+            let value = certified.as_ref().unwrap_or(&presentation.value);
             let before = sink.arena.watermark();
             let declared = sink.arena.value_type_data(constant, Vec::new());
-            let body = presentation_term(sink.arena, presentation.value.as_value(), declared);
+            let body = presentation_term(sink.arena, value.as_value(), declared);
             self.record_since(sink, before, block.node);
             match body {
                 Ok(body) => {

@@ -348,6 +348,7 @@
 extern crate alloc;
 
 mod attribute;
+mod certify;
 pub mod circuit;
 mod classify;
 pub mod coincide;

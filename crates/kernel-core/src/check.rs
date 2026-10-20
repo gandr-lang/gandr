@@ -6330,6 +6330,8 @@ where
                 (declared, body),
                 declaration.operation_rules(),
             )?;
+            // A presentation's rules are decided as its value states them.
+            crate::theory_rules::admit(arena, judgement.entries, (declared, body))?;
             Ok(())
         },
         DeclarationContent::Axiom { .. } => Ok(()),

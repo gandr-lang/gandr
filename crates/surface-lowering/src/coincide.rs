@@ -357,6 +357,9 @@ pub struct DerivedRule<A: CellAlphabet = SequentAlphabet>
     /// and then firing [`DerivedRule::cell`] at the root, the other reaching
     /// its right side: the join is the rule's right side.
     pub certificate: Tracelet<A>,
+    /// Whether the rule rides the precedence or ranks it: a ranking rule
+    /// raises its head above what it calls.
+    pub joined: Joined,
 }
 
 impl<A: CellAlphabet> DerivedRule<A>
@@ -762,7 +765,7 @@ enum Later
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Joined
+pub enum Joined
 {
     /// The path order orients the rule over the precedence as it stands.
     Riding,
@@ -1013,6 +1016,7 @@ where
             derived.push(DerivedRule {
                 cell,
                 rule,
+                joined,
                 certificate: Tracelet {
                     overlap,
                     path_a,
