@@ -2512,7 +2512,7 @@ enum Agreement
                 }
                 ContentNode::Memory(ref left) => matches!(*new, ContentNode::Memory(ref right) if left.shape() == right.shape()),
                 _ if children(old).next().is_none() => old == new,
-                ContentNode::Univalence(..) |
+                ContentNode::Univalence(..) | ContentNode::ListCase { .. } |
                 ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Thunk(_) | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::UnknownComputationType | ContentNode::Unresolved(_) => true,
             })
 },
@@ -3268,6 +3268,7 @@ where
                     matches!(ret, ContentNode::Fixpoint { evidence: found, .. } if found == evidence)
                 }
                 Computation::ListFold { .. } => matches!(ret, ContentNode::ListFold { .. }),
+                Computation::ListCase { .. } => matches!(ret, ContentNode::ListCase { .. }),
                 Computation::Session(ref action) => matches!(ret, ContentNode::Session(ref found) if found.shape() == action.shape()),
                 Computation::Memory(ref form) => matches!(ret, ContentNode::Memory(ref found) if found.shape() == form.shape()),
                 Computation::World(_) => ret == ContentNode::Unresolved(Sort::Computation),
@@ -3444,6 +3445,15 @@ where
         }) => ContentNode::ListFold {
             element: child(Root::ValueType(element)),
             result: child(Root::ValueType(result)),
+            list: child(Root::Value(list)),
+            on_nil: child(Root::Computation(on_nil)),
+            on_cons: child(Root::Computation(on_cons)),
+        },
+        Some(&Computation::ListCase {
+            list,
+            on_nil,
+            on_cons,
+        }) => ContentNode::ListCase {
             list: child(Root::Value(list)),
             on_nil: child(Root::Computation(on_nil)),
             on_cons: child(Root::Computation(on_cons)),

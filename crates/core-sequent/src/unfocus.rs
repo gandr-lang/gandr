@@ -27,8 +27,9 @@
 //! `unfocus_command` and `unfocus_value` read the image of focusing back into a
 //! core arena, rule by rule in reverse: a cut against the return point is a
 //! `return`, a force frame a `force`, an application frame an application, a
-//! copattern object of one `apply` arm a `λ`, a `μ̃` a bind, a match on the two
-//! injections a `case`, a nominal match a `case_D` over its branch thunks'
+//! copattern object of one `apply` arm a `λ`, a `μ̃` a bind, a match on the
+//! injections a `case`, a match on the list's nil and cell its list case, a
+//! nominal match a `case_D` over its branch thunks'
 //! bodies, a selection the projection of its field, a recursive thunk under a
 //! force frame the fixpoint, and a `μ` cut the bind or case it names, under the
 //! frame it was named for. The IL carries no types, so a datatype's
@@ -36,7 +37,7 @@
 //! unknown motive. The return point is `★` at the root and `α0` under the
 //! nearest covariable binder; a covariable reaching past it is a jump the core
 //! cannot state and is refused as `UnfocusRefusal::EscapingContinuation`. A `μ`
-//! in value position, a match on anything but the two injections and every
+//! in value position, a match the core cannot state and every
 //! other node outside the image is refused by name, and a refused reading
 //! truncates the core arena to its mark.
 //! Over closed well-typed terms `unfocus ∘ focus` is the identity up to the
@@ -529,6 +530,9 @@ enum Task
     /// Pop the body and the scrutinee and build the split of this many
     /// components.
     Split(gandr_core_term::ComponentCount),
+    /// Pop the cell branch, the empty branch and the scrutinee and build the
+    /// list case.
+    ListCase,
 }
 
 /// The state of one decoding.
@@ -659,7 +663,7 @@ impl Unfocusing<'_>
             | &Task::ListCons => self.values.len() >= 2,
             | &Task::Injection(_) | &Task::Lift(_) | &Task::Return | &Task::Force | &Task::Select(_) => !self.values.is_empty(),
             | &Task::Application | &Task::Split(_) => !self.values.is_empty() && !self.computations.is_empty(),
-            | &Task::ListFold(..) => !self.values.is_empty() && self.computations.len() >= 2,
+            | &Task::ListCase | &Task::ListFold(..) => !self.values.is_empty() && self.computations.len() >= 2,
             | &Task::Tuple(arity) | &Task::Native { arity, .. } => self.values.len() >= usize::from(arity),
             | &Task::Record(ref labels) => self.values.len() >= labels.len(),
             | &Task::Recorded(ref moves) => self.values.len() >= usize::from(ConstructorTag::Recorded(alloc::sync::Arc::clone(moves)).producer_arity()),
@@ -874,6 +878,14 @@ impl Unfocusing<'_>
                 let scrutinee = self.pop_value()?;
                 let split = self.core.computation_split(scrutinee, arity, body);
                 self.computations.push(split);
+                Ok(())
+            },
+            Task::ListCase => {
+                let on_cons = self.pop_computation()?;
+                let on_nil = self.pop_computation()?;
+                let scrutinee = self.pop_value()?;
+                let cased = self.core.computation_list_case(scrutinee, on_nil, on_cons);
+                self.computations.push(cased);
                 Ok(())
             },
             Task::DataCase(count) => {
@@ -1617,6 +1629,32 @@ impl Unfocusing<'_>
                         usize::from(arity),
                     )));
                 self.tasks.push(Task::Command(body, under));
+            },
+            ConsumerNode::Case { ref arms }
+                if matches!(**arms, [
+                    crate::il::PatternArm {
+                        constructor: ConstructorTag::ListNil,
+                        ..
+                    },
+                    crate::il::PatternArm {
+                        constructor: ConstructorTag::ListCons,
+                        ..
+                    },
+                ]) =>
+            {
+                let [
+                    crate::il::PatternArm { body: on_nil, .. },
+                    crate::il::PatternArm { body: on_cons, .. },
+                ] = **arms
+                else {
+                    return Err(UnfocusRefusal::DecodeInvariant);
+                };
+                self.tasks.push(Task::ListCase);
+                self.tasks.push(Task::Command(
+                    on_cons,
+                    depth.under_producer().under_producer(),
+                ));
+                self.tasks.push(Task::Command(on_nil, depth));
             },
             ConsumerNode::Case { ref arms } => {
                 let in_order = arms.iter().enumerate().all(|(summand, arm)| {

@@ -1806,6 +1806,32 @@ enum Frame
         /// The common result type under one binder.
         expected: CompTypeId,
     },
+    /// Await the List classifier of the list case `at`'s scrutinee.
+    ListCaseScrutinee
+    {
+        /// The list case.
+        at: ComputationId,
+        /// The list it reads.
+        scrutinee: ValueId,
+        /// The common result type.
+        expected: CompTypeId,
+    },
+    /// Once the list case `at`'s empty branch has checked, check its cell
+    /// branch under a binder of the element and one of the tail.
+    ListCaseNil
+    {
+        /// The list case.
+        at: ComputationId,
+        /// The list's element type.
+        element: ValueTypeId,
+        /// The tail's type, at the stage the case opened when the list
+        /// stood at one.
+        tail: ValueTypeId,
+        /// The common result type.
+        expected: CompTypeId,
+    },
+    /// Await the cell branch's check, then close its two binders.
+    ListCaseCons,
     /// A force waits on the type its value synthesises, which must be a thunk
     /// type; the force has the thunk's body.
     Force
@@ -1833,6 +1859,16 @@ enum Frame
         domain: ValueTypeId,
         /// The codomain.
         codomain: Codomain,
+    },
+    /// An applied fixpoint waits on the type its argument synthesises; the
+    /// fixpoint then checks against the arrow from that type to the
+    /// application's.
+    FixpointArgument
+    {
+        /// The fixpoint.
+        head: ComputationId,
+        /// The application's type.
+        expected: CompTypeId,
     },
     /// A lambda waits on its body's check, then closes the binder it opened.
     LambdaBody,
@@ -2208,9 +2244,13 @@ impl Frame
             Self::SplitScrutinee { .. } => FrameRole::SplitScrutinee,
             Self::SplitBody(_) => FrameRole::SplitBody,
             Self::CaseBranch { .. } => FrameRole::CaseBranch,
+            Self::ListCaseScrutinee { .. } => FrameRole::ListCaseScrutinee,
+            Self::ListCaseNil { .. } => FrameRole::ListCaseNil,
+            Self::ListCaseCons => FrameRole::ListCaseCons,
             Self::Force { .. } => FrameRole::Force,
             Self::ApplicationHead { .. } => FrameRole::ApplicationHead,
             Self::ApplicationArgument { .. } => FrameRole::ApplicationArgument,
+            Self::FixpointArgument { .. } => FrameRole::FixpointArgument,
             Self::LambdaBody => FrameRole::LambdaBody,
             Self::BindBound { .. } => FrameRole::BindBound,
             Self::BindBody { .. } => FrameRole::BindBody,
@@ -2276,8 +2316,9 @@ impl Frame
     /// - requires: nothing.
     /// - ensures: one for an abstraction body, a bind body, a `leta` body, a
     ///   formation under a binder, a return clause, a capability scope's
-    ///   subject, a stack bind and a case motive; two for an operation clause;
-    ///   the component count for a split body; zero otherwise.
+    ///   subject, a stack bind and a case motive; two for an operation clause
+    ///   and a list case's cell branch; the component count for a split body;
+    ///   zero otherwise.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -2297,7 +2338,7 @@ impl Frame
             | Self::SigmaSplitMotive { .. }
             | Self::ScopeSubject { .. }
             | Self::LetaBody { .. } => 1_usize,
-            Self::HandlerClause { .. } => 2_usize,
+            Self::HandlerClause { .. } | Self::ListCaseCons => 2_usize,
             Self::SplitBody(arity) => usize::from(arity),
             Self::NativeNext(_)
             | Self::NativeYield(_)
@@ -2352,9 +2393,12 @@ impl Frame
             | Self::CaseScrutinee { .. }
             | Self::SplitScrutinee { .. }
             | Self::CaseBranch { .. }
+            | Self::ListCaseScrutinee { .. }
+            | Self::ListCaseNil { .. }
             | Self::Force { .. }
             | Self::ApplicationHead { .. }
             | Self::ApplicationArgument { .. }
+            | Self::FixpointArgument { .. }
             | Self::BindBound { .. }
             | Self::ValueBridge { .. }
             | Self::CompBridge { .. }
@@ -2792,9 +2836,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::SplitScrutinee { .. }
                 | Frame::SplitBody(_)
                 | Frame::CaseBranch { .. }
+                | Frame::ListCaseScrutinee { .. }
+                | Frame::ListCaseNil { .. }
+                | Frame::ListCaseCons
                 | Frame::Force { .. }
                 | Frame::ApplicationHead { .. }
                 | Frame::ApplicationArgument { .. }
+                | Frame::FixpointArgument { .. }
                 | Frame::LambdaBody
                 | Frame::BindBound { .. }
                 | Frame::BindBody { .. }
@@ -5007,9 +5055,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Computation::Bind(bound, body) => {
                 Ok(self.bind(term, bound, body, Direction::Synthesise))
             },
-            Computation::Case { .. } => Err(CheckRefusal::NotSynthesisable {
-                form: CheckingForm::Case(term),
-            }),
+            Computation::Case { .. } | Computation::ListCase { .. } => {
+                Err(CheckRefusal::NotSynthesisable {
+                    form: CheckingForm::Case(term),
+                })
+            },
             Computation::Split {
                 scrutinee,
                 motive: SplitMotive::Scrutinee(_),
@@ -5057,8 +5107,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   except that a structural one opens its stage
     ///   ([`crate::recursion::open_fixpoint`]): the self binder takes the
     ///   recursed-on parameter below the stage and the body takes it at the
-    ///   stage; a synthesising computation synthesises, then crosses the
-    ///   computation bridge to `expected`.
+    ///   stage; a list case synthesises its list's type, opens one stage below
+    ///   it ([`crate::recursion::open_case`]), checks its empty branch against
+    ///   `expected` and its cell branch, under a binder of the element and one
+    ///   of the tail at that stage, against `expected` shifted past both; an
+    ///   applied fixpoint synthesises its argument's type and checks the
+    ///   fixpoint against the arrow from it to `expected`; a synthesising
+    ///   computation synthesises, then crosses the computation bridge to
+    ///   `expected`.
     /// - fails: [`CheckRefusal::ShapeMismatch`] for a lambda against no arrow,
     ///   a return against no returner, or a structural fixpoint against a type
     ///   with no arrow to recurse on; [`CheckRefusal::OutOfFragment`] for a
@@ -5170,6 +5226,18 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(scoped),
                 }))
             },
+            Computation::Application(head, argument)
+                if matches!(
+                    self.context.arena().computation(head),
+                    Some(&Computation::Fixpoint { .. })
+                ) =>
+            {
+                self.wait(Frame::FixpointArgument { head, expected });
+                Ok(Step::Descend(Goal::Value {
+                    term: argument,
+                    direction: Direction::Synthesise,
+                }))
+            },
             Computation::Primitive { .. }
             | Computation::DataCase { .. }
             | Computation::RecordProjection(..)
@@ -5228,6 +5296,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 });
                 Ok(Step::Descend(Goal::Value {
                     term: scrutinee,
+                    direction: Direction::Synthesise,
+                }))
+            },
+            Computation::ListCase { list, .. } => {
+                self.wait(Frame::ListCaseScrutinee {
+                    at: term,
+                    scrutinee: list,
+                    expected,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: list,
                     direction: Direction::Synthesise,
                 }))
             },
@@ -7482,6 +7561,71 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(expected),
                 }))
             },
+            (
+                Frame::ListCaseScrutinee {
+                    at,
+                    scrutinee,
+                    expected,
+                },
+                Produced::ValueType(classifier),
+            ) => {
+                let classifier = classifier.settle(self.context.arena_mut());
+                let (list, opened) = crate::recursion::open_case(self.context, classifier)?;
+                let element = self.list_expected(scrutinee, list)?;
+                let tail = self.context.arena_mut().value_type_list(element);
+                let tail = match opened {
+                    Maybe::Present(child) => self
+                        .context
+                        .arena_mut()
+                        .value_type_staged(tail, gandr_kernel_term::Stage::At(child)),
+                    Maybe::Absent(_) => tail,
+                };
+                let Computation::ListCase { on_nil, .. } = *self.computation(at)?
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                self.wait(Frame::ListCaseNil {
+                    at,
+                    element,
+                    tail,
+                    expected,
+                });
+                Ok(Step::Descend(Goal::Computation {
+                    term: on_nil,
+                    direction: Direction::Check(expected),
+                }))
+            },
+            (
+                Frame::ListCaseNil {
+                    at,
+                    element,
+                    tail,
+                    expected,
+                },
+                Produced::Checked,
+            ) => {
+                let Computation::ListCase { on_cons, .. } = *self.computation(at)?
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                let tail = shift_value_type(self.context.arena_mut(), tail, Binders::from(1_u32))
+                    .settle(self.context.arena_mut());
+                let expected =
+                    shift_comp_type(self.context.arena_mut(), expected, Binders::from(2_u32))
+                        .settle(self.context.arena_mut());
+                self.context.binders().open(Zone::Intuitionistic, element);
+                self.context.binders().open(Zone::Intuitionistic, tail);
+                self.wait(Frame::ListCaseCons);
+                Ok(Step::Descend(Goal::Computation {
+                    term: on_cons,
+                    direction: Direction::Check(expected),
+                }))
+            },
+            (Frame::ListCaseCons, Produced::Checked) => {
+                self.close()?;
+                self.close()?;
+                Ok(Step::Ascend(Produced::Checked))
+            },
             (Frame::Force { value }, Produced::ValueType(synthesised)) => {
                 let synthesised = synthesised.settle(self.context.arena_mut());
                 let head = self.context.whnf_value_type(synthesised)?;
@@ -7497,6 +7641,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         },
                     )),
                 }
+            },
+            (Frame::FixpointArgument { head, expected }, Produced::ValueType(domain)) => {
+                let domain = domain.settle(self.context.arena_mut());
+                let arrow = self.context.arena_mut().comp_type_arrow(domain, expected);
+                Ok(Step::Descend(Goal::Computation {
+                    term: head,
+                    direction: Direction::Check(arrow),
+                }))
             },
             (Frame::ApplicationHead { head, argument }, Produced::CompType(synthesised)) => {
                 let (domain, codomain) =
@@ -7867,6 +8019,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::TelescopePath { .. }
                 | Frame::TelescopeOver { .. }
                 | Frame::CaseScrutinee { .. }
+                | Frame::ListCaseScrutinee { .. }
+                | Frame::FixpointArgument { .. }
                 | Frame::SplitScrutinee { .. }
                 | Frame::Force { .. }
                 | Frame::ValueBridge { .. }
@@ -7926,6 +8080,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::TelescopeMotive { .. }
                 | Frame::TelescopeStart { .. }
                 | Frame::CaseBranch { .. }
+                | Frame::ListCaseNil { .. }
+                | Frame::ListCaseCons
                 | Frame::SplitBody(_)
                 | Frame::ApplicationArgument { .. }
                 | Frame::LambdaBody

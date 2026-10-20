@@ -1695,6 +1695,24 @@ fn converge(
                             ConversionGoal::Computation(left_cons, right_cons),
                         ]);
                     },
+                    (
+                        &Computation::ListCase {
+                            list: left_list,
+                            on_nil: left_nil,
+                            on_cons: left_cons,
+                        },
+                        &Computation::ListCase {
+                            list: right_list,
+                            on_nil: right_nil,
+                            on_cons: right_cons,
+                        },
+                    ) => {
+                        stack.extend([
+                            ConversionGoal::Value(left_list, right_list),
+                            ConversionGoal::Computation(left_nil, right_nil),
+                            ConversionGoal::Computation(left_cons, right_cons),
+                        ]);
+                    },
                     (&Computation::Transport(a, b), &Computation::Transport(c, d)) => {
                         stack.push(ConversionGoal::Value(a, c));
                         stack.push(ConversionGoal::Value(b, d));
@@ -1864,6 +1882,7 @@ fn converge(
                         | &Computation::Lambda(_)
                         | &Computation::Fixpoint { .. }
                         | &Computation::ListFold { .. }
+                        | &Computation::ListCase { .. }
                         | &Computation::Application(..)
                         | &Computation::Return(_)
                         | &Computation::Bind(..)

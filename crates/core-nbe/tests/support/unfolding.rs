@@ -145,7 +145,7 @@ pub struct Unfolded(pub u64);
                     Computation::Hole(_) => 1,
                     Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 6,
                     Computation::Primitive { arguments, .. } => if arguments.len() == 1 { 2 } else { 3 },
-                    Computation::Case { .. } | Computation::PathTransport { .. } | Computation::Ride { .. } => 4,
+                    Computation::Case { .. } | Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::Ride { .. } => 4,
                     Computation::Session(ref action) => 1_u64.saturating_add(u64::try_from(action.values().count().saturating_add(action.computations().count()).saturating_add(action.value_types().count())).unwrap_or(u64::MAX)),
                     Computation::Memory(ref form) => 1_u64.saturating_add(u64::try_from(form.values().count().saturating_add(form.computations().count())).unwrap_or(u64::MAX)),
                     Computation::World(ref form) => 1_u64.saturating_add(u64::try_from(form.values().count().saturating_add(form.computations().count())).unwrap_or(u64::MAX)),
@@ -393,6 +393,15 @@ pub fn unfolded(
                     } => pending.extend([
                         CoreNode::ValueType(element),
                         CoreNode::ValueType(result),
+                        CoreNode::Value(list),
+                        CoreNode::Computation(on_nil),
+                        CoreNode::Computation(on_cons),
+                    ]),
+                    Computation::ListCase {
+                        list,
+                        on_nil,
+                        on_cons,
+                    } => pending.extend([
                         CoreNode::Value(list),
                         CoreNode::Computation(on_nil),
                         CoreNode::Computation(on_cons),

@@ -137,14 +137,16 @@ fn program() -> Program
     };
     let partial = looping(&mut arena, FixpointEvidence::Partial);
     let claimed = looping(&mut arena, FixpointEvidence::StructuralDescent);
+    // A fixpoint bound by a `bind` stands where a type must be synthesised:
+    // `x ← (fix rec. return ()); return x`.
     let headed = {
         let unit = arena.value_unit();
+        let returned = arena.computation_return(unit);
+        let fixpoint = arena.computation_fixpoint(returned, FixpointEvidence::Partial);
         let bound = var(&mut arena, DeBruijnIndex::from(0));
-        let returned = arena.computation_return(bound);
-        let identity = arena.computation_lambda(returned);
-        let fixpoint = arena.computation_fixpoint(identity, FixpointEvidence::Partial);
-        let applied = arena.computation_application(fixpoint, unit);
-        arena.value_thunk(applied)
+        let rest = arena.computation_return(bound);
+        let first = arena.computation_bind(fixpoint, rest);
+        arena.value_thunk(first)
     };
 
     // double = fix rec. λx. case x of { zero ↦ zero; succ p ↦ succ (succ (rec p)) }

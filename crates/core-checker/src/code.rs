@@ -2352,6 +2352,19 @@ pub fn loose_reach(
                             (CoreNode::Term(TermNode::Computation(on_cons)), cell_depth),
                         ]);
                     },
+                    Computation::ListCase {
+                        list,
+                        on_nil,
+                        on_cons,
+                    } => {
+                        let cell_depth =
+                            under.checked_add(1).ok_or(CheckRefusal::MachineInvariant)?;
+                        work.extend([
+                            (CoreNode::Term(TermNode::Value(list)), depth),
+                            (CoreNode::Term(TermNode::Computation(on_nil)), depth),
+                            (CoreNode::Term(TermNode::Computation(on_cons)), cell_depth),
+                        ]);
+                    },
                     Computation::Primitive { arguments, .. } => {
                         work.extend(
                             arguments.iter().map(|argument| {

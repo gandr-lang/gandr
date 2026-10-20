@@ -1,5 +1,6 @@
-//! Loops: `loop`, `while`, `break` and `continue`, lowered into the fixpoint
-//! former, whose body runs in the continuation the loop was entered with.
+//! Loops: `loop`, `while`, `for`, `break` and `continue`, lowered into the
+//! fixpoint former, whose body runs in the continuation the loop was entered
+//! with.
 //!
 //! # The fixpoint reading
 //!
@@ -13,6 +14,13 @@
 //!   `break`. A value written as the condition is returned, and `x ← return v;
 //!   N` written as its beta step `N[v/x]`, as the commuting writes a
 //!   returner's, since the checker synthesises no returner it binds.
+//! - `for x in xs { b }` is `(fix k. λ r. case r { nil => return (), cons(x, t)
+//!   => b' }) xs`, structural on `r`: the list case binds the tail one stage
+//!   below the list it reads, so the stage ends the loop. The empty list is the
+//!   loop's `break`, and in `b'` a pass runs again on the tail, `(force k) t`,
+//!   where a `loop` or a `while` forces `k` alone. The fixpoint's arrow is read
+//!   off the list's type and the type the loop is checked against, the applied
+//!   fixpoint's checking rule.
 //! - In `b'`, every place a path through the body ends without an exit runs the
 //!   loop again: `e` becomes `x ← e; split x (); force k`, the result discarded
 //!   as a block's statement discards it, so it must be unit. `continue` is
@@ -22,7 +30,8 @@
 //!   follows the loop, or leaves it where the loop ends the body.
 //!
 //! The loop's own binder carries a name no identifier spells, so a written
-//! name never resolves to it and `continue` finds the nearest one.
+//! name never resolves to it and `continue` finds the nearest one; a `for`
+//! loop's remaining tail carries another, found inside the loop's own binder.
 //!
 //! - choice: the one fixpoint former the core has, at partial evidence, its
 //!   binder the thunk a pass forces to run the next.
@@ -53,16 +62,6 @@
 //! The fragment has no mutation: a loop's body sees the binders around the
 //! loop, unchanged on every pass. State a loop carries is a recursive
 //! function's parameter, or an effect's.
-//!
-//! # `for`
-//!
-//! - choice: `for x in xs { b }` is refused as
-//!   [`LoweringRefusal::ForNeedsListCase`].
-//! - alternatives: lowering through the native list's fold, which runs every
-//!   element and so cannot leave at a `break`; or recursion over a list data
-//!   declaration, which the native list the loop names is not.
-//! - reversal: a case former on the native list, in the kernel and the core,
-//!   lowers `for` as a `while` over the list's remaining tail (#283).
 
 use alloc::vec::Vec;
 
@@ -93,6 +92,7 @@ use super::exits::record_copies;
 use super::lowered;
 use super::native::answered;
 use crate::error::CrossedExit;
+use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::LoopExit;
 use crate::error::LoweringRefusal;
@@ -115,6 +115,77 @@ mod tests;
 fn iteration() -> SurfaceName<'static>
 {
     SurfaceName::from(" loop")
+}
+
+/// The name a `for` loop's remaining tail carries: no identifier spells it,
+/// so no written name resolves to it.
+///
+/// # Specification
+/// trivial.
+fn remaining() -> SurfaceName<'static>
+{
+    SurfaceName::from(" tail")
+}
+
+/// Where a pass through a loop's body runs the loop again from.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct Reentry
+{
+    /// The index the loop's own binder has.
+    own: DeBruijnIndex,
+    /// The index a `for` loop's remaining tail has, which the next pass steps
+    /// through.
+    tail: Maybe<DeBruijnIndex, passed::Absent>,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a loop's next pass steps through no tail.
+    pub(super) mod passed {
+        /// The loop iterates no list.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// A `loop` or a `while` runs its next pass over nothing.
+            Unlisted,
+        }
+    }
+}
+
+/// The pass `reentry` runs: the force of the loop's own binder, applied to the
+/// remaining tail when the loop is a `for`.
+///
+/// # Specification
+/// - requires: `reentry`'s indices are in scope where the pass is minted.
+/// - ensures: `force k`, or `(force k) t`, every node below the pass at
+///   `origin`; the caller records the pass itself.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `continue` in a `while` and one in a `for` each run
+///   their loop again, the second on its tail.
+/// - witness: `lower::loops::tests::a_continue_runs_its_own_loop_again`
+/// - witness: `lower::loops::tests::a_for_steps_through_its_list`
+#[spec(ensures: |ret| sink.arena.computation(ret).is_some())]
+pub(super) fn again(
+    reentry: Reentry,
+    sink: &mut Sink<'_>,
+    origin: Origin,
+) -> ComputationId
+{
+    let itself = sink.arena.value_variable(Zone::Intuitionistic, reentry.own);
+    sink.origins.record_value(itself, origin);
+    let forced = sink.arena.computation_force(itself);
+    let Maybe::Present(tail) = reentry.tail
+    else {
+        return forced;
+    };
+    sink.origins.record_computation(forced, origin);
+    let tail = sink.arena.value_variable(Zone::Intuitionistic, tail);
+    sink.origins.record_value(tail, origin);
+    sink.arena.computation_application(forced, tail)
 }
 
 impl<'source> Lowerer<'_, 'source>
@@ -234,6 +305,69 @@ impl<'source> Lowerer<'_, 'source>
         let body = self.block(site, &mut cursor, held)?;
         self.iterate(site, body)?;
         self.plan(site, Plan::While(condition.node, body));
+
+        Ok(())
+    }
+
+    /// Classify a list loop, `for x in xs { … }`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a `for` in term position.
+    /// - ensures: a `for` standing as a computation where a path through a body
+    ///   passes reads its list as a value in its own frame, binds itself in a
+    ///   frame extending its own, reads its block as a loop's body under three
+    ///   more binders — the remaining list, the element its written name binds
+    ///   and the remaining tail — and is planned over both.
+    /// - provides: the loop over a native list.
+    /// - fails: as [`Self::looped`], a misplaced-tile fault for a `for` that
+    ///   names no element, and the list's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The loop's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `for` at a body's end and one bound as a statement
+    ///   each lower to the structural fixpoint over the list case and are
+    ///   accepted; a `continue` in it runs the loop again on the tail.
+    /// - witness: `lower::loops::tests::a_for_steps_through_its_list`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || (self.exitable.contains(&site.at.node)
+                    && matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::For(list, body))
+                        if self.looping.contains(&body.last)
+                            && matches!(self.reading(list), Reading::Value(_))))
+        },
+    )]
+    pub(super) fn stepped(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::Computation)?;
+        if !self.exitable.contains(&site.at.node) {
+            return Err(site.out(FragmentBoundary::NotInTail));
+        }
+        let _keyword = cursor.tile(TileName::FOR);
+        let Maybe::Present(binder) = cursor.tile(TileName::IDENTIFIER)
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        let _in = cursor.tile(TileName::IN);
+        let list = site.one(cursor.operands())?;
+        self.read(list.node, Reading::Value(frame));
+        let unwritten = Maybe::Absent(binder_site::Absent::Unwritten);
+        let own = Frame::Inner(self.scope.extend(frame, iteration(), unwritten));
+        let listed = Frame::Inner(self.scope.extend(own, SurfaceName::from(""), unwritten));
+        let name = self.name_at(binder);
+        self.note_binder(binder, name)?;
+        let element = Frame::Inner(self.scope.extend(listed, name, Maybe::Present(binder.span)));
+        let held = Frame::Inner(self.scope.extend(element, remaining(), unwritten));
+        let body = self.block(site, &mut cursor, held)?;
+        self.iterate(site, body)?;
+        self.plan(site, Plan::For(list.node, body));
 
         Ok(())
     }
@@ -388,6 +522,42 @@ impl<'source> Lowerer<'_, 'source>
         self.on_loop_path(site, LoopExit::Continue)?;
         let _keyword = cursor.tile(TileName::CONTINUE);
         exhausted(site, &cursor)?;
+        let reentry = self.reentry(frame, site)?;
+        let _exit = self.leaving.insert(site.at.node);
+        self.plan(site, Plan::Reenter(reentry));
+
+        Ok(())
+    }
+
+    /// Where a pass through the nearest loop's body at `frame` runs the loop
+    /// again from.
+    ///
+    /// # Specification
+    /// - requires: `site` is the node the pass is read at, under `frame`.
+    /// - ensures: the index the nearest loop's own binder has at `frame`, and
+    ///   the index of its remaining tail when that loop is a `for`, whose tail
+    ///   stands inside the loop's own binder.
+    /// - fails: [`LoweringRefusal::OutsideLoop`] where no loop's binder is in
+    ///   scope; [`LoweringRefusal::BudgetExceeded`] from the binder walk.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The re-entry's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `continue` in a `for` passes its tail, and one in a
+    ///   `while` inside a `for` passes nothing.
+    /// - witness: `lower::loops::tests::a_for_steps_through_its_list`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |reentry| match reentry.tail {
+        | Maybe::Present(tail) => u32::from(tail) < u32::from(reentry.own),
+        | Maybe::Absent(_) => true,
+    }))]
+    fn reentry(
+        &mut self,
+        frame: Frame,
+        site: Site,
+    ) -> Result<Reentry, LoweringRefusal<'source>>
+    {
         let Maybe::Present(own) = self.scope.index_of(frame, iteration(), &mut self.fuel)?
         else {
             return Err(LoweringRefusal::OutsideLoop {
@@ -395,10 +565,12 @@ impl<'source> Lowerer<'_, 'source>
                 exit: LoopExit::Continue,
             });
         };
-        let _exit = self.leaving.insert(site.at.node);
-        self.plan(site, Plan::Reenter(own));
+        let tail = match self.scope.index_of(frame, remaining(), &mut self.fuel)? {
+            Maybe::Present(tail) if u32::from(tail) < u32::from(own) => Maybe::Present(tail),
+            Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(passed::Absent::Unlisted),
+        };
 
-        Ok(())
+        Ok(Reentry { own, tail })
     }
 
     /// Admit the loop exit `exit` at `site` only on a path through a loop's
@@ -508,21 +680,21 @@ impl<'source> Lowerer<'_, 'source>
         if leaves == Leaves::Always {
             return Ok(());
         }
-        let Maybe::Present(own) =
-            self.scope
-                .index_of(site.reading.frame(), iteration(), &mut self.fuel)?
-        else {
-            return Err(LoweringRefusal::OutsideLoop {
-                span: site.at.span,
-                exit: LoopExit::Continue,
-            });
+        let reentry = self.reentry(site.reading.frame(), site)?;
+        let budget = self.fuel.budget;
+        let past = |index: DeBruijnIndex| {
+            u32::from(index)
+                .checked_add(1_u32)
+                .map(DeBruijnIndex::from)
+                .ok_or(LoweringRefusal::BudgetExceeded { budget })
         };
-        let under = u32::from(own)
-            .checked_add(1_u32)
-            .map(DeBruijnIndex::from)
-            .ok_or(LoweringRefusal::BudgetExceeded {
-                budget: self.fuel.budget,
-            })?;
+        let under = Reentry {
+            own: past(reentry.own)?,
+            tail: match reentry.tail {
+                Maybe::Present(tail) => Maybe::Present(past(tail)?),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
+            },
+        };
         let _first = self.reentered.insert(site.at.node, under);
         if leaves == Leaves::Never {
             let _discarded = self.answers.remove(&site.at.node);
@@ -538,12 +710,12 @@ impl<'source> Lowerer<'_, 'source>
     /// with the loop run again after it.
     ///
     /// # Specification
-    /// - requires: `own` is the index the loop's binder has under one more
+    /// - requires: `reentry` is where the loop runs again from under one more
     ///   binder at `position`; `end` is the node's bridged computation.
-    /// - ensures: `x ← end; split x (); force own`, every inserted node at
-    ///   `origin` marked as the loop's insertion, the force recorded as an
-    ///   exit, and the bind recorded as distributed when a path through `end`
-    ///   leaves.
+    /// - ensures: `x ← end; split x (); force own`, or `…; (force own) t` in a
+    ///   `for`, every inserted node at `origin` marked as the loop's insertion,
+    ///   the pass recorded as an exit, and the bind recorded as distributed
+    ///   when a path through `end` leaves.
     /// - provides: the minting half of [`Self::reenter`].
     /// - fails: never.
     /// - panics: none.
@@ -557,7 +729,7 @@ impl<'source> Lowerer<'_, 'source>
         &self,
         position: NodeIndex,
         end: ComputationId,
-        own: DeBruijnIndex,
+        reentry: Reentry,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> ComputationId
@@ -567,14 +739,12 @@ impl<'source> Lowerer<'_, 'source>
             .arena
             .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         sink.origins.record_value(discarded, inserted);
-        let itself = sink.arena.value_variable(Zone::Intuitionistic, own);
-        sink.origins.record_value(itself, inserted);
-        let again = sink.arena.computation_force(itself);
-        sink.origins.record_computation(again, inserted);
-        let _exit = sink.exits.insert(again);
+        let pass = again(reentry, sink, inserted);
+        sink.origins.record_computation(pass, inserted);
+        let _exit = sink.exits.insert(pass);
         let split = sink
             .arena
-            .computation_split(discarded, ComponentCount::default(), again);
+            .computation_split(discarded, ComponentCount::default(), pass);
         sink.origins.record_computation(split, inserted);
         let bound = sink.arena.computation_bind(end, split);
         sink.origins.record_computation(bound, inserted);
@@ -694,5 +864,68 @@ impl<'source> Lowerer<'_, 'source>
         let _first = sink.loops.insert(id);
 
         Maybe::Present(sink.computation(id, origin))
+    }
+
+    /// Mint a list loop stepping through `list` over `body`.
+    ///
+    /// # Specification
+    /// - requires: the list and every node of `body` are already minted or
+    ///   absent.
+    /// - ensures: `(fix k. λ r. case r { nil => return (), cons(x, t) => b })
+    ///   xs`, the fixpoint structural on `r`, at `origin` and recorded as a
+    ///   loop, the application at `origin`, the lambda, the case and the empty
+    ///   branch marked as the loop's insertion and the empty branch recorded as
+    ///   a break; nothing when the list or the body did not lower.
+    /// - provides: the minting half of [`Self::stepped`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::stepped`].
+    /// - witness: `lower::loops::tests::a_for_steps_through_its_list`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(Lowered::Computation(id)) => matches!(sink.arena.computation(id),
+            Some(&Computation::Application(head, _)) if sink.loops.contains(&head)),
+        | Maybe::Present(_) => false,
+        | Maybe::Absent(_) => true,
+    })]
+    pub(super) fn mint_for(
+        &self,
+        list: NodeIndex,
+        body: Block,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let listed = match self.value_at(list) {
+            Maybe::Present(listed) => listed,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let under = match self.mint_block(body, sink) {
+            Maybe::Present(under) => under,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let inserted = origin.inserted(Insertion::Loop);
+        let unit = sink.arena.value_unit();
+        sink.origins.record_value(unit, inserted);
+        let left = sink.arena.computation_return(unit);
+        sink.origins.record_computation(left, inserted);
+        let _break = sink.breaks.insert(left);
+        let remaining = sink
+            .arena
+            .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        sink.origins.record_value(remaining, inserted);
+        let steps = sink.arena.computation_list_case(remaining, left, under);
+        sink.origins.record_computation(steps, inserted);
+        let each = sink.arena.computation_lambda(steps);
+        sink.origins.record_computation(each, inserted);
+        let id = sink
+            .arena
+            .computation_fixpoint(each, FixpointEvidence::StructuralDescent);
+        sink.origins.record_computation(id, origin);
+        let _first = sink.loops.insert(id);
+        let applied = sink.arena.computation_application(id, listed);
+
+        Maybe::Present(sink.computation(applied, origin))
     }
 }

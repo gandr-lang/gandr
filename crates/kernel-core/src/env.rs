@@ -2631,6 +2631,17 @@ fn reach(
                         AnyNode::Computation(on_cons),
                     ]);
                 },
+                Some(&Computation::ListCase {
+                    list,
+                    on_nil,
+                    on_cons,
+                }) => {
+                    pending.extend([
+                        AnyNode::Value(list),
+                        AnyNode::Computation(on_nil),
+                        AnyNode::Computation(on_cons),
+                    ]);
+                },
                 Some(&Computation::Transport(path, value)) => {
                     pending.push(AnyNode::Value(path));
                     pending.push(AnyNode::Value(value));

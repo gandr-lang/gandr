@@ -2605,6 +2605,13 @@ fn decode_entry(
                 .computation_list_fold(element, result, list, on_nil, on_cons);
             (DecodedNode::Computation(id), Family::Computation)
         },
+        tags::NODE_C_LIST_CASE => {
+            let list = read_value(reader, table, this, &mut children)?;
+            let on_nil = read_computation(reader, table, this, &mut children)?;
+            let on_cons = read_computation(reader, table, this, &mut children)?;
+            let id = table.arena.computation_list_case(list, on_nil, on_cons);
+            (DecodedNode::Computation(id), Family::Computation)
+        },
         tags::NODE_VT_SUM => {
             let count = usize::from(reader.read_usize()?);
             let mut summands = Vec::new();

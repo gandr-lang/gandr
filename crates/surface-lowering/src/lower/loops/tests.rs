@@ -60,6 +60,40 @@ fn forced(
         .collect()
 }
 
+/// The passes a `for` runs again on, reachable from the body of `name`: the
+/// index of the loop's own binder it forces and of the tail it applies that
+/// to, in the walk's order.
+///
+/// # Specification
+/// trivial.
+fn stepped(
+    module: &LoweredModule<'_>,
+    arena: &CoreArena,
+    name: SurfaceName<'_>,
+) -> Vec<(DeBruijnIndex, DeBruijnIndex)>
+{
+    let tail = tail_of(arena, body_named(module, name));
+    let variable = |value| match arena.value(value) {
+        Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        }) => Some(index),
+        _ => None,
+    };
+    reachable(arena, tail)
+        .into_iter()
+        .filter_map(|node| match arena.computation(node) {
+            Some(&Computation::Application(head, remaining)) => match arena.computation(head) {
+                Some(&Computation::Force(forced)) => {
+                    Some((variable(forced)?, variable(remaining)?))
+                },
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
 fn a_loop_lowers_to_a_partial_fixpoint_over_its_body()
 {
@@ -247,6 +281,55 @@ fn a_while_tests_its_condition_on_every_pass()
 }
 
 #[test]
+fn a_for_steps_through_its_list()
+{
+    let source = format!(
+        "{PRELUDE}def each(xs : List(Nat), n : Nat) -> -F Nat {{ for x in xs {{ tick(x) }} ; return n }}\n\
+         def skipped(xs : List(Nat)) -> -F Nat {{ for x in xs {{ case x {{ Zero => continue, Succ(p) => return p }} }} ; return Zero }}\n\
+         def inner(xs : List(Nat)) -> -F Unit {{ for x in xs {{ loop {{ continue }} }} }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["each", "skipped", "inner"] {
+        let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
+        let structural = |head| match arena.computation(head) {
+            Some(&Computation::Fixpoint {
+                body,
+                evidence: FixpointEvidence::StructuralDescent,
+            }) => matches!(arena.computation(body), Some(&Computation::Lambda(steps))
+                if matches!(arena.computation(steps), Some(Computation::ListCase { .. }))),
+            _ => false,
+        };
+        assert!(
+            matches!(arena.computation(tail), Some(&Computation::Application(head, _)) if structural(head)),
+            "`{name}` applies a structural fixpoint over the case of the remaining list to its list: {:?}",
+            arena.computation(tail)
+        );
+    }
+    for (name, passes) in [
+        ("each", [(4_u32, 1_u32)].as_slice()),
+        ("skipped", [(3_u32, 0_u32)].as_slice()),
+        ("inner", [].as_slice()),
+    ] {
+        let expected: Vec<(DeBruijnIndex, DeBruijnIndex)> = passes
+            .iter()
+            .map(|&(own, tail)| (DeBruijnIndex::from(own), DeBruijnIndex::from(tail)))
+            .collect();
+        assert_eq!(
+            stepped(&module, &arena, SurfaceName::from(name)),
+            expected,
+            "each pass of `{name}` runs its loop again on the tail past the binders between"
+        );
+    }
+    assert_eq!(
+        forced(&module, &arena, SurfaceName::from("inner")),
+        [DeBruijnIndex::from(0_u32)],
+        "a loop inside a `for` runs only itself again"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
 fn a_loop_leaves_where_it_stands_only_through_its_breaks()
 {
     let source = format!(
@@ -279,8 +362,7 @@ fn a_loop_exit_off_every_loop_body_is_refused_by_name()
     let source = format!(
         "{PRELUDE}def stray(n : Nat) -> -F Nat {{ break(n) }}\n\
          def skip(n : Nat) -> -F Nat {{ continue }}\n\
-         def held(n : Nat) -> -F Nat {{ loop {{ run t <- pure thunk {{ break(Zero) }} ; continue }} }}\n\
-         def stepped(n : Nat) -> -F Nat {{ for x in n {{ tick(x) }} }}\n"
+         def held(n : Nat) -> -F Nat {{ loop {{ run t <- pure thunk {{ break(Zero) }} ; continue }} }}\n"
     );
     let text = SourceText::from(source.as_str());
     let module = lowered(text, &mut CoreArena::new());
@@ -311,13 +393,6 @@ fn a_loop_exit_off_every_loop_body_is_refused_by_name()
             "`{name}` writes a loop exit on no path through a loop's body"
         );
     }
-    assert_eq!(
-        refusal_of(&module, SurfaceName::from("stepped")),
-        LoweringRefusal::ForNeedsListCase {
-            span: spelled(text, SourceText::from("for x in n { tick(x) }")),
-        },
-        "a `for` loop names the list case it waits on"
-    );
 }
 
 #[test]

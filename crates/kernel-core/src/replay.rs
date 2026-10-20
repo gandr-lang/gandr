@@ -1619,6 +1619,8 @@ enum Elimination
     /// A native List fold's branches; checked element and result annotations
     /// erase.
     ListFold(ComputationId, ComputationId),
+    /// A native List case's branches; the checked element annotation erases.
+    ListCase(ComputationId, ComputationId),
     /// A static application to this code: the one value elimination.
     StaticApply(ValueId),
     /// A fixpoint applied, past its leading arguments, to the neutral head;
@@ -4479,6 +4481,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         | Computation::Lambda(_)
                         | Computation::Fixpoint { .. }
                         | Computation::ListFold { .. }
+                        | Computation::ListCase { .. }
                         | Computation::Bind(..)
                         | Computation::Case { .. }
                         | Computation::With(..)
@@ -4650,6 +4653,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     Computation::TupleProjection(..) => spine.as_slice() == [Elimination::TupleProjection(computation)],
                     Computation::Project(side, _) => spine.last() == Some(&Elimination::Project(side)),
                     Computation::ListFold { on_nil, on_cons, .. } => spine.as_slice() == [Elimination::ListFold(on_nil, on_cons)],
+                    Computation::ListCase { on_nil, on_cons, .. } => spine.as_slice() == [Elimination::ListCase(on_nil, on_cons)],
                     Computation::Lambda(_) | Computation::Return(_) | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::With(..) | Computation::Fixpoint { .. } => false,
                 },
                 Err(Stop::Refused(ReplayRefusal::Unreadable)) => true,
@@ -4752,6 +4756,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     ..
                 }) => {
                     spine.push(Elimination::ListFold(on_nil, on_cons));
+                    break self.value_head(list, frozen, side)?;
+                },
+                Some(&Computation::ListCase {
+                    list,
+                    on_nil,
+                    on_cons,
+                    ..
+                }) => {
+                    spine.push(Elimination::ListCase(on_nil, on_cons));
                     break self.value_head(list, frozen, side)?;
                 },
                 Some(&Computation::Transport(path, value)) => {
@@ -5102,6 +5115,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         .arena
                         .computation_list_fold(element, result, body, on_nil, on_cons);
                 },
+                Some(&Computation::ListCase {
+                    on_nil, on_cons, ..
+                }) => {
+                    break self.arena.computation_list_case(body, on_nil, on_cons);
+                },
                 Some(&Computation::Transport(path, value)) => {
                     break if matches!(self.arena.value(path), Some(&Value::PathProduct(..))) {
                         self.arena.computation_transport(path, body)
@@ -5370,6 +5388,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     | Computation::ListFold {
                         list: inspected, ..
                     }
+                    | Computation::ListCase {
+                        list: inspected, ..
+                    }
                     | Computation::RecordProjection(inspected, _)
                     | Computation::TupleProjection(inspected, _)
                     | Computation::Force(inspected)),
@@ -5476,6 +5497,32 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             focus = self
                                 .arena
                                 .computation_list_fold(element, result, tail, on_nil, on_cons);
+                            progress = Progress::Reduced;
+                        },
+                        Some(_) => break,
+                        None => return Err(unreadable()),
+                    },
+                    // A list case on a cell enters its cell branch with the head
+                    // and the tail for its two binders, the head outermost.
+                    Some(&Computation::ListCase {
+                        list,
+                        on_nil,
+                        on_cons,
+                        ..
+                    }) => match self.arena.value(list) {
+                        Some(&Value::ListNil) => {
+                            focus = on_nil;
+                            progress = Progress::Reduced;
+                        },
+                        Some(&Value::ListCons(head, tail)) => {
+                            let opened = crate::rewrite::substitute_fold_head(
+                                self.arena,
+                                &mut self.table,
+                                &mut self.memo,
+                                on_cons,
+                                head,
+                            );
+                            focus = self.instantiate(opened, tail);
                             progress = Progress::Reduced;
                         },
                         Some(_) => break,
@@ -6844,7 +6891,7 @@ fn bind_rule(
         (Elimination::TupleProjection(a),Elimination::TupleProjection(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::TupleProjection(_,a)),Some(Computation::TupleProjection(_,b))) if a == b),
         (Elimination::DataCase(a),Elimination::DataCase(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::DataCase{branches:a,..}),Some(Computation::DataCase{branches:b,..})) if a.len() == b.len()),
         (Elimination::Case(a),Elimination::Case(b)) => {
-            let width = |case: ComputationId| match *arena.computation(case)? { Computation::Case { ref branches, .. } => Some(branches.len()), Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::SigmaSplit { .. } | Computation::ListFold { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Ride { .. } | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::With(..) | Computation::Project(..) | Computation::Fixpoint { .. } => None };
+            let width = |case: ComputationId| match *arena.computation(case)? { Computation::Case { ref branches, .. } => Some(branches.len()), Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::SigmaSplit { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Ride { .. } | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::With(..) | Computation::Project(..) | Computation::Fixpoint { .. } => None };
             width(a).is_some() && width(a) == width(b)
         },
         (Elimination::Project(a), Elimination::Project(b)) => a == b,
@@ -6881,7 +6928,8 @@ if let Some(matched_left_node) = matched_left_value && let Computation::DataCase
                 (Elimination::Fixpoint(one), Elimination::Fixpoint(other)) => matches!((fixpoint_chain(arena, one), fixpoint_chain(arena, other)), (Some((one, ref ones)), Some((other, ref others)))
                     if pending.next() == Some(&Premise::computations(one, other)) && ones.iter().zip(others).all(|(&a, &b)| pending.next() == Some(&Premise::values(a, b)))),
                 (Elimination::SigmaSplit(a), Elimination::SigmaSplit(b)) => matches!((arena.computation(a), arena.computation(b)), (Some(&Computation::SigmaSplit { body: one, .. }), Some(&Computation::SigmaSplit { body: other, .. })) if pending.next() == Some(&Premise::computations(one, other))),
-                (Elimination::ListFold(one_left, one_right), Elimination::ListFold(other_left, other_right)) =>
+                (Elimination::ListFold(one_left, one_right), Elimination::ListFold(other_left, other_right))
+                | (Elimination::ListCase(one_left, one_right), Elimination::ListCase(other_left, other_right)) =>
                     pending.next() == Some(&Premise::computations(one_left, other_left)) && pending.next() == Some(&Premise::computations(one_right, other_right)),
                 _ => false,
             });
@@ -7086,7 +7134,8 @@ fn spines(
                         .map(|(&first, &second)| Premise::values(first, second)),
                 );
             },
-            (Elimination::ListFold(a, b), Elimination::ListFold(c, d)) => {
+            (Elimination::ListFold(a, b), Elimination::ListFold(c, d))
+            | (Elimination::ListCase(a, b), Elimination::ListCase(c, d)) => {
                 premises.extend([Premise::computations(a, c), Premise::computations(b, d)]);
             },
             // Two dependent splits compare by their bodies under the two
@@ -7124,6 +7173,7 @@ fn spines(
                 | Elimination::Bind(_)
                 | Elimination::Case(..)
                 | Elimination::ListFold(..)
+                | Elimination::ListCase(..)
                 | Elimination::StaticApply(_)
                 | Elimination::Fixpoint(_),
                 _,

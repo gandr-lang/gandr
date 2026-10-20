@@ -1186,11 +1186,25 @@ pub(super) fn commute(
                         };
                         steps.push(Step::Open(under, iterated, depth.deeper()));
                     },
+                    // A `for` loop is its fixpoint applied to the list: the
+                    // application stands where the loop does, so its ends
+                    // are the loop's.
+                    Some(&Computation::Application(head, _)) if sink.loops.contains(&head) => {
+                        steps.push(Step::Close(node));
+                        steps.push(Step::Open(head, ends, depth));
+                    },
                     Some(&Computation::Case { ref branches, .. }) => {
                         steps.push(Step::Close(node));
                         for &branch in branches.iter().rev() {
                             steps.push(Step::Open(branch, ends, depth.deeper()));
                         }
+                    },
+                    Some(&Computation::ListCase {
+                        on_nil, on_cons, ..
+                    }) => {
+                        steps.push(Step::Close(node));
+                        steps.push(Step::Open(on_cons, ends, depth.deeper().deeper()));
+                        steps.push(Step::Open(on_nil, ends, depth));
                     },
                     Some(&Computation::DataCase { ref branches, .. }) => {
                         steps.push(Step::Close(node));
@@ -1705,16 +1719,21 @@ impl Sources
     }
 }
 
-/// The value a case or a data case eliminates; nothing for any other node.
+/// The value a case, a data case or a list case eliminates; nothing for any
+/// other node.
 ///
 /// # Specification
 /// trivial.
 fn eliminated(node: Option<&Computation>) -> Option<ValueId>
 {
     match node {
-        Some(&(Computation::Case { scrutinee, .. } | Computation::DataCase { scrutinee, .. })) => {
-            Some(scrutinee)
-        },
+        Some(
+            &(Computation::Case { scrutinee, .. }
+            | Computation::DataCase { scrutinee, .. }
+            | Computation::ListCase {
+                list: scrutinee, ..
+            }),
+        ) => Some(scrutinee),
         Some(_) | None => None,
     }
 }
@@ -1756,6 +1775,7 @@ fn rebuild(
         Computation::Case { ref branches, .. } => branches.len(),
         Computation::DataCase { ref branches, .. } => branches.len(),
         Computation::Session(SessionAction::Offer { ref arms, .. }) => arms.len(),
+        Computation::ListCase { .. } => 2_usize,
         Computation::Bind(..)
         | Computation::Split { .. }
         | Computation::Lambda(_)
@@ -1763,6 +1783,7 @@ fn rebuild(
         | Computation::Memory(MemoryForm::Hold { .. })
         | Computation::World(WorldForm::Leta { .. }) => 1_usize,
         Computation::Fixpoint { .. } if sink.loops.contains(&node) => 1_usize,
+        Computation::Application(head, _) if sink.loops.contains(&head) => 1_usize,
         Computation::Primitive { .. }
         | Computation::Transport(..)
         | Computation::PathTransport { .. }
@@ -1831,6 +1852,14 @@ fn rebuild(
             sink.arena
                 .computation_data_case(scrutinee, motive, branched.to_vec())
         },
+        (
+            Computation::ListCase {
+                list,
+                on_nil,
+                on_cons,
+            },
+            &[nil, cons],
+        ) if (nil, cons) != (on_nil, on_cons) => sink.arena.computation_list_case(list, nil, cons),
         (Computation::Session(SessionAction::Offer { endpoint, ref arms }), branched)
             if !arms.values().copied().eq(branched.iter().copied()) =>
         {
@@ -1868,6 +1897,9 @@ fn rebuild(
             let looped = sink.arena.computation_fixpoint(commuted, evidence);
             let _first = sink.loops.insert(looped);
             looped
+        },
+        (Computation::Application(head, argument), &[commuted]) if commuted != head => {
+            sink.arena.computation_application(commuted, argument)
         },
         _ => return node,
     };

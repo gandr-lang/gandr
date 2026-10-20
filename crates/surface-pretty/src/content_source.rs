@@ -136,7 +136,7 @@ impl Source for ContentSource<'_>
             ContentNode::UnknownType | ContentNode::UnknownComputationType => reason == Unreadable::UnknownType,
             ContentNode::ValueLift { .. } | ContentNode::TypeLift { .. } => reason == Unreadable::Lift,
             ContentNode::Constant(ref reference) | ContentNode::Abstract(ref reference) => reason == Unreadable::Unnamed && key(reference).is_none(),
-            ContentNode::Univalence(..) |
+            ContentNode::Univalence(..) | ContentNode::ListCase { .. } |
             ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::Variable { .. } | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } => false,
         },
         (Some(&(ContentNode::Constant(ref reference) | ContentNode::Abstract(ref reference))), Former::Constant(name) | Former::Abstract(name)) => key(reference) == Some(name),
@@ -272,6 +272,7 @@ impl Source for ContentSource<'_>
                         | ContentNode::ComputationMark { .. }
                         | ContentNode::Fixpoint { .. }
                         | ContentNode::ListFold { .. }
+                        | ContentNode::ListCase { .. }
                         | ContentNode::Session(_)
                         | ContentNode::Memory(_)
                         | ContentNode::Base(_)
@@ -425,6 +426,15 @@ impl Source for ContentSource<'_>
                 on_cons,
                 ..
             } => Former::ListFold {
+                list,
+                nil: on_nil,
+                cons: on_cons,
+            },
+            ContentNode::ListCase {
+                list,
+                on_nil,
+                on_cons,
+            } => Former::ListCase {
                 list,
                 nil: on_nil,
                 cons: on_cons,
@@ -793,6 +803,7 @@ impl Source for ContentSource<'_>
             | ContentNode::ComputationMark { .. }
             | ContentNode::Fixpoint { .. }
             | ContentNode::ListFold { .. }
+            | ContentNode::ListCase { .. }
             | ContentNode::Session(_)
             | ContentNode::Memory(_)
             | ContentNode::Base(_)
@@ -923,6 +934,7 @@ impl Source for ContentSource<'_>
             | ContentNode::ComputationMark { .. }
             | ContentNode::Fixpoint { .. }
             | ContentNode::ListFold { .. }
+            | ContentNode::ListCase { .. }
             | ContentNode::Session(_)
             | ContentNode::Memory(_)
             | ContentNode::Base(_)

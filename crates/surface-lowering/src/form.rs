@@ -495,6 +495,10 @@ impl TileName
     pub const LOOP: Self = Self("loop");
     /// The conditional loop keyword `while`.
     pub const WHILE: Self = Self("while");
+    /// The list loop keyword `for`.
+    pub const FOR: Self = Self("for");
+    /// The `in` naming the list a `for` loop steps through.
+    pub const IN: Self = Self("in");
     /// The bind keyword `run`, opening a statement or a run where a value is
     /// read.
     pub const RUN: Self = Self("run");

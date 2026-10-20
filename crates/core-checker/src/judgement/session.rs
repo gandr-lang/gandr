@@ -603,7 +603,8 @@ impl Machine<'_, '_>
                     Computation::Case { .. }
                     | Computation::DataCase { .. }
                     | Computation::With(..)
-                    | Computation::ListFold { .. } => Capture::Branch,
+                    | Computation::ListFold { .. }
+                    | Computation::ListCase { .. } => Capture::Branch,
                     Computation::Handle { .. } => Capture::Continuation,
                     Computation::Shift(_) => {
                         let node = CoreNode::Term(TermNode::Computation(term));

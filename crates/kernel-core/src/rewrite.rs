@@ -1852,7 +1852,7 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
 #[spec(captures: before = tasks.len(),
     ensures: tasks.get(before ..).is_some_and(|added| added.len() == match node {
     AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Tuple(ref components) => components.len(), Value::Higher { ref evidence, .. } => evidence.len(), Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3), Value::QuantifiedEvaluation { ref children, .. } => children.len(), Value::ForwardFlow { ref outputs, .. } => outputs.len().saturating_add(2), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 0, Value::PathEquiv { .. } | Value::FunctionFlow { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::PathProduct(..) | Value::FlowProduct(..) | Value::StaticApplication(..) | Value::Then { .. } => 2, Value::Stay { .. } | Value::PathRefl(_) | Value::Univalence(_) | Value::Here { .. } | Value::Returned(_) | Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) => 1 }),
-    AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::SigmaSplit { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) | Computation::With(..) => 2, Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::Project(..) | Computation::Fixpoint { .. } => 1 }),
+    AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::SigmaSplit { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) | Computation::With(..) => 2, Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::Project(..) | Computation::Fixpoint { .. } => 1 }),
     AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Data { ref arguments, .. } => arguments.len(), ValueType::Record(ref fields) => fields.len(), ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(), ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Bridge { .. } => 3, ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) | ValueType::StaticPi { .. } | ValueType::Sigma { .. } => 2, ValueType::Session { .. } | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Staged { .. } => 1 }),
     AnyNode::CompType(id) => arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } | CompType::With(..) => 2, CompType::Returner(_) | CompType::Element { .. } => 1, CompType::Codata { ref arguments, .. } => arguments.len() }),
 }
@@ -2109,6 +2109,23 @@ fn push_rewrite_children(
                     depth,
                     rewrite,
                 ));
+            },
+            Some(&Computation::ListCase {
+                list,
+                on_nil,
+                on_cons,
+            }) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(on_cons),
+                    depth.deeper().deeper(),
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(on_nil),
+                    depth,
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(AnyNode::Value(list), depth, rewrite));
             },
             Some(&Computation::Transport(path, value)) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(value), depth, rewrite));
@@ -3067,7 +3084,7 @@ fn rewrite_variable(
 #[spec(
     captures: [before = results.len(), arity = arena.computation(id).map_or(0, |matched_native_node| match *matched_native_node {
 Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } => 5,
-Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::SigmaSplit { .. } => 3,
+Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::SigmaSplit { .. } => 3,
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) | Computation::With(..) => 2,
@@ -3175,6 +3192,21 @@ fn close_computation(
             }
             else {
                 arena.computation_list_fold(new_element, new_result, new_list, new_nil, new_cons)
+            }
+        },
+        Computation::ListCase {
+            list,
+            on_nil,
+            on_cons,
+        } => {
+            let new_cons = popped(results, AnyNode::Computation(on_cons)).computation_or(on_cons);
+            let new_nil = popped(results, AnyNode::Computation(on_nil)).computation_or(on_nil);
+            let new_list = popped(results, AnyNode::Value(list)).value_or(list);
+            if new_cons == on_cons && new_nil == on_nil && new_list == list {
+                id
+            }
+            else {
+                arena.computation_list_case(new_list, new_nil, new_cons)
             }
         },
         Computation::Transport(path, value) => {

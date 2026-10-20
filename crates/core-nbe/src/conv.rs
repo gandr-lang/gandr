@@ -1732,6 +1732,18 @@ impl<'run> Walk<'run>
                         on_cons: rc,
                         ..
                     },
+                )
+                | (
+                    Elimination::ListCase {
+                        on_nil: ln,
+                        on_cons: lc,
+                        ..
+                    },
+                    Elimination::ListCase {
+                        on_nil: rn,
+                        on_cons: rc,
+                        ..
+                    },
                 ) => {
                     queued.push(Goal::Closures(ln, rn));
                     queued.push(Goal::Closures(lc, rc));
@@ -1766,6 +1778,7 @@ impl<'run> Walk<'run>
                     | Elimination::Bind(_)
                     | Elimination::Case(_)
                     | Elimination::ListFold { .. }
+                    | Elimination::ListCase { .. }
                     | Elimination::StaticApply(_)
                     | Elimination::Fixpoint { .. },
                     _,

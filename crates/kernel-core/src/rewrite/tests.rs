@@ -1422,6 +1422,7 @@ enum Former
     Case,
     SigmaSplit,
     ListFold,
+    ListCase,
     Transport,
     PathTransport,
     TelescopeTransport,
@@ -1492,6 +1493,7 @@ const FORMERS: &[Former] = &[
     Former::Case,
     Former::SigmaSplit,
     Former::ListFold,
+    Former::ListCase,
     Former::Transport,
     Former::PathTransport,
     Former::TelescopeTransport,
@@ -1748,6 +1750,11 @@ fn build(
             AnyNode::Computation(
                 arena.computation_list_fold(element, result, list, on_nil, on_cons),
             )
+        },
+        Former::ListCase => {
+            let list = c.value(arena);
+            let (on_nil, on_cons) = (c.computation(arena), c.computation(arena));
+            AnyNode::Computation(arena.computation_list_case(list, on_nil, on_cons))
         },
         Former::Transport => {
             let (path, value) = (c.value(arena), c.value(arena));

@@ -282,7 +282,7 @@ pub enum ExpectedValueShape
     Sigma,
     /// A sum, for an injection or a case scrutinee.
     Sum,
-    /// A native list, for nil and cons.
+    /// A native list, for nil and cons and a list case's scrutinee.
     List,
     /// A thunk type, for a thunk or a force.
     Thunk,
@@ -316,6 +316,8 @@ pub enum NonInferableForm
     /// A case of no branches, the empty sum's elimination, carries no result
     /// annotation and has no branch to synthesize one from.
     EmptyCase,
+    /// A case on a native list carries no result annotation; it only checks.
+    ListCase,
     /// A fixpoint carries no classifier annotation.
     Fixpoint,
     /// A native list introduction needs its element classifier.

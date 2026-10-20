@@ -101,10 +101,11 @@
 //! | `0x6C` | Unassigned | Refused |
 //! | `0x6D` | Univalence, bi-invertible record child | Admitted |
 //! | `0x6E` | Codata application, declaration and counted value arguments | Admitted |
-//! | `0x6F–0xFF` | Unassigned | Refused |
+//! | `0x6F` | List case, list and two branch children | Admitted |
+//! | `0x70–0xFF` | Unassigned | Refused |
 //!
 //! The admitted domain is sparse: the greatest assigned native byte is
-//! `0x6E`, not a promise to accept every smaller byte. Boundary witnesses
+//! `0x6F`, not a promise to accept every smaller byte. Boundary witnesses
 //! admit assigned native tags, refuse inline opcodes and retired bytes as
 //! native nodes, and retain the frozen block. The unit and the empty type are
 //! zero-count products and sums, and List nil is a zero-child leaf; all three
@@ -288,9 +289,12 @@
 //! carries five children in order: ambient element type, ambient result type,
 //! list value, nil branch and cons branch. Only the cons branch binds values:
 //! head first, folded result second, so the result is index zero. Both
-//! branches return the annotated result type. The ordinary sharing format
-//! persists this pure fragment; guarded recursive observations remain
-//! separate in-memory programs.
+//! branches return the annotated result type. [`NODE_C_LIST_CASE`] carries
+//! three children: list value, nil branch and cons branch, whose binders are
+//! the head first and the tail second, so the tail is index zero; its
+//! branches are ordinary computations of the case's type.
+//! The ordinary sharing format persists this pure fragment; guarded recursive
+//! observations remain separate in-memory programs.
 //!
 //! # Session codes
 //!
@@ -854,6 +858,8 @@ pub const NODE_V_LIST_NIL: WireTag = WireTag(0x51);
 pub const NODE_V_LIST_CONS: WireTag = WireTag(0x5B);
 /// Node tag: pure fold, over element, result, list, nil and cons branches.
 pub const NODE_C_LIST_FOLD: WireTag = WireTag(0x5C);
+/// Node tag: a case on a native list, over list, nil and cons branches.
+pub const NODE_C_LIST_CASE: WireTag = WireTag(0x6F);
 /// Node tag: the lazy product `C & D`, over its left and right component
 /// computation types.
 pub const NODE_CT_WITH: WireTag = WireTag(0x65);
@@ -1070,7 +1076,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_VT_BRIDGE | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE | NODE_CT_CODATA) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_VT_BRIDGE | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_LIST_CASE | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE | NODE_CT_CODATA) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -1122,7 +1128,7 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_VT_BRIDGE | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE | NODE_CT_CODATA) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_VT_BRIDGE | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_LIST_CASE | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE | NODE_CT_CODATA) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && !matches!(tag, NODE_VT_BASE | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT | NODE_V_LIST_NIL),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -1222,7 +1228,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 76] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 77] = [
     row(
         NODE_VT_BASE,
         ChildArity::Fixed(0),
@@ -1305,6 +1311,7 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 76] = [
     unbounded(NODE_C_SIGMA_SPLIT, ChildArity::Fixed(3)),
     unbounded(NODE_V_UNIVALENCE, ChildArity::Fixed(1)),
     unbounded(NODE_CT_CODATA, ChildArity::Counted(0)),
+    unbounded(NODE_C_LIST_CASE, ChildArity::Fixed(3)),
 ];
 
 #[cfg(test)]
@@ -1405,6 +1412,7 @@ mod tests
                         Some(&crate::Computation::TelescopeRide { .. }) => row.tag == super::NODE_C_TELESCOPE_RIDE,
                         Some(&crate::Computation::RelatedApplication { .. }) => row.tag == super::NODE_C_RELATED_APPLICATION,
                         Some(&crate::Computation::ListFold { .. }) => row.tag == super::NODE_C_LIST_FOLD,
+                        Some(&crate::Computation::ListCase { .. }) => row.tag == super::NODE_C_LIST_CASE,
                         Some(&crate::Computation::With(_, _)) => row.tag == super::NODE_C_WITH,
                         Some(&crate::Computation::Project(_, _)) => row.tag == super::NODE_C_PROJECT,
                         None => false,
@@ -1578,6 +1586,7 @@ mod tests
         let sigma_split = arena.computation_sigma_split(pair, returner, bind);
         let univalence = arena.value_univalence(pair);
         let codata = arena.comp_type_codata(ConstantIndex::from(0_usize), alloc::vec![unit]);
+        let list_case = arena.computation_list_case(cons, ret, ret);
         let nodes = alloc::vec![
             AnyNode::ValueType(base),
             AnyNode::ValueType(universe),
@@ -1655,6 +1664,7 @@ mod tests
             AnyNode::Computation(sigma_split),
             AnyNode::Value(univalence),
             AnyNode::CompType(codata),
+            AnyNode::Computation(list_case),
         ];
         (arena, nodes)
     }
@@ -1821,10 +1831,14 @@ mod tests
             assigned[usize::from(u8::from(super::NODE_CT_CODATA))],
             "codata holds its byte"
         );
-        for unassigned in core::iter::once(0x6C_u8).chain(0x6F_u8 ..= u8::MAX) {
+        assert!(
+            assigned[usize::from(u8::from(super::NODE_C_LIST_CASE))],
+            "the list case holds its byte"
+        );
+        for unassigned in core::iter::once(0x6C_u8).chain(0x70_u8 ..= u8::MAX) {
             assert!(
                 !assigned[usize::from(unassigned)],
-                "every byte above the dependent split but univalence's and codata's is unassigned: {unassigned:#04x}"
+                "every byte above the dependent split but univalence's, codata's and the list case's is unassigned: {unassigned:#04x}"
             );
         }
     }
@@ -1858,7 +1872,7 @@ mod tests
             .chain(0x48 ..= 0x4F)
             .chain([0x50, 0x51, 0x52, 0x5a, 0x5b, 0x5c])
             .chain(0x5d ..= 0x6b)
-            .chain([0x6D, 0x6E])
+            .chain([0x6D, 0x6E, 0x6F])
             .collect();
         let actual: Vec<_> = NODE_TAG_TABLE.iter().map(|row| u8::from(row.tag)).collect();
         assert_eq!(actual, expected);

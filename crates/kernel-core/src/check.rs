@@ -117,6 +117,7 @@
 //! | `check_comp` Bind                      | `SynthComp(bound)`           | `CheckBind` against `expected↑`, `ScopeExit`        |
 //! | `check_comp` With                      | `CheckComp(left, left_t)`    | `Pending` with `CheckComp(right, right_t)`          |
 //! | `check_comp` Case                      | `SynthValue(scrutinee)`      | `CheckCaseScrutinee` / `AfterLeft` against `expected↑`, `ScopeExit` |
+//! | `check_comp` Application, fixpoint head | `SynthValue(argument)`     | `FixpointArgument`, then `CheckComp(head, argument_t → expected)` |
 //! | `check_comp` synth fallthrough         | `SynthComp(computation)`     | `ConvertComp`                                       |
 //!
 //! **A type keeps the scope it was written in.** A plain arrow's codomain is
@@ -2142,11 +2143,32 @@ enum Frame
     FoldNil(ComputationId, CompTypeId),
     /// Check the cons branch under its head and folded-result binders.
     FoldCons(ValueTypeId, CompTypeId, ComputationId),
+    /// A list case: the list is synthesizing; the branches and the case's
+    /// expected type are held.
+    ListCaseScrutinee
+    {
+        /// The empty branch source.
+        on_nil: ComputationId,
+        /// The cell branch source.
+        on_cons: ComputationId,
+        /// The case's expected type.
+        expected: CompTypeId,
+    },
+    /// Check a list case's cell branch under a binder of the element and one
+    /// of the tail, against the case's expected type: the element, the tail's
+    /// type — at the stage the case opened when the list stood at one — the
+    /// expected type and the branch.
+    ListCaseCons(ValueTypeId, ValueTypeId, CompTypeId, ComputationId),
     /// A value mode switch: the value synthesized; convert against the held
     /// expected type.
     ConvertValue(ValueTypeId),
     /// An application: the head is synthesized; the argument source is held.
     SynthApply(ValueId),
+    /// An application of a fixpoint in checking position: the argument is
+    /// synthesizing; the fixpoint and the application's expected type are
+    /// held, and the fixpoint checks against the arrow from the argument's
+    /// type to it.
+    FixpointArgument(ComputationId, CompTypeId),
     /// An application: the argument checked; produce the held codomain.
     ProduceComp(CompTypeId),
     /// A static application: the head is synthesized; the argument source is
@@ -3630,6 +3652,13 @@ where
                         goal = Goal::CheckValue(list, list_type);
                         continue 'expand;
                     },
+                    // A list case carries no result annotation: it only
+                    // checks, its branches against the expected type.
+                    Computation::ListCase { .. } => {
+                        return Err(KernelError::NotInferable {
+                            form: NonInferableForm::ListCase,
+                        });
+                    },
                     Computation::Transport(path, value) => {
                         frames.push(Frame::Transport(value));
                         goal = Goal::SynthValue(path);
@@ -3856,6 +3885,38 @@ where
                             expected,
                         });
                         goal = Goal::SynthValue(scrutinee);
+                        continue 'expand;
+                    },
+                    // A list case synthesizes its list, as a sum case its
+                    // scrutinee, then checks each branch against the case's
+                    // type: the empty branch as it stands, the cell branch under
+                    // the head and the tail.
+                    Computation::ListCase {
+                        list,
+                        on_nil,
+                        on_cons,
+                    } => {
+                        frames.push(Frame::ListCaseScrutinee {
+                            on_nil,
+                            on_cons,
+                            expected,
+                        });
+                        goal = Goal::SynthValue(list);
+                        continue 'expand;
+                    },
+                    // An applied fixpoint synthesizes nothing, so the
+                    // application reads its arrow off the argument's type and
+                    // the type it is checked against: the fixpoint checks
+                    // against that arrow, which is the application rule at
+                    // the domain the argument has.
+                    Computation::Application(head, argument)
+                        if matches!(
+                            read_computation(arena, head)?,
+                            &Computation::Fixpoint { .. }
+                        ) =>
+                    {
+                        frames.push(Frame::FixpointArgument(head, expected));
+                        goal = Goal::SynthValue(argument);
                         continue 'expand;
                     },
                     Computation::DataCase { .. }
@@ -4223,6 +4284,51 @@ where
                     let under_both = weakened(arena, session, under_head);
                     context.push(element);
                     context.push(folded);
+                    frames.push(Frame::ScopeExit);
+                    frames.push(Frame::ScopeExit);
+                    goal = Goal::CheckComp(body, under_both);
+                    continue 'expand;
+                },
+                Frame::ListCaseScrutinee {
+                    on_nil,
+                    on_cons,
+                    expected,
+                } => {
+                    let list_type = produced.value_type()?;
+                    // A list at a stage opens one below it, which its tail
+                    // takes.
+                    let (read, opened) =
+                        recursion::open_case(arena, judgement.entries, &mut stages, list_type)?;
+                    let Some(&ValueType::List(element)) = arena.value_type(read)
+                    else {
+                        return Err(value_shape_mismatch(
+                            arena,
+                            ExpectedValueShape::List,
+                            list_type,
+                        ));
+                    };
+                    let tail = arena.value_type_list(element);
+                    let tail = match opened {
+                        Maybe::Present(child) => {
+                            arena.value_type_staged(tail, gandr_kernel_term::Stage::At(child))
+                        },
+                        Maybe::Absent(_) => tail,
+                    };
+                    frames.push(Frame::ListCaseCons(element, tail, expected, on_cons));
+                    goal = Goal::CheckComp(on_nil, expected);
+                    continue 'expand;
+                },
+                Frame::ListCaseCons(element, tail, expected, body) => {
+                    let listed = arena.comp_type_returner(tail);
+                    let listed = weakened(arena, session, listed);
+                    let Some(&CompType::Returner(tail)) = arena.comp_type(listed)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let under_head = weakened(arena, session, expected);
+                    let under_both = weakened(arena, session, under_head);
+                    context.push(element);
+                    context.push(tail);
                     frames.push(Frame::ScopeExit);
                     frames.push(Frame::ScopeExit);
                     goal = Goal::CheckComp(body, under_both);
@@ -5125,6 +5231,12 @@ where
                         }
                     }
                     produced = Produced::Checked;
+                },
+                Frame::FixpointArgument(head, expected) => {
+                    let domain = produced.value_type()?;
+                    let arrow = arena.comp_type_arrow(domain, expected);
+                    goal = Goal::CheckComp(head, arrow);
+                    continue 'expand;
                 },
                 Frame::SynthApply(argument) => {
                     let head_type = produced.comp_type()?;

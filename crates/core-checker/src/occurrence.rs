@@ -1428,6 +1428,15 @@ where
                     pending.push((AnyNode::Computation(on_nil), reach));
                     pending.push((AnyNode::Computation(on_cons), reach));
                 },
+                Some(&Computation::ListCase {
+                    list,
+                    on_nil,
+                    on_cons,
+                }) => {
+                    pending.push((AnyNode::Value(list), reach));
+                    pending.push((AnyNode::Computation(on_nil), reach));
+                    pending.push((AnyNode::Computation(on_cons), reach));
+                },
                 Some(&Computation::Application(head, argument)) => {
                     pending.push((AnyNode::Computation(head), reach));
                     pending.push((AnyNode::Value(argument), reach));

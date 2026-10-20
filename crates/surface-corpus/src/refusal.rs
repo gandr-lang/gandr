@@ -482,8 +482,6 @@ pub enum RefusalName
     /// A `become` in a handled subject, or a `break` or a `continue` there
     /// whose loop holds the scope.
     AcrossHandler,
-    /// A `for` loop, which waits on a case former over the native list.
-    ForNeedsListCase,
     /// A path matched against reflexivity, `here`: axiom K.
     WithoutK,
     /// A directed cell `-->` between two terms of a `data` block.
@@ -639,7 +637,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 166_usize] = [
+    pub const VOCABULARY: [Self; 165_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -735,7 +733,6 @@ impl RefusalName
         Self::Unreachable,
         Self::OutsideLoop,
         Self::AcrossHandler,
-        Self::ForNeedsListCase,
         Self::WithoutK,
         Self::DirectedCell,
         Self::CellNotALoop,
@@ -854,7 +851,6 @@ impl RefusalName
         (Self::Unreachable, b"Unreachable") |
         (Self::OutsideLoop, b"OutsideLoop") |
         (Self::AcrossHandler, b"AcrossHandler") |
-        (Self::ForNeedsListCase, b"ForNeedsListCase") |
         (Self::WithoutK, b"WithoutK") |
         (Self::DirectedCell, b"DirectedCell") |
         (Self::CellNotALoop, b"CellNotALoop") |
@@ -1122,7 +1118,6 @@ impl RefusalName
             Self::Unreachable => "Unreachable",
             Self::OutsideLoop => "OutsideLoop",
             Self::AcrossHandler => "AcrossHandler",
-            Self::ForNeedsListCase => "ForNeedsListCase",
             Self::WithoutK => "WithoutK",
             Self::DirectedCell => "DirectedCell",
             Self::CellNotALoop => "CellNotALoop",
@@ -1332,8 +1327,6 @@ impl Refusal<'_>
         RefusalName::OutsideLoop) |
         (Self::Lowering(LoweringRefusal::AcrossHandler { .. }),
         RefusalName::AcrossHandler) |
-        (Self::Lowering(LoweringRefusal::ForNeedsListCase { .. }),
-        RefusalName::ForNeedsListCase) |
         (Self::Lowering(LoweringRefusal::WithoutK { .. }),
         RefusalName::WithoutK) |
         (Self::Lowering(LoweringRefusal::DirectedCell { .. }),
@@ -1542,8 +1535,7 @@ impl Refusal<'_>
         RefusalName::DescentOnSeveralParameters) | (LoweringRefusal::Unreachable { .. },
         RefusalName::Unreachable) | (LoweringRefusal::OutsideLoop { .. },
         RefusalName::OutsideLoop) | (LoweringRefusal::AcrossHandler { .. },
-        RefusalName::AcrossHandler) | (LoweringRefusal::ForNeedsListCase { .. },
-        RefusalName::ForNeedsListCase) | (LoweringRefusal::WithoutK { .. },
+        RefusalName::AcrossHandler) | (LoweringRefusal::WithoutK { .. },
         RefusalName::WithoutK) | (LoweringRefusal::DirectedCell { .. },
         RefusalName::DirectedCell) | (LoweringRefusal::CellNotALoop { .. },
         RefusalName::CellNotALoop) | (LoweringRefusal::RulesUnoriented { .. },
@@ -1596,7 +1588,6 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::Unreachable { .. } => RefusalName::Unreachable,
         LoweringRefusal::OutsideLoop { .. } => RefusalName::OutsideLoop,
         LoweringRefusal::AcrossHandler { .. } => RefusalName::AcrossHandler,
-        LoweringRefusal::ForNeedsListCase { .. } => RefusalName::ForNeedsListCase,
         LoweringRefusal::WithoutK { .. } => RefusalName::WithoutK,
         LoweringRefusal::DirectedCell { .. } => RefusalName::DirectedCell,
         LoweringRefusal::CellNotALoop { .. } => RefusalName::CellNotALoop,

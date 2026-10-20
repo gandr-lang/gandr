@@ -1305,6 +1305,15 @@ fn covers_preserve_every_binding_former()
             both,
         ),
         (
+            "list case",
+            ContentNode::ListCase {
+                list: index(1_usize),
+                on_nil: index(2_usize),
+                on_cons: index(3_usize),
+            },
+            both,
+        ),
+        (
             "element transport",
             ContentNode::ElementTransport {
                 motive: index(1_usize),

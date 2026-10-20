@@ -136,6 +136,7 @@ fn admitted_result(
             | Computation::Case { .. }
             | Computation::SigmaSplit { .. }
             | Computation::ListFold { .. }
+            | Computation::ListCase { .. }
             | Computation::Transport(..)
             | Computation::PathTransport { .. }
             | Computation::TelescopeTransport { .. }

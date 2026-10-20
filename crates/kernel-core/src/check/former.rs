@@ -783,6 +783,7 @@ pub(super) fn case(
         | &Computation::Case { .. }
         | &Computation::SigmaSplit { .. }
         | &Computation::ListFold { .. }
+        | &Computation::ListCase { .. }
         | &Computation::Transport(..)
         | &Computation::PathTransport { .. }
         | &Computation::TelescopeTransport { .. }
@@ -972,6 +973,7 @@ pub(super) fn absurd(
         | &Computation::Case { .. }
         | &Computation::SigmaSplit { .. }
         | &Computation::ListFold { .. }
+        | &Computation::ListCase { .. }
         | &Computation::Transport(..)
         | &Computation::PathTransport { .. }
         | &Computation::TelescopeTransport { .. }

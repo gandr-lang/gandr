@@ -689,6 +689,7 @@ impl Machine<'_, '_>
             | &Computation::Hole(_)
             | &Computation::Mark { .. }
             | &Computation::ListFold { .. }
+            | &Computation::ListCase { .. }
             | &Computation::Perform { .. }
             | &Computation::Handle { .. }
             | &Computation::Exercise { .. }
@@ -793,6 +794,7 @@ impl Machine<'_, '_>
             | &Computation::Hole(_)
             | &Computation::Mark { .. }
             | &Computation::ListFold { .. }
+            | &Computation::ListCase { .. }
             | &Computation::Perform { .. }
             | &Computation::Handle { .. }
             | &Computation::Exercise { .. }
@@ -863,6 +865,7 @@ impl Machine<'_, '_>
                     | &Computation::Hole(_)
                     | &Computation::Mark { .. }
                     | &Computation::ListFold { .. }
+                    | &Computation::ListCase { .. }
                     | &Computation::Perform { .. }
                     | &Computation::Handle { .. }
                     | &Computation::Exercise { .. }
@@ -924,6 +927,7 @@ impl Machine<'_, '_>
                 | &Computation::Hole(_)
                 | &Computation::Mark { .. }
                 | &Computation::ListFold { .. }
+                | &Computation::ListCase { .. }
                 | &Computation::Perform { .. }
                 | &Computation::Handle { .. }
                 | &Computation::Exercise { .. }

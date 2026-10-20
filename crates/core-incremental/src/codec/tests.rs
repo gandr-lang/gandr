@@ -261,6 +261,11 @@ fn every_node_former_round_trips_under_its_own_frame()
             on_nil: d,
             on_cons: e,
         },
+        ContentNode::ListCase {
+            list: a,
+            on_nil: b,
+            on_cons: c,
+        },
         ContentNode::Base(BaseType::Integer),
         ContentNode::Product(vec![a, b]),
         ContentNode::Sum(vec![a, b]),

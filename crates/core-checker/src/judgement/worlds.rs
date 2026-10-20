@@ -610,6 +610,7 @@ impl Machine<'_, '_>
                             | Computation::DataCase { .. }
                             | Computation::With(..)
                             | Computation::ListFold { .. }
+                            | Computation::ListCase { .. }
                     ) {
                         Capture::Branch
                     }
@@ -830,6 +831,7 @@ impl Machine<'_, '_>
             | Computation::Hole(_)
             | Computation::Mark { .. }
             | Computation::ListFold { .. }
+            | Computation::ListCase { .. }
             | Computation::Perform { .. }
             | Computation::Handle { .. }
             | Computation::Exercise { .. }
