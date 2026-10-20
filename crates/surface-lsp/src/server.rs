@@ -122,6 +122,7 @@ use crate::protocol::FileRename;
 use crate::protocol::FilesParams;
 use crate::protocol::FoldersChangedParams;
 use crate::protocol::Hover;
+use crate::protocol::ImportFilesParams;
 use crate::protocol::InitializeParams;
 use crate::protocol::InitializeResult;
 use crate::protocol::InlineCompletionItem;
@@ -2702,6 +2703,12 @@ impl Server
                         error.code == ErrorCode::INVALID_PARAMS || error.code == ErrorCode::REQUEST_FAILED,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
+            (Phase::Running, "gandr/importFiles") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Edits(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
             (Phase::Running, _) => self.phase == phase && matches!(ret,
                 Outgoing::Failure { ref error, .. } if error.code == ErrorCode::METHOD_NOT_FOUND),
         },
@@ -2984,6 +2991,34 @@ impl Server
                                     Answer::Imports(
                                         reading.links(&LineIndex::new(text.as_ref().into()), &path),
                                     )
+                                },
+                            ),
+                        )
+                    },
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "gandr/importFiles") => {
+                match serde_json::from_value::<ImportFilesParams>(params) {
+                    Ok(params) => {
+                        let path = named_path(&params.text_document.uri.path());
+                        let files: Vec<PathBuf> = params
+                            .files
+                            .iter()
+                            .map(|file| named_path(&file.path()))
+                            .collect();
+                        success(
+                            id,
+                            workspace.outline(
+                                &params.text_document.uri,
+                                self.peer,
+                                |reading, text| {
+                                    Answer::Edits(reading.imported(
+                                        text,
+                                        &LineIndex::new(text.as_ref().into()),
+                                        &path,
+                                        &files,
+                                    ))
                                 },
                             ),
                         )
@@ -7540,6 +7575,82 @@ mod tests
             wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":[]}]"#)),
             "imports that do not read link nowhere"
         );
+    }
+
+    #[test]
+    fn dropped_sources_are_imported_after_the_last_import()
+    {
+        let directory = std::env::temp_dir().join(format!("gandr-drop-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(directory.join("lib")).expect("the scratch tree is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        for file in [
+            "main.gandr",
+            "bare.gandr",
+            "lib/base.gandr",
+            "lib/more.gandr",
+        ] {
+            std::fs::write(directory.join(file), "").expect("the source is written");
+        }
+        let uri = |file: &str| {
+            DocumentUri::of_path(&directory.join(file)).expect("an absolute path names a file URI")
+        };
+        let mut server = initialized();
+        let open = |server: &mut Connected, file: &str, text: &str| {
+            let notification = format!(
+                r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":
+                    {{"uri":"{}","languageId":"gandr","version":1,"text":"{text}"}}}}}}"#,
+                uri(file)
+            );
+            drop(send(server, Json(&notification)));
+        };
+        let import = |server: &mut Connected, file: &str, files: &[&str]| {
+            let files = files
+                .iter()
+                .map(|dropped| format!("\"{}\"", uri(dropped)))
+                .collect::<Vec<_>>()
+                .join(",");
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":9,"method":"gandr/importFiles","params":{{
+                    "textDocument":{{"uri":"{}"}},"files":[{files}]}}}}"#,
+                uri(file)
+            );
+            send(server, Json(&request))
+        };
+        open(
+            &mut server,
+            "main.gandr",
+            r#"import \"./lib/base.gandr\" ;\ndef answer = 1 ;\n"#,
+        );
+        open(&mut server, "bare.gandr", r#"def answer = 1 ;\n"#);
+        assert_eq!(
+            import(&mut server, "main.gandr", &[
+                "lib/base.gandr",
+                "lib/more.gandr"
+            ]),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":9,"result":[{
+                    "range":{"start":{"line":1,"character":0},"end":{"line":1,"character":0}},
+                    "newText":"import \"./lib/more.gandr\" ;\n"}]}]"#
+            )),
+            "the source not yet imported is imported on the line after the last import"
+        );
+        assert_eq!(
+            import(&mut server, "bare.gandr", &["lib/more.gandr"]),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":9,"result":[{
+                    "range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},
+                    "newText":"import \"./lib/more.gandr\" ;\n\n"}]}]"#
+            )),
+            "a document with no import gains it at its start, a blank line after"
+        );
+        assert_eq!(
+            import(&mut server, "main.gandr", &["lib/base.gandr", "main.gandr"]),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":[]}]"#)),
+            "a source imported already, or the document itself, adds nothing"
+        );
+        let _cleared = std::fs::remove_dir_all(&directory);
     }
 
     #[test]

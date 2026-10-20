@@ -9,6 +9,7 @@ Language support for `.gandr` sources. The extension registers the `gandr` langu
 - [Install the extension](#install-the-extension)
 - [Check the connection](#check-the-connection)
 - [Hover colours](#hover-colours)
+- [Drop to import](#drop-to-import)
 - [Develop the extension](#develop-the-extension)
 
 ## Requirements
@@ -105,6 +106,10 @@ The server colours a hover by the roles its semantic tokens carry: the extension
 | hole | `gandr.hover.hole` | `macro` | `#569CD6` | `#0000FF` | `#DCDCAA` | `#0F4A85` |
 | directive | `gandr.hover.directive` | `macro` | `#569CD6` | `#0000FF` | `#DCDCAA` | `#0F4A85` |
 | label | `gandr.hover.label` | `label` | hover foreground | hover foreground | hover foreground | hover foreground |
+
+## Drop to import
+
+Drag `.gandr` files from the Explorer into a gandr editor, holding Shift, and each source the document does not import yet is imported: the server writes an `import "…" ;` line for it after the document's last import, or at its start when it has none, addressed from the document's directory. Nothing is written where the files were dropped. A drop of only sources the document imports already falls back to the editor's own drop.
 
 ## Develop the extension
 
