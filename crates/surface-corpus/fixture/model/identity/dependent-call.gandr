@@ -27,7 +27,7 @@ def toLoopThroughImage(f : +U[ω] (Circle -> -F Int)) -> -F (#{
   point : Int,
   around : Path(Int, point, point)
 }) {
-  #{f(Base), loopImage(f)}
+  (f(Base), loopImage(f))
 }
 
 /// Another map's loop is not one at this map's point.
@@ -36,7 +36,7 @@ def toOtherLoop(f : +U[ω] (Circle -> -F Int), g : +U[ω] (Circle -> -F Int)) ->
   point : Int,
   around : Path(Int, point, point)
 }) {
-  #{f(Base), loopImage(g)}
+  (f(Base), loopImage(g))
 }
 
 /// A record's projections as the arguments of that map: the second

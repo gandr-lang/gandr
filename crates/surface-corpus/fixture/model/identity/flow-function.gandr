@@ -7,13 +7,13 @@
 /// A record schema with its fields swapped, the reader of its ages carried
 /// back to the old schema along the upgrade.
 module ReaderSchema {
-  type Old = #{String, Integer};
-  type New = #{Integer, String};
+  type Old = String * Integer;
+  type New = Integer * String;
   /// The translator: the old record's fields swapped.
   @[ checks ]
   def toNew(old : Old) -> -F New {
     case old {
-      #{name, age} => return #{age, name}
+      #{name, age} => return (age, name)
     }
   }
   /// The flow from the old schema to the new, by its translator.
@@ -22,7 +22,7 @@ module ReaderSchema {
   def upgrade = forward(toNew) ;
   /// The flow on readers: a reader of the new schema becomes one of the old.
   @[ checks ]
-  def reader : Flow(Type, +U (New -> -F Integer), +U (Old -> -F Integer)) ;
+  def reader : Flow(Type, New => Integer, Old => Integer) ;
   def reader = arrow(upgrade, stay(Integer)) ;
   /// The new schema's reader of ages.
   @[ checks ]
@@ -39,6 +39,6 @@ module ReaderSchema {
   }
   /// An old record's age, read through the ridden reader.
   @[ runs("30") ]
-  def aged : +U (-F Integer) ;
-  def aged = thunk { become legacy(#{"ada", 30}) } ;
+  def aged : () => Integer ;
+  def aged = thunk { become legacy(("ada", 30)) } ;
 }

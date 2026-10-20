@@ -24,13 +24,13 @@ def rec windWords(c : Words) -> -F Int {
 
 /// Two loops wind twice.
 @[ runs("S(S(Z))") ]
-def twice_wound : +U (-F Int) ;
+def twice_wound : () => Int ;
 def twice_wound = thunk { become windWords(Loop(Loop(Nil))) } ;
 
 /// A run builds the count letter by letter: a cancelled word winds to
 /// `S(P(Z))`, which conversion reads as `Z` (`wound_never`).
 @[ runs("S(P(Z))") ]
-def wound_letterwise : +U (-F Int) ;
+def wound_letterwise : () => Int ;
 def wound_letterwise = thunk { become windWords(Loop(Unloop(Nil))) } ;
 
 /// Conversion runs the fold at a closed word: two loops are two successors.
@@ -62,10 +62,10 @@ def rec native_wind(c : Words) -> -F Integer {
 
 /// Two loops wind twice into the native integers.
 @[ runs("2") ]
-def native_twice : +U (-F Integer) ;
+def native_twice : () => Integer ;
 def native_twice = thunk { become native_wind(Loop(Loop(Nil))) } ;
 
 /// A cancelled word winds as its normal form does: not at all.
 @[ runs("0") ]
-def native_unwound : +U (-F Integer) ;
+def native_unwound : () => Integer ;
 def native_unwound = thunk { become native_wind(Loop(Unloop(Nil))) } ;

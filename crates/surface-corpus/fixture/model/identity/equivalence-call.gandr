@@ -19,7 +19,7 @@ def kept(a : Type, b : Type, i : a ≅ b) -> -F (a ≅ b) {
 def keptToEquiv(a : Type, b : Type, i : a ≅ b) -> -F (a ≃ b) {
   run j <- kept(a, b, i);
   case j {
-    #{t, k, s, r} => #{t, #{#{k, s}, #{k, r}}}
+    #{t, k, s, r} => (t, ((k, s), (k, r)))
   }
 }
 
@@ -29,6 +29,6 @@ def keptToEquiv(a : Type, b : Type, i : a ≅ b) -> -F (a ≃ b) {
 def madeAgain(a : Type, b : Type, i : a ≅ b) -> -F (a ≃ b) {
   run e <- isoToEquiv(a, b, i);
   case e {
-    #{t, #{g, s}, #{h, r}} => #{t, #{#{g, s}, #{h, r}}}
+    #{t, #{g, s}, #{h, r}} => (t, ((g, s), (h, r)))
   }
 }

@@ -15,13 +15,13 @@ import "./univalence.gandr" ;
 def backBeta(
   a : Type,
   b : Type,
-  t : +U (a -> -F b),
-  g : +U (b -> -F a),
-  s : +U ((x : a) -> -F Path(a, g(t(x)), x)),
-  h : +U (b -> -F a),
-  r : +U ((y : b) -> -F Path(b, t(h(y)), y)),
+  t : a => b,
+  g : b => a,
+  s : (x : a) => Path(a, g(t(x)), x),
+  h : b => a,
+  r : (y : b) => Path(b, t(h(y)), y),
   y : b
-) -> -F Path(a, bwdAlong(a, b, ua(#{t, #{#{g, s}, #{h, r}}}), y), g(y)) {
+) -> -F Path(a, bwdAlong(a, b, ua((t, ((g, s), (h, r)))), y), g(y)) {
   return here(g(y))
 }
 
@@ -36,5 +36,5 @@ def loopsBack(
 
 /// Two carried back along the loops' path is the word of two loops, by a run.
 @[ runs("loop ∷ loop ∷ here(Base)") ]
-def backRun : +U (-F Path(Circle, Base, Base)) ;
+def backRun : () => Path(Circle, Base, Base) ;
 def backRun = thunk { loopsBack(loopsAreIntegers, S(S(Z))) } ;

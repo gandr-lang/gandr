@@ -22,5 +22,5 @@ def shifted = shift ;
 
 /// Riding the relation translates a record of the old schema.
 @[ runs("(30, \"ada\", +{.0 = unit})") ]
-def ridden : +U (-F Schema.New) ;
-def ridden = thunk { become ride(\X. X, shift, #{"ada", 30}) } ;
+def ridden : () => Schema.New ;
+def ridden = thunk { become ride(\X. X, shift, ("ada", 30)) } ;
