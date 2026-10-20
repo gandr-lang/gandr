@@ -1,0 +1,68 @@
+// What a string's view may not do: outlive its access, be ended twice or be
+// left unended. A view lives for its access, so these are refused with no
+// annotation saying how long it lives. A view kept in the region of a scope
+// around it lives as long as that scope, and no longer: it does not leave the
+// region, and the string it views is not written while the region keeps it.
+
+// The lists; the byte lists.
+import "../../model/data/data-base.gandr" ;
+import "../../model/strings/string-base.gandr" ;
+
+/// A view captured by a thunk: the thunk may be forced after the access that
+/// lent the view has ended, so the view would outlive its access.
+@[ refuses("ViewEscaped") ]
+def escaped() -> -F Repr {
+  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  access s as v { force thunk { resume(v, v) } };
+  pure s
+}
+
+/// A view ended twice: once written back, the view is spent, and the abort
+/// after it has nothing to end.
+@[ refuses("ViewSpent") ]
+def endedTwice() -> -F Unit {
+  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  access s as v { resume(v, v); abort(v) }
+}
+
+/// A view its access never ends: the access would return with neither a
+/// write-back nor an unwind.
+@[ refuses("ViewUnended") ]
+def unended() -> -F Unit {
+  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  access s as v { pure unit }
+}
+
+/// A view kept in the region of the scope around it, forced from a thunk kept
+/// in no region: the kept view would leave its region inside that thunk.
+@[ refuses("KeptEscaped") ]
+def keptPastRegion() -> -F Integer {
+  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  handle c : Proc {
+    run k : (() => Integer) at c <- access shared s as w {
+      pure thunk { run bs <- bytes(w) ; become count(bs) }
+    } ;
+    run j : () => Integer <- pure thunk { force k } ;
+    force j
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => pure 0
+  }
+}
+
+/// The string written while the region around it keeps a view of it: the kept
+/// view would read the string while it is written.
+@[ refuses("HeldKept") ]
+def writtenWhileKept() -> -F Integer {
+  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  handle c : Proc {
+    run k : (() => Integer) at c <- access shared s as w {
+      pure thunk { run bs <- bytes(w) ; become count(bs) }
+    } ;
+    access s as v { resume(v, v) };
+    force k
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => pure 0
+  }
+}

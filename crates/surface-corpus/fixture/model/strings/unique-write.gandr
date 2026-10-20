@@ -1,0 +1,65 @@
+// Copy-on-write pays for a holder count it reads at every write, even when
+// the string is held once. A write that reads no count is sound exactly where
+// the string has one holder: there it writes what copy-on-write writes, and on
+// a shared string it would write the buffer another string reads. So where the
+// program states that a string is not copied for a scope, the count and its
+// branch can go (Racordon et al., "Implementation strategies for mutable value
+// semantics", _Journal of Object Technology_ 21(2), 2022,
+// doi:10.5381/jot.2022.21.2.a2, § 4: uniqueness-elided copies). The statement
+// is a grade on the string, which the checker does not read yet (#1165):
+// these items show the write the grade will license, and on what.
+
+// The lists; the byte lists; the owned bytes; where they live; the writes.
+import "../data/data-base.gandr" ;
+import "./string-base.gandr" ;
+import "./nul-terminated.gandr" ;
+import "./small-string.gandr" ;
+import "./copy-on-write.gandr" ;
+
+/// `b` appended with no holder count read: inline bytes as `push` writes
+/// them, a heap buffer written where it is, whoever holds it.
+@[ checks ]
+def pushInPlace(s : Repr, b : Integer) -> -F Written {
+  case s {
+    Inline(bs) => become push(s, b),
+    Shared(n, bs) => { run grown <- beforeZero(bs, b) ; return Written(Shared(n, grown), 0) }
+  }
+}
+
+/// The number of strings holding a string's bytes: one for inline bytes.
+@[ checks ]
+def holders(s : Repr) -> -F Integer {
+  case s {
+    Inline(bs) => 1,
+    Shared(n, bs) => n
+  }
+}
+
+/// On a long string held once, the write that reads no count copies nothing,
+/// as copy-on-write does.
+@[ runs("0") ]
+def aloneCopies : () => Integer ;
+def aloneCopies = thunk { run s <- force long ; run w <- pushInPlace(s, 33) ; become copies(w) } ;
+
+/// And its written buffer has the one holder copy-on-write's has.
+@[ runs("1") ]
+def aloneHolders : () => Integer ;
+def aloneHolders = thunk {
+  run s <- force long ;
+  run w <- pushInPlace(s, 33) ;
+  run t <- written(w) ;
+  become holders(t)
+} ;
+
+/// On a copy it writes the buffer the original reads too: the written buffer
+/// still has two holders, so the original would see the write. This is the
+/// write a grade must keep from a shared string.
+@[ runs("2") ]
+def sharedHolders : () => Integer ;
+def sharedHolders = thunk {
+  run s <- force long ;
+  run c <- copy(s) ;
+  run w <- pushInPlace(c, 33) ;
+  run t <- written(w) ;
+  become holders(t)
+} ;
