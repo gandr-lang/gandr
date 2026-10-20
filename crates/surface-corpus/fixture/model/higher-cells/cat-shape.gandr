@@ -124,13 +124,13 @@ module SetoidCat : Model(CatShape) {
 /// the operation at its type argument and calls the function it returns
 /// (#452).
 @[ runs("3") ]
-def identity_observed : +U (-F Integer) ;
+def identity_observed : () => Integer ;
 def identity_observed = thunk { run f <- SetoidCat.id(Integer) ; become f(3) } ;
 
 /// Composition observed through the interface: `n + 1` then `n + 2`, applied
 /// to `1` (#452).
 @[ runs("4") ]
-def composite_observed : +U (-F Integer) ;
+def composite_observed : () => Integer ;
 def composite_observed = thunk {
   run h <- SetoidCat.comp(
     Integer,

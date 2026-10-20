@@ -20,11 +20,11 @@ def raised = ua[
 /// degree-two unit stage.
 @[ checks ]
 def lifts : Path(
-  #{Unit, #{+{Unit}, #{Bool, Unit}}},
-  transport(\X. X, raised, #{unit, #{+{.0 = unit}, #{+{.0 = unit}, unit}}}),
-  #{unit, #{+{.0 = unit}, #{+{.1 = unit}, unit}}}
+  Unit * (+{Unit} * (Bool * Unit)),
+  transport(\X. X, raised, (unit, (+{.0 = unit}, (+{.0 = unit}, unit)))),
+  (unit, (+{.0 = unit}, (+{.1 = unit}, unit)))
 ) ;
-def lifts = here(#{unit, #{+{.0 = unit}, #{+{.1 = unit}, unit}}}) ;
+def lifts = here((unit, (+{.0 = unit}, (+{.1 = unit}, unit)))) ;
 
 /// A degree no shape of the catalogue reaches is not certified.
 @[ refuses("UncertifiedDegree") ]

@@ -45,5 +45,5 @@ def add_to(n : Integer) -> -F Integer {
 
 /// One held, five added.
 @[ runs("6") ]
-def add_five : +U (-F Integer) ;
+def add_five : () => Integer ;
 def add_five = thunk { add_to(5) } ;

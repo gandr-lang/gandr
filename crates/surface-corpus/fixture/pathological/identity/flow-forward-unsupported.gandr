@@ -1,10 +1,10 @@
 module Schema {
-  type Old = #{String, Integer};
-  type New = #{Integer, String};
+  type Old = String * Integer;
+  type New = Integer * String;
   @[ checks ]
   def anonymise(old : Old) -> -F New {
     case old {
-      #{name, age} => return #{age, "anonymous"}
+      #{name, age} => return (age, "anonymous")
     }
   }
   @[ refuses("ForwardUnsupported") ]

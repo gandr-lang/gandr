@@ -27,20 +27,20 @@ def opposite = ua[
 /// Transport along it swaps the binary corolla's boolean.
 @[ checks ]
 def moves : Path(
-  #{Unit, #{+{Unit}, Bool}},
-  transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}),
-  #{unit, #{+{.0 = unit}, +{.1 = unit}}}
+  Unit * (+{Unit} * Bool),
+  transport(\X. X, opposite, (unit, (+{.0 = unit}, +{.0 = unit}))),
+  (unit, (+{.0 = unit}, +{.1 = unit}))
 ) ;
-def moves = here(#{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
+def moves = here((unit, (+{.0 = unit}, +{.1 = unit}))) ;
 
 /// It does not leave the boolean where it was.
 @[ refuses("EndpointMismatch") ]
 def stays : Path(
-  #{Unit, #{+{Unit}, Bool}},
-  transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}),
-  #{unit, #{+{.0 = unit}, +{.0 = unit}}}
+  Unit * (+{Unit} * Bool),
+  transport(\X. X, opposite, (unit, (+{.0 = unit}, +{.0 = unit}))),
+  (unit, (+{.0 = unit}, +{.0 = unit}))
 ) ;
-def stays = here(#{unit, #{+{.0 = unit}, +{.0 = unit}}}) ;
+def stays = here((unit, (+{.0 = unit}, +{.0 = unit}))) ;
 
 /// The magma to itself by the swap written three times.
 @[ checks ]
@@ -48,10 +48,10 @@ def reopposite = ua[1, 4](Magma, Magma, #{.mul = flip, .one = keep}, #{.mul = fl
 
 /// The swap and the swap three times agree at every boolean.
 @[ checks ]
-def agree : Path(+U (Bool -> -F Bool), exchange, flip) ;
+def agree : Path(Bool => Bool, exchange, flip) ;
 def agree = funext(exchange, flip) ;
 
 /// The swap and the identity do not.
 @[ refuses("PointwiseDistinct") ]
-def disagree : Path(+U (Bool -> -F Bool), exchange, boolId) ;
+def disagree : Path(Bool => Bool, exchange, boolId) ;
 def disagree = funext(exchange, boolId) ;

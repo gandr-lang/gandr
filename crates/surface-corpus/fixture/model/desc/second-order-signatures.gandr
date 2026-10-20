@@ -63,7 +63,7 @@ def rec bound(chain : Theory) -> -F Integer {
 
 /// The identity-return signature declares one representable sort, `VTm`.
 @[ runs("1") ]
-def representableSorts : +U (-F Integer) ;
+def representableSorts : () => Integer ;
 def representableSorts = thunk {
   case IdentityReturn {
     Presents(sorts, opers, rules) => become representable(sorts),
@@ -73,7 +73,7 @@ def representableSorts = thunk {
 
 /// The λ-calculus's first operation, `lam`, binds over its one input.
 @[ runs("1") ]
-def boundInputs : +U (-F Integer) ;
+def boundInputs : () => Integer ;
 def boundInputs = thunk {
   case Lambda {
     Presents(sorts, opers, rules) => case opers {

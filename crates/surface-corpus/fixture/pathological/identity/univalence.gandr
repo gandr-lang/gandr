@@ -15,7 +15,7 @@ import "../../model/identity/univalence.gandr" ;
 /// reflexivity at `x` does not reach it.
 @[ refuses("EndpointMismatch") ]
 def collapsedPath : Path(Type, Two, One) ;
-def collapsedPath = ua(#{collapse, #{#{pick, thunk { fn (x) { here(x) } }}, #{pick, single}}}) ;
+def collapsedPath = ua((collapse, ((pick, thunk { fn (x) { here(x) } }), (pick, single)))) ;
 
 /// A transport along `ua` of a bi-invertible map from `Type` to itself,
 /// refused at the code `ua` reads off the record: `Type` is a code of
@@ -33,14 +33,14 @@ def alongTypeSelf(e : Type ≃ Type, x : Type) -> -F Type {
 def alongLiteral(
   a : Type,
   b : Type,
-  t : +U (a -> -F b),
-  g : +U (b -> -F a),
-  s : +U ((x : a) -> -F Path(a, g(t(x)), x)),
-  h : +U (b -> -F a),
-  r : +U ((y : b) -> -F Path(b, t(h(y)), y)),
+  t : a => b,
+  g : b => a,
+  s : (x : a) => Path(a, g(t(x)), x),
+  h : b => a,
+  r : (y : b) => Path(b, t(h(y)), y),
   x : a
 ) -> -F b {
-  transport(\X. X, ua(#{t, #{#{g, s}, #{h, r}}}), x)
+  transport(\X. X, ua((t, ((g, s), (h, r)))), x)
 }
 
 /// `ua` after `idtoequiv` converted with the path, refused even at

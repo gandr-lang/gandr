@@ -41,7 +41,7 @@ def second(s : +U Stream(Integer)) -> -F Integer {
 /// to call, and the call stays productive.
 @[ checks ]
 def rec zipWith(
-  f : +U (Integer -> Integer -> -F Integer),
+  f : (Integer, Integer) => Integer,
   s : +U Stream(Integer),
   t : +U Stream(Integer)
 ) -> Stream(Integer) {
@@ -63,15 +63,15 @@ def add(x : Integer, y : Integer) -> -F Integer {
 
 /// The integers from three, observed at the head.
 @[ runs("3") ]
-def three : +U (-F Integer) ;
+def three : () => Integer ;
 def three = thunk { first(thunk { upward(3) }) } ;
 
 /// The integers from three, observed one further.
 @[ runs("4") ]
-def four : +U (-F Integer) ;
+def four : () => Integer ;
 def four = thunk { second(thunk { upward(3) }) } ;
 
 /// The integers from one added to the sevens, one further: `2 + 7`.
 @[ runs("9") ]
-def nine : +U (-F Integer) ;
+def nine : () => Integer ;
 def nine = thunk { second(thunk { zipWith(add, thunk { upward(1) }, thunk { always(7) }) }) } ;

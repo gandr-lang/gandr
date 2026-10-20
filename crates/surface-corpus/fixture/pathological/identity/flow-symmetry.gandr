@@ -1,11 +1,11 @@
 module Schema {
-  type Old = #{String, Integer};
-  type New = #{Integer, String};
+  type Old = String * Integer;
+  type New = Integer * String;
   type Count = Integer;
   @[ checks ]
   def toNew(old : Old) -> -F New {
     case old {
-      #{name, age} => return #{age, name}
+      #{name, age} => return (age, name)
     }
   }
   @[ checks ]
@@ -22,7 +22,7 @@ module Schema {
     }
   }
   @[ refuses("NonCovariantMotive") ]
-  def reader() -> -F +U (New -> -F Count) {
-    become ride(\X. +U (X -> -F Count), upgrade, age)
+  def reader() -> -F (New => Count) {
+    become ride(\X. X => Count, upgrade, age)
   }
 }

@@ -29,6 +29,6 @@ def unmarkedHandle() -> -F (Seat.Dispatch at seat) {
 /// where it is forced, and what it closes over is the seat's.
 @[ refuses("Immobile") ]
 @[ entry((operator, seat)) ]
-def suspendedBack() -> -F (+U (-F Seat.Report)) {
+def suspendedBack() -> -F (() => Seat.Report) {
   migrate [seat] { pure thunk { pure Seat.progress } }
 }
