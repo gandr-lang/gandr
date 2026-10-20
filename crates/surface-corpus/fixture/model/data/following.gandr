@@ -1,0 +1,74 @@
+// A result that follows its argument (#392). A recursive definition whose
+// result is the type it recurses on, and which holds with that result at its
+// parameter's own stage — every branch returns a value no larger than the
+// argument — returns at the stage of the argument a call hands it. A recursion
+// then descends through such a call: division recurses on what subtraction
+// leaves of its dividend's predecessor, and a logarithm on half of it. A
+// definition with no recursion opens no stage, and its result follows
+// nothing. What refuses is in `../../pathological/data/following.gandr`.
+
+// The naturals and the numerals two and three.
+import "./data-base.gandr" ;
+
+/// Truncated subtraction, by recursion on the first argument: never larger
+/// than it, so a call's result stands where its first argument does.
+@[ checks ]
+def rec minus(n : Nat, k : Nat) -> -F Nat {
+  case k {
+    Zero => n,
+    Succ(j) => case n {
+      Zero => Zero,
+      Succ(p) => minus[<](p, j)
+    }
+  }
+}
+
+/// `n` divided by `d + 1`, rounded up: what `minus` leaves of the predecessor
+/// `p` stands where `p` does, below `n`.
+@[ checks ]
+def rec divided(n : Nat, d : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(p) => { run r <- minus(p, d); Succ(divided[<](r, d)) }
+  }
+}
+
+/// Half a number, rounded up, through `minus`: one less than the field `p`
+/// stands where `p` does.
+@[ checks ]
+def rec halvedUp(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(p) => { run q <- minus(p, Succ(Zero)); Succ(halvedUp[<](q)) }
+  }
+}
+
+/// The number of binary digits of `n`, a logarithm: half of the field `p`
+/// stands where `p` does, below `n`, since `halvedUp` follows its argument.
+@[ checks ]
+def rec digits(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(p) => { run h <- halvedUp(p); Succ(digits[<](h)) }
+  }
+}
+
+/// Three less one: two.
+@[ runs("Succ(Succ(Zero))") ]
+def difference : () => Nat ;
+def difference = thunk { minus(three, Succ(Zero)) } ;
+
+/// Four divided by two: two.
+@[ runs("Succ(Succ(Zero))") ]
+def quotient : () => Nat ;
+def quotient = thunk { divided(Succ(three), Succ(Zero)) } ;
+
+/// Half of three, rounded up: two.
+@[ runs("Succ(Succ(Zero))") ]
+def halvedThree : () => Nat ;
+def halvedThree = thunk { halvedUp(three) } ;
+
+/// Four is `100` in binary: three digits.
+@[ runs("Succ(Succ(Succ(Zero)))") ]
+def digitsOfFour : () => Nat ;
+def digitsOfFour = thunk { digits(Succ(three)) } ;

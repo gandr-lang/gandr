@@ -69,11 +69,13 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldPosition;
 use gandr_kernel_term::OccurrenceSite;
 use gandr_kernel_term::ParameterPosition;
+use gandr_kernel_term::StagedPosition;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
+use quenchant_shape::shape::Maybe;
 
 use crate::error::KernelError;
 use crate::rewrite::BinderDepth;
@@ -264,8 +266,11 @@ pub enum Stratification
     Stratified,
 }
 
-/// What a data declaration's walk decided: how its own occurrences stand,
-/// and how each of its parameters does.
+/// What a declaration's recursion was read to be.
+///
+/// For a data declaration, how its own occurrences stand and how each of its
+/// parameters does; for a structural definition, the parameter whose stage its
+/// result stands at.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -285,6 +290,9 @@ pub struct Accessibility
     stratification: Stratification,
     /// How each parameter stands, in telescope order.
     parameters: Vec<Variance>,
+    /// The position of the parameter a definition's result stands at the
+    /// stage of, when its own recursion was judged to return at it.
+    result: Maybe<StagedPosition, super::recursion::Unstaged>,
 }
 
 impl Accessibility
@@ -300,7 +308,36 @@ impl Accessibility
         Self {
             stratification: Stratification::Stratified,
             parameters: Vec::new(),
+            result: Maybe::Absent(super::recursion::Unstaged::Plain),
         }
+    }
+
+    /// The same reading, with a definition's result standing at the stage of
+    /// its parameter at `position`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) fn following(
+        self,
+        position: StagedPosition,
+    ) -> Self
+    {
+        Self {
+            result: Maybe::Present(position),
+            ..self
+        }
+    }
+
+    /// The position of the parameter a definition's result stands at the stage
+    /// of, when it follows one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(super) const fn result(&self) -> Maybe<StagedPosition, super::recursion::Unstaged>
+    {
+        self.result
     }
 
     /// How the family's own occurrences stand.
@@ -1550,6 +1587,7 @@ where
     Ok(Accessibility {
         stratification,
         parameters: variances,
+        result: Maybe::Absent(super::recursion::Unstaged::Plain),
     })
 }
 

@@ -325,6 +325,114 @@ fn a_recursion_descends_on_its_first_parameter()
     );
 }
 
+/// What a predecessor's successor arm returns.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Returning
+{
+    /// The field `p`, below the argument.
+    Field,
+    /// `Succ n`, one step above the argument.
+    Successor,
+}
+
+/// `Nat`; at position 1 `pred : U (Nat → F Nat)`, `fix f. λn. case n { Zero ⇒
+/// return Zero ; Succ ⇒ λp. return v }`, `v` what `returning` names under `p`
+/// 0, `n` 1; at position 2 `halve`, `fix h. λn. case n { Zero ⇒ return Zero ;
+/// Succ ⇒ λp. q ← (force pred) p; (force h) q }`, under `q` 0, `p` 1, `n` 2,
+/// `h` 3.
+///
+/// # Specification
+/// trivial.
+fn through_predecessor(
+    arena: &mut CoreArena,
+    returning: Returning,
+) -> Vec<Declaration>
+{
+    let nat_signature = nat_signature(arena);
+    let nat = data(arena, ConstantIndex::from(0), vec![]);
+    let returner = arena.comp_type_returner(nat);
+    let declared = unary(arena);
+    let fixpoint = |arena: &mut CoreArena, on_successor| {
+        let on_zero = {
+            let zero = zero(arena);
+            arena.computation_return(zero)
+        };
+        let scrutinee = var(arena, DeBruijnIndex::from(0));
+        let case = arena.computation_data_case(scrutinee, returner, vec![on_zero, on_successor]);
+        let lambda = arena.computation_lambda(case);
+        let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
+        arena.value_thunk(fixpoint)
+    };
+    let given = match returning {
+        Returning::Field => var(arena, DeBruijnIndex::from(0)),
+        Returning::Successor => {
+            let argument = var(arena, DeBruijnIndex::from(1));
+            succ(arena, argument)
+        },
+    };
+    let given = arena.computation_return(given);
+    let on_successor = arena.computation_lambda(given);
+    let pred = fixpoint(arena, on_successor);
+    let head = arena.value_constant(ConstantIndex::from(1));
+    let field = var(arena, DeBruijnIndex::from(0));
+    let predecessor = call(arena, head, &[field]);
+    let recursive = var(arena, DeBruijnIndex::from(3));
+    let bound = var(arena, DeBruijnIndex::from(0));
+    let recursed = call(arena, recursive, &[bound]);
+    let bind = arena.computation_bind(predecessor, recursed);
+    let on_successor = arena.computation_lambda(bind);
+    let halve = fixpoint(arena, on_successor);
+    vec![
+        declare_data(ConstantIndex::from(0), nat_signature),
+        define(ConstantIndex::from(1), declared, pred),
+        define(ConstantIndex::from(2), declared, halve),
+    ]
+}
+
+#[test]
+fn a_result_follows_the_parameter_it_recurses_on()
+{
+    // A predecessor returning its field returns at its argument's stage, so
+    // `halve` recursing on the predecessor of its own field descends, and
+    // both checkers admit it.
+    let mut arena = CoreArena::new();
+    let declarations = through_predecessor(&mut arena, Returning::Field);
+    let (verdicts, outcomes) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(verdicts[2], Verdict::Checked { .. }),
+        "{:?}",
+        verdicts[2]
+    );
+    assert!(
+        matches!(outcomes[2], Outcome::Defined { .. }),
+        "{:?}",
+        outcomes[2]
+    );
+
+    // One returning `Succ n` stands above its argument, so its result stands
+    // at no stage and the same recursion is refused at the top.
+    let mut arena = CoreArena::new();
+    let declarations = through_predecessor(&mut arena, Returning::Successor);
+    let (verdicts, _) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(verdicts[1], Verdict::Checked { .. }),
+        "{:?}",
+        verdicts[1]
+    );
+    assert!(
+        matches!(
+            verdicts[2],
+            Verdict::Refused(CheckRefusal::StageNotBelow {
+                found: Standing::Top,
+                bound,
+                ..
+            }) if bound == below(Stage::At(StageId::from(0_usize)))
+        ),
+        "{:?}",
+        verdicts[2]
+    );
+}
+
 #[test]
 fn a_structural_fixpoint_needs_an_arrow_to_recurse_on()
 {

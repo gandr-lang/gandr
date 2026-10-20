@@ -1134,6 +1134,7 @@ fn decide(
     let mut elaboration = Maybe::Absent(elaborated::Absent::Unnested);
     let mut relating = Vec::new();
     let residue: Residue;
+    let mut following = Maybe::Absent(crate::recursion::Unstaged::Plain);
     let (verdict, failure) = match body {
         Maybe::Present(body) => {
             let _stale = context.take_nesting();
@@ -1166,6 +1167,7 @@ fn decide(
             };
             relating = context.take_relating();
             residue = context.deferrals_mut().take();
+            following = follows(context, &judged, (residue.pending(), direction));
             if let Some(signed) = signed.take() {
                 context.own_body(body);
                 typings =
@@ -1222,6 +1224,9 @@ fn decide(
             context.record(constant, declared);
             context.define(constant, declared, body);
             context.keep_relations(constant, relating);
+            if let Maybe::Present(position) = following {
+                context.record_following(constant, position);
+            }
         },
         (Direction::Check(declared), Verdict::Owed(_)) => {
             context.record(constant, declared);
@@ -1264,6 +1269,76 @@ fn decide(
             | Verdict::Owed(_)
             | Verdict::Refused(_) => Residue::default(),
         },
+    }
+}
+
+/// Judge an accepted structural definition once more with its own fixpoint's
+/// result read at the stage of the parameter it recurses on: the position of
+/// that parameter when the body checks there, so a call reads the result at
+/// its argument's stage.
+///
+/// Nothing the second judgement relates, owes, decides or mints is kept.
+///
+/// # Specification
+/// - requires: `judged` is the verdict of the definition under way's body, with
+///   nothing left pending when `pending` says so.
+/// - ensures: for a checked body thunking a structural fixpoint, settled with
+///   nothing pending, whose type returns the type it recurses on, the
+///   parameter's position when the body checks with that result at the
+///   parameter's stage; [`crate::recursion::Unstaged::Plain`] otherwise. The
+///   context reads results as declared again on return.
+/// - fails: never; a second judgement's refusal is
+///   [`crate::recursion::Unstaged::Plain`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a subtraction recursing on its first argument follows it,
+///   and an addition returning its accumulator does not.
+/// - witness: `recursion::tests::a_result_follows_the_parameter_it_recurses_on`
+#[spec(ensures: context.result_stage() == crate::recursion::ResultStage::Declared)]
+fn follows(
+    context: &mut CheckingContext<'_>,
+    judged: &Result<Verdict, Failure>,
+    (pending, direction): (Deferred, Direction<FormedValueType>),
+) -> Maybe<gandr_kernel_term::StagedPosition, crate::recursion::Unstaged>
+{
+    let plain = Maybe::Absent(crate::recursion::Unstaged::Plain);
+    let (Deferred::No, &Ok(Verdict::Checked { body, .. })) = (pending, judged)
+    else {
+        return plain;
+    };
+    let Some(&gandr_core_term::Value::Thunk(root)) = context.arena().value(body)
+    else {
+        return plain;
+    };
+    if !matches!(
+        context.arena().computation(root),
+        Some(&gandr_core_term::Computation::Fixpoint {
+            evidence: gandr_kernel_term::FixpointEvidence::StructuralDescent
+                | gandr_kernel_term::FixpointEvidence::Staged { .. },
+            ..
+        })
+    ) {
+        return plain;
+    }
+    context.forget_stages();
+    context.deferrals_mut().open(Collecting::On);
+    context.own_body(body);
+    context.read_result(crate::recursion::ResultStage::Asked(root));
+    let staged = judge(context, body, direction);
+    let read = context.result_stage();
+    context.read_result(crate::recursion::ResultStage::Declared);
+    let _nesting = context.take_nesting();
+    let _relating = context.take_relating();
+    let _residue = context.deferrals_mut().take();
+    match (staged, read) {
+        (Ok(_), crate::recursion::ResultStage::Staged(position)) => Maybe::Present(position),
+        (
+            Ok(_) | Err(_),
+            crate::recursion::ResultStage::Declared
+            | crate::recursion::ResultStage::Asked(_)
+            | crate::recursion::ResultStage::Staged(_),
+        ) => plain,
     }
 }
 

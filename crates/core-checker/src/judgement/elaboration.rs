@@ -612,6 +612,7 @@ pub fn type_value(
         marks: Vec::new(),
         sessions: super::Sessions::new(base),
         root: quenchant_shape::shape::Maybe::Absent(crate::respect::root::Absent::Unmarked),
+        staged_motives: Vec::new(),
     };
     let register = machine.context.binders().world();
     let scope = machine.session_scope();
