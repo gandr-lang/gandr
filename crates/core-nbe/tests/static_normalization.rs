@@ -751,28 +751,32 @@ fn generate(
     // (parent, kind, binder kinds outermost first, fuel left)
     let mut pending: Vec<(Option<usize>, Kind, Vec<Kind>, u32)> =
         Vec::from([(None, kind, Vec::new(), fuel)]);
+    let mut variables: Vec<u32> = Vec::new();
+    let mut options: Vec<Shape> = Vec::new();
     while let Some((parent, kind, context, fuel)) = pending.pop() {
         let here = tree.nodes.len();
         if let Some(parent) = parent {
             tree.nodes[parent].1.push(here);
         }
-        let variables: Vec<u32> = context
-            .iter()
-            .enumerate()
-            .filter(|&(_, &bound)| bound == kind)
-            .map(|(level, _)| {
-                let outward = context
-                    .len()
-                    .checked_sub(1)
-                    .unwrap()
-                    .checked_sub(level)
-                    .unwrap();
-                u32::try_from(outward).unwrap()
-            })
-            .collect();
+        variables.clear();
+        variables.extend(
+            context
+                .iter()
+                .enumerate()
+                .filter(|&(_, &bound)| bound == kind)
+                .map(|(level, _)| {
+                    let outward = context
+                        .len()
+                        .checked_sub(1)
+                        .unwrap()
+                        .checked_sub(level)
+                        .unwrap();
+                    u32::try_from(outward).unwrap()
+                }),
+        );
         let less = fuel.saturating_sub(1);
         let operators = kind.operators();
-        let mut options: Vec<Shape> = Vec::new();
+        options.clear();
         if kind.arrow().is_some() {
             options.push(Shape::Lambda);
         }

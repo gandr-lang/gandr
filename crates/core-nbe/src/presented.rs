@@ -298,8 +298,8 @@ pub fn normal_form(
             }
             continue;
         };
-        let mut fields = built.split_off(built.len().saturating_sub(usize::from(arity)));
-        fields.reverse();
+        let start = built.len().saturating_sub(usize::from(arity));
+        let fields: Vec<DomainValueId> = built.drain(start ..).rev().collect();
         let kept = kept(domain, origin, &fields)?;
         let rebuilt = match kept {
             Origin::Written(id) => id,

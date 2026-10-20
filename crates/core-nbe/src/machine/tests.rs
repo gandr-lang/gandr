@@ -1,5 +1,8 @@
 mod trace_pairing;
 
+// The test harness links `std`; the canonicalizer keys its tables by hash.
+extern crate std;
+
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
@@ -931,8 +934,9 @@ fn canonical(
 ) -> BTreeMap<CoreTerm, CoreTerm>
 {
     let mut canon: BTreeMap<CoreTerm, CoreTerm> = BTreeMap::new();
-    let mut values: Vec<(Value, CoreTerm)> = Vec::new();
-    let mut computations: Vec<(Computation, CoreTerm)> = Vec::new();
+    let mut values: std::collections::HashMap<Value, CoreTerm> = std::collections::HashMap::new();
+    let mut computations: std::collections::HashMap<Computation, CoreTerm> =
+        std::collections::HashMap::new();
     let mut walk = Vec::from([Lifting::Enter(root)]);
     while let Some(step) = walk.pop() {
         match step {
@@ -1049,15 +1053,7 @@ fn canonical(
                             | Value::QuoteComputation(_)
                             | Value::Hole(_)) => leaf,
                         };
-                        if let Some(&(_, representative)) =
-                            values.iter().find(|entry| entry.0 == key)
-                        {
-                            representative
-                        }
-                        else {
-                            values.push((key, node));
-                            node
-                        }
+                        *values.entry(key).or_insert(node)
                     },
                     CoreTerm::Computation(id) => {
                         let key = match *core
@@ -1170,15 +1166,7 @@ fn canonical(
                             },
                             Computation::Hole(hole) => Computation::Hole(hole),
                         };
-                        if let Some(&(_, representative)) =
-                            computations.iter().find(|entry| entry.0 == key)
-                        {
-                            representative
-                        }
-                        else {
-                            computations.push((key, node));
-                            node
-                        }
+                        *computations.entry(key).or_insert(node)
                     },
                 };
                 canon.insert(node, representative);
