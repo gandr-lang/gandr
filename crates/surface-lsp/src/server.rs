@@ -111,6 +111,7 @@ use crate::protocol::DocumentParams;
 use crate::protocol::DocumentUri;
 use crate::protocol::DocumentVersion;
 use crate::protocol::FileEvent;
+use crate::protocol::FoldersChangedParams;
 use crate::protocol::Hover;
 use crate::protocol::InitializeParams;
 use crate::protocol::InitializeResult;
@@ -1252,8 +1253,9 @@ impl Workspace
     /// # Specification
     /// - requires: nothing; a peer that never connected or held nothing is
     ///   admitted.
-    /// - ensures: `peer` watches and hears nothing and holds no copy of any
-    ///   document; every document left is held by another connection.
+    /// - ensures: `peer` watches and hears nothing, holds no copy of any
+    ///   document and holds no folder open; every document left is held by
+    ///   another connection.
     /// - provides: a connection's end, clean or not.
     /// - panics: none.
     ///
@@ -1278,6 +1280,7 @@ impl Workspace
     {
         let _watcher = self.watchers.remove(&peer);
         let _editor = self.editors.remove(&peer);
+        self.files.get_mut().depart(peer);
         for (uri, held) in core::mem::take(&mut self.documents) {
             if let Some(forgotten) = self.let_go(uri, held, peer) {
                 self.edited(&forgotten, peer);
@@ -2318,7 +2321,7 @@ impl Server
                 self.offsets = initial_offsets(&params);
                 self.watching = initial_watching(&params);
                 self.progress = initial_progress(&params);
-                workspace.rooted(&initial_roots(&params));
+                workspace.rooted(self.peer, &initial_roots(&params));
                 success(
                     id,
                     Answer::Initialize(Box::new(InitializeResult::advertised())),
@@ -2643,8 +2646,9 @@ impl Server
     ///   every other hub connection whose copies name it hears it changed.
     ///   Unknown, malformed and out-of-phase notifications leave documents
     ///   alone.
-    /// - provides: document synchronization, configuration, file watching and
-    ///   termination.
+    /// - provides: document synchronization, configuration, file watching, the
+    ///   folders the client opens and termination: a folder opened is a root of
+    ///   the path table while this connection holds it open.
     /// - fails: unreadable parameters and changes to documents this connection
     ///   holds no copy of are ignored.
     /// - panics: none.
@@ -2667,6 +2671,7 @@ impl Server
     /// - witness: `server::tests::a_watching_client_is_asked_to_watch_every_source`
     /// - witness: `server::tests::a_changed_file_rechecks_the_copies_whose_closure_names_it`
     /// - witness: `server::tests::an_editor_s_copy_shadows_the_disk_for_its_importers`
+    /// - witness: `server::tests::a_folder_is_searched_while_the_client_holds_it_open`
     #[spec(
         captures: [phase = self.phase, count = workspace.documents.len()],
         ensures: |ret| self.phase == phase
@@ -2889,6 +2894,15 @@ impl Server
                     Picks::Naming(&changed_paths(&changes), Origin::Disk),
                 )
             },
+            (Phase::Running, "workspace/didChangeWorkspaceFolders") => {
+                let Ok(FoldersChangedParams { event }) = serde_json::from_value(params)
+                else {
+                    return Outcome::quiet();
+                };
+                workspace.unrooted(self.peer, &event.removed());
+                workspace.rooted(self.peer, &event.added());
+                Outcome::quiet()
+            },
             (Phase::Waiting | Phase::Running | Phase::ShuttingDown, _) => Outcome::quiet(),
         }
     }
@@ -2914,18 +2928,35 @@ impl Workspace
             })
     }
 
-    /// Add each of `roots`, a folder a connection opened, to the path table.
+    /// Add each of `roots`, a folder `peer` opened, to the path table.
     ///
     /// # Specification
     /// trivial.
     fn rooted(
         &self,
+        peer: Peer,
         roots: &[PathBuf],
     )
     {
         let mut files = self.files.borrow_mut();
         for root in roots {
-            files.root(root);
+            files.root(peer, root);
+        }
+    }
+
+    /// Withdraw each of `roots`, a folder `peer` closed, from the path table.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unrooted(
+        &self,
+        peer: Peer,
+        roots: &[PathBuf],
+    )
+    {
+        let mut files = self.files.borrow_mut();
+        for root in roots {
+            files.unroot(peer, root);
         }
     }
 
@@ -4578,7 +4609,8 @@ mod tests
                         "documentHighlightProvider":true,
                         "referencesProvider":true,
                         "renameProvider":{"prepareProvider":true},
-                        "documentLinkProvider":{"resolveProvider":false}},
+                        "documentLinkProvider":{"resolveProvider":false},
+                        "workspace":{"workspaceFolders":{"supported":true,"changeNotifications":true}}},
                     "serverInfo":{"name":"gandr","version":""#,
                 env!("CARGO_PKG_VERSION"),
                 r#""}}}]"#
@@ -4998,6 +5030,86 @@ mod tests
             )["result"],
             Value::Null,
             "a document the server does not hold answers null"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_folder_is_searched_while_the_client_holds_it_open()
+    {
+        let directory = std::env::temp_dir().join(format!("gandr-folders-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        let opened = "import \"./base.gandr\" ;\ndef nought : Nat ;\ndef nought = Zero ;\n";
+        for (file, text) in [
+            (
+                "base.gandr",
+                "data Nat : Type {\n  Zero : Nat;\n}\ndef zero : Nat ;\ndef zero = Zero ;\n",
+            ),
+            ("first.gandr", opened),
+            (
+                "unopened.gandr",
+                "import \"./base.gandr\" ;\ndef unseen : Nat ;\ndef unseen = Zero ;\n",
+            ),
+        ] {
+            std::fs::write(directory.join(file), text).expect("the source is written");
+        }
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        let mut server = Connected::default();
+        let initialize = serde_json::json!({"jsonrpc": "2.0", "id": 1_i32, "method": "initialize",
+            "params": {"capabilities": {}}});
+        let _answered = send(&mut server, Json(&initialize.to_string()));
+        let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+            "textDocument": {"uri": uri("first.gandr"), "languageId": "gandr", "version": 1_i32,
+                "text": opened}}});
+        let _published = send(&mut server, Json(&open.to_string()));
+        let references = |server: &mut Connected| {
+            let request = serde_json::json!({"jsonrpc": "2.0", "id": 10_i32,
+                "method": "textDocument/references", "params": {
+                    "textDocument": {"uri": uri("first.gandr")},
+                    "position": at(Line::from(2_u32), Character::from(14_u32)),
+                    "context": {"includeDeclaration": false}}});
+            send(server, Json(&request.to_string()))
+                .get(0)
+                .and_then(|answer| answer.get("result"))
+                .and_then(Value::as_array)
+                .map(|found| {
+                    found
+                        .iter()
+                        .filter_map(|location| location.get("uri").and_then(Value::as_str))
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        let folders = |side: &str| {
+            serde_json::json!({"jsonrpc": "2.0", "method": "workspace/didChangeWorkspaceFolders",
+                "params": {"event": {"added": [], "removed": [], side: [
+                    {"uri": format!("file://{}", directory.display()), "name": "scratch"}]}}})
+            .to_string()
+        };
+        assert_eq!(
+            references(&mut server),
+            [uri("first.gandr"), uri("base.gandr")],
+            "with no folder open, the open document and the name's own source are searched"
+        );
+        assert_eq!(
+            send(&mut server, Json(&folders("added"))),
+            serde_json::json!([]),
+            "a folder opened is answered with nothing"
+        );
+        assert_eq!(
+            references(&mut server),
+            [uri("first.gandr"), uri("base.gandr"), uri("unopened.gandr")],
+            "a folder opened since `initialize` is searched for importers no editor holds"
+        );
+        let _closed = send(&mut server, Json(&folders("removed")));
+        assert_eq!(
+            references(&mut server),
+            [uri("first.gandr"), uri("base.gandr")],
+            "a folder closed is not searched"
         );
         let _removed = std::fs::remove_dir_all(&directory);
     }
