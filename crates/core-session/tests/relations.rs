@@ -290,14 +290,23 @@ fn reference(
         })
         .collect();
     // Each changing pass removes at least one pair; the finite product bounds it.
+    let mut kept = BTreeSet::new();
     for _pass in 0 ..= candidates.len() {
-        let before = candidates.clone();
-        candidates.retain(|&(NodeId(a), NodeId(b))| {
-            compatible(&left[a], &right[b], relation, polarity, &before) == Decision::Related
-        });
-        if candidates == before {
+        kept.clear();
+        kept.extend(
+            candidates
+                .iter()
+                .copied()
+                .filter(|&(NodeId(a), NodeId(b))| {
+                    compatible(&left[a], &right[b], relation, polarity, &candidates)
+                        == Decision::Related
+                }),
+        );
+        // A pass only removes pairs, so an unchanged count is an unchanged set.
+        if kept.len() == candidates.len() {
             break;
         }
+        core::mem::swap(&mut candidates, &mut kept);
     }
     if candidates.contains(&(NodeId(0), NodeId(0))) {
         Decision::Related
