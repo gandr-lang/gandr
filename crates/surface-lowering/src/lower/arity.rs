@@ -2111,11 +2111,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   binder or declaration was written with the type `#{l : A, …}`: the
     ///   entry the label names, the name read as a value under the form's
     ///   frame, with the stated type and the label, so the mint projects a
-    ///   record by its label and a dependent record along the nesting; nothing
-    ///   is planned otherwise.
-    /// - fails: the unresolved-name refusal for a label the type lacks; the
-    ///   wrong-sort refusal where no computation is read; the name's own
-    ///   resolution refusals.
+    ///   record by its label and a dependent record along the nesting; a label
+    ///   a record lacks is projected all the same, for the checker to refuse;
+    ///   nothing is planned otherwise.
+    /// - fails: the unresolved-name refusal for a label a dependent record
+    ///   lacks; the wrong-sort refusal where no computation is read; the name's
+    ///   own resolution refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -2165,7 +2166,17 @@ impl<'source> Lowerer<'_, 'source>
         {
             return Ok(Planned(false));
         }
-        let (Place(index), _) = Self::labelled_in(&stated, self.name_at(selected), selected)?;
+        let index = match Self::labelled_in(&stated, self.name_at(selected), selected) {
+            Ok((Place(index), _)) => index,
+            // A record no entry depends on is projected at the label, which
+            // the checker refuses as a field the record lacks, as it refuses a
+            // record pattern naming it; a dependent record has no nesting
+            // that reaches the label.
+            Err(lacked) => match self.dependent_links(&stated)? {
+                Maybe::Absent(_) => stated.len(),
+                Maybe::Present(_) => return Err(lacked),
+            },
+        };
         let label = FieldLabel::from(String::from(self.name_at(selected).as_ref()));
         let frame = self.require(site, Produced::Computation)?;
         self.read(target.node, Reading::Value(frame));
