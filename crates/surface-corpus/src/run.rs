@@ -131,6 +131,32 @@ pub trait Runner
         &mut self,
         constant: ConstantIndex,
     ) -> RunSpelling;
+
+    /// The spelling of what running the declaration at `constant` produced,
+    /// though the checker refused it.
+    ///
+    /// # Specification
+    /// - requires: `constant` is the admission position of a declaration of the
+    ///   module being settled that the checker refused, and that states it runs
+    ///   beside the refusal.
+    /// - ensures: the spelling [`Self::run`] would give the declaration's
+    ///   lowered body, a run that stops short of a value or cannot be carried
+    ///   out included; the declaration alone runs refused, and a refused
+    ///   declaration it reaches stops the run as it would stop any.
+    /// - provides: the produced side of a `runs` beside a `refuses`.
+    /// - fails: never; a run that cannot be carried out is an outcome of its
+    ///   own, spelled.
+    /// - panics: none.
+    /// - executable: none — as [`Self::run`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refused declaration stating a run and one stating
+    ///   none; settlement asks only the first, and compares its spelling.
+    /// - witness: `settle::tests::a_run_beside_a_refusal_settles_only_when_both_hold`
+    fn run_refused(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling;
 }
 
 impl<Run> Runner for Run
@@ -143,6 +169,19 @@ where
     /// trivial.
     #[inline]
     fn run(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        self(constant)
+    }
+
+    /// Calls the closure: a closure spells a run by position, refused or not.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run_refused(
         &mut self,
         constant: ConstantIndex,
     ) -> RunSpelling

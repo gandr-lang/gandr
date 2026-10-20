@@ -653,16 +653,25 @@ impl<'step> Entries<'step>
                                     &Stated::Verdict(Outcome::Runs(_) | Outcome::Normalizes(_)),
                                     Outcome::Checks(_),
                                 ) => Unsettlement::Obligations,
-                                (&Stated::Verdict(Outcome::Refuses(_)), _) => {
-                                    Unsettlement::Unproduced
-                                },
+                                (
+                                    &Stated::Verdict(
+                                        Outcome::Refuses(_) | Outcome::RefusesRunning(..),
+                                    ),
+                                    _,
+                                ) => Unsettlement::Unproduced,
                                 (
                                     &Stated::Verdict(Outcome::Runs(_)),
-                                    Outcome::Runs(_) | Outcome::Refuses(_) | Outcome::Normalizes(_),
+                                    Outcome::Runs(_)
+                                    | Outcome::Refuses(_)
+                                    | Outcome::Normalizes(_)
+                                    | Outcome::RefusesRunning(..),
                                 ) => Unsettlement::RunOutcome,
                                 (
                                     &Stated::Verdict(Outcome::Normalizes(_)),
-                                    Outcome::Normalizes(_) | Outcome::Refuses(_) | Outcome::Runs(_),
+                                    Outcome::Normalizes(_)
+                                    | Outcome::Refuses(_)
+                                    | Outcome::Runs(_)
+                                    | Outcome::RefusesRunning(..),
                                 ) => Unsettlement::NormalForm,
                                 (&Stated::Malformed(_), _) => Unsettlement::Malformed,
                             },

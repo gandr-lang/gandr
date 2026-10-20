@@ -288,7 +288,8 @@ fn unsettled_by(declaration: &DeclarationReport<'_>) -> Unsettled
                 Outcome::Checks(_)
                 | Outcome::Refuses(_)
                 | Outcome::Runs(_)
-                | Outcome::Normalizes(_),
+                | Outcome::Normalizes(_)
+                | Outcome::RefusesRunning(..),
             )
             | Stated::Malformed(_)),
             _,

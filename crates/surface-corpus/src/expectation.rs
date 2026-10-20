@@ -3,25 +3,26 @@
 //!
 //! # A name states one verdict or none
 //!
-//! A declared name carries at most one expectation. Two on one name — `checks`
-//! beside `owes`, or one on the signature and another on the definition —
-//! state no verdict: the name is unsettled with
-//! [`ExpectationFault::ConflictingExpectations`], never resolved by picking
-//! one. A payload outside its schema's range states no verdict either, and
-//! is reported with the bytes it covers.
+//! A declared name carries one expectation, or a `runs` beside a `refuses`
+//! (see below). Any other two on one name — `checks` beside `owes`, or one on
+//! the signature and another on the definition — state no verdict:
+//! [`ExpectationFault::ConflictingExpectations`] names the first two, and the
+//! name is unsettled even when one of them would hold. A form that writes both
+//! halves, a signed function tail, is one form with one set of attributes, read
+//! once. A payload outside its schema's range — a negative `owes`, or one past
+//! every ledger size — likewise states nothing, with the bytes it covers. The
+//! lowering already refuses one attribute written twice; this crate refuses
+//! two different expectations.
 //!
-//! A declared name carries at most one expectation. Two on one name — `checks`
-//! beside `owes`, or one on the signature and another on the definition — state
-//! no verdict: `ExpectationFault::ConflictingExpectations` names the first two,
-//! and the name is unsettled even when one of them would hold. A form that
-//! writes both halves, a signed function tail, is one form with one set of
-//! attributes, read once. A payload outside its schema's range — a negative
-//! `owes`, or one past every ledger size — likewise states nothing, with the
-//! bytes it covers. The lowering already refuses one attribute written twice;
-//! this crate refuses two different expectations. The alternative was a
-//! precedence among schemas, which makes a contradiction pass silently on
-//! whichever side wins. The choice reverses if a schema is added that refines
-//! another rather than contradicting it.
+//! # A run beside a refusal states both
+//!
+//! `@[ runs("v"), refuses("Name") ]` states that the checker refuses the
+//! declaration with `Name` and that running it anyway comes to `v`: a program
+//! that runs while the checker refuses it, as a loop with no measure does. The
+//! two read as their conjunction, [`Outcome::RefusesRunning`], in either order.
+//! The declaration settles only when both hold: the produced refusal is `Name`
+//! and the runner, asked to run the refused declaration, spells `v`. It is a
+//! `refuses`, so the strict root guards it as it guards any.
 //!
 //! # A run outcome refines *checks*
 //!
@@ -316,17 +317,22 @@ pub enum Outcome
     /// The block checks, owing nothing, and its rules read a call to a normal
     /// form: the line `call ~> normal form`.
     Normalizes(RunSpelling),
+    /// The declaration is refused with the named refusal, and running it
+    /// anyway produces the outcome spelled: a program that runs while the
+    /// checker refuses it.
+    RefusesRunning(RefusalName, RunSpelling),
 }
 
 impl fmt::Display for Outcome
 {
-    /// Writes `checks owing n`, `refuses Name`, `runs to outcome` or
-    /// `normalizes call ~> normal form`.
+    /// Writes `checks owing n`, `refuses Name`, `runs to outcome`,
+    /// `normalizes call ~> normal form` or `refuses Name and runs to outcome`.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: writes the verdict kind and its count, refusal name, run
-    ///   spelling or normalization line.
+    ///   spelling or normalization line, or the refusal name and the run
+    ///   spelling together.
     /// - fails: propagates a refusing output sink as `fmt::Error`.
     /// - panics: none.
     /// - executable: none — the formatter exposes neither emitted text nor
@@ -353,6 +359,9 @@ impl fmt::Display for Outcome
             Self::Refuses(name) => write!(f, "refuses {name}"),
             Self::Runs(ref spelled) => write!(f, "runs to {spelled}"),
             Self::Normalizes(ref spelled) => write!(f, "normalizes {spelled}"),
+            Self::RefusesRunning(name, ref spelled) => {
+                write!(f, "refuses {name} and runs to {spelled}")
+            },
         }
     }
 }
@@ -598,9 +607,10 @@ pub struct Expectations
 ///   nothing, unguarded. Otherwise a fixture: guarded by the first expectation
 ///   in reading order its root does not admit — under the strict root an `owes`
 ///   or a `refuses` — and then stating checks owing nothing with no payload
-///   read; unguarded, stating its one expectation's verdict, or
+///   read; unguarded, stating its one expectation's verdict, the two together
+///   when it carries exactly a `runs` and a `refuses`, in either order, or
 ///   [`ExpectationFault::ConflictingExpectations`] naming the first two when it
-///   carries more than one.
+///   carries any other pair or more than two.
 /// - provides: the stated side of the settle comparison.
 /// - fails: [`SettleFault::UnreadablePayload`] when the one payload read is
 ///   absent from `arena`, or is not its schema's literal.
@@ -613,11 +623,11 @@ pub struct Expectations
 /// # Adequacy
 /// - hypothesis: L3 — all five schemas under both roots; negative, zero,
 ///   maximal and overflowing obligation counts; missing and wrong-kind
-///   payloads; absent, single and conflicting expectations. Exact membership,
-///   verdict, guard and source spans distinguish changed defaults, wrong schema
-///   readings and error-precedence changes. The iterator is consumed once, so
-///   its original sequence is observed by the fixtures, not replayed in the
-///   postcondition.
+///   payloads; absent, single, composed and conflicting expectations. Exact
+///   membership, verdict, guard and source spans distinguish changed defaults,
+///   wrong schema readings and error-precedence changes. The iterator is
+///   consumed once, so its original sequence is observed by the fixtures, not
+///   replayed in the postcondition.
 /// - witness: `expectation::tests::an_owes_payload_outside_the_counts_states_no_verdict`
 /// - witness: `expectation::tests::a_payload_the_arena_does_not_hold_is_unreadable`
 /// - witness: `expectation::tests::guard_and_conflict_precedence_preserve_the_first_spans`
@@ -625,6 +635,7 @@ pub struct Expectations
 /// - witness: `settle::tests::a_refusal_outside_the_vocabulary_fails_the_fixture`
 /// - witness: `settle::tests::a_name_carrying_two_expectations_states_none`
 /// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
+/// - witness: `expectation::tests::a_run_beside_a_refusal_states_both`
 #[spec(
     ensures: |ret| match ret {
     Ok(ref expectations) => {
@@ -643,7 +654,8 @@ pub struct Expectations
                     || expectations.stated == owing_nothing())
                     && (root != CorpusRoot::Strict
                         || !matches!(
-                            expectations.stated, Stated::Verdict(Outcome::Refuses(_))
+                            expectations.stated,
+                            Stated::Verdict(Outcome::Refuses(_) | Outcome::RefusesRunning(..))
                         ))
                     && (root != CorpusRoot::Strict
                         || !matches!(
@@ -689,12 +701,30 @@ where
             guard: Maybe::Present(refusal),
         });
     }
-    let stated = match written.get(1_usize) {
-        Some(&(_schema, second)) => Stated::Malformed(ExpectationFault::ConflictingExpectations {
+    let stated = match *written.as_slice() {
+        [
+            (ExpectationSchema::Runs, ran),
+            (ExpectationSchema::Refuses, refused),
+        ]
+        | [
+            (ExpectationSchema::Refuses, refused),
+            (ExpectationSchema::Runs, ran),
+        ] => {
+            let spelled = run_spelled(ran, arena)?;
+            match refusal_named(refused, arena)? {
+                Maybe::Present(name) => Stated::Verdict(Outcome::RefusesRunning(name, spelled)),
+                Maybe::Absent(refusal_name::Absent::Unnamed) => {
+                    Stated::Malformed(ExpectationFault::UnknownRefusal {
+                        span: refused.span(),
+                    })
+                },
+            }
+        },
+        [_, (_, second), ..] => Stated::Malformed(ExpectationFault::ConflictingExpectations {
             first: entry.span(),
             second: second.span(),
         }),
-        None => stated_by(schema, entry, arena)?,
+        [_] | [] => stated_by(schema, entry, arena)?,
     };
     Ok(Expectations {
         membership: Membership::Fixture,
@@ -809,29 +839,13 @@ fn stated_by(
             };
             Ok(obligations(integer, span))
         },
-        ExpectationSchema::Refuses => {
-            let literal = payload(entry, arena)?;
-            let Literal::Text(ref text) = *literal
-            else {
-                return Err(unreadable);
-            };
-            Ok(match RefusalName::named_by(text) {
-                Maybe::Present(name) => Stated::Verdict(Outcome::Refuses(name)),
-                Maybe::Absent(refusal_name::Absent::Unnamed) => {
-                    Stated::Malformed(ExpectationFault::UnknownRefusal { span })
-                },
-            })
-        },
-        ExpectationSchema::Runs => {
-            let literal = payload(entry, arena)?;
-            let Literal::Text(ref text) = *literal
-            else {
-                return Err(unreadable);
-            };
-            Ok(Stated::Verdict(Outcome::Runs(RunSpelling::from(
-                String::from(text.as_ref()),
-            ))))
-        },
+        ExpectationSchema::Refuses => Ok(match refusal_named(entry, arena)? {
+            Maybe::Present(name) => Stated::Verdict(Outcome::Refuses(name)),
+            Maybe::Absent(refusal_name::Absent::Unnamed) => {
+                Stated::Malformed(ExpectationFault::UnknownRefusal { span })
+            },
+        }),
+        ExpectationSchema::Runs => Ok(Stated::Verdict(Outcome::Runs(run_spelled(entry, arena)?))),
         ExpectationSchema::Normalizes => {
             let literal = payload(entry, arena)?;
             let Literal::Text(ref text) = *literal
@@ -848,6 +862,76 @@ fn stated_by(
             })
         },
     }
+}
+
+/// The refusal a `refuses` entry names, read out of `arena`.
+///
+/// # Specification
+/// - requires: `entry` is a `refuses` entry of the declaration being read.
+/// - ensures: the refusal its text payload spells exactly, or the unnamed
+///   absence for text outside the vocabulary.
+/// - fails: `UnreadablePayload` at the entry's span for an absent or non-text
+///   payload.
+/// - panics: none.
+///
+/// # Errors
+/// [`SettleFault::UnreadablePayload`] when the payload is not a text literal
+/// of `arena`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a named refusal and a near miss, alone and beside a run.
+/// - witness: `settle::tests::a_refusal_outside_the_vocabulary_fails_the_fixture`
+/// - witness: `expectation::tests::a_run_beside_a_refusal_states_both`
+#[spec(ensures: |ret| match ret {
+    | Ok(Maybe::Present(name)) => payload(entry, arena).is_ok_and(|literal| matches!(*literal, Literal::Text(ref text) if name.spelling().as_ref() == text.as_ref())),
+    | Ok(Maybe::Absent(refusal_name::Absent::Unnamed)) => payload(entry, arena).is_ok_and(|literal| matches!(*literal, Literal::Text(_))),
+    | Err(fault) => fault == SettleFault::UnreadablePayload { span: entry.span() },
+})]
+fn refusal_named(
+    entry: &AttributeEntry,
+    arena: &CoreArena,
+) -> Result<Maybe<RefusalName, refusal_name::Absent>, SettleFault>
+{
+    let literal = payload(entry, arena)?;
+    let Literal::Text(ref text) = *literal
+    else {
+        return Err(SettleFault::UnreadablePayload { span: entry.span() });
+    };
+    Ok(RefusalName::named_by(text))
+}
+
+/// The run outcome a `runs` entry spells, read out of `arena`.
+///
+/// # Specification
+/// - requires: `entry` is a `runs` entry of the declaration being read.
+/// - ensures: its text payload, unchanged.
+/// - fails: `UnreadablePayload` at the entry's span for an absent or non-text
+///   payload.
+/// - panics: none.
+///
+/// # Errors
+/// [`SettleFault::UnreadablePayload`] when the payload is not a text literal
+/// of `arena`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run alone and beside a refusal.
+/// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
+/// - witness: `expectation::tests::a_run_beside_a_refusal_states_both`
+#[spec(ensures: |ret| match ret {
+    | Ok(ref spelled) => payload(entry, arena).is_ok_and(|literal| matches!(*literal, Literal::Text(ref text) if spelled.as_ref() == text.as_ref())),
+    | Err(fault) => fault == SettleFault::UnreadablePayload { span: entry.span() },
+})]
+fn run_spelled(
+    entry: &AttributeEntry,
+    arena: &CoreArena,
+) -> Result<RunSpelling, SettleFault>
+{
+    let literal = payload(entry, arena)?;
+    let Literal::Text(ref text) = *literal
+    else {
+        return Err(SettleFault::UnreadablePayload { span: entry.span() });
+    };
+    Ok(RunSpelling::from(String::from(text.as_ref())))
 }
 
 /// The call a `normalizes` line reads: the text before its first `~>`,
@@ -1055,6 +1139,7 @@ mod tests
     use super::Membership;
     use super::Outcome;
     use super::Stated;
+    use super::guard;
     use super::owing_nothing;
     use super::read;
     use crate::fixture::RefusingWriter;
@@ -1206,6 +1291,93 @@ mod tests
             stated(CorpusRoot::Strict, misread, &empty),
             Ok(owing_nothing()),
             "the strict root reads no payload"
+        );
+    }
+
+    #[test]
+    fn a_run_beside_a_refusal_states_both()
+    {
+        let first = span(ByteOffset::from(3_usize), ByteOffset::from(12_usize));
+        let second = span(ByteOffset::from(14_usize), ByteOffset::from(40_usize));
+        let mut arena = CoreArena::new();
+        let text = |arena: &mut CoreArena, spelled: &str| {
+            Maybe::Present(
+                arena.value_literal(Literal::Text(StringLiteral::new(String::from(spelled)))),
+            )
+        };
+        let ran = text(&mut arena, "5");
+        let named = text(&mut arena, "HeldCaptured");
+        let unnamed = text(&mut arena, "HeldCapture");
+        let runs = AttributeEntry::new(
+            registered(SurfaceName::from("runs")),
+            AttributeSchema::Text,
+            ran,
+            first,
+        );
+        let refuses = AttributeEntry::new(
+            registered(SurfaceName::from("refuses")),
+            AttributeSchema::Text,
+            named,
+            second,
+        );
+        let misnamed = AttributeEntry::new(
+            registered(SurfaceName::from("refuses")),
+            AttributeSchema::Text,
+            unnamed,
+            second,
+        );
+        let normalizes = AttributeEntry::new(
+            registered(SurfaceName::from("normalizes")),
+            AttributeSchema::Text,
+            ran,
+            second,
+        );
+        let both = Stated::Verdict(Outcome::RefusesRunning(
+            RefusalName::HeldCaptured,
+            RunSpelling::from(String::from("5")),
+        ));
+        let stated = |root: CorpusRoot, entries: &[&AttributeEntry]| {
+            read(root, entries.iter().copied(), &arena)
+                .map(|expectations| (expectations.stated, expectations.guard))
+        };
+
+        for entries in [[&runs, &refuses], [&refuses, &runs]] {
+            assert_eq!(
+                stated(CorpusRoot::Fixture, &entries),
+                Ok((both.clone(), Maybe::Absent(guard::Absent::Admitted))),
+                "a run beside a refusal states both, in either order"
+            );
+            assert!(
+                matches!(
+                    stated(CorpusRoot::Strict, &entries),
+                    Ok((_, Maybe::Present(_)))
+                ),
+                "the strict root guards the refusal half"
+            );
+        }
+        assert_eq!(
+            stated(CorpusRoot::Fixture, &[&runs, &misnamed]),
+            Ok((
+                Stated::Malformed(ExpectationFault::UnknownRefusal { span: second }),
+                Maybe::Absent(guard::Absent::Admitted)
+            )),
+            "a refusal outside the vocabulary states nothing, beside a run as alone"
+        );
+        assert_eq!(
+            stated(CorpusRoot::Fixture, &[&runs, &normalizes]),
+            Ok((
+                Stated::Malformed(ExpectationFault::ConflictingExpectations { first, second }),
+                Maybe::Absent(guard::Absent::Admitted)
+            )),
+            "a run beside any other expectation still conflicts"
+        );
+        assert_eq!(
+            stated(CorpusRoot::Fixture, &[&runs, &refuses, &refuses]),
+            Ok((
+                Stated::Malformed(ExpectationFault::ConflictingExpectations { first, second }),
+                Maybe::Absent(guard::Absent::Admitted)
+            )),
+            "a third expectation beside the pair conflicts"
         );
     }
 
