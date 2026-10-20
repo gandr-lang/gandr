@@ -292,6 +292,7 @@ use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::CheckpointObserver;
 use gandr_core_incremental::CheckpointStore;
 use gandr_core_incremental::CheckpointStoreError;
+use gandr_core_incremental::Checkpoints;
 use gandr_core_incremental::IncrementalSession;
 use gandr_core_incremental::ItemCount;
 use gandr_core_incremental::ProgramError;
@@ -329,6 +330,7 @@ use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Threads;
+use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::judge_member;
 use gandr_surface_dispatcher::judge_member_after;
@@ -2185,7 +2187,10 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// # Specification
     /// - requires: as [`judge_unit_reading`](Self::judge_unit_reading).
     /// - ensures: as [`judge_unit_reading`](Self::judge_unit_reading); without
-    ///   a slot, the text is parsed through the form store and lowered whole.
+    ///   a slot, the text is parsed through the form store and lowered whole;
+    ///   with one, a session with nothing submitted resumes from the
+    ///   checkpoints the closure's items hold, and the first submission over
+    ///   the closure keeps its items' checkpoints there.
     /// - fails: as [`judge`](Self::judge).
     /// - panics: only by propagating a panic of `read`.
     /// - executable: none — as
@@ -2308,7 +2313,11 @@ impl<Store, Blocks> Session<Store, Blocks>
                 }));
             },
         };
-        let (census, persistence) = match self.incremental.submit(&mut items, &mut Quiet) {
+        let submitted = match closure.and_then(Closure::checkpoints) {
+            Some(seed) => self.incremental.submit_seeded(&mut items, seed, &mut Quiet),
+            None => self.incremental.submit(&mut items, &mut Quiet),
+        };
+        let (census, persistence) = match submitted {
             Ok(census) => (census, Persistence::Stored),
             Err(SessionError::Resume(error)) => return Err(SessionFault::Resume(error)),
             // The incremental session keeps the new resume when persisting
@@ -2319,6 +2328,19 @@ impl<Store, Blocks> Session<Store, Blocks>
                 Maybe::Absent(_) => return Err(SessionFault::Store(error)),
             },
         };
+        if let (Some(closure), Maybe::Present(resume)) = (closure, self.incremental.last()) {
+            let checkpoints = resume.checkpoints();
+            closure.keep_checkpoints(|| {
+                Checkpoints::new(
+                    checkpoints.budget(),
+                    checkpoints
+                        .items()
+                        .get(.. boundary)
+                        .unwrap_or_default()
+                        .to_vec(),
+                )
+            });
+        }
         let edits = diff(&self.snapshot, &snapshot);
         self.imports = imports;
         self.snapshot = snapshot;
@@ -2665,7 +2687,60 @@ impl<Store, Blocks> Session<Store, Blocks>
             Some((unit, base)),
             self.threads,
         )
-        .map(|(parsed, _census)| parsed)
+        .map(|(parsed, _census, _closure)| parsed)
+    }
+
+    /// The type table of `revision`, the text `unit` lays out with the
+    /// document's own text from `base` on, parsed as
+    /// [`parse_held_unit`](Self::parse_held_unit) parses it, `read` handed its
+    /// tree first: typed after the closure's judgement under the session's
+    /// root when the process holds the closure's lowering and the closure
+    /// lowers to its end, else typed whole.
+    ///
+    /// # Specification
+    /// - requires: as [`judge_unit_reading`](Self::judge_unit_reading).
+    /// - ensures: [`TypeTable::of_parsed_after`] over the closure's judgement
+    ///   ([`Closure::judged`]) under the session's root when the process holds
+    ///   the closure's lowering and that judgement is made, else
+    ///   [`TypeTable::of_parsed_unit`]; `None` when the text does not parse or
+    ///   the lowering faults.
+    /// - provides: the table a hover reads, typed in the document's size.
+    /// - fails: never; a fault answers `None`.
+    /// - panics: only by propagating a panic of `read` or a molding thread's.
+    /// - executable: none — the table is the dispatcher's typed run, whose own
+    ///   specification states what it holds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an importer's hover answers its imported names at
+    ///   their declarations' types.
+    /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
+    #[inline]
+    #[must_use]
+    pub fn type_held_unit<'text, Read>(
+        &self,
+        revision: SourceText<'text>,
+        (unit, base): (&Unit, ByteOffset),
+        read: Read,
+    ) -> Option<TypeTable>
+    where
+        Read: FnOnce(&SyntaxTree<'text>),
+    {
+        let (parsed, _census, closure) = parse_held_laid(
+            &self.grammar,
+            &self.forms,
+            revision,
+            Some((unit, base)),
+            self.threads,
+        )
+        .ok()?;
+        read(parsed.tree());
+        match closure
+            .as_deref()
+            .and_then(|closure| closure.judged(self.root.corpus_root()))
+        {
+            Some(judged) => TypeTable::of_parsed_after(judged, parsed, unit, base).ok(),
+            None => TypeTable::of_parsed_unit(&self.grammar, parsed, unit, base).ok(),
+        }
     }
 
     /// The lowering the process holds for `revision`'s closure — its text
@@ -3085,9 +3160,9 @@ fn closure_of<'revision, 'unit>(
 ///
 /// # Specification
 /// - requires: `laid`, when given, lays `revision` out.
-/// - ensures: the joined parse and the document's form census when the process
-///   holds the closure's lowering, else [`FormStore::parse_held`] of
-///   `revision`.
+/// - ensures: the joined parse, the document's form census and the closure when
+///   the process holds the closure's lowering, else [`FormStore::parse_held`]
+///   of `revision` and no closure.
 /// - fails: the commit's [`MeldError`], and a join the closure's tree refuses
 ///   as [`MeldError::Build`].
 /// - panics: only by propagating a molding thread's panic.
@@ -3100,14 +3175,14 @@ fn closure_of<'revision, 'unit>(
 ///   read the tree a judgement of the same text reads.
 /// - witness: `tests::trial::each_candidate_is_judged_as_a_fresh_session_judges_it`
 /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
-#[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(ref parsed, _)| parsed.tree().source() == revision))]
+#[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(ref parsed, _, _)| parsed.tree().source() == revision))]
 fn parse_held_laid<'text>(
     grammar: &Pbg,
     forms: &FormStore,
     revision: SourceText<'text>,
     laid: Option<(&Unit, ByteOffset)>,
     threads: Threads,
-) -> Result<(ParseResult<'text>, FormCensus), MeldError>
+) -> Result<(ParseResult<'text>, FormCensus, Option<Arc<Closure>>), MeldError>
 {
     let held = laid
         .and_then(|(unit, base)| closure_of(revision, unit, base))
@@ -3123,9 +3198,11 @@ fn parse_held_laid<'text>(
             let joined = parsed
                 .after(closure.lowering().tree(), revision)
                 .map_err(MeldError::Build)?;
-            Ok((joined, census))
+            Ok((joined, census, Some(closure)))
         },
-        Some(Held::Whole) | None => forms.parse_held(grammar, revision, threads),
+        Some(Held::Whole) | None => forms
+            .parse_held(grammar, revision, threads)
+            .map(|(parsed, census)| (parsed, census, None)),
     }
 }
 
@@ -3176,7 +3253,7 @@ fn try_candidate<'text>(
         Laying::Alone => None,
         Laying::Member { unit, base: own } => Some((unit, own)),
     };
-    let (parsed, census) = parse_held_laid(grammar, forms, candidate, laid_out, threads)
+    let (parsed, census, _closure) = parse_held_laid(grammar, forms, candidate, laid_out, threads)
         .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
     let lowering = match laying {
         Laying::Alone => lower_parsed(grammar, parsed, &mut LoweringCount::default()),

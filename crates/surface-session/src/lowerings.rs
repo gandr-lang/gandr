@@ -28,6 +28,7 @@ use std::sync::OnceLock;
 use std::sync::PoisonError;
 
 use anodized::spec;
+use gandr_core_incremental::Checkpoints;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::JudgedClosure;
@@ -54,7 +55,8 @@ pub enum Held
 }
 
 /// A closure's lowering, with its own declarations' judgement under each root
-/// once a document laid after it asks for it.
+/// once a document laid after it asks for it, and the checkpoints of its
+/// declarations' items once a submission has judged them.
 ///
 /// # Specification
 /// trivial.
@@ -69,6 +71,9 @@ pub struct Closure
     strict: OnceLock<Option<JudgedClosure>>,
     /// The same, settled under the fixture root.
     fixture: OnceLock<Option<JudgedClosure>>,
+    /// The checkpoints of the items its declarations lead a submitted program
+    /// with, kept by the first submission that judged them.
+    checkpoints: OnceLock<Checkpoints>,
 }
 
 impl Closure
@@ -84,6 +89,7 @@ impl Closure
             lowering: Arc::new(lowering),
             strict: OnceLock::new(),
             fixture: OnceLock::new(),
+            checkpoints: OnceLock::new(),
         }
     }
 
@@ -130,6 +136,41 @@ impl Closure
             JudgedClosure::new(Arc::clone(&self.lowering), &HostGrant::UNBOUNDED, root)
         })
         .as_ref()
+    }
+
+    /// The checkpoints of the items the closure's declarations lead a
+    /// submitted program with, once a submission has kept them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn checkpoints(&self) -> Option<&Checkpoints>
+    {
+        self.checkpoints.get()
+    }
+
+    /// Keep `checkpoints` as the closure's items' checkpoints, unless a
+    /// submission kept them before.
+    ///
+    /// # Specification
+    /// - requires: `checkpoints` are a submission's checkpoints of the items
+    ///   the closure's declarations lead its program with.
+    /// - ensures: the closure holds checkpoints, the first kept.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a second session's first submission over a document
+    ///   laid after the closure adopts the closure's items.
+    /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
+    #[spec(ensures: self.checkpoints.get().is_some())]
+    pub fn keep_checkpoints<Make>(
+        &self,
+        checkpoints: Make,
+    ) where
+        Make: FnOnce() -> Checkpoints,
+    {
+        let _kept = self.checkpoints.get_or_init(checkpoints);
     }
 }
 

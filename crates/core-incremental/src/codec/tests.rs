@@ -1530,7 +1530,7 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
         Err(CodecError::Corrupt)
     );
     let mut program = CheckpointBytes::default();
-    write_program(&mut program, &[]).expect("empty program");
+    write_program::<_, crate::content::ItemContent>(&mut program, &[]).expect("empty program");
     assert_eq!(program.as_ref(), b"GPROG\0\0\x09\0\0\0\0\0\0\0\0");
     assert_eq!(
         decode_checkpoints(Bytes(program.as_ref())),

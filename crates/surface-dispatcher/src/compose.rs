@@ -1552,6 +1552,34 @@ impl JudgedClosure
     {
         self.0.borrow_dependent()
     }
+
+    /// The checker's state after the closure's last declaration and the
+    /// closure's declarations, when `declarations` lead with them.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Some` exactly when the closure's declarations are a prefix
+    ///   of `declarations`; then the state the checker holds after them and
+    ///   that prefix.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a document typed after its closure types its own
+    ///   declarations alone, on the closure's state.
+    /// - witness: `typed::tests::a_document_typed_after_its_closure_types_as_one_typed_whole_776`
+    #[spec(ensures: |ret| ret.is_some() == (declarations.get(.. self.judgement().declarations.len())
+        == Some(self.judgement().declarations.as_slice())))]
+    pub(crate) fn led(
+        &self,
+        declarations: &[Declaration],
+    ) -> Option<(&Checkpoint, &[Declaration])>
+    {
+        let judgement = self.judgement();
+        (declarations.get(.. judgement.declarations.len())
+            == Some(judgement.declarations.as_slice()))
+        .then_some((&judgement.checkpoint, judgement.declarations.as_slice()))
+    }
 }
 
 impl fmt::Debug for JudgedClosure
