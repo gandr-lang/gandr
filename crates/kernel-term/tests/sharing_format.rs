@@ -2657,8 +2657,10 @@ fn arbitrary_bytes_never_panic()
 
     let mut state = 0x2545_f491_4f6c_dd1d_u64;
     let mut trial = 0_u32;
+    let mut bytes: Vec<u8> = Vec::with_capacity(28);
     while trial < 512 {
-        let mut bytes: Vec<u8> = b"GKX1".to_vec();
+        bytes.clear();
+        bytes.extend_from_slice(b"GKX1");
         let mut remaining = 24_u32;
         while remaining > 0 {
             state = state
