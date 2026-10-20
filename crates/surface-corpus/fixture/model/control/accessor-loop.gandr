@@ -1,0 +1,93 @@
+// Loop-carried state. A `while` or a `loop` that names a slot held around it
+// carries the slot through its passes: each pass reads the value the pass
+// before left there, and what follows the loop reads the value the last pass
+// left. The loop is a fold whose accumulator is the slot (Hutton, "A tutorial
+// on the universality and expressiveness of fold", _Journal of Functional
+// Programming_ 9(4), 1999).
+
+/// A count held at three and taken down by one on each pass: the condition
+/// reads the value the pass before wrote back, so the loop stops at zero.
+@[ runs("0") ]
+def countdown() -> -F Integer {
+  hold n = 3;
+  while n > 0 { access n as v { resume(v, v - 1) } };
+  pure n
+}
+
+/// Two slots carried together, each keeping its own: the first counts down
+/// while the second counts up.
+@[ runs("704") ]
+def opposed() -> -F Integer {
+  hold a = 10;
+  hold b = 1;
+  while b < 4 {
+    access b as v { resume(v, v + 1) };
+    access a as w { resume(w, w - 1) }
+  };
+  pure a * 100 + b
+}
+
+/// An accumulator: each pass adds the count to the total before taking the
+/// count down, so the total ends as three plus two plus one.
+@[ runs("6") ]
+def sum() -> -F Integer {
+  hold i = 3;
+  hold total = 0;
+  while i > 0 {
+    access total as t { resume(t, t + i) };
+    access i as v { resume(v, v - 1) }
+  };
+  pure total
+}
+
+/// A slot the loop never names but what follows it reads is carried as well,
+/// unchanged.
+@[ runs("7") ]
+def beside() -> -F Integer {
+  hold a = 4;
+  hold b = 3;
+  while b > 0 { access b as v { resume(v, v - 1) } };
+  pure a + 3
+}
+
+/// A pass ending in `continue` hands the next pass the slot as it left it.
+@[ runs("0") ]
+def skipping() -> -F Integer {
+  hold n = 3;
+  while n > 0 {
+    access n as v { resume(v, v - 1) };
+    continue
+  };
+  pure n
+}
+
+/// A `loop` left by a `break`: the break's value reads the slot the pass
+/// wrote, and the statement binds it.
+@[ runs("5") ]
+def climb() -> -F Integer {
+  hold n = 0;
+  run m <- loop {
+    access n as v { resume(v, v + 1) };
+    run done <- n >= 5;
+    case done {
+      true => break(n),
+      false => continue,
+    }
+  };
+  pure m
+}
+
+/// A bare `break`: what follows the loop reads the slot the last pass left.
+@[ runs("4") ]
+def stride() -> -F Integer {
+  hold n = 0;
+  loop {
+    access n as v { resume(v, v + 2) };
+    run done <- n >= 4;
+    case done {
+      true => break,
+      false => continue,
+    }
+  };
+  pure n
+}

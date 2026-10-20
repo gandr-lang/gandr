@@ -2281,6 +2281,60 @@ pub fn repair_at(
     })
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a node carries no tile label.
+    pub mod tiled {
+        /// The node is no tile the grammar labels.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// A meld, grout, layout, or a tile whose mold `pbg` does not
+            /// hold.
+            Untiled,
+        }
+    }
+}
+
+/// The label `pbg` gives the tile `node`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the label the mold table holds for a tile's mold; the untiled
+///   absence for a meld, grout, layout and a tile of an unknown mold.
+/// - provides: the names a walk over a subtree reads, without reading each
+///   form's pieces.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the slot a `while` names in its condition and in an
+///   access is found, and the keywords and operators beside it are not.
+/// - witness: `lower::loops::tests::a_loop_threads_the_slots_it_names_through_its_passes`
+#[spec(ensures: |ret| match (node.label(), ret) {
+    | (NodeLabel::Tile(mold), Maybe::Present(label)) => pbg.mold(mold).is_ok_and(|held| held.label == label.0),
+    | (NodeLabel::Tile(mold), Maybe::Absent(tiled::Absent::Untiled)) => pbg.mold(mold).is_err(),
+    | (_, Maybe::Present(_)) => false,
+    | (_, Maybe::Absent(tiled::Absent::Untiled)) => true,
+})]
+pub fn tile_label(
+    pbg: &Pbg,
+    node: &Node,
+) -> Maybe<TileName, tiled::Absent>
+{
+    match node.label() {
+        NodeLabel::Tile(mold) => pbg
+            .mold(mold)
+            .map_or(Maybe::Absent(tiled::Absent::Untiled), |held| {
+                Maybe::Present(TileName(held.label))
+            }),
+        NodeLabel::Wald
+        | NodeLabel::Meld(_)
+        | NodeLabel::Grout { .. }
+        | NodeLabel::GhostClose { .. }
+        | NodeLabel::Space
+        | NodeLabel::Doc => Maybe::Absent(tiled::Absent::Untiled),
+    }
+}
+
 /// The label `mold`'s tile carries under `pbg`.
 ///
 /// # Specification

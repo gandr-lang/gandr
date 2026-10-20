@@ -1,0 +1,15 @@
+/// A loop inside another loop's body carries no slot through its passes: the
+/// outer body's ends continue what follows the outer loop, so the inner loop
+/// reads the slot it names inside a fixpoint (#1143).
+@[ refuses("HeldCaptured") ]
+def nested() -> -F Integer {
+  hold n = 0;
+  hold i = 3;
+  while i > 0 {
+    while n < 3 {
+      access n as v { resume(v, v + 1) }
+    };
+    access i as u { resume(u, u - 1) }
+  };
+  pure n
+}
