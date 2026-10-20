@@ -13,11 +13,16 @@
 //! - it opens with a `///` comment naming its rule or attribute in backticks;
 //! - it parses with no obligation left;
 //! - a rule's exemplar holds one item: one top-level form besides its attribute
-//!   blocks;
+//!   blocks; a rule holding a glyph tile holds two, one per spelling;
 //! - its tree holds a tile molded by its rule, or, for an attribute, the source
 //!   lowers, no declaration is refused and the attribute is filed on one. The
 //!   `doc` attribute is filed as documentation, so its exemplar's declaration
-//!   must carry documentation beyond the opening comment's lines.
+//!   must carry documentation beyond the opening comment's lines;
+//! - a glyph rule's exemplar writes each spelling the spelling table gives: a
+//!   tile of the rule written as the glyph, and one written as its ASCII token,
+//!   or, for a glyph the table pairs with a head, a call of the head. The table
+//!   is the one the labeler reads, so an ASCII spelling added to it fails here
+//!   until its exemplar writes it.
 //!
 //! An attribute's exemplar may hold, besides the item it decorates, the
 //! declarations its payload names: `entry` names a world, `respects` a law,
@@ -50,8 +55,11 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_core_term::CoreArena;
+use gandr_surface_grammar::Ascii;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::RuleName;
+use gandr_surface_grammar::SPELLED;
+use gandr_surface_grammar::Spelled;
 use gandr_surface_lowering::AttributeRegistry;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweringBudget;
@@ -155,11 +163,22 @@ pub enum ExemplarFault
         /// How many.
         count: usize,
     },
-    /// A rule's exemplar holds other than one item.
+    /// A rule's exemplar holds another number of items than it shows
+    /// spellings.
     Items
     {
         /// How many top-level forms besides attribute blocks it holds.
         count: usize,
+        /// How many it should hold: one per spelling.
+        expected: usize,
+    },
+    /// A glyph rule's exemplar does not write one of its spellings.
+    Unwritten
+    {
+        /// The rule.
+        rule: String,
+        /// The text no tile of the rule is written with.
+        spelling: &'static str,
     },
     /// The tree holds no tile its rule molds.
     Unmolded
@@ -205,8 +224,14 @@ impl core::fmt::Display for ExemplarFault
                 count,
                 noun: "obligation"
             }),
-            Self::Items { count } => {
-                write!(f, "holds {count} items where an exemplar holds one")
+            Self::Items { count, expected } => {
+                write!(f, "holds {} where it shows {expected}", super::Counted {
+                    count,
+                    noun: "item"
+                })
+            },
+            Self::Unwritten { ref rule, spelling } => {
+                write!(f, "writes no tile of rule `{rule}` as `{spelling}`")
             },
             Self::Unmolded { ref rule } => {
                 write!(f, "its tree holds no tile molded by rule `{rule}`")
@@ -441,8 +466,9 @@ fn listed(folder: &Path) -> Result<BTreeSet<PathBuf>, LedgerFault>
 /// # Specification
 /// - requires: nothing.
 /// - ensures: `Ok` exactly when the file reads, opens with a comment naming the
-///   subject, parses with no obligation, holds one item, and holds a tile of
-///   the subject's rule or files the subject's attribute.
+///   subject, parses with no obligation, holds one item per spelling of its
+///   rule, holds a tile of the subject's rule or files the subject's attribute,
+///   and writes each spelling of a glyph rule.
 /// - fails: the first check that does not hold.
 /// - panics: none.
 ///
@@ -453,6 +479,7 @@ fn listed(folder: &Path) -> Result<BTreeSet<PathBuf>, LedgerFault>
 /// - hypothesis: L3 — each check is broken alone by a witness and named.
 /// - witness: `ledger::exemplars::tests::each_check_names_its_file`
 /// - witness: `ledger::exemplars::tests::an_exemplar_of_another_form_lacks_the_mold`
+/// - witness: `ledger::exemplars::tests::a_glyph_exemplar_writes_both_spellings`
 #[spec(ensures: |ref ret| ret.is_ok() || !matches!(*ret, Err(ExemplarFault::Missing { .. } | ExemplarFault::Stray)))]
 fn exemplar(
     pbg: &Pbg,
@@ -480,14 +507,22 @@ fn exemplar(
         return Err(ExemplarFault::Obligations { count });
     }
     let tree = parsed.tree();
+    let glyphs = match subject {
+        Subject::Rule(rule) => glyphs_of(pbg, rule),
+        Subject::Attribute(_) => Vec::new(),
+    };
     if let Subject::Rule(_) = subject {
         let items = tree
             .forms()
             .iter()
             .filter(|&&form| rule_of(pbg, tree, form) != Maybe::Present(ATTRIBUTE_BLOCK))
             .count();
-        if items != 1 {
-            return Err(ExemplarFault::Items { count: items });
+        let expected = if glyphs.is_empty() { 1 } else { 2 };
+        if items != expected {
+            return Err(ExemplarFault::Items {
+                count: items,
+                expected,
+            });
         }
     }
     let header = Header {
@@ -497,7 +532,10 @@ fn exemplar(
             .count(),
     };
     match subject {
-        Subject::Rule(rule) => molded(pbg, tree, rule),
+        Subject::Rule(rule) => {
+            molded(pbg, tree, rule)?;
+            written(pbg, tree, rule, &glyphs)
+        },
         Subject::Attribute(attribute) => filed(pbg, tree, attribute, header),
     }
 }
@@ -528,6 +566,111 @@ fn rule_of(
         | NodeLabel::Space
         | NodeLabel::Doc => Maybe::Absent(()),
     }
+}
+
+/// The spelling table's entries for the glyph tiles `rule` molds, in table
+/// order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each [`SPELLED`] entry whose tile labels a mold of `rule`, once.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the glyph rules' exemplars are held to two items and a
+///   rule with no glyph to one.
+/// - witness: `ledger::exemplars::tests::the_committed_exemplars_verify`
+/// - witness: `ledger::exemplars::tests::a_glyph_exemplar_writes_both_spellings`
+#[spec(ensures: |ret| ret.iter().all(|entry| SPELLED.contains(entry)))]
+fn glyphs_of(
+    pbg: &Pbg,
+    rule: RuleName,
+) -> Vec<Spelled>
+{
+    SPELLED
+        .iter()
+        .copied()
+        .filter(|entry| {
+            pbg.iter_molds().any(|(mold, def)| {
+                def.label == entry.tile.0
+                    && pbg
+                        .rule_of(mold)
+                        .is_ok_and(|owner| RuleName(owner.name) == rule)
+            })
+        })
+        .collect()
+}
+
+/// Whether `tree` writes each spelling of `glyphs`: a tile of `rule`
+/// written as the glyph, and one written as the ASCII token or, for a head,
+/// a tile written as the head.
+///
+/// # Specification
+/// - requires: `glyphs` are [`glyphs_of`] `rule`.
+/// - ensures: `Ok` exactly when every spelling of every entry is written.
+/// - fails: the first spelling no tile is written with, glyph before ASCII.
+/// - panics: none.
+///
+/// # Errors
+/// [`ExemplarFault::Unwritten`] naming the rule and the spelling.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the committed glyph exemplars write both; one with its
+///   ASCII item respelled as the glyph lacks the token, and the isomorphism's
+///   without its call lacks the head.
+/// - witness: `ledger::exemplars::tests::a_glyph_exemplar_writes_both_spellings`
+#[spec(ensures: |ref ret| ret.is_ok() || matches!(*ret, Err(ExemplarFault::Unwritten { .. })))]
+fn written(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    rule: RuleName,
+    glyphs: &[Spelled],
+) -> Result<(), ExemplarFault>
+{
+    let tile_written = |label: &str, text: &str, of_rule: bool| {
+        tree.positions().any(|position| {
+            let Some(node) = tree.node(position)
+            else {
+                return false;
+            };
+            let NodeLabel::Tile(mold) = node.label()
+            else {
+                return false;
+            };
+            pbg.mold(mold).is_ok_and(|def| def.label == label)
+                && (!of_rule || rule_of(pbg, tree, position) == Maybe::Present(rule))
+                && tree
+                    .fragment(position)
+                    .is_some_and(|fragment| <&str>::from(fragment) == text)
+        })
+    };
+    for entry in glyphs {
+        let glyph = entry.tile.0;
+        if !tile_written(glyph, glyph, true) {
+            return Err(ExemplarFault::Unwritten {
+                rule: rule.to_string(),
+                spelling: glyph,
+            });
+        }
+        let ascii_written = match entry.ascii {
+            Ascii::Token(token) => tile_written(glyph, token.0, true),
+            Ascii::Head(head) => tree.positions().any(|position| {
+                tree.node(position)
+                    .is_some_and(|node| matches!(node.label(), NodeLabel::Tile(_)))
+                    && tree
+                        .fragment(position)
+                        .is_some_and(|fragment| <&str>::from(fragment) == head.0)
+            }),
+        };
+        if !ascii_written {
+            let (Ascii::Token(spelling) | Ascii::Head(spelling)) = entry.ascii;
+            return Err(ExemplarFault::Unwritten {
+                rule: rule.to_string(),
+                spelling: spelling.0,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Whether some tile of `tree` is molded by `rule`.
@@ -820,9 +963,37 @@ mod tests
         assert_eq!(named(&report), [
             "block.gandr: parses with 2 obligations left",
             "case_expression.gandr: does not open with a `///` comment naming rule `case_expression`",
-            "number.expression.gandr: holds 2 items where an exemplar holds one",
+            "number.expression.gandr: holds 2 items where it shows 1",
             "doc.gandr: the attribute `doc` is filed on no declaration",
             "entry.gandr: the lowering refuses it: no declaration or binder answers `seat`",
+        ]);
+    }
+
+    #[test]
+    fn a_glyph_exemplar_writes_both_spellings()
+    {
+        let directory = copied(Path::new("glyphs"));
+        for (file, text) in [
+            (
+                "syntax/equivalence_type.gandr",
+                "/// `equivalence_type`: the glyph twice.\ndef a : Type ≃ Type ;\ndef b : Type ≃ Type ;\n",
+            ),
+            (
+                "syntax/isomorphism_type.gandr",
+                "/// `isomorphism_type`: no call.\ndef a : Type ≅ Type ;\ndef b : Type ≅ Type ;\n",
+            ),
+            (
+                "syntax/universe_flow_type.gandr",
+                "/// `universe_flow_type`: one spelling.\ndef a : Type ⇝ Type ;\n",
+            ),
+        ] {
+            std::fs::write(directory.join(file), text).expect("the exemplar is replaced");
+        }
+        let report = verified(&directory);
+        assert_eq!(named(&report), [
+            "equivalence_type.gandr: writes no tile of rule `equivalence_type` as `<~>`",
+            "isomorphism_type.gandr: writes no tile of rule `isomorphism_type` as `Iso`",
+            "universe_flow_type.gandr: holds 1 item where it shows 2",
         ]);
     }
 }

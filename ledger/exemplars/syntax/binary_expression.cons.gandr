@@ -1,2 +1,3 @@
-/// `binary_expression.cons`: path cons: a step before the rest of a path.
+/// `binary_expression.cons`: path cons: a step before the rest of a path, written with its glyph and in ASCII.
 def flipped = here(back(loop) ∷ here(Base)) ;
+def flippedAscii = here(back(loop) :: here(Base)) ;

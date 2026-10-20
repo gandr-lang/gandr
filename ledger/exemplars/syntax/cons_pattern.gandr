@@ -1,7 +1,13 @@
-/// `cons_pattern`: a path cons pattern: a step and the rest of the path.
+/// `cons_pattern`: a path cons pattern: a step and the rest of the path, written with its glyph and in ASCII.
 def tell(p : Path(Circle, Base, Base)) -> -F Integer {
   case p {
     here => 0,
     loop ∷ q => 1
+  }
+}
+def tellAscii(p : Path(Circle, Base, Base)) -> -F Integer {
+  case p {
+    here => 0,
+    loop :: q => 1
   }
 }

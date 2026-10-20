@@ -101,12 +101,15 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_surface_grammar::Ascii;
+use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::RegexShape;
 use gandr_surface_grammar::RegexView;
 use gandr_surface_grammar::RoleTable;
 use gandr_surface_grammar::RuleName;
+use gandr_surface_grammar::SPELLED;
 use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::Sym;
 use gandr_surface_grammar::TREE_SITTER_NAMED_KINDS;
@@ -384,6 +387,8 @@ struct RuleRow
     tree_sitter: TreeSitterKind,
     /// The form, spelled for reading.
     form: String,
+    /// The form in its ASCII spelling, for a rule holding a glyph tile.
+    ascii: Option<String>,
     /// The form as a tree, every tile with its mold.
     tree: Value,
     /// The highlight roles of its tiles, each once, first use first.
@@ -466,6 +471,19 @@ impl SyntaxLedger
                 .name(rule.prec)
                 .map(|name| name.to_string())
                 .ok_or(LedgerFault::Group { rule: rule.name })?;
+            let view = rule.regex().view();
+            let form = spelled(
+                view,
+                &abbreviations,
+                RuleName(rule.name),
+                gandr_surface_grammar::Spelling::Unicode,
+            );
+            let ascii = spelled(
+                view,
+                &abbreviations,
+                RuleName(rule.name),
+                gandr_surface_grammar::Spelling::Ascii,
+            );
             rules.push(RuleRow {
                 name: rule.name,
                 sort: rule.sort,
@@ -477,7 +495,8 @@ impl SyntaxLedger
                 else {
                     TreeSitterKind::GrammarOnly
                 },
-                form: spelled(rule.regex().view(), &abbreviations, RuleName(rule.name)),
+                ascii: (ascii != form).then_some(ascii),
+                form,
                 tree: tree.value,
                 roles: tree.roles,
                 standing: standing::standing(&pbg, rule)?,
@@ -598,7 +617,8 @@ impl SyntaxLedger
         out.push_str(
             "| `⟨block⟩` | the whole form of rule `block`, written out in place: its tiles are this rule's own |\n\n",
         );
-        out.push_str("Each committed rule links its exemplar, a small source the exemplar gate parses and checks for a tile of the rule. The group is the rule's precedence group. The kind is the named node kind the rule realises; `*` marks a kind the surface's tree-sitter grammar does not have. The roles are the highlight roles of the rule's tiles, each once, first use first.\n");
+        out.push_str("A rule holding a glyph tile writes its form twice: the glyph spelling, then `or` and the ASCII spelling the labeler reads as the same tile. The isomorphism's ASCII spelling is a call of `Iso` over its operands, which the lowering reads as the same type.\n\n");
+        out.push_str("Each committed rule links its exemplar, a small source the exemplar gate parses and checks for a tile of the rule; a glyph rule's exemplar holds one item per spelling, and the gate checks each is written. The group is the rule's precedence group. The kind is the named node kind the rule realises; `*` marks a kind the surface's tree-sitter grammar does not have. The roles are the highlight roles of the rule's tiles, each once, first use first.\n");
         for (sort, rows) in &by_sort {
             write!(out, "\n## `{}` — {}\n\n", sort.name(), Counted {
                 count: rows.len(),
@@ -620,7 +640,7 @@ impl SyntaxLedger
                 writeln!(
                     out,
                     "| [`{name}`](exemplars/syntax/{name}.gandr) | {} | `{}` | `{}`{marker} | {roles} |",
-                    Code(&row.form),
+                    Forms(row),
                     row.group,
                     row.kind,
                     name = row.name,
@@ -648,7 +668,7 @@ impl SyntaxLedger
                 "| `{}` | {} | {} | {reason} | {} |",
                 row.name,
                 row.sort.name(),
-                Code(&row.form),
+                Forms(row),
                 reason.evidence()
             )?;
         }
@@ -801,6 +821,9 @@ fn rule_json(row: &RuleRow) -> Value
         Value::from(row.tree_sitter == TreeSitterKind::Shared),
     );
     fields.insert("form".to_owned(), Value::from(row.form.clone()));
+    if let Some(ref ascii) = row.ascii {
+        fields.insert("ascii".to_owned(), Value::from(ascii.clone()));
+    }
     fields.insert("roles".to_owned(), json!(row.roles));
     fields.insert("tree".to_owned(), row.tree.clone());
     match row.standing {
@@ -898,6 +921,45 @@ impl core::fmt::Display for Code<'_>
             ""
         };
         write!(f, "{fence}{pad}{}{pad}{fence}", text.replace('|', "\\|"))
+    }
+}
+
+/// A rule's form as a table cell: its code span, and its ASCII spelling's
+/// after `or` where the rule has one.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Forms<'row>(&'row RuleRow);
+
+impl core::fmt::Display for Forms<'_>
+{
+    /// Writes the cell.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the form as [`Code`] writes it, then ` or ` and the ASCII
+    ///   form the same way when the row has one.
+    /// - fails: what the formatter fails with.
+    /// - panics: none.
+    /// - executable: none — the cell goes to the formatter; the witness reads
+    ///   the written text.
+    ///
+    /// # Errors
+    /// The formatter's error.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a glyph rule's row holds both spellings, and a rule
+    ///   with none holds its form alone.
+    /// - witness: `ledger::tests::a_glyph_rule_writes_both_spellings`
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        let Self(row) = *self;
+        write!(f, "{}", Code(&row.form))?;
+        row.ascii
+            .as_ref()
+            .map_or(Ok(()), |ascii| write!(f, " or {}", Code(ascii)))
     }
 }
 
@@ -1090,7 +1152,7 @@ fn abbreviations(pbg: &Pbg) -> Vec<Abbreviation<'_>>
         .collect()
 }
 
-/// The form `root` of `rule`, spelled for reading.
+/// The form `root` of `rule`, spelled for reading in `written`.
 ///
 /// # Specification
 /// - requires: `abbreviations` is [`abbreviations`] of the grammar the rule
@@ -1098,25 +1160,37 @@ fn abbreviations(pbg: &Pbg) -> Vec<Abbreviation<'_>>
 /// - ensures: a top-level alternation is its branches joined by `‖`, each
 ///   spelled; any other form is spelled whole. A part equal to the whole form
 ///   of another rule of `abbreviations` is that rule's name in `⟨ ⟩`; a branch
-///   or form spelled whole never is.
+///   or form spelled whole never is. In [`Spelling::Ascii`] a glyph tile the
+///   spelling table pairs with a token is that token, and an infix form whose
+///   glyph the table pairs with a head is the head's call over its operands.
 /// - panics: none.
+///
+/// [`Spelling::Ascii`]: gandr_surface_grammar::Spelling::Ascii
 ///
 /// # Adequacy
 /// - hypothesis: L3 — pinned spellings of a keyword form, a form with a class
 ///   tile, an option and a repetition, a top-level alternation and an
-///   abbreviated block distinguish each notation.
+///   abbreviated block distinguish each notation; the glyph rules' rows pin
+///   both spellings of a token glyph and of a head glyph.
 /// - witness: `ledger::tests::a_form_spells_its_tiles_holes_and_parts`
+/// - witness: `ledger::tests::a_glyph_rule_writes_both_spellings`
 #[spec(ensures: |ret| !ret.is_empty())]
 fn spelled(
     root: RegexView<'_>,
     abbreviations: &[Abbreviation<'_>],
     rule: RuleName,
+    written: gandr_surface_grammar::Spelling,
 ) -> String
 {
+    if written == gandr_surface_grammar::Spelling::Ascii
+        && let Some(call) = head_call(root)
+    {
+        return call;
+    }
     match root.shape() {
         RegexShape::Alt(branches) if !branches.is_empty() => branches
             .into_iter()
-            .map(|branch| spelled_whole(branch, abbreviations, rule))
+            .map(|branch| spelled_whole(branch, abbreviations, rule, written))
             .collect::<Vec<_>>()
             .join(" ‖ "),
         RegexShape::Empty
@@ -1124,27 +1198,76 @@ fn spelled(
         | RegexShape::Seq(_)
         | RegexShape::Alt(_)
         | RegexShape::Optional(_)
-        | RegexShape::Repeat(_) => spelled_whole(root, abbreviations, rule),
+        | RegexShape::Repeat(_) => spelled_whole(root, abbreviations, rule, written),
     }
 }
 
-/// `root` spelled whole, its parts abbreviated as [`spelled`] states. An
-/// option or a repetition of an alternation takes the alternation's brackets
-/// rather than a pair of its own.
+/// `root` written as a call of its glyph's ASCII head, when it is an infix
+/// form `SORT glyph SORT` whose glyph the spelling table pairs with a head:
+/// `Iso(TYPE, TYPE)` for `TYPE ≅ TYPE`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the call over the two holes' sorts exactly when `root` is a hole,
+///   a head glyph's tile and a hole; nothing otherwise.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the isomorphism's row spells the call, and the
+///   equivalence's, a token glyph's, spells no call.
+/// - witness: `ledger::tests::a_glyph_rule_writes_both_spellings`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|call| call.ends_with(')')))]
+fn head_call(root: RegexView<'_>) -> Option<String>
+{
+    let RegexShape::Seq(parts) = root.shape()
+    else {
+        return None;
+    };
+    let mut shapes = parts.into_iter().map(RegexView::shape);
+    let (
+        Some(RegexShape::Sym(Sym::Sort(left))),
+        Some(RegexShape::Sym(Sym::Tile(tile))),
+        Some(RegexShape::Sym(Sym::Sort(right))),
+        None,
+    ) = (shapes.next(), shapes.next(), shapes.next(), shapes.next())
+    else {
+        return None;
+    };
+    let head = SPELLED.iter().find_map(|entry| match entry.ascii {
+        Ascii::Head(head) if entry.tile.0 == tile.label => Some(head),
+        Ascii::Head(_) | Ascii::Token(_) => None,
+    })?;
+    Some(format!(
+        "{}({}, {})",
+        head.0,
+        left.name().to_string().to_uppercase(),
+        right.name().to_string().to_uppercase()
+    ))
+}
+
+/// `root` spelled whole in `written`, its parts abbreviated as [`spelled`]
+/// states. An option or a repetition of an alternation takes the
+/// alternation's brackets rather than a pair of its own.
 ///
 /// # Specification
 /// - requires: as [`spelled`].
-/// - ensures: `root` itself is never abbreviated; each part is.
+/// - ensures: `root` itself is never abbreviated; each part is. A glyph tile is
+///   its token under [`Spelling::Ascii`] where the spelling table pairs it with
+///   one.
 /// - panics: none.
+///
+/// [`Spelling::Ascii`]: gandr_surface_grammar::Spelling::Ascii
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`spelled`].
 /// - witness: `ledger::tests::a_form_spells_its_tiles_holes_and_parts`
+/// - witness: `ledger::tests::a_glyph_rule_writes_both_spellings`
 #[spec(ensures: |ret| !ret.is_empty())]
 fn spelled_whole(
     root: RegexView<'_>,
     abbreviations: &[Abbreviation<'_>],
     rule: RuleName,
+    written: gandr_surface_grammar::Spelling,
 ) -> String
 {
     let mut first = true;
@@ -1173,7 +1296,9 @@ fn spelled_whole(
                 Node::Hole(sort) => Spelling::plain(sort.name().to_string().to_uppercase()),
                 Node::Tile(tile) => {
                     Spelling::plain(match tile_spelling(CandidateLabel::from(tile)) {
-                        TileSpelling::Literal(text) => text.to_owned(),
+                        TileSpelling::Literal(text) => {
+                            token_of(LabelText(text), written).0.to_owned()
+                        },
                         TileSpelling::Class(class) => format!("‹{class}›"),
                     })
                 },
@@ -1189,6 +1314,41 @@ fn spelled_whole(
         (),
     );
     answer.map_or_else(|()| "ε".to_owned(), |spelling| spelling.text)
+}
+
+/// The text a literal tile `text` is written with in `written`: its ASCII
+/// token where the spelling table pairs the glyph with one, else `text`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the [`SPELLED`] entry's token for `text` under
+///   [`Spelling::Ascii`]; `text` under [`Spelling::Unicode`], for a head glyph,
+///   and for any tile the table does not hold.
+/// - panics: none.
+///
+/// [`Spelling::Ascii`]: gandr_surface_grammar::Spelling::Ascii
+/// [`Spelling::Unicode`]: gandr_surface_grammar::Spelling::Unicode
+///
+/// # Adequacy
+/// - hypothesis: L3 — the equivalence's row spells `<~>`, and its Unicode row
+///   `≃`.
+/// - witness: `ledger::tests::a_glyph_rule_writes_both_spellings`
+#[spec(ensures: |ret| written == gandr_surface_grammar::Spelling::Ascii || ret == text)]
+fn token_of(
+    text: LabelText<'_>,
+    written: gandr_surface_grammar::Spelling,
+) -> LabelText<'_>
+{
+    if written == gandr_surface_grammar::Spelling::Unicode {
+        return text;
+    }
+    SPELLED
+        .iter()
+        .find_map(|entry| match entry.ascii {
+            Ascii::Token(token) if entry.tile.0 == text.0 => Some(token),
+            Ascii::Token(_) | Ascii::Head(_) => None,
+        })
+        .unwrap_or(text)
 }
 
 /// Whether a spelled part already stands in brackets of its own.
@@ -1556,6 +1716,56 @@ mod tests
             }
             .to_string(),
             "2 rules"
+        );
+    }
+
+    #[test]
+    fn a_glyph_rule_writes_both_spellings()
+    {
+        let ledger = SyntaxLedger::build().expect("the ledger builds");
+        let spellings = |name| {
+            let found = row(&ledger, RuleName(name));
+            (found.form.as_str(), found.ascii.as_deref())
+        };
+        assert_eq!(
+            spellings("equivalence_type"),
+            ("TYPE ≃ TYPE", Some("TYPE <~> TYPE")),
+            "a token glyph is written as its token"
+        );
+        assert_eq!(
+            spellings("universe_flow_type"),
+            ("TYPE ⇝ TYPE", Some("TYPE ~~> TYPE"))
+        );
+        assert_eq!(
+            spellings("binary_expression.cons"),
+            ("EXPRESSION ∷ EXPRESSION", Some("EXPRESSION :: EXPRESSION"))
+        );
+        assert_eq!(
+            spellings("isomorphism_type"),
+            ("TYPE ≅ TYPE", Some("Iso(TYPE, TYPE)")),
+            "a head glyph's infix form is written as the head's call"
+        );
+        assert_eq!(
+            spellings("u_type"),
+            (
+                "+U ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? TYPE",
+                Some("+U ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ inf ⦆ ] ⦆? TYPE")
+            ),
+            "a glyph inside a larger form is written as its token in place"
+        );
+        assert_eq!(
+            spellings("sum_type"),
+            ("TYPE + TYPE", None),
+            "a form with no glyph has one spelling"
+        );
+        let markdown = ledger.markdown();
+        assert!(
+            markdown.contains("| `TYPE ≃ TYPE` or `TYPE <~> TYPE` |"),
+            "the table writes both spellings"
+        );
+        assert!(
+            markdown.contains("| `TYPE + TYPE` |"),
+            "and one where there is one"
         );
     }
 

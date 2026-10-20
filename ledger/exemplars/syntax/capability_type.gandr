@@ -1,2 +1,3 @@
-/// `capability_type`: a capability and the operations it grants.
-def fs : Cap {read, write} ;
+/// `capability_type`: a capability and the operations it grants at the unrestricted grade, written with its glyph and in ASCII.
+def fs : Cap[ω] {read, write} ;
+def fsAscii : Cap[inf] {read, write} ;

@@ -1,4 +1,7 @@
-/// `codata_declaration`: a codatatype: its family head and one observation per destructor.
+/// `codata_declaration`: a codatatype: its family head and one observation per destructor, at the unrestricted grade written with its glyph and in ASCII.
 codata Stream : Type {
-  head : Integer;
+  ω head : Integer;
+}
+codata StreamAscii : Type {
+  inf head : Integer;
 }

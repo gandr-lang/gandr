@@ -1,2 +1,3 @@
-/// `universe_flow_type`: a flow between universe codes.
+/// `universe_flow_type`: a flow between universe codes, written with its glyph and in ASCII.
 def shift : Schema.Old ⇝ Schema.New ;
+def shiftAscii : Schema.Old ~~> Schema.New ;

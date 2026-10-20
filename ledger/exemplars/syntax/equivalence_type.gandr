@@ -1,2 +1,3 @@
-/// `equivalence_type`: an equivalence type.
+/// `equivalence_type`: an equivalence type, written with its glyph and in ASCII.
 def same : Integer ≃ Integer ;
+def sameAscii : Integer <~> Integer ;

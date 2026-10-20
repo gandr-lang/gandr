@@ -1,5 +1,7 @@
-/// `data_declaration`: a datatype: its family head and one generator per constructor.
-data Bit : Type {
-  Zero : Bit;
-  One : Bit;
+/// `data_declaration`: a datatype: its family head and one generator per constructor, a field at the unrestricted grade written with its glyph and in ASCII.
+data Box : Type {
+  Wrap : (ω n : Integer);
+}
+data BoxAscii : Type {
+  Wrap : (inf n : Integer);
 }
