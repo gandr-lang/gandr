@@ -1,0 +1,31 @@
+// What `univalence`'s owed laws need and the checker does not have (#520).
+// `ua` after `idtoequiv` is the path once `J` reaches reflexivity, where `ua`
+// of the identity record is not reflexivity: two paths between types that
+// transport alike are not one path. `idtoequiv` after `ua` is the record once
+// its inverses are determined by its map, which needs function extensionality
+// from a homotopy at any two functions; `funext` decides closed first-order
+// functions only. The same refusal at a stratum code waits on its type
+// printing back (#1102).
+
+// Univalence over the user universe: `idtoequiv`.
+import "../../model/identity/univalence.gandr" ;
+
+/// `ua` of the identity record at reflexivity, read as reflexivity: the case
+/// `J` leaves of `uaEta`, refused (#520).
+@[ refuses("EndpointMismatch") ]
+def uaEtaRefl(a : Type) -> -F Path(Path(Type, a, a), ua(idtoequiv(a, a, here(a))), here(a)) {
+  return here(here(a))
+}
+
+/// Two functions that agree at every point are one function, from the
+/// homotopy: past the functions `funext` decides, refused (#520).
+@[ refuses("FunextUnsupported") ]
+def funextFromHomotopy(
+  a : Type,
+  b : Type,
+  f : a => b,
+  g : a => b,
+  h : (x : a) => Path(b, f(x), g(x))
+) -> -F Path(a => b, f, g) {
+  return funext(f, g)
+}

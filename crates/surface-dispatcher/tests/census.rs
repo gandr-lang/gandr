@@ -328,14 +328,6 @@ fn spell(shard: Shard)
                 ..
             } = composed
             {
-                let stated: BTreeSet<String> = report
-                    .declarations()
-                    .iter()
-                    .filter(|declaration| {
-                        matches!(declaration.stated(), Stated::Verdict(Outcome::Runs(_)))
-                    })
-                    .map(|declaration| declaration.name().to_string())
-                    .collect();
                 // Each normal form the corpus states, as the engine spelled
                 // it: the side after `~>`, read back under the rules of the
                 // block that states it (#669).
@@ -362,22 +354,18 @@ fn spell(shard: Shard)
                         }
                     }
                 }
-                let Maybe::Present(last) = program.target()
-                else {
-                    return ControlFlow::Continue(());
-                };
-                for position in 0_usize ..= usize::from(last) {
-                    let constant = ConstantIndex::from(position);
-                    let Maybe::Present(name) = program.name(constant)
-                    else {
-                        continue;
-                    };
-                    named.clear();
-                    core::fmt::Write::write_fmt(&mut named, format_args!("{name}"))
-                        .expect("a name writes");
-                    if !stated.contains(named.as_str()) {
+                // Each run the source states, evaluated at its declaration's
+                // own constant: the walk numbers the whole component's
+                // constants, and two sources of one component may state runs
+                // under one name.
+                for declaration in report.declarations() {
+                    if !matches!(declaration.stated(), Stated::Verdict(Outcome::Runs(_))) {
                         continue;
                     }
+                    let constant = declaration.constant();
+                    named.clear();
+                    core::fmt::Write::write_fmt(&mut named, format_args!("{}", declaration.name()))
+                        .expect("a name writes");
                     if let Evaluation::Value(value) = program.evaluate(constant) {
                         values = values.saturating_add(1);
                         census.count(path, Site::Run(constant), value.presentation());
