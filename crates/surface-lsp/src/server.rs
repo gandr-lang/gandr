@@ -135,6 +135,7 @@ use crate::protocol::InlineCompletionItem;
 use crate::protocol::InlineCompletionList;
 use crate::protocol::LabelOffsets;
 use crate::protocol::Linked;
+use crate::protocol::ListsFolders;
 use crate::protocol::Location;
 use crate::protocol::MarkupContent;
 use crate::protocol::MessageAction;
@@ -159,6 +160,8 @@ use crate::protocol::SemanticTokensDelta;
 use crate::protocol::SetTraceParams;
 use crate::protocol::Settings;
 use crate::protocol::Severity;
+use crate::protocol::ShowDocumentParams;
+use crate::protocol::ShowsDocuments;
 use crate::protocol::ShowsProgress;
 use crate::protocol::StringValue;
 use crate::protocol::SymbolInformation;
@@ -172,7 +175,9 @@ use crate::protocol::WatchedFilesParams;
 use crate::protocol::WatchesFiles;
 use crate::protocol::WorkTitle;
 use crate::protocol::WorkspaceEdit;
+use crate::protocol::WorkspaceFolder;
 use crate::protocol::WorkspaceSymbolParams;
+use crate::protocol::folder_roots;
 use crate::quiet::Changes;
 use crate::quiet::Holding;
 use crate::quiet::Inbox;
@@ -214,12 +219,14 @@ use crate::rpc::apply_edit;
 use crate::rpc::choose;
 use crate::rpc::classify;
 use crate::rpc::failure;
+use crate::rpc::list_folders;
 use crate::rpc::progress_begun;
 use crate::rpc::progress_ended;
 use crate::rpc::publish;
 use crate::rpc::pull;
 use crate::rpc::refresh;
 use crate::rpc::register;
+use crate::rpc::show;
 use crate::rpc::success;
 use crate::rpc::tell;
 use crate::rpc::trace;
@@ -1295,6 +1302,10 @@ impl Workspace
             trace: Trace::Off,
             pulling: PullsConfiguration(false),
             applying: AppliesEdits(false),
+            showing: ShowsDocuments(false),
+            listing: ListsFolders(false),
+            announced: BTreeMap::new(),
+            offered: Vec::new(),
             choices: Vec::new(),
             streams: BTreeMap::new(),
         };
@@ -1535,6 +1546,20 @@ pub struct Server
     /// `initialize`: a lens over one checked fill then runs the command
     /// applying it.
     applying: AppliesEdits,
+    /// Whether its client shows a document the server asks it to, read at
+    /// `initialize`: a fill kept elsewhere is then offered to its user.
+    showing: ShowsDocuments,
+    /// Whether its client answers a request for its workspace folders, read
+    /// at `initialize`: a folder change that does not read then asks for
+    /// them whole.
+    listing: ListsFolders,
+    /// For each document it holds whose kept fills its user was offered, the
+    /// version its copy was at: a fill is withdrawn only by an edit, so a
+    /// fill kept at a later version is offered again.
+    announced: BTreeMap<DocumentUri, DocumentVersion>,
+    /// Each offer to show a kept fill, by the choice that put it, with the
+    /// document and the fill's range.
+    offered: Vec<(RequestId, DocumentUri, Range)>,
     /// Each choice this connection put to its user, by the request that put
     /// it, with the answer once read.
     choices: Vec<(RequestId, Choice)>,
@@ -1568,6 +1593,9 @@ const STYLE: Style = Style {
     spelling: Spelling::Unicode,
     markup: Markup::Markdown,
 };
+
+/// The action an offer to see a fill kept elsewhere puts to the user.
+const SHOW_FILL: &str = "Show";
 
 impl Default for Server
 {
@@ -1609,23 +1637,100 @@ impl Server
             trace: Trace::Off,
             pulling: PullsConfiguration(false),
             applying: AppliesEdits(false),
+            showing: ShowsDocuments(false),
+            listing: ListsFolders(false),
+            announced: BTreeMap::new(),
+            offered: Vec::new(),
             choices: Vec::new(),
             streams: BTreeMap::new(),
         }
     }
 
-    /// The request asking this connection's client for its code lenses
-    /// again, once another connection kept a fill of a document it holds:
-    /// none when the connection is not running or its client did not say it
-    /// requests them again when asked.
+    /// The requests owed this connection's client once another connection
+    /// kept a fill of a document it holds: its code lenses asked for again,
+    /// then its user offered to see each such document's newest fill.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: nothing when the connection is not running; otherwise a
+    ///   `workspace/codeLens/refresh` when its client requests lenses again
+    ///   when asked, then, when its client shows a document the server asks it
+    ///   to, one `window/showMessageRequest` with the one action [`SHOW_FILL`]
+    ///   for each document whose latest copy it holds and keeps a fill, and
+    ///   whose user this connection did not yet offer a fill at that copy's
+    ///   version: the offer recorded with the newest kept fill's range, which a
+    ///   later answer choosing the action shows.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a first kept fill offered, a second kept beside it
+    ///   not offered, one kept after the next edit withdrew both offered again,
+    ///   and a client that shows no document, a client that refreshes no lens
+    ///   and one not yet initialised, each asserted at its exact messages.
+    /// - witness: `server::tests::a_refreshing_client_is_asked_for_its_lenses_once_a_fill_is_kept_elsewhere`
+    /// - witness: `server::tests::a_fill_kept_elsewhere_is_offered_to_its_editor_once`
+    #[spec(ensures: |ret| self.phase == Phase::Running || ret.is_empty())]
+    #[inline]
+    pub fn proposed_elsewhere(
+        &mut self,
+        workspace: &Workspace,
+    ) -> Vec<Outgoing>
+    {
+        if self.phase != Phase::Running {
+            return Vec::new();
+        }
+        let mut asked = Vec::new();
+        if self.refreshing.lenses {
+            asked.push(self.asked(Refreshed::Lenses));
+        }
+        if self.showing.0 {
+            asked.extend(
+                workspace
+                    .proposed_to(self.peer)
+                    .filter_map(|(uri, version, kept)| {
+                        self.offer(uri, version, kept.last()?.range)
+                    }),
+            );
+        }
+        asked
+    }
+
+    /// The choice offering this connection's user to see the fill of `range`
+    /// kept for the document at `uri`, at `version`, recorded as offered;
+    /// none when its user was already offered a fill at that version.
     ///
     /// # Specification
     /// trivial.
-    #[inline]
-    pub fn proposed_elsewhere(&mut self) -> Option<Outgoing>
+    fn offer(
+        &mut self,
+        uri: &DocumentUri,
+        version: DocumentVersion,
+        range: Range,
+    ) -> Option<Outgoing>
     {
-        (self.phase == Phase::Running && self.refreshing.lenses)
-            .then(|| self.asked(Refreshed::Lenses))
+        if self.announced.get(uri) == Some(&version) {
+            return None;
+        }
+        let named = uri.path();
+        let asked = self.ask(ChoiceParams {
+            kind: MessageType::INFO,
+            message: format!(
+                "A model proposed a checked fill for {}.",
+                named.file_name().map_or_else(
+                    || named.display().to_string(),
+                    |file| file.to_string_lossy().into_owned()
+                )
+            ),
+            actions: Vec::from([MessageAction {
+                title: String::from(SHOW_FILL),
+            }]),
+        });
+        if let Outgoing::Request { ref id, .. } = asked {
+            self.offered.push((id.clone(), uri.clone(), range));
+        }
+        let _replaced = self.announced.insert(uri.clone(), version);
+        Some(asked)
     }
 
     /// The requests asking this connection's client for its semantic tokens
@@ -2850,6 +2955,8 @@ impl Server
                 self.trace = initial_trace(&params);
                 self.pulling = initial_pulling(&params);
                 self.applying = initial_applying(&params);
+                self.showing = initial_showing(&params);
+                self.listing = initial_listing(&params);
                 workspace.rooted(self.peer, &initial_roots(&params));
                 success(
                     id,
@@ -3325,7 +3432,9 @@ impl Server
     ///   folders the client opens and termination: a folder opened is a root of
     ///   the path table while this connection holds it open.
     /// - fails: unreadable parameters and changes to documents this connection
-    ///   holds no copy of are ignored.
+    ///   holds no copy of are ignored, except a folder change that does not
+    ///   read from a client that lists its workspace folders, which asks for
+    ///   them whole.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3347,6 +3456,7 @@ impl Server
     /// - witness: `server::tests::a_changed_file_rechecks_the_copies_whose_closure_names_it`
     /// - witness: `server::tests::an_editor_s_copy_shadows_the_disk_for_its_importers`
     /// - witness: `server::tests::a_folder_is_searched_while_the_client_holds_it_open`
+    /// - witness: `server::tests::an_unread_folder_change_lists_the_folders_whole`
     /// - witness: `server::tests::a_file_operation_rechecks_the_copies_whose_closure_names_it`
     #[spec(
         captures: [phase = self.phase, count = workspace.documents.len()],
@@ -3385,6 +3495,9 @@ impl Server
                         "initialized" => (called == "client/registerCapability" && self.watching.0)
                             || (called == "workspace/configuration" && self.pulling.0),
                         "workspace/didChangeConfiguration" => called == "workspace/configuration" && self.pulling.0,
+                        "workspace/didChangeWorkspaceFolders" => {
+                            called == "workspace/workspaceFolders" && self.listing.0
+                        },
                         _ => false,
                     },
                     Outgoing::Notification { params: Notified::Traced(_), .. } | Outgoing::Success { .. }
@@ -3508,6 +3621,7 @@ impl Server
                     return Outcome::quiet();
                 };
                 let _forgotten = self.streams.remove(&text_document.uri);
+                let _unoffered = self.announced.remove(&text_document.uri);
                 let named = match workspace.documents.remove_entry(&text_document.uri) {
                     Some((uri, held)) => {
                         // The disk stands in for the last copy, so what its
@@ -3598,7 +3712,12 @@ impl Server
             (Phase::Running, "workspace/didChangeWorkspaceFolders") => {
                 let Ok(FoldersChangedParams { event }) = serde_json::from_value(params)
                 else {
-                    return Outcome::quiet();
+                    return if self.listing.0 {
+                        Outcome::say(list_folders(self.next_request()))
+                    }
+                    else {
+                        Outcome::quiet()
+                    };
                 };
                 workspace.unrooted(self.peer, &event.removed());
                 workspace.rooted(self.peer, &event.added());
@@ -3672,7 +3791,8 @@ impl Server
 
     /// Handle the client's answer `result` to the request of this
     /// connection's that `id` names: a pull's settings applied, a choice
-    /// recorded, an edit the client did not apply logged, every other answer
+    /// recorded, a fill offered and chosen shown, the folders listed made the
+    /// roots, an edit the client did not apply logged, every other answer
     /// read and left.
     ///
     /// # Specification
@@ -3681,19 +3801,26 @@ impl Server
     ///   as [`Server::configured`] does, and one that does not read is logged
     ///   to the client as a warning; a pull answered with null or an error
     ///   applies nothing; a choice this connection put is recorded as chosen
-    ///   when the answer names an action, dismissed otherwise; an edit the
-    ///   client answers it did not apply is logged to it as a warning, with its
-    ///   reason when it gave one; nothing else changes.
+    ///   when the answer names an action, dismissed otherwise, and when it
+    ///   offered a kept fill and the answer names [`SHOW_FILL`], the client is
+    ///   asked to show the fill's document with its range selected; a list of
+    ///   workspace folders replaces the folders this connection holds open, as
+    ///   roots, null replacing them with none and an error leaving them; an
+    ///   edit the client answers it did not apply is logged to it as a warning,
+    ///   with its reason when it gave one; nothing else changes.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a pull answered with settings, with a section that
     ///   does not read, with null and with an error; a choice answered with an
-    ///   action, null and an error; an edit applied and one refused; a
+    ///   action, null and an error; an offer answered with its action and
+    ///   dismissed; folders listed; an edit applied and one refused; a
     ///   registration's answer.
     /// - witness: `server::tests::a_pulled_setting_applies_as_a_pushed_one`
     /// - witness: `server::tests::a_choice_put_to_the_user_reads_its_answer`
+    /// - witness: `server::tests::a_fill_kept_elsewhere_is_offered_to_its_editor_once`
+    /// - witness: `server::tests::an_unread_folder_change_lists_the_folders_whole`
     /// - witness: `server::tests::a_lens_applies_its_one_checked_fill`
     #[spec(ensures: |ret| ret.log.len() <= ret.messages.len() && ret.flow == Flow::Continue)]
     fn response(
@@ -3724,12 +3851,42 @@ impl Server
                 let answer = result
                     .and_then(|result| serde_json::from_value::<Option<MessageAction>>(result).ok())
                     .flatten();
+                let shown = self
+                    .offered
+                    .iter()
+                    .position(|&(ref asked, ..)| asked == id)
+                    .map(|at| self.offered.swap_remove(at))
+                    .filter(|_| {
+                        answer
+                            .as_ref()
+                            .is_some_and(|action| action.title == SHOW_FILL)
+                    });
                 if let Some(&mut (_, ref mut choice)) = self
                     .choices
                     .iter_mut()
                     .find(|&&mut (ref asked, _)| asked == id)
                 {
                     *choice = answer.map_or(Choice::Dismissed, Choice::Chose);
+                }
+                shown.map_or_else(Outcome::quiet, |(_, uri, selection)| {
+                    Outcome::say(show(
+                        ShowDocumentParams {
+                            uri,
+                            take_focus: true,
+                            selection,
+                        },
+                        self.next_request(),
+                    ))
+                })
+            },
+            Answered::Listed => {
+                if let Some(folders) = result.and_then(|result| {
+                    serde_json::from_value::<Option<Vec<WorkspaceFolder>>>(result).ok()
+                }) {
+                    workspace.rerooted(
+                        self.peer,
+                        &folders.as_deref().map_or_else(Vec::new, folder_roots),
+                    );
                 }
                 Outcome::quiet()
             },
@@ -3808,6 +3965,46 @@ impl Workspace
             .map_or(Maybe::Absent(unheld::Absent::Forgotten), |held| {
                 Maybe::Present(held.view(peer))
             })
+    }
+
+    /// Each document whose latest copy `peer` holds and that keeps a fill,
+    /// with that copy's version and the fills it keeps, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn proposed_to(
+        &self,
+        peer: Peer,
+    ) -> impl Iterator<Item = (&DocumentUri, DocumentVersion, &[Proposal])>
+    {
+        self.documents
+            .iter()
+            .filter(move |&(_, held)| held.latest == peer && !held.document.proposals.is_empty())
+            .map(|(uri, held)| {
+                (
+                    uri,
+                    held.document.version,
+                    held.document.proposals.as_slice(),
+                )
+            })
+    }
+
+    /// Make `roots` the folders `peer` holds open in the path table, in
+    /// place of every folder it held open before.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rerooted(
+        &self,
+        peer: Peer,
+        roots: &[PathBuf],
+    )
+    {
+        let mut files = self.files.borrow_mut();
+        files.depart(peer);
+        for root in roots {
+            files.root(peer, root);
+        }
     }
 
     /// Add each of `roots`, a folder `peer` opened, to the path table.
@@ -5130,6 +5327,30 @@ fn initial_applying(params: &Value) -> AppliesEdits
 {
     InitializeParams::deserialize(params)
         .map(|params| params.applies_edits())
+        .unwrap_or_default()
+}
+
+/// Whether the client `initialize` names in `params` shows a document the
+/// server asks it to; not when the parameters do not read.
+///
+/// # Specification
+/// trivial.
+fn initial_showing(params: &Value) -> ShowsDocuments
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.shows_documents())
+        .unwrap_or_default()
+}
+
+/// Whether the client `initialize` names in `params` answers a request for
+/// its workspace folders; not when the parameters do not read.
+///
+/// # Specification
+/// trivial.
+fn initial_listing(params: &Value) -> ListsFolders
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.lists_folders())
         .unwrap_or_default()
 }
 
@@ -6876,26 +7097,33 @@ mod tests
         };
         let mut refreshing = started("true");
         let asked = |number: u32| {
-            Some(wire(Json(&format!(
+            Value::Array(vec![wire(Json(&format!(
                 r#"{{"jsonrpc":"2.0","id":"workspace/codeLens/refresh/{number}",
                     "method":"workspace/codeLens/refresh"}}"#
-            ))))
+            )))])
         };
-        let mut proposed = || serde_json::to_value(refreshing.server.proposed_elsewhere()?).ok();
-        assert_eq!(proposed(), asked(1), "the first kept fill asks once");
+        let proposed = |connected: &mut Connected| {
+            serde_json::to_value(connected.server.proposed_elsewhere(&connected.workspace))
+                .expect("the requests encode")
+        };
         assert_eq!(
-            proposed(),
+            proposed(&mut refreshing),
+            asked(1),
+            "the first kept fill asks once"
+        );
+        assert_eq!(
+            proposed(&mut refreshing),
             asked(2),
             "each later one under its own identifier"
         );
         assert_eq!(
-            started("false").server.proposed_elsewhere(),
-            None,
+            proposed(&mut started("false")),
+            serde_json::json!([]),
             "a client that does not refresh is asked nothing"
         );
         assert_eq!(
-            Connected::default().server.proposed_elsewhere(),
-            None,
+            proposed(&mut Connected::default()),
+            serde_json::json!([]),
             "nor is one not yet initialised"
         );
     }
@@ -6929,8 +7157,9 @@ mod tests
             "a client refreshing both is asked for its tokens, then its folds"
         );
         assert_eq!(
-            serde_json::to_value(every.server.proposed_elsewhere()).expect("the request encodes"),
-            asked("workspace/codeLens/refresh", 3),
+            serde_json::to_value(every.server.proposed_elsewhere(&every.workspace))
+                .expect("the request encodes"),
+            serde_json::json!([asked("workspace/codeLens/refresh", 3)]),
             "every refresh is counted on the one connection"
         );
         assert_eq!(
@@ -9799,6 +10028,181 @@ mod tests
             Some(&serde_json::json!(-32_602_i32)),
             "a command the server does not run is refused"
         );
+    }
+
+    /// A fill kept elsewhere for a document an editor holds is offered to
+    /// its user once, shown when the user chooses to, and offered again only
+    /// once the next edit withdrew what was offered; a client that shows no
+    /// document is offered nothing.
+    #[test]
+    fn a_fill_kept_elsewhere_is_offered_to_its_editor_once()
+    {
+        let mut server = Connected::default();
+        let _answered = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{"window":{"showDocument":{"support":true}}}}}"#,
+            ),
+        );
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/offered.gandr","languageId":"gandr","version":1,
+                     "text":"def f : Integer ;\ndef f = missing ;\n"}}}"#,
+            ),
+        );
+        let uri = DocumentUri::from("file:///tmp/offered.gandr");
+        let hole = on_line(
+            Line::from(1_u32),
+            Character::from(8_u32),
+            Character::from(15_u32),
+        );
+        let propose = |server: &mut Connected, version: i32, text: &str| {
+            let version = serde_json::from_value(serde_json::json!(version)).expect("a version");
+            server
+                .workspace
+                .propose(&uri, version, fill(hole, Json(text), None))
+                .is_ok()
+        };
+        let offered = |server: &mut Connected| {
+            serde_json::to_value(server.server.proposed_elsewhere(&server.workspace))
+                .expect("the requests encode")
+        };
+        let offer = |number: u32| {
+            serde_json::json!([{"jsonrpc": "2.0", "id": format!("window/showMessageRequest/{number}"),
+                "method": "window/showMessageRequest",
+                "params": {"type": 3_u8, "message": "A model proposed a checked fill for offered.gandr.",
+                    "actions": [{"title": "Show"}]}}])
+        };
+        assert!(propose(&mut server, 1_i32, "42"), "the fill is kept");
+        assert_eq!(
+            offered(&mut server),
+            offer(1),
+            "the first kept fill is offered"
+        );
+        assert!(
+            propose(&mut server, 1_i32, "7"),
+            "a second fill is kept beside it"
+        );
+        assert_eq!(
+            offered(&mut server),
+            serde_json::json!([]),
+            "a fill kept beside one offered is not offered again"
+        );
+        assert_eq!(
+            send(
+                &mut server,
+                Json(
+                    r#"{"jsonrpc":"2.0","id":"window/showMessageRequest/1","result":{"title":"Show"}}"#
+                ),
+            ),
+            serde_json::json!([{"jsonrpc": "2.0", "id": "window/showDocument/2",
+                "method": "window/showDocument",
+                "params": {"uri": "file:///tmp/offered.gandr", "takeFocus": true,
+                    "selection": {"start": {"line": 1_u32, "character": 8_u32},
+                        "end": {"line": 1_u32, "character": 15_u32}}}}]),
+            "choosing to see the fill shows its document with its range selected"
+        );
+        assert_eq!(
+            send(
+                &mut server,
+                Json(r#"{"jsonrpc":"2.0","id":"window/showDocument/2","result":{"success":true}}"#),
+            ),
+            serde_json::json!([]),
+            "the client's answer is read and left"
+        );
+        let _changed = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":
+                    {"uri":"file:///tmp/offered.gandr","version":2},
+                    "contentChanges":[{"text":"def f : Integer ;\ndef f = missing ;\n"}]}}"#,
+            ),
+        );
+        assert!(propose(&mut server, 2_i32, "42"), "the fill is kept again");
+        assert_eq!(
+            offered(&mut server),
+            offer(3),
+            "a fill kept after the edit withdrew the one offered is offered again"
+        );
+        assert_eq!(
+            send(
+                &mut server,
+                Json(r#"{"jsonrpc":"2.0","id":"window/showMessageRequest/3","result":null}"#),
+            ),
+            serde_json::json!([]),
+            "a dismissed offer shows nothing"
+        );
+        let mut plain = initialized();
+        let _opened = send(
+            &mut plain,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/offered.gandr","languageId":"gandr","version":1,
+                     "text":"def f : Integer ;\ndef f = missing ;\n"}}}"#,
+            ),
+        );
+        assert!(propose(&mut plain, 1_i32, "42"), "the fill is kept");
+        assert_eq!(
+            offered(&mut plain),
+            serde_json::json!([]),
+            "a client that shows no document is offered nothing"
+        );
+    }
+
+    /// A folder change that does not read, from a client that lists its
+    /// workspace folders, asks for them whole, and the list answered replaces
+    /// the folders the connection holds open; null leaves it none, and a
+    /// client that lists none is asked nothing.
+    #[test]
+    fn an_unread_folder_change_lists_the_folders_whole()
+    {
+        let directory = std::env::temp_dir().join(format!("gandr-listed-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).expect("a scratch folder");
+        let source = std::fs::canonicalize(&directory)
+            .expect("the scratch folder resolves")
+            .join("listed.gandr");
+        let mut server = Connected::default();
+        let _answered = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{"workspace":{"workspaceFolders":true}}}}"#,
+            ),
+        );
+        let unread = r#"{"jsonrpc":"2.0","method":"workspace/didChangeWorkspaceFolders","params":{"event":5}}"#;
+        assert_eq!(
+            send(&mut server, Json(unread)),
+            serde_json::json!([{"jsonrpc": "2.0", "id": "workspace/workspaceFolders/1",
+                "method": "workspace/workspaceFolders"}]),
+            "the folders are asked for whole"
+        );
+        let listed = serde_json::json!({"jsonrpc": "2.0", "id": "workspace/workspaceFolders/1",
+            "result": [{"uri": format!("file://{}", directory.display()), "name": "listed"}]});
+        assert_eq!(
+            send(&mut server, Json(&listed.to_string())),
+            serde_json::json!([]),
+            "the list is answered with nothing"
+        );
+        assert!(
+            server.workspace.files.borrow().root_of(&source).is_some(),
+            "the folder listed is a root"
+        );
+        let _again = send(&mut server, Json(unread));
+        let _none = send(
+            &mut server,
+            Json(r#"{"jsonrpc":"2.0","id":"workspace/workspaceFolders/2","result":null}"#),
+        );
+        assert!(
+            server.workspace.files.borrow().root_of(&source).is_none(),
+            "a null list leaves the connection no folder"
+        );
+        assert_eq!(
+            send(&mut initialized(), Json(unread)),
+            serde_json::json!([]),
+            "a client that lists no folders is asked nothing"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
     }
 
     /// #1034: a name declared in two halves answers its definition half to a

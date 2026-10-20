@@ -442,7 +442,7 @@ fn connection<Log>(
                     return Ok(ControlFlow::Continue(()));
                 },
                 Met::Proposed => {
-                    if let Some(message) = server.proposed_elsewhere() {
+                    for message in server.proposed_elsewhere(&held) {
                         drop(outbox.send(message));
                     }
                     return Ok(ControlFlow::Continue(()));

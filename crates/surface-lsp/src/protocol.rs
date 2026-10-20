@@ -613,12 +613,69 @@ impl InitializeParams
                 .unwrap_or(false),
         )
     }
+
+    /// Whether this client shows a document the server asks it to: when it
+    /// declares `window.showDocument.support`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn shows_documents(&self) -> ShowsDocuments
+    {
+        ShowsDocuments(
+            self.capabilities
+                .as_ref()
+                .and_then(|capabilities| capabilities.window)
+                .and_then(|window| window.show_document)
+                .and_then(|show| show.support)
+                .unwrap_or(false),
+        )
+    }
+
+    /// Whether this client answers a request for its workspace folders: when
+    /// it declares `workspace.workspaceFolders`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn lists_folders(&self) -> ListsFolders
+    {
+        ListsFolders(
+            self.capabilities
+                .as_ref()
+                .and_then(|capabilities| capabilities.workspace)
+                .and_then(|workspace| workspace.workspace_folders)
+                .unwrap_or(false),
+        )
+    }
+}
+
+/// The paths of `folders`, each a `file` URI's path, in order.
+///
+/// # Specification
+/// trivial.
+#[must_use]
+pub fn folder_roots(folders: &[WorkspaceFolder]) -> Vec<PathBuf>
+{
+    absolute(folders.iter().map(|folder| &folder.uri))
 }
 
 /// Whether a client applies an edit the server asks it to.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct AppliesEdits(pub bool);
+
+/// Whether a client shows a document the server asks it to.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ShowsDocuments(pub bool);
+
+/// Whether a client answers a request for its workspace folders.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ListsFolders(pub bool);
 
 /// Whether a client answers a pull of its settings.
 #[repr(transparent)]
@@ -775,13 +832,25 @@ pub struct ClientCapabilities
 /// The window client capabilities the server reads.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
-#[repr(transparent)]
 pub struct WindowCapabilities
 {
     /// `window.workDoneProgress`: whether it shows the progress of work the
     /// server starts.
     #[serde(default)]
     pub work_done_progress: Option<bool>,
+    /// `window.showDocument`.
+    #[serde(default)]
+    pub show_document: Option<ShowDocumentCapabilities>,
+}
+
+/// What a client offers of showing a document the server asks it to.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct ShowDocumentCapabilities
+{
+    /// `support`: whether it shows one.
+    #[serde(default)]
+    pub support: Option<bool>,
 }
 
 /// The workspace client capabilities the server reads.
@@ -808,6 +877,10 @@ pub struct WorkspaceCapabilities
     /// to.
     #[serde(default)]
     pub apply_edit: Option<bool>,
+    /// `workspace.workspaceFolders`: whether it answers a request for its
+    /// workspace folders.
+    #[serde(default)]
+    pub workspace_folders: Option<bool>,
 }
 
 /// What the client offers of requesting a feature's answers again.
@@ -1836,6 +1909,20 @@ pub struct AppliedEdit
     /// Why it was not, when the client says.
     #[serde(default)]
     pub failure_reason: Option<String>,
+}
+
+/// The parameters of `window/showDocument`: the document the client is
+/// asked to show, focused, with a range selected.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShowDocumentParams
+{
+    /// The document.
+    pub uri: DocumentUri,
+    /// Whether the editor showing it takes the focus.
+    pub take_focus: bool,
+    /// The range selected in it.
+    pub selection: Range,
 }
 
 /// An item a second request resolves as it came: what the first answered

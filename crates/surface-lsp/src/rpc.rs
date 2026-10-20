@@ -20,6 +20,7 @@ use crate::protocol::ProgressToken;
 use crate::protocol::PublishParams;
 use crate::protocol::PullParams;
 use crate::protocol::RegistrationParams;
+use crate::protocol::ShowDocumentParams;
 use crate::protocol::TraceParams;
 use crate::protocol::UnregistrationParams;
 use crate::protocol::WorkDone;
@@ -48,6 +49,12 @@ const CHOOSE: &str = "window/showMessageRequest";
 
 /// The method a server asks the client to apply an edit with.
 const APPLY_EDIT: &str = "workspace/applyEdit";
+
+/// The method a server asks the client to show a document with.
+const SHOW_DOCUMENT: &str = "window/showDocument";
+
+/// The method a server asks the client for its workspace folders with.
+const LIST_FOLDERS: &str = "workspace/workspaceFolders";
 
 /// The method a server traces its exchanges under.
 const LOG_TRACE: &str = "$/logTrace";
@@ -454,6 +461,8 @@ pub enum Asked
     Choosing(ChoiceParams),
     /// `workspace/applyEdit`.
     Applying(ApplyEditParams),
+    /// `window/showDocument`.
+    Showing(ShowDocumentParams),
 }
 
 /// A message reporting the progress of work the server started.
@@ -794,6 +803,43 @@ pub fn apply_edit(
     }
 }
 
+/// The request asking the client to show the document `params` names, the
+/// `sent`th numbered request this connection sent.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn show(
+    params: ShowDocumentParams,
+    sent: Requests,
+) -> Outgoing
+{
+    Outgoing::Request {
+        jsonrpc: VERSION,
+        id: numbered(Called(SHOW_DOCUMENT), sent),
+        method: SHOW_DOCUMENT,
+        params: Some(Asked::Showing(params)),
+    }
+}
+
+/// The request asking the client for its workspace folders, the `sent`th
+/// numbered request this connection sent.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn list_folders(sent: Requests) -> Outgoing
+{
+    Outgoing::Request {
+        jsonrpc: VERSION,
+        id: numbered(Called(LIST_FOLDERS), sent),
+        method: LIST_FOLDERS,
+        params: None,
+    }
+}
+
 /// What a response's identifier names: the request of the server's it
 /// answers, by the method the identifier is numbered under.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -805,7 +851,10 @@ pub enum Answered
     Chosen,
     /// A `workspace/applyEdit` edit.
     Applied,
-    /// Any other request: a registration, a refresh, a progress token.
+    /// A `workspace/workspaceFolders` list.
+    Listed,
+    /// Any other request: a registration, a refresh, a progress token, a
+    /// document shown.
     Other,
 }
 
@@ -833,6 +882,9 @@ impl Answered
         }
         else if numbered_under(APPLY_EDIT) {
             Self::Applied
+        }
+        else if numbered_under(LIST_FOLDERS) {
+            Self::Listed
         }
         else {
             Self::Other
