@@ -7,13 +7,13 @@
 /// The old and the new schema, the translator between them and the flow it
 /// gives.
 module Schema {
-  type Old = #{String, Integer};
-  type New = #{Integer, String, +{Unit, Unit}};
+  type Old = String * Integer;
+  type New = Integer * String * (Unit + Unit);
   /// The translator: the fields swapped and a flag added.
   @[ checks ]
   def toNew(old : Old) -> -F New {
     case old {
-      #{name, age} => return #{age, name, +{.0 = unit}}
+      #{name, age} => return (age, name, +{.0 = unit})
     }
   }
   /// The flow from the old schema to the new, by its translator.
@@ -32,10 +32,10 @@ module Schema {
   }
   /// One old record migrated by a run.
   @[ runs("(30, \"ada\", +{.0 = unit})") ]
-  def one : +U (-F New) ;
-  def one = thunk { become moved(#{"ada", 30}) } ;
+  def one : () => New ;
+  def one = thunk { become moved(("ada", 30)) } ;
   /// Two old records migrated by a run.
   @[ runs("cons((30, \"ada\", +{.0 = unit}), cons((41, \"grace\", +{.0 = unit}), nil))") ]
-  def many : +U (-F List(New)) ;
-  def many = thunk { become everyone(cons(#{"ada", 30}, cons(#{"grace", 41}, nil))) } ;
+  def many : () => List(New) ;
+  def many = thunk { become everyone(cons(("ada", 30), cons(("grace", 41), nil))) } ;
 }

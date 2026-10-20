@@ -14,9 +14,9 @@ import "./univalence.gandr" ;
 /// function on the integers that spins its argument back to a loop, applies
 /// `f` and winds the result, by conversion.
 @[ checks ]
-def funBeta(f : +U (Path(Circle, Base, Base) -> -F Path(Circle, Base, Base))) -> -F Path(
-  +U (Int -> -F Int),
-  transport(\X. +U (X -> -F X), loopsAreIntegers, f),
+def funBeta(f : Path(Circle, Base, Base) => Path(Circle, Base, Base)) -> -F Path(
+  Int => Int,
+  transport(\X. X => X, loopsAreIntegers, f),
   thunk { fn (n) { wind(f(spin(n))) } }
 ) {
   return here(thunk { fn (n) { wind(f(spin(n))) } })
@@ -25,8 +25,8 @@ def funBeta(f : +U (Path(Circle, Base, Base) -> -F Path(Circle, Base, Base))) ->
 /// Adding a loop, carried along `loopsAreIntegers`, adds one: the integer
 /// spins back to its word, gains a loop and winds to its successor, by a run.
 @[ runs("S(S(S(Z)))") ]
-def funRun : +U (-F Int) ;
+def funRun : () => Int ;
 def funRun = thunk {
-  run g <- transport(\X. +U (X -> -F X), loopsAreIntegers, thunk { fn (l) { loopOn(l) } }) ;
+  run g <- transport(\X. X => X, loopsAreIntegers, thunk { fn (l) { loopOn(l) } }) ;
   g(S(S(Z)))
 } ;

@@ -40,7 +40,7 @@ def law_count(presented : Theory) -> -F Integer {
 
 /// The shape's laws join, so its `Theory` value carries both as `Rule` entries.
 @[ runs("2") ]
-def shape_laws : +U (-F Integer) ;
+def shape_laws : () => Integer ;
 def shape_laws = thunk { become law_count(CircleShape) } ;
 
 /// The presented integers as a model of the shape: `turn` the successor and

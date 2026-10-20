@@ -67,7 +67,7 @@ def unwound_word = here(back(loop)) ;
 @[ checks ]
 def moved : Path(
   Path(Circle, Base, Base),
-  transport(\x. Path(Circle, Base, x), loop, here(Base)),
+  here(Base) then loop,
   loop
 ) ;
 def moved = here(loop) ;

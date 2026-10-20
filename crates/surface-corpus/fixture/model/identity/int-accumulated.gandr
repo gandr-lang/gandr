@@ -21,5 +21,5 @@ def rec count(acc : Int, b : Int) -> -F Int {
 
 /// One and two by the accumulator: three.
 @[ runs("S(S(S(Z)))") ]
-def accumulated : +U (-F Int) ;
+def accumulated : () => Int ;
 def accumulated = thunk { count(S(Z), S(S(Z))) } ;

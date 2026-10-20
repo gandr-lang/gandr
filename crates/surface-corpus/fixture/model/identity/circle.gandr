@@ -26,7 +26,7 @@ import "./equivalence.gandr" ;
 
 /// The loop's word: one letter before the empty word.
 @[ runs("loop ∷ here(Base)") ]
-def once : +U (-F Path(Circle, Base, Base)) ;
+def once : () => Path(Circle, Base, Base) ;
 def once = thunk { loop } ;
 
 /// The inverse of the loop is the letter `back(loop)`, by conversion.
@@ -69,14 +69,14 @@ def twice = here(loop ∷ loop ∷ here(Base)) ;
 
 /// Spinning two successors and winding the word counts two.
 @[ runs("S(S(Z))") ]
-def counted : +U (-F Int) ;
+def counted : () => Int ;
 def counted = thunk { wind(spin(S(S(Z)))) } ;
 
 /// The loops at the point and the presented integers are a quasi-inverse, by
 /// `wind` and `spin` with the two round trips at a variable, nothing owed.
 @[ checks ]
 def windingIso : Path(Circle, Base, Base) ≅ Int ;
-def windingIso = #{wind, #{spin, #{sect, retr}}} ;
+def windingIso = (wind, (spin, (sect, retr))) ;
 
 /// The loops at the point and the presented integers are equivalent: the
 /// book's `Path(Circle, Base, Base) ≃ Int`, the quasi-inverse made
@@ -84,7 +84,7 @@ def windingIso = #{wind, #{spin, #{sect, retr}}} ;
 /// a call, so the equivalence is written as the record `isoToEquiv` builds.
 @[ checks ]
 def winding : Path(Circle, Base, Base) ≃ Int ;
-def winding = #{wind, #{#{spin, sect}, #{spin, retr}}} ;
+def winding = (wind, ((spin, sect), (spin, retr))) ;
 
 /// The equivalence is `isoToEquiv` at the quasi-inverse, by conversion.
 @[ checks ]

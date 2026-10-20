@@ -37,7 +37,7 @@ def flipped_beta = here(cons(+{.1 = unit}, cons(+{.0 = unit}, nil))) ;
 
 /// `both` transported along negation by a run, which negates every element.
 @[ runs("cons(+{.1 = unit}, cons(+{.0 = unit}, nil))") ]
-def flipped_list : +U (-F List(Bool)) ;
+def flipped_list : () => List(Bool) ;
 def flipped_list = thunk { become moved_list(both) } ;
 
 /// Negation and the identity are no equivalence: their round trips differ.

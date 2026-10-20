@@ -72,7 +72,7 @@ def rotInv4(a : Circle, b : Circle) -> -F Path(Circle, mul(invLooper(mul(b, invL
 
 /// A loop at every point, evaluated at the point.
 @[ checks ]
-def atBase(f : +U ((x : Circle) -> -F Path(Circle, x, x))) -> -F Path(Circle, Base, Base) {
+def atBase(f : (x : Circle) => Path(Circle, x, x)) -> -F Path(Circle, Base, Base) {
   f(Base)
 }
 
@@ -80,7 +80,7 @@ def atBase(f : +U ((x : Circle) -> -F Path(Circle, x, x))) -> -F Path(Circle, Ba
 /// 6.4.2, cubical's `rotLoop` against `refl`): a path between the two
 /// functions, evaluated at the point, would make the loop the empty word.
 @[ checks ]
-def distinct(e : Path(+U ((x : Circle) -> -F Path(Circle, x, x)), selfloop, selfrefl)) -> -F Empty {
+def distinct(e : Path((x : Circle) => Path(Circle, x, x), selfloop, selfrefl)) -> -F Empty {
   loop_apart(cong(atBase, e))
 }
 
@@ -90,7 +90,7 @@ def distinct(e : Path(+U ((x : Circle) -> -F Path(Circle, x, x)), selfloop, self
 /// reads the point through what that call returns.
 @[ checks ]
 def toLoop(f : +U[ω] (Circle -> -F Int)) -> -F (#{point : Int, around : Path(Int, point, point)}) {
-  #{f(Base), cong(f, loop)}
+  (f(Base), cong(f, loop))
 }
 
 /// A point and a loop at it make a map out of the circle, at a point of it: a

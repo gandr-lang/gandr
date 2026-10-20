@@ -14,7 +14,7 @@
 @[ checks ]
 def isoToEquiv(a : Type, b : Type, i : a ≅ b) -> -F (a ≃ b) {
   case i {
-    #{t, k, s, r} => #{t, #{#{k, s}, #{k, r}}}
+    #{t, k, s, r} => (t, ((k, s), (k, r)))
   }
 }
 
@@ -43,10 +43,10 @@ def leftRetraction(
 @[ checks ]
 def equivToIso(a : Type, b : Type, e : a ≃ b) -> -F (a ≅ b) {
   case e {
-    #{t, #{g, s}, #{h, r}} => #{
+    #{t, #{g, s}, #{h, r}} => (
       t,
-      #{g, #{s, thunk { fn (y) { leftRetraction(a, b, t, g, h, y, s(h(y)), r(y)) } }}}
-    }
+      (g, (s, thunk { fn (y) { leftRetraction(a, b, t, g, h, y, s(h(y)), r(y)) } }))
+    )
   }
 }
 
