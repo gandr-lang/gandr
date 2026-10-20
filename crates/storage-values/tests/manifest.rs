@@ -9,6 +9,8 @@ use gandr_storage_chunker::Kappa;
 use gandr_storage_chunker::TokenCap;
 use gandr_storage_chunker::TokenCount;
 use gandr_storage_chunker::TypedChunkerParams;
+use gandr_storage_values::BoundaryClassification;
+use gandr_storage_values::BoundaryTags;
 use gandr_storage_values::ChildIndexBase;
 use gandr_storage_values::ChunkDigest;
 use gandr_storage_values::ChunkFrameField;
@@ -17,6 +19,7 @@ use gandr_storage_values::ChunkStore;
 use gandr_storage_values::CodecId;
 use gandr_storage_values::CodecIdentity;
 use gandr_storage_values::CodecVersion;
+use gandr_storage_values::ConstructorTag;
 use gandr_storage_values::ContentPtr;
 use gandr_storage_values::InMemoryChunkStore;
 use gandr_storage_values::ManifestDigest;
@@ -34,6 +37,7 @@ use gandr_storage_values::cam_commit;
 use gandr_storage_values::frame_chunk;
 use gandr_storage_values::verify_chunk_image;
 use proptest::prelude::ProptestConfig;
+use proptest::prelude::any;
 use proptest::prop_assert_eq;
 use proptest::proptest;
 
@@ -225,6 +229,24 @@ fn each_manifest_field_moves_the_identity()
             under(params, codec, ChildIndexBase::ChunkLocal),
         ),
         (
+            "the boundary classification",
+            ValueManifest::new(
+                profile.classified(BoundaryClassification::Tagged(BoundaryTags::EMPTY)),
+                base.root(),
+                base.token_count(),
+            ),
+        ),
+        (
+            "the boundary classification's set",
+            ValueManifest::new(
+                profile.classified(BoundaryClassification::Tagged(
+                    BoundaryTags::EMPTY.with(ConstructorTag::from(0xFF_u8)),
+                )),
+                base.root(),
+                base.token_count(),
+            ),
+        ),
+        (
             "the root digest",
             at(ContentPtr::new(
                 ChunkDigest::from(digest),
@@ -264,9 +286,14 @@ proptest! {
     /// The manifest of every generated commit under every generated profile
     /// decodes from its image back to itself, re-encodes to the same bytes,
     /// and is named by those bytes' BLAKE3; so does the same manifest naming
-    /// chunk-local children, which a commit refuses but an image admits.
+    /// chunk-local children, which a commit refuses but an image admits, and
+    /// the same manifest under a generated tagged classification.
     #[test]
-    fn a_manifest_round_trips_through_its_bytes(value in tree(), profile in profile()) {
+    fn a_manifest_round_trips_through_its_bytes(
+        value in tree(),
+        profile in profile(),
+        words in any::<[u64; 4]>(),
+    ) {
         let mut store = InMemoryChunkStore::new();
         let committed = cam_commit(&mut store, &profile, &value)
             .expect("a generated value commits");
@@ -275,8 +302,18 @@ proptest! {
             committed.root(),
             committed.token_count(),
         );
+        let tags = (0_u8 ..= u8::MAX)
+            .filter(|&tag| {
+                words[usize::from(tag >> 6_u8)] & (1_u64 << (tag & 0x3F_u8)) != 0
+            })
+            .fold(BoundaryTags::EMPTY, |tags, tag| tags.with(ConstructorTag::from(tag)));
+        let tagged = ValueManifest::new(
+            profile.classified(BoundaryClassification::Tagged(tags)),
+            committed.root(),
+            committed.token_count(),
+        );
 
-        for manifest in [committed, chunk_local] {
+        for manifest in [committed, chunk_local, tagged] {
             let image = manifest.encode();
             let decoded = ValueManifest::decode(image.as_image());
             prop_assert_eq!(decoded, Ok(manifest));
@@ -287,6 +324,57 @@ proptest! {
             );
         }
     }
+}
+
+/// A tagged profile's manifest round-trips through its bytes with its
+/// classification, its set's bytes following the tag lowest tags first, and a
+/// reader under the classification by every constructor refuses it naming the
+/// boundary classification before reading a chunk.
+#[test]
+fn a_tagged_manifest_round_trips_and_refuses_the_untagged_reader()
+{
+    let base = golden();
+    let untagged = *base.profile();
+    let tags = BoundaryTags::EMPTY
+        .with(ConstructorTag::from(0x00_u8))
+        .with(ConstructorTag::from(0x3F_u8))
+        .with(ConstructorTag::from(0x40_u8))
+        .with(ConstructorTag::from(0xFF_u8));
+    let tagged = ValueManifest::new(
+        untagged.classified(BoundaryClassification::Tagged(tags)),
+        base.root(),
+        base.token_count(),
+    );
+    let image = tagged.encode();
+    let bytes: &[u8] = image.as_ref();
+
+    assert_eq!(
+        bytes.len(),
+        GOLDEN_LEN + 32,
+        "the set's bytes follow the tag"
+    );
+    assert_eq!(
+        bytes.get(97),
+        Some(&0x02_u8),
+        "the tagged classification's tag"
+    );
+    let mut set = [0_u8; 32];
+    set[0] = 0x01;
+    set[7] = 0x80;
+    set[8] = 0x01;
+    set[31] = 0x80;
+    assert_eq!(
+        bytes.get(98 .. 130),
+        Some(set.as_slice()),
+        "the set, lowest tags first"
+    );
+    assert_eq!(ValueManifest::decode(image.as_image()), Ok(tagged));
+    assert_eq!(
+        tagged.profile().ensure_matches(&untagged),
+        Err(ValueError::IncompatibleProfile {
+            field: ProfileField::BoundaryClassification,
+        })
+    );
 }
 
 /// A foreign domain, an unknown manifest version, an unassigned value in each
@@ -358,8 +446,15 @@ fn each_malformed_manifest_is_refused_by_name()
             malformed(ManifestField::BoundaryClassification),
         ),
         (
-            with(97, 0x02),
+            with(97, 0x03),
             malformed(ManifestField::BoundaryClassification),
+        ),
+        // A tagged classification whose set the image cuts short.
+        (
+            with(97, 0x02)[.. 120].to_vec(),
+            Err(ValueError::TruncatedManifest {
+                field: ManifestField::BoundaryClassification,
+            }),
         ),
         (with(98, 0x00), malformed(ManifestField::ChunkFrameVersion)),
         (with(98, 0x02), malformed(ManifestField::ChunkFrameVersion)),

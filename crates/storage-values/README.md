@@ -25,6 +25,7 @@ A content-addressed value plane with typed chunk DAGs, content pointers and flat
 - `cam_commit` stores chunks and returns a `ValueManifest`; `cam_deref` decodes from a root or interior `ContentPtr`.
 - `ValueManifest::encode`, `decode` and `identity` give a manifest one byte image and a BLAKE3 identity over it; `read_under` refuses a profile mismatch before loading a chunk; `closure` returns the `ValueClosure` a dereference loads and checks the manifest's token count against it.
 - `encode_flat` and `decode_flat` round-trip a value without a store or child pointers.
+- `ValueProfile::classified` with a `BoundaryClassification::Tagged` set names the boundary constructors; every other constructor is an alias, kept inline in the chunk that holds it. A commit refuses an alias reopened inside itself with no boundary between, and a closure refuses a seam at an alias.
 - `VerifiedChunk`, `frame_chunk` and `verify_chunk_image` bind canonical framing to content identity.
 - `ChunkStore` defines verified chunk storage; `InMemoryChunkStore` supplies an in-memory implementation.
 - `expected_chunk_bound` and `measure_edit` express and measure chunk locality.

@@ -1,11 +1,22 @@
 //! `cam_commit` — the typed chunking traversal, committing bottom-up.
 //!
 //! The traversal walks a value once, in preorder, appending its records to a
-//! pending body. At every constructor exit but the outermost it raises a
-//! boundary event and asks the committed typed profile whether to cut. A cut
-//! frames the closed subtree as a chunk, stores it, and splices a child record
-//! naming that chunk in its place. The root chunk is framed last, and its
-//! digest at offset zero is the root pointer.
+//! pending body. At every boundary constructor's exit but the outermost it
+//! raises a boundary event and asks the committed typed profile whether to
+//! cut. A cut frames the closed subtree as a chunk, stores it, and splices a
+//! child record naming that chunk in its place. The root chunk is framed last,
+//! and its digest at offset zero is the root pointer.
+//!
+//! # Alias and boundary constructors
+//!
+//! The profile's [`BoundaryClassification`] says which constructors are
+//! boundaries. An alias constructor's exit raises no event, so its subtree
+//! stays in the chunk of the constructor holding it, and a read of that chunk
+//! copies it whole. An alias region — the aliases open since the innermost
+//! open boundary — is bounded only when no alias opens inside an open alias of
+//! its own tag; the traversal refuses that open with
+//! [`ValueError::RecursiveAlias`], since an alias type that recurses through
+//! aliases alone has no bound a chunk could keep.
 //!
 //! # Bottom-up commitment
 //!
@@ -37,11 +48,12 @@
 //!
 //! Each record appended to a body joins the scanner's count once, at the next
 //! boundary event: every record the value emits, and the one child record that
-//! takes a cut subtree's place in its parent. Every constructor exit except the
-//! outermost is a candidate: the scanner cuts when the pending count reaches
-//! the cap, otherwise when the residue is divisible by kappa, and a cut empties
-//! the count. The outermost constructor becomes the root chunk directly,
-//! avoiding an extra pointer-only root.
+//! takes a cut subtree's place in its parent. Every boundary constructor's
+//! exit except the outermost is a candidate: the scanner cuts when the pending
+//! count reaches the cap, otherwise when the residue is divisible by kappa, and
+//! a cut empties the count. An alias constructor's residue nests in its
+//! parent's preimage like any other. The outermost constructor becomes the
+//! root chunk directly, avoiding an extra pointer-only root.
 //!
 //! # Root framing
 //!
@@ -60,12 +72,16 @@ use gandr_theory_spec_combinators::Holds;
 
 use crate::chunk::ChunkStore;
 use crate::chunk::frame_chunk;
+use crate::closure::WalkStart;
 use crate::closure::add_tokens;
 use crate::closure::walk_closure;
 use crate::error::EmissionFault;
 use crate::error::ValueError;
 use crate::error::ValueQuantity;
 use crate::index_base::ChildIndexBase;
+use crate::manifest::BoundaryClassification;
+use crate::manifest::BoundaryTags;
+use crate::manifest::ConstructorClass;
 use crate::manifest::ValueManifest;
 use crate::manifest::ValueProfile;
 use crate::ptr::ContentPtr;
@@ -94,14 +110,16 @@ const NESTED_SUBTREE: u8 = 0x00_u8;
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct PreimageMark(usize);
 
-/// One open constructor: where its subtree starts in the body, and where its
-/// residue preimage starts.
+/// One open constructor: where its subtree starts in the body, where its
+/// residue preimage starts, what it is to the chunk DAG, and the alias tags
+/// open around it.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: identifies one open constructor in a sink's body and residue
 ///   preimage buffers.
-/// - provides: the two starts a close and possible cut consume.
+/// - provides: the two starts a close and possible cut consume, and the alias
+///   region the close restores.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the two buffers that give the marks meaning belong to
@@ -120,6 +138,11 @@ struct OpenFrame
     body_start: BodyMark,
     /// The preimage position of the constructor's residue domain.
     preimage_start: PreimageMark,
+    /// Whether the constructor's exit raises a boundary event.
+    class: ConstructorClass,
+    /// The alias tags open since the innermost boundary outside the
+    /// constructor.
+    aliases_outside: BoundaryTags,
 }
 
 /// The committing traversal's sink.
@@ -159,6 +182,10 @@ where
     preimage: Vec<u8>,
     /// One frame per open constructor, outermost first.
     open: Vec<OpenFrame>,
+    /// Which constructors are boundaries.
+    classification: BoundaryClassification,
+    /// The alias tags open since the innermost open boundary.
+    aliases: BoundaryTags,
     /// Where the emission stands in the one-balanced-value shape.
     shape: EmissionShape,
     /// Records appended to the body since the previous boundary event.
@@ -186,6 +213,8 @@ where
             body: BodyWriter::default(),
             preimage: Vec::new(),
             open: Vec::new(),
+            classification: profile.boundary_classification(),
+            aliases: BoundaryTags::EMPTY,
             shape: EmissionShape::Empty,
             since_event: TokenCount::ZERO,
             delivered: TokenCount::ZERO,
@@ -373,10 +402,13 @@ where
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success one frame deeper, its preimage opened with
-    ///   [`RESIDUE_DOMAIN`], and the open record appended.
+    ///   [`RESIDUE_DOMAIN`], the open record appended, and the alias region
+    ///   holding `tag` when the classification makes it an alias and empty when
+    ///   a boundary.
     /// - provides: the committing half of [`TokenSink::open`].
-    /// - fails: the shape refusal for a second root, and [`CommitSink`]'s
-    ///   overflow refusals.
+    /// - fails: the shape refusal for a second root,
+    ///   [`ValueError::RecursiveAlias`] for an alias whose tag the alias region
+    ///   already holds, and [`CommitSink`]'s overflow refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -385,22 +417,43 @@ where
     /// # Adequacy
     /// - hypothesis: L3 on two nested constructors observes their live body and
     ///   residue marks, exact final bytes and delivered count; malformed
-    ///   emissions distinguish a second root. This separates missed pushes,
-    ///   wrong domain starts and lost open records on these inputs.
+    ///   emissions distinguish a second root. L2 over generated values and
+    ///   classifications compares the recursive-alias refusal with a reference
+    ///   reading of the flat form. This separates missed pushes, wrong domain
+    ///   starts, lost open records and an alias region kept across a boundary.
     /// - witness: `commit::tests::open_frames_bind_live_body_and_residue_marks`
     /// - witness: `tests::values::a_malformed_emission_is_refused_by_name`
+    /// - witness: `tests::classification::a_tagged_commit_reads_back_or_refuses_an_unbounded_alias`
     #[inline]
     #[spec(captures: [entry_depth = self.open.len()],
-        ensures: |ret| ret.is_err() || self.open.len() == entry_depth.saturating_add(1_usize))]
+        ensures: |ret| ret.is_err() || (self.open.len() == entry_depth.saturating_add(1_usize)
+            && match self.classification.class(tag) {
+                ConstructorClass::Alias => self.aliases.class(tag) == ConstructorClass::Boundary,
+                ConstructorClass::Boundary => self.aliases == BoundaryTags::EMPTY,
+            }))]
     fn open(
         &mut self,
         tag: ConstructorTag,
     ) -> Result<(), ValueError>
     {
         self.shape.open()?;
+        let class = self.classification.class(tag);
+        let aliases_outside = self.aliases;
+        self.aliases = match class {
+            ConstructorClass::Alias if aliases_outside.class(tag) == ConstructorClass::Boundary => {
+                return Err(ValueError::RecursiveAlias {
+                    tag,
+                    position: self.delivered,
+                });
+            },
+            ConstructorClass::Alias => aliases_outside.with(tag),
+            ConstructorClass::Boundary => BoundaryTags::EMPTY,
+        };
         self.open.push(OpenFrame {
             body_start: self.body.mark(),
             preimage_start: PreimageMark(self.preimage.len()),
+            class,
+            aliases_outside,
         });
         self.preimage.extend_from_slice(RESIDUE_DOMAIN);
 
@@ -483,8 +536,10 @@ where
     ///   so the manifest counts the value a reader reads back.
     /// - provides: the committing half of [`TokenSink::child_pointer`].
     /// - fails: the shape refusal outside every constructor, and the closure
-    ///   walk's refusals for the pointer — [`ValueError::UnknownChunk`] naming
-    ///   a chunk of its closure the store does not hold among them.
+    ///   walk's refusals for the pointer as a seam —
+    ///   [`ValueError::UnknownChunk`] naming a chunk of its closure the store
+    ///   does not hold, and [`ValueError::AliasSeam`] for a subtree opening
+    ///   with an alias under the profile's classification, among them.
     /// - panics: none.
     ///
     /// # Errors
@@ -510,7 +565,11 @@ where
         self.shape.payload()?;
         // economy: each embedding walks its pointer's closure afresh; a
         // per-commit memo of embedded pointers if embedding-heavy codecs show.
-        let embedded = walk_closure(&*self.store, pointer)?;
+        let embedded = walk_closure(
+            &*self.store,
+            pointer,
+            (self.classification, WalkStart::Seam),
+        )?;
 
         self.emit(Record::Child(pointer), embedded.token_count())
     }
@@ -520,11 +579,12 @@ where
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: on success the close record is appended and the frame popped;
-    ///   for an inner constructor the event carried the records since the
-    ///   previous event and the subtree's residue, the parent's preimage holds
-    ///   the subtree digest, and a cut decision replaced the subtree with a
-    ///   child record; the outermost close raises no event.
+    /// - ensures: on success the close record is appended, the frame popped and
+    ///   the alias region outside it restored; for an inner boundary
+    ///   constructor the event carried the records since the previous event and
+    ///   the subtree's residue, the parent's preimage holds the subtree digest,
+    ///   and a cut decision replaced the subtree with a child record; an
+    ///   alias's close and the outermost close raise no event.
     /// - provides: every cut the traversal makes.
     /// - fails: the shape refusal with nothing open, [`CommitSink`]'s refusals,
     ///   and the cut's.
@@ -546,6 +606,7 @@ where
     /// - witness: `tests::values::a_committed_value_derefs_back_equal`
     /// - witness: `tests::values::a_value_larger_than_one_chunk_is_read_across_seams`
     /// - witness: `tests::flat::flat_bytes_equal_the_single_chunk_body`
+    /// - witness: `tests::classification::a_tagged_commit_reads_back_or_refuses_an_unbounded_alias`
     #[inline]
     #[spec(captures: [entry_depth = self.open.len()],
         ensures: |ret| ret.is_err() || self.open.len().saturating_add(1_usize) == entry_depth)]
@@ -566,6 +627,7 @@ where
                 .unwrap_or_default(),
         );
         self.preimage.truncate(frame.preimage_start.0);
+        self.aliases = frame.aliases_outside;
 
         if closing == Closing::Root {
             return Ok(());
@@ -573,6 +635,10 @@ where
 
         self.preimage.push(NESTED_SUBTREE);
         self.preimage.extend_from_slice(subtree.as_bytes());
+
+        if frame.class == ConstructorClass::Alias {
+            return Ok(());
+        }
 
         let Some(head) = subtree.as_bytes().first_chunk::<8>()
         else {

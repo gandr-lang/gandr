@@ -82,7 +82,7 @@ pub enum Shape
 impl Shape
 {
     /// Every shape.
-    const ALL: [Self; 7] = [
+    pub const ALL: [Self; 7] = [
         Self::Unit,
         Self::Word,
         Self::Bytes,

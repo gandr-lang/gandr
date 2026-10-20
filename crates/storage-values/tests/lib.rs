@@ -13,6 +13,8 @@ mod generate;
 mod reference;
 
 #[cfg(test)]
+mod classification;
+#[cfg(test)]
 mod closure;
 #[cfg(test)]
 mod flat;
