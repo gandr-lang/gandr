@@ -372,16 +372,34 @@ const fn checked(refusal: CheckRefusal) -> Culprit
 mod tests
 {
     use gandr_surface_corpus::Refusal;
+    use gandr_surface_lowering::AscriptionForm;
+    use gandr_surface_lowering::AttributeSchema;
+    use gandr_surface_lowering::CrossedExit;
     use gandr_surface_lowering::Ending;
     use gandr_surface_lowering::FormFault;
     use gandr_surface_lowering::FormName;
+    use gandr_surface_lowering::FragmentBoundary;
+    use gandr_surface_lowering::FragmentSort;
+    use gandr_surface_lowering::HeadArity;
+    use gandr_surface_lowering::LoopExit;
+    use gandr_surface_lowering::LoweringBudget;
     use gandr_surface_lowering::LoweringRefusal;
+    use gandr_surface_lowering::Offer;
+    use gandr_surface_lowering::OperandCount;
+    use gandr_surface_lowering::PayloadForm;
+    use gandr_surface_lowering::RegisteredAttribute;
     use gandr_surface_lowering::Repair;
+    use gandr_surface_lowering::StrayKeyword;
+    use gandr_surface_lowering::SurfaceName;
+    use gandr_surface_lowering::TelescopeFault;
     use gandr_surface_lowering::TileName;
+    use gandr_surface_lowering::model::ModelFault;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
     use gandr_surface_syntax::ClosingClass;
+    use gandr_surface_syntax::GrammarFingerprint;
     use gandr_surface_syntax::GroutShape;
+    use gandr_surface_syntax::MoldId;
 
     use super::Culprit;
 
@@ -399,6 +417,10 @@ mod tests
             Repair::GhostClose(ClosingClass::Brace),
             Repair::Unended(Ending::Tile(TileName::SEMICOLON)),
             Repair::Unended(Ending::Unnamed),
+            Repair::Keyword(StrayKeyword {
+                written: TileName::SEMICOLON,
+                offer: Offer::Unspelled,
+            }),
         ]
         .into_iter()
         .map(|repair| {
@@ -414,8 +436,360 @@ mod tests
         labels.dedup();
         assert_eq!(
             labels.len(),
-            8_usize,
+            9_usize,
             "each repair names what the source left out"
         );
+    }
+
+    /// The label of a lowering refusal's primary locus, as the witness reads
+    /// it: the match mirrors `lowered`'s arms one for one, so a label that
+    /// changes in `lowered` changes here too and the witness fails.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn label(refusal: LoweringRefusal<'_>) -> Culprit
+    {
+        Culprit(match refusal {
+            LoweringRefusal::UnresolvedName { .. } => "not found in this scope",
+            LoweringRefusal::UnresolvedDocLink { .. } => "links to no declared name",
+            LoweringRefusal::UnresolvedTypeHead { .. } => "no type head of this name and arity",
+            LoweringRefusal::DuplicateSignature { .. }
+            | LoweringRefusal::DuplicateDefinition { .. }
+            | LoweringRefusal::DuplicateImportAlias { .. }
+            | LoweringRefusal::DuplicateAttribute { .. } => "written again here",
+            LoweringRefusal::ShadowedBuiltin { .. } => "shadows a builtin",
+            LoweringRefusal::ImportUnresolved { .. } => "names no source this root holds",
+            LoweringRefusal::ImportCycle { .. } => "leads back to this source",
+            LoweringRefusal::ImportShadows { .. } => "bound here and by an import",
+            LoweringRefusal::UnexportedName { .. } => "declared without a definition",
+            LoweringRefusal::OutOfFragment { boundary, .. } => match boundary {
+                FragmentBoundary::Reserved => "a reserved form",
+                FragmentBoundary::Unadmitted => "a form the fragment does not admit",
+                FragmentBoundary::WrongSort => "a form of another sort than this position takes",
+                FragmentBoundary::Arity(_) => "the wrong number of operands",
+                FragmentBoundary::Indexed => "a family applied to an index",
+                FragmentBoundary::Unannotated => "needs a stated type",
+                FragmentBoundary::NonUniform => "not the parameter itself",
+                FragmentBoundary::NotAFunction => "a constructor, not a function",
+                FragmentBoundary::NotInTail => "not on a path through a body",
+                FragmentBoundary::JoinsBlock => "an answer the arms do not give",
+                FragmentBoundary::EmptyList => "an empty list, not the unit",
+                FragmentBoundary::Endpoint => "not an endpoint a fork binds",
+                FragmentBoundary::NonContractive => "recurses before any action",
+                FragmentBoundary::Held => "not a value a hold holds",
+                FragmentBoundary::View => "not a view an access binds",
+            },
+            LoweringRefusal::GradedBridge { .. } => "a grade other than `ω`",
+            LoweringRefusal::MalformedLiteral { .. } => "not this literal's lexeme",
+            LoweringRefusal::MalformedForm { fault, .. } => match fault {
+                FormFault::Repaired(Repair::Grout(GroutShape::Convex)) => "a term is missing here",
+                FormFault::Repaired(Repair::Grout(GroutShape::Prefix | GroutShape::Postfix))
+                | FormFault::MissingOperand => "an operand is missing here",
+                FormFault::Repaired(Repair::Grout(GroutShape::Infix)) => {
+                    "an operator is missing here"
+                },
+                FormFault::Repaired(Repair::Keyword(_)) => "a keyword where a term belongs",
+                FormFault::Repaired(Repair::GhostClose(ClosingClass::Paren)) => "missing `)`",
+                FormFault::Repaired(Repair::GhostClose(ClosingClass::Bracket)) => "missing `]`",
+                FormFault::Repaired(Repair::GhostClose(ClosingClass::Brace)) => "missing `}`",
+                FormFault::Repaired(Repair::Unended(Ending::Tile(_))) => {
+                    "its closing tile belongs here"
+                },
+                FormFault::Repaired(Repair::Unended(Ending::Unnamed)) => "the form stops here",
+                FormFault::ExtraOperand => "an operand the form does not take",
+                FormFault::MisplacedTile => "out of place",
+            },
+            LoweringRefusal::UnknownAttribute { .. } => "unknown attribute",
+            LoweringRefusal::MissingPayload { .. } => "takes a payload",
+            LoweringRefusal::NonValuePayload { .. } => "a payload that is not a value",
+            LoweringRefusal::IllTypedPayload { .. } => "a payload of another schema",
+            LoweringRefusal::ForwardMemberReference { .. } => "named before it is declared",
+            LoweringRefusal::UnknownMember { .. } => "no member of this name",
+            LoweringRefusal::NotAFunctor { .. } => "not a functor",
+            LoweringRefusal::ProjectionFromApplication { .. } => {
+                "an application read before it is bound"
+            },
+            LoweringRefusal::UnreadAscription { .. } => "not read by the fragment yet",
+            LoweringRefusal::UnstatedComponent { .. } => "the signature this model derives",
+            LoweringRefusal::FamilyTelescope { .. } => "parameters its kind does not state",
+            LoweringRefusal::LowercaseModuleName { .. } => "a lowercase initial",
+            LoweringRefusal::NonExhaustiveMatch { .. } => "some value matches no arm",
+            LoweringRefusal::UnmarkedSelfReference { .. } => "recursion without a claim",
+            LoweringRefusal::DescentOnSeveralParameters { .. } => "descends on another parameter",
+            LoweringRefusal::Unreachable { .. } => "no path reaches this",
+            LoweringRefusal::OutsideLoop { .. } => "no loop to leave",
+            LoweringRefusal::AcrossHandler { .. } => "an exit across a live handler",
+            LoweringRefusal::ForNeedsListCase { .. } => "a `for` loop",
+            LoweringRefusal::WithoutK { .. } => "a path matched against reflexivity",
+            LoweringRefusal::DirectedCell { .. } => "a directed cell between terms",
+            LoweringRefusal::CellNotALoop { .. } => "a cell between two distinct terms",
+            LoweringRefusal::RulesUnoriented { .. } => "a rule that may not end",
+            LoweringRefusal::RulesDiverge { .. } => "rewrites a term to another normal form",
+            LoweringRefusal::RulesUndecided { .. } => "a pair the step budget left undecided",
+            LoweringRefusal::BudgetExceeded { .. } => "the lowering's allowance ran out",
+            LoweringRefusal::GrammarMismatch { .. } => "molded under another grammar",
+            LoweringRefusal::UnknownMold { .. } => "a mold the grammar does not hold",
+            LoweringRefusal::Unminted { .. } => "a declaration the lowering dropped",
+        })
+    }
+
+    #[test]
+    fn every_lowering_refusal_labels_what_its_bytes_are()
+    {
+        let at = ByteSpan::new(ByteOffset::from(3_usize), ByteOffset::from(3_usize))
+            .expect("an empty span is ordered");
+        let name = SurfaceName::from("name");
+        let refusals = [
+            LoweringRefusal::UnresolvedName { span: at, name },
+            LoweringRefusal::UnresolvedDocLink { span: at, name },
+            LoweringRefusal::UnresolvedTypeHead {
+                span: at,
+                name,
+                arity: HeadArity::Nullary,
+            },
+            LoweringRefusal::DuplicateSignature {
+                span: at,
+                name,
+                first: at,
+            },
+            LoweringRefusal::DuplicateDefinition {
+                span: at,
+                name,
+                first: at,
+            },
+            LoweringRefusal::DuplicateImportAlias {
+                span: at,
+                alias: name,
+                first: at,
+            },
+            LoweringRefusal::DuplicateAttribute {
+                span: at,
+                name,
+                first: at,
+            },
+            LoweringRefusal::ShadowedBuiltin { span: at, name },
+            LoweringRefusal::ImportUnresolved {
+                span: at,
+                refused: at,
+            },
+            LoweringRefusal::ImportCycle {
+                span: at,
+                refused: at,
+            },
+            LoweringRefusal::ImportShadows {
+                span: at,
+                name,
+                import: at,
+                other: at,
+            },
+            LoweringRefusal::UnexportedName {
+                span: at,
+                name,
+                declared: at,
+            },
+            LoweringRefusal::OutOfFragment {
+                span: at,
+                form: FormName::DECLARATION,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Reserved,
+            },
+            LoweringRefusal::OutOfFragment {
+                span: at,
+                form: FormName::DECLARATION,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Unadmitted,
+            },
+            LoweringRefusal::OutOfFragment {
+                span: at,
+                form: FormName::DECLARATION,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::WrongSort,
+            },
+            LoweringRefusal::OutOfFragment {
+                span: at,
+                form: FormName::DECLARATION,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Arity(OperandCount::from(2_usize)),
+            },
+            LoweringRefusal::OutOfFragment {
+                span: at,
+                form: FormName::DECLARATION,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Indexed,
+            },
+            LoweringRefusal::OutOfFragment {
+                span: at,
+                form: FormName::DECLARATION,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Unannotated,
+            },
+            LoweringRefusal::OutOfFragment {
+                span: at,
+                form: FormName::DECLARATION,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::NonUniform,
+            },
+            LoweringRefusal::OutOfFragment {
+                span: at,
+                form: FormName::DECLARATION,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::NotAFunction,
+            },
+            LoweringRefusal::OutOfFragment {
+                span: at,
+                form: FormName::DECLARATION,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::NotInTail,
+            },
+            LoweringRefusal::OutOfFragment {
+                span: at,
+                form: FormName::DECLARATION,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::JoinsBlock,
+            },
+            LoweringRefusal::OutOfFragment {
+                span: at,
+                form: FormName::DECLARATION,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::EmptyList,
+            },
+            LoweringRefusal::OutOfFragment {
+                span: at,
+                form: FormName::DECLARATION,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Endpoint,
+            },
+            LoweringRefusal::OutOfFragment {
+                span: at,
+                form: FormName::DECLARATION,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::NonContractive,
+            },
+            LoweringRefusal::OutOfFragment {
+                span: at,
+                form: FormName::DECLARATION,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Held,
+            },
+            LoweringRefusal::OutOfFragment {
+                span: at,
+                form: FormName::DECLARATION,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::View,
+            },
+            LoweringRefusal::GradedBridge {
+                span: at,
+                grade: name,
+            },
+            LoweringRefusal::MalformedLiteral {
+                span: at,
+                form: FormName::DECLARATION,
+            },
+            LoweringRefusal::MalformedForm {
+                span: at,
+                form: FormName::DECLARATION,
+                fault: FormFault::ExtraOperand,
+            },
+            LoweringRefusal::MalformedForm {
+                span: at,
+                form: FormName::DECLARATION,
+                fault: FormFault::MisplacedTile,
+            },
+            LoweringRefusal::MissingPayload {
+                span: at,
+                name: RegisteredAttribute::DOC,
+                expected: AttributeSchema::Marker,
+            },
+            LoweringRefusal::NonValuePayload {
+                span: at,
+                name: RegisteredAttribute::DOC,
+                form: FormName::DECLARATION,
+            },
+            LoweringRefusal::IllTypedPayload {
+                span: at,
+                name: RegisteredAttribute::DOC,
+                expected: AttributeSchema::Marker,
+                written: PayloadForm::Integer,
+            },
+            LoweringRefusal::ForwardMemberReference {
+                span: at,
+                name,
+                declared: at,
+            },
+            LoweringRefusal::UnknownMember {
+                span: at,
+                module: name,
+                member: name,
+            },
+            LoweringRefusal::NotAFunctor { span: at, name },
+            LoweringRefusal::ProjectionFromApplication {
+                span: at,
+                functor: name,
+            },
+            LoweringRefusal::UnreadAscription {
+                span: at,
+                name,
+                form: AscriptionForm::Kinded,
+            },
+            LoweringRefusal::UnstatedComponent {
+                span: at,
+                name,
+                fault: ModelFault::UnknownHead,
+            },
+            LoweringRefusal::FamilyTelescope {
+                span: at,
+                name,
+                fault: TelescopeFault::Index(OperandCount::from(1_usize)),
+            },
+            LoweringRefusal::LowercaseModuleName { span: at, name },
+            LoweringRefusal::NonExhaustiveMatch { span: at },
+            LoweringRefusal::UnmarkedSelfReference { span: at, name },
+            LoweringRefusal::DescentOnSeveralParameters {
+                span: at,
+                staged: name,
+                claimed: name,
+            },
+            LoweringRefusal::Unreachable { span: at },
+            LoweringRefusal::OutsideLoop {
+                span: at,
+                exit: LoopExit::Break,
+            },
+            LoweringRefusal::AcrossHandler {
+                span: at,
+                exit: CrossedExit::Become,
+            },
+            LoweringRefusal::ForNeedsListCase { span: at },
+            LoweringRefusal::WithoutK { span: at },
+            LoweringRefusal::DirectedCell { span: at },
+            LoweringRefusal::CellNotALoop { span: at },
+            LoweringRefusal::RulesUnoriented { span: at },
+            LoweringRefusal::RulesDiverge {
+                span: at,
+                first: at,
+            },
+            LoweringRefusal::RulesUndecided {
+                span: at,
+                first: at,
+            },
+            LoweringRefusal::BudgetExceeded {
+                budget: LoweringBudget::from(1_usize),
+            },
+            LoweringRefusal::GrammarMismatch {
+                tree: GrammarFingerprint::from(1_u64),
+                grammar: GrammarFingerprint::from(2_u64),
+            },
+            LoweringRefusal::UnknownMold {
+                span: at,
+                mold: MoldId::from(1_u32),
+            },
+            LoweringRefusal::Unminted { span: at, name },
+        ];
+        for refusal in refusals {
+            assert_eq!(
+                Culprit::of(Refusal::Lowering(refusal)),
+                label(refusal),
+                "the label names what the bytes are"
+            );
+        }
     }
 }

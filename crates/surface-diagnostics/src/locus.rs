@@ -3433,4 +3433,771 @@ mod tests
             );
         }
     }
+
+    #[test]
+    fn every_checker_title_names_its_subject_and_payloads()
+    {
+        use gandr_core_checker::LoopRespect;
+        use gandr_core_checker::RunFault;
+        use gandr_core_checker::access::AccessDefect;
+        use gandr_core_checker::ua::StratumDefect;
+        use gandr_core_checker::ua::UaDefect;
+        use gandr_core_checker::worlds::Crossed;
+        use gandr_core_checker::worlds::LocatedDefect;
+        use gandr_core_checker::worlds::Predicate;
+        use gandr_kernel_term::CellIndex;
+        use gandr_kernel_term::DeBruijnIndex;
+        use gandr_kernel_term::RuleFault;
+        use gandr_kernel_term::RuleIndex;
+        use gandr_kernel_term::RuleRefusal;
+        use gandr_theory_sites::ElementIndex;
+        use gandr_theory_sites::PortCount;
+        use gandr_theory_sites::Profile;
+        use gandr_theory_sites::ShapeIndex;
+        use gandr_theory_sites::ShapeSize;
+
+        let mut arena = CoreArena::new();
+        let value = arena.value_unit();
+        let computation = arena.computation_return(value);
+        let value_type = arena.value_type_unit();
+        let comp_type = arena.comp_type_returner(value_type);
+        let comp = CoreNode::Term(TermNode::Computation(computation));
+        let title = |refusal: CheckRefusal| Checked(refusal).to_string();
+        let ordinals = |title: &str| -> Vec<usize> {
+            title
+                .split(|character: char| !character.is_ascii_digit())
+                .filter_map(|digits| digits.parse::<usize>().ok())
+                .collect()
+        };
+        let not_apart = |reason: gandr_kernel_term::Apartness| {
+            title(CheckRefusal::NotApart {
+                at: computation,
+                reason,
+            })
+        };
+        let apart = not_apart(gandr_kernel_term::Apartness::Apart);
+        let agree = not_apart(gandr_kernel_term::Apartness::Agree);
+        let open = not_apart(gandr_kernel_term::Apartness::Open);
+        let leaf = not_apart(gandr_kernel_term::Apartness::Leaf);
+        let diverges = not_apart(gandr_kernel_term::Apartness::Diverges {
+            outer: RuleIndex::from(1_usize),
+            inner: RuleIndex::from(2_usize),
+        });
+        let undecided = not_apart(gandr_kernel_term::Apartness::Undecided);
+        let apartness = [&apart, &agree, &open, &leaf, &diverges, &undecided];
+        for (index, title) in apartness.iter().enumerate() {
+            for earlier in &apartness[.. index] {
+                assert_ne!(
+                    *earlier, *title,
+                    "each apartness reason stays distinguishable"
+                );
+            }
+        }
+        assert_eq!(
+            ordinals(&diverges),
+            [1_usize, 2_usize],
+            "the overlapped rule, then the other"
+        );
+        let loops = [
+            title(CheckRefusal::LoopNotRespected {
+                at: computation,
+                cell: CellIndex::from(1_usize),
+                left: computation,
+                right: computation,
+                reason: LoopRespect::Apart,
+            }),
+            title(CheckRefusal::LoopNotRespected {
+                at: computation,
+                cell: CellIndex::from(1_usize),
+                left: computation,
+                right: computation,
+                reason: LoopRespect::NotPresentedSet,
+            }),
+            title(CheckRefusal::LoopUndecided {
+                at: computation,
+                cell: CellIndex::from(1_usize),
+            }),
+        ];
+        for (index, title) in loops.iter().enumerate() {
+            for earlier in &loops[.. index] {
+                assert_ne!(earlier, title, "each loop refusal names its own subject");
+            }
+        }
+        assert_eq!(ordinals(&loops[0]), [1_usize], "the loop's cell");
+        assert_eq!(ordinals(&loops[2]), [1_usize], "the loop's cell");
+        let rules = [
+            title(CheckRefusal::RuleNotPresentable {
+                kind: value_type,
+                refusal: RuleRefusal {
+                    rule: RuleIndex::from(1_usize),
+                    fault: RuleFault::VariableHeaded,
+                },
+            }),
+            title(CheckRefusal::RuleNotPresentable {
+                kind: value_type,
+                refusal: RuleRefusal {
+                    rule: RuleIndex::from(1_usize),
+                    fault: RuleFault::UnknownConstructor,
+                },
+            }),
+            title(CheckRefusal::RuleNotPresentable {
+                kind: value_type,
+                refusal: RuleRefusal {
+                    rule: RuleIndex::from(1_usize),
+                    fault: RuleFault::Arity,
+                },
+            }),
+            title(CheckRefusal::RuleNotPresentable {
+                kind: value_type,
+                refusal: RuleRefusal {
+                    rule: RuleIndex::from(1_usize),
+                    fault: RuleFault::NotOwnPosition,
+                },
+            }),
+            title(CheckRefusal::RuleNotPresentable {
+                kind: value_type,
+                refusal: RuleRefusal {
+                    rule: RuleIndex::from(1_usize),
+                    fault: RuleFault::NonLinear,
+                },
+            }),
+            title(CheckRefusal::RuleNotPresentable {
+                kind: value_type,
+                refusal: RuleRefusal {
+                    rule: RuleIndex::from(1_usize),
+                    fault: RuleFault::Unbound,
+                },
+            }),
+            title(CheckRefusal::RuleNotPresentable {
+                kind: value_type,
+                refusal: RuleRefusal {
+                    rule: RuleIndex::from(1_usize),
+                    fault: RuleFault::Duplicated,
+                },
+            }),
+            title(CheckRefusal::RuleNotPresentable {
+                kind: value_type,
+                refusal: RuleRefusal {
+                    rule: RuleIndex::from(1_usize),
+                    fault: RuleFault::SlotMismatch,
+                },
+            }),
+            title(CheckRefusal::RuleNotPresentable {
+                kind: value_type,
+                refusal: RuleRefusal {
+                    rule: RuleIndex::from(1_usize),
+                    fault: RuleFault::NotDecreasing,
+                },
+            }),
+            title(CheckRefusal::RuleNotPresentable {
+                kind: value_type,
+                refusal: RuleRefusal {
+                    rule: RuleIndex::from(1_usize),
+                    fault: RuleFault::DependentSlot,
+                },
+            }),
+            title(CheckRefusal::RuleNotRespected {
+                at: computation,
+                rule: RuleIndex::from(1_usize),
+                left: value,
+                right: value,
+            }),
+        ];
+        for (index, title) in rules.iter().enumerate() {
+            for earlier in &rules[.. index] {
+                assert_ne!(earlier, title, "each rule fault names its own subject");
+            }
+        }
+        assert_eq!(ordinals(&rules[0]), [1_usize], "the rule's position");
+        assert_eq!(ordinals(&rules[10]), [1_usize], "the rule's position");
+        let strata = [
+            title(CheckRefusal::UaUncertified {
+                at: value,
+                stratum: StratumDefect::Degree {
+                    degree: gandr_theory_sites::Degree::from(3_usize),
+                },
+            }),
+            title(CheckRefusal::UaUncertified {
+                at: value,
+                stratum: StratumDefect::Allowance {
+                    bound: ShapeSize::from(6_usize),
+                },
+            }),
+        ];
+        assert_ne!(
+            strata[0], strata[1],
+            "a degree and a bound are distinct subjects"
+        );
+        assert_eq!(
+            ordinals(&strata[0]),
+            [1_usize, 3_usize],
+            "the floor, then the degree"
+        );
+        assert_eq!(
+            ordinals(&strata[1]),
+            [5_usize, 6_usize],
+            "the bound, then the asked bound"
+        );
+        let inequivalent = [
+            title(CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::UnknownGenerator {
+                    way: gandr_core_checker::ua::Way::Forward,
+                },
+            }),
+            title(CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::PastTheBound {
+                    profile: Profile {
+                        inputs: PortCount::from(1_usize),
+                        outputs: PortCount::from(2_usize),
+                    },
+                },
+            }),
+            title(CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::Cardinality {
+                    corolla: ShapeIndex::from(1_usize),
+                },
+            }),
+            title(CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::Tables {
+                    corolla: ShapeIndex::from(1_usize),
+                },
+            }),
+            title(CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::NotInverse {
+                    corolla: ShapeIndex::from(1_usize),
+                    element: ElementIndex::from(0_usize),
+                },
+            }),
+            title(CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::NotNatural {
+                    corolla: ShapeIndex::from(1_usize),
+                    element: ElementIndex::from(0_usize),
+                },
+            }),
+            title(CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::Stuck {
+                    corolla: ShapeIndex::from(1_usize),
+                    element: ElementIndex::from(0_usize),
+                },
+            }),
+        ];
+        for (index, title) in inequivalent.iter().enumerate() {
+            for earlier in &inequivalent[.. index] {
+                assert_ne!(
+                    earlier, title,
+                    "each translator defect names its own subject"
+                );
+            }
+        }
+        assert_eq!(
+            ordinals(&inequivalent[1]),
+            [1_usize, 2_usize],
+            "inputs, then outputs"
+        );
+        let forms = [
+            CheckingForm::Reify(value),
+            CheckingForm::Handle(computation),
+            CheckingForm::Reset(computation),
+            CheckingForm::Shift(computation),
+            CheckingForm::With(computation),
+            CheckingForm::Injection(value),
+            CheckingForm::List(value),
+            CheckingForm::Case(computation),
+            CheckingForm::Split(computation),
+            CheckingForm::Thunk(value),
+            CheckingForm::Lambda(computation),
+            CheckingForm::Return(computation),
+            CheckingForm::Hole(1_usize.into()),
+            CheckingForm::StaticLambda(value),
+            CheckingForm::Fixpoint(computation),
+            CheckingForm::Nested(value),
+            CheckingForm::Offer(computation),
+            CheckingForm::Scope(computation),
+            CheckingForm::Run(value),
+        ]
+        .into_iter()
+        .map(|form| title(CheckRefusal::NotSynthesisable { form }))
+        .collect::<Vec<_>>();
+        for (index, title) in forms.iter().enumerate() {
+            for earlier in &forms[.. index] {
+                assert_ne!(earlier, title, "each checking form names its own subject");
+            }
+        }
+        let sessions = [
+            title(CheckRefusal::SessionMismatch {
+                at: computation,
+                endpoint: Endpoint {
+                    fork: computation,
+                    side: ForkSide::Parent,
+                },
+                state: value_type,
+                defect: gandr_core_checker::session::ProtocolDefect::Label,
+            }),
+            title(CheckRefusal::SessionMismatch {
+                at: computation,
+                endpoint: Endpoint {
+                    fork: computation,
+                    side: ForkSide::Parent,
+                },
+                state: value_type,
+                defect: gandr_core_checker::session::ProtocolDefect::Arms,
+            }),
+        ];
+        assert_ne!(
+            sessions[0], sessions[1],
+            "a label and an offer are distinct refusals"
+        );
+        let linearity = [
+            title(CheckRefusal::Linearity {
+                at: comp,
+                defect: gandr_core_checker::session::LinearityDefect::Residue {
+                    endpoint: Endpoint {
+                        fork: computation,
+                        side: ForkSide::Parent,
+                    },
+                    state: value_type,
+                },
+            }),
+            title(CheckRefusal::Linearity {
+                at: comp,
+                defect: gandr_core_checker::session::LinearityDefect::Closed {
+                    endpoint: Endpoint {
+                        fork: computation,
+                        side: ForkSide::Parent,
+                    },
+                },
+            }),
+            title(CheckRefusal::Linearity {
+                at: comp,
+                defect: gandr_core_checker::session::LinearityDefect::UsedTwice {
+                    endpoint: Endpoint {
+                        fork: computation,
+                        side: ForkSide::Parent,
+                    },
+                },
+            }),
+            title(CheckRefusal::Linearity {
+                at: comp,
+                defect: gandr_core_checker::session::LinearityDefect::Delegated,
+            }),
+            title(CheckRefusal::Linearity {
+                at: comp,
+                defect: gandr_core_checker::session::LinearityDefect::AsValue {
+                    endpoint: Endpoint {
+                        fork: computation,
+                        side: ForkSide::Parent,
+                    },
+                },
+            }),
+            title(CheckRefusal::Linearity {
+                at: comp,
+                defect: gandr_core_checker::session::LinearityDefect::Unrestricted,
+            }),
+            title(CheckRefusal::Linearity {
+                at: comp,
+                defect: gandr_core_checker::session::LinearityDefect::Unbound {
+                    index: DeBruijnIndex::from(1_u32),
+                },
+            }),
+        ];
+        for (index, title) in linearity.iter().enumerate() {
+            for earlier in &linearity[.. index] {
+                assert_ne!(
+                    earlier, title,
+                    "each linearity defect names its own subject"
+                );
+            }
+        }
+        assert_eq!(ordinals(&linearity[6]), [1_usize], "the unbound index");
+        let access = [
+            title(CheckRefusal::Access {
+                at: comp,
+                defect: AccessDefect::NotHeld,
+            }),
+            title(CheckRefusal::Access {
+                at: comp,
+                defect: AccessDefect::Lent,
+            }),
+            title(CheckRefusal::Access {
+                at: comp,
+                defect: AccessDefect::HeldCaptured { by: Capture::Thunk },
+            }),
+            title(CheckRefusal::Access {
+                at: comp,
+                defect: AccessDefect::Escaped { by: Capture::Thunk },
+            }),
+            title(CheckRefusal::Access {
+                at: comp,
+                defect: AccessDefect::Unended,
+            }),
+            title(CheckRefusal::Access {
+                at: comp,
+                defect: AccessDefect::Spent,
+            }),
+            title(CheckRefusal::Access {
+                at: comp,
+                defect: AccessDefect::NotAView,
+            }),
+            title(CheckRefusal::Access {
+                at: comp,
+                defect: AccessDefect::UnwindEffect,
+            }),
+        ];
+        for (index, title) in access.iter().enumerate() {
+            for earlier in &access[.. index] {
+                assert_ne!(earlier, title, "each access defect names its own subject");
+            }
+        }
+        let located = [
+            title(CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Result,
+                    ty: value_type,
+                    former: value_type,
+                    predicate: Predicate::Mobile,
+                },
+            }),
+            title(CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Constant,
+                    ty: value_type,
+                    former: value_type,
+                    predicate: Predicate::Open,
+                },
+            }),
+            title(CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::CapabilityCaptured {
+                    world: gandr_core_term::world::World::Host,
+                    by: Capture::Thunk,
+                },
+            }),
+            title(CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::Elsewhere {
+                    bound: gandr_core_term::world::World::Host,
+                },
+            }),
+            title(CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::HoldElsewhere {
+                    wanted: gandr_core_term::world::World::Host,
+                },
+            }),
+            title(CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::Unlocated,
+            }),
+            title(CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::UndeclaredWorld {
+                    world: 8_usize.into(),
+                },
+            }),
+            title(CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::HostWorldUndeclared,
+            }),
+            title(CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::MarkUnfounded {
+                    atom: 9_usize.into(),
+                    former: value_type,
+                    predicate: Predicate::Mobile,
+                },
+            }),
+            title(CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::MarkUnfounded {
+                    atom: 9_usize.into(),
+                    former: value_type,
+                    predicate: Predicate::Open,
+                },
+            }),
+            title(CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::EntryNamed {
+                    constant: 10_usize.into(),
+                },
+            }),
+            title(CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::EntryUngranted {
+                    constant: 11_usize.into(),
+                },
+            }),
+            title(CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::NotAHandle { found: value_type },
+            }),
+        ];
+        for (index, title) in located.iter().enumerate() {
+            for earlier in &located[.. index] {
+                assert_ne!(earlier, title, "each located defect names its own subject");
+            }
+        }
+        assert_eq!(ordinals(&located[6]), [8_usize], "the world's declaration");
+        assert_eq!(
+            ordinals(&located[10]),
+            [10_usize],
+            "the entry's declaration"
+        );
+        assert_eq!(
+            ordinals(&located[11]),
+            [11_usize],
+            "the entry's declaration"
+        );
+        let runs = [
+            title(CheckRefusal::RunNotAdmitted {
+                at: value,
+                fault: RunFault::WrongDirection(gandr_core_checker::RunStep::from(0_u32)),
+            }),
+            title(CheckRefusal::RunNotAdmitted {
+                at: value,
+                fault: RunFault::WrongLabel(gandr_core_checker::RunStep::from(0_u32)),
+            }),
+            title(CheckRefusal::RunNotAdmitted {
+                at: value,
+                fault: RunFault::ResumeAfterEnd(gandr_core_checker::RunStep::from(0_u32)),
+            }),
+            title(CheckRefusal::RunNotAdmitted {
+                at: value,
+                fault: RunFault::Incomplete(gandr_core_checker::RunStep::from(2_u32)),
+            }),
+            title(CheckRefusal::RunNotAdmitted {
+                at: value,
+                fault: RunFault::OfferNarrowed,
+            }),
+        ];
+        for (index, title) in runs.iter().enumerate() {
+            for earlier in &runs[.. index] {
+                assert_ne!(earlier, title, "each run fault names its own subject");
+            }
+        }
+        assert_eq!(ordinals(&runs[0]), [1_usize], "the move, one-based");
+        assert_eq!(ordinals(&runs[3]), [2_usize], "the moves the run made");
+        let shapes = [
+            ExpectedShape::Data,
+            ExpectedShape::Record,
+            ExpectedShape::Stack,
+            ExpectedShape::With,
+            ExpectedShape::PathUniverse,
+            ExpectedShape::Sum,
+            ExpectedShape::List,
+            ExpectedShape::Thunk,
+            ExpectedShape::Returner,
+            ExpectedShape::Product,
+            ExpectedShape::Sigma,
+            ExpectedShape::StaticPi,
+            ExpectedShape::Path,
+            ExpectedShape::Telescope,
+            ExpectedShape::Session,
+            ExpectedShape::Capability,
+            ExpectedShape::Flow,
+            ExpectedShape::Run,
+        ]
+        .into_iter()
+        .map(|wanted| {
+            title(CheckRefusal::ShapeMismatch {
+                at: TermNode::Computation(computation),
+                wanted,
+                found: TypeNode::Computation(comp_type),
+            })
+        })
+        .collect::<Vec<_>>();
+        for (index, title) in shapes.iter().enumerate() {
+            for earlier in &shapes[.. index] {
+                assert_ne!(
+                    earlier, title,
+                    "each required former names its own notation"
+                );
+            }
+        }
+        let actions = [
+            gandr_core_term::session::ActionKind::Send,
+            gandr_core_term::session::ActionKind::Receive,
+            gandr_core_term::session::ActionKind::Select,
+            gandr_core_term::session::ActionKind::Offer,
+            gandr_core_term::session::ActionKind::Close,
+        ]
+        .into_iter()
+        .map(|action| {
+            title(CheckRefusal::SessionMismatch {
+                at: computation,
+                endpoint: Endpoint {
+                    fork: computation,
+                    side: ForkSide::Parent,
+                },
+                state: value_type,
+                defect: gandr_core_checker::session::ProtocolDefect::Action {
+                    expected: action,
+                    observed: action,
+                },
+            })
+        })
+        .collect::<Vec<_>>();
+        for (index, title) in actions.iter().enumerate() {
+            for earlier in &actions[.. index] {
+                assert_ne!(earlier, title, "each action names its own article");
+            }
+        }
+        let places = [
+            title(CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::CapabilityMissing {
+                    world: gandr_core_term::world::World::Host,
+                },
+            }),
+            title(CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::CapabilityMissing {
+                    world: gandr_core_term::world::World::Declared(
+                        gandr_kernel_term::ConstantIndex::from(3_usize),
+                    ),
+                },
+            }),
+        ];
+        assert_ne!(
+            places[0], places[1],
+            "the host's world and a declared one read apart"
+        );
+        assert!(
+            places[0].contains("the host's world"),
+            "the host's world is named as such"
+        );
+        assert!(
+            places[1].contains("declaration 3"),
+            "a declared world is named by its declaration"
+        );
+        let formers = [
+            UnadmittedFormer::Reify,
+            UnadmittedFormer::Stack,
+            UnadmittedFormer::Perform,
+            UnadmittedFormer::Handle,
+            UnadmittedFormer::Resume,
+            UnadmittedFormer::Reset,
+            UnadmittedFormer::Shift,
+            UnadmittedFormer::EffectRow,
+            UnadmittedFormer::Capability,
+            UnadmittedFormer::Exercise,
+            UnadmittedFormer::Scope,
+            UnadmittedFormer::Run,
+            UnadmittedFormer::HigherFlow,
+            UnadmittedFormer::Memory,
+            UnadmittedFormer::Stage,
+        ]
+        .into_iter()
+        .map(|former| title(CheckRefusal::OutOfFragment { at: comp, former }))
+        .collect::<Vec<_>>();
+        for (index, title) in formers.iter().enumerate() {
+            for earlier in &formers[.. index] {
+                assert_ne!(
+                    earlier, title,
+                    "each unadmitted former names its own subject"
+                );
+            }
+        }
+        let sites = [
+            title(CheckRefusal::NegativeOccurrence(OccurrenceSite::Field {
+                tag: ConstructorTag::from(3_usize),
+                field: FieldPosition::from(5_usize),
+            })),
+            title(CheckRefusal::NegativeOccurrence(OccurrenceSite::Parameter(
+                ParameterPosition::from(2_usize),
+            ))),
+        ];
+        assert_ne!(
+            sites[0], sites[1],
+            "a field and a parameter site read apart"
+        );
+        assert_eq!(
+            ordinals(&sites[0]),
+            [5_usize, 3_usize],
+            "the field, then the tag"
+        );
+        assert_eq!(ordinals(&sites[1]), [2_usize], "the parameter");
+        let stood = [
+            title(CheckRefusal::StageNotBelow {
+                at: value,
+                found: Standing::Top,
+                bound: Stage::At(StageId::from(0_usize)),
+            }),
+            title(CheckRefusal::StageNotBelow {
+                at: value,
+                found: Standing::Staged(Stage::At(StageId::from(0_usize))),
+                bound: Stage::At(StageId::from(0_usize)),
+            }),
+        ];
+        assert_ne!(
+            stood[0], stood[1],
+            "a value at no stage and one at a stage read apart"
+        );
+        let labels = [
+            Label::First.to_string(),
+            Label::Declared.to_string(),
+            Label::Expected.to_string(),
+            Label::Synthesised.to_string(),
+            Label::Endpoint.to_string(),
+            Label::Shadows.to_string(),
+            Label::Reported.to_string(),
+            Label::Forked.to_string(),
+            Label::FirstArm.to_string(),
+            Label::Overlaps.to_string(),
+            Label::Inferred(gandr_surface_lowering::Exit::Return).to_string(),
+            Label::Inferred(gandr_surface_lowering::Exit::Become).to_string(),
+            Label::Ran(gandr_core_term::effect::Purity::Pure).to_string(),
+            Label::Ran(gandr_core_term::effect::Purity::Effectful).to_string(),
+        ];
+        for (index, label) in labels.iter().enumerate() {
+            for earlier in &labels[.. index] {
+                assert_ne!(earlier, label, "each label says what its bytes are");
+            }
+        }
+        assert!(
+            labels[10].contains("return"),
+            "an inferred exit names its keyword"
+        );
+        assert!(
+            labels[11].contains("become"),
+            "an inferred exit names its keyword"
+        );
+        assert!(
+            labels[13].contains("performing an effect"),
+            "an effectful run says it performs an effect"
+        );
+    }
+
+    #[test]
+    fn a_comparison_spells_only_the_sides_it_holds()
+    {
+        use super::Comparison;
+        use super::UNCOMPARED;
+        use crate::spelling::Absent;
+
+        let both = Comparison {
+            expected: Maybe::Present("Integer"),
+            found: Maybe::Present("String"),
+        };
+        assert_eq!(both.to_string(), "expected `Integer`, found `String`");
+        let expected_alone = Comparison {
+            expected: Maybe::Present("Integer"),
+            found: Maybe::Absent(Absent::Unspelled),
+        };
+        assert_eq!(expected_alone.to_string(), "expected `Integer`");
+        let found_alone = Comparison {
+            expected: Maybe::Absent(Absent::Unspelled),
+            found: Maybe::Present("String"),
+        };
+        assert_eq!(found_alone.to_string(), "found `String`");
+        assert_eq!(UNCOMPARED.to_string(), "");
+    }
 }
