@@ -1,12 +1,14 @@
 //! A sweep's sample: a hashed slice of its candidates at a fixed size, at
 //! least one of each class, and every candidate a change touches.
 
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 
 use anodized::spec;
 
 use crate::changed::Changed;
 use crate::corpus::Class;
+use crate::corpus::CorpusName;
 use crate::corpus::Source;
 
 /// What salts a sample's ranking: the sweep test's own name, so two sweeps
@@ -98,8 +100,12 @@ impl Sample
             }
             let _ranked = taken.insert(at);
         }
+        let mut by_name: BTreeMap<&CorpusName, usize> = BTreeMap::new();
+        for (at, source) in candidates.iter().enumerate() {
+            let _first = by_name.entry(&source.name).or_insert(at);
+        }
         for name in changed.names() {
-            if let Some(at) = candidates.iter().position(|source| source.name == *name) {
+            if let Some(&at) = by_name.get(name) {
                 let _changed = taken.insert(at);
             }
         }
@@ -129,6 +135,7 @@ impl Sample
 #[cfg(test)]
 mod tests
 {
+    use alloc::collections::BTreeSet;
     use std::path::PathBuf;
 
     use super::Sample;
@@ -226,9 +233,10 @@ mod tests
             corpus,
             "a size past the corpus takes all of it"
         );
+        let sampled: BTreeSet<&CorpusName> = four.iter().map(|source| &source.name).collect();
         let outside = corpus
             .iter()
-            .find(|source| !four.contains(source))
+            .find(|source| !sampled.contains(&source.name))
             .expect("a source outside the sample");
         let changed: Changed = core::iter::once(outside.name.clone()).collect();
         let with_change = at(4).select(&corpus, &changed);
@@ -237,8 +245,10 @@ mod tests
             with_change.contains(outside),
             "the changed source is visited"
         );
+        let visited: BTreeSet<&CorpusName> =
+            with_change.iter().map(|source| &source.name).collect();
         assert!(
-            four.iter().all(|kept| with_change.contains(kept)),
+            four.iter().all(|kept| visited.contains(&kept.name)),
             "the slice itself is unchanged"
         );
     }
@@ -255,6 +265,7 @@ mod tests
         let mut grown = corpus;
         grown.push(source(CorpusName::from("fixture/model/m99.gandr")));
         let after = names(&sample.select(&grown, &Changed::default()));
+        let after: BTreeSet<&String> = after.iter().collect();
         let dropped = before.iter().filter(|name| !after.contains(name)).count();
         assert!(
             dropped <= 1,

@@ -219,11 +219,14 @@ pub fn sources() -> Result<Vec<Source>, SweepError>
                         path: path.clone(),
                         detail: error.to_string(),
                     })?;
-                let parts: Vec<String> = below
-                    .components()
-                    .map(|part| part.as_os_str().to_string_lossy().into_owned())
-                    .collect();
-                let name = CorpusName(parts.join("/"));
+                let mut name = String::new();
+                for part in below.components() {
+                    if !name.is_empty() {
+                        name.push('/');
+                    }
+                    name.push_str(&part.as_os_str().to_string_lossy());
+                }
+                let name = CorpusName(name);
                 let class = Class::of(&name);
                 found.push(Source { path, name, class });
             }
@@ -280,7 +283,7 @@ mod tests
         assert!(
             found
                 .iter()
-                .any(|source| source.name.as_ref().matches('/').count() > 2),
+                .any(|source| source.name.as_ref().matches('/').nth(2).is_some()),
             "a source two directories below its root is reached"
         );
         assert!(
