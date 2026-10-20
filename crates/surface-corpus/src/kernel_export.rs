@@ -12,11 +12,12 @@
 //! # The kernel export suite
 //!
 //! `kernel_export` takes each readable source through parse, lower, check,
-//! readmission and export.
-//! `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
+//! readmission and export. Each sweep runs as four tests, `_in_shard_0` to
+//! `_in_shard_3`, each over every fourth source of each root.
+//! `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
 //! checks repeat-sweep byte and identity determinism, decoder/re-encoder
 //! agreement, record-plane readback and admission from each root.
-//! `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+//! `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
 //! checks that withheld dependencies did not cross, the manifest contains one
 //! record per crossed declaration beside its header, and the decoded
 //! declarations are exactly the admitted names in order. These are L3 witnesses
@@ -175,8 +176,8 @@ use crate::refusal::RefusalName;
 ///   Exact admitted names and withheld dependencies distinguish changed
 ///   inclusion and lost provenance; repeated exports show determinism rather
 ///   than an independent oracle.
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Root
 {
@@ -205,8 +206,8 @@ enum Root
 ///   Exact admitted names and withheld dependencies distinguish changed
 ///   inclusion and lost provenance; repeated exports show determinism rather
 ///   than an independent oracle.
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Class
 {
@@ -268,8 +269,8 @@ enum Class
 ///   Exact admitted names and withheld dependencies distinguish changed
 ///   inclusion and lost provenance; repeated exports show determinism rather
 ///   than an independent oracle.
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
 struct Exported
 {
     /// Where the source sits.
@@ -308,8 +309,8 @@ struct Exported
 ///   Exact admitted names and withheld dependencies distinguish changed
 ///   inclusion and lost provenance; repeated exports show determinism rather
 ///   than an independent oracle.
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
 enum Swept
 {
     /// The lowering read it, and it was exported.
@@ -333,8 +334,8 @@ enum Swept
 ///   extension, uniqueness and ordering without a second filesystem walk. The
 ///   witnesses cover the current corpus; they do not model concurrent
 ///   filesystem mutation.
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
 #[spec(
     ensures: |ret| {
     let directory = match root {
@@ -406,8 +407,8 @@ fn sources(root: Root) -> Vec<PathBuf>
 ///   membership distinguishes admitting excluded declarations or losing
 ///   admitted names; the predicate additionally states pair compatibility and
 ///   exact class selection.
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
 #[spec(
     requires: match (verdict, outcome) {
     (
@@ -540,8 +541,8 @@ fn class_of(
 ///   inclusion/exclusion mistakes and lost dependencies. Repeat sweeps
 ///   establish determinism, not an independent semantic oracle; the predicate
 ///   does not reread source files.
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
 #[spec(
     ensures: |ret| match ret {
     Swept::RefusedWhole => true,
@@ -699,14 +700,27 @@ fn export(
     })
 }
 
-/// Every source of both roots the lowering reads, exported, in root and then
-/// path order.
+/// How many tests share each corpus sweep, each taking every fourth source of
+/// each root: the export gate sweeps the corpus twice, six seconds of one core
+/// where specifications are enforced and past the per-test limit on a loaded
+/// machine, and a quarter of it stays inside.
+const SHARDS: usize = 4;
+
+/// Which of the `SHARDS` tests of a sweep a corpus source is exported in.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Shard(usize);
+
+/// The sources of both roots in `shard` that the lowering reads, exported, in
+/// root and then path order: every `SHARDS`-th source of each root's listing,
+/// starting at the shard's own index.
 ///
 /// # Specification
-/// - requires: both committed corpus trees remain readable and unchanged during
-///   the sweep.
-/// - ensures: exports every source that lowers, omitting whole-source refusals,
-///   in strict-root then fixture-root path order without duplicate paths.
+/// - requires: `shard` is below `SHARDS`; both committed corpus trees remain
+///   readable and unchanged during the sweep.
+/// - ensures: exports every source of `shard` that lowers, omitting
+///   whole-source refusals, in strict-root then fixture-root path order without
+///   duplicate paths.
 /// - panics: on an invalid fixture or failed export precondition.
 ///
 /// # Adequacy
@@ -714,10 +728,12 @@ fn export(
 ///   artifact is decoded and read through its records. Root/path order and
 ///   unique membership are executable invariants; byte identity across sweeps
 ///   is determinism evidence, while the partition witness compares admitted
-///   names to the reconstructed artifact.
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+///   names to the reconstructed artifact. The four shards together take every
+///   source of each root, each in one shard.
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_3`
 #[spec(
+    requires: shard.0 < SHARDS,
     ensures: |ret| {
     ret
         .iter()
@@ -739,12 +755,12 @@ fn export(
             })
 },
 )]
-fn corpus() -> Vec<Exported>
+fn corpus(shard: Shard) -> Vec<Exported>
 {
     let pbg = built_in().expect("the built-in grammar builds");
     let mut exported = Vec::new();
     for root in [Root::Strict, Root::Fixture] {
-        for path in sources(root) {
+        for path in sources(root).into_iter().skip(shard.0).step_by(SHARDS) {
             if let Swept::Exported(source) = export(&pbg, path, root) {
                 exported.push(source);
             }
@@ -771,8 +787,8 @@ fn corpus() -> Vec<Exported>
 ///   count also matches the independently observed admitted declarations. The
 ///   predicate verifies the returned manifest/store root association without
 ///   another whole-artifact reconstruction.
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
 #[spec(
     ensures: |ret| {
     gandr_storage_records::BlockStore::load(&ret.1, ret.0.root_node())
@@ -794,20 +810,64 @@ mod kernel_export_gate
 {
     use alloc::collections::BTreeSet;
 
+    use anodized::spec;
     use gandr_kernel_term::decode;
     use gandr_kernel_term::encode;
     use gandr_storage_records::TreeParams;
 
     use super::Class;
     use super::Root;
+    use super::SHARDS;
+    use super::Shard;
     use super::commit;
     use super::corpus;
 
     #[test]
-    fn the_kernel_export_exit_gate_holds()
+    fn the_kernel_export_exit_gate_holds_in_shard_0()
     {
-        let first = corpus();
-        let second = corpus();
+        gate(Shard(0));
+    }
+
+    #[test]
+    fn the_kernel_export_exit_gate_holds_in_shard_1()
+    {
+        gate(Shard(1));
+    }
+
+    #[test]
+    fn the_kernel_export_exit_gate_holds_in_shard_2()
+    {
+        gate(Shard(2));
+    }
+
+    #[test]
+    fn the_kernel_export_exit_gate_holds_in_shard_3()
+    {
+        gate(Shard(3));
+    }
+
+    /// The sources of `shard` exported twice: each artifact is a function of
+    /// its text and reads back through the record plane and the decoder as
+    /// itself.
+    ///
+    /// # Specification
+    /// - requires: `shard` is below `SHARDS`.
+    /// - ensures: both sweeps of `shard` export the same sources to the same
+    ///   bytes and identities; each artifact decodes, re-encodes byte for byte
+    ///   and reads back through its records; and the sources of `shard` export
+    ///   a definition or an assumption from each root.
+    /// - panics: when any of those fails.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the four shards together take every source of each
+    ///   root, each in one shard; a shard past `SHARDS` would take none.
+    /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
+    /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_3`
+    #[spec(requires: shard.0 < SHARDS)]
+    fn gate(shard: Shard)
+    {
+        let first = corpus(shard);
+        let second = corpus(shard);
         assert_eq!(
             first.len(),
             second.len(),
@@ -850,7 +910,8 @@ mod kernel_export_gate
         assert_eq!(
             BTreeSet::from([Root::Strict, Root::Fixture]),
             exporting,
-            "each root exports a declaration"
+            "the sources of shard {} export a declaration from each root",
+            shard.0
         );
     }
 }
@@ -863,18 +924,62 @@ mod kernel_corpus_partition
     use alloc::collections::BTreeMap;
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_storage_records::RecordCount;
     use gandr_storage_records::TreeParams;
 
     use super::Class;
+    use super::SHARDS;
+    use super::Shard;
     use super::commit;
     use super::corpus;
 
     #[test]
-    fn corpus_partition_matches_the_manifest()
+    fn corpus_partition_matches_the_manifest_in_shard_0()
+    {
+        partition(Shard(0));
+    }
+
+    #[test]
+    fn corpus_partition_matches_the_manifest_in_shard_1()
+    {
+        partition(Shard(1));
+    }
+
+    #[test]
+    fn corpus_partition_matches_the_manifest_in_shard_2()
+    {
+        partition(Shard(2));
+    }
+
+    #[test]
+    fn corpus_partition_matches_the_manifest_in_shard_3()
+    {
+        partition(Shard(3));
+    }
+
+    /// The sources of `shard` exported once, each declaration classified by
+    /// what became of it at the kernel boundary and held against the artifact
+    /// that holds what crossed.
+    ///
+    /// # Specification
+    /// - requires: `shard` is below `SHARDS`.
+    /// - ensures: no withheld declaration names one that crossed; each manifest
+    ///   counts its header, every native the source uses and every declaration
+    ///   that crossed; and each artifact holds exactly those natives and
+    ///   declarations, in admission order, under their names.
+    /// - panics: when any of those fails.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the four shards together take every source of each
+    ///   root, each in one shard; a shard past `SHARDS` would take none.
+    /// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
+    /// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_3`
+    #[spec(requires: shard.0 < SHARDS)]
+    fn partition(shard: Shard)
     {
         let mut classes = BTreeMap::new();
-        for exported in corpus() {
+        for exported in corpus(shard) {
             let path = exported.path.display();
             classes.clear();
             classes.extend(exported.classes.iter().copied());
