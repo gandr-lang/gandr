@@ -528,12 +528,13 @@ pub fn constant_names(module: &LoweredModule<'_>) -> Vec<String>
     let mut paths = alloc::vec![String::new(); positions];
     for declaration in module.declarations() {
         if let Some(slot) = paths.get_mut(usize::from(declaration.constant())) {
-            *slot = module
-                .path_of(declaration)
-                .iter()
-                .map(|segment| <&str>::from(SourceFragment::from(*segment)))
-                .collect::<Vec<_>>()
-                .join(".");
+            slot.clear();
+            for (index, segment) in module.path_of(declaration).iter().enumerate() {
+                if index > 0 {
+                    slot.push('.');
+                }
+                slot.push_str(<&str>::from(SourceFragment::from(*segment)));
+            }
         }
     }
     for declaration in module.declarations() {
@@ -637,16 +638,19 @@ fn words_point(
         else {
             return unworded;
         };
-        let arguments: Vec<String> = spelled
-            .drain(spelled.len().saturating_sub(fields.len()) ..)
-            .rev()
-            .collect();
-        spelled.push(if arguments.is_empty() {
-            name.clone()
+        let start = spelled.len().saturating_sub(fields.len());
+        let mut text = name.clone();
+        if start < spelled.len() {
+            text.push('(');
+            for (index, argument) in spelled.drain(start ..).rev().enumerate() {
+                if index > 0 {
+                    text.push_str(", ");
+                }
+                text.push_str(&argument);
+            }
+            text.push(')');
         }
-        else {
-            alloc::format!("{name}({})", arguments.join(", "))
-        });
+        spelled.push(text);
     }
     match (spelled.pop(), spelled.is_empty()) {
         (Some(point), true) => Maybe::Present((cells.sort(), point)),
