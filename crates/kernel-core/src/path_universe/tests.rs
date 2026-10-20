@@ -1752,3 +1752,30 @@ fn univalence_is_admitted_on_its_record()
         Err(PathError::ExpectedEquivalence(boolean.ty))
     );
 }
+
+/// #1064: an element transport follows a native path written in place, whose
+/// type is `Path_U(a, b)`, as it follows one declared at `Path(U₀, a, b)`: the
+/// two are readings of one classifier at the level-zero value universe. The
+/// transport read the written path's type as an identity and refused it by
+/// shape.
+#[test]
+fn an_element_transport_follows_a_native_path_written_in_place_1064()
+{
+    let mut environment = Environment::new();
+    let transported = offer(&mut environment, |arena| {
+        let boolean = boolean(arena);
+        let path = equivalence(arena, boolean, boolean.not, boolean.not);
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let element = arena.value_type_element(bound, gandr_kernel_strata::Level::zero());
+        let motive = arena.value_type_list(element);
+        let nil = arena.value_list_nil();
+        let truth = arena.value_list_cons(boolean.truth, nil);
+        let transport = arena.computation_path_transport(motive, path, truth);
+        let list = arena.value_type_list(boolean.ty);
+        (list, arena.value_returned(transport))
+    });
+    assert!(
+        transported.is_ok(),
+        "a list moves along negation written in place: {transported:?}"
+    );
+}
