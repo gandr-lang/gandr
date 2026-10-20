@@ -120,13 +120,6 @@
     )
 )]
 #![no_std]
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        allocation_in_repeated_body,
-        reason = "2 cost-shape sites; #814 lists them"
-    )
-)]
 
 extern crate alloc;
 // The profiler's instrumentation names `std`; it links only into the
