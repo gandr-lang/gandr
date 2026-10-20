@@ -12,7 +12,6 @@ use core::ops::ControlFlow;
 use anodized::spec;
 use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_storage_records::InMemoryBlockStore;
-use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::SourceRoot;
@@ -36,7 +35,6 @@ use proptest::proptest;
 use crate::common::GRAMMAR;
 use crate::common::Text;
 use crate::common::backend;
-use crate::common::corpus;
 use crate::common::grammar;
 use crate::common::resumed;
 use crate::common::session;
@@ -55,16 +53,6 @@ const CASES: u32 = if cfg!(anodized_panic) { 6 } else { 24 };
 /// every checked clause within its time limit on the smallest runner.
 const LARGE: usize = if cfg!(anodized_panic) { 32 } else { 2_000 };
 
-/// Every how many corpus sources the edit scripts take: each, or every sixth
-/// where specifications are enforced.
-const STRIDE: usize = if cfg!(anodized_panic) { 6 } else { 1 };
-
-/// How many tests share the corpus edit scripts, each taking every fourth of
-/// the sources `STRIDE` takes: the whole corpus is eleven seconds of one
-/// core, and a quarter of it stays inside the per-test limit on a loaded
-/// machine.
-const SHARDS: usize = 4;
-
 /// Submit `text` to `incremental` and assert it reports what the walk's
 /// composition and a fresh session's submission of the same text report.
 ///
@@ -80,7 +68,8 @@ const SHARDS: usize = 4;
 /// - hypothesis: L2 — every generated and scripted revision is compared through
 ///   it; a field it skipped would let a store bug through.
 /// - witness: `tests::forms::every_generated_edit_submits_as_the_walk_composes_it`
-/// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it`
+/// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_strict_root`
+/// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_fixture_root`
 #[spec(ensures: |ret| ret.molded() <= ret.forms())]
 fn agree(
     incremental: &mut Session<MemoryCheckpointStore, InMemoryBlockStore>,
@@ -163,7 +152,10 @@ fn agree(
     census
 }
 
-/// Three threads: wider than one, narrower than the host.
+/// Three threads: wider than one, narrower than the host. The scripts mold at
+/// this width because a session defaults to every performance core, and
+/// scripts beside a workspace run each claiming every core oversubscribe the
+/// host until one outruns the per-test limit.
 ///
 /// # Specification
 /// trivial.
@@ -195,42 +187,64 @@ proptest! {
 }
 
 #[test]
-fn a_large_module_edit_script_submits_as_the_walk_composes_it()
+fn a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_strict_root()
 {
-    // Two thousand forms, each root, every class of edit at the host's
-    // width: each revision agrees, the first molds every form, and each edit
-    // after it molds a handful.
+    large_edit_script(SourceRoot::Strict);
+}
+
+#[test]
+fn a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_fixture_root()
+{
+    large_edit_script(SourceRoot::Fixture);
+}
+
+/// A generated module of `LARGE` forms under `root`, then every class of edit
+/// at `three` threads: each revision agrees, the first molds every form, and
+/// each edit after it molds a handful.
+///
+/// # Specification
+/// - ensures: every revision agreed, the first molded every form, and no edit
+///   after it molded more than eight.
+/// - panics: when a revision disagrees or molds more than that.
+/// - executable: none — the outcome is the test's panic or its return; the
+///   function returns nothing a predicate could read.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one test per root at a bounded width, so each stays
+///   inside the per-test limit under a full workspace run.
+/// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_strict_root`
+/// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_fixture_root`
+fn large_edit_script(root: SourceRoot)
+{
     let forms = FormCount::from(LARGE);
-    for root in [SourceRoot::Strict, SourceRoot::Fixture] {
-        let mut module = module(forms, root);
-        let mut incremental = session(root);
-        let first = agree(
+    let mut module = module(forms, root);
+    let mut incremental = session(root).with_width(three());
+    let first = agree(
+        &mut incremental,
+        root,
+        Text::from(&module.text()),
+        &format_args!("{root:?}"),
+    );
+    assert_eq!(first.forms(), forms, "{root:?}: one run per generated form");
+    assert_eq!(
+        first.molded(),
+        forms,
+        "{root:?}: the first revision molds every form"
+    );
+    for edit in script(forms) {
+        module.edit(&edit);
+        let census = agree(
             &mut incremental,
             root,
             Text::from(&module.text()),
-            &format_args!("{root:?}"),
+            &format_args!("{root:?} {edit}"),
         );
-        assert_eq!(first.forms(), forms, "{root:?}: one run per generated form");
-        assert_eq!(
-            first.molded(),
-            forms,
-            "{root:?}: the first revision molds every form"
+        assert!(
+            usize::from(census.molded()) <= 8,
+            "{root:?} {edit}: molds {} of {} forms",
+            usize::from(census.molded()),
+            usize::from(census.forms())
         );
-        for edit in script(forms) {
-            module.edit(&edit);
-            let census = agree(
-                &mut incremental,
-                root,
-                Text::from(&module.text()),
-                &format_args!("{root:?} {edit}"),
-            );
-            assert!(
-                usize::from(census.molded()) <= 8,
-                "{root:?} {edit}: molds {} of {} forms",
-                usize::from(census.molded()),
-                usize::from(census.forms())
-            );
-        }
     }
 }
 
@@ -319,7 +333,7 @@ struct Byte(usize);
 /// # Adequacy
 /// - hypothesis: L3 — every corpus source's script cuts at these bytes and
 ///   submits to the walk's compositions.
-/// - witness: `tests::forms::every_corpus_edit_script_submits_as_the_walk_composes_it_in_shard_0`
+/// - witness: `tests::forms::sweeps::every_corpus_edit_script_submits_as_the_walk_composes_it`
 #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(pair, [left, right] if left <= right))
     && ret.last().copied() == Some(Byte(text.0.len())))]
 fn form_starts(text: Text<'_>) -> Vec<Byte>
@@ -338,110 +352,139 @@ fn form_starts(text: Text<'_>) -> Vec<Byte>
     starts
 }
 
-/// Which of the `SHARDS` tests a corpus source's edit script runs in.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Shard(usize);
-
-#[test]
-fn every_corpus_edit_script_submits_as_the_walk_composes_it_in_shard_0()
+/// The corpus edit-script sweep: a sample of corpus sources, each submitted,
+/// then a declaration inserted at its middle form, its first form deleted,
+/// its last form moved first, and the source again, molded at `three`
+/// threads: each revision agrees with the walk's composition and a fresh
+/// session's.
+mod sweeps
 {
-    edit_scripts(Shard(0));
-}
+    use gandr_workflow_sweep::Coverage;
+    use gandr_workflow_sweep::Sample;
+    use gandr_workflow_sweep::SampleName;
+    use gandr_workflow_sweep::SampleSize;
+    use gandr_workflow_sweep::Sweep;
 
-#[test]
-fn every_corpus_edit_script_submits_as_the_walk_composes_it_in_shard_1()
-{
-    edit_scripts(Shard(1));
-}
+    use super::*;
 
-#[test]
-fn every_corpus_edit_script_submits_as_the_walk_composes_it_in_shard_2()
-{
-    edit_scripts(Shard(2));
-}
+    /// The sample: twenty-four corpus sources ranked by their BLAKE3 digest
+    /// under this name, the first of every class, and every one the change
+    /// adds or modifies (`gandr-workflow-sweep`). The `sweeps` profile
+    /// scripts every source; the nightly profile scripts the night's slice,
+    /// every source within `NIGHTS` nights, because the whole corpus scripted
+    /// with specifications enforced takes five minutes of the nightly budget.
+    const SAMPLE: Sample = Sample {
+        name: SampleName("every_corpus_edit_script_submits_as_the_walk_composes_it"),
+        size: SampleSize(24),
+    };
 
-#[test]
-fn every_corpus_edit_script_submits_as_the_walk_composes_it_in_shard_3()
-{
-    edit_scripts(Shard(3));
-}
+    /// The longest source text, its import closure laid out before it, a
+    /// sampled run scripts. A script submits the text ten times, and where
+    /// specifications are enforced the corpus's longest sources (35 to 88
+    /// KiB) take two to three seconds each, where its median source takes
+    /// tens of milliseconds; the `sweeps` and nightly profiles script them.
+    const SCRIPTED_BYTES: usize = 0x4000;
 
-/// Every corpus source of `shard` (every sixth source where specifications
-/// are enforced, every fourth of those for a shard), then a declaration
-/// inserted at its middle form, its first form deleted, its last form moved
-/// first, and the source again: each revision agrees with the walk's
-/// composition and a fresh session's.
-///
-/// # Specification
-/// - requires: `shard` is below `SHARDS`.
-/// - ensures: every revision of every source of `shard` agreed.
-/// - panics: when a revision disagrees, the corpus walk faults, or `shard`
-///   holds no source.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the four shards together take every source `STRIDE`
-///   takes, each in one shard; a shard past `SHARDS` would take none.
-/// - witness: `tests::forms::every_corpus_edit_script_submits_as_the_walk_composes_it_in_shard_0`
-/// - witness: `tests::forms::every_corpus_edit_script_submits_as_the_walk_composes_it_in_shard_3`
-#[spec(requires: shard.0 < SHARDS)]
-fn edit_scripts(shard: Shard)
-{
-    let Shard(shard) = shard;
-    let walk = Walk::new(vec![
-        corpus(CorpusRoot::Strict),
-        corpus(CorpusRoot::Fixture),
-    ]);
-    let mut walked = 0_usize;
-    let mut sources = 0_usize;
-    let ControlFlow::Continue(_report) =
-        walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
-            let Step::Source {
-                path, root, text, ..
-            } = step
-            else {
-                panic!("the corpus walks without a fault: {step:?}");
-            };
-            walked = walked.saturating_add(1);
-            if walked.rem_euclid(STRIDE) != 0
-                || walked.div_euclid(STRIDE).rem_euclid(SHARDS) != shard
-            {
-                return ControlFlow::Continue(());
-            }
-            let original = String::from(<&str>::from(text));
-            let starts = form_starts(Text::from(&original));
-            let cut = |at: usize| {
-                original
-                    .split_at_checked(at)
-                    .unwrap_or((original.as_str(), ""))
-            };
-            let middle = starts
-                .get(starts.len().div_euclid(2))
-                .map_or(0, |&Byte(at)| at);
-            let first_end = starts.get(1).map_or(original.len(), |&Byte(at)| at);
-            let last_start = starts.iter().rev().nth(1).map_or(0, |&Byte(at)| at);
-            let (head, tail) = cut(middle);
-            let inserted = format!("{head}def inserted = 1;\n{tail}");
-            let deleted = String::from(cut(first_end).1);
-            let (front, last) = cut(last_start);
-            let moved = format!("{last}\n{front}");
-            let mut incremental = session(root);
-            for (revision, name) in [
-                (&original, "the source"),
-                (&inserted, "an insertion"),
-                (&deleted, "a deletion"),
-                (&moved, "a move"),
-                (&original, "the source again"),
-            ] {
-                let _census = agree(
-                    &mut incremental,
-                    root,
-                    Text::from(revision),
-                    &format_args!("{}: {name}", path.display()),
-                );
-            }
-            sources = sources.saturating_add(1);
-            ControlFlow::Continue(())
-        });
-    assert!(sources > 0, "the corpus roots populate shard {shard}");
+    #[test]
+    fn every_corpus_edit_script_submits_as_the_walk_composes_it()
+    {
+        let sweep = Sweep::asked().expect("the run's sweep resolves");
+        eprintln!("{}", sweep.rotation());
+        let visited: Vec<_> = sweep
+            .visit_rotating(
+                SAMPLE,
+                &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+            )
+            .into_iter()
+            .map(|source| source.path)
+            .collect();
+        assert!(
+            visited.len() >= SAMPLE.size.0,
+            "the sample is drawn: {}",
+            visited.len()
+        );
+        let drawn = visited.len();
+        let mut scripted = 0_usize;
+        let mut over = 0_usize;
+        let ControlFlow::Continue(_report) =
+            Walk::new(visited).visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+                let Step::Source {
+                    path, root, text, ..
+                } = step
+                else {
+                    panic!("the corpus walks without a fault: {step:?}");
+                };
+                let text = <&str>::from(text);
+                if sweep.coverage() == Coverage::Sampled && text.len() > SCRIPTED_BYTES {
+                    over = over.saturating_add(1);
+                }
+                else {
+                    edit_script(path, root, Text::from(text));
+                    scripted = scripted.saturating_add(1);
+                }
+                ControlFlow::Continue(())
+            });
+        eprintln!("{over} sources past the script ceiling, scripted by the `sweeps` profile");
+        assert_eq!(
+            scripted.saturating_add(over),
+            drawn,
+            "the walk reaches every visited source"
+        );
+        assert!(scripted > 0, "the sample scripts a source");
+    }
+
+    /// `text`, the corpus source at `path` under `root`, then a declaration
+    /// inserted at its middle form, its first form deleted, its last form
+    /// moved first, and the source again, molded at `three` threads.
+    ///
+    /// # Specification
+    /// - ensures: every revision agreed with the walk's composition and a fresh
+    ///   session's.
+    /// - panics: when a revision disagrees.
+    /// - executable: none — the outcome is the test's panic or its return; the
+    ///   function returns nothing a predicate could read.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the sample under every pull-request profile, every
+    ///   source under `sweeps` and nightly.
+    /// - witness: `tests::forms::sweeps::every_corpus_edit_script_submits_as_the_walk_composes_it`
+    fn edit_script(
+        path: &std::path::Path,
+        root: SourceRoot,
+        text: Text<'_>,
+    )
+    {
+        let original = String::from(text.0);
+        let starts = form_starts(Text::from(&original));
+        let cut = |at: usize| {
+            original
+                .split_at_checked(at)
+                .unwrap_or((original.as_str(), ""))
+        };
+        let middle = starts
+            .get(starts.len().div_euclid(2))
+            .map_or(0, |&Byte(at)| at);
+        let first_end = starts.get(1).map_or(original.len(), |&Byte(at)| at);
+        let last_start = starts.iter().rev().nth(1).map_or(0, |&Byte(at)| at);
+        let (head, tail) = cut(middle);
+        let inserted = format!("{head}def inserted = 1;\n{tail}");
+        let deleted = String::from(cut(first_end).1);
+        let (front, last) = cut(last_start);
+        let moved = format!("{last}\n{front}");
+        let mut incremental = session(root).with_width(three());
+        for (revision, name) in [
+            (&original, "the source"),
+            (&inserted, "an insertion"),
+            (&deleted, "a deletion"),
+            (&moved, "a move"),
+            (&original, "the source again"),
+        ] {
+            let _census = agree(
+                &mut incremental,
+                root,
+                Text::from(revision),
+                &format_args!("{}: {name}", path.display()),
+            );
+        }
+    }
 }

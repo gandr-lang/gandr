@@ -1128,6 +1128,7 @@ dependencies = [
  "gandr-surface-pretty",
  "gandr-surface-render-terminal",
  "gandr-surface-syntax",
+ "gandr-workflow-sweep",
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",

@@ -57,6 +57,7 @@ allocation-counter.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-render-terminal.workspace = true
+gandr-workflow-sweep.workspace = true
 proptest.workspace = true
 
 [lints]

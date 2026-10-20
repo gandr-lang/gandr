@@ -829,6 +829,7 @@ path = "crates/theory-spec-combinators"
 # - surface-format (dev)
 # - surface-lsp (dev)
 # - surface-parser (dev)
+# - surface-session (dev)
 [workspace.dependencies.gandr-workflow-sweep]
 path = "crates/workflow-sweep"
 

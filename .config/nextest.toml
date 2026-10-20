@@ -49,11 +49,12 @@ slow-timeout = { period = "60s", terminate-after = 20 }
 # summed over the whole workflow. The four sweeps whose sources cost their
 # length squared rotate (`gandr-workflow-sweep`'s rotation): erasing, the
 # token drops and the table verdicts visit the night's slice of four of the
-# corpus, the typing the night's part of sixteen of every source. Every other
-# sweep visits the corpus whole. nextest does not inherit a default filter, so
-# the profile states it again. The limit is the slowest sweep's share of the
-# budget, so a sweep that outgrows it fails as a timeout rather than passing
-# slowly.
+# corpus, the typing the night's part of sixteen of every source. The corpus
+# edit scripts, five minutes whole with specifications enforced, visit the
+# night's slice of four too. Every other sweep visits the corpus whole.
+# nextest does not inherit a default filter, so the profile states it again.
+# The limit is the slowest sweep's share of the budget, so a sweep that
+# outgrows it fails as a timeout rather than passing slowly.
 [profile.nightly]
 inherits = "sweeps"
 default-filter = "test(/(^|::)sweeps::/)"
