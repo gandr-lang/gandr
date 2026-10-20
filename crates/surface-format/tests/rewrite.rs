@@ -4,6 +4,7 @@
 //! by name, and the corpus formatted into either form — a sample on every
 //! pull request, every source under the `sweeps` profile.
 
+use expect_test::expect;
 use gandr_surface_format::Beside;
 use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
@@ -177,6 +178,80 @@ fn a_transport_standing_as_a_computation_keeps_its_spelling()
     let formatted = format(&grammar, &parsed, options).expect("the source formats");
     assert_eq!(formatted.withdrawn(), &[]);
     assert_eq!(formatted.into_text(), source);
+}
+
+/// #803: a composite's motive names the binders around it, here the
+/// parameter `x`, so the explicit form spells the motive under the names the
+/// source writes for them and writes the composite as its transport, in a
+/// body and in a type alike, with nothing withdrawn.
+#[test]
+fn a_composite_under_a_parameter_takes_its_motive_803()
+{
+    let grammar = grammar();
+    let source = format!(
+        "{CIRCLE}def onward(x: Circle, q: Path(Circle, x, Base)) -> -F Path(Circle, x, Base) {{
+  q then here(Base)
+}}
+
+def stated(x: Circle, q: Path(Circle, x, Base)) -> -F Path(Path(Circle, x, Base), q then here(Base), q then here(Base)) {{
+  here(q then here(Base))
+}}
+"
+    );
+    let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Explicit,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(formatted.withdrawn(), &[]);
+    expect![[r#"
+        data Circle : Type {
+          Base : Circle;
+          loop : Base <-> Base;
+        }
+
+        def onward(x: Circle, q: Path(Circle, x, Base)) -> -F Path(Circle, x, Base) {
+          transport(\a. Path(Circle, x, a), here(Base), q)
+        }
+
+        def stated(x: Circle, q: Path(Circle, x, Base)) -> -F Path(
+          Path(Circle, x, Base),
+          transport(\a. Path(Circle, x, a), here(Base), q),
+          transport(\a. Path(Circle, x, a), here(Base), q)
+        ) {
+          here(transport(\a. Path(Circle, x, a), here(Base), q))
+        }
+    "#]]
+    .assert_eq(formatted.text().as_ref());
+}
+
+/// #803: a composite of types, its carrier `Type`, which the grammar keeps as
+/// the path type's own tile, sugars back from its transport as any other.
+#[test]
+fn a_composite_of_types_sugars_back_803()
+{
+    let grammar = grammar();
+    let source = "def joined(a: Type, b: Type, c: Type, p: Path(Type, a, b), q: Path(Type, b, c)) -> -F \
+                  Path(Path(Type, a, c), transport(\\d. Path(Type, a, d), q, p), transport(\\d. \
+                  Path(Type, a, d), q, p)) {\n  here(transport(\\d. Path(Type, a, d), q, p))\n}\n";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Sugared,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(formatted.withdrawn(), &[]);
+    expect![[r#"
+        def joined(a: Type, b: Type, c: Type, p: Path(Type, a, b), q: Path(Type, b, c)) -> -F Path(
+          Path(Type, a, c),
+          p then q,
+          p then q
+        ) {
+          here(p then q)
+        }
+    "#]]
+    .assert_eq(formatted.text().as_ref());
 }
 
 /// The value-function alias is written only in a type, as the printer

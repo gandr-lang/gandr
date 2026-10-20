@@ -1205,6 +1205,9 @@ impl<'source> Respelling<'_, 'source>
                 Band::Loose
             },
             (RewriteName::PathComposite, Direction::Desugar) => {
+                if self.motives.standing(extent) == Standing::Flows {
+                    return None;
+                }
                 if self.motives.of(extent).is_none() {
                     self.unspelled.push(extent);
                     return None;
@@ -1585,13 +1588,31 @@ impl<'source> Respelling<'_, 'source>
             return None;
         }
         let (typed, _) = self.parts(body);
-        let (_, endpoints) = split(&typed);
-        let &[carrier, fixed, moving] = endpoints.as_slice()
+        // The endpoints by their tokens, split at the type's own commas: a
+        // carrier the grammar keeps as its own tile, as `Type`, is one too.
+        let mut endpoints: Vec<Vec<SourceFragment<'source>>> = Vec::new();
+        let mut opened = false;
+        for part in &typed {
+            match part.role {
+                Role::Own(text) => match <&str>::from(text) {
+                    "(" if !opened => {
+                        opened = true;
+                        endpoints.push(Vec::new());
+                    },
+                    "," => endpoints.push(Vec::new()),
+                    ")" => {},
+                    _ if opened => endpoints.last_mut()?.push(text),
+                    _ => {},
+                },
+                Role::Operand(child) => endpoints.last_mut()?.extend(self.tokens(child)),
+                Role::Comment => return None,
+            }
+        }
+        let &[ref carrier, ref fixed, ref moving] = endpoints.as_slice()
         else {
             return None;
         };
-        let names = |child: Child<'source>| self.tokens(child).contains(&binder);
-        (self.tokens(moving) == [binder] && !names(carrier) && !names(fixed))
+        (moving.as_slice() == [binder] && !carrier.contains(&binder) && !fixed.contains(&binder))
             .then_some((path, then))
     }
 

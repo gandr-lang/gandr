@@ -108,6 +108,7 @@
 )]
 extern crate alloc;
 
+mod binders;
 mod culprit;
 mod frame;
 mod lint;
@@ -118,6 +119,9 @@ mod report;
 mod spelled;
 mod verbosity;
 
+pub use crate::binders::Around;
+pub use crate::binders::Naming;
+pub use crate::binders::Scoped;
 pub use crate::culprit::Culprit;
 pub use crate::frame::Sentence;
 pub use crate::frame::sentence;

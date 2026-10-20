@@ -490,16 +490,9 @@ const BODY_PAGE: u32 = 1_000;
 /// printing reads back is held to it. An entry whose declaration meets the
 /// parity is itself a miss, so the list shrinks as each issue closes.
 ///
-/// The formatter withdraws each rewrite of these: `thrice` and `unthrice`,
-/// written explicitly, are refused (#812); `leftUnit`'s and `stated`'s
-/// composites have no motive the printer spells (#803). The sugared form of
-/// the universe sources keeps the thunk type their bodies return explicit
-/// (#838).
-const EXCLUDED_BODIES: [(&str, &str, &str); 8] = [
-    ("identity/path-operand.gandr", "stated", "#803"),
-    ("identity/path-operand.gandr", "thrice", "#812"),
-    ("identity/path-operand.gandr", "unthrice", "#812"),
-    ("identity/word-append.gandr", "leftUnit", "#803"),
+/// The sugared form of the universe sources keeps the thunk type their bodies
+/// return explicit (#838).
+const EXCLUDED_BODIES: [(&str, &str, &str); 4] = [
     ("universe/closed.gandr", "endo", "#838"),
     ("universe/closed.gandr", "endoBare", "#838"),
     ("universe/closed.gandr", "onType", "#838"),
@@ -519,7 +512,7 @@ enum Held
     /// spelling writes no path composite (#808).
     Apart,
     /// The same, where the sugared spelling writes a path composite `then`
-    /// (#803).
+    /// (#985).
     ApartComposite,
 }
 
@@ -537,7 +530,7 @@ impl fmt::Display for Held
         f.write_str(match *self {
             Self::Notation => "#941, written in the printer's own notation",
             Self::Apart => "#808, the two spellings lower apart",
-            Self::ApartComposite => "#803, the two spellings of a composite lower apart",
+            Self::ApartComposite => "#985, the two spellings of a composite lower apart",
         })
     }
 }

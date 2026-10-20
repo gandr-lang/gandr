@@ -107,7 +107,6 @@ use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
-use gandr_core_term::ComputationId;
 use gandr_core_term::ConstructorTag;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DataSignature;
@@ -117,7 +116,6 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
-use gandr_core_term::Zone;
 use gandr_core_term::constructor_classifier;
 use gandr_core_term::decoded_comp_reading;
 use gandr_core_term::equal_type_reading;
@@ -134,9 +132,9 @@ use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Side;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_diagnostics::Families;
+use gandr_surface_diagnostics::Naming;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_grammar::Pbg;
-use gandr_surface_lowering::ComponentName;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::InScope;
 use gandr_surface_lowering::Insertion;
@@ -148,14 +146,11 @@ use gandr_surface_lowering::PatternReading;
 use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::Role;
 use gandr_surface_lowering::SourceIndex;
-use gandr_surface_lowering::SplitComponent;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::coincide::CallText;
 use gandr_surface_lowering::described::DescribedRole;
 use gandr_surface_parser::ParseResult;
 use gandr_surface_parser::parse;
-use gandr_surface_pretty::BinderIndex;
-use gandr_surface_pretty::ChildSlot;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Form;
@@ -515,24 +510,6 @@ fn preceding(
     }
 }
 
-/// One intuitionistic binder a typed node stands under: the binder around
-/// it, the name the source writes for it, whether it is a capability scope's
-/// own, whose region a capability type may name, and the former opening it.
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct Bound
-{
-    /// The intuitionistic binder around this one.
-    around: Option<BinderIndex>,
-    /// The name written at the binder, or at a use resolving to it; none
-    /// where the source writes none.
-    name: Option<String>,
-    /// Whether the binder is the capability a scope binds over its subject.
-    scope: bool,
-    /// The former that opens it, whose type, or whose judgement's, states
-    /// the type it binds.
-    opener: CoreNode,
-}
-
 /// The context an entry's type is spelled in: the names of the
 /// intuitionistic binders around it, and of the capability scopes among
 /// them, each outermost first, and the type each binder binds where the
@@ -576,175 +553,6 @@ struct Printed
     settled: Option<RoundTrip>,
     /// The binders a type naming them stands under.
     under: Option<Under>,
-}
-
-/// The name a split component binds, as the table keeps it: where the
-/// pattern variable for it is written, or the label of the field a labelled
-/// pattern leaves unwritten.
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum Named
-{
-    /// The pattern variable, at its span.
-    Written(ByteSpan),
-    /// The field's label.
-    Labelled(String),
-}
-
-/// What the table keeps to name the binders an entry stands under when a
-/// reader asks: each declaration's roots, and where the source writes each
-/// binder and each use. The scopes are walked one declaration at a time by
-/// the answer that needs them, never while the table is built.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct Naming
-{
-    /// The source text the spans index.
-    text: String,
-    /// Each declaration's declared type and body, ascending by constant.
-    roots: Vec<(ConstantIndex, [Option<CoreNode>; 2])>,
-    /// Each lambda and bind with where the binder it opens is written,
-    /// ascending by id.
-    openers: Vec<(ComputationId, ByteSpan)>,
-    /// Each split component with the name it binds, ascending by split and
-    /// component.
-    components: Vec<((ComputationId, SplitComponent), Named)>,
-    /// Each dependent arrow with where the name it binds is written,
-    /// ascending by id.
-    arrows: Vec<(CompTypeId, ByteSpan)>,
-    /// Each dependent pair a dependent record's field opens with where the
-    /// field's label is written, ascending by id.
-    pairs: Vec<(ValueTypeId, ByteSpan)>,
-    /// Each type written as a relation between types, with the relation,
-    /// ascending by id.
-    relations: Vec<(ValueTypeId, Relation)>,
-    /// Each written use of a variable with where a name for its binder is
-    /// written: first where the origin table records the binder a use
-    /// resolves to, then the use itself, which a type's variables have and no
-    /// binding records.
-    uses: Vec<(ValueId, ByteSpan)>,
-}
-
-impl Naming
-{
-    /// What `module`, lowered from `source`, keeps for naming binders.
-    ///
-    /// # Specification
-    /// - requires: `module` was lowered from `source`.
-    /// - ensures: the source text, each value declaration's roots by its
-    ///   constant, the origin table's binders, split components, dependent
-    ///   arrows, dependent record pairs and relations, and its bindings then
-    ///   its written values as uses.
-    /// - provides: the input of [`scopes`], kept for an answer.
-    /// - fails: never.
-    /// - panics: none.
-    /// - executable: none — the record is read only through an answer's
-    ///   spelling, which the census witnesses.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the corpus census spells every typed node of a body
-    ///   under its binders' names, which this record alone supplies; a binder
-    ///   or use left out spells `?`, which the census fails on.
-    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0`
-    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
-    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
-    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
-    fn of(
-        module: &LoweredModule<'_>,
-        source: SourceText<'_>,
-    ) -> Self
-    {
-        let origins = module.origins();
-        let mut roots: Vec<(ConstantIndex, [Option<CoreNode>; 2])> = module
-            .declarations()
-            .iter()
-            .filter_map(|declaration| {
-                let roots = match declaration.outcome() {
-                    DeclarationOutcome::Completed {
-                        declared_type,
-                        body,
-                    } => [
-                        Some(CoreNode::ValueType(declared_type)),
-                        Some(CoreNode::Value(body)),
-                    ],
-                    DeclarationOutcome::Uncompleted { declared_type } => {
-                        [Some(CoreNode::ValueType(declared_type)), None]
-                    },
-                    DeclarationOutcome::Bodied { body } => [Some(CoreNode::Value(body)), None],
-                    DeclarationOutcome::Data(_)
-                    | DeclarationOutcome::Abstract(_)
-                    | DeclarationOutcome::World
-                    | DeclarationOutcome::Refused(_) => return None,
-                };
-                Some((declaration.constant(), roots))
-            })
-            .collect();
-        roots.sort_by_key(|&(constant, _)| constant);
-        let mut openers: Vec<(ComputationId, ByteSpan)> = origins
-            .binders()
-            .iter()
-            .map(|&(opener, origin)| (opener, origin.span()))
-            .collect();
-        openers.sort_by_key(|&(opener, _)| opener);
-        let components = origins
-            .components()
-            .iter()
-            .map(|&(component, ref name)| {
-                (component, match *name {
-                    ComponentName::Written(origin) => Named::Written(origin.span()),
-                    ComponentName::Labelled(ref label) => {
-                        Named::Labelled(String::from(label.as_ref()))
-                    },
-                })
-            })
-            .collect();
-        let uses = origins
-            .bindings()
-            .iter()
-            .copied()
-            .chain(
-                origins
-                    .values()
-                    .iter()
-                    .filter(|&&(_, origin)| origin.provenance() == Provenance::Written)
-                    .map(|&(variable, origin)| (variable, origin.span())),
-            )
-            .collect();
-        let arrows = origins
-            .arrows()
-            .iter()
-            .map(|&(arrow, origin)| (arrow, origin.span()))
-            .collect();
-        let pairs = origins
-            .pairs()
-            .iter()
-            .map(|&(pair, origin)| (pair, origin.span()))
-            .collect();
-        let mut relations = origins.relations().to_vec();
-        relations.sort_by_key(|&(related, _)| related);
-        Self {
-            text: String::from(<&str>::from(source)),
-            roots,
-            openers,
-            components,
-            arrows,
-            pairs,
-            relations,
-            uses,
-        }
-    }
-
-    /// The text the source writes at `span`.
-    ///
-    /// # Specification
-    /// trivial.
-    fn written(
-        &self,
-        span: ByteSpan,
-    ) -> Option<String>
-    {
-        self.text
-            .get(usize::from(span.start()) .. usize::from(span.end()))
-            .map(String::from)
-    }
 }
 
 /// What a reprint's own lowering keeps beside the types it read, at their
@@ -838,202 +646,6 @@ pub struct TypeTable
     /// The binders in scope at each offset of the unit's text the lowering
     /// read under one.
     in_scope: InScope,
-}
-
-/// The intuitionistic binder at or around `at`.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the first intuitionistic binder of the chain from `at` outward;
-///   none when the chain holds none.
-/// - provides: an entry's context, which skips a fork's linear binders.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Termination
-/// A binder's parent precedes it, so the chain strictly descends.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the corpus census spells each typed node of a body under
-///   its binders' names; a chain stopping at a linear binder leaves a `?` the
-///   census fails on.
-/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0`
-/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
-/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
-/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
-#[spec(ensures: |ret| ret.is_none_or(|index| scopes.binder(index).is_some_and(|binder| binder.zone() == Zone::Intuitionistic)))]
-fn intuitionistic(
-    scopes: &Scopes<CoreNode>,
-    at: Option<BinderIndex>,
-) -> Option<BinderIndex>
-{
-    let mut at = at;
-    while let Some(index) = at {
-        let binder = scopes.binder(index)?;
-        if binder.zone() == Zone::Intuitionistic {
-            return Some(index);
-        }
-        at = binder.parent().filter(|&parent| parent < index);
-    }
-    None
-}
-
-/// The binders of one declaration, whose declared type and body are `roots`,
-/// each named by what `naming` records for it.
-///
-/// # Specification
-/// - requires: `arena` holds the declaration's nodes and `names` its module's
-///   constants'.
-/// - ensures: the scopes of every node reachable from `roots`, and for each
-///   binder, at its position, the intuitionistic binder around it and its name:
-///   the one written for the lambda or bind that opens it, or for the split
-///   component it is, counted from the split's outermost binder, or the label
-///   of the dependent record field whose pair opens it (#728), else the one
-///   written at a use's binder; a split component a label pattern leaves
-///   unwritten is named by its field's label, primed (`′`) until no other
-///   binder of the declaration holds the name.
-/// - provides: the context an entry's type is spelled in.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the corpus census spells the types of terms inside
-///   bodies, and of endpoints under a signature's binders, by their binders'
-///   names; a binder left unnamed spells `?`, which the census fails on. A
-///   split component its arm never uses is named all the same, and one a label
-///   pattern omits by its label, primed apart from a written name.
-/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0`
-/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
-/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
-/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
-/// - witness: `typed::tests::an_unused_split_component_answers_by_its_written_name_665`
-/// - witness: `typed::tests::an_unwritten_field_answers_by_its_label_670`
-#[spec(ensures: |ret| ret.1.len() == ret.0.binders().len())]
-fn scopes(
-    arena: &CoreArena,
-    names: &[String],
-    naming: &Naming,
-    roots: [Option<CoreNode>; 2],
-) -> (Scopes<CoreNode>, Vec<Bound>)
-{
-    let names: Vec<Name<'_>> = names.iter().map(|name| Name::from(name.as_str())).collect();
-    let printer = CoreSource::new(arena, &names);
-    let scopes = Scopes::of(&printer, roots.into_iter().flatten());
-    // A split's binders are consecutive, its outermost component first.
-    let mut split: Option<(ComputationId, usize)> = None;
-    // The binders a label names, primed apart once every binder is named.
-    let mut labelled: Vec<usize> = Vec::new();
-    let mut bound: Vec<Bound> = scopes
-        .binders()
-        .enumerate()
-        .map(|(at, (_, binder))| {
-            let (name, scope) = match binder.opener() {
-                CoreNode::Computation(opener) => {
-                    let component = match split {
-                        Some((held, count)) if held == opener => count.saturating_add(1),
-                        Some(_) | None => 0,
-                    };
-                    split = Some((opener, component));
-                    let key = (opener, SplitComponent::from(component));
-                    let opened = naming
-                        .openers
-                        .binary_search_by_key(&opener, |&(held, _)| held)
-                        .ok()
-                        .and_then(|at| naming.openers.get(at))
-                        .and_then(|&(_, span)| naming.written(span));
-                    let name = opened.or_else(|| {
-                        let held = naming
-                            .components
-                            .binary_search_by_key(&key, |&(held, _)| held)
-                            .ok()
-                            .and_then(|at| naming.components.get(at))?;
-                        match held.1 {
-                            Named::Written(span) => naming.written(span),
-                            Named::Labelled(ref label) => {
-                                labelled.push(at);
-                                Some(label.clone())
-                            },
-                        }
-                    });
-                    (
-                        name,
-                        binder.slot() == ChildSlot::FIRST
-                            && matches!(
-                                arena.computation(opener),
-                                Some(&Computation::Scope { .. })
-                            ),
-                    )
-                },
-                CoreNode::ValueType(opener) => {
-                    split = None;
-                    let labelled = naming
-                        .pairs
-                        .binary_search_by_key(&opener, |&(held, _)| held)
-                        .ok()
-                        .and_then(|at| naming.pairs.get(at))
-                        .and_then(|&(_, span)| naming.written(span));
-                    (labelled, false)
-                },
-                CoreNode::Value(_) | CoreNode::CompType(_) => {
-                    split = None;
-                    (None, false)
-                },
-            };
-            Bound {
-                around: intuitionistic(&scopes, binder.parent()),
-                name,
-                scope,
-                opener: binder.opener(),
-            }
-        })
-        .collect();
-    // A use names the binder it counts out to.
-    for &(variable, written_at) in &naming.uses {
-        let (Some(Some(innermost)), Some(&Value::Variable { zone, index })) = (
-            scopes.innermost(CoreNode::Value(variable)),
-            arena.value(variable),
-        )
-        else {
-            continue;
-        };
-        let Some(name) = naming.written(written_at).filter(|name| {
-            !name.is_empty()
-                && name
-                    .chars()
-                    .all(|glyph| glyph.is_alphanumeric() || glyph == '_')
-        })
-        else {
-            continue;
-        };
-        let chain = scopes.around(Some(innermost), zone);
-        if let Some(entry) = usize::try_from(u32::from(index))
-            .ok()
-            .and_then(|index| chain.get(index))
-            .and_then(|&at| bound.get_mut(usize::from(at)))
-            && entry.name.is_none()
-        {
-            entry.name = Some(name);
-        }
-    }
-    // A label is the record's own name for the field, so it stands unless a
-    // written name already holds it.
-    for at in labelled {
-        while bound
-            .get(at)
-            .and_then(|held| held.name.as_deref())
-            .is_some_and(|name| {
-                bound
-                    .iter()
-                    .enumerate()
-                    .any(|(other, held)| other != at && held.name.as_deref() == Some(name))
-            })
-        {
-            if let Some(name) = bound.get_mut(at).and_then(|held| held.name.as_mut()) {
-                name.push('′');
-            }
-        }
-    }
-    (scopes, bound)
 }
 
 /// The printer's root for `node`.
@@ -2190,8 +1802,13 @@ impl TypeTable
         let start = usize::from(sources.get(usize::from(source))?.start());
         let end = sources
             .get(usize::from(source).saturating_add(1_usize))
-            .map_or(self.naming.text.len(), |next| usize::from(next.start()));
-        self.naming.text.get(start .. end).map(SourceText::from)
+            .map_or_else(
+                || <&str>::from(self.naming.text()).len(),
+                |next| usize::from(next.start()),
+            );
+        <&str>::from(self.naming.text())
+            .get(start .. end)
+            .map(SourceText::from)
     }
 
     /// Each name the table's unit declares, a family's constructors included,
@@ -2245,8 +1862,7 @@ impl TypeTable
     {
         let at = ByteOffset::from(usize::from(offset).saturating_add(usize::from(self.base)));
         self.in_scope.binders_at(at).filter_map(|site| {
-            self.naming
-                .text
+            <&str>::from(self.naming.text())
                 .get(usize::from(site.start()) .. usize::from(site.end()))
                 .map(SourceText::from)
         })
@@ -2488,11 +2104,10 @@ impl TypeTable
             .collect();
         let mut arrows: Vec<(CompTypeId, Name<'_>)> = self
             .naming
-            .arrows
+            .arrows()
             .iter()
             .filter_map(|&(arrow, span)| {
-                self.naming
-                    .text
+                <&str>::from(self.naming.text())
                     .get(usize::from(span.start()) .. usize::from(span.end()))
                     .map(|name| (arrow, Name::from(name)))
             })
@@ -2505,7 +2120,7 @@ impl TypeTable
         arrows.sort_by_key(|&(arrow, _)| arrow);
         let mut relations: Vec<(ValueTypeId, Relation)> = self
             .naming
-            .relations
+            .relations()
             .iter()
             .chain(&read.relations)
             .copied()
@@ -2531,22 +2146,24 @@ impl TypeTable
     /// # Specification
     /// - requires: nothing.
     /// - ensures: for a judged node, for each intuitionistic binder from the
-    ///   outermost to the innermost around the node, the name [`scopes`] gives
-    ///   it, and the same name again among the regions for each binder a
-    ///   capability scope binds over its subject; for a part standing under the
-    ///   parts before it, those of its match's node, then each earlier part's
-    ///   name, of no known type; for a described member, each name its context
-    ///   binds; empty for a closed node or one its declaration does not reach.
+    ///   outermost to the innermost around the node, the name
+    ///   [`Naming::scoped`] gives it, and the same name again among the regions
+    ///   for each binder a capability scope binds over its subject; for a part
+    ///   standing under the parts before it, those of its match's node, then
+    ///   each earlier part's name, of no known type; for a described member,
+    ///   each name its context binds; empty for a closed node or one its
+    ///   declaration does not reach.
     /// - provides: the context an entry's type is spelled in.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — as [`scopes`], whose witness spells through it.
+    /// - executable: none — as [`Naming::scoped`], whose witness spells through
+    ///   it.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`scopes`]: a body's terms answer under their
-    ///   binders' names, and an endpoint under its signature's; a theory's
-    ///   operation under the sorts before it; a capability inside a scope's
-    ///   subject names the scope.
+    /// - hypothesis: L3 — as [`Naming::scoped`]: a body's terms answer under
+    ///   their binders' names, and an endpoint under its signature's; a
+    ///   theory's operation under the sorts before it; a capability inside a
+    ///   scope's subject names the scope.
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
@@ -2575,34 +2192,20 @@ impl TypeTable
             Standing::Judged(within) => (within, None),
             Standing::Parted(within, earlier) => (within, Some(earlier)),
         };
-        let Some(&(_, roots)) = self
-            .naming
-            .roots
-            .binary_search_by_key(&constant, |&(held, _)| held)
-            .ok()
-            .and_then(|at| self.naming.roots.get(at))
+        let Some(roots) = self.naming.roots(constant)
         else {
             return Context::default();
         };
-        let (scopes, mut bound) = scopes(&self.arena, &self.names, &self.naming, roots);
+        let scoped = self.naming.scoped(&self.arena, &self.names, roots);
         let mut context = Context::default();
-        let mut at = intuitionistic(&scopes, scopes.innermost(node).flatten());
-        while let Some(index) = at {
-            let Some(binder) = bound.get_mut(usize::from(index))
-            else {
-                break;
-            };
-            let name = binder.name.take();
+        for binder in scoped.around(node).unwrap_or_default() {
+            let name = binder.name.map(String::from);
             if binder.scope {
                 context.regions.push(name.clone());
             }
             context.binders.push(name);
             context.types.push(self.bound_type(binder.opener));
-            at = binder.around.filter(|&around| around < index);
         }
-        context.binders.reverse();
-        context.regions.reverse();
-        context.types.reverse();
         for name in parted
             .and_then(|earlier| self.contexts.get(earlier.0))
             .into_iter()
@@ -2865,7 +2468,7 @@ impl TypeTable
         // Each function's name with how many binders its parameters declare
         // before the read type's.
         let mut parameterised: BTreeMap<String, usize> = BTreeMap::new();
-        let mut augmented = self.naming.text.clone();
+        let mut augmented = String::from(<&str>::from(self.naming.text()));
         let mut whole = String::new();
         for &Printed {
             node,
@@ -3173,14 +2776,8 @@ impl TypeTable
                 .iter()
                 .position(|name| name.as_str() == signed.as_ref())
                 .map(ConstantIndex::from)
-                .and_then(|signed| {
-                    self.naming
-                        .roots
-                        .binary_search_by_key(&signed, |&(held, _)| held)
-                        .ok()
-                })
-                .and_then(|at| self.naming.roots.get(at))
-                .and_then(|&(_, [declared, body])| body.and(declared)),
+                .and_then(|signed| self.naming.roots(signed))
+                .and_then(|[declared, body]| body.and(declared)),
             Maybe::Absent(signed::Absent::Unsigned) => None,
         };
         let signature = if let Some(CoreNode::ValueType(declared)) = declared {
@@ -3204,11 +2801,11 @@ impl TypeTable
             String::new()
         };
         let body = format!("\ndef {NAME} = thunk {{ {written} }} ;\n");
-        let mut unsigned = self.naming.text.clone();
+        let mut unsigned = String::from(<&str>::from(self.naming.text()));
         unsigned.push_str(&body);
         match self.lowered_reprint(grammar, SourceText::from(unsigned.as_str())) {
             Maybe::Absent(reprinted::Absent::Unlowered) if !signature.is_empty() => {
-                let mut signed = self.naming.text.clone();
+                let mut signed = String::from(<&str>::from(self.naming.text()));
                 signed.push_str(&signature);
                 signed.push_str(&body);
                 self.run_reprinted(grammar, SourceText::from(signed.as_str()))
@@ -3262,7 +2859,7 @@ impl TypeTable
     {
         let Ok(Lowered::Module { module, .. }) = lower_unit_source(
             grammar,
-            SourceText::from(self.naming.text.as_str()),
+            self.naming.text(),
             &self.unit,
             &mut LoweringCount::default(),
         )

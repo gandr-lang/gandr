@@ -1214,6 +1214,17 @@ impl OriginTable
         &self.values
     }
 
+    /// Every computation's origin, ascending by id.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn computations(&self) -> &[(ComputationId, Origin)]
+    {
+        &self.computations
+    }
+
     /// Every value type's origin, in mint order.
     ///
     /// # Specification

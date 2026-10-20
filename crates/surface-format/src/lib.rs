@@ -126,11 +126,13 @@
 //! `p then q` is the transport `transport(\y. Path(A, a, y), q, p)`, and the
 //! syntax holds neither the carrier `A` nor the fixed endpoint `a`: they are
 //! the type of `p`, which the lowering derives. So the explicit form reads the
-//! motive from the lowering — the returned transport it inserted at the
-//! composite — and spells it through the presentation printer, as
-//! `gandr-surface-diagnostics` names the module's constants for it. A
-//! composite whose motive the printer cannot spell, one naming a binder
-//! around it, keeps `then` and is reported (#803). The sugared form writes
+//! motive from the lowering — the transport it minted at the composite — and
+//! spells it through the presentation printer under the names the source
+//! writes for the binders around the composite, as
+//! `gandr-surface-diagnostics` names the module's constants and binders for
+//! it. A composite whose motive the printer cannot spell, one under a binder
+//! the source names nothing, keeps `then` and is reported; a composite of
+//! flows is its own explicit spelling and stays. The sugared form writes
 //! `then` for the same transports, those the lowering returns at a
 //! composite, as the printer does: a transport a body runs as written stays
 //! `transport(…)`.
@@ -691,7 +693,12 @@ pub fn format_beside(
         .collect();
     let mut held: BTreeSet<NodeKey> = withdrawn.iter().copied().collect();
     let motives = match (chosen, lowered.as_ref()) {
-        (Some(_), Some(module)) => composite::motives(module, &arena, base),
+        (Some(_), Some(module)) => composite::motives(
+            module,
+            &arena,
+            whole.as_ref().map_or(tree, ParseResult::tree).source(),
+            base,
+        ),
         (Some(_) | None, _) => composite::Motives::default(),
     };
     let ending = Ending::of(source);
