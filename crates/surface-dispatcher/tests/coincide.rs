@@ -172,6 +172,8 @@ fn every_run_through_a_described_operation_is_its_calls_normal_form()
     let grammar = built_in().expect("the built-in grammar builds");
     let mut lowerings = LoweringCount::default();
     let mut compared = 0_usize;
+    let mut operations: Vec<String> = Vec::new();
+    let mut needle = String::new();
     for path in sources() {
         let text = std::fs::read_to_string(&path).expect("the source reads");
         let shown = path.display();
@@ -184,14 +186,16 @@ fn every_run_through_a_described_operation_is_its_calls_normal_form()
         };
         // A presentation's operations are interpreted by its models and
         // run nowhere; only a family's operations have runs to compare.
-        let operations: Vec<String> = module
-            .descriptions()
-            .declarations
-            .iter()
-            .filter(|described| matches!(described.presentation, Maybe::Absent(_)))
-            .flat_map(|described| described.description.opers.iter())
-            .map(|operation| String::from(operation.name.as_ref()))
-            .collect();
+        operations.clear();
+        operations.extend(
+            module
+                .descriptions()
+                .declarations
+                .iter()
+                .filter(|described| matches!(described.presentation, Maybe::Absent(_)))
+                .flat_map(|described| described.description.opers.iter())
+                .map(|operation| String::from(operation.name.as_ref())),
+        );
         if operations.is_empty() {
             continue;
         }
@@ -205,9 +209,13 @@ fn every_run_through_a_described_operation_is_its_calls_normal_form()
             else {
                 continue;
             };
-            let named = operations
-                .iter()
-                .find(|operation| body.contains(&format!("{operation}(")));
+            let named = operations.iter().find(|operation| {
+                needle.clear();
+                for part in [operation.as_str(), "("] {
+                    needle.push_str(part);
+                }
+                body.contains(needle.as_str())
+            });
             let Some(operation) = named
             else {
                 continue;
@@ -221,7 +229,11 @@ fn every_run_through_a_described_operation_is_its_calls_normal_form()
             let member = module
                 .declarations()
                 .iter()
-                .find(|member| call.starts_with(&format!("{}(", member.name())))
+                .find(|member| {
+                    let name = member.name();
+                    call.strip_prefix(AsRef::<str>::as_ref(&name))
+                        .is_some_and(|rest| rest.starts_with('('))
+                })
                 .unwrap_or_else(|| panic!("{shown}: `{call}` names no declaration"));
             let normal = module
                 .normal_form(member, CallText::from(call.as_str()))

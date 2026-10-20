@@ -344,6 +344,8 @@ fn gated(
             })
             .unwrap_or("")
     };
+    let mut children: Vec<NodeIndex> = Vec::new();
+    let mut binds: Vec<bool> = Vec::new();
     while let Some((position, placed, parent, run, discarding)) = stack.pop() {
         let Some(node) = tree.node(position)
         else {
@@ -402,14 +404,12 @@ fn gated(
         // A bind's tiles stand among its block's children: the computation
         // after `run _ <-` is discarded, the one after a named binder's
         // `<-` kept; every other child stands as its parent does.
-        let children: Vec<NodeIndex> = tree
-            .children(position)
-            .filter(|&child| {
-                tree.node(child)
-                    .is_some_and(|node| node.label() != NodeLabel::Space)
-            })
-            .collect();
-        let mut binds = Vec::with_capacity(children.len());
+        children.clear();
+        children.extend(tree.children(position).filter(|&child| {
+            tree.node(child)
+                .is_some_and(|node| node.label() != NodeLabel::Space)
+        }));
+        binds.clear();
         let mut bound = None::<bool>;
         for (at, &child) in children.iter().enumerate() {
             let previous = |back: usize| {
@@ -423,19 +423,24 @@ fn gated(
             }
             binds.push(discarded);
         }
-        stack.extend(children.iter().zip(binds).map(|(&child, discards)| {
-            let headed = melded
-                && opener == Some(child)
-                && (def.label == "[" || (def.label == "(" && def.sort == Sort::Expression));
-            let qualifying = melded && opener == Some(child) && def.label == ".";
-            (
-                child,
-                placed,
-                Some((mold, def.label, headed, qualifying)),
-                within,
-                discards,
-            )
-        }));
+        stack.extend(
+            children
+                .iter()
+                .zip(binds.iter().copied())
+                .map(|(&child, discards)| {
+                    let headed = melded
+                        && opener == Some(child)
+                        && (def.label == "[" || (def.label == "(" && def.sort == Sort::Expression));
+                    let qualifying = melded && opener == Some(child) && def.label == ".";
+                    (
+                        child,
+                        placed,
+                        Some((mold, def.label, headed, qualifying)),
+                        within,
+                        discards,
+                    )
+                }),
+        );
         if !matches!(def.sort, Sort::Expression | Sort::Type | Sort::Pattern) {
             continue;
         }

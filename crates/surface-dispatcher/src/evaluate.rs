@@ -1523,21 +1523,26 @@ impl<'source> Program<'source>
 fn hidden_members(module: &LoweredModule<'_>) -> BTreeMap<ConstantIndex, String>
 {
     let mut hidden = BTreeMap::new();
+    let mut exported: BTreeSet<ConstantIndex> = BTreeSet::new();
+    let mut at = String::new();
     for structure in module.structures() {
         if !structure.coerced().0 {
             continue;
         }
-        let exported: BTreeSet<ConstantIndex> = structure
-            .values()
-            .iter()
-            .map(|component| component.constant)
-            .collect();
-        let at = structure
-            .path()
-            .iter()
-            .map(AsRef::<str>::as_ref)
-            .collect::<Vec<&str>>()
-            .join(".");
+        exported.clear();
+        exported.extend(
+            structure
+                .values()
+                .iter()
+                .map(|component| component.constant),
+        );
+        at.clear();
+        for (index, segment) in structure.path().iter().enumerate() {
+            if index > 0 {
+                at.push('.');
+            }
+            at.push_str(AsRef::<str>::as_ref(segment));
+        }
         for declaration in module.declarations() {
             let path = module.path_of(declaration);
             if path
