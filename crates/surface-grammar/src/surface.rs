@@ -474,6 +474,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "telescope_type",
     "theory_declaration",
     "type_path",
+    "type_quote_expression",
     "unknown_type",
     "universe_type",
     "universe_flow_type",

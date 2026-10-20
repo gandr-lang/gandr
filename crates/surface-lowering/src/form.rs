@@ -519,6 +519,8 @@ impl TileName
     pub const THUNK: Self = Self("thunk");
     /// The type-component keyword `type` of a module signature.
     pub const TYPE: Self = Self("type");
+    /// The opener `type(` of a type quoted where an expression stands.
+    pub const TYPE_QUOTE_OPEN: Self = Self("type(");
     /// A type identifier written as one of a form's own tiles.
     pub const TYPE_IDENTIFIER: Self = Self("type_identifier");
     /// A type variable written as one of a form's own tiles.
@@ -656,6 +658,9 @@ pub enum Former
     /// The parenthesised expression: a grouping, the reserved tuple or an
     /// annotation, told apart by its own tiles; empty, it is refused.
     Parenthesized,
+    /// The type quote `type(T)`: the code of the type `T`, written where an
+    /// expression stands.
+    TypeQuote,
     /// The unit value `unit`.
     Unit,
     /// The thunk `thunk { c }`.
@@ -916,13 +921,14 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 76_usize] = [
+pub const FORMERS: [(&str, Former); 77_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
     ("number", Former::Number),
     ("string", Former::Text),
     ("parenthesized_expression", Former::Parenthesized),
+    ("type_quote_expression", Former::TypeQuote),
     ("unit", Former::Unit),
     ("thunk_expression", Former::Thunk),
     ("lambda_expression", Former::Lambda),

@@ -3186,6 +3186,7 @@ impl<'source> Collector<'_, 'source>
                 | Former::Hole
                 | Former::Number
                 | Former::Text
+                | Former::TypeQuote
                 | Former::Parenthesized
                 | Former::Unit
                 | Former::Thunk

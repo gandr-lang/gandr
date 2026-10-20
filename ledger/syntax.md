@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x8713561f2c42a652`
-- Rules: 150 — 149 committed, 1 internal
-- Molds: 2815
+- Grammar fingerprint: `0x3c57e71f008850f3`
+- Rules: 151 — 150 committed, 1 internal
+- Molds: 2817
 - Attributes: 11
 
 ## Reading a form
@@ -61,7 +61,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`identifier.pattern`](exemplars/syntax/identifier.pattern.gandr) | `‹identifier›` | `pattern.atom` | `identifier` | Variable |
 | [`unit.pattern`](exemplars/syntax/unit.pattern.gandr) | `unit` | `pattern.atom` | `unit` | Keyword |
 
-## `expression` — 78 rules
+## `expression` — 79 rules
 
 | Rule | Form | Group | Kind | Roles |
 | ---- | ---- | ----- | ---- | ----- |
@@ -92,6 +92,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`projection_expression`](exemplars/syntax/projection_expression.gandr) | `EXPRESSION . ⦅ ‹identifier› ‖ ‹number› ⦆` | `expression.postfix` | `projection_expression` | Other, Member, Number |
 | [`hole`](exemplars/syntax/hole.gandr) | `? ⦅ ‹hole_name› ⦆?` | `expression.atom` | `hole` | Hole, Label |
 | [`parenthesized_expression`](exemplars/syntax/parenthesized_expression.gandr) | `( ⦅ ) ‖ EXPRESSION ⦅ ) ‖ , ⦅ EXPRESSION ⦅ , EXPRESSION ⦅ , EXPRESSION ⦆* ⦆? ⦅ , ⦆? ⦆? ) ‖ : TYPE ) ⦆ ⦆` | `expression.atom` | `parenthesized_expression` | Other |
+| [`type_quote_expression`](exemplars/syntax/type_quote_expression.gandr) | `type( TYPE )` | `expression.atom` | `type_quote_expression` * | Keyword, Other |
 | [`list_expression`](exemplars/syntax/list_expression.gandr) | `[ ⦅ EXPRESSION ⦅ , EXPRESSION ⦆* ⦅ , ⦆? ⦆? ]` | `expression.atom` | `list_expression` | Other |
 | [`block`](exemplars/syntax/block.gandr) | `{ ⦅ val PATTERN = EXPRESSION ; ‖ run PATTERN ⦅ : TYPE ⦆? <- EXPRESSION ; ‖ unpack ‹identifier› : TYPE = EXPRESSION ; ‖ leta ‹identifier› = EXPRESSION ; ‖ hold ‹identifier› = EXPRESSION ; ‖ recv ( EXPRESSION ) as ‹identifier› ; ‖ acquire ( EXPRESSION ) as ‹identifier› ; ‖ release ( EXPRESSION ) as ‹identifier› ; ‖ fork ( ‹identifier› : TYPE ) EXPRESSION as ‹identifier› ; ‖ fork ! ( ‹identifier› : TYPE ) EXPRESSION ; ‖ EXPRESSION ; ⦆* ⦅ EXPRESSION ⦆? }` | `expression.atom` | `block` | Other, Keyword, Operator, VariableDef, VariableParam |
 | [`lambda_expression`](exemplars/syntax/lambda_expression.gandr) | `fn ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⟨block⟩ ‖ [ ‹type_variable› ⦅ , ‹type_variable› ⦆* ⦅ , ⦆? ] ⟨block⟩ ⦆` | `expression.atom` | `lambda_expression` | Keyword, Other, VariableParam, TypeVariable, Type, Operator, VariableDef |

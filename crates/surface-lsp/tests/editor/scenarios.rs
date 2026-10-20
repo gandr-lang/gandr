@@ -141,6 +141,7 @@ const COUNTED: &[&str] = &[
     "expression telescope_expression",
     "expression telescope_expression name",
     "expression thunk_expression",
+    "expression type_quote_expression",
     "expression typed_number",
     "expression unary_expression",
     "expression unit",

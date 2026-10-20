@@ -496,6 +496,7 @@ impl<'source> Lowerer<'_, 'source>
             | Former::Hole
             | Former::Number
             | Former::Text
+            | Former::TypeQuote
             | Former::Unit
             | Former::Return
             | Former::Force
