@@ -140,6 +140,7 @@ fn named(
         | Some(
             &HeapValue::Literal(_)
             | &HeapValue::Opaque(_)
+            | &HeapValue::Code(_)
             | &HeapValue::Capability
             | &HeapValue::Stack { .. },
         ) => Vec::new(),
@@ -185,7 +186,10 @@ fn spelled_from(
             environment,
         }) => format!("closure {producer:?} [{}]", bound(environment)),
         Some(
-            held @ (&HeapValue::Opaque(_) | &HeapValue::Capability | &HeapValue::Stack { .. }),
+            held @ (&HeapValue::Opaque(_)
+            | &HeapValue::Code(_)
+            | &HeapValue::Capability
+            | &HeapValue::Stack { .. }),
         ) => {
             format!("{held:?}")
         },

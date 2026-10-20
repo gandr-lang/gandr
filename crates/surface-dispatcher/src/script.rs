@@ -444,7 +444,7 @@ mod tests
             (r#"// nothing to run"#, RunStatus::Unreached),
             (
                 r#"def code : Type ; def code = Integer ;"#,
-                RunStatus::Unreached,
+                RunStatus::Value,
             ),
         ];
         for (source, status) in rows {

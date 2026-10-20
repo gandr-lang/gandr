@@ -411,7 +411,7 @@ impl<'run> Reading<'run>
                         }
                     }
                 },
-                HeapValue::Literal(_) | HeapValue::Opaque(_) => {},
+                HeapValue::Literal(_) | HeapValue::Opaque(_) | HeapValue::Code(_) => {},
                 HeapValue::Constructed { ref fields, .. } => {
                     pending.extend(fields.iter().copied());
                 },
@@ -467,6 +467,7 @@ impl<'run> Reading<'run>
                 | HeapValue::Stack { ref frames } => matches!(node, gandr_core_term::Value::Reify(source) if source.len() == frames.len()),
                 | HeapValue::Literal(ref literal) => matches!(*node, gandr_core_term::Value::Literal(ref found) if found == literal),
                 | HeapValue::Opaque(constant) => *node == gandr_core_term::Value::Constant(constant),
+                | HeapValue::Code(_) => matches!(*node, gandr_core_term::Value::Quote(_) | gandr_core_term::Value::QuoteComputation(_)),
                 | HeapValue::Constructed { ref tag, ref fields } => match (tag, fields.as_ref()) {
                     | (&ConstructorTag::ListNil, &[]) => *node == gandr_core_term::Value::ListNil,
                     | (&ConstructorTag::ListCons, &[head, tail]) => matches!(*node, gandr_core_term::Value::ListCons(h, t) if self.read.get(&head) == Some(&h) && self.read.get(&tail) == Some(&t)),
@@ -537,6 +538,12 @@ impl<'run> Reading<'run>
             },
             HeapValue::Literal(ref literal) => Ok(self.core.value_literal(literal.clone())),
             HeapValue::Opaque(constant) => Ok(self.core.value_constant(constant)),
+            HeapValue::Code(code) => {
+                let arena = self.arena;
+                gandr_core_term::TypeImporter::new(arena.annotations(), self.core)
+                    .value(code)
+                    .map_err(|gandr_core_term::ImportFault| ReadbackRefusal::Unreadable(id))
+            },
             HeapValue::Constructed {
                 ref tag,
                 ref fields,

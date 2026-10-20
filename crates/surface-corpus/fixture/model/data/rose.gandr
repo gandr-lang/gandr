@@ -2,8 +2,8 @@
 // node holds a `List` of nodes: the list's parameter is strictly positive, so
 // each child stands below the node and the family declares (#517); a measure
 // recurses through the list's `map`, which a call instantiates at the
-// children's stage (#393), and its run waits on the machine taking a type code
-// as an argument (#452). Written as a block, a node holds a forest and a forest
+// children's stage (#393), and a run passes `map` the children's type as a
+// code (#452). Written as a block, a node holds a forest and a forest
 // is empty or a tree before a forest: the two families name each other, so
 // they are one block, admitted as one and sharing one stage; and the two
 // measures name each other, so they are one fixpoint over the sum of their
@@ -63,6 +63,18 @@ def rec grow(t : Bush) -> -F Bush {
     Sprout(kids) => Sprout((Cons(sprig, map(Bush, Bush, grow[<], kids)) : List(Bush)))
   }
 }
+
+/// The shrub's three nodes, its children counted through `map` at the
+/// children's type (#452).
+@[ runs("Succ(Succ(Succ(Zero)))") ]
+def shrub_nodes : +U (-F Nat) ;
+def shrub_nodes = thunk { nodes(shrub) } ;
+
+/// The shrub grown, then counted: the root gains a childless node and each
+/// of its two children gains one, six nodes in all (#452).
+@[ runs("Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))") ]
+def grown_nodes : +U (-F Nat) ;
+def grown_nodes = thunk { run grown <- grow(shrub) ; nodes(grown) } ;
 
 /// The tree and its forest, one block: each family names the other, and
 /// the two measures recurse through each other.

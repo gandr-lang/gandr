@@ -86,8 +86,8 @@ pub enum TransferRefusal
     HostObject(Word),
 }
 
-/// The tables a run's objects name by their family: the function's heads
-/// and the run's literals.
+/// The tables a run's objects name by their family: the function's heads and
+/// codes and the run's literals.
 ///
 /// # Specification
 /// trivial.
@@ -98,6 +98,8 @@ pub struct Tables<'run>
     pub heads: &'run [ConstructorTag],
     /// The run's literals, by family.
     pub literals: &'run [Literal],
+    /// The function's codes, by family, in its IL arena's annotations.
+    pub codes: &'run [gandr_core_term::ValueId],
 }
 
 impl From<StoreFault> for TransferRefusal
@@ -309,7 +311,9 @@ fn children(
         .kind()
         .map_err(|unknown| TransferRefusal::Kind(unknown.0))?
     {
-        Kind::Integer | Kind::Literal | Kind::Opaque | Kind::Capability => Ok(Vec::new()),
+        Kind::Integer | Kind::Literal | Kind::Opaque | Kind::Capability | Kind::Code => {
+            Ok(Vec::new())
+        },
         Kind::Cell => Err(TransferRefusal::HostObject(object)),
         Kind::Stack => {
             let mut held = Vec::new();
@@ -483,6 +487,13 @@ fn allocate(
                 .ok_or(TransferRefusal::Entry(object))?,
         )?,
         Kind::Opaque => HeapValue::Opaque(ConstantIndex::from(entry?)),
+        Kind::Code => HeapValue::Code(
+            tables
+                .codes
+                .get(entry?)
+                .copied()
+                .ok_or(TransferRefusal::Entry(object))?,
+        ),
         Kind::Capability => HeapValue::Capability,
         Kind::Cell => return Err(TransferRefusal::HostObject(object)),
         Kind::Stack => {

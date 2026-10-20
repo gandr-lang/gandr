@@ -440,7 +440,9 @@ fn walked(
                             free.0.insert((zone, DeBruijnIndex::from(past)));
                         }
                     },
-                    ProducerNode::Constant(_) | ProducerNode::Literal(_) => {},
+                    ProducerNode::Constant(_)
+                    | ProducerNode::Literal(_)
+                    | ProducerNode::Code(_) => {},
                     ProducerNode::Constructor {
                         ref producers,
                         ref consumers,

@@ -97,6 +97,10 @@ pub enum HeapValue
     /// A constant with no body to run: an owed or refused declaration, which
     /// a run carries as itself.
     Opaque(ConstantIndex),
+    /// A code, a quoted type or computation type in the command arena's
+    /// annotations: a type argument a run passes as itself and never
+    /// observes.
+    Code(gandr_core_term::ValueId),
     /// A capability a handler introduced: its address is its identity.
     Capability,
 }

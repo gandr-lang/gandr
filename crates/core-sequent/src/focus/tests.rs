@@ -1,35 +1,35 @@
 use super::*;
 
-/// A lambda whose sequenced body returns a type code outside the focusing
+/// A lambda whose sequenced body returns a static code outside the focusing
 /// image.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a lambda sequences a returned unit before returning a valid type
-///   quote; all core references resolve, but focusing refuses the code.
+/// - ensures: a lambda sequences a returned unit before returning a static
+///   lambda; all core references resolve, but focusing refuses the code.
 /// - provides: a refusal after entering nested translation work without
 ///   violating a core constructor's precondition.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — focusing this valid nested core graph after an earlier
-///   translation refuses the type code and preserves both destination marks and
-///   the earlier provenance. This distinguishes missing rollback and damage to
-///   the prefix; it covers this unsupported form, not an invalid source arena.
+///   translation refuses the static code and preserves both destination marks
+///   and the earlier provenance. This distinguishes missing rollback and damage
+///   to the prefix; it covers this unsupported form, not an invalid source
+///   arena.
 /// - witness: `focus::tests::a_refused_focusing_leaves_the_arena_at_its_mark`
 #[spec(ensures: |ret| match core.computation(ret) {
         | Some(&Computation::Lambda(bind)) => match core.computation(bind) {
             | Some(&Computation::Bind(bound, body)) => matches!(core.computation(bound), Some(&Computation::Return(unit)) if core.value(unit) == Some(&Value::unit()))
-                && matches!(core.computation(body), Some(&Computation::Return(code)) if matches!(core.value(code), Some(&Value::Quote(quoted)) if core.value_type(quoted).is_some())),
+                && matches!(core.computation(body), Some(&Computation::Return(code)) if matches!(core.value(code), Some(&Value::StaticLambda(_)))),
             | _ => false,
         },
         | _ => false,
     })]
-fn lambda_over_a_type_code(core: &mut CoreArena) -> ComputationId
+fn lambda_over_a_static_code(core: &mut CoreArena) -> ComputationId
 {
     let unit = core.value_unit();
-    let quoted_type = core.value_type_base(gandr_kernel_term::BaseType::Integer);
-    let code = core.value_quote(quoted_type);
+    let code = core.value_static_lambda(unit);
     let bound = core.computation_return(unit);
     let body = core.computation_return(code);
     let bind = core.computation_bind(bound, body);
@@ -43,7 +43,7 @@ fn lambda_over_a_type_code(core: &mut CoreArena) -> ComputationId
 fn a_refused_focusing_leaves_the_arena_at_its_mark()
 {
     let mut core = CoreArena::new();
-    let refused = lambda_over_a_type_code(&mut core);
+    let refused = lambda_over_a_static_code(&mut core);
     let fine_value = core.value_unit();
     let fine = core.computation_return(fine_value);
 
@@ -57,7 +57,7 @@ fn a_refused_focusing_leaves_the_arena_at_its_mark()
     let outcome = focus_computation(&core, refused, &mut arena, &mut provenance);
     assert!(
         matches!(outcome, Err(FocusRefusal::Code(_))),
-        "the type code is refused by name: {outcome:?}"
+        "the static code is refused by name: {outcome:?}"
     );
     assert_eq!(
         arena_mark,
@@ -76,17 +76,66 @@ fn a_refused_focusing_leaves_the_arena_at_its_mark()
     );
 }
 
-/// A code has no producer: `return ⌜Integer⌝` and `return ⌜F Integer⌝`
-/// are each refused naming the quote, and the arena is left at its mark.
+/// A quote of either sort focuses to a code producer naming the same quote:
+/// `⌜Integer⌝` and `⌜F Integer⌝` each import back from the IL's annotations
+/// to the type they quote.
 #[test]
-fn a_code_is_refused_by_name()
+fn a_quote_focuses_to_the_code_it_names()
 {
     let mut core = CoreArena::new();
     let integer = core.value_type_base(gandr_kernel_term::BaseType::Integer);
     let returns_integer = core.comp_type_returner(integer);
     let quoted = core.value_quote(integer);
     let quoted_computation = core.value_quote_computation(returns_integer);
-    for code in [quoted, quoted_computation] {
+    let mut arena = CommandArena::new();
+    let mut provenance = Provenance::new();
+    let mut read_back = |code| {
+        let producer =
+            focus_value(&core, code, &mut arena, &mut provenance).expect("a quote focuses");
+        let Some(&ProducerNode::Code(held)) = arena.producer(producer)
+        else {
+            panic!("a quote focuses to a code producer");
+        };
+        let mut back = CoreArena::new();
+        let value = gandr_core_term::TypeImporter::new(arena.annotations(), &mut back)
+            .value(held)
+            .expect("the code imports back");
+        (back, value)
+    };
+    let is_integer = |arena: &CoreArena, ty| {
+        arena.value_type(ty)
+            == Some(&gandr_core_term::ValueType::Base(
+                gandr_kernel_term::BaseType::Integer,
+            ))
+    };
+    let (back, value) = read_back(quoted);
+    assert!(
+        matches!(back.value(value), Some(&Value::Quote(ty)) if is_integer(&back, ty)),
+        "the value code reads back as `⌜Integer⌝`"
+    );
+    let (back, value) = read_back(quoted_computation);
+    assert!(
+        matches!(
+            back.value(value),
+            Some(&Value::QuoteComputation(ty)) if matches!(
+                back.comp_type(ty),
+                Some(&gandr_core_term::CompType::Returner { result, .. }) if is_integer(&back, result)
+            )
+        ),
+        "the computation code reads back as `⌜F Integer⌝`"
+    );
+}
+
+/// A static lambda and a static application have no producer: each is
+/// refused naming it, and the arena is left at its mark.
+#[test]
+fn a_static_code_is_refused_by_name()
+{
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let lambda = core.value_static_lambda(unit);
+    let applied = core.value_static_application(lambda, unit);
+    for code in [lambda, applied] {
         let term = core.computation_return(code);
         let mut arena = CommandArena::new();
         let mut provenance = Provenance::new();
@@ -94,7 +143,7 @@ fn a_code_is_refused_by_name()
         assert_eq!(
             focus_computation(&core, term, &mut arena, &mut provenance),
             Err(FocusRefusal::Code(code)),
-            "the quote is refused by name"
+            "the static code is refused by name"
         );
         assert_eq!(mark, arena.watermark(), "the arena is back at its mark");
     }

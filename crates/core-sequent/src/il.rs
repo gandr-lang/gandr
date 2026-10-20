@@ -545,6 +545,10 @@ pub enum ProducerNode
     Constant(ConstantIndex),
     /// A base-type literal.
     Literal(Literal),
+    /// A code: a quoted type or computation type, held in the command arena's
+    /// annotations. It passes where a type argument stands and is read back as
+    /// itself; no command observes it.
+    Code(gandr_core_term::ValueId),
     /// A constructor application `K(p̄; c̄)`.
     Constructor
     {
@@ -2045,7 +2049,7 @@ impl CommandArena
     #[spec(ensures: |ref ret| ret.is_ok() == match *node {
         | ProducerNode::Reify(ref frames) => frames.iter().all(|frame| match *frame { gandr_core_term::control::StackFrame::Apply(value) => self.producer(value).is_some(), gandr_core_term::control::StackFrame::Bind(body) => self.command(body).is_some(), gandr_core_term::control::StackFrame::Project(_) => true }),
         | ProducerNode::Primitive { arguments, .. } => arguments.iter().all(|id| self.producer(*id).is_some()),
-        | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) => true,
+        | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) | ProducerNode::Code(_) => true,
         | ProducerNode::Constructor { ref producers, ref consumers, .. } =>
             producers.iter().all(|id| self.producer(*id).is_some())
                 && consumers.iter().all(|id| self.consumer(*id).is_some()),
@@ -2075,7 +2079,8 @@ impl CommandArena
             ProducerNode::Primitive { arguments, .. } => self.children_resolve(&arguments, &[]),
             ProducerNode::Variable { .. }
             | ProducerNode::Constant(_)
-            | ProducerNode::Literal(_) => Ok(()),
+            | ProducerNode::Literal(_)
+            | ProducerNode::Code(_) => Ok(()),
             ProducerNode::Constructor {
                 ref producers,
                 ref consumers,
@@ -2291,7 +2296,10 @@ where
                 each(NodeAddress::Producer(argument), at)?;
             }
         },
-        ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) => {},
+        ProducerNode::Variable { .. }
+        | ProducerNode::Constant(_)
+        | ProducerNode::Literal(_)
+        | ProducerNode::Code(_) => {},
         ProducerNode::Constructor {
             ref producers,
             ref consumers,
@@ -2567,6 +2575,7 @@ pub fn producer_named(node: &ProducerNode) -> core::option::IntoIter<(Zone, DeBr
         | ProducerNode::Primitive { .. }
         | ProducerNode::Constant(_)
         | ProducerNode::Literal(_)
+        | ProducerNode::Code(_)
         | ProducerNode::Constructor { .. }
         | ProducerNode::Thunk { .. }
         | ProducerNode::Fixpoint { .. }

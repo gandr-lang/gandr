@@ -483,6 +483,7 @@ fn command(
         | ProducerNode::Reify(_) => matches!(ret.first(), Some(Piece::Text(Token("reify [")))) && matches!(ret.last(), Some(Piece::Text(Token("]")))),
         | ProducerNode::Primitive { primitive, .. } => matches!(ret.first(), Some(Piece::Text(Token(name))) if *name == primitive.name().as_ref()),
         | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) => matches!(ret.as_slice(), &[Piece::Owned(_)]),
+        | ProducerNode::Code(_) => matches!(ret.as_slice(), &[Piece::Text(Token("code"))]),
         | ProducerNode::Constructor { ref tag, ref producers, ref consumers } =>
             if *tag == ConstructorTag::Tuple(ProducerArity::ZERO) && producers.is_empty() && consumers.is_empty() {
                 matches!(ret.as_slice(), &[Piece::Text(Token("()"))])
@@ -546,6 +547,7 @@ fn producer(
             alloc::vec![Piece::Owned(alloc::format!("c{}", usize::from(constant)))]
         },
         ProducerNode::Literal(ref literal) => alloc::vec![Piece::Owned(literal_text(literal))],
+        ProducerNode::Code(_) => alloc::vec![text!("code")],
         ProducerNode::Constructor {
             ref tag,
             ref producers,

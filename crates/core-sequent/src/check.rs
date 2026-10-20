@@ -531,6 +531,7 @@ impl Walk<'_>
             | ProducerNode::Variable { .. }
             | ProducerNode::Constant(_)
             | ProducerNode::Literal(_)
+            | ProducerNode::Code(_)
             | ProducerNode::Thunk { .. }
             | ProducerNode::Fixpoint { .. }
             | ProducerNode::Mu { .. } => {},
@@ -961,7 +962,7 @@ const fn dangling(node: NodeAddress) -> CheckRefusal
 ///   and captures change the table observation.
 /// - witness: `check::tests::every_node_kind_declares_its_intrinsic_polarity`
 #[spec(ensures: |ret| ret == match *node {
-    | ProducerNode::Reify(_) | ProducerNode::Primitive { .. } | ProducerNode::Literal(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } => Some(Polarity::Positive),
+    | ProducerNode::Reify(_) | ProducerNode::Primitive { .. } | ProducerNode::Literal(_) | ProducerNode::Code(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } => Some(Polarity::Positive),
     | ProducerNode::Cocase { .. } => Some(Polarity::Negative),
     | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Mu { .. } => None,
 })]
@@ -971,6 +972,7 @@ fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
         ProducerNode::Reify(_)
         | ProducerNode::Primitive { .. }
         | ProducerNode::Literal(_)
+        | ProducerNode::Code(_)
         | ProducerNode::Constructor { .. }
         | ProducerNode::Thunk { .. }
         | ProducerNode::Fixpoint { .. } => Some(Polarity::Positive),
