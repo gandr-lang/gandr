@@ -6,6 +6,8 @@
 // along `p`, then applies the record's forward map. A first path that does
 // not compute, as `p` here, is carried on as the value it stands for.
 
+// The circle, the presented integers, the winding number and spinning.
+import "./circle-base.gandr" ;
 // Transport forward along a path between types.
 import "./univalence.gandr" ;
 
@@ -22,3 +24,18 @@ def thenBeta(
 ) -> -F Path(c, fwdAlong(a, c, p then ua(e), x), fwdAlong(b, c, ua(e), fwdAlong(a, b, p, x))) {
   return here(fwdAlong(b, c, ua(e), fwdAlong(a, b, p, x)))
 }
+
+/// Transport along a path from the loops at the point to the integers, then
+/// back along it.
+@[ checks ]
+def loopsRound(
+  p : Path(Type, Path(Circle, Base, Base), Int),
+  x : Path(Circle, Base, Base)
+) -> -F Path(Circle, Base, Base) {
+  transport(\X. X, p then back(p), x)
+}
+
+/// A loop carried to the integers and back again is the loop, by a run.
+@[ runs("loop ∷ here(Base)") ]
+def roundRun : +U (-F Path(Circle, Base, Base)) ;
+def roundRun = thunk { loopsRound(loopsAreIntegers, loop) } ;

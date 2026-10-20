@@ -1,8 +1,8 @@
 // Transport, the HoTT book's § 2.3 (`transport`), along reflexivity at a
 // motive whose fibres are path types: the element it returns is a path, an
 // element of another type is none, and transport along the path it returns
-// runs it first. Along reflexivity in the universe, transport keeps the
-// value, by conversion and by a run.
+// runs it first. Along reflexivity, at a path-type motive and in the
+// universe, transport keeps the value, by conversion and by a run.
 
 /// A reflexive transport at a path-type motive returns a path.
 @[ checks ]
@@ -12,6 +12,12 @@ def moved_end : Path(
   here(2)
 ) ;
 def moved_end = here(here(2)) ;
+
+/// A reflexive transport at a path-type motive returns its path, by a run: the
+/// path runs as its two maps, both the identity.
+@[ runs("(thunk { fn (a) { a } }, thunk { fn (a) { a } })") ]
+def moved_end_run : +U (-F Path(Integer, 2, 2)) ;
+def moved_end_run = thunk { transport(\x. Path(Integer, x, x), here(2), here(2)) } ;
 
 /// A transported unit is no path between integers.
 @[ refuses("TypeMismatch") ]
