@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 
+import { IMPORT_DROP, ImportDrop } from "./drop";
 import { GandrLanguageClient } from "./lsp/client";
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -7,6 +8,13 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(languageClient);
   context.subscriptions.push(
     vscode.commands.registerCommand("gandr.toggleForm", () => toggleForm(languageClient)),
+  );
+  context.subscriptions.push(
+    vscode.languages.registerDocumentDropEditProvider(
+      { language: "gandr" },
+      new ImportDrop(languageClient),
+      { dropMimeTypes: ["text/uri-list"], providedDropEditKinds: [IMPORT_DROP] },
+    ),
   );
   await languageClient.start();
 }

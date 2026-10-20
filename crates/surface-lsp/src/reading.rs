@@ -32,6 +32,7 @@
 
 use alloc::vec::Vec;
 use std::path::Path;
+use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_surface_dispatcher::named_path;
@@ -67,6 +68,7 @@ use crate::recheck::grammar;
 use crate::recheck::roles;
 use crate::relocate::Moves;
 use crate::relocate::PathImport;
+use crate::relocate::added;
 use crate::signature::Argument;
 use crate::signature::Calls;
 
@@ -153,6 +155,9 @@ struct Readout
     calls: Calls,
     /// The path imports, in source order; none when the imports do not read.
     imports: Vec<PathImport>,
+    /// Where the last import of any address ends; none when the text writes
+    /// none or its imports do not read.
+    imports_end: Option<ByteOffset>,
 }
 
 /// The reading of one text, or why it has none.
@@ -172,8 +177,8 @@ impl Reading
     ///   disjoint and on character boundaries of `text`, its declarations each
     ///   beside its declaring form's key, its folds, its selection skeleton,
     ///   its calls, as [`crate::outline`] and [`Calls::of`] read each off the
-    ///   tree, and the address of each path import as [`written_imports`] reads
-    ///   it, none when the imports do not read.
+    ///   tree, the address of each path import as [`written_imports`] reads it
+    ///   and where the last import ends, none when the imports do not read.
     /// - provides: the one parse a held text's structural requests share.
     /// - fails: never; an unread text names its reason.
     /// - panics: none.
@@ -212,7 +217,7 @@ impl Reading
         };
         let tree = parsed.into_tree();
         let index = LineIndex::new(<&str>::from(text).into());
-        Self(Maybe::Present(Readout {
+        let mut readout = Readout {
             spans: roles.highlight(&tree).unwrap_or_default(),
             declarations: declarations(grammar, roles, &tree, &index)
                 .into_iter()
@@ -225,20 +230,21 @@ impl Reading
             folds: folds(&tree, &index),
             skeleton: Skeleton::of(&tree),
             calls: Calls::of(grammar, &tree),
-            imports: written_imports(grammar, &tree).map_or_else(
-                |_refused| Vec::new(),
-                |written| {
-                    written
-                        .into_iter()
-                        .filter(|import| import.address == Address::Path)
-                        .map(|import| PathImport {
-                            addressed: import.addressed,
-                            address: String::from(import.uri.as_ref()),
-                        })
-                        .collect()
-                },
-            ),
-        }))
+            imports_end: None,
+            imports: Vec::new(),
+        };
+        if let Ok(written) = written_imports(grammar, &tree) {
+            readout.imports_end = written.last().map(|import| import.span.end());
+            readout.imports = written
+                .into_iter()
+                .filter(|import| import.address == Address::Path)
+                .map(|import| PathImport {
+                    addressed: import.addressed,
+                    address: String::from(import.uri.as_ref()),
+                })
+                .collect();
+        }
+        Self(Maybe::Present(readout))
     }
 
     /// The highlighter's spans over the text, none when it was not read.
@@ -355,6 +361,75 @@ impl Reading
                     new_text: readdressed.written,
                 })
             })
+            .collect()
+    }
+
+    /// The edit importing `files` into the text, `source`, the document at
+    /// `path`, ranged through `index`.
+    ///
+    /// # Specification
+    /// - requires: `source` is the text this reading read and `index` was built
+    ///   over it; `path` and each of `files` are named as [`named_path`] names
+    ///   them.
+    /// - ensures: none when the text was not read or [`added`] adds no address;
+    ///   otherwise one insertion of an `import "…" ;` line per added address,
+    ///   in order: at the start of the line after the last import the text
+    ///   writes, at its end on a line of its own when that import ends the
+    ///   text's last line, and at the text's start, a blank line after them,
+    ///   when it writes none.
+    /// - provides: the answer to `gandr/importFiles`, which a drop of gandr
+    ///   sources into a document asks.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a text with imports gains its new imports on the line
+    ///   after the last; a text with none gains them at its start; a file
+    ///   imported already adds nothing.
+    /// - witness: `server::tests::dropped_sources_are_imported_after_the_last_import`
+    #[spec(ensures: |ret| ret.len() <= 1
+        && ret.iter().all(|edit| edit.range.start == edit.range.end))]
+    #[must_use]
+    pub fn imported(
+        &self,
+        source: SourceText<'_>,
+        index: &LineIndex<'_>,
+        path: &Path,
+        files: &[PathBuf],
+    ) -> Vec<TextEdit>
+    {
+        let Maybe::Present(ref readout) = self.0
+        else {
+            return Vec::new();
+        };
+        let addresses = added(path, &readout.imports, files);
+        if addresses.is_empty() {
+            return Vec::new();
+        }
+        let mut lines = String::new();
+        for address in &addresses {
+            lines.push_str("import \"");
+            lines.push_str(address);
+            lines.push_str("\" ;\n");
+        }
+        let text = <&str>::from(source);
+        let (at, new_text) = match readout.imports_end {
+            Some(end) => {
+                let end = usize::from(end);
+                match text.get(end ..).and_then(|rest| rest.find('\n')) {
+                    Some(newline) => (end.saturating_add(newline).saturating_add(1), lines),
+                    None => (text.len(), format!("\n{}", lines.trim_end_matches('\n'))),
+                }
+            },
+            None if text.is_empty() => (0, lines),
+            None => (0, format!("{lines}\n")),
+        };
+        let at = ByteOffset::from(at);
+        ByteSpan::new(at, at)
+            .ok()
+            .and_then(|span| ranged(index, span))
+            .map(|range| TextEdit { range, new_text })
+            .into_iter()
             .collect()
     }
 

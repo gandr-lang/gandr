@@ -1,6 +1,7 @@
-//! Files moving: where a rename of files and folders takes each path, and the
-//! address each path import writes once the file it names, or the source
-//! writing it, has moved.
+//! Files moving and files imported: where a rename of files and folders takes
+//! each path, the address each path import writes once the file it names, or
+//! the source writing it, has moved, and the address a source writes to import
+//! another.
 //!
 //! An import's address is relative to the directory of the source writing it,
 //! so a move rewrites two kinds of import: those naming a file that moves, in
@@ -8,8 +9,10 @@
 //! another directory. A rewritten address is the moved file's path relative to
 //! the importer's new directory, `./` before it when it does not climb, as the
 //! corpus writes them; its backslashes, quotes and control characters are
-//! escaped as an address decodes them.
+//! escaped as an address decodes them. A source dropped into another is
+//! imported by the same address, from the importer's directory, dotted.
 
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use std::path::Component;
 use std::path::Path;
@@ -172,6 +175,57 @@ impl Moves
     }
 }
 
+/// The addresses the source at `importer`, writing `imports`, adds to import
+/// `files`.
+///
+/// # Specification
+/// - requires: `importer` and each of `files` are named as [`named_path`] names
+///   them.
+/// - ensures: in the order `files` lists them, one address for each file whose
+///   extension is `gandr`, that is not `importer`, that no import of `imports`
+///   and no earlier file names, and that a relative path in Unicode reaches
+///   from the importer's directory: that path, `./` before it when it does not
+///   climb, escaped.
+/// - provides: the imports a drop of gandr sources into a document inserts.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a sibling, a source in a deeper and in a higher
+///   directory, the importer itself, a file it imports already, a file listed
+///   twice, a file of another kind and an address needing escapes each answer
+///   as stated.
+/// - witness: `relocate::tests::a_dropped_source_is_imported_by_its_address_from_the_importer`
+#[spec(ensures: |ret| ret.len() <= files.len())]
+#[must_use]
+pub fn added(
+    importer: &Path,
+    imports: &[PathImport],
+    files: &[PathBuf],
+) -> Vec<String>
+{
+    let directory = importer.parent().unwrap_or(importer);
+    let mut named: BTreeSet<PathBuf> = imports
+        .iter()
+        .map(|import| named_path(&directory.join(&import.address)))
+        .collect();
+    files
+        .iter()
+        .filter_map(|file| {
+            if file
+                .extension()
+                .is_none_or(|extension| extension != "gandr")
+                || file == importer
+                || !named.insert(file.clone())
+            {
+                return None;
+            }
+            let address = relative(directory, file, Dotted(true))?;
+            Some(escaped(Unescaped(&address)))
+        })
+        .collect()
+}
+
 /// Whether an address is written with its leading `./` or `../`.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -248,6 +302,7 @@ mod tests
     use super::Moves;
     use super::PathImport;
     use super::Readdressed;
+    use super::added;
     use crate::protocol::DocumentUri;
     use crate::protocol::FileRename;
 
@@ -351,6 +406,57 @@ mod tests
             renamed("base.gandr", "elsewhere.gandr").moved(&at("stays.gandr")),
             None,
             "a file beside a moved one stays"
+        );
+        let _cleared = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_dropped_source_is_imported_by_its_address_from_the_importer()
+    {
+        let directory = std::env::temp_dir().join(format!("gandr-added-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(directory.join("deeper")).expect("the scratch tree is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        for file in [
+            "base.gandr",
+            "beside.gandr",
+            "odd\"name.gandr",
+            "notes.txt",
+            "deeper/mid.gandr",
+            "deeper/low.gandr",
+        ] {
+            std::fs::write(directory.join(file), "").expect("the source is written");
+        }
+        let at = |file: &str| directory.join(file);
+        let imported = [PathImport {
+            addressed: ByteSpan::new(ByteOffset::from(8_usize), ByteOffset::from(20_usize))
+                .expect("the span is ordered"),
+            address: String::from("./base.gandr"),
+        }];
+        assert_eq!(
+            added(&at("beside.gandr"), &imported, &[
+                at("deeper/mid.gandr"),
+                at("base.gandr"),
+                at("beside.gandr"),
+                at("notes.txt"),
+                at("odd\"name.gandr"),
+                at("deeper/mid.gandr"),
+            ]),
+            [
+                String::from("./deeper/mid.gandr"),
+                String::from("./odd\\\"name.gandr"),
+            ],
+            "a deeper source and an escaped sibling are added once; the source imported \
+             already, the importer itself and a file of another kind are not"
+        );
+        assert_eq!(
+            added(&at("deeper/mid.gandr"), &[], &[
+                at("deeper/low.gandr"),
+                at("base.gandr")
+            ]),
+            [String::from("./low.gandr"), String::from("../base.gandr")],
+            "a sibling is dotted, and a source in a higher directory climbs to it"
         );
         let _cleared = std::fs::remove_dir_all(&directory);
     }

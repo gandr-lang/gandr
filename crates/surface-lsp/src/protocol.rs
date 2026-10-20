@@ -297,6 +297,18 @@ pub struct DocumentParams
     pub text_document: DocumentIdentifier,
 }
 
+/// The parameters of `gandr/importFiles`: the document importing and the
+/// files it imports, as a drop of them into it names them.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportFilesParams
+{
+    /// The document importing.
+    pub text_document: DocumentIdentifier,
+    /// The files imported, each by its `file` URI.
+    pub files: Vec<DocumentUri>,
+}
+
 /// A document, by its URI alone.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[repr(transparent)]
