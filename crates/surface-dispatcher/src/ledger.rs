@@ -1598,20 +1598,29 @@ mod tests
             1,
             "the header names the fingerprint"
         );
+        let mut cell = String::new();
         for row in &ledger.rules {
-            let cell = match row.standing {
-                Standing::Committed => {
-                    format!("| [`{0}`](exemplars/syntax/{0}.gandr) |", row.name)
+            cell.clear();
+            match row.standing {
+                Standing::Committed => core::fmt::Write::write_fmt(
+                    &mut cell,
+                    format_args!("| [`{0}`](exemplars/syntax/{0}.gandr) |", row.name),
+                ),
+                Standing::Internal(_) => {
+                    core::fmt::Write::write_fmt(&mut cell, format_args!("| `{}` |", row.name))
                 },
-                Standing::Internal(_) => format!("| `{}` |", row.name),
-            };
+            }
+            .expect("a string accepts every write");
             assert!(markdown.contains(&cell), "`{}` has a row", row.name);
         }
         for row in &ledger.attributes {
-            assert!(markdown.contains(&format!(
-                "| [`{0}`](exemplars/attributes/{0}.gandr) |",
-                row.name
-            )));
+            cell.clear();
+            core::fmt::Write::write_fmt(
+                &mut cell,
+                format_args!("| [`{0}`](exemplars/attributes/{0}.gandr) |", row.name),
+            )
+            .expect("a string accepts every write");
+            assert!(markdown.contains(&cell), "`{}` has a row", row.name);
         }
         assert!(
             markdown.contains("`EXPRESSION \\|\\| EXPRESSION`"),

@@ -117,6 +117,7 @@ fn signed(
     let text = <&str>::from(text);
     let tree = parsed.tree();
     let mut found = Vec::new();
+    let mut read: Vec<(usize, usize)> = Vec::new();
     for form in tree.children(tree.root()) {
         let (Some(key), Some(node)) = (tree.key(form), tree.node(form))
         else {
@@ -127,16 +128,18 @@ fn signed(
         else {
             continue;
         };
-        let read: Vec<(usize, usize)> = label(SourceFragment::from(written))
-            .into_iter()
-            .filter(|token| token.lexeme != Lexeme::Space)
-            .filter_map(|token| {
-                Some((
-                    usize::try_from(token.start).ok()?,
-                    usize::try_from(token.end).ok()?,
-                ))
-            })
-            .collect();
+        read.clear();
+        read.extend(
+            label(SourceFragment::from(written))
+                .into_iter()
+                .filter(|token| token.lexeme != Lexeme::Space)
+                .filter_map(|token| {
+                    Some((
+                        usize::try_from(token.start).ok()?,
+                        usize::try_from(token.end).ok()?,
+                    ))
+                }),
+        );
         let at = |index: usize| {
             let &(start, end) = read.get(index)?;
             written.get(start .. end)
@@ -827,32 +830,31 @@ fn substituted(
     form: Form,
 ) -> String
 {
-    let mut edits: Vec<(ByteSpan, String)> = Vec::new();
-    for declaration in printed {
-        let (ty, body) = (declaration.ty.of(form), declaration.body.of(form));
-        let whole = format!(
-            "def {name} : {ty} ;\ndef {name} = {body} ;",
-            name = declaration.name
-        );
+    // Each form a declaration held, with the declaration whose spelling
+    // replaces it: the first form takes the whole, the rest are emptied.
+    let mut edits: Vec<(ByteSpan, Option<&Printed>)> = Vec::new();
+    for &declaration in printed {
         for (index, &span) in declaration.forms.iter().enumerate() {
-            edits.push((
-                span,
-                if index == 0 {
-                    whole.clone()
-                }
-                else {
-                    String::new()
-                },
-            ));
+            edits.push((span, (index == 0).then_some(declaration)));
         }
     }
     edits.sort_by_key(|&(span, _)| core::cmp::Reverse(span.start()));
     let mut out = String::from(<&str>::from(own));
-    for (span, replacement) in edits {
-        out.replace_range(
-            usize::from(span.start()) .. usize::from(span.end()),
-            &replacement,
-        );
+    let mut whole = String::new();
+    for (span, declaration) in edits {
+        whole.clear();
+        if let Some(declaration) = declaration {
+            let (ty, body) = (declaration.ty.of(form), declaration.body.of(form));
+            core::fmt::Write::write_fmt(
+                &mut whole,
+                format_args!(
+                    "def {name} : {ty} ;\ndef {name} = {body} ;",
+                    name = declaration.name
+                ),
+            )
+            .expect("a string accepts every write");
+        }
+        out.replace_range(usize::from(span.start()) .. usize::from(span.end()), &whole);
     }
     out
 }
@@ -1199,17 +1201,23 @@ fn bodies(
             let shown = |tokens: Option<Vec<String>>| {
                 tokens.map_or_else(|| String::from("(none)"), |tokens| tokens.join(" "))
             };
-            found.misses.push(format!(
-                "{name}: `{}` from {from:?} into {into}{}:\n  formatter: {} = {}\n  printer:   {} = {}",
-                declaration.name,
-                withdrawn
-                    .get(declaration.name.as_str())
-                    .map_or_else(String::new, |reason| format!(", withdrawn: {reason}")),
-                shown(got_type),
-                shown(got_body),
-                shown(want_type),
-                shown(want_body),
-            ));
+            let mut miss = format!("{name}: `{}` from {from:?} into {into}", declaration.name);
+            if let Some(reason) = withdrawn.get(declaration.name.as_str()) {
+                core::fmt::Write::write_fmt(&mut miss, format_args!(", withdrawn: {reason}"))
+                    .expect("a string accepts every write");
+            }
+            core::fmt::Write::write_fmt(
+                &mut miss,
+                format_args!(
+                    ":\n  formatter: {} = {}\n  printer:   {} = {}",
+                    shown(got_type),
+                    shown(got_body),
+                    shown(want_type),
+                    shown(want_body),
+                ),
+            )
+            .expect("a string accepts every write");
+            found.misses.push(miss);
         }
     }
     found.compared = held.len();

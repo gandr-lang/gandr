@@ -279,17 +279,23 @@ fn every_typed_entry_spells_without_a_dishonest_question_mark()
                 // Each normal form the corpus states, as the engine spelled
                 // it: the side after `~>`, read back under the rules of the
                 // block that states it (#669).
+                let mut named = String::new();
                 if let Some(ref table) = table {
                     for declaration in report.declarations() {
                         if let Stated::Verdict(Outcome::Normalizes(ref spelled)) =
                             *declaration.stated()
                             && let Some((_, normal)) = spelled.as_ref().split_once("~>")
                         {
-                            let block = declaration.name().to_string();
+                            named.clear();
+                            core::fmt::Write::write_fmt(
+                                &mut named,
+                                format_args!("{}", declaration.name()),
+                            )
+                            .expect("a name writes");
                             let normal = SourceText::from(normal.trim());
                             let again = table.reprint_normal_form(
                                 &grammar,
-                                Name::from(block.as_str()),
+                                Name::from(named.as_str()),
                                 normal,
                             );
                             fixed.compare(path, normal, &again);
@@ -306,7 +312,10 @@ fn every_typed_entry_spells_without_a_dishonest_question_mark()
                     else {
                         continue;
                     };
-                    if !stated.contains(&name.to_string()) {
+                    named.clear();
+                    core::fmt::Write::write_fmt(&mut named, format_args!("{name}"))
+                        .expect("a name writes");
+                    if !stated.contains(named.as_str()) {
                         continue;
                     }
                     if let Evaluation::Value(value) = program.evaluate(constant) {
@@ -318,7 +327,6 @@ fn every_typed_entry_spells_without_a_dishonest_question_mark()
                             // The name, not the walk's constant, crosses
                             // over: the walk numbers the whole component's
                             // constants, the table its source's unit (#610).
-                            let named = name.to_string();
                             let spelled = SourceText::from(value.presentation().as_ref());
                             let again = table.reprint_value(
                                 &grammar,
@@ -495,8 +503,14 @@ mod sweeps
                             .into_iter()
                             .map(move |read| (spelling, read))
                     });
+                let mut at = String::new();
                 for (spelling, read) in reads {
-                    let at = format!("{} ({spelling:?})", path.display());
+                    at.clear();
+                    core::fmt::Write::write_fmt(
+                        &mut at,
+                        format_args!("{} ({spelling:?})", path.display()),
+                    )
+                    .expect("a string accepts every write");
                     let class = match read.trip {
                         RoundTrip::Equal => "Equal",
                         RoundTrip::Open => "Open",

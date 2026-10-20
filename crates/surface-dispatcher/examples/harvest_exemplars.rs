@@ -18,13 +18,6 @@
 
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",
-    expect(
-        allocation_in_repeated_body,
-        reason = "1 cost-shape site; #814 lists it"
-    )
-)]
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
     expect(clone_in_loop, reason = "1 cost-shape site; #814 lists it")
 )]
 
@@ -212,6 +205,7 @@ fn main() -> Result<(), Failure>
     let mut syntax: BTreeMap<String, Seed> = BTreeMap::new();
     let mut attributes: BTreeMap<String, Seed> = BTreeMap::new();
     let mut skipped = 0_usize;
+    let mut origin = String::new();
     for path in sources(&corpus)? {
         let text =
             std::fs::read_to_string(&path).map_err(|error| Failure::Io(path.clone(), error))?;
@@ -236,7 +230,10 @@ fn main() -> Result<(), Failure>
                 .get(.. start)
                 .map_or(0, |before| before.matches('\n').count())
                 .saturating_add(1);
-            let origin = format!("{}:{line}", path.display());
+            origin.clear();
+            // Formatting into a `String` cannot fail.
+            let _written =
+                core::fmt::Write::write_fmt(&mut origin, format_args!("{}:{line}", path.display()));
             let form_text = <&str>::from(fragment).to_owned();
             for rule in rules_under(&pbg, tree, form) {
                 Seed::keep(&mut syntax, rule.0.to_owned(), Seed {

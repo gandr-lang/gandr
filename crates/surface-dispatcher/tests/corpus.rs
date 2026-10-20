@@ -744,15 +744,15 @@ fn no_subject_declares_a_name_twice()
         .iter()
         .filter(|&(_, sources)| sources.len() > 1)
         .map(|(&(ref subject, ref name), sources)| {
-            let sources: Vec<String> = sources
-                .iter()
-                .map(|source| source.display().to_string())
-                .collect();
-            format!(
-                "{}: `{name}` is declared by {}",
-                subject.display(),
-                sources.join(" and ")
-            )
+            let mut message = format!("{}: `{name}` is declared by ", subject.display());
+            for (index, source) in sources.iter().enumerate() {
+                if index > 0 {
+                    message.push_str(" and ");
+                }
+                core::fmt::Write::write_fmt(&mut message, format_args!("{}", source.display()))
+                    .expect("a string accepts every write");
+            }
+            message
         })
         .collect();
     assert_eq!(

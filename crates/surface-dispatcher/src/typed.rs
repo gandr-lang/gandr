@@ -2663,9 +2663,12 @@ impl TypeTable
             let name = name
                 .clone()
                 .unwrap_or_else(|| format!("read_back_bound_{at}"));
-            for part in [name.as_str(), " : ", spelled.to_string().as_str(), ", "] {
+            for part in [name.as_str(), " : "] {
                 parameters.push_str(part);
             }
+            // Formatting into a `String` cannot fail.
+            let _written =
+                core::fmt::Write::write_fmt(&mut parameters, format_args!("{spelled}, "));
             names.push(Some(name));
         }
         Some(Under {
@@ -2831,6 +2834,7 @@ impl TypeTable
         // before the read type's.
         let mut parameterised: BTreeMap<String, usize> = BTreeMap::new();
         let mut augmented = self.naming.text.clone();
+        let mut whole = String::new();
         for &Printed {
             node,
             ref spelled,
@@ -2846,7 +2850,10 @@ impl TypeTable
             if appended.contains_key(&written) {
                 continue;
             }
-            let whole = format!("def read_back{written}");
+            whole.clear();
+            for part in ["def read_back", written.as_str()] {
+                whole.push_str(part);
+            }
             if parse(grammar, SourceText::from(whole.as_str()))
                 .is_ok_and(|parsed| parsed.obligations().is_empty())
             {
@@ -4501,7 +4508,8 @@ mod tests
                 if !path.ends_with("b-member.gandr") {
                     return ControlFlow::Continue(());
                 }
-                let own = SourceText::from(text.as_ref().get(usize::from(base) ..).unwrap_or_default());
+                let own =
+                    SourceText::from(text.as_ref().get(usize::from(base) ..).unwrap_or_default());
                 let Maybe::Present(laid) = lay_out(&grammar, path, root, own)
                 else {
                     panic!("the member is laid out beside its import");
@@ -4517,10 +4525,17 @@ mod tests
                 else {
                     panic!("the component declares");
                 };
+                let mut named = String::new();
                 for position in 0_usize ..= usize::from(last) {
                     let constant = ConstantIndex::from(position);
-                    if !matches!(program.name(constant), Maybe::Present(name) if name.to_string() == "joined")
-                    {
+                    let Maybe::Present(name) = program.name(constant)
+                    else {
+                        continue;
+                    };
+                    named.clear();
+                    core::fmt::Write::write_fmt(&mut named, format_args!("{name}"))
+                        .expect("a name writes");
+                    if named != "joined" {
                         continue;
                     }
                     let Evaluation::Value(value) = program.evaluate(constant)
