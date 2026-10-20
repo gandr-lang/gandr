@@ -96,17 +96,15 @@ proptest! {
             .chain(others.into_iter().map(|(left, right)| vec![left, right]))
             .collect();
         let generalization = generalized(&family);
+        let mut rebuilt: Vec<CmdPat> = Vec::with_capacity(generalization.patterns.len());
         for (index, member) in family.iter().enumerate() {
-            let rebuilt: Vec<CmdPat> = generalization
-                .patterns
-                .iter()
-                .map(|pattern| {
-                    generalization
-                        .points
-                        .iter()
-                        .fold(pattern.clone(), |term, point| point.arms[index].binding.apply_cmd(&term))
-                })
-                .collect();
+            rebuilt.clear();
+            rebuilt.extend(generalization.patterns.iter().map(|pattern| {
+                generalization
+                    .points
+                    .iter()
+                    .fold(pattern.clone(), |term, point| point.arms[index].binding.apply_cmd(&term))
+            }));
             prop_assert_eq!(member, &rebuilt, "each member is its generalization under its arms");
         }
         let columns: Vec<Vec<Image<'_>>> = generalization.points.iter().map(column).collect();
