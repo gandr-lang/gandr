@@ -776,6 +776,8 @@ fn intern(
 {
     let mut stack: Vec<(AnyNode, usize)> = Vec::new();
     stack.push((root, 0_usize));
+    // The children's indices of the node being written, refilled per node.
+    let mut child_globals: Vec<GlobalIndex> = Vec::new();
     while let Some((node, cursor)) = stack.pop() {
         if interner.by_node.contains_key(&node) {
             continue;
@@ -810,16 +812,14 @@ fn intern(
             let _prior = interner.by_node.insert(node, global);
             continue;
         }
-        let child_globals: Vec<GlobalIndex> = children
-            .iter()
-            .map(|child| {
-                interner
-                    .by_node
-                    .get(child)
-                    .copied()
-                    .unwrap_or_else(GlobalIndex::default)
-            })
-            .collect();
+        child_globals.clear();
+        child_globals.extend(children.iter().map(|child| {
+            interner
+                .by_node
+                .get(child)
+                .copied()
+                .unwrap_or_else(GlobalIndex::default)
+        }));
         let encoded = encode_entry(arena, node, &child_globals);
         let deduplicated = interner.by_content.get(&encoded).copied();
         let global = if let Some(global) = deduplicated {
@@ -1685,11 +1685,13 @@ mod tests
             ("x".repeat(0x3fff), &[0xff, 0x7f]),
             ("x".repeat(0x4000), &[0x80, 0x80, 1]),
         ];
+        let mut expected: Vec<u8> = Vec::new();
         for &(ref text, length) in cases {
             let mut out = EncodedArtifact::new();
             out.put_image(ArtifactImage::from([0xde_u8, 0xad].as_slice()));
             super::encode_text(&mut out, ArtifactText::from(text.as_str()));
-            let mut expected = alloc::vec![0xde_u8, 0xad];
+            expected.clear();
+            expected.extend_from_slice(&[0xde, 0xad]);
             expected.extend_from_slice(length);
             expected.extend_from_slice(text.as_bytes());
             assert_eq!(out.as_image().as_ref(), expected.as_slice());
@@ -1733,11 +1735,13 @@ mod tests
                 &[2, 0, 1, b'0', 0],
             ),
         ];
+        let mut expected: Vec<u8> = Vec::new();
         for &(ref literal, bytes) in cases {
             let mut out = EncodedArtifact::new();
             out.put_image(ArtifactImage::from([0xde_u8, 0xad].as_slice()));
             super::encode_literal(&mut out, literal);
-            let mut expected = alloc::vec![0xde_u8, 0xad];
+            expected.clear();
+            expected.extend_from_slice(&[0xde, 0xad]);
             expected.extend_from_slice(bytes);
             assert_eq!(out.as_image().as_ref(), expected.as_slice());
         }
@@ -1776,11 +1780,13 @@ mod tests
             (x.clone(), &[0, 1, 0, 0]),
             (mixed, &[7, 2, 2, 1, 0x81, 1, 0]),
         ];
+        let mut expected: Vec<u8> = Vec::new();
         for &(ref level, bytes) in levels {
             let mut out = EncodedArtifact::new();
             out.put_image(ArtifactImage::from([0xde_u8, 0xad].as_slice()));
             super::encode_level(&mut out, level);
-            let mut expected = alloc::vec![0xde_u8, 0xad];
+            expected.clear();
+            expected.extend_from_slice(&[0xde, 0xad]);
             expected.extend_from_slice(bytes);
             assert_eq!(out.as_image().as_ref(), expected.as_slice());
         }
@@ -1799,11 +1805,13 @@ mod tests
                 2, 2, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1, 0, 1, 1, 0, 0, 1, 0, 0,
             ]),
         ];
+        let mut expected: Vec<u8> = Vec::new();
         for &(ref signature, bytes) in signatures {
             let mut out = EncodedArtifact::new();
             out.put_image(ArtifactImage::from([0xde_u8, 0xad].as_slice()));
             super::encode_level_signature(&mut out, signature);
-            let mut expected = alloc::vec![0xde_u8, 0xad];
+            expected.clear();
+            expected.extend_from_slice(&[0xde, 0xad]);
             expected.extend_from_slice(bytes);
             assert_eq!(out.as_image().as_ref(), expected.as_slice());
         }

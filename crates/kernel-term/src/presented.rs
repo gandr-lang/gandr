@@ -444,6 +444,8 @@ impl Presentation
     where
         T: Copy + Eq,
     {
+        // One binding table and one use mask, refilled per rule.
+        let (mut bound, mut used): (Vec<RuleSlot<T>>, Vec<bool>) = (Vec::new(), Vec::new());
         for (index, rule) in self.rules().iter().enumerate() {
             let refuse = |fault| RuleRefusal {
                 rule: RuleIndex(index),
@@ -453,7 +455,7 @@ impl Presentation
                 return Err(refuse(RuleFault::VariableHeaded));
             }
             let left = read_side(rule.left(), table).map_err(refuse)?;
-            let mut bound: Vec<RuleSlot<T>> = Vec::new();
+            bound.clear();
             for &(variable, slot) in &left.variables {
                 if usize::try_from(u32::from(variable)).ok() != Some(bound.len()) {
                     return Err(refuse(RuleFault::NonLinear));
@@ -461,7 +463,8 @@ impl Presentation
                 bound.push(slot);
             }
             let right = read_side(rule.right(), table).map_err(refuse)?;
-            let mut used = alloc::vec![false; bound.len()];
+            used.clear();
+            used.resize(bound.len(), false);
             for &(variable, slot) in &right.variables {
                 let ordinal = usize::try_from(u32::from(variable)).unwrap_or(usize::MAX);
                 let (Some(&written), Some(seen)) = (bound.get(ordinal), used.get_mut(ordinal))
@@ -1159,6 +1162,10 @@ fn overlap(
             },
         }
     }
+    // Stable, so a variable bound twice keeps its first binding first, which
+    // is the one `substituted` reads.
+    outer_bound.sort_by_key(|&(variable, _)| variable);
+    inner_bound.sort_by_key(|&(variable, _)| variable);
     let by_outer = substituted(outer.right(), PairVariable::Outer, &outer_bound, arities);
     let mut by_inner = flattened(before, PairVariable::Outer, arities);
     by_inner.extend(substituted(
@@ -1245,7 +1252,17 @@ fn flattened(
 /// as its term, every other as `side` names it.
 ///
 /// # Specification
-/// trivial.
+/// - requires: `bound` is sorted by variable.
+/// - ensures: each variable node replaced by the first term `bound` holds for
+///   it, or by its leaf under `side` when `bound` holds none; each constructor
+///   node kept with its arity under `arities`.
+/// - panics: none.
+/// - executable: none — sortedness of `bound` would rescan it on every call,
+///   and the substituted term is the body's own construction.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentation::converges`].
+/// - witness: `presented::tests::critical_pairs_decide_convergence`
 fn substituted(
     nodes: &[RuleNode],
     side: fn(RuleVariable) -> PairVariable,
@@ -1262,9 +1279,12 @@ fn substituted(
                 payload: (),
             }),
             RuleNode::Variable(variable) => {
-                match bound.iter().find(|&&(named, _)| named == variable) {
-                    Some(&(_, ref value)) => term.extend_from_slice(value),
-                    None => term.push(RuleTerm::Leaf(side(variable))),
+                let first = bound.partition_point(|&(named, _)| named < variable);
+                match bound.get(first) {
+                    Some(&(named, ref value)) if named == variable => {
+                        term.extend_from_slice(value);
+                    },
+                    Some(_) | None => term.push(RuleTerm::Leaf(side(variable))),
                 }
             },
         }
@@ -1725,9 +1745,7 @@ where
                     .len()
                     .checked_sub(usize::from(arity))
                     .ok_or(RuleFault::Arity)?;
-                let mut fields = built.split_off(start);
-                fields.reverse();
-                fields
+                built.drain(start ..).rev().collect()
             },
         };
         built.push(node(written, fields));
