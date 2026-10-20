@@ -354,8 +354,8 @@ impl Reading
 
     /// The links of the text, the document at `path`: each path import's
     /// address, ranged through `index`, to the file the dispatcher reads for
-    /// it, the address joined to `path`'s directory; none when the text was
-    /// not read.
+    /// it, the address joined to `path`'s directory, with that file's path as
+    /// its tooltip; none when the text was not read.
     ///
     /// # Specification
     /// trivial.
@@ -375,9 +375,11 @@ impl Reading
             .imports
             .iter()
             .filter_map(|import| {
+                let file = named_path(&directory.join(&import.address));
                 Some(DocumentLink {
                     range: ranged(index, import.addressed)?,
-                    target: DocumentUri::of_path(&named_path(&directory.join(&import.address)))?,
+                    target: DocumentUri::of_path(&file)?,
+                    tooltip: file.to_string_lossy().into_owned(),
                 })
             })
             .collect()
