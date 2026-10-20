@@ -136,7 +136,7 @@ pub enum Label
     /// The first arm of an offer, which a later arm disagrees with.
     FirstArm,
     /// The earlier rule of a pair that rewrites one term apart, or whose
-    /// joining the step budget left undecided.
+    /// joining the coincidence check's budget left undecided.
     Overlaps,
 }
 
@@ -502,7 +502,7 @@ impl Annotations
                     ret.context[0_usize] == Maybe::Present(Annotation { span: declared, label: Label::Declared }),
                 LoweringRefusal::ImportShadows { import, .. } =>
                     ret.context[0_usize] == Maybe::Present(Annotation { span: import, label: Label::First }),
-                LoweringRefusal::RulesDiverge { first, .. } | LoweringRefusal::RulesUndecided { first, .. } =>
+                LoweringRefusal::RulesDiverge { first, .. } | LoweringRefusal::RulesUncompleted { first, .. } | LoweringRefusal::RulesUndecided { first, .. } =>
                     ret.context[0_usize] == Maybe::Present(Annotation { span: first, label: Label::Overlaps }),
                 LoweringRefusal::UnresolvedName { .. } | LoweringRefusal::UnresolvedDocLink { .. } | LoweringRefusal::UnresolvedTypeHead { .. } | LoweringRefusal::ShadowedBuiltin { .. } | LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::GradedBridge { .. } | LoweringRefusal::MalformedLiteral { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownAttribute { .. } | LoweringRefusal::MissingPayload { .. } | LoweringRefusal::NonValuePayload { .. } | LoweringRefusal::IllTypedPayload { .. } | LoweringRefusal::UnknownMember { .. } | LoweringRefusal::NotAFunctor { .. } | LoweringRefusal::ProjectionFromApplication { .. } | LoweringRefusal::UnreadAscription { .. } | LoweringRefusal::UnstatedComponent { .. } | LoweringRefusal::FamilyTelescope { .. } | LoweringRefusal::LowercaseModuleName { .. } | LoweringRefusal::NonExhaustiveMatch { .. } | LoweringRefusal::UnmarkedSelfReference { .. } | LoweringRefusal::UnguardedCorecursion { .. } | LoweringRefusal::DescentOnSeveralParameters { .. } | LoweringRefusal::Unreachable { .. } | LoweringRefusal::OutsideLoop { .. } | LoweringRefusal::AcrossHandler { .. } | LoweringRefusal::WithoutK { .. } | LoweringRefusal::DirectedCell { .. } | LoweringRefusal::CellNotALoop { .. } | LoweringRefusal::RulesUnoriented { .. } | LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::GrammarMismatch { .. } | LoweringRefusal::UnknownMold { .. } | LoweringRefusal::Unminted { .. } => ret.context[0_usize] == Maybe::Absent(report_context::Absent::Unnamed),
             }
@@ -540,6 +540,7 @@ impl Annotations
                 label: Label::First,
             }),
             LoweringRefusal::RulesDiverge { first, .. }
+            | LoweringRefusal::RulesUncompleted { first, .. }
             | LoweringRefusal::RulesUndecided { first, .. } => Maybe::Present(Annotation {
                 span: first,
                 label: Label::Overlaps,

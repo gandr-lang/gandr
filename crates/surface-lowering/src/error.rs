@@ -1076,8 +1076,8 @@ pub enum LoweringRefusal<'source>
     },
 
     /// Two rules of a block that match one term and rewrite it to two normal
-    /// forms, where the block's first-match reading and its equational reading
-    /// part.
+    /// forms headed by constructors: no rule joins two values, so the block's
+    /// first-match reading and its equational reading part.
     RulesDiverge
     {
         /// The bytes the later rule covers.
@@ -1086,9 +1086,20 @@ pub enum LoweringRefusal<'source>
         first: ByteSpan,
     },
 
-    /// Two rules of a block that match one term whose rewrites reach no normal
-    /// form within the coincidence check's budget: whether the readings agree
-    /// there is not decided.
+    /// Two rules of a block that match one term and rewrite it to two normal
+    /// forms the path order does not orient into a rule from an operation
+    /// call, so completion derives no rule joining them.
+    RulesUncompleted
+    {
+        /// The bytes the later rule covers.
+        span: ByteSpan,
+        /// The bytes the earlier rule covers.
+        first: ByteSpan,
+    },
+
+    /// Two rules of a block that match one term the coincidence check did not
+    /// decide within its budget: a rewrite reaching no normal form within its
+    /// steps, or a pair still parting once completion derived its most rules.
     RulesUndecided
     {
         /// The bytes the later rule covers.
@@ -1312,14 +1323,19 @@ impl fmt::Display for LoweringRefusal<'_>
                  so the block's rules may never end",
             ),
             Self::RulesDiverge { .. } => f.write_str(
-                "this rule and an earlier one rewrite one term to different normal forms, so the \
-                 rule written first decides what runs and the equations do not",
+                "this rule and an earlier one rewrite one term to two different constructor \
+                 terms, so the rule written first decides what runs and the equations do not",
+            ),
+            Self::RulesUncompleted { .. } => f.write_str(
+                "this rule and an earlier one rewrite one term to two normal forms the path order \
+                 orients neither way, so no rule derived from them joins the two",
             ),
             Self::RulesUndecided { .. } => write!(
                 f,
-                "this rule and an earlier one rewrite one term whose rewrites reach no normal \
-                 form within {} steps, so whether they agree is not decided",
-                crate::coincide::JOIN_STEPS
+                "this rule and an earlier one rewrite one term, and whether they agree is not \
+                 decided within {} steps a rewrite and {} derived rules",
+                crate::coincide::JOIN_STEPS,
+                crate::coincide::DERIVED_RULES
             ),
             Self::BudgetExceeded { budget } => {
                 write!(f, "the lowering outran its allowance of {budget} steps")
@@ -1422,6 +1438,7 @@ impl LoweringRefusal<'_>
             | Self::CellNotALoop { span }
             | Self::RulesUnoriented { span }
             | Self::RulesDiverge { span, .. }
+            | Self::RulesUncompleted { span, .. }
             | Self::RulesUndecided { span, .. }
             | Self::UnknownMold { span, .. }
             | Self::Unminted { span, .. } => Maybe::Present(span),
@@ -1486,7 +1503,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 40_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 41_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -1673,6 +1690,10 @@ mod tests
                 name: SurfaceName::from("pending"),
                 declared: s(0_usize, 1_usize),
             },
+            LoweringRefusal::RulesUncompleted {
+                span: s(77_usize, 78_usize),
+                first: s(0_usize, 1_usize),
+            },
         ]
     }
 
@@ -1724,6 +1745,7 @@ mod tests
             s(71_usize, 72_usize),
             s(73_usize, 74_usize),
             s(75_usize, 76_usize),
+            s(77_usize, 78_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

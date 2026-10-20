@@ -1,0 +1,27 @@
+// Rules whose overlap parts at a call rather than a value are completed: the
+// two rules of `swap` overlap at `swap(Zero, n)`, which one leaves at `n` and
+// the other at `add(n, Zero)`, a call the written rules cannot rewrite with
+// `n` unknown. Completion derives the rule joining the pair, `add(n, Zero)`
+// rewriting to `n`, which follows from the written rules (both sides are
+// reducts of one peak), and decides the pairs again (Knuth and Bendix,
+// _Simple Word Problems in Universal Algebras_, 1970, § 7). The kernel reads
+// the derived rule beside the written ones as one of `add`'s (#338).
+
+/// The naturals with addition and an operation whose two rules part at a
+/// call.
+@[ normalizes("swap(Zero, Succ(Zero)) ~> Succ(Zero)") ]
+data NatSwap : Type {
+  Zero : NatSwap;
+  Succ : (n : NatSwap) --> NatSwap;
+  oper add(m : NatSwap, n : NatSwap) -> NatSwap;
+  oper swap(m : NatSwap, n : NatSwap) -> NatSwap;
+  rule add(Zero, n) ==> n;
+  rule add(Succ(m), n) ==> Succ(add(m, n));
+  rule swap(m, n) ==> add(m, n);
+  rule swap(Zero, n) ==> add(n, Zero);
+}
+
+/// Zero swapped with one, where the two rules overlap.
+@[ runs("Succ(Zero)") ]
+def zero_swap_one : +U (-F NatSwap) ;
+def zero_swap_one = thunk { become swap(Zero, Succ(Zero)) } ;

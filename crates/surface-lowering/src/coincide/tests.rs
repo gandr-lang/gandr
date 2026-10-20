@@ -232,12 +232,12 @@ data Circle : Type {
         );
         assert_eq!(
             text(source, first).as_ref(),
-            "rule Unloop(Loop(x)) ==> x",
+            "rule Loop(Unloop(x)) ==> x",
             "and names the cancellation it parts from"
         );
         assert_eq!(
             fault.to_string(),
-            "both rules rewrite `Unloop(Loop(Loop(x')))`, one to `Loop(x')` and the other to \
+            "both rules rewrite `Loop(Loop(Unloop(x')))`, one to `Loop(x')` and the other to \
              `Unloop(x')`"
         );
         let [ref family] = *module.declarations()
@@ -336,13 +336,36 @@ fn the_circles_shape_joins_where_the_circle_does()
         "the presentation meets where the presented type does"
     );
     let tampered = CIRCLE_SHAPE.replace('}', "    rule twice : turn(turn(x)) ==> x;\n}");
-    let faults = lowered(SourceText::from(tampered.as_str()), term_peaks)
-        .expect_err("a third law parts the readings");
-    assert!(
-        matches!(*faults.as_slice(), [CellFault::Coherence(
-            CoherenceFault::Diverges { .. }
-        )]),
-        "the third law diverges: {faults:?}"
+    let derived = lowered(SourceText::from(tampered.as_str()), |module| {
+        let _peaks = term_peaks(module).expect("a third law completes");
+        let [ref cells] = *module.cells().declarations.as_slice()
+        else {
+            panic!("one block")
+        };
+        let (&Maybe::Present(ref presented), &Coincidence::Joined(ref certificates)) =
+            (&cells.presented, &cells.coincidence)
+        else {
+            panic!("the laws are read over terms and complete")
+        };
+        certificates
+            .derived_terms
+            .iter()
+            .map(|rule| {
+                let Maybe::Present(cell) = presented.store.get(rule.cell)
+                else {
+                    panic!("a derived rule is a cell of the store")
+                };
+                match (cell.lhs().read(), cell.rhs().read()) {
+                    (Maybe::Present(lhs), Maybe::Present(rhs)) => format!("{lhs} ==> {rhs}"),
+                    sides => panic!("a derived rule spells two terms: {sides:?}"),
+                }
+            })
+            .collect::<Vec<String>>()
+    });
+    assert_eq!(
+        derived,
+        ["unturn(x') ==> turn(x')"],
+        "a turn that undoes itself makes the two turns one, and the completion says so"
     );
 }
 
@@ -405,6 +428,211 @@ def later = 7;"#,
         assert_eq!(
             module.normal_form(family, CallText::from("add(Zero, Zero)")),
             Err(NormalFormFault::Incoherent)
+        );
+    });
+}
+
+/// A group's laws with the left inverse: associativity and the inverse law
+/// meet at `mul(mul(inv(x), x), z)`, which they leave at `z` and at
+/// `mul(inv(x), mul(x, z))`.
+const GROUP: &str = r#"theory Group {
+    sort G : Type;
+    oper e : G;
+    oper a : G;
+    oper b : G;
+    oper inv : (x : G) --> G;
+    oper mul : (x : G, y : G) --> G;
+    rule unitL : mul(e(), x) <=> x;
+    rule assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));
+    rule invL : mul(inv(x), x) <=> e();
+}"#;
+
+#[test]
+fn a_groups_inverse_law_completes_to_the_rules_it_derives()
+{
+    lowered(SourceText::from(GROUP), |module| {
+        assert!(
+            module.cells().diagnostics.is_empty(),
+            "{:?}",
+            module.cells().diagnostics
+        );
+        let [ref cells] = *module.cells().declarations.as_slice()
+        else {
+            panic!("one block")
+        };
+        let Maybe::Present(ref presented) = cells.presented
+        else {
+            panic!("the laws are read over terms")
+        };
+        let Coincidence::Joined(ref certificates) = cells.coincidence
+        else {
+            panic!("the laws complete: {:?}", cells.coincidence)
+        };
+        assert!(
+            certificates
+                .derived_terms
+                .iter()
+                .all(|derived| bool::from(derived.replay(&presented.store))),
+            "every derived rule follows from the cells before it"
+        );
+        assert!(
+            certificates
+                .terms
+                .iter()
+                .all(|certificate| bool::from(certificate.replay(&presented.store))),
+            "every critical pair of the completed rules joins"
+        );
+        let [ref first, ..] = *certificates.derived_terms
+        else {
+            panic!("a derived rule")
+        };
+        let mut retargeted = first.clone();
+        retargeted.cell = CellId::from(usize::from(presented.store.len()));
+        assert!(
+            !bool::from(retargeted.replay(&presented.store)),
+            "a certificate names its own cell"
+        );
+        let mut cut = first.clone();
+        let _dropped = cut.certificate.path_a.pop();
+        let _dropped = cut.certificate.path_b.pop();
+        assert!(
+            !bool::from(cut.replay(&presented.store)),
+            "a certificate fires its rule"
+        );
+        let family = &module.declarations()[0];
+        for (call, normal) in [
+            ("mul(inv(a), mul(a, b))", "b"),
+            ("mul(a, inv(a))", "e"),
+            ("inv(mul(a, b))", "mul(inv(b), inv(a))"),
+        ] {
+            let reached = module
+                .normal_form(family, CallText::from(call))
+                .unwrap_or_else(|fault| panic!("{call}: {fault}"));
+            assert_eq!(reached.spelling(), normal, "{call}");
+        }
+    });
+}
+
+#[test]
+fn a_permuted_call_no_order_orients_is_uncompleted()
+{
+    let source = SourceText::from(
+        r#"data Nat : Type {
+    Zero : Nat;
+    Succ : (n : Nat) --> Nat;
+    oper plus(m : Nat, n : Nat) -> Nat;
+    oper pick(m : Nat, n : Nat) -> Nat;
+    rule pick(m, n) ==> plus(m, n);
+    rule pick(Zero, n) ==> plus(n, Zero);
+}"#,
+    );
+    lowered(source, |module| {
+        let [ref diagnostic] = *module.cells().diagnostics.as_slice()
+        else {
+            panic!("one cell diagnostic: {:?}", module.cells().diagnostics)
+        };
+        let CellFault::Coherence(ref fault @ CoherenceFault::Uncompleted { first, .. }) =
+            diagnostic.fault
+        else {
+            panic!("the pair is uncompleted: {:?}", diagnostic.fault)
+        };
+        assert_eq!(
+            text(source, diagnostic.span).as_ref(),
+            "rule pick(Zero, n) ==> plus(n, Zero)",
+            "the refusal stands at the later rule"
+        );
+        assert_eq!(
+            text(source, first).as_ref(),
+            "rule pick(m, n) ==> plus(m, n)",
+            "and names the earlier one"
+        );
+        assert_eq!(
+            fault.to_string(),
+            "both rules rewrite `pick(Zero, n')`, one to `plus(Zero, n')` and the other to \
+             `plus(n', Zero)`, and the path order orients no rule from an operation call between \
+             the two"
+        );
+        let [ref family, ..] = *module.declarations()
+        else {
+            panic!("the refused family")
+        };
+        assert_eq!(
+            family.outcome(),
+            DeclarationOutcome::Refused(LoweringRefusal::RulesUncompleted {
+                span: diagnostic.span,
+                first
+            }),
+            "the family is refused under its own name"
+        );
+    });
+}
+
+#[test]
+fn a_data_blocks_derived_rule_is_a_pattern_rule()
+{
+    let completed = SourceText::from(
+        r#"data NatSwap : Type {
+    Zero : NatSwap;
+    Succ : (n : NatSwap) --> NatSwap;
+    oper add(m : NatSwap, n : NatSwap) -> NatSwap;
+    oper swap(m : NatSwap, n : NatSwap) -> NatSwap;
+    rule add(Zero, n) ==> n;
+    rule add(Succ(m), n) ==> Succ(add(m, n));
+    rule swap(m, n) ==> add(m, n);
+    rule swap(Zero, n) ==> add(n, Zero);
+}"#,
+    );
+    lowered(completed, |module| {
+        let [ref cells] = *module.cells().declarations.as_slice()
+        else {
+            panic!("one block")
+        };
+        let Coincidence::Joined(ref certificates) = cells.coincidence
+        else {
+            panic!("the rules complete: {:?}", cells.coincidence)
+        };
+        let derived: Vec<String> = certificates
+            .derived_commands
+            .iter()
+            .map(|derived| format!("{} ==> {}", derived.rule.0, derived.rule.1))
+            .collect();
+        assert_eq!(
+            derived,
+            ["add(n', Zero) ==> n'"],
+            "the pair's call rewrites to its variable, over constructor patterns"
+        );
+        let reached = module
+            .normal_form(
+                &module.declarations()[0],
+                CallText::from("swap(Zero, Succ(Zero))"),
+            )
+            .unwrap_or_else(|fault| panic!("{fault}"));
+        assert_eq!(reached.spelling(), "Succ(Zero)");
+    });
+    let repeated = SourceText::from(
+        r#"data NatTwice : Type {
+    Zero : NatTwice;
+    Succ : (n : NatTwice) --> NatTwice;
+    oper add(m : NatTwice, n : NatTwice) -> NatTwice;
+    oper pick(m : NatTwice, n : NatTwice) -> NatTwice;
+    rule add(Zero, n) ==> n;
+    rule add(Succ(m), n) ==> Succ(add(m, n));
+    rule pick(m, n) ==> n;
+    rule pick(Zero, n) ==> add(n, n);
+}"#,
+    );
+    lowered(repeated, |module| {
+        let [ref diagnostic] = *module.cells().diagnostics.as_slice()
+        else {
+            panic!("one cell diagnostic: {:?}", module.cells().diagnostics)
+        };
+        assert!(
+            matches!(
+                diagnostic.fault,
+                CellFault::Coherence(CoherenceFault::Uncompleted { .. })
+            ),
+            "the one rule joining `n'` and `add(n', n')` repeats a variable in its pattern: {:?}",
+            diagnostic.fault
         );
     });
 }

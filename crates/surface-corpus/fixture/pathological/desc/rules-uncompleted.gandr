@@ -1,0 +1,17 @@
+// Two rules of one operation that overlap at `pick(Zero, n)` and leave it at
+// `plus(Zero, n)` and at `plus(n, Zero)`, one call with its arguments
+// swapped. Neither normal form is a value, so completion would join them by a
+// rule, and the path order orients a rule between a call and its permutation
+// neither way: the block is refused by name (#338).
+
+/// An operation whose two overlapping rules swap the arguments of the call
+/// they leave.
+@[ refuses("RulesUncompleted") ]
+data NatSwapped : Type {
+  Zero : NatSwapped;
+  Succ : (n : NatSwapped) --> NatSwapped;
+  oper plus(m : NatSwapped, n : NatSwapped) -> NatSwapped;
+  oper pick(m : NatSwapped, n : NatSwapped) -> NatSwapped;
+  rule pick(m, n) ==> plus(m, n);
+  rule pick(Zero, n) ==> plus(n, Zero);
+}

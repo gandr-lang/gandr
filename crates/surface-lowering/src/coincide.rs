@@ -17,20 +17,36 @@
 //!    that function's crate). The first rule it does not orient is refused as
 //!    [`LoweringRefusal::RulesUnoriented`] at that rule.
 //! 2. Joinability of every critical pair over the block's own cells
-//!    (`join_critical_pairs`). A pair whose normal forms differ is refused as
+//!    (`join_critical_pairs`), completed where a pair parts. A pair whose two
+//!    normal forms are both headed by a constructor is refused as
 //!    [`LoweringRefusal::RulesDiverge`] at the later rule, naming the earlier
 //!    one, the peak and both normal forms kept in the cell diagnostic
-//!    ([`CoherenceFault::Diverges`]). A pair a reduct of which reaches no
-//!    normal form within [`JOIN_STEPS`] steps is refused as
-//!    [`LoweringRefusal::RulesUndecided`], which reports the budget and no
-//!    verdict.
+//!    ([`CoherenceFault::Diverges`]): no rule joins two values. Any other
+//!    divergent pair is joined by the rule it derives — both its sides are
+//!    reducts of one peak, so it follows from the rules before it — its left
+//!    side headed by an operation and oriented by the path order
+//!    (`orient_rules_with`): first over the precedence the block's rules and
+//!    the ranking rules derived so far induce, and failing that as a ranking
+//!    rule itself, its calls raising its head. The rule is appended to the
+//!    reading's store and the pairs are decided again, every pair a rule makes
+//!    with the rules before it decided before any pair of a later one. A pair
+//!    no direction orients is refused as [`LoweringRefusal::RulesUncompleted`].
+//!    A pair a reduct of which reaches no normal form within [`JOIN_STEPS`]
+//!    steps, or one that still parts once [`DERIVED_RULES`] rules are derived,
+//!    is refused as [`LoweringRefusal::RulesUndecided`], which reports the
+//!    budget and no verdict.
 //!
 //! A block that passes is orthogonal — no two of its rules overlap — or
-//! joined, with one replaying certificate per critical pair
-//! ([`Coincidence`]). Witnesses:
+//! joined, with one replaying certificate per critical pair and one per
+//! derived rule ([`Coincidence`], [`DerivedRule`]). A derived rule's left
+//! side is headed by an operation, so a constructor term stays a normal form
+//! of the completed rules: the value a decision tree computes for a call is
+//! the completed rules' normal form of it. Witnesses:
 //! `coincide::tests::an_overlap_that_joins_is_certified_and_runs_either_way`,
 //! `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`,
-//! `coincide::tests::a_rule_that_rebuilds_its_own_call_refuses_the_block`.
+//! `coincide::tests::a_rule_that_rebuilds_its_own_call_refuses_the_block`,
+//! `coincide::tests::a_groups_inverse_law_completes_to_the_rules_it_derives`,
+//! `coincide::tests::a_permuted_call_no_order_orients_is_uncompleted`.
 //!
 //! A circuit rule is a congruence over the rewrite it binds — `add(x, y) ==>
 //! add(x′, y)` reads "a rewrite of `x` rewrites the sum" — not a rewrite of
@@ -41,23 +57,12 @@
 //! verdict over the members left would be over rules the author did not write
 //! alone.
 //!
-//! **Choice: refuse.** A block whose two readings part is refused whole, as a
-//! family: the equational reading is what the rules mean — what a model of
-//! the family satisfies, and what a `theory` block's models state as paths —
-//! and the decision tree is how they run, so a tree computing what the
-//! equations do not is a miscompilation, not a dialect. **Alternatives.**
-//! Warning and running first match, the written order read as a disambiguation
-//! the author opted into: rule order then means something, reordering two rules
-//! changes what a program computes while every equation the family states stays
-//! the same, and a model checked against the equations disagrees with the
-//! program it models. Completing the rules — adding the derived cell that joins
-//! a divergent pair, as completion does — was declined too: a derived cell is
-//! an equation the author did not write, and a divergence between two
-//! constructor terms would identify them. **Reversal.** A written opt-in to
-//! ordered rules — an attribute on the block — makes first match the declared
-//! semantics; the equational reading is then the one that changes, to the
-//! rules with each one's earlier overlaps subtracted, and this check reads
-//! that.
+//! A block whose two readings part is refused whole, as a family: the
+//! equational reading is what the rules mean — what a model of the family
+//! satisfies, and what a `theory` block's models state as paths — and the
+//! decision tree is how they run, so a tree computing what the equations do
+//! not is refused rather than run. A derived rule adds no equation: it
+//! certifies one the written rules already state.
 //!
 //! # The equation
 //!
@@ -68,12 +73,9 @@
 //! neither puts one side above the other. `==>` pins left to right: a pinned
 //! rule the order refuses stays [`LoweringRefusal::RulesUnoriented`], as a rule
 //! written only that way always has. The kernel-facing table receives the
-//! oriented rule only — left above right — and the declaration's rules keep the
-//! written arrow so the printer reads `<=>` back. **Alternative.** Completion
-//! choosing a direction per critical pair, which would add equations the
-//! author did not write. **Reversal.** The opt-in to ordered rules above:
-//! pinning becomes the default again, and `<=>` is sugar for whichever
-//! direction the order admits.
+//! oriented rule only — left above right
+//! — and the declaration's rules keep the written arrow so the printer reads
+//! `<=>` back.
 //!
 //! # A presented type
 //!
@@ -139,14 +141,18 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_surface_syntax::ByteSpan;
+use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::CmdPat;
+use gandr_theory_cell_complexes::SequentAlphabet;
 use gandr_theory_coherent_resolutions::CellApp;
 use gandr_theory_coherent_resolutions::Joinability;
 use gandr_theory_coherent_resolutions::NormalizationBudget;
+use gandr_theory_coherent_resolutions::Overlap;
 use gandr_theory_coherent_resolutions::Tracelet;
+use gandr_theory_coherent_resolutions::TraceletReplay;
 use gandr_theory_coherent_resolutions::join_critical_pairs;
 use gandr_theory_coherent_resolutions::normalize;
 use gandr_theory_coherent_resolutions::replay_path;
@@ -160,16 +166,19 @@ use gandr_theory_computads::elaborate_call;
 use gandr_theory_computads::presented_reading;
 use gandr_theory_computads::read_command;
 use gandr_theory_computads::term_reading;
+use gandr_theory_levitation::DeclPolarity;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::Precedence;
 use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::RuleIndex;
+use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::Termination;
 use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::derive_cell_var_meta;
 use gandr_theory_levitation::orient_rules;
+use gandr_theory_levitation::orient_rules_with;
 use gandr_theory_levitation::path_greater;
 use quenchant_shape::shape::Maybe;
 
@@ -188,6 +197,10 @@ pub const JOIN_STEPS: usize = 4_096;
 /// The most steps a call's normalization may take before it reports no normal
 /// form.
 pub const NORMAL_FORM_STEPS: usize = 1 << 16;
+
+/// The most rules completion derives for one reading of a block before a pair
+/// that still parts leaves the block undecided.
+pub const DERIVED_RULES: usize = 64;
 
 /// A block's rules oriented so each left side is above its right, with the
 /// direction the order chose for each written rule.
@@ -302,15 +315,17 @@ pub enum Coincidence
     Unexamined,
     /// The rules terminate and no two of them overlap.
     Orthogonal,
-    /// The rules terminate and every critical pair joins: one certificate per
-    /// pair, in the reading the pair was decided in.
+    /// The rules terminate and every critical pair joins, with the rules
+    /// completion derived among them: one certificate per pair and one per
+    /// derived rule, in the reading each was decided in.
     Joined(Certificates),
     /// The rules' two readings part, or the check could not tell: the report's
     /// diagnostic at this index says why.
     Refused(CellDiagnosticIndex),
 }
 
-/// The join certificates of a block's critical pairs, by reading.
+/// The join certificates of a block's critical pairs and the rules completion
+/// derived, by reading.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Certificates
 {
@@ -320,6 +335,74 @@ pub struct Certificates
     /// One per critical pair of the presented reading, interior overlaps
     /// included, each replaying over its term store.
     pub terms: Vec<Tracelet<TermAlphabet>>,
+    /// The rules completion derived for the sequent reading, in derivation
+    /// order, each a cell [`DeclarationCells::rewriting`] ends with.
+    pub derived_commands: Vec<DerivedRule>,
+    /// The rules completion derived for the presented reading, in derivation
+    /// order, each a cell its term store ends with.
+    pub derived_terms: Vec<DerivedRule<TermAlphabet>>,
+}
+
+/// A rule completion derived to join a critical pair whose two normal forms
+/// differ, with the certificate that it follows from the cells before it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DerivedRule<A: CellAlphabet = SequentAlphabet>
+{
+    /// The derived rule's cell.
+    pub cell: CellId,
+    /// The derived rule as a rewrite of terms: its left side, headed by an
+    /// operation, then its right.
+    pub rule: (FreeTerm, FreeTerm),
+    /// The pair's two paths from its peak, one reaching the rule's left side
+    /// and then firing [`DerivedRule::cell`] at the root, the other reaching
+    /// its right side: the join is the rule's right side.
+    pub certificate: Tracelet<A>,
+}
+
+impl<A: CellAlphabet> DerivedRule<A>
+{
+    /// Replay the derivation over `store`: the rule follows from the cells
+    /// before it.
+    ///
+    /// # Specification
+    /// - ensures: positive exactly when the certificate replays over `store`,
+    ///   exactly one of its paths ends with [`DerivedRule::cell`] fired at the
+    ///   root, and every other step of both paths fires a cell `store` issued
+    ///   before it — so the rule's two sides are reducts of one peak under the
+    ///   cells before it, and the rule rewrites one to the other.
+    /// - panics: none.
+    /// - executable: none — the clause is the replay itself; a predicate would
+    ///   replay the certificate a second time.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every rule a group's inverse law derives replays over
+    ///   the completed store, and the same certificate retargeted at a later
+    ///   cell, or with its final step dropped, does not.
+    /// - witness: `coincide::tests::a_groups_inverse_law_completes_to_the_rules_it_derives`
+    #[inline]
+    #[must_use]
+    pub fn replay(
+        &self,
+        store: &CellStore<A>,
+    ) -> TraceletReplay
+    {
+        let fires = |path: &[CellApp<A>]| {
+            path.last()
+                .is_some_and(|step| step.cell == self.cell && step.at == A::root_position())
+        };
+        let (path_a, path_b) = (&self.certificate.path_a, &self.certificate.path_b);
+        let (deriving, other) = match (fires(path_a), fires(path_b)) {
+            (true, false) => (path_a, path_b),
+            (false, true) => (path_b, path_a),
+            (true, true) | (false, false) => return TraceletReplay::from(false),
+        };
+        let before = |path: &[CellApp<A>]| path.iter().all(|step| step.cell < self.cell);
+        TraceletReplay::from(
+            before(deriving.split_last().map_or(&[][..], |(_, rest)| rest))
+                && before(other)
+                && bool::from(self.certificate.replay(store)),
+        )
+    }
 }
 
 /// A term a coherence fault names, in the reading whose pair it is.
@@ -340,8 +423,23 @@ pub enum CoherenceFault
     /// so the rules are not known to terminate.
     Unoriented,
     /// The rule and an earlier one overlap at `peak` and rewrite it to two
-    /// normal forms.
+    /// normal forms each headed by a constructor or a results tuple: no rule
+    /// joins two values.
     Diverges
+    {
+        /// The earlier rule's written interval.
+        first: ByteSpan,
+        /// The term both rules match.
+        peak: Box<PairTerm>,
+        /// The earlier rule's normal form of it.
+        left: Box<PairTerm>,
+        /// This rule's normal form of it.
+        right: Box<PairTerm>,
+    },
+    /// The rule and an earlier one overlap at `peak` and rewrite it to two
+    /// normal forms the path order does not orient into a rule from an
+    /// operation call, beside the block's rules and those derived before.
+    Uncompleted
     {
         /// The earlier rule's written interval.
         first: ByteSpan,
@@ -355,6 +453,15 @@ pub enum CoherenceFault
     /// The rule and an earlier one overlap at `peak`, and a reduct reaches no
     /// normal form within [`JOIN_STEPS`] steps.
     Undecided
+    {
+        /// The earlier rule's written interval.
+        first: ByteSpan,
+        /// The term both rules match.
+        peak: Box<PairTerm>,
+    },
+    /// The rule and an earlier one overlap at `peak` and part once completion
+    /// has derived [`DERIVED_RULES`] rules.
+    Unfinished
     {
         /// The earlier rule's written interval.
         first: ByteSpan,
@@ -379,7 +486,10 @@ impl CoherenceFault
         match *self {
             Self::Unoriented => LoweringRefusal::RulesUnoriented { span },
             Self::Diverges { first, .. } => LoweringRefusal::RulesDiverge { span, first },
-            Self::Undecided { first, .. } => LoweringRefusal::RulesUndecided { span, first },
+            Self::Uncompleted { first, .. } => LoweringRefusal::RulesUncompleted { span, first },
+            Self::Undecided { first, .. } | Self::Unfinished { first, .. } => {
+                LoweringRefusal::RulesUndecided { span, first }
+            },
         }
     }
 }
@@ -387,8 +497,8 @@ impl CoherenceFault
 impl fmt::Display for CoherenceFault
 {
     /// Writes the fault with the terms it names in the inspection notation: the
-    /// peak and both normal forms of a divergence, the peak of an undecided
-    /// pair.
+    /// peak and both normal forms of a divergence or of a pair completion
+    /// leaves apart, the peak of an undecided or unfinished pair.
     ///
     /// # Specification
     /// - ensures: one sentence per fault; a command the term reading cannot
@@ -403,10 +513,12 @@ impl fmt::Display for CoherenceFault
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a divergent pair of either reading is written with
-    ///   its peak and both normal forms in order; swapping them or dropping the
-    ///   peak changes the witnessed text.
+    ///   its peak and both normal forms in order, and so is a pair completion
+    ///   leaves apart; swapping them or dropping the peak changes the witnessed
+    ///   text.
     /// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
     /// - witness: `coincide::tests::a_third_cancellation_parts_the_circles_readings`
+    /// - witness: `coincide::tests::a_permuted_call_no_order_orients_is_uncompleted`
     #[inline]
     fn fmt(
         &self,
@@ -430,10 +542,29 @@ impl fmt::Display for CoherenceFault
                 Spelled(left),
                 Spelled(right)
             ),
+            Self::Uncompleted {
+                ref peak,
+                ref left,
+                ref right,
+                ..
+            } => write!(
+                f,
+                "both rules rewrite `{}`, one to `{}` and the other to `{}`, and the path order \
+                 orients no rule from an operation call between the two",
+                Spelled(peak),
+                Spelled(left),
+                Spelled(right)
+            ),
             Self::Undecided { ref peak, .. } => write!(
                 f,
                 "both rules rewrite `{}`, and its rewrites reach no normal form within \
                  {JOIN_STEPS} steps",
+                Spelled(peak)
+            ),
+            Self::Unfinished { ref peak, .. } => write!(
+                f,
+                "both rules rewrite `{}` to two normal forms still once completion has derived \
+                 {DERIVED_RULES} rules",
                 Spelled(peak)
             ),
         }
@@ -478,18 +609,21 @@ impl fmt::Display for Spelled<'_>
 
 /// Decide whether a description's rules are one rewriting system: termination
 /// by the path order, then joinability of every critical pair over its
-/// rewriting store and, for a presented type, over its term store.
+/// rewriting store and, for a presented type, over its term store, each
+/// reading completed by the rules its divergent pairs derive.
 ///
 /// # Specification
 /// - requires: `store`, `faces`, `presented` and `circuits` are the cell gate's
 ///   elaboration of `description`, which declined none of its operations, faces
 ///   or circuit rules; `at` is the declaration's interval.
 /// - ensures: the first unoriented rule as [`CoherenceFault::Unoriented`] at
-///   its span; else the first critical pair of the sequent reading, then of the
-///   presented one, that does not join, at the later rule's span naming the
-///   earlier one's; else [`Coincidence::Orthogonal`] when no two cells overlap
-///   in either reading and [`Coincidence::Joined`] with every pair's
-///   certificate otherwise.
+///   its span; else each reading completed in turn, the sequent one first, as
+///   [`Reading::complete`] completes it, its first fault at the later rule's
+///   span naming the earlier one's; else [`Coincidence::Orthogonal`] when no
+///   two cells overlap in either reading and [`Coincidence::Joined`] with every
+///   pair's certificate and every derived rule otherwise. Each derived rule's
+///   cell is appended to `store` or to the presented reading's store, in
+///   derivation order, so the store a reading rewrites with ends with them.
 /// - panics: none.
 ///
 /// # Errors
@@ -501,28 +635,36 @@ impl fmt::Display for Spelled<'_>
 ///   returning a successor diverges at the later rule, and a rule rebuilding
 ///   its own call is unoriented before any pair is read; the circle's two
 ///   cancellations join over terms at the two words they overlap in, and a
-///   third cancellation diverges at itself naming the one before; reporting the
-///   earlier rule's span, deciding joinability first, or reading the circle in
-///   the sequent store alone changes one of them.
+///   third cancellation diverges at itself naming the one before; a group's
+///   inverse law completes to the rules that join it, each derived rule's
+///   certificate replaying over the cells before it, and two operations a pair
+///   leaves apart at one rank are uncompleted; reporting the earlier rule's
+///   span, deciding joinability first, reading the circle in the sequent store
+///   alone, or deriving a rule between two constructor terms changes one of
+///   them.
 /// - witness: `coincide::tests::an_overlap_that_joins_is_certified_and_runs_either_way`
 /// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
 /// - witness: `coincide::tests::a_rule_that_rebuilds_its_own_call_refuses_the_block`
 /// - witness: `coincide::tests::the_circles_cancellations_join_below_the_root`
 /// - witness: `coincide::tests::a_third_cancellation_parts_the_circles_readings`
-#[spec(ensures: |ret| match ret {
-    Ok(Coincidence::Joined(ref certificates)) => !certificates.commands.is_empty() || !certificates.terms.is_empty(),
-    Ok(Coincidence::Orthogonal) => true,
+/// - witness: `coincide::tests::a_groups_inverse_law_completes_to_the_rules_it_derives`
+/// - witness: `coincide::tests::a_permuted_call_no_order_orients_is_uncompleted`
+/// - witness: `coincide::tests::a_data_blocks_derived_rule_is_a_pattern_rule`
+#[spec(captures: written = store.len(), ensures: |ret| match ret {
+    Ok(Coincidence::Joined(ref certificates)) => (!certificates.commands.is_empty() || !certificates.terms.is_empty())
+        && usize::from(store.len()) == usize::from(written).saturating_add(certificates.derived_commands.len()),
+    Ok(Coincidence::Orthogonal) => store.len() == written,
     Ok(Coincidence::Unexamined | Coincidence::Refused(_)) => false,
     Err((span, CoherenceFault::Unoriented)) => matches!(orient_rules(description), Termination::Unoriented(_))
         && span.start() >= at.start() && span.end() <= at.end(),
-    Err((_, CoherenceFault::Diverges { .. } | CoherenceFault::Undecided { .. })) => orient_rules(description) == Termination::Oriented,
+    Err((_, CoherenceFault::Diverges { .. } | CoherenceFault::Uncompleted { .. } | CoherenceFault::Undecided { .. } | CoherenceFault::Unfinished { .. })) => orient_rules(description) == Termination::Oriented,
 })]
 pub(crate) fn decide<G>(
     description: &TheoryDesc<G>,
     at: ByteSpan,
-    store: &CellStore,
+    store: &mut CellStore,
     faces: &[(AdmittedFaceIndex, CellId)],
-    presented: &Maybe<PresentedRules, presented_reading::Absent>,
+    presented: &mut Maybe<PresentedRules, presented_reading::Absent>,
     circuits: &[CircuitCell],
 ) -> Result<Coincidence, (ByteSpan, CoherenceFault)>
 {
@@ -537,114 +679,434 @@ pub(crate) fn decide<G>(
     }
     let budget = NormalizationBudget::from(JOIN_STEPS);
     let rewriting = rewriting_store(store, faces, circuits);
-    let commands = certified(
-        join_critical_pairs(&rewriting, budget),
-        faces,
-        &rule_span,
-        at,
-        PairTerm::Command,
-    )?;
-    let terms = match *presented {
-        Maybe::Present(ref presented) => certified(
-            join_critical_pairs(&presented.store, budget),
-            &presented.faces,
-            &rule_span,
-            at,
-            PairTerm::Term,
-        )?,
-        Maybe::Absent(presented_reading::Absent::NoTermFace) => Vec::new(),
+    let (commands, derived_commands) = match join_critical_pairs(&rewriting, budget) {
+        Joinability::Joined(certificates) => (certificates, Vec::new()),
+        first @ (Joinability::Diverges { .. } | Joinability::Undecided(_)) => {
+            let mut completing = rewriting.into_owned();
+            let reading = Reading {
+                description,
+                faces,
+                rule_span: &rule_span,
+                at,
+            };
+            let completed =
+                reading.complete(&mut completing, first, PairTerm::Command, |command| {
+                    match read_command(command) {
+                        Maybe::Present(term) => Some(term),
+                        Maybe::Absent(_) => None,
+                    }
+                })?;
+            for derived in &completed.1 {
+                if let Maybe::Present(cell) = completing.get(derived.cell) {
+                    let _appended = store.insert(cell.clone());
+                }
+            }
+            completed
+        },
+    };
+    let (terms, derived_terms) = match *presented {
+        Maybe::Present(ref mut presented) => {
+            let first = join_critical_pairs(&presented.store, budget);
+            let reading = Reading {
+                description,
+                faces: &presented.faces,
+                rule_span: &rule_span,
+                at,
+            };
+            reading.complete(
+                &mut presented.store,
+                first,
+                PairTerm::Term,
+                |term| match term.read() {
+                    Maybe::Present(read) => Some(read),
+                    Maybe::Absent(_) => None,
+                },
+            )?
+        },
+        Maybe::Absent(presented_reading::Absent::NoTermFace) => (Vec::new(), Vec::new()),
     };
     if commands.is_empty() && terms.is_empty() {
         return Ok(Coincidence::Orthogonal);
     }
-    Ok(Coincidence::Joined(Certificates { commands, terms }))
+    Ok(Coincidence::Joined(Certificates {
+        commands,
+        terms,
+        derived_commands,
+        derived_terms,
+    }))
 }
 
-/// The certificates of one reading's critical pairs, or the fault of its first
-/// pair that does not join, at the later rule's span naming the earlier one's.
+/// A completed reading: one certificate per critical pair, then the rules it
+/// derived with theirs.
+type Completed<A> = (Vec<Tracelet<A>>, Vec<DerivedRule<A>>);
+
+/// Rules a completion derived, each as its left and right sides.
+type Rewrites = Vec<(FreeTerm, FreeTerm)>;
+
+/// Which of a critical pair's two cells is its later face.
 ///
 /// # Specification
-/// - requires: `faces` pairs each face with its cell in the store `joinability`
-///   was decided over; `rule_span` locates a face by index.
-/// - ensures: every certificate when every pair joins; otherwise the pair's two
-///   cells located at their faces — `at` for a cell no face wrote — the later
-///   face carrying the fault and the earlier one named in it, a pair whose
-///   faces are written out of store order read in face order.
-/// - panics: none.
-///
-/// # Errors
-/// The fault and the span it stands at, as the ensures clause states.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a sequent pair is located at its later rule, written
-///   after or before the earlier one in the overlap, and an interior pair of
-///   the circle whose later rule is the overlap's left cell is located at that
-///   rule all the same; swapping the two spans changes the witnessed text.
-/// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
-/// - witness: `coincide::tests::two_rules_written_the_other_way_round_are_refused_at_the_later_one_all_the_same`
-/// - witness: `coincide::tests::a_third_cancellation_parts_the_circles_readings`
-#[spec(captures: joined = match joinability {
-    Joinability::Joined(ref all) => Some(all.len()),
-    Joinability::Diverges { .. } | Joinability::Undecided(_) => None,
-}, ensures: |ret| ret.as_ref().map_or_else(|_| joined.is_none(), |certificates| joined == Some(certificates.len())))]
-fn certified<A, S, W>(
-    joinability: Joinability<A>,
-    faces: &[(AdmittedFaceIndex, CellId)],
-    rule_span: &S,
-    at: ByteSpan,
-    wrap: W,
-) -> Result<Vec<Tracelet<A>>, (ByteSpan, CoherenceFault)>
-where
-    A: CellAlphabet,
-    S: Fn(usize) -> ByteSpan,
-    W: Fn(A::Cmd) -> PairTerm,
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Later
 {
-    let face_of = |cell: CellId| {
-        faces
+    /// The overlap's left cell: the pair names its later face first.
+    Left,
+    /// The overlap's right cell.
+    Right,
+}
+
+/// Which list of derived rules a rule joined: those that ride the precedence
+/// the block's rules induce, or those that rank it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Joined
+{
+    /// The path order orients the rule over the precedence as it stands.
+    Riding,
+    /// The rule's calls raise its head in the precedence.
+    Ranking,
+}
+
+/// One reading of a block's rules, as its completion locates a pair.
+struct Reading<'block, G, S>
+{
+    /// The block's description, its rules oriented.
+    description: &'block TheoryDesc<G>,
+    /// Each written face the reading admitted, with its cell.
+    faces: &'block [(AdmittedFaceIndex, CellId)],
+    /// A written face's span, by its index among the description's rules.
+    rule_span: &'block S,
+    /// The declaration's interval: the span of a cell no face wrote.
+    at: ByteSpan,
+}
+
+impl<G, S> Reading<'_, G, S>
+where
+    S: Fn(usize) -> ByteSpan,
+{
+    /// The span of a pair's later face, the span of its earlier one, and
+    /// which of the pair's two cells is the later face.
+    ///
+    /// # Specification
+    /// - ensures: a cell no face wrote stands at the declaration's interval;
+    ///   two written faces are ordered by their place among the rules, and any
+    ///   other pair is read with its right cell the later one.
+    /// - panics: none.
+    /// - executable: none — the order reads the receiver's face table, which a
+    ///   clause may not walk.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`decide`]: a sequent pair is located at its later
+    ///   rule, written after or before the earlier one in the overlap, and an
+    ///   interior pair of the circle whose later rule is the overlap's left
+    ///   cell is located at that rule all the same.
+    /// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
+    /// - witness: `coincide::tests::two_rules_written_the_other_way_round_are_refused_at_the_later_one_all_the_same`
+    /// - witness: `coincide::tests::a_third_cancellation_parts_the_circles_readings`
+    fn located(
+        &self,
+        left: CellId,
+        right: CellId,
+    ) -> (ByteSpan, ByteSpan, Later)
+    {
+        let span = |face: Option<AdmittedFaceIndex>| {
+            face.map_or(self.at, |index| (self.rule_span)(usize::from(index)))
+        };
+        match (self.face_of(left), self.face_of(right)) {
+            (Some(written_left), Some(written_right)) if written_left > written_right => (
+                span(Some(written_left)),
+                span(Some(written_right)),
+                Later::Left,
+            ),
+            (written_left, written_right) => {
+                (span(written_right), span(written_left), Later::Right)
+            },
+        }
+    }
+
+    /// The written face whose cell `cell` is, by its index among the rules.
+    ///
+    /// # Specification
+    /// trivial.
+    fn face_of(
+        &self,
+        cell: CellId,
+    ) -> Option<AdmittedFaceIndex>
+    {
+        self.faces
             .iter()
             .find(|&&(_, admitted)| admitted == cell)
-            .map(|&(index, _)| usize::from(index))
-    };
-    // The span of the later face, the span of the earlier one, and whether the
-    // overlap read the later face first.
-    let located = |left: CellId, right: CellId| {
-        let span = |face: Option<usize>| face.map_or(at, rule_span);
-        match (face_of(left), face_of(right)) {
-            (Some(written_left), Some(written_right)) if written_left > written_right => {
-                (span(Some(written_left)), span(Some(written_right)), true)
-            },
-            (written_left, written_right) => (span(written_right), span(written_left), false),
-        }
-    };
-    match joinability {
-        Joinability::Joined(certificates) => Ok(certificates),
-        Joinability::Diverges {
-            overlap,
-            left,
-            right,
-        } => {
-            let (span, first, swapped) = located(overlap.left, overlap.right);
-            let (earlier, later) = if swapped {
-                (right, left)
-            }
-            else {
-                (left, right)
-            };
-            Err((span, CoherenceFault::Diverges {
-                first,
-                peak: Box::new(wrap(overlap.peak)),
-                left: Box::new(wrap(earlier)),
-                right: Box::new(wrap(later)),
-            }))
-        },
-        Joinability::Undecided(overlap) => {
-            let (span, first, _) = located(overlap.left, overlap.right);
-            Err((span, CoherenceFault::Undecided {
-                first,
-                peak: Box::new(wrap(overlap.peak)),
-            }))
-        },
+            .map(|&(index, _)| index)
     }
+
+    /// Complete one reading of a block's rules from `first`, its store's
+    /// joinability: every critical pair's certificate and every rule a
+    /// divergent pair derived, or the fault of the first pair that neither
+    /// joins nor completes.
+    ///
+    /// # Specification
+    /// - requires: `first` is [`join_critical_pairs`] over `store`; `read`
+    ///   writes a term of the reading as the term it denotes.
+    /// - ensures: a divergent pair whose two normal forms are both headed by a
+    ///   constructor or a results tuple is [`CoherenceFault::Diverges`]; one
+    ///   either of whose normal forms writes no term, or which no direction
+    ///   with an operation at the left side's head orients — riding the
+    ///   precedence the block's rules and the ranking rules derived so far
+    ///   induce, or failing that ranking it — is
+    ///   [`CoherenceFault::Uncompleted`]; otherwise the oriented rule is
+    ///   appended to `store` with its certificate — the pair's two paths from
+    ///   the peak, the one reaching the rule's left side then firing the rule
+    ///   at the root — and the joinability decided again. A pair a reduct of
+    ///   which reaches no normal form within [`JOIN_STEPS`] steps is
+    ///   [`CoherenceFault::Undecided`], and a divergent pair met once
+    ///   [`DERIVED_RULES`] rules are derived is [`CoherenceFault::Unfinished`].
+    ///   Every fault stands at the pair's later face naming the earlier one,
+    ///   and its terms are in that order.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The fault and the span it stands at, as the ensures clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`decide`]: a constructor-headed divergence is
+    ///   refused, a group's inverse law completes, and a divergence the order
+    ///   leaves apart is uncompleted.
+    /// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
+    /// - witness: `coincide::tests::a_groups_inverse_law_completes_to_the_rules_it_derives`
+    /// - witness: `coincide::tests::a_permuted_call_no_order_orients_is_uncompleted`
+    #[spec(captures: before = store.len(), ensures: |ret| ret.as_ref().is_err()
+        || ret.as_ref().is_ok_and(|completed| usize::from(store.len()) == usize::from(before).saturating_add(completed.1.len())
+            && completed.1.iter().all(|derived| bool::from(derived.replay(store)))))]
+    fn complete<A, W, R>(
+        &self,
+        store: &mut CellStore<A>,
+        first: Joinability<A>,
+        wrap: W,
+        read: R,
+    ) -> Result<Completed<A>, (ByteSpan, CoherenceFault)>
+    where
+        A: CellAlphabet,
+        W: Fn(A::Cmd) -> PairTerm,
+        R: Fn(&A::Cmd) -> Option<FreeTerm>,
+    {
+        let budget = NormalizationBudget::from(JOIN_STEPS);
+        let mut joinability = first;
+        let mut derived: Vec<DerivedRule<A>> = Vec::new();
+        let (mut ranking, mut riding): (Rewrites, Rewrites) = (Vec::new(), Vec::new());
+        loop {
+            let (overlap, left, right) = match joinability {
+                Joinability::Joined(certificates) => return Ok((certificates, derived)),
+                Joinability::Undecided(overlap) => {
+                    let (span, first, _) = self.located(overlap.left, overlap.right);
+                    return Err((span, CoherenceFault::Undecided {
+                        first,
+                        peak: Box::new(wrap(overlap.peak)),
+                    }));
+                },
+                Joinability::Diverges {
+                    overlap,
+                    left,
+                    right,
+                } => (overlap, left, right),
+            };
+            let (span, first, later_cell) = self.located(overlap.left, overlap.right);
+            let terms = (read(&left), read(&right));
+            // The pair's peak and two normal forms as the fault names them, the
+            // earlier face's normal form first.
+            let parted = |overlap: Overlap<A>, left: A::Cmd, right: A::Cmd| {
+                let (earlier, later) = match later_cell {
+                    Later::Left => (right, left),
+                    Later::Right => (left, right),
+                };
+                (
+                    Box::new(wrap(overlap.peak)),
+                    Box::new(wrap(earlier)),
+                    Box::new(wrap(later)),
+                )
+            };
+            let uncompleted = |overlap, left, right| {
+                let (peak, left, right) = parted(overlap, left, right);
+                (span, CoherenceFault::Uncompleted {
+                    first,
+                    peak,
+                    left,
+                    right,
+                })
+            };
+            let (Some(left_term), Some(right_term)) = terms
+            else {
+                return Err(uncompleted(overlap, left, right));
+            };
+            // Two values: both normal forms headed by a constructor or a
+            // results tuple, which no rule's left side is headed by.
+            if matches!(
+                (left_term.view(), right_term.view()),
+                (
+                    TermView::Ctor { .. } | TermView::Results { .. },
+                    TermView::Ctor { .. } | TermView::Results { .. }
+                )
+            ) {
+                let (peak, left, right) = parted(overlap, left, right);
+                return Err((span, CoherenceFault::Diverges {
+                    first,
+                    peak,
+                    left,
+                    right,
+                }));
+            }
+            if derived.len() >= DERIVED_RULES {
+                return Err((span, CoherenceFault::Unfinished {
+                    first,
+                    peak: Box::new(wrap(overlap.peak)),
+                }));
+            }
+            let Some((direction, joined)) = orient_derived(
+                self.description,
+                &mut ranking,
+                &mut riding,
+                left_term,
+                right_term,
+            )
+            else {
+                return Err(uncompleted(overlap, left, right));
+            };
+            let Some(rule) = match joined {
+                Joined::Riding => riding.last(),
+                Joined::Ranking => ranking.last(),
+            }
+            .cloned()
+            else {
+                return Err(uncompleted(overlap, left, right));
+            };
+            let (Ok(left_reduct), Ok(right_reduct)) =
+                (overlap.left_reduct(store), overlap.right_reduct())
+            else {
+                return Err(uncompleted(overlap, left, right));
+            };
+            let mut path_a = Vec::from([CellApp {
+                cell: overlap.left,
+                at: A::root_position(),
+            }]);
+            path_a.extend(normalize(store, &left_reduct, budget).path);
+            let mut path_b = Vec::from([CellApp {
+                cell: overlap.right,
+                at: overlap.seam.clone(),
+            }]);
+            path_b.extend(normalize(store, &right_reduct, budget).path);
+            let (lhs, rhs, from_lhs) = match direction {
+                RuleDirection::LeftToRight => (left, right, &mut path_a),
+                RuleDirection::RightToLeft => (right, left, &mut path_b),
+            };
+            let cell = store.insert(Cell::new(
+                lhs,
+                rhs.clone(),
+                A::derived_orientation(),
+                A::derived_provenance(),
+            ));
+            from_lhs.push(CellApp {
+                cell,
+                at: A::root_position(),
+            });
+            derived.push(DerivedRule {
+                cell,
+                rule,
+                certificate: Tracelet {
+                    overlap,
+                    path_a,
+                    path_b,
+                    joins_at: rhs,
+                },
+            });
+            joinability = join_critical_pairs(store, budget);
+        }
+    }
+}
+
+/// The direction a rule joining `left` and `right` takes, and the list it
+/// joined: the rule rides the precedence the block's rules and `ranking`
+/// induce when the path order orients it so, left to right before right to
+/// left, and otherwise ranks, its head raised above what it calls, in the same
+/// order. Its left side is headed by an operation, and in a `data` block,
+/// whose operations the kernel reads as rules over constructor patterns, over
+/// linear constructor patterns.
+///
+/// # Specification
+/// - ensures: [`Some`] exactly when one direction's left side is headed by an
+///   operation, over linear constructor patterns in a `data` block, and
+///   [`orient_rules_with`] over `description`, `ranking` and `riding` with that
+///   rule pushed onto `riding`, or failing every direction so, onto `ranking`,
+///   is [`Termination::Oriented`]; the rule then ends the list it was pushed
+///   onto, which is returned with its direction, and both lists are otherwise
+///   unchanged, as both are on [`None`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Reading::complete`]: a group's inverse law orients
+///   each rule it derives, a derived rule calling an operation that calls its
+///   head rides the precedence by the subterm property, a permuted call orients
+///   neither way, and a `data` block's derived rule is one the kernel reads.
+/// - witness: `coincide::tests::a_groups_inverse_law_completes_to_the_rules_it_derives`
+/// - witness: `coincide::tests::a_permuted_call_no_order_orients_is_uncompleted`
+/// - witness: `coincide::tests::a_data_blocks_derived_rule_is_a_pattern_rule`
+#[spec(captures: before = ranking.len().saturating_add(riding.len()), ensures: |ret|
+    ranking.len().saturating_add(riding.len()) == before.saturating_add(usize::from(ret.is_some())))]
+fn orient_derived<G>(
+    description: &TheoryDesc<G>,
+    ranking: &mut Rewrites,
+    riding: &mut Rewrites,
+    left: FreeTerm,
+    right: FreeTerm,
+) -> Option<(RuleDirection, Joined)>
+{
+    // The blocks whose operations the kernel reads as rules: an unparametrised
+    // `data` family with constructors.
+    let routed = description.polarity == DeclPolarity::Data
+        && description.params.is_empty()
+        && !description.ctors.is_empty();
+    let heads_a_rule = |lhs: &FreeTerm| {
+        let TermView::Op { args, .. } = lhs.view()
+        else {
+            return false;
+        };
+        let mut bound = BTreeSet::new();
+        let mut pending: Vec<TermNode<'_>> = if routed { args.collect() } else { Vec::new() };
+        while let Some(node) = pending.pop() {
+            match node.view() {
+                TermView::Var(name) => {
+                    if !bound.insert(name) {
+                        return false;
+                    }
+                },
+                TermView::Ctor { args, .. } => pending.extend(args),
+                TermView::Op { .. } | TermView::Results { .. } => return false,
+            }
+        }
+        true
+    };
+    let mut tried = (left, right);
+    for joined in [Joined::Riding, Joined::Ranking] {
+        for direction in [RuleDirection::LeftToRight, RuleDirection::RightToLeft] {
+            if heads_a_rule(&tried.0) {
+                let list = match joined {
+                    Joined::Riding => &mut *riding,
+                    Joined::Ranking => &mut *ranking,
+                };
+                list.push(tried);
+                if orient_rules_with(description, ranking, riding) == Termination::Oriented {
+                    return Some((direction, joined));
+                }
+                tried = match joined {
+                    Joined::Riding => riding.pop()?,
+                    Joined::Ranking => ranking.pop()?,
+                };
+            }
+            tried = (tried.1, tried.0);
+        }
+    }
+    None
 }
 
 /// The cells of `store` a rewrite reads: every cell but the admitted circuit

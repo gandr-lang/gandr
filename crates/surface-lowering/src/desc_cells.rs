@@ -262,12 +262,12 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
             .as_ref()
             .map_or(&declaration.description, |block| &block.description);
         let DescElaboration {
-            store,
+            mut store,
             opers,
             declined_opers,
             admitted_faces,
             declined_faces,
-            presented,
+            mut presented,
             circuits,
             eta,
         } = match declaration.presentation {
@@ -339,9 +339,9 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
             match decide(
                 reading,
                 declaration.at.span,
-                &store,
+                &mut store,
                 &admitted_faces,
-                &presented,
+                &mut presented,
                 &outcomes,
             ) {
                 Ok(coincidence) => coincidence,

@@ -493,9 +493,13 @@ pub enum RefusalName
     /// A rule of a block's rules the path order does not orient, so the
     /// rules may not end.
     RulesUnoriented,
-    /// Two rules of a block rewriting one term to two normal forms.
+    /// Two rules of a block rewriting one term to two constructor terms.
     RulesDiverge,
-    /// A critical pair of a block's rules its step budget left undecided.
+    /// Two rules of a block rewriting one term to two normal forms no rule
+    /// the path order orients joins.
+    RulesUncompleted,
+    /// A critical pair of a block's rules the coincidence check's budget left
+    /// undecided.
     RulesUndecided,
     /// A work allowance ran out, the lowering's or the checker's.
     BudgetExceeded,
@@ -639,7 +643,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 166_usize] = [
+    pub const VOCABULARY: [Self; 167_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -741,6 +745,7 @@ impl RefusalName
         Self::CellNotALoop,
         Self::RulesUnoriented,
         Self::RulesDiverge,
+        Self::RulesUncompleted,
         Self::RulesUndecided,
         Self::BudgetExceeded,
         Self::GrammarMismatch,
@@ -860,6 +865,7 @@ impl RefusalName
         (Self::CellNotALoop, b"CellNotALoop") |
         (Self::RulesUnoriented, b"RulesUnoriented") |
         (Self::RulesDiverge, b"RulesDiverge") |
+        (Self::RulesUncompleted, b"RulesUncompleted") |
         (Self::RulesUndecided, b"RulesUndecided") |
         (Self::BudgetExceeded, b"BudgetExceeded") | (Self::GrammarMismatch,
         b"GrammarMismatch") | (Self::UnknownMold, b"UnknownMold") | (Self::Unminted, b"Unminted") | (Self::TypeMismatch,
@@ -1128,6 +1134,7 @@ impl RefusalName
             Self::CellNotALoop => "CellNotALoop",
             Self::RulesUnoriented => "RulesUnoriented",
             Self::RulesDiverge => "RulesDiverge",
+            Self::RulesUncompleted => "RulesUncompleted",
             Self::RulesUndecided => "RulesUndecided",
             Self::BudgetExceeded => "BudgetExceeded",
             Self::GrammarMismatch => "GrammarMismatch",
@@ -1344,6 +1351,8 @@ impl Refusal<'_>
         RefusalName::RulesUnoriented) |
         (Self::Lowering(LoweringRefusal::RulesDiverge { .. }),
         RefusalName::RulesDiverge) |
+        (Self::Lowering(LoweringRefusal::RulesUncompleted { .. }),
+        RefusalName::RulesUncompleted) |
         (Self::Lowering(LoweringRefusal::RulesUndecided { .. }),
         RefusalName::RulesUndecided) |
         (Self::Lowering(LoweringRefusal::BudgetExceeded { .. }) |
@@ -1548,7 +1557,8 @@ impl Refusal<'_>
         RefusalName::DirectedCell) | (LoweringRefusal::CellNotALoop { .. },
         RefusalName::CellNotALoop) | (LoweringRefusal::RulesUnoriented { .. },
         RefusalName::RulesUnoriented) | (LoweringRefusal::RulesDiverge { .. },
-        RefusalName::RulesDiverge) | (LoweringRefusal::RulesUndecided { .. },
+        RefusalName::RulesDiverge) | (LoweringRefusal::RulesUncompleted { .. },
+        RefusalName::RulesUncompleted) | (LoweringRefusal::RulesUndecided { .. },
         RefusalName::RulesUndecided) | (LoweringRefusal::BudgetExceeded { .. },
         RefusalName::BudgetExceeded) | (LoweringRefusal::GrammarMismatch { .. },
         RefusalName::GrammarMismatch) | (LoweringRefusal::UnknownMold { .. },
@@ -1602,6 +1612,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::CellNotALoop { .. } => RefusalName::CellNotALoop,
         LoweringRefusal::RulesUnoriented { .. } => RefusalName::RulesUnoriented,
         LoweringRefusal::RulesDiverge { .. } => RefusalName::RulesDiverge,
+        LoweringRefusal::RulesUncompleted { .. } => RefusalName::RulesUncompleted,
         LoweringRefusal::RulesUndecided { .. } => RefusalName::RulesUndecided,
         LoweringRefusal::BudgetExceeded { .. } => RefusalName::BudgetExceeded,
         LoweringRefusal::GrammarMismatch { .. } => RefusalName::GrammarMismatch,

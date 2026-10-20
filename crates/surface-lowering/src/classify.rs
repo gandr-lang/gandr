@@ -127,6 +127,7 @@ impl LoweringRefusal<'_>
             | Self::OutsideLoop { .. }
             | Self::RulesUnoriented { .. }
             | Self::RulesDiverge { .. }
+            | Self::RulesUncompleted { .. }
             | Self::AcrossHandler { .. } => {
                 matches!(ret, FailureClass::MalformedSource)
             },
@@ -167,6 +168,7 @@ impl LoweringRefusal<'_>
             | Self::OutsideLoop { .. }
             | Self::RulesUnoriented { .. }
             | Self::RulesDiverge { .. }
+            | Self::RulesUncompleted { .. }
             | Self::AcrossHandler { .. } => FailureClass::MalformedSource,
             Self::OutOfFragment { .. }
             | Self::GradedBridge { .. }
@@ -239,7 +241,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 43_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 44_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -423,6 +425,10 @@ mod tests
                 staged: SurfaceName::from("m"),
                 claimed: SurfaceName::from("n"),
             },
+            LoweringRefusal::RulesUncompleted {
+                span: empty,
+                first: empty,
+            },
         ]
     }
 
@@ -473,6 +479,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unrepresentable,
+            FailureClass::MalformedSource,
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {

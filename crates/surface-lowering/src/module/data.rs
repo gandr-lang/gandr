@@ -1331,6 +1331,7 @@ impl<'source> Collector<'_, 'source>
             }
             let mut table = self.route_table();
             let mut faces = Vec::new();
+            let mut derived = Vec::new();
             for &named in &form.operations {
                 let name = self.name_of(named);
                 let Some((position, operation)) = described
@@ -1374,9 +1375,21 @@ impl<'source> Collector<'_, 'source>
                 if declined {
                     continue;
                 }
+                derived.clear();
+                if let crate::coincide::Coincidence::Joined(ref certificates) = cells.coincidence {
+                    derived.extend(
+                        certificates
+                            .derived_commands
+                            .iter()
+                            .map(|rule| &rule.rule)
+                            .filter(|&&(ref lhs, _)| {
+                                matches!(lhs.view(), TermView::Op { name: head, .. } if *head == operation.name)
+                            }),
+                    );
+                }
                 let constant =
                     ConstantIndex::from(collected.slots.len().saturating_add(routed.len()));
-                let Ok(plan) = plan_operation(operation, &faces, (&table, constant))
+                let Ok(plan) = plan_operation(operation, &faces, &derived, (&table, constant))
                 else {
                     continue;
                 };

@@ -899,15 +899,18 @@ pub enum Joinability<A: CellAlphabet = SequentAlphabet>
 /// caller that has the termination half asks this for the other.
 ///
 /// # Specification
-/// - ensures: the pairs are, for each ordered pair of cells in store order, the
-///   root confluence entries of [`overlaps_between`] when the left cell
-///   precedes the right, so a pair and its mirror are decided once, then the
-///   entries of [`interior_overlaps_between`], the diagonal included; each
-///   pair's two reducts are normalized under `budget`; [`Joinability::Joined`]
-///   carries one replaying certificate per pair when every pair joins;
-///   otherwise the first pair that does not, as [`Joinability::Undecided`] when
-///   a reduct ran out of budget and as [`Joinability::Diverges`] with both
-///   normal forms when they differ.
+/// - ensures: the pairs are taken in order of their later cell: for each cell
+///   in store order and each cell up to it, the root confluence entries of
+///   [`overlaps_between`] with the earlier cell on the left, so a pair and its
+///   mirror are decided once, then the entries of [`interior_overlaps_between`]
+///   with the earlier cell on the left and then on the right, the diagonal
+///   once; every pair a cell makes with the cells before it is decided before
+///   any pair of a later cell, so a store growing by cells reaches each pair;
+///   each pair's two reducts are normalized under `budget`;
+///   [`Joinability::Joined`] carries one replaying certificate per pair when
+///   every pair joins; otherwise the first pair that does not, as
+///   [`Joinability::Undecided`] when a reduct ran out of budget and as
+///   [`Joinability::Diverges`] with both normal forms when they differ.
 /// - panics: none.
 /// - intension: two pair queries per ordered cell pair, stopping at the first
 ///   pair that does not join.
@@ -942,19 +945,23 @@ where
     A: CellAlphabet,
 {
     let mut certificates = Vec::new();
-    for (left_id, left_cell) in store.iter() {
-        for (right_id, right_cell) in store.iter() {
-            let root = if right_id > left_id {
-                overlaps_between((left_id, left_cell), (right_id, right_cell))
+    for (later_id, later_cell) in store.iter() {
+        for (earlier_id, earlier_cell) in store.iter().take_while(|&(id, _)| id <= later_id) {
+            let (earlier, later) = ((earlier_id, earlier_cell), (later_id, later_cell));
+            let (root, mirrored) = if earlier_id < later_id {
+                (
+                    overlaps_between(earlier, later),
+                    interior_overlaps_between(later, earlier),
+                )
             }
             else {
-                Vec::new()
+                (Vec::new(), Vec::new())
             };
-            let interior = interior_overlaps_between((left_id, left_cell), (right_id, right_cell));
             let pairs = root
                 .into_iter()
                 .filter(|overlap| overlap.kind == OverlapKind::Confluence)
-                .chain(interior);
+                .chain(interior_overlaps_between(earlier, later))
+                .chain(mirrored);
             for overlap in pairs {
                 let (Ok(left_reduct), Ok(right_reduct)) =
                     (overlap.left_reduct(store), overlap.right_reduct())
