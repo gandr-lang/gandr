@@ -75,6 +75,43 @@ impl fmt::Display for ItemName
     }
 }
 
+/// The inline modules enclosing an item, outermost first, spelled as the
+/// prefix of its [`ItemName`].
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Prefix<'path>(&'path [&'path syn::Ident]);
+
+impl fmt::Display for Prefix<'_>
+{
+    /// Writes each module followed by `::`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes `a::b::` for the modules `a` then `b`, and nothing for
+    ///   an item outside every inline module.
+    /// - provides: the module prefix of an item's name.
+    /// - fails: propagates the formatter's own write failure.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a method inside an inline module is named with the
+    ///   module's prefix and a top-level one without; a dropped or repeated
+    ///   segment changes the asserted names.
+    /// - witness: `region::tests::every_spec_attribute_is_a_region`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        for module in self.0 {
+            write!(f, "{module}::")?;
+        }
+        Ok(())
+    }
+}
+
 impl From<&str> for ItemName
 {
     /// Adopts `name` as given.
@@ -236,13 +273,18 @@ impl Regions
             message: error.to_string(),
         })?;
         let mut found = Vec::new();
-        let mut pending: Vec<(&syn::Item, String)> = file
+        // A depth-first walk: an item's enclosing modules are the first
+        // `depth` entries of `modules` when it is popped, since every item of
+        // a module is popped before the module's next sibling.
+        let mut modules: Vec<&syn::Ident> = Vec::new();
+        let mut pending: Vec<(&syn::Item, usize)> = file
             .items
             .iter()
             .rev()
-            .map(|item| (item, String::new()))
+            .map(|item| (item, 0_usize))
             .collect();
-        while let Some((item, prefix)) = pending.pop() {
+        while let Some((item, depth)) = pending.pop() {
+            modules.truncate(depth);
             let mut attach = |attrs: &[syn::Attribute], name: String| {
                 // Matching the last segment counts `#[spec]` and
                 // `#[anodized::spec]` alike.
@@ -269,7 +311,10 @@ impl Regions
             )]
             match *item {
                 syn::Item::Fn(ref function) => {
-                    attach(&function.attrs, format!("{prefix}{}", function.sig.ident));
+                    attach(
+                        &function.attrs,
+                        format!("{}{}", Prefix(&modules), function.sig.ident),
+                    );
                 },
                 syn::Item::Impl(ref block) => {
                     let owner = owner_of(block);
@@ -277,32 +322,47 @@ impl Regions
                         if let syn::ImplItem::Fn(ref method) = *member {
                             attach(
                                 &method.attrs,
-                                format!("{prefix}{owner}::{}", method.sig.ident),
+                                format!("{}{owner}::{}", Prefix(&modules), method.sig.ident),
                             );
                         }
                     }
                 },
                 syn::Item::Trait(ref interface) => {
-                    attach(&interface.attrs, format!("{prefix}{}", interface.ident));
+                    attach(
+                        &interface.attrs,
+                        format!("{}{}", Prefix(&modules), interface.ident),
+                    );
                     for member in &interface.items {
                         if let syn::TraitItem::Fn(ref method) = *member {
                             attach(
                                 &method.attrs,
-                                format!("{prefix}{}::{}", interface.ident, method.sig.ident),
+                                format!(
+                                    "{}{}::{}",
+                                    Prefix(&modules),
+                                    interface.ident,
+                                    method.sig.ident
+                                ),
                             );
                         }
                     }
                 },
                 syn::Item::Struct(ref record) => {
-                    attach(&record.attrs, format!("{prefix}{}", record.ident));
+                    attach(
+                        &record.attrs,
+                        format!("{}{}", Prefix(&modules), record.ident),
+                    );
                 },
                 syn::Item::Enum(ref choice) => {
-                    attach(&choice.attrs, format!("{prefix}{}", choice.ident));
+                    attach(
+                        &choice.attrs,
+                        format!("{}{}", Prefix(&modules), choice.ident),
+                    );
                 },
                 syn::Item::Mod(ref module) => {
                     if let Some((_, ref items)) = module.content {
-                        let inner = format!("{prefix}{}::", module.ident);
-                        pending.extend(items.iter().rev().map(|item| (item, inner.clone())));
+                        modules.push(&module.ident);
+                        let inner = modules.len();
+                        pending.extend(items.iter().rev().map(|item| (item, inner)));
                     }
                 },
                 _ => {},

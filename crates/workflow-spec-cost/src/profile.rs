@@ -114,23 +114,19 @@ impl Suites
         root: &Path,
     ) -> Result<Self, CostError>
     {
-        let packages: BTreeSet<String> = workloads
+        let packages: BTreeSet<&str> = workloads
             .iter()
             .map(|workload| {
-                let binary = workload.binary.to_string();
+                let binary: &str = workload.binary.as_ref();
                 binary
                     .split_once("::")
-                    .map_or_else(|| binary.clone(), |(package, _)| package.to_owned())
+                    .map_or(binary, |(package, _)| package)
             })
             .collect();
         let mut command = Command::new("cargo");
         command
             .args(["nextest", "list", "--locked", "--message-format", "json"])
-            .args(
-                packages
-                    .iter()
-                    .flat_map(|package| ["--package", package.as_str()]),
-            )
+            .args(packages.iter().flat_map(|&package| ["--package", package]))
             .current_dir(root)
             .env("RUSTFLAGS", PROFILE_RUSTFLAGS)
             .env("CARGO_TARGET_DIR", root.join("target").join("spec-cost"))

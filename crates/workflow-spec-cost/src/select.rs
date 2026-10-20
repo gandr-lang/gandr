@@ -159,7 +159,7 @@ pub fn slowest_enforcing(
     let mut enforcing: Vec<_> = history
         .timings()
         .into_iter()
-        .filter(|entry| entry.1.lane.to_string().contains("enforcing"))
+        .filter(|entry| AsRef::<str>::as_ref(&entry.1.lane).contains("enforcing"))
         .collect();
     enforcing.sort_by_key(|entry| core::cmp::Reverse(entry.1.median));
     let chosen: Vec<Workload> = enforcing
