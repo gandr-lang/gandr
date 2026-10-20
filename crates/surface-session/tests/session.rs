@@ -1122,6 +1122,92 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
     let _removed = std::fs::remove_dir_all(&directory);
 }
 
+/// #776: each revision of a document laid out after its import closure shares
+/// the closure's items' images with the revision before it, and its edits are
+/// the document's own.
+#[test]
+fn a_document_after_its_closure_shares_the_closure_s_images_776()
+{
+    use alloc::sync::Arc;
+
+    use gandr_surface_dispatcher::lay_out;
+    use gandr_surface_session::Action;
+    use gandr_surface_session::ItemTree;
+    use gandr_surface_syntax::SourceText;
+
+    let directory =
+        std::env::temp_dir().join(format!("gandr-session-images-776-{}", std::process::id()));
+    let _cleared = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+    let directory =
+        std::fs::canonicalize(&directory).expect("the scratch directory has a canonical path");
+    let sibling = directory.join("base.gandr");
+    let document = directory.join("document.gandr");
+    std::fs::write(
+        &sibling,
+        "def one : Integer ;\ndef one = 1 ;\ndef two : Integer ;\ndef two = one ;\n",
+    )
+    .expect("the sibling is written");
+    std::fs::write(&document, "").expect("the document is written");
+    let grammar = &*crate::common::GRAMMAR;
+    let mut session = session(SourceRoot::Strict);
+    // Each revision judged laid out after the sibling: the snapshot's items
+    // and the item ordinals its edits are anchored at.
+    let mut judge = |own: &str| {
+        let laid = lay_out(grammar, &document, SourceRoot::Strict, own.into());
+        let Maybe::Present(laid) = laid
+        else {
+            panic!("the document is laid out after its sibling: {laid:?}");
+        };
+        let text = SourceText::from(laid.text.as_str());
+        let slot = gandr_surface_session::ClosureSlot::new();
+        let judged = session
+            .judge_unit_reading(text, &laid.unit, laid.base, &slot, |_| ())
+            .expect("the revision is judged");
+        let Maybe::Present(edits) = judged.edits()
+        else {
+            panic!("an accepted revision carries its edits");
+        };
+        let anchors: Vec<usize> = edits
+            .actions()
+            .iter()
+            .map(|action| match *action {
+                Action::InsertItem { at, .. }
+                | Action::DeleteItem { at }
+                | Action::SetSignature { at, .. }
+                | Action::FillHole { at, .. }
+                | Action::EraseToHole { at } => usize::from(at),
+                Action::Replace { ref path, .. }
+                | Action::SetLiteral { ref path, .. }
+                | Action::SetVariable { ref path, .. }
+                | Action::SetConstant { ref path, .. } => usize::from(path.item()),
+            })
+            .collect();
+        let items: Vec<Arc<ItemTree>> = session.snapshot().items().to_vec();
+        (items, anchors)
+    };
+    let first = "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = two ;\n";
+    let (before, _) = judge(first);
+    let (after, anchors) = judge(&format!(
+        "{first}def four : Integer ;\ndef four = three ;\n"
+    ));
+    assert_eq!((before.len(), after.len()), (3_usize, 4_usize));
+    assert!(
+        before
+            .iter()
+            .zip(&after)
+            .take(2)
+            .all(|(before, after)| Arc::ptr_eq(before, after)),
+        "the closure's two items keep their images"
+    );
+    assert_eq!(
+        anchors,
+        [3_usize],
+        "the one edit inserts the document's new item"
+    );
+    let _removed = std::fs::remove_dir_all(&directory);
+}
+
 /// #1033: an importer judged twice lowers its closure once and its own source
 /// each time; a second session judges it over the closure the first lowered,
 /// to the same composition; every judgement reports what the dispatcher
