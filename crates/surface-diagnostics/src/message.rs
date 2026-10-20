@@ -272,6 +272,10 @@ fn lowered(
                     "a recursive call must pass the parameters before the one it descends on \
                      unchanged",
                 ),
+                FragmentBoundary::ForeignClaim => f.write_str(
+                    "a descent claim `[<]` heads a call of the recursive function it is written \
+                     in, or of a member of its mutual block; this one names another function",
+                ),
                 FragmentBoundary::NotAFunction => f.write_str(
                     "`cong` maps a path by a function, and a constructor is not one; write a \
                      function definition that applies it",

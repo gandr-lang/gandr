@@ -363,6 +363,10 @@ use crate::module::Operand;
 use crate::module::SlotIndex;
 use crate::module::WordsForm;
 use crate::module::closed_term;
+use crate::namespace::NamePath;
+use crate::namespace::PathResolution;
+use crate::namespace::Recognized;
+use crate::namespace::Segment;
 use crate::origin::ArmOrigin;
 use crate::origin::CaseOrigin;
 use crate::origin::ComponentName;
@@ -7691,17 +7695,19 @@ impl<'source> Lowerer<'_, 'source>
     /// - provides: the head of a recursive call, and the self reference a value
     ///   position passes on.
     /// - fails: the reserved refusal for any other resident, a termination
-    ///   claim the grammar reserves; the unadmitted refusal for an
-    ///   instantiation whose head names no recursive function in scope, for a
-    ///   call through a joint member over a parameter after its staged one and
-    ///   for a joint member's claim standing unapplied, whose thunk is the
-    ///   joint's at the sum of the block's domains; the arity refusal, at the
-    ///   call, for a call passing other than one argument per parameter; the
-    ///   non-uniform refusal, at the argument, for a parameter before the
-    ///   staged one passed as anything but itself, and at the call for a joint
-    ///   member over leading parameters; the several-parameters refusal
-    ///   [`Self::claim`] raises; the wrong-sort refusal outside a head or value
-    ///   position; and the allowance refusal from the binder walk.
+    ///   claim the grammar reserves; the foreign-claim refusal for an
+    ///   instantiation whose head names a function other than a recursive one
+    ///   in scope; the unresolved-name refusal, at the head, for a head that
+    ///   names nothing; the unadmitted refusal for a call through a joint
+    ///   member over a parameter after its staged one and for a joint member's
+    ///   claim standing unapplied, whose thunk is the joint's at the sum of the
+    ///   block's domains; the arity refusal, at the call, for a call passing
+    ///   other than one argument per parameter; the non-uniform refusal, at the
+    ///   argument, for a parameter before the staged one passed as anything but
+    ///   itself, and at the call for a joint member over leading parameters;
+    ///   the several-parameters refusal [`Self::claim`] raises; the wrong-sort
+    ///   refusal outside a head or value position; and the allowance refusal
+    ///   from the binder walk.
     /// - panics: none.
     ///
     /// # Errors
@@ -7777,12 +7783,12 @@ impl<'source> Lowerer<'_, 'source>
                 self.resolved(head.span, Resolved::Binder(bound));
                 (bound, joint.summand())
             },
-            Maybe::Present(_) => return Err(site.out(FragmentBoundary::Unadmitted)),
+            Maybe::Present(_) => return Err(site.out(FragmentBoundary::ForeignClaim)),
             Maybe::Absent(_) => {
                 let (Maybe::Present((owner, _)), Maybe::Present(called)) =
                     (joint.own, joint.member(&self.collected, name))
                 else {
-                    return Err(site.out(FragmentBoundary::Unadmitted));
+                    return Err(self.foreign_claim(site, frame, head, name)?);
                 };
                 if let Some(constant) = joint
                     .members
@@ -7843,6 +7849,56 @@ impl<'source> Lowerer<'_, 'source>
         self.plan(site, Plan::Variable(bound.index, bound.binder));
 
         Ok(())
+    }
+
+    /// The refusal of a descent claim whose head, `name` at `head`, is no
+    /// recursive function the claim is read in.
+    ///
+    /// # Specification
+    /// - requires: `site` is an instantiation read in `frame`, headed by `name`
+    ///   at `head`, which no joint block member answers.
+    /// - ensures: the foreign-claim refusal at `site` when `name` resolves to a
+    ///   binder, a declaration or a builtin primitive; the unresolved-name
+    ///   refusal at `head` when it resolves to nothing.
+    /// - provides: the refusal [`Self::instantiation`] raises for a claim on
+    ///   another function.
+    /// - fails: the refusals name resolution raises before an answer: an
+    ///   unmarked self reference, a forward member reference, the allowance.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The refusals of [`Self::resolve_name`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a claim on an earlier declaration and on a name
+    ///   nothing declares, each asserted as its exact refusal.
+    /// - witness: `lower::native::tests::a_descent_claim_names_its_own_function_873`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |refusal| {
+        matches!(*refusal, LoweringRefusal::OutOfFragment { boundary: FragmentBoundary::ForeignClaim, .. })
+            || matches!(*refusal, LoweringRefusal::UnresolvedName { span, name: refused } if span == head.span && refused == name)
+    }))]
+    fn foreign_claim(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        head: Placed,
+        name: SurfaceName<'source>,
+    ) -> Result<LoweringRefusal<'source>, LoweringRefusal<'source>>
+    {
+        let named = Site { at: head, ..site };
+        if let Maybe::Present(_) = self.resolve_name(named, frame, name)? {
+            return Ok(site.out(FragmentBoundary::ForeignClaim));
+        }
+        let path = NamePath::from(Vec::from([Segment::from(name.as_ref())]));
+        if let PathResolution::Complete(Recognized::BuiltinPrimitive { .. }) =
+            self.recognition.resolve_path(&path)
+        {
+            return Ok(site.out(FragmentBoundary::ForeignClaim));
+        }
+        Ok(LoweringRefusal::UnresolvedName {
+            span: head.span,
+            name,
+        })
     }
 
     /// The joint fixpoint the declaration at `owner` is read in.

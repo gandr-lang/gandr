@@ -1137,7 +1137,7 @@ fn only_the_descent_claim_heads_a_recursive_call()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def rec ahead(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become ahead[>](p) }} }}\ndef rec both(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become both[<, >](p) }} }}\ndef other(n : Nat) -> -F Nat {{ return n }}\ndef rec borrowed(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become other[<](p) }} }}\n"
+        "{NAT}def rec ahead(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become ahead[>](p) }} }}\ndef rec both(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become both[<, >](p) }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let declined = |name: &'static str, boundary: FragmentBoundary| {
@@ -1167,9 +1167,47 @@ fn only_the_descent_claim_heads_a_recursive_call()
         declined("both", FragmentBoundary::Reserved),
         "combined claims are reserved"
     );
-    assert!(
-        declined("borrowed", FragmentBoundary::Unadmitted),
-        "a claim names the recursive function it stands in"
+}
+
+#[test]
+fn a_descent_claim_names_its_own_function_873()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}def other(n : Nat) -> -F Nat {{ return n }}\ndef rec borrowed(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become other[<](p) }} }}\ndef rec primed(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become add[<](p) }} }}\ndef rec stray(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become nowhere[<](p) }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let at = |text: &str| {
+        let start = source.find(text).unwrap_or_default();
+        crate::fixture::span(
+            gandr_surface_syntax::ByteOffset::from(start),
+            gandr_surface_syntax::ByteOffset::from(start.saturating_add(text.len())),
+        )
+    };
+    let foreign = |claim: &str| LoweringRefusal::OutOfFragment {
+        span: at(claim),
+        form: FormName::INSTANTIATION,
+        sort: FragmentSort::Computation,
+        boundary: FragmentBoundary::ForeignClaim,
+    };
+
+    assert_eq!(
+        refusal_of(&module, SurfaceName::from("borrowed")),
+        foreign("other[<]"),
+        "a claim on an earlier declaration names the function it is not"
+    );
+    assert_eq!(
+        refusal_of(&module, SurfaceName::from("primed")),
+        foreign("add[<]"),
+        "and so does a claim on a builtin"
+    );
+    assert_eq!(
+        refusal_of(&module, SurfaceName::from("stray")),
+        LoweringRefusal::UnresolvedName {
+            span: at("nowhere"),
+            name: SurfaceName::from("nowhere"),
+        },
+        "a claim's head that names nothing is unresolved before it is anything else"
     );
 }
 
