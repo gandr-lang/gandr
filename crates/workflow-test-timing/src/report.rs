@@ -39,9 +39,23 @@ pub struct Lane(String);
 #[derive(Clone, Copy, Debug)]
 pub struct ReportText<'text>(&'text str);
 
-/// Declares `From` conversions and the rendering of a name over `String`.
+/// Declares `From` conversions, the text and the rendering of a name over
+/// `String`.
 macro_rules! name {
     ($name:ident) => {
+        impl AsRef<str> for $name
+        {
+            /// The name as text.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn as_ref(&self) -> &str
+            {
+                &self.0
+            }
+        }
+
         impl From<&str> for $name
         {
             /// Adopts `name` as given.
