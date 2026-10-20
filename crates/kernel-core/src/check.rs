@@ -3154,6 +3154,20 @@ where
                 {
                     let (mode, domain, left, right) =
                         crate::element_identity::related_parts(arena, expected)?;
+                    // The decode of a returned code is read to the type the code
+                    // quotes, as an introduction form reads it: the identity at
+                    // `El(⟨R a b⟩)` is the identity at the type `R a b` returns.
+                    let domain = if let Some(&ValueType::Element { code, .. }) =
+                        arena.value_type(domain)
+                        && matches!(arena.value(code), Some(Value::Returned(_)))
+                    {
+                        let unfoldings = entry_unfoldings(judgement);
+                        read_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT)
+                            .unwrap_or(domain)
+                    }
+                    else {
+                        domain
+                    };
                     if mode == crate::identity_recursion::Mode::Bridge {
                         goal = Goal::CheckValue(
                             id,
@@ -6257,14 +6271,29 @@ where
             if let Maybe::Present(interface) = interface {
                 let (relations, reflexive) = crate::element_identity::interface_types(
                     arena,
-                    (kind, level),
+                    (kind, level.clone()),
                     representation,
                     interface.relation(),
                 );
+                let law = match interface.law() {
+                    Maybe::Present(law) => Some((
+                        law,
+                        crate::element_identity::law_type(
+                            arena,
+                            &level,
+                            representation,
+                            (interface.relation(), interface.reflexivity()),
+                        ),
+                    )),
+                    Maybe::Absent(_) => None,
+                };
                 for (value, expected) in [
                     (interface.relation(), relations),
                     (interface.reflexivity(), reflexive),
-                ] {
+                ]
+                .into_iter()
+                .chain(law)
+                {
                     let _checked = run(
                         arena,
                         judgement,

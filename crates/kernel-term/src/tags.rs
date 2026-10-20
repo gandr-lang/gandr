@@ -811,11 +811,21 @@ pub const KIND_DATA_WORDS: WireTag = WireTag(0x0A);
 ///
 /// After the [`KIND_ABSTRACT_TYPE`] fields come two value roots, the relation
 /// between two of the atom's elements and its reflexivity. An atom with no
-/// interface writes [`KIND_ABSTRACT_TYPE`], so every other artifact keeps its
+/// interface writes [`KIND_ABSTRACT_TYPE`], and one whose interface states a
+/// law writes [`KIND_ABSTRACT_LAWFUL`], so every other artifact keeps its
 /// bytes, and a reader predating this kind refuses it as an unknown
 /// declaration kind rather than misreading it, which is why the format
 /// version holds.
 pub const KIND_ABSTRACT_INTERFACED: WireTag = WireTag(0x0C);
+/// Declaration tag: a sealed abstract type whose segment closes with its
+/// element interface and that interface's identity-system law.
+///
+/// After the [`KIND_ABSTRACT_INTERFACED`] roots comes a third value root, the
+/// law. An atom whose interface states no law writes
+/// [`KIND_ABSTRACT_INTERFACED`], so every other artifact keeps its bytes, and
+/// a reader predating this kind refuses it as an unknown declaration kind
+/// rather than misreading it, which is why the format version holds.
+pub const KIND_ABSTRACT_LAWFUL: WireTag = WireTag(0x0F);
 /// Declaration tag: a codata declaration, whose segment closes with its
 /// parameter roots and its observations.
 ///
