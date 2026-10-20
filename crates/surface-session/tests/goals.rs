@@ -50,11 +50,17 @@ fn goal_flags_match_checkpoint_footprints_for_recovery_fixtures()
         else {
             panic!("{name} is read as a module");
         };
+        let mut spelled = String::new();
         let goals: Vec<ItemKey> = report
             .declarations()
             .iter()
             .filter(|declaration| shown(declaration, Verb::Check(Goals::Reported)) == Shown::Goal)
-            .map(|declaration| ItemKey::from(declaration.name().to_string().as_str()))
+            .map(|declaration| {
+                spelled.clear();
+                core::fmt::Write::write_fmt(&mut spelled, format_args!("{}", declaration.name()))
+                    .expect("a name writes");
+                ItemKey::from(spelled.as_str())
+            })
             .collect();
         let checkpoints = footprints(&session);
         assert!(

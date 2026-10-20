@@ -93,10 +93,13 @@ pub fn refusal<'source, 'function>(
     else {
         panic!("the source lowers as a module");
     };
-    let Some(declaration) = module
-        .declarations()
-        .iter()
-        .find(|declaration| declaration.name().to_string() == function)
+    let mut spelled = String::new();
+    let Some(declaration) = module.declarations().iter().find(|declaration| {
+        spelled.clear();
+        core::fmt::Write::write_fmt(&mut spelled, format_args!("{}", declaration.name()))
+            .expect("a name writes");
+        spelled == function
+    })
     else {
         panic!("`{function}` is declared");
     };

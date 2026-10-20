@@ -588,6 +588,7 @@ fn every_arm_of_a_declared_data_case_is_addressable()
     let mut written = color_pick("Red => return 0, Green => return 1, Blue => return 2");
     let rows = written.rows().to_vec();
     assert_eq!(rows.len(), 3, "one row per arm");
+    let mut digits = String::new();
     for (tag, row) in rows.iter().enumerate() {
         assert_eq!(row.arm, tag, "row {tag} is its own arm");
         assert!(
@@ -602,9 +603,11 @@ fn every_arm_of_a_declared_data_case_is_addressable()
             "each arm's body has its own syntax node"
         );
         let value = nullary(&mut written, "Color", tag);
+        digits.clear();
+        core::fmt::Write::write_fmt(&mut digits, format_args!("{tag}")).expect("a tag writes");
         assert_eq!(
             written.run(value),
-            returned(&tag.to_string()),
+            returned(&digits),
             "the constructor at tag {tag} reaches its own arm"
         );
     }
