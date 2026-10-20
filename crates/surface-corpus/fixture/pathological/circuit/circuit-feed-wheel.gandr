@@ -1,4 +1,8 @@
-@[ refuses("OutOfFragment") ]
+/// A wheel whose fed-back port `state` reaches `zip` bare: no observation of
+/// `Nat` reads it, so the loop `spin` closes is not guarded and the rule is
+/// refused at that occurrence (#1031). The guarded twin is
+/// `model/circuit/circuit-feed-wheel.gandr`.
+@[ refuses("BareFeedback") ]
 theory Wheel {
   sort Nat : Type;
   oper zip : (s : Nat, t : Nat) --> (u : Nat);

@@ -61,13 +61,13 @@ impl LoweringRefusal<'_>
     ///   of one variant classify alike whatever their spans, names or
     ///   suggestions hold — and every reserved, unadmitted, wrong-sort or
     ///   wrong-arity form, every graded bridge, every unread ascription, every
-    ///   model component the derivation cannot state and every cell between
-    ///   terms but a loop classifies as unrepresentable, the exhausted
-    ///   allowance, the grammar mismatch, the unknown mold, an undecided
-    ///   coincidence check and an unminted declaration as engine faults, and
-    ///   every other refusal — a family member of the wrong telescope, a loop
-    ///   exit off every loop and rules that part among them — as malformed
-    ///   source.
+    ///   model component the derivation cannot state, every cell between terms
+    ///   but a loop and every unguarded corecursion or feedback classifies as
+    ///   unrepresentable, the exhausted allowance, the grammar mismatch, the
+    ///   unknown mold, an undecided coincidence check and an unminted
+    ///   declaration as engine faults, and every other refusal — a family
+    ///   member of the wrong telescope, a loop exit off every loop and rules
+    ///   that part among them — as malformed source.
     /// - provides: the fact a report groups by and a job alarming on the
     ///   fragment's reach counts.
     /// - fails: never.
@@ -91,7 +91,8 @@ impl LoweringRefusal<'_>
             | Self::DirectedCell { .. }
             | Self::CellNotALoop { .. }
             | Self::DescentOnSeveralParameters { .. }
-            | Self::UnguardedCorecursion { .. } => matches!(ret, FailureClass::Unrepresentable),
+            | Self::UnguardedCorecursion { .. }
+            | Self::BareFeedback { .. } => matches!(ret, FailureClass::Unrepresentable),
             | Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::RulesUndecided { .. }
@@ -178,7 +179,8 @@ impl LoweringRefusal<'_>
             | Self::DirectedCell { .. }
             | Self::CellNotALoop { .. }
             | Self::DescentOnSeveralParameters { .. }
-            | Self::UnguardedCorecursion { .. } => FailureClass::Unrepresentable,
+            | Self::UnguardedCorecursion { .. }
+            | Self::BareFeedback { .. } => FailureClass::Unrepresentable,
             Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::RulesUndecided { .. }
@@ -241,7 +243,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 44_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 45_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -429,6 +431,10 @@ mod tests
                 span: empty,
                 first: empty,
             },
+            LoweringRefusal::BareFeedback {
+                span: empty,
+                rule: empty,
+            },
         ]
     }
 
@@ -480,6 +486,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::Unrepresentable,
             FailureClass::MalformedSource,
+            FailureClass::Unrepresentable,
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {

@@ -437,6 +437,8 @@ pub enum RefusalName
     ShadowedBuiltin,
     /// A form the fragment does not admit, from the lowering or the checker.
     OutOfFragment,
+    /// A circuit rule's fed-back port read under no observation.
+    BareFeedback,
     /// A bridge graded other than the default the fragment admits.
     GradedBridge,
     /// A literal whose text is not a lexeme of its kind.
@@ -644,7 +646,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 167_usize] = [
+    pub const VOCABULARY: [Self; 168_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -718,6 +720,7 @@ impl RefusalName
         Self::UnexportedName,
         Self::ShadowedBuiltin,
         Self::OutOfFragment,
+        Self::BareFeedback,
         Self::GradedBridge,
         Self::MalformedLiteral,
         Self::MalformedForm,
@@ -842,6 +845,7 @@ impl RefusalName
         b"ImportUnresolved") | (Self::ImportCycle, b"ImportCycle") | (Self::ImportShadows,
         b"ImportShadows") | (Self::UnexportedName, b"UnexportedName") | (Self::ShadowedBuiltin,
         b"ShadowedBuiltin") | (Self::OutOfFragment, b"OutOfFragment") |
+        (Self::BareFeedback, b"BareFeedback") |
         (Self::GradedBridge, b"GradedBridge") | (Self::MalformedLiteral,
         b"MalformedLiteral") | (Self::MalformedForm, b"MalformedForm") |
         (Self::UnknownAttribute, b"UnknownAttribute") | (Self::DuplicateAttribute,
@@ -1107,6 +1111,7 @@ impl RefusalName
             Self::Boundary => "Boundary",
             Self::ShadowedBuiltin => "ShadowedBuiltin",
             Self::OutOfFragment => "OutOfFragment",
+            Self::BareFeedback => "BareFeedback",
             Self::GradedBridge => "GradedBridge",
             Self::MalformedLiteral => "MalformedLiteral",
             Self::MalformedForm => "MalformedForm",
@@ -1299,7 +1304,8 @@ impl Refusal<'_>
         (Self::Lowering(LoweringRefusal::ShadowedBuiltin { .. }),
         RefusalName::ShadowedBuiltin) | (Self::Lowering(LoweringRefusal::OutOfFragment {
         .. }) | Self::Checking(CheckRefusal::OutOfFragment { .. }),
-        RefusalName::OutOfFragment) | (Self::Lowering(LoweringRefusal::GradedBridge { ..
+        RefusalName::OutOfFragment) | (Self::Lowering(LoweringRefusal::BareFeedback { .. }),
+        RefusalName::BareFeedback) | (Self::Lowering(LoweringRefusal::GradedBridge { ..
         }), RefusalName::GradedBridge) |
         (Self::Lowering(LoweringRefusal::MalformedLiteral { .. }),
         RefusalName::MalformedLiteral) | (Self::Lowering(LoweringRefusal::MalformedForm {
@@ -1530,7 +1536,8 @@ impl Refusal<'_>
         RefusalName::ImportShadows) | (LoweringRefusal::UnexportedName { .. },
         RefusalName::UnexportedName) | (LoweringRefusal::ShadowedBuiltin { .. },
         RefusalName::ShadowedBuiltin) | (LoweringRefusal::OutOfFragment { .. },
-        RefusalName::OutOfFragment) | (LoweringRefusal::GradedBridge { .. },
+        RefusalName::OutOfFragment) | (LoweringRefusal::BareFeedback { .. },
+        RefusalName::BareFeedback) | (LoweringRefusal::GradedBridge { .. },
         RefusalName::GradedBridge) | (LoweringRefusal::MalformedLiteral { .. },
         RefusalName::MalformedLiteral) | (LoweringRefusal::MalformedForm { .. },
         RefusalName::MalformedForm) | (LoweringRefusal::UnknownAttribute { .. },
@@ -1583,6 +1590,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::UnexportedName { .. } => RefusalName::UnexportedName,
         LoweringRefusal::ShadowedBuiltin { .. } => RefusalName::ShadowedBuiltin,
         LoweringRefusal::OutOfFragment { .. } => RefusalName::OutOfFragment,
+        LoweringRefusal::BareFeedback { .. } => RefusalName::BareFeedback,
         LoweringRefusal::GradedBridge { .. } => RefusalName::GradedBridge,
         LoweringRefusal::MalformedLiteral { .. } => RefusalName::MalformedLiteral,
         LoweringRefusal::MalformedForm { .. } => RefusalName::MalformedForm,

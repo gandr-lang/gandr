@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 
 use quenchant_shape::shape::Maybe;
 
+use super::OperationKind;
 use super::Tag;
 use super::TheoryBinder;
 use super::TheoryFault;
@@ -103,11 +104,13 @@ fn lambda() -> TheoryParts
         operations: vec![
             TheoryOperation {
                 name: Name::from("lam"),
+                kind: OperationKind::Operation,
                 inputs: vec![body],
                 outputs: vec![port("", "Tm", [])],
             },
             TheoryOperation {
                 name: Name::from("app"),
+                kind: OperationKind::Operation,
                 inputs: vec![port("t", "Tm", []), port("u", "Tm", [])],
                 outputs: vec![port("", "Tm", [])],
             },
@@ -118,8 +121,9 @@ fn lambda() -> TheoryParts
 }
 
 /// A presentation exercising every constructor of the code: an indexed sort,
-/// an unnamed output, a two-output operation and rules whose sides apply an
-/// operation, a constructor and a results tuple.
+/// an unnamed output, a two-output operation, an observation between two
+/// operations and rules whose sides apply an operation, a constructor and a
+/// results tuple.
 ///
 /// # Specification
 /// trivial.
@@ -135,11 +139,19 @@ fn cat_like() -> TheoryParts
         operations: vec![
             TheoryOperation {
                 name: Name::from("id"),
+                kind: OperationKind::Operation,
                 inputs: vec![port("a", "Ob", [])],
                 outputs: vec![port("", "Hom", [FreeTerm::var("a"), FreeTerm::var("a")])],
             },
             TheoryOperation {
+                name: Name::from("dom"),
+                kind: OperationKind::Observation,
+                inputs: vec![port("f", "Hom", [FreeTerm::var("a"), FreeTerm::var("b")])],
+                outputs: vec![port("", "Ob", [])],
+            },
+            TheoryOperation {
                 name: Name::from("split"),
+                kind: OperationKind::Operation,
                 inputs: vec![port("m", "Ob", [])],
                 outputs: vec![port("q", "Ob", []), port("r", "Ob", [])],
             },
@@ -164,7 +176,7 @@ fn cat_like() -> TheoryParts
 }
 
 #[test]
-fn the_code_is_one_data_sort_of_fifteen_constructors()
+fn the_code_is_one_data_sort_of_sixteen_constructors()
 {
     let desc = theory_desc(Grade::One);
     assert_eq!(
@@ -222,6 +234,7 @@ fn the_code_is_one_data_sort_of_fifteen_constructors()
         ]),
         ("Shape", vec!["String", "String", "Theory", "Theory"]),
         ("Face", vec!["String", "String", "Theory"]),
+        ("Obs", vec!["String", "Theory", "Theory", "Theory"]),
     ]);
 }
 
@@ -238,12 +251,21 @@ fn a_presentation_round_trips_through_its_value()
         value,
         "a dropped operation is another value"
     );
-    let mut reordered = parts;
+    let mut reordered = parts.clone();
     reordered.sorts.reverse();
     assert_ne!(
         TheoryValue::encode(&reordered),
         value,
         "the order of the sorts is part of the value"
+    );
+    let mut constructive = parts;
+    for operation in &mut constructive.operations {
+        operation.kind = OperationKind::Operation;
+    }
+    assert_ne!(
+        TheoryValue::encode(&constructive),
+        value,
+        "an observation is not the operation of the same ports"
     );
 }
 

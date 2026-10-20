@@ -498,7 +498,8 @@ impl Annotations
                 LoweringRefusal::ForwardMemberReference { declared, .. }
                 | LoweringRefusal::UnexportedName { declared, .. }
                 | LoweringRefusal::ImportUnresolved { refused: declared, .. }
-                | LoweringRefusal::ImportCycle { refused: declared, .. } =>
+                | LoweringRefusal::ImportCycle { refused: declared, .. }
+                | LoweringRefusal::BareFeedback { rule: declared, .. } =>
                     ret.context[0_usize] == Maybe::Present(Annotation { span: declared, label: Label::Declared }),
                 LoweringRefusal::ImportShadows { import, .. } =>
                     ret.context[0_usize] == Maybe::Present(Annotation { span: import, label: Label::First }),
@@ -531,7 +532,8 @@ impl Annotations
             }
             | LoweringRefusal::ImportCycle {
                 refused: declared, ..
-            } => Maybe::Present(Annotation {
+            }
+            | LoweringRefusal::BareFeedback { rule: declared, .. } => Maybe::Present(Annotation {
                 span: declared,
                 label: Label::Declared,
             }),
