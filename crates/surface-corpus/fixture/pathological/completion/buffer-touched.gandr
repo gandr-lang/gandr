@@ -1,0 +1,25 @@
+// An in-flight buffer touched: the buffer moved into a read's submission is
+// used again before the completion hands it back, while the kernel owns it
+// (boats, _Notes on io-uring_, 2020).
+
+// The ring's protocol and its entries.
+import "../../model/completion/ring-base.gandr" ;
+
+/// The buffer finished by its submitter after it was moved into the
+/// submission. Refused today before the move: an endpoint received over a
+/// session is not acted on (#1167). With delegation, the refusal names the
+/// sent buffer's consumed slot.
+@[ refuses("OutOfFragment") ]
+def bufferTouched() -> -F Unit {
+  fork (owner : Ring.Buffer) { close(owner) } as buffer;
+  fork (kernel : Ring.Moving) {
+    recv(kernel) as held;
+    close(held);
+    send(kernel, Ring.done);
+    close(kernel)
+  } as ring;
+  send(ring, buffer);
+  close(buffer);
+  recv(ring) as cqe;
+  close(ring)
+}

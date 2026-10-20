@@ -1,0 +1,33 @@
+// The completion subject's shared declarations, written once and imported by
+// every source that reads them (`import "./ring-base.gandr" ;`): a mock
+// kernel's submission protocol after io_uring, whose manual states that there
+// is "exactly one matching CQE for every SQE" (io_uring(7)). A submission
+// queue entry is received and one completion queue entry is posted; on the
+// submitter's side, what remains after a submit is the pending completion it
+// must reap. The buffer a read fills is moved into its submission and handed
+// back with its completion, because the kernel owns it while the operation is
+// in flight (boats, _Notes on io-uring_, 2020).
+
+/// A ring: its entries sealed behind the interface, the protocol of one
+/// submission as the kernel serves it, the buffer and the pending completion
+/// on the submitter's side, and one entry of each kind.
+module Ring :> #{
+  type Sqe,
+  type Cqe,
+  type Submission = ?Sqe. !Cqe. end,
+  type Buffer = end,
+  type Pending = ?Cqe. end,
+  type Moving = ?Buffer. !Cqe. end,
+  type Reaping = ?Pending. end,
+  read : Sqe,
+  done : Cqe
+} {
+  type Sqe = String;
+  type Cqe = Integer;
+  /// The entry a read submits.
+  @[ checks ]
+  def read = "read";
+  /// The result its completion posts.
+  @[ checks ]
+  def done = 0;
+}
