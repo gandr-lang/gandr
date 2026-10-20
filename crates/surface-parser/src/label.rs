@@ -2453,7 +2453,8 @@ fn is_env_assign_run(
 /// # Specification
 /// - requires: the cursor points to a double quote.
 /// - ensures: an unescaped closing quote ends the value; otherwise scanning
-///   continues through the tail.
+///   continues through the tail, an escape at the last byte ending it at the
+///   source's end.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2461,6 +2462,7 @@ fn is_env_assign_run(
 ///   delimiter or an ordinary unclosed tail, expose the end offset. Stopping at
 ///   an escaped quote or consuming past a real closing quote changes it.
 /// - witness: `label::tests::quoted_values_stop_only_at_an_unescaped_quote`
+/// - witness: `label::tests::a_quoted_value_ending_in_a_lone_backslash_ends_at_the_source_1070`
 #[spec(requires: bytes.0.get(pos.0) == Some(&b'"'), ensures: |ret| ret > pos && ret <= bytes.len() && (ret == bytes.len() || bytes.0.get(ret.0.saturating_sub(1)) == Some(&b'"')))]
 fn scan_shell_quoted_value(
     bytes: SourceBytes<'_>,
@@ -2470,7 +2472,7 @@ fn scan_shell_quoted_value(
     let mut cursor = pos.advance(ByteWidth::ONE);
     while let Some(byte) = bytes.byte(cursor) {
         match u8::from(byte) {
-            b'\\' => cursor = cursor.advance(ByteWidth::TWO),
+            b'\\' => cursor = cursor.advance(ByteWidth::TWO).min(bytes.len()),
             b'"' => return cursor.advance(ByteWidth::ONE),
             _ => cursor = cursor.advance(ByteWidth::ONE),
         }
@@ -2964,6 +2966,23 @@ mod tests
                 end
             );
         }
+    }
+
+    /// #1070: a quoted value whose last byte is an escaping backslash ends at
+    /// the source's end, and the shell block it closes labels whole: the
+    /// escape stepped the cursor one byte past the source.
+    #[test]
+    fn a_quoted_value_ending_in_a_lone_backslash_ends_at_the_source_1070()
+    {
+        assert_eq!(
+            usize::from(super::scan_shell_quoted_value(
+                super::SourceBytes::from(b"\"\\".as_slice()),
+                super::ByteOffset::from(0_usize)
+            )),
+            2_usize
+        );
+        let source = super::SourceFragment::from("#!{NAME=\"\\");
+        assert_eq!(relabeled(source, source), Labeling::new(source));
     }
 
     #[test]
