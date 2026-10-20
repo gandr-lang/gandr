@@ -179,8 +179,10 @@ fn spine_positions(count: RedexCount) -> Vec<ToyPos>
     let last = count.0.saturating_sub(1_usize);
     let right = PositionStep::from(1_usize);
     let mut out = Vec::with_capacity(count.0);
+    let mut path: Vec<PositionStep> = Vec::with_capacity(last.saturating_add(1_usize));
     for index in 0_usize .. last {
-        let mut path = vec![right; index];
+        path.clear();
+        path.resize(index, right);
         path.push(PositionStep::from(0_usize));
         out.push(ToyAlphabet::position_at_path(&path));
     }
@@ -408,8 +410,10 @@ fn tree_layers(height: TreeHeight) -> Vec<Vec<ToyPos>>
 {
     let mut layers: Vec<Vec<ToyPos>> = Vec::with_capacity(height.0.saturating_add(1_usize));
     let mut length = height.0;
+    let mut paths: Vec<Vec<PositionStep>> = Vec::new();
     loop {
-        let mut paths: Vec<Vec<PositionStep>> = vec![Vec::new()];
+        paths.clear();
+        paths.push(Vec::new());
         for _ in 0_usize .. length {
             let mut grown: Vec<Vec<PositionStep>> =
                 Vec::with_capacity(paths.len().saturating_mul(2_usize));
@@ -1967,7 +1971,7 @@ proptest! {
         (height, keys) in tree_case()
     ) {
         let (store, cell, peak, layers) = tree_fixture(height);
-        let recorded = tree_path(cell, layers, &keys);
+        let mut recorded = tree_path(cell, layers, &keys);
         let join = run(&store, &peak, &recorded);
         let order = event_order(&store, &peak, &recorded)
             .expect("the layered derivation replays, so it has an event order");
@@ -1980,20 +1984,21 @@ proptest! {
                 continue;
             }
             exercised = exercised.saturating_add(1_usize);
-            let mut swapped = recorded.clone();
-            swapped.swap(below, above);
+            recorded.swap(below, above);
             prop_assert_eq!(
                 &join,
-                &run(&store, &peak, &swapped),
+                &run(&store, &peak, &recorded),
                 "an independent transposition reaches the same term to begin with"
             );
-            let shifted = event_order(&store, &peak, &swapped)
+            let shifted = event_order(&store, &peak, &recorded)
                 .expect("and the transposed derivation has an event order too");
             prop_assert_eq!(
                 &expected,
                 &canonical_keys(&shifted),
                 "so the canonical order reads only the labeled causal order"
             );
+            // The next pair is read against the recorded order.
+            recorded.swap(below, above);
         }
         // Every tree above the degenerate one opens with a layer of at least
         // two adjacent independent events, so a run that transposed nothing

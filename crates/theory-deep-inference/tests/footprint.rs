@@ -816,13 +816,17 @@ fn every_footprint_partitions_exactly_the_addresses_its_redex_covers()
             let mut classified = footprint.written.clone();
             classified.extend(footprint.read.iter().cloned());
             classified.extend(footprint.framed.iter().cloned());
-            let mut seen: Vec<ToyPos> = Vec::new();
+            let mut seen: std::collections::HashSet<&ToyPos> = std::collections::HashSet::new();
             for position in &classified {
                 assert!(
-                    !seen.contains(position),
+                    seen.insert(position),
                     "the three classes are disjoint, so each address is classified once"
                 );
-                seen.push(position.clone());
+            }
+            let mut enumeration: std::collections::HashMap<&ToyPos, usize> =
+                std::collections::HashMap::new();
+            for (index, position) in addresses.iter().enumerate() {
+                enumeration.entry(position).or_insert(index);
             }
             assert_eq!(
                 sorted(covered),
@@ -832,7 +836,7 @@ fn every_footprint_partitions_exactly_the_addresses_its_redex_covers()
             for class in [&footprint.written, &footprint.read, &footprint.framed] {
                 let enumerated = class
                     .iter()
-                    .map(|position| addresses.iter().position(|candidate| candidate == position))
+                    .map(|position| enumeration.get(position).copied())
                     .collect::<Option<Vec<_>>>()
                     .expect("every classified address is one the alphabet enumerates");
                 assert!(

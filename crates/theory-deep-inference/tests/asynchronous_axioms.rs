@@ -536,6 +536,7 @@ fn fixture_vertices(
     steps: &[&CellApp<ToyAlphabet>],
 ) -> Vec<Toy>
 {
+    let mut seen: std::collections::HashSet<Toy> = std::collections::HashSet::from([peak.clone()]);
     let mut out = vec![peak.clone()];
     let mut frontier = vec![peak.clone()];
     while let Some(vertex) = frontier.pop() {
@@ -544,7 +545,7 @@ fn fixture_vertices(
             else {
                 continue;
             };
-            if out.contains(&next) {
+            if !seen.insert(next.clone()) {
                 continue;
             }
             out.push(next.clone());

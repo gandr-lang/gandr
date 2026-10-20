@@ -17,8 +17,10 @@ use gandr_theory_cell_complexes::ConsPat;
 use gandr_theory_cell_complexes::HoleName;
 use gandr_theory_cell_complexes::Orientation;
 use gandr_theory_cell_complexes::Polarity;
+use gandr_theory_cell_complexes::Pos;
 use gandr_theory_cell_complexes::ProdPat;
 use gandr_theory_cell_complexes::SequentAlphabet;
+use gandr_theory_cell_complexes::Subst;
 use gandr_theory_cell_complexes::Sym;
 use gandr_theory_coherent_resolutions::CompletionBudget;
 use gandr_theory_coherent_resolutions::CompletionCellBudget;
@@ -357,10 +359,39 @@ fn planned(
     term
 }
 
+/// An overlap's public fields, by which one family's members are told apart.
+type OverlapKey<'family> = (
+    CellId,
+    CellId,
+    OverlapKind,
+    &'family Subst,
+    &'family Pos,
+    &'family CmdPat,
+);
+
+/// The key of one overlap: every field but the renamed right cell, which the
+/// unifier and the peak already read.
+///
+/// # Specification
+/// trivial.
+fn overlap_key(overlap: &Overlap) -> OverlapKey<'_>
+{
+    (
+        overlap.left,
+        overlap.right,
+        overlap.kind,
+        &overlap.unifier,
+        &overlap.seam,
+        &overlap.peak,
+    )
+}
+
 /// The input position of each batch member, per batch.
 ///
 /// # Specification
-/// - requires: every batch member occurs in `overlaps`.
+/// - requires: every batch member occurs in `overlaps`, and no two members of
+///   `overlaps` share a key ([`overlap_key`]) and differ in their renamed right
+///   cell.
 /// - ensures: the first input position of each member, preserving batch and
 ///   member order and each batch's cardinality.
 /// - panics: when a batch member is not in `overlaps`, which the batching
@@ -383,17 +414,26 @@ fn batch_input_positions(
     batches: &[Vec<Overlap>],
 ) -> Vec<Vec<InputPosition>>
 {
+    let mut first: std::collections::HashMap<OverlapKey<'_>, usize> =
+        std::collections::HashMap::new();
+    for (index, overlap) in overlaps.iter().enumerate() {
+        first.entry(overlap_key(overlap)).or_insert(index);
+    }
     batches
         .iter()
         .map(|batch| {
             batch
                 .iter()
                 .map(|member| {
-                    overlaps
-                        .iter()
-                        .position(|candidate| candidate == member)
-                        .map(InputPosition)
-                        .expect("every batch member came from the input family")
+                    let position = *first
+                        .get(&overlap_key(member))
+                        .expect("every batch member came from the input family");
+                    assert_eq!(
+                        overlaps.get(position),
+                        Some(member),
+                        "the keyed input member is the batch member"
+                    );
+                    InputPosition(position)
                 })
                 .collect()
         })

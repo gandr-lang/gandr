@@ -244,15 +244,17 @@ version = "1.5.1"
 default-features = false
 
 # The hasher behind the grammar's label index, the syntax tree builder's
-# leaf-digest cache, the printer's binder scopes and the content table's
-# interner: a fixed-seed folded-multiply hash, deterministic across runs. The
-# choices and their reversals are in the consumers' READMEs and module docs.
+# leaf-digest cache, the printer's binder scopes, the content table's interner
+# and the derivation identities' address and subterm sets: a fixed-seed
+# folded-multiply hash, deterministic across runs. The choices and their
+# reversals are in the consumers' READMEs and module docs.
 # features:
 # - none: the fixed-seed state needs neither `std` nor a random seed
 # consumers:
 # - core-incremental
 # - surface-grammar
 # - surface-pretty
+# - theory-deep-inference
 [workspace.dependencies.foldhash]
 version = "0.2.0"
 default-features = false
@@ -836,14 +838,16 @@ path = "crates/workflow-sweep"
 path = "crates/workflow-test-timing"
 
 # SwissTable hash maps without `std`, for the grammar's label index, the
-# printer's binder scopes and the content table's interner. The choice and its
-# reversal are in the grammar's README and the printer's scope module.
+# printer's binder scopes, the content table's interner and the derivation
+# identities' address and subterm sets. The choice and its reversal are in the
+# grammar's README and the printer's scope module.
 # features:
 # - none: the index names its own hasher, so the default one stays off
 # consumers:
 # - core-incremental
 # - surface-grammar
 # - surface-pretty
+# - theory-deep-inference
 [workspace.dependencies.hashbrown]
 version = "0.17.1"
 default-features = false

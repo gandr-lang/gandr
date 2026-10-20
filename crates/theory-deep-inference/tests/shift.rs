@@ -260,13 +260,13 @@ fn an_adjacent_transposition_schedule_asks_a_quadratic_number_of_questions()
         settled = true;
         for index in 0 .. length.saturating_sub(1) {
             let next = index.saturating_add(1);
-            let left = schedule[index].clone();
-            let right = schedule[next].clone();
+            let left = &schedule[index];
+            let right = &schedule[next];
             if left.at.steps() <= right.at.steps() {
                 continue;
             }
             let prefix = run(&store, &peak, &schedule[.. index]);
-            derive_shift_equivalence(&store, &prefix, &left, &right)
+            derive_shift_equivalence(&store, &prefix, left, right)
                 .expect("pairwise disjoint redexes earn the witness at every intermediate");
             questions = questions.saturating_add(1);
             schedule.swap(index, next);

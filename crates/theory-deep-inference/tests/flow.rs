@@ -139,7 +139,8 @@ fn depends_before(
     later: FlowVertexIndex,
 ) -> FlowEquality
 {
-    let mut reached: Vec<FlowVertexIndex> = vec![earlier];
+    let mut reached: alloc::collections::BTreeSet<FlowVertexIndex> =
+        alloc::collections::BTreeSet::from([earlier]);
     let mut work: Vec<FlowVertexIndex> = vec![earlier];
     while let Some(current) = work.pop() {
         for thread in &flow.threads {
@@ -148,11 +149,10 @@ fn depends_before(
             else {
                 continue;
             };
-            if up == current && !reached.contains(&lo) {
+            if up == current && reached.insert(lo) {
                 if lo == later {
                     return FlowEquality::from(true);
                 }
-                reached.push(lo);
                 work.push(lo);
             }
         }

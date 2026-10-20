@@ -110,8 +110,10 @@
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use core::hash::BuildHasher as _;
 
 use anodized::spec;
+use foldhash::fast::FixedState;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
@@ -120,6 +122,9 @@ use gandr_theory_cell_complexes::PositionOrder;
 use gandr_theory_cell_complexes::SequentAlphabet;
 use gandr_theory_coherent_resolutions::CellApp;
 use gandr_theory_coherent_resolutions::rewrite_at;
+use hashbrown::HashSet;
+use hashbrown::HashTable;
+use hashbrown::hash_table::Entry;
 use quenchant_shape::shape::Maybe;
 
 /// Whether the node at one address survives an application as the same node:
@@ -373,20 +378,23 @@ pub fn footprint_independence<A>(
 where
     A: CellAlphabet,
 {
+    let right_written: HashSet<&A::Pos, FixedState> = right.written.iter().collect();
+    let right_read: HashSet<&A::Pos, FixedState> = right.read.iter().collect();
     for position in &left.written {
-        if right.written.contains(position) {
+        if right_written.contains(position) {
             return FootprintIndependence::WriteWrite {
                 position: position.clone(),
             };
         }
-        if right.read.contains(position) {
+        if right_read.contains(position) {
             return FootprintIndependence::ReadWrite {
                 position: position.clone(),
             };
         }
     }
+    let left_read: HashSet<&A::Pos, FixedState> = left.read.iter().collect();
     for position in &right.written {
-        if left.read.contains(position) {
+        if left_read.contains(position) {
             return FootprintIndependence::ReadWrite {
                 position: position.clone(),
             };
@@ -425,13 +433,19 @@ fn distinct_subterms<A>(
 where
     A: CellAlphabet,
 {
+    let hasher = FixedState::default();
     let mut out: Vec<A::Cmd> = Vec::new();
+    let mut seen: HashTable<usize> = HashTable::new();
     for position in positions {
         let Maybe::Present(subterm) = A::subterm_cmd_at(term, position)
         else {
             continue;
         };
-        if !out.contains(&subterm) {
+        let hash = hasher.hash_one(&subterm);
+        let held = |index: &usize| out.get(*index) == Some(&subterm);
+        let rehash = |index: &usize| out.get(*index).map_or(0, |held| hasher.hash_one(held));
+        if let Entry::Vacant(slot) = seen.entry(hash, held, rehash) {
+            slot.insert(out.len());
             out.push(subterm);
         }
     }
@@ -527,8 +541,9 @@ where
     // The two child address lists must denote one set; order is not compared,
     // because an alphabet's enumeration order within one depth is its own.
     let after_children = immediate_children::<A>(after_positions, position);
+    let after_set: HashSet<&A::Pos, FixedState> = after_children.iter().collect();
     if children.len() != after_children.len()
-        || !children.iter().all(|child| after_children.contains(child))
+        || !children.iter().all(|child| after_set.contains(child))
     {
         return NodeSurvival::Replaced;
     }
