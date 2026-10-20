@@ -2580,6 +2580,11 @@ pub fn loose_reach(
                     CompType::Element { code, .. } => {
                         work.push((CoreNode::Term(TermNode::Value(code)), depth));
                     },
+                    CompType::Codata { ref arguments, .. } => work.extend(
+                        arguments
+                            .iter()
+                            .map(|&argument| (CoreNode::Term(TermNode::Value(argument)), depth)),
+                    ),
                     CompType::Unknown => {},
                 }
             },

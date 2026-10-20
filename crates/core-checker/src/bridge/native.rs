@@ -1,6 +1,6 @@
-//! Native nominal and structural formers at the kernel boundary: data, records,
-//! and the n-ary tuples, cases, products and sums, whose children cross in
-//! order before the former is assembled.
+//! Native nominal and structural formers at the kernel boundary: data, codata,
+//! records, and the n-ary tuples, cases, products and sums, whose children
+//! cross in order before the former is assembled.
 
 use anodized::spec;
 use gandr_core_term::ValueType;
@@ -52,7 +52,9 @@ impl Erasure<'_, '_>
             CoreNode::Type(TypeNode::Value(at)) => {
                 self.memo().value_types.insert(at, Image::Open);
             },
-            CoreNode::Type(TypeNode::Computation(_)) => return Err(Refusal::MachineInvariant),
+            CoreNode::Type(TypeNode::Computation(at)) => {
+                self.memo().comp_types.insert(at, Image::Open);
+            },
         }
         self.frames.push(Frame::NativeBuild(root));
         let value = |at| Frame::NativeNext(CoreNode::Term(TermNode::Value(at)));
@@ -208,7 +210,19 @@ impl Erasure<'_, '_>
                     | ValueType::World(_) => return Err(Refusal::MachineInvariant),
                 }
             },
-            CoreNode::Type(TypeNode::Computation(_)) => return Err(Refusal::MachineInvariant),
+            CoreNode::Type(TypeNode::Computation(at)) => {
+                match *(self.arena.comp_type(at).ok_or(dangling)?) {
+                    gandr_core_term::CompType::Codata { ref arguments, .. } => self
+                        .frames
+                        .extend(arguments.iter().rev().copied().map(value)),
+                    gandr_core_term::CompType::Returner { .. }
+                    | gandr_core_term::CompType::Arrow { .. }
+                    | gandr_core_term::CompType::Pi { .. }
+                    | gandr_core_term::CompType::With(..)
+                    | gandr_core_term::CompType::Element { .. }
+                    | gandr_core_term::CompType::Unknown => return Err(Refusal::MachineInvariant),
+                }
+            },
         }
         match self.frames.pop() {
             Some(Frame::NativeNext(child)) => Ok(Step::Descend(child)),
@@ -236,6 +250,7 @@ impl Erasure<'_, '_>
         Ok(Step::Ascend(AnyNode::Value(image))) => matches!(root,CoreNode::Term(TermNode::Value(at)) if self.reached().values.get(&at) == Some(&Image::Erased(image))),
         Ok(Step::Ascend(AnyNode::Computation(image))) => matches!(root,CoreNode::Term(TermNode::Computation(at)) if self.reached().computations.get(&at) == Some(&Image::Erased(image))),
         Ok(Step::Ascend(AnyNode::ValueType(image))) => matches!(root,CoreNode::Type(TypeNode::Value(at)) if self.reached().value_types.get(&at) == Some(&Image::Erased(image))),
+        Ok(Step::Ascend(AnyNode::CompType(image))) => matches!(root,CoreNode::Type(TypeNode::Computation(at)) if self.reached().comp_types.get(&at) == Some(&Image::Erased(image))),
         Err(_) => true,
         _ => false,
     })]
@@ -411,7 +426,7 @@ impl Erasure<'_, '_>
                             .map(|&(_, kernel)| kernel)
                             .or_else(|| self.positions.admitted.get(declaration).copied());
                         let position = crossing.ok_or(Refusal::WithheldData {
-                            at,
+                            at: TypeNode::Value(at),
                             constant: *declaration,
                         })?;
                         let arguments = arguments
@@ -477,7 +492,38 @@ impl Erasure<'_, '_>
                 };
                 Ok(self.erased_value_type(at, image))
             },
-            CoreNode::Type(TypeNode::Computation(_)) => Err(Refusal::MachineInvariant),
+            CoreNode::Type(TypeNode::Computation(at)) => {
+                let image = match *(self.arena.comp_type(at).ok_or(dangling)?) {
+                    gandr_core_term::CompType::Codata {
+                        ref declaration,
+                        ref arguments,
+                    } => {
+                        let crossing = self
+                            .crossing
+                            .iter()
+                            .find(|&&(member, _)| member == *declaration)
+                            .map(|&(_, kernel)| kernel)
+                            .or_else(|| self.positions.admitted.get(declaration).copied());
+                        let position = crossing.ok_or(Refusal::WithheldData {
+                            at: TypeNode::Computation(at),
+                            constant: *declaration,
+                        })?;
+                        let arguments = arguments
+                            .iter()
+                            .copied()
+                            .map(value)
+                            .collect::<Result<_, _>>()?;
+                        target.comp_type_codata(position, arguments)
+                    },
+                    gandr_core_term::CompType::Returner { .. }
+                    | gandr_core_term::CompType::Arrow { .. }
+                    | gandr_core_term::CompType::Pi { .. }
+                    | gandr_core_term::CompType::With(..)
+                    | gandr_core_term::CompType::Element { .. }
+                    | gandr_core_term::CompType::Unknown => return Err(Refusal::MachineInvariant),
+                };
+                Ok(self.erased_comp_type(at, image))
+            },
         }
     }
 }

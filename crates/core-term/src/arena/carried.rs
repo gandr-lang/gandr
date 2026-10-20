@@ -650,6 +650,11 @@ impl CoreArena
                 self.comp_type_into(&mut union, first, at);
                 self.comp_type_into(&mut union, second, at);
             },
+            CompType::Codata { ref arguments, .. } => {
+                for &argument in arguments {
+                    self.value_into(&mut union, argument, at);
+                }
+            },
         }
         self.words.store_union(union)
     }

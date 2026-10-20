@@ -1520,6 +1520,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
             | Some(&CompType::Returner { ref effects, .. }) => 1_usize.saturating_add(effects.types().count()),
             | Some(&CompType::Element { .. }) => 1,
             Some(&CompType::With(..) | &CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
+            Some(&CompType::Codata { ref arguments, .. }) => arguments.len(),
         },
     }],
         ensures: self.results.len() == ready && pending.checked_add(children) == Some(self.tasks.len())
@@ -2020,6 +2021,12 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     self.tasks.push(open(Node::CompType(first), depth));
                 },
                 None | Some(&CompType::Unknown) => {},
+                Some(&CompType::Codata { ref arguments, .. }) => self.tasks.extend(
+                    arguments
+                        .iter()
+                        .rev()
+                        .map(|&argument| open(Node::Value(argument), depth)),
+                ),
                 Some(&CompType::Returner {
                     result,
                     ref effects,
@@ -3571,6 +3578,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
             | Some(&CompType::Returner { ref effects, .. }) => 1_usize.saturating_add(effects.types().count()),
             | Some(&CompType::Element { .. }) => 1,
             Some(&CompType::With(..) | &CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
+            Some(&CompType::Codata { ref arguments, .. }) => arguments.len(),
         }],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
             && (ret == id || self.arena.comp_type(id).is_some_and(|original| self.arena.comp_type(ret).is_some_and(|rewritten|
@@ -3648,6 +3656,25 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 }
             },
             CompType::Unknown => id,
+            CompType::Codata {
+                declaration,
+                ref arguments,
+            } => {
+                let mut changed = None;
+                for (index, original) in arguments.iter().enumerate().rev() {
+                    let rewritten = Self::value(&mut self.results, *original);
+                    if rewritten != *original {
+                        let changed = changed.get_or_insert_with(|| arguments.clone());
+                        if let Some(slot) = changed.get_mut(index) {
+                            *slot = rewritten;
+                        }
+                    }
+                }
+                match changed {
+                    Some(arguments) => self.arena.comp_type_codata(declaration, arguments),
+                    None => id,
+                }
+            },
         }
     }
 }

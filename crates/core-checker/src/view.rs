@@ -291,6 +291,14 @@ pub enum CompTypeView<'arena>
     /// The unknown computation type: a hole's or a mark's, or the decode of
     /// one.
     Unknown,
+    /// A nominal codata type at its telescope arguments.
+    Codata
+    {
+        /// Admission position of the codata signature.
+        declaration: gandr_kernel_term::ConstantIndex,
+        /// Quoted type or ordinary value arguments, in telescope order.
+        arguments: &'arena [ValueId],
+    },
 }
 
 /// Read a value-type node as the fragment admits it.
@@ -480,6 +488,7 @@ pub fn value_type_view(
     | (Some(&CompType::Element { code, ref target }), Ok(CompTypeView::Element { code: found, target: found_target })) => code == found && target == found_target
         && comp_type_knowledge(arena, comp_type) == Knowledge::Known,
     | (Some(&(CompType::Element { .. } | CompType::Unknown)), Ok(CompTypeView::Unknown)) => comp_type_knowledge(arena, comp_type) == Knowledge::Unknown,
+    | (Some(&CompType::Codata { declaration, ref arguments }), Ok(CompTypeView::Codata { declaration: found, arguments: held })) => declaration == found && arguments.as_slice() == held,
     | (None, Err(FragmentRefusal::DanglingNode { node })) => node == CoreNode::Type(TypeNode::Computation(comp_type)),
     | _ => false,
 })]
@@ -506,6 +515,13 @@ pub fn comp_type_view(
             Knowledge::Unknown => Ok(CompTypeView::Unknown),
         },
         CompType::Unknown => Ok(CompTypeView::Unknown),
+        CompType::Codata {
+            declaration,
+            ref arguments,
+        } => Ok(CompTypeView::Codata {
+            declaration,
+            arguments,
+        }),
     }
 }
 

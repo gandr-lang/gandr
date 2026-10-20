@@ -53,6 +53,7 @@ use gandr_core_checker::CheckingForm;
 use gandr_core_checker::Mismatch;
 use gandr_core_checker::RunFault;
 use gandr_core_checker::access::AccessDefect;
+use gandr_core_checker::codata::CodataFault;
 use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
@@ -331,6 +332,14 @@ const fn checked(refusal: CheckRefusal) -> Culprit
             AccessDefect::Spent => "a view already ended",
             AccessDefect::NotAView => "no view here",
             AccessDefect::UnwindEffect => "an effect in an unwind",
+        },
+        CheckRefusal::Codata { fault, .. } => match fault {
+            CodataFault::Undeclared => "no codata declaration here",
+            CodataFault::KindNotUniverse => "a codata kind that is no computation universe",
+            CodataFault::WithoutObservations => "a codata declaration with no observation",
+            CodataFault::Occurrence => "the codata type named off an observation's result",
+            CodataFault::ObservationLevel => "an observation above the declared universe",
+            CodataFault::Arity => "a codata type at another arity than its declaration",
         },
         CheckRefusal::Located { defect, .. } => match defect {
             LocatedDefect::Immobile { .. } => "a value whose type does not cross",

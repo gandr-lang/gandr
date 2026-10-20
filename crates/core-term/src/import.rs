@@ -130,7 +130,8 @@ impl Image
                 Computation::RecordProjection(ref mut record, _)
                 | Computation::TupleProjection(ref mut record, _),
             ) => [Some(V(record)), None, None, None, None],
-            Self::Value(Value::Record(_) | Value::Tuple(_) | Value::Recorded(_))
+            Self::CompType(CompType::Codata { .. })
+            | Self::Value(Value::Record(_) | Value::Tuple(_) | Value::Recorded(_))
             | Self::ValueType(ValueType::Data { .. } | ValueType::Record(_)) => {
                 [None, None, None, None, None]
             },
@@ -821,7 +822,18 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | ValueType::Stack { .. } => {},
                             }
                         },
-                        Node::CompType(_) => {},
+                        Node::CompType(id) => {
+                            if let Some(&CompType::Codata { ref arguments, .. }) =
+                                self.source.comp_type(id)
+                            {
+                                self.pending.extend(
+                                    arguments
+                                        .iter()
+                                        .rev()
+                                        .map(|&value| Task::Open(Node::Value(value))),
+                                );
+                            }
+                        },
                     }
                     self.pending
                         .extend(children.into_iter().flatten().rev().map(Task::Open));
@@ -858,6 +870,10 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                     match image {
                         Image::Value(Value::Constructor { ref mut fields, .. })
                         | Image::ValueType(ValueType::Data {
+                            arguments: ref mut fields,
+                            ..
+                        })
+                        | Image::CompType(CompType::Codata {
                             arguments: ref mut fields,
                             ..
                         }) => {

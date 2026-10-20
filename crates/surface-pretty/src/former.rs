@@ -904,6 +904,9 @@ pub enum Unreadable
     /// A world's capability: the linear resource a migration spends, which
     /// the checker opens where a run enters and the surface never writes.
     WorldCapability,
+    /// A codata application: a computation type the surface grammar has no
+    /// syntax for yet.
+    Codata,
 }
 
 /// A former the printer writes in a notation of its own, which does not read

@@ -907,7 +907,7 @@ pub fn covariant(
                     work.push((Position::CompType(first), polarity, depth));
                     work.push((Position::CompType(second), polarity, depth));
                 },
-                CompType::Unknown => return Err(refused),
+                CompType::Codata { .. } | CompType::Unknown => return Err(refused),
             },
         }
     }

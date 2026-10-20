@@ -316,6 +316,8 @@ pub struct CheckingContext<'arena>
     signatures: Vec<(ConstantIndex, FormedValueType)>,
     /// Successfully formed nominal signatures, without a value unfolding.
     data_signatures: BTreeMap<ConstantIndex, alloc::sync::Arc<gandr_core_term::DataSignature>>,
+    /// Successfully formed codata signatures, by position.
+    codata_signatures: BTreeMap<ConstantIndex, alloc::sync::Arc<gandr_core_term::CodataSignature>>,
     /// What each data declaration's occurrence walk decided, kept once its
     /// signature forms.
     accessibility: BTreeMap<ConstantIndex, crate::occurrence::Accessibility>,
@@ -373,6 +375,12 @@ pub struct CheckingContext<'arena>
     forming: Vec<(
         ConstantIndex,
         alloc::sync::Arc<gandr_core_term::DataSignature>,
+    )>,
+    /// The codata declaration whose observations are forming: it names
+    /// itself only at an observation's result.
+    codata_forming: Vec<(
+        ConstantIndex,
+        alloc::sync::Arc<gandr_core_term::CodataSignature>,
     )>,
     /// The mutual block being admitted, while one is.
     mutual: Maybe<crate::occurrence::Block, mutual::Absent>,
@@ -518,6 +526,7 @@ impl<'arena> CheckingContext<'arena>
             binders: Context::new(),
             signatures: Vec::new(),
             data_signatures: BTreeMap::new(),
+            codata_signatures: BTreeMap::new(),
             accessibility: BTreeMap::new(),
             admitted: Maybe::Absent(admission::Absent::Fresh),
             atoms,
@@ -539,6 +548,7 @@ impl<'arena> CheckingContext<'arena>
             support: SupportLog::Off,
             deferrals: crate::elaboration::Deferrals::default(),
             forming: Vec::new(),
+            codata_forming: Vec::new(),
             mutual: Maybe::Absent(mutual::Absent::Lone),
             defining: Vec::new(),
             kin: Vec::new(),
@@ -999,6 +1009,165 @@ impl<'arena> CheckingContext<'arena>
         self.admit(constant)?;
         self.record_data(constant, signature);
         Ok(())
+    }
+
+    /// Codata signatures already admitted in this context.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn codata_signatures(
+        &self
+    ) -> &BTreeMap<ConstantIndex, alloc::sync::Arc<gandr_core_term::CodataSignature>>
+    {
+        &self.codata_signatures
+    }
+
+    /// Retain a codata signature after its formation has succeeded.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn record_codata(
+        &mut self,
+        constant: ConstantIndex,
+        signature: alloc::sync::Arc<gandr_core_term::CodataSignature>,
+    )
+    {
+        let _previous = self.codata_signatures.insert(constant, signature);
+    }
+
+    /// Re-form and adopt a codata signature.
+    ///
+    /// # Specification
+    /// - requires: identifiers are read in this context.
+    /// - ensures: the fresh position has a codata signature.
+    /// - fails: signature formation or admission out of source order.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns a formation refusal or the ordinary admission-order refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a stream adopted into a fresh context reads through
+    ///   its observations as it did where it was first admitted.
+    /// - witness: `tests::codata::a_stream_is_admitted_observed_and_adopted`
+    #[spec(ensures: |ret| ret.is_err() || self.codata_signatures.contains_key(&constant))]
+    #[inline]
+    pub fn adopt_codata(
+        &mut self,
+        constant: ConstantIndex,
+        signature: alloc::sync::Arc<gandr_core_term::CodataSignature>,
+    ) -> Result<(), CheckRefusal>
+    {
+        crate::codata::form_signature(self, constant, &signature)?;
+        self.admit(constant)?;
+        self.record_codata(constant, signature);
+        Ok(())
+    }
+
+    /// Open the codata declaration at `position` for its observations'
+    /// formation: until it closes, [`Self::codata_in_scope`] answers
+    /// `signature` at `position`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn open_codata(
+        &mut self,
+        position: ConstantIndex,
+        signature: alloc::sync::Arc<gandr_core_term::CodataSignature>,
+    )
+    {
+        self.codata_forming.clear();
+        self.codata_forming.push((position, signature));
+    }
+
+    /// Close the codata declaration whose observations were forming.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn close_codata(&mut self)
+    {
+        self.codata_forming.clear();
+    }
+
+    /// Whether `constant` is the codata declaration whose observations are
+    /// forming.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn codata_forming_at(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<alloc::sync::Arc<gandr_core_term::CodataSignature>, data_scope::Absent>
+    {
+        self.codata_forming
+            .iter()
+            .find_map(|&(held, ref signature)| (held == constant).then_some(signature))
+            .map_or(Maybe::Absent(data_scope::Absent::Unknown), |signature| {
+                Maybe::Present(alloc::sync::Arc::clone(signature))
+            })
+    }
+
+    /// The codata signature in scope at `constant`, without logging: the
+    /// forming declaration's when it is that position's, else the admitted
+    /// one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn codata_in_scope(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<alloc::sync::Arc<gandr_core_term::CodataSignature>, data_scope::Absent>
+    {
+        if let Maybe::Present(signature) = self.codata_forming_at(constant) {
+            return Maybe::Present(signature);
+        }
+        self.codata_signatures
+            .get(&constant)
+            .map_or(Maybe::Absent(data_scope::Absent::Unknown), |signature| {
+                Maybe::Present(alloc::sync::Arc::clone(signature))
+            })
+    }
+
+    /// Read and log an admitted codata signature, including its absence.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the exact stored signature, and a supported judgment logs the
+    ///   identity and the signature read.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a judgement reading a stream through its observations
+    ///   logs the stream's signature once.
+    /// - witness: `tests::codata::a_stream_is_admitted_observed_and_adopted`
+    #[spec(ensures: |ret| match self.support {
+SupportLog::Off => true,
+SupportLog::Recording { ref codata, .. } => codata.last().is_some_and(|entry| entry.constant() == constant && entry.signature() == match ret { Maybe::Present(ref held) => Some(&**held), Maybe::Absent(_) => None }),
+})]
+    pub(crate) fn consult_codata(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> Maybe<alloc::sync::Arc<gandr_core_term::CodataSignature>, data_scope::Absent>
+    {
+        let answer = self
+            .codata_signatures
+            .get(&constant)
+            .map_or(Maybe::Absent(data_scope::Absent::Unknown), |signature| {
+                Maybe::Present(alloc::sync::Arc::clone(signature))
+            });
+        if let SupportLog::Recording { ref mut codata, .. } = self.support {
+            codata.push(crate::support::CodataConsulted::new(
+                constant,
+                match answer {
+                    Maybe::Present(ref signature) => Some(alloc::sync::Arc::clone(signature)),
+                    Maybe::Absent(_) => None,
+                },
+            ));
+        }
+        answer
     }
 
     /// Open the block of the data declaration at `position` for its
@@ -1651,12 +1820,13 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///   unsupported reads expose their own exact supports; stale entries or
     ///   failure to start logging change the observed consultation sets.
     /// - witness: `module::tests::the_support_holds_each_consulted_answer_once_in_position_order`
-    #[spec(ensures: matches!(self.support, SupportLog::Recording { ref values,ref data } if values.is_empty() && data.is_empty()))]
+    #[spec(ensures: matches!(self.support, SupportLog::Recording { ref values,ref data,ref codata } if values.is_empty() && data.is_empty() && codata.is_empty()))]
     pub(crate) fn start_support(&mut self)
     {
         self.support = SupportLog::Recording {
             values: Vec::new(),
             data: Vec::new(),
+            codata: Vec::new(),
         };
     }
 
@@ -1676,15 +1846,20 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// - witness: `module::tests::the_support_holds_each_consulted_answer_once_in_position_order`
     /// - witness: `module::tests::a_refusal_cuts_the_support_where_the_run_stopped`
     #[spec(
-        captures: before = match self.support { SupportLog::Off => (0,0), SupportLog::Recording { ref values,ref data } => (values.len(),data.len()) },
+        captures: before = match self.support { SupportLog::Off => (0,0,0), SupportLog::Recording { ref values,ref data,ref codata } => (values.len(),data.len(),codata.len()) },
         ensures: |ret| matches!(self.support, SupportLog::Off)
             && ret.consulted().len() <= before.0 && ret.consulted().is_empty() == (before.0 == 0)
-            && ret.data_consulted().len() <= before.1 && ret.data_consulted().is_empty() == (before.1 == 0),
+            && ret.data_consulted().len() <= before.1 && ret.data_consulted().is_empty() == (before.1 == 0)
+            && ret.codata_consulted().len() <= before.2 && ret.codata_consulted().is_empty() == (before.2 == 0),
     )]
     pub(crate) fn finish_support(&mut self) -> Support
     {
         match core::mem::replace(&mut self.support, SupportLog::Off) {
-            SupportLog::Recording { values, data } => Support::from_log(values, data),
+            SupportLog::Recording {
+                values,
+                data,
+                codata,
+            } => Support::from_log(values, data, codata),
             SupportLog::Off => Support::default(),
         }
     }

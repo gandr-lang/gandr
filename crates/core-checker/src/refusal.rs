@@ -937,6 +937,18 @@ pub enum CheckRefusal
         /// How it breaks.
         defect: crate::access::AccessDefect,
     },
+    /// A codata declaration or application is refused: its head names no
+    /// admitted codata declaration, its kind is no computation universe, it
+    /// states no observation, an observation exceeds its universe or names the
+    /// declaration off its result, or an application supplies another number
+    /// of arguments (see [`crate::codata`]).
+    Codata
+    {
+        /// The declaration's kind, its observation or the application refused.
+        at: CoreNode,
+        /// Why it is refused.
+        fault: crate::codata::CodataFault,
+    },
     /// A located judgement broke: a value crossed where its type does not, a
     /// migration found no capability or stands where one may run twice, a
     /// hypothesis was used at another world, or an entry, a world or a
@@ -1142,7 +1154,7 @@ impl CheckRefusal
         | Self::StaticLambdaArgument { .. }
         | Self::StaticClassifierExpected { .. }
         | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::StageNotBelow { .. } | Self::UnenclosedRun { .. }
-        | Self::SessionMismatch { .. } | Self::Linearity { .. } | Self::Access { .. } | Self::Located { .. }
+        | Self::SessionMismatch { .. } | Self::Linearity { .. } | Self::Access { .. } | Self::Codata { .. } | Self::Located { .. }
         | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. }
         | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
     })]
@@ -1202,6 +1214,7 @@ impl CheckRefusal
             | Self::SessionMismatch { .. }
             | Self::Linearity { .. }
             | Self::Access { .. }
+            | Self::Codata { .. }
             | Self::Located { .. }
             | Self::CapabilityForged { .. }
             | Self::CapabilityAmplified(_)
@@ -1414,6 +1427,7 @@ impl CheckRefusal
             | Self::UnenclosedRun { .. }
             | Self::Linearity { .. }
             | Self::Access { .. }
+            | Self::Codata { .. }
             | Self::Located { .. }
             | Self::SessionNotEquivalent { .. }
             | Self::SessionNotSubtype { .. }

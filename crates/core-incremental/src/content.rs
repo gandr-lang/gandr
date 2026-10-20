@@ -2213,6 +2213,9 @@ pub enum DeclarationRoots
     /// A world declaration: no roots. Its program is located, so its item is
     /// opaque.
     World,
+    /// A codata declaration: no roots. A codata signature has no content
+    /// form, so its item is opaque.
+    Codata,
 }
 
 /// The roots of a sealed abstract type, with the reach of its seal, the site
@@ -2240,7 +2243,7 @@ impl DeclarationRoots
     /// # Specification
     /// - ensures: value signature before body, all nominal roots in order as
     ///   [`DataRoots::sorted`] sorts them, an abstract type's kind before its
-    ///   representation, or none for a world.
+    ///   representation, or none for a world or a codata declaration.
     /// - executable: none — the return is an opaque iterator.
     ///
     /// # Adequacy
@@ -2268,7 +2271,7 @@ impl DeclarationRoots
                 None,
             ),
             Self::Data(ref roots) => ([None, None], Some(roots)),
-            Self::World => ([None, None], None),
+            Self::World | Self::Codata => ([None, None], None),
             Self::Abstract(roots) => (
                 [
                     Some((roots.kind, Sort::ValueType)),
@@ -2324,6 +2327,7 @@ impl DeclarationRoots
                 ..roots
             }),
             Self::World => Self::World,
+            Self::Codata => Self::Codata,
         }
     }
 }
@@ -2768,11 +2772,12 @@ impl ItemContent
     }
 
     /// Whether the item may be adopted and persisted: every node resolved, in
-    /// an unlocated program.
+    /// an unlocated program, and no codata declaration.
     ///
     /// # Specification
-    /// - ensures: [`Opacity::Opaque`] for a located item, else opaque exactly
-    ///   when a root carries an unresolved node beneath it.
+    /// - ensures: [`Opacity::Opaque`] for a located item and for a codata
+    ///   declaration, else opaque exactly when a root carries an unresolved
+    ///   node beneath it.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -2780,8 +2785,9 @@ impl ItemContent
     ///   makes its item opaque.
     /// - witness: `content::tests::an_item_of_a_located_program_is_opaque`
     /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
-    #[spec(ensures: |ret| (self.locus == Locus::Unlocated || ret == Opacity::Opaque)
-        && (self.locus == Locus::Located || (ret == Opacity::Opaque) == self.declaration.iter().any(|(root, _)|
+    #[spec(ensures: |ret| (ret == Opacity::Opaque
+            || (self.locus == Locus::Unlocated && !matches!(self.declaration, DeclarationRoots::Codata)))
+        && (self.locus == Locus::Located || matches!(self.declaration, DeclarationRoots::Codata) || (ret == Opacity::Opaque) == self.declaration.iter().any(|(root, _)|
             self.nodes.get(usize::from(root)).is_some_and(|node| node.opacity() == Opacity::Opaque))))]
     #[inline]
     #[must_use]
@@ -2789,6 +2795,7 @@ impl ItemContent
     {
         let opaque = match self.locus {
             Locus::Located => true,
+            Locus::Unlocated if matches!(self.declaration, DeclarationRoots::Codata) => true,
             Locus::Unlocated => self.declaration.iter().any(|(root, _)| {
                 self.nodes
                     .get(usize::from(root))
@@ -2822,7 +2829,7 @@ impl ItemContent
         (&DeclarationRoots::Value { signature: Maybe::Present(root), .. }, Some(content)) =>
             content.nodes.first().map(SupportedNode::sort) == self.nodes.get(usize::from(root)).map(SupportedNode::sort),
         (&DeclarationRoots::Value { signature: Maybe::Present(_), .. }, None) => false,
-        (&(DeclarationRoots::Value { signature: Maybe::Absent(_), .. } | DeclarationRoots::Data(_) | DeclarationRoots::Abstract(_) | DeclarationRoots::World), found) => found.is_none(),
+        (&(DeclarationRoots::Value { signature: Maybe::Absent(_), .. } | DeclarationRoots::Data(_) | DeclarationRoots::Abstract(_) | DeclarationRoots::World | DeclarationRoots::Codata), found) => found.is_none(),
     })]
     pub(crate) fn signature_type(&self) -> Option<TypeContent>
     {
@@ -2846,7 +2853,8 @@ impl ItemContent
             }
             | DeclarationRoots::Data(_)
             | DeclarationRoots::Abstract(_)
-            | DeclarationRoots::World => None,
+            | DeclarationRoots::World
+            | DeclarationRoots::Codata => None,
         }
     }
 }
@@ -3230,7 +3238,7 @@ if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } 
  else if let gandr_core_checker::DeclarationContent::Abstract(sealed) = *matched_left_value && let DeclarationRoots::Abstract(roots) = *matched_right_value { ret.sites.0.get(&ArenaNode::ValueType(sealed.kind())) == Some(&roots.kind)
                     && ret.sites.0.get(&ArenaNode::ValueType(sealed.representation())) == Some(&roots.representation)
                     && roots.extent == sealed.extent() && roots.site == sealed.site() && roots.mobility == sealed.mobility() }
- else { matches!((matched_left_value, matched_right_value), (gandr_core_checker::DeclarationContent::World, DeclarationRoots::World)) }
+ else { matches!((matched_left_value, matched_right_value), (gandr_core_checker::DeclarationContent::World, DeclarationRoots::World) | (gandr_core_checker::DeclarationContent::Codata(_), DeclarationRoots::Codata)) }
 } && ret.content.locus == layout.locus(),
         None => ret.content.reference == Reference::Unoccupied
             && matches!(ret.content.declaration,DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Absent(body::Absent::Hole),ref laws} if laws.is_empty())
@@ -3280,6 +3288,7 @@ pub fn encode_item(
                     })
                 },
                 gandr_core_checker::DeclarationContent::World => DeclarationRoots::World,
+                gandr_core_checker::DeclarationContent::Codata(_) => DeclarationRoots::Codata,
             };
             let reference = layout
                 .references
@@ -4191,7 +4200,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   every payload.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| ret.sort() == Sort::CompType
-        && !matches!(ret, ContentNode::Unresolved(_))
+        && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*comp_type, CompType::Codata { .. }))
         && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
     fn read_comp_type(
         &mut self,
@@ -4234,6 +4243,8 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 target: target.clone(),
             },
             CompType::Unknown => ContentNode::UnknownComputationType,
+            // A codata application has no content form, and stays opaque.
+            CompType::Codata { .. } => ContentNode::Unresolved(Sort::CompType),
         }
     }
 }

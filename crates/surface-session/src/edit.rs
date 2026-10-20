@@ -69,11 +69,12 @@
 //! # Native declaration snapshots
 //!
 //! `DeclarationTree::Value`, `DeclarationTree::Data`,
-//! `DeclarationTree::Abstract` and `DeclarationTree::World` preserve distinct
-//! declaration categories. Data snapshots retain their kind, parameter
-//! telescope and every constructor field; an abstract type its kind, its
-//! representation, the extent of its seal, its minting site and the mobility
-//! its signature marks; a world declaration has no roots. A schema or
+//! `DeclarationTree::Abstract`, `DeclarationTree::World` and
+//! `DeclarationTree::Codata` preserve distinct declaration categories. Data
+//! snapshots retain their kind, parameter telescope and every constructor
+//! field; an abstract type its kind, its representation, the extent of its
+//! seal, its minting site and the mobility its signature marks; a world
+//! declaration and a codata declaration have no roots. A schema or
 //! category change replaces the item through delete/insert; native term
 //! children still receive localized edits.
 //! Record labels, constructor tags, nominal identities and all variadic
@@ -519,6 +520,9 @@ pub enum DeclarationTree
     },
     /// A world declaration; it has no roots.
     World,
+    /// A codata declaration; its signature has no content form, so it has no
+    /// roots.
+    Codata,
 }
 
 /// One item of a revision: its identity, its signature and its body, each
@@ -597,7 +601,8 @@ impl ItemTree
             }
             | DeclarationTree::Data { .. }
             | DeclarationTree::Abstract { .. }
-            | DeclarationTree::World => None,
+            | DeclarationTree::World
+            | DeclarationTree::Codata => None,
         }
     }
 
@@ -621,7 +626,8 @@ impl ItemTree
             }
             | DeclarationTree::Data { .. }
             | DeclarationTree::Abstract { .. }
-            | DeclarationTree::World => None,
+            | DeclarationTree::World
+            | DeclarationTree::Codata => None,
         }
     }
 }
@@ -736,7 +742,7 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
                                     && spans.is_empty()
                             } }
  else if let DeclarationTree::Abstract {ref kind,ref representation,extent,site,mobility} = *matched_left_value && let gandr_core_checker::DeclarationContent::Abstract(sealed) = *matched_right_value { ordered(kind) && ordered(representation) && extent == sealed.extent() && site == sealed.site() && mobility == sealed.mobility() && spans.is_empty() }
- else if matches!(*matched_left_value, DeclarationTree::World) && matches!(*matched_right_value, gandr_core_checker::DeclarationContent::World) { spans.is_empty() }
+ else if (matches!(*matched_left_value, DeclarationTree::World) && matches!(*matched_right_value, gandr_core_checker::DeclarationContent::World)) || (matches!(*matched_left_value, DeclarationTree::Codata) && matches!(*matched_right_value, gandr_core_checker::DeclarationContent::Codata(_))) { spans.is_empty() }
  else { false }
 }
                     }
@@ -836,6 +842,9 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
                 ),
                 gandr_core_checker::DeclarationContent::World => {
                     (DeclarationTree::World, Vec::new())
+                },
+                gandr_core_checker::DeclarationContent::Codata(_) => {
+                    (DeclarationTree::Codata, Vec::new())
                 },
             };
             if let Some(&Maybe::Present(span)) = located.first() {
@@ -3797,6 +3806,7 @@ where
                     )
                 }
                 CompType::Unknown => ret == ContentNode::UnknownComputationType,
+                CompType::Codata { .. } => ret == ContentNode::Unresolved(Sort::CompType),
             },
         )
 },
@@ -3842,7 +3852,8 @@ where
             target: target.clone(),
         },
         Some(&CompType::Unknown) => ContentNode::UnknownComputationType,
-        None => ContentNode::Unresolved(Sort::CompType),
+        // A codata application has no content form, and stays opaque.
+        Some(&CompType::Codata { .. }) | None => ContentNode::Unresolved(Sort::CompType),
     }
 }
 

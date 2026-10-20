@@ -1199,6 +1199,7 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
                     | CompType::With(..)
                     | CompType::Arrow { .. }
                     | CompType::Pi { .. }
+                    | CompType::Codata { .. }
                     | CompType::Unknown => {
                         return Ok(node);
                     },
@@ -1330,11 +1331,15 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
 } } },
                     _ => Err(ConversionFault::MachineInvariant),
                 },
-                Ok((Node::CompType(first, _), Node::CompType(second, _))) => match (self.core.comp_type(first), self.core.comp_type(second)) {
+                Ok((Node::CompType(first, here), Node::CompType(second, there))) => match (self.core.comp_type(first), self.core.comp_type(second)) {
                     (Some(left), Some(right)) => match *left {
                         CompType::Returner { effects: ref first, .. } => match *right {
                             CompType::Returner { effects: ref second, .. } if matching_effect_shapes(first, second) == Alike::Same => Ok((Alike::Same, 1_usize.saturating_add(first.types().count()), 0)),
-                            CompType::Returner { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) => Ok((Alike::Different, 0, 0)),
+                            CompType::Returner { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
+                        },
+                        CompType::Codata { declaration: ref a, arguments: ref left } => match *right {
+                            CompType::Codata { declaration: ref b, arguments: ref right } if a == b && left.len() == right.len() => { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(left.iter().zip(right).map(|(a,b)| (Node::Code(*a,here),Node::Code(*b,there))))); Ok((Alike::Same,left.len(),0)) },
+                            CompType::Returner { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
                         },
                         CompType::With(..) | CompType::Arrow { .. } | CompType::Pi { .. } => if core::mem::discriminant(left) == core::mem::discriminant(right) || matches!((left, right), (&CompType::Pi { .. }, &CompType::Arrow { .. }) | (&CompType::Arrow { .. }, &CompType::Pi { .. })) { Ok((Alike::Same, 2, 0)) } else { Ok((Alike::Different, 0, 0)) },
                         CompType::Element { code, ref target } => match *right {
@@ -1343,7 +1348,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                     self.atom(Node::Code(code, here)).and_then(|_| self.atom(Node::Code(other_code, there))).map(|_| (Alike::Same, 0, 1))
                                 } else { Err(ConversionFault::MachineInvariant) }
                             },
-                            CompType::Returner { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) => Ok((Alike::Different, 0, 0)),
+                            CompType::Returner { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
                         },
                         CompType::Unknown => Ok((Alike::Different, 0, 0)),
                     },
@@ -1732,6 +1737,26 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         Ok(Alike::Same)
                     },
                     (
+                        &CompType::Codata {
+                            declaration: ref a,
+                            arguments: ref left,
+                        },
+                        &CompType::Codata {
+                            declaration: ref b,
+                            arguments: ref right,
+                        },
+                    ) => {
+                        if a != b || left.len() != right.len() {
+                            return Ok(Alike::Different);
+                        }
+                        pending.extend(
+                            left.iter()
+                                .zip(right)
+                                .map(|(a, b)| (Node::Code(*a, here), Node::Code(*b, there))),
+                        );
+                        Ok(Alike::Same)
+                    },
+                    (
                         &CompType::Returner {
                             result: a,
                             effects: ref first,
@@ -1847,6 +1872,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         | CompType::Arrow { .. }
                         | CompType::Pi { .. }
                         | CompType::Element { .. }
+                        | CompType::Codata { .. }
                         | CompType::Unknown),
                         _,
                     ) => Ok(Alike::Different),
@@ -2428,6 +2454,11 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                     {
                         CompType::With(first, second) => types
                             .extend([Node::CompType(first, place), Node::CompType(second, place)]),
+                        CompType::Codata { ref arguments, .. } => {
+                            for argument in arguments {
+                                atoms.push(self.atom(Node::Code(*argument, place))?);
+                            }
+                        },
                         CompType::Returner {
                             result,
                             ref effects,

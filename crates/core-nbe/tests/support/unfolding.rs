@@ -173,6 +173,7 @@ pub struct Unfolded(pub u64);
                     CompType::Element { .. } => 2,
                     CompType::With(..) | CompType::Arrow { .. } | CompType::Pi { .. } => 3,
                     CompType::Unknown => 1,
+                    CompType::Codata { ref arguments, .. } => 1_u64.saturating_add(u64::try_from(arguments.len()).unwrap_or(u64::MAX)),
                 }
             },
         };
@@ -552,6 +553,9 @@ pub fn unfolded(
                         pending.push(CoreNode::CompType(codomain));
                     },
                     CompType::Element { code, .. } => pending.push(CoreNode::Value(code)),
+                    CompType::Codata { ref arguments, .. } => {
+                        pending.extend(arguments.iter().copied().map(CoreNode::Value));
+                    },
                     CompType::Unknown => {},
                 }
             },

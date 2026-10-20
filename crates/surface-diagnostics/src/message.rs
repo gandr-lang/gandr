@@ -41,6 +41,7 @@ use core::fmt;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingForm;
 use gandr_core_checker::access::AccessDefect;
+use gandr_core_checker::codata::CodataFault;
 use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
@@ -863,6 +864,26 @@ fn checked(
                 f.write_str("an `unwind` runs under the empty row and cannot perform an effect")
             },
         },
+        CheckRefusal::Codata { fault, .. } => match fault {
+            CodataFault::Undeclared => f.write_str("this names no codata declaration"),
+            CodataFault::KindNotUniverse => {
+                f.write_str("a codata declaration's kind must be a computation universe")
+            },
+            CodataFault::WithoutObservations => {
+                f.write_str("a codata declaration needs at least one observation")
+            },
+            CodataFault::Occurrence => f.write_str(
+                "a codata type may name itself only as an observation's result, at its own \
+                 parameters in order",
+            ),
+            CodataFault::ObservationLevel => f.write_str(
+                "an observation's type lives above the universe the codata declaration names",
+            ),
+            CodataFault::Arity => f.write_str(
+                "this codata type is applied to another number of arguments than its \
+                 declaration has parameters",
+            ),
+        },
         CheckRefusal::Located { defect, .. } => match defect {
             LocatedDefect::Immobile { .. } => f.write_str(
                 "this value crosses to another world, but its type cannot: mark an abstract type `mobile`, or send what crosses instead",
@@ -944,6 +965,7 @@ mod tests
     use gandr_core_checker::TypeNode;
     use gandr_core_checker::UnadmittedFormer;
     use gandr_core_checker::access::AccessDefect;
+    use gandr_core_checker::codata::CodataFault;
     use gandr_core_checker::session::Capture;
     use gandr_core_checker::session::Endpoint;
     use gandr_core_checker::session::ForkSide;
@@ -1509,6 +1531,30 @@ mod tests
             CheckRefusal::Access {
                 at: node,
                 defect: AccessDefect::UnwindEffect,
+            },
+            CheckRefusal::Codata {
+                at: node,
+                fault: CodataFault::Undeclared,
+            },
+            CheckRefusal::Codata {
+                at: node,
+                fault: CodataFault::KindNotUniverse,
+            },
+            CheckRefusal::Codata {
+                at: node,
+                fault: CodataFault::WithoutObservations,
+            },
+            CheckRefusal::Codata {
+                at: node,
+                fault: CodataFault::Occurrence,
+            },
+            CheckRefusal::Codata {
+                at: node,
+                fault: CodataFault::ObservationLevel,
+            },
+            CheckRefusal::Codata {
+                at: node,
+                fault: CodataFault::Arity,
             },
             CheckRefusal::CapabilityForged {
                 at: value,

@@ -247,6 +247,7 @@ pub fn clause(
                     CompType::Returner { .. }
                     | CompType::Pi { .. }
                     | CompType::With(..)
+                    | CompType::Codata { .. }
                     | CompType::Element { .. }
                     | CompType::Unknown => Clause::Unclassified,
                 }
@@ -435,7 +436,8 @@ pub fn fibre(
                 | CompType::Pi { .. }
                 | CompType::Element { .. }
                 | CompType::Unknown
-                | CompType::With(..) => return Err(IdentityFault::DanglingTerm),
+                | CompType::With(..)
+                | CompType::Codata { .. } => return Err(IdentityFault::DanglingTerm),
             }
         },
         (Clause::Universe, _) => Fibre::Universe,

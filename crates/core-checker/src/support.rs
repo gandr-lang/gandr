@@ -13,9 +13,10 @@
 //! answers its own table would give now; equal answers mean the judgement
 //! would read exactly what it read before.
 //!
-//! Context lookups log value-signature and data-signature queries separately,
-//! in position and query order, absent answers included, and data support
-//! retains the complete schema rather than its universe alone. A refusal stops
+//! Context lookups log value-signature, data-signature and codata-signature
+//! queries separately, in position and query order, absent answers included,
+//! and data and codata support retain the complete schema rather than its
+//! universe alone. A refusal stops
 //! the log where it stops the judgement. A term scan would include constants
 //! never reached and cannot replace this dynamic support; the incremental
 //! checker's conservative footprint serves a different purpose. Native
@@ -128,6 +129,56 @@ impl DataConsulted
     }
 }
 
+/// One codata-signature answer, including a missing declaration.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct CodataConsulted
+{
+    /// The declaration identity that was read.
+    constant: ConstantIndex,
+    /// The complete signature, observations included.
+    signature: Option<alloc::sync::Arc<gandr_core_term::CodataSignature>>,
+}
+
+impl CodataConsulted
+{
+    /// Retain a codata answer without copying its observations.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn new(
+        constant: ConstantIndex,
+        signature: Option<alloc::sync::Arc<gandr_core_term::CodataSignature>>,
+    ) -> Self
+    {
+        Self {
+            constant,
+            signature,
+        }
+    }
+
+    /// The codata identity that was read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn constant(&self) -> ConstantIndex
+    {
+        self.constant
+    }
+
+    /// The signature that existed when this judgment ran, or its absence.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn signature(&self) -> Option<&gandr_core_term::CodataSignature>
+    {
+        self.signature.as_deref()
+    }
+}
+
 /// The answers one declaration's judgement consulted, ascending by position,
 /// each position once.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
@@ -137,6 +188,8 @@ pub struct Support
     consulted: Vec<Consulted>,
     /// Nominal answers, ascending by position, without repeats.
     data: Vec<DataConsulted>,
+    /// Codata answers, ascending by position, without repeats.
+    codata: Vec<CodataConsulted>,
 }
 
 impl Support
@@ -163,6 +216,7 @@ impl Support
             data_before = data.len(),
             data_first = data.iter().map(DataConsulted::constant).min(),
             data_last = data.iter().map(DataConsulted::constant).max(),
+            codata_before = codata.len(),
         ],
         ensures: |ret| ret.consulted.len() <= before
             && ret.consulted.first().copied() == first
@@ -171,20 +225,26 @@ impl Support
                 .all(|(left, right)| left.constant < right.constant)
             && ret.data.len() <= data_before && ret.data.first().map(DataConsulted::constant) == data_first
             && ret.data.last().map(DataConsulted::constant) == data_last
-            && ret.data.iter().zip(ret.data.iter().skip(1)).all(|(left,right)| left.constant < right.constant),
+            && ret.data.iter().zip(ret.data.iter().skip(1)).all(|(left,right)| left.constant < right.constant)
+            && ret.codata.len() <= codata_before
+            && ret.codata.iter().zip(ret.codata.iter().skip(1)).all(|(left,right)| left.constant < right.constant),
     )]
     pub(crate) fn from_log(
         mut log: Vec<Consulted>,
         mut data: Vec<DataConsulted>,
+        mut codata: Vec<CodataConsulted>,
     ) -> Self
     {
         log.sort_by_key(|consulted| consulted.constant);
         log.dedup_by_key(|consulted| consulted.constant);
         data.sort_by_key(DataConsulted::constant);
         data.dedup_by_key(|entry| entry.constant);
+        codata.sort_by_key(CodataConsulted::constant);
+        codata.dedup_by_key(|entry| entry.constant);
         Self {
             consulted: log,
             data,
+            codata,
         }
     }
 
@@ -208,6 +268,17 @@ impl Support
     pub fn data_consulted(&self) -> &[DataConsulted]
     {
         &self.data
+    }
+
+    /// Codata answers, ascending by position, including absent signatures.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn codata_consulted(&self) -> &[CodataConsulted]
+    {
+        &self.codata
     }
 }
 
@@ -270,5 +341,7 @@ pub enum SupportLog
         values: Vec<Consulted>,
         /// Nominal-signature answers in consultation order.
         data: Vec<DataConsulted>,
+        /// Codata-signature answers in consultation order.
+        codata: Vec<CodataConsulted>,
     },
 }

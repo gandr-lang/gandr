@@ -269,6 +269,7 @@ fn shape(
             | CompType::Arrow { .. }
             | CompType::Pi { .. }
             | CompType::Element { .. }
+            | CompType::Codata { .. }
             | CompType::Unknown),
         )
         | None => FieldShape::Plain,
@@ -320,7 +321,13 @@ fn function_hypothesis(
                 focus = codomain;
             },
             Some(&CompType::Returner { .. }) => break,
-            Some(&(CompType::With(..) | CompType::Element { .. } | CompType::Unknown)) | None => {
+            Some(
+                &(CompType::With(..)
+                | CompType::Element { .. }
+                | CompType::Codata { .. }
+                | CompType::Unknown),
+            )
+            | None => {
                 return Err(DerivationRefusal::BinderCeiling);
             },
         }

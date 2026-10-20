@@ -521,6 +521,17 @@ pub fn reaches(
                 CompType::With(left, right) => {
                     pending.extend([TypeNode::Computation(left), TypeNode::Computation(right)]);
                 },
+                CompType::Codata { ref arguments, .. } => {
+                    pending.extend(arguments.iter().filter_map(|&argument| {
+                        match arena.value(argument) {
+                            Some(&Value::Quote(quoted)) => Some(TypeNode::Value(quoted)),
+                            Some(&Value::QuoteComputation(quoted)) => {
+                                Some(TypeNode::Computation(quoted))
+                            },
+                            Some(_) | None => None,
+                        }
+                    }));
+                },
                 CompType::Element { .. } | CompType::Unknown => {},
             },
         }

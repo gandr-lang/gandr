@@ -125,7 +125,8 @@ fn returned(
             | gandr_core_term::CompType::Pi { codomain, .. } => comp = codomain,
             gandr_core_term::CompType::Element { .. }
             | gandr_core_term::CompType::Unknown
-            | gandr_core_term::CompType::With(..) => return None,
+            | gandr_core_term::CompType::With(..)
+            | gandr_core_term::CompType::Codata { .. } => return None,
         }
     }
 }

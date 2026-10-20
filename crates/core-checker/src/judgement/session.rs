@@ -764,6 +764,7 @@ impl Machine<'_, '_>
             | CheckRefusal::ForwardUnsupported { .. }
             | CheckRefusal::Boundary { .. }
             | CheckRefusal::Access { .. }
+            | CheckRefusal::Codata { .. }
             | CheckRefusal::Located { .. }) => other,
         })?;
         Err(CheckRefusal::Linearity {
@@ -1438,7 +1439,8 @@ impl Machine<'_, '_>
             CompTypeView::With(..)
             | CompTypeView::Arrow { .. }
             | CompTypeView::Pi { .. }
-            | CompTypeView::Element { .. } => false,
+            | CompTypeView::Element { .. }
+            | CompTypeView::Codata { .. } => false,
         };
         if pure {
             return Ok(());

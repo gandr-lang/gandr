@@ -247,6 +247,7 @@ pub fn codes(
         | CompTypeView::Arrow { .. }
         | CompTypeView::Pi { .. }
         | CompTypeView::Element { .. }
+        | CompTypeView::Codata { .. }
         | CompTypeView::Unknown => Err(unsupported),
     }
 }

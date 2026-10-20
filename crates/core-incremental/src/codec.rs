@@ -54,6 +54,7 @@ use gandr_core_checker::StaticArity;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::body;
+use gandr_core_checker::codata::CodataFault;
 use gandr_core_checker::session::Capture;
 use gandr_core_checker::session::ForkSide;
 use gandr_core_checker::session::ProtocolDefect;
@@ -165,6 +166,8 @@ pub enum UnsupportedPersistence
     /// An item of a program that declares a world, or that states an entry:
     /// its judgement read homes no footprint records.
     Located,
+    /// A codata declaration: its signature has no content form.
+    Codata,
 }
 
 /// Why bytes are not a canonical encoding, or a value has none.
@@ -225,6 +228,7 @@ impl fmt::Display for UnsupportedPersistence
             Self::Located => {
                 f.write_str("a located program's judgements read homes no record keeps")
             },
+            Self::Codata => f.write_str("a codata signature has no content form"),
         }
     }
 }
@@ -4502,6 +4506,9 @@ where
             content.locus() == crate::content::Locus::Located
                 || matches!(*content.declaration(), crate::content::DeclarationRoots::World)
         },
+        | Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => {
+            matches!(*content.declaration(), crate::content::DeclarationRoots::Codata)
+        },
         | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
             content.nodes().iter().find_map(|node| match *node.former() {
                 | ContentNode::Unresolved(found) => Some(found),
@@ -4572,6 +4579,9 @@ where
         },
         crate::content::DeclarationRoots::World => {
             return Err(CodecError::Unsupported(UnsupportedPersistence::Located));
+        },
+        crate::content::DeclarationRoots::Codata => {
+            return Err(CodecError::Unsupported(UnsupportedPersistence::Codata));
         },
     }
     write_nodes(writer, content.nodes())?;
@@ -6259,6 +6269,18 @@ where
                 write_listed(writer, &CAPTURES, &by)?;
             }
         },
+        Refusal::Codata { at, fault } => {
+            writer.tag(Tag(82));
+            write_site(writer, at)?;
+            writer.tag(Tag(match fault {
+                CodataFault::Undeclared => 0,
+                CodataFault::KindNotUniverse => 1,
+                CodataFault::WithoutObservations => 2,
+                CodataFault::Occurrence => 3,
+                CodataFault::ObservationLevel => 4,
+                CodataFault::Arity => 5,
+            }));
+        },
         Refusal::Located { at, ref defect } => {
             writer.tag(Tag(79));
             write_site(writer, at)?;
@@ -6417,6 +6439,7 @@ where
                     | Refusal::ForwardUnsupported(_) => 70,
                     | Refusal::Boundary(_) => 71,
                     | Refusal::Access { .. } => 76,
+                    | Refusal::Codata { .. } => 82,
                     | Refusal::Located { .. } => 79,
                 })
         },
@@ -6756,6 +6779,19 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             };
             Refusal::Access { at, defect }
         },
+        82 => {
+            let at = read_site(reader)?;
+            let fault = match reader.tag()?.0 {
+                0 => CodataFault::Undeclared,
+                1 => CodataFault::KindNotUniverse,
+                2 => CodataFault::WithoutObservations,
+                3 => CodataFault::Occurrence,
+                4 => CodataFault::ObservationLevel,
+                5 => CodataFault::Arity,
+                _ => return Err(CodecError::NonCanonical),
+            };
+            Refusal::Codata { at, fault }
+        },
         79 => Refusal::Located {
             at: read_site(reader)?,
             defect: read_located(reader)?,
@@ -7033,6 +7069,7 @@ where
             write_data_content(writer, signature)?;
         },
         Answer::Untyped => writer.tag(Tag(0)),
+        Answer::Codata => writer.tag(Tag(4)),
         Answer::Typed(ref ty) => {
             writer.tag(Tag(1));
             write_type(writer, ty)?;
@@ -7045,7 +7082,8 @@ where
 ///
 /// # Specification
 /// - ensures: tags zero and one retain absent and present value-signature
-///   answers; tags two and three retain absent and complete data signatures.
+///   answers; tags two and three retain absent and complete data signatures;
+///   tag four retains a codata answer.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — persisted support contains structured typed answers and
@@ -7061,6 +7099,7 @@ where
         Ok(Answer::Data(None)) => reader.bytes.get(before) == Some(&2),
         Ok(Answer::Data(Some(_))) => reader.bytes.get(before) == Some(&3),
         | Ok(Answer::Untyped) => reader.bytes.get(before) == Some(&0),
+        | Ok(Answer::Codata) => reader.bytes.get(before) == Some(&4),
         | Ok(Answer::Typed(ref ty)) => {
             reader.bytes.get(before) == Some(&1)
                 && matches!(
@@ -7082,6 +7121,7 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
         2 => Ok(Answer::Data(None)),
         3 => Ok(Answer::Data(Some(read_data_content(reader)?))),
         0 => Ok(Answer::Untyped),
+        4 => Ok(Answer::Codata),
         1 => {
             let ty = read_type(reader)?;
             Ok(Answer::Typed(ty))
@@ -7157,6 +7197,9 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
                 && nodes.all(|node| !matches!(*node.former(), ContentNode::Unresolved(_))),
             | Err(CodecError::Unsupported(UnsupportedPersistence::Located)) => {
                 checkpoint.content().locus() == crate::content::Locus::Located
+            },
+            | Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => {
+                matches!(*checkpoint.content().declaration(), crate::content::DeclarationRoots::Codata)
             },
             | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
                 nodes.find_map(|node| match *node.former() {
@@ -7425,6 +7468,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::ForwardUnsupported(_)
             | Refusal::Boundary(_)
             | Refusal::Access { .. }
+            | Refusal::Codata { .. }
             | Refusal::Located { .. } => [None, None],
         },
         Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Suspended => [None, None],
@@ -7624,8 +7668,8 @@ pub fn decode_checkpoints(bytes: Bytes<'_>) -> Result<Checkpoints, CodecError>
 /// # Specification
 /// - requires: `contents` are a program's items' contents, in order.
 /// - ensures: the magic, the count, then each item's content.
-/// - fails: [`CodecError::Unsupported`] naming a located item, or the first
-///   unresolved node met.
+/// - fails: [`CodecError::Unsupported`] naming a located item, a codata
+///   declaration, or the first unresolved node met.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -7645,6 +7689,9 @@ pub fn decode_checkpoints(bytes: Bytes<'_>) -> Result<Checkpoints, CodecError>
                 .all(|node| !matches!(*node.former(), ContentNode::Unresolved(_))),
         | Err(CodecError::Unsupported(UnsupportedPersistence::Located)) => {
             contents.iter().any(|content| content.locus() == crate::content::Locus::Located)
+        },
+        | Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => {
+            contents.iter().any(|content| matches!(*content.declaration(), crate::content::DeclarationRoots::Codata))
         },
         | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
             contents

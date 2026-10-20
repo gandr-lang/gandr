@@ -406,7 +406,7 @@ fn value_spelling(
             | Some(&CompType::Arrow { .. }) => Token::Arrow,
             | Some(&CompType::Pi { .. }) => Token::Pi,
             | Some(&CompType::Element { .. }) => Token::CompElement,
-            | Some(&CompType::Unknown | &CompType::With(..)) | None => Token::Other,
+            | Some(&CompType::Unknown | &CompType::With(..) | &CompType::Codata { .. }) | None => Token::Other,
         },
         | Visit::ValueType(id) => match arena.value_type(id) {
             | Some(&ValueType::Base(base)) => Token::Base(base),
@@ -461,7 +461,8 @@ fn spelling_of(
                     tokens.push(Token::CompElement);
                     pending.push(Visit::Value(code));
                 },
-                Some(&CompType::Unknown | &CompType::With(..)) | None => {
+                Some(&CompType::Unknown | &CompType::With(..) | &CompType::Codata { .. })
+                | None => {
                     tokens.push(Token::Other);
                 },
             },

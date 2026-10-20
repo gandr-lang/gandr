@@ -2015,6 +2015,23 @@ impl CoreArena
         })
     }
 
+    /// Apply a codata declaration to its telescope arguments.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn comp_type_codata(
+        &mut self,
+        declaration: gandr_kernel_term::ConstantIndex,
+        arguments: alloc::vec::Vec<ValueId>,
+    ) -> CompTypeId
+    {
+        self.alloc_comp_type(CompType::Codata {
+            declaration,
+            arguments,
+        })
+    }
+
     /// Form a structural record classifier in canonical label order.
     ///
     /// # Specification
