@@ -960,6 +960,40 @@ pub struct FileEvent
     pub uri: DocumentUri,
 }
 
+/// The parameters of `workspace/didCreateFiles` and `didDeleteFiles`, and of
+/// `willCreateFiles` and `willDeleteFiles`: each file or folder created or
+/// deleted, or about to be, by its URI.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct FilesParams
+{
+    /// The files and folders.
+    #[serde(default)]
+    pub files: Vec<FileEvent>,
+}
+
+/// The parameters of `workspace/didRenameFiles` and `willRenameFiles`: each
+/// file or folder renamed, or about to be.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct RenameFilesParams
+{
+    /// The renames.
+    #[serde(default)]
+    pub files: Vec<FileRename>,
+}
+
+/// One file or folder renamed: where it was and where it goes.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FileRename
+{
+    /// Where it was.
+    pub old_uri: DocumentUri,
+    /// Where it goes.
+    pub new_uri: DocumentUri,
+}
+
 /// The token one piece of work's progress is reported under.
 #[repr(transparent)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1445,7 +1479,9 @@ impl InitializeResult
     ///   code lenses, code actions, document links and workspace symbols, each
     ///   whole in its answer and resolved by a second request as it came;
     ///   linked editing; workspace folders, with a notification as they change;
-    ///   the server named `gandr` at this crate's version.
+    ///   the creation, deletion and renaming of gandr sources and folders on
+    ///   disk, each heard of once done, and a rename asked about before it is
+    ///   done; the server named `gandr` at this crate's version.
     /// - provides: the one capabilities answer, written by `initialize` and by
     ///   the driver's `gandr lsp --capabilities` alike.
     /// - fails: never.
@@ -1482,6 +1518,9 @@ impl InitializeResult
             && ret.capabilities.document_link_provider.resolve_provider
             && ret.capabilities.workspace.workspace_folders.supported
             && ret.capabilities.workspace.workspace_folders.change_notifications
+            && matches!(ret.capabilities.workspace.file_operations.will_rename.filters,
+                [ref file, ref folder] if matches!(file.pattern.glob.as_bytes(), b"**/*.gandr")
+                    && matches!(folder.pattern.matches.as_bytes(), b"folder"))
             && ret.capabilities.linked_editing_range_provider.0
             && ret.capabilities.code_lens_provider.resolve_provider
             && ret.capabilities.completion_provider.resolve_provider)]
@@ -1542,6 +1581,12 @@ impl InitializeResult
                     workspace_folders: FoldersOptions {
                         supported: true,
                         change_notifications: true,
+                    },
+                    file_operations: FileOperationsOptions {
+                        did_create: OperationFilters::SOURCES,
+                        did_rename: OperationFilters::SOURCES,
+                        did_delete: OperationFilters::SOURCES,
+                        will_rename: OperationFilters::SOURCES,
                     },
                 },
             },
@@ -1692,11 +1737,12 @@ impl Unresolved
 /// The workspace features, as advertised.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[repr(transparent)]
 pub struct WorkspaceOptions
 {
     /// The folders the client opens.
     pub workspace_folders: FoldersOptions,
+    /// The file operations the server hears of.
+    pub file_operations: FileOperationsOptions,
 }
 
 /// Workspace folders, as advertised.
@@ -1708,6 +1754,78 @@ pub struct FoldersOptions
     pub supported: bool,
     /// The client tells the server as it opens and closes folders.
     pub change_notifications: bool,
+}
+
+/// The file operations the server hears of, as advertised: a creation, a
+/// deletion and a rename once done, and a rename before it is done, each of
+/// the files and folders its filters match.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileOperationsOptions
+{
+    /// Creations, once done.
+    pub did_create: OperationFilters,
+    /// Renames, once done.
+    pub did_rename: OperationFilters,
+    /// Deletions, once done.
+    pub did_delete: OperationFilters,
+    /// Renames, before they are done.
+    pub will_rename: OperationFilters,
+}
+
+/// The files and folders one file operation is heard of for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct OperationFilters
+{
+    /// The filters, any of which matching admits a file or folder.
+    pub filters: [OperationFilter; 2],
+}
+
+impl OperationFilters
+{
+    /// Every gandr source on disk, and every folder on disk, which may hold
+    /// some.
+    pub const SOURCES: Self = Self {
+        filters: [
+            OperationFilter {
+                scheme: "file",
+                pattern: OperationPattern {
+                    glob: "**/*.gandr",
+                    matches: "file",
+                },
+            },
+            OperationFilter {
+                scheme: "file",
+                pattern: OperationPattern {
+                    glob: "**",
+                    matches: "folder",
+                },
+            },
+        ],
+    };
+}
+
+/// One filter of a file operation: the URI scheme and the pattern a file or
+/// folder matches.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct OperationFilter
+{
+    /// The URI scheme.
+    pub scheme: &'static str,
+    /// The pattern.
+    pub pattern: OperationPattern,
+}
+
+/// A file operation's pattern: a glob, and whether it matches files or
+/// folders.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct OperationPattern
+{
+    /// The glob.
+    pub glob: &'static str,
+    /// `file` or `folder`.
+    pub matches: &'static str,
 }
 
 /// Whether a request is answered, advertised as a provider with no options.

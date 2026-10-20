@@ -115,6 +115,8 @@ use crate::protocol::DocumentParams;
 use crate::protocol::DocumentUri;
 use crate::protocol::DocumentVersion;
 use crate::protocol::FileEvent;
+use crate::protocol::FileRename;
+use crate::protocol::FilesParams;
 use crate::protocol::FoldersChangedParams;
 use crate::protocol::Hover;
 use crate::protocol::InitializeParams;
@@ -137,6 +139,7 @@ use crate::protocol::ReferenceContext;
 use crate::protocol::ReferenceParams;
 use crate::protocol::Refreshing;
 use crate::protocol::RegistrationParams;
+use crate::protocol::RenameFilesParams;
 use crate::protocol::RenameParams;
 use crate::protocol::Sections;
 use crate::protocol::SelectionRangeParams;
@@ -174,6 +177,7 @@ use crate::recheck::grammar;
 use crate::recheck::open;
 use crate::recheck::recheck;
 use crate::recheck::trial;
+use crate::relocate::Moves;
 use crate::rename::NewName;
 use crate::rename::Unrenamed;
 use crate::rename::prepared;
@@ -277,6 +281,9 @@ enum Picks<'changed>
     Naming(&'changed [PathBuf], Origin),
     /// Those whose closures named this file, changed in an editor's copy.
     File(&'changed Path),
+    /// Those whose closures, at their last judgement, named a file of these
+    /// or under a folder of these, created, deleted or renamed on disk.
+    Under(&'changed [PathBuf]),
 }
 
 /// One connection's copy of an open document, as that connection last
@@ -2061,11 +2068,12 @@ impl Server
     ///   `textDocument/didOpen` begins one piece of work titled `Checking` on
     ///   the document's file name, and a `workspace/didChangeWatchedFiles`
     ///   naming a file the closure of a copy this connection holds named at its
-    ///   last judgement begins one titled `Rechecking` on how many copies it
-    ///   rechecks. A piece of work begins with a create request and a begin
-    ///   report under a token no earlier piece used, and ends with one end
-    ///   report under the same token. Every other message reports nothing and
-    ///   uses no token.
+    ///   last judgement, or a `workspace/didCreateFiles`, `didDeleteFiles` or
+    ///   `didRenameFiles` naming such a file or a folder holding one, begins
+    ///   one titled `Rechecking` on how many copies it rechecks. A piece of
+    ///   work begins with a create request and a begin report under a token no
+    ///   earlier piece used, and ends with one end report under the same token.
+    ///   Every other message reports nothing and uses no token.
     /// - provides: what a client shows while a closure is checked and while the
     ///   watched files' dependants are rechecked.
     /// - panics: none.
@@ -2123,6 +2131,20 @@ impl Server
                     workspace,
                     Picks::Naming(&changed_paths(&changes), Origin::Disk),
                 );
+            },
+            "workspace/didCreateFiles" | "workspace/didDeleteFiles" => {
+                let Ok(FilesParams { files }) = FilesParams::deserialize(params)
+                else {
+                    return Reported::default();
+                };
+                return self.rechecking(workspace, Picks::Under(&changed_paths(&files)));
+            },
+            "workspace/didRenameFiles" => {
+                let Ok(RenameFilesParams { files }) = RenameFilesParams::deserialize(params)
+                else {
+                    return Reported::default();
+                };
+                return self.rechecking(workspace, Picks::Under(&renamed_paths(&files)));
             },
             _ => return Reported::default(),
         };
@@ -2464,6 +2486,7 @@ impl Server
     /// - witness: `server::tests::formatting_answers_the_edits_that_lay_a_document_out`
     /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
     /// - witness: `server::tests::a_listed_item_resolves_as_it_came`
+    /// - witness: `server::tests::a_moved_file_s_imports_follow_it`
     #[spec(
         captures: [phase = self.phase, initial = initial_settings(&params), markup = initial_markup(&params),
             linked = initial_links(&params), offsets = initial_offsets(&params), watching = initial_watching(&params),
@@ -2548,6 +2571,24 @@ impl Server
                     Outgoing::Success { result: Answer::Nothing | Answer::Renamed(_), .. } => true,
                     Outgoing::Failure { ref error, .. } =>
                         error.code == ErrorCode::INVALID_PARAMS || error.code == ErrorCode::REQUEST_FAILED,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
+            (Phase::Running, "workspace/willRenameFiles") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Renamed(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
+            (Phase::Running, "workspace/willCreateFiles" | "workspace/willDeleteFiles") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing, .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
+            (Phase::Running, "textDocument/willSaveWaitUntil") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Edits(ref edits), .. } => edits.is_empty(),
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
             (Phase::Running, "textDocument/documentHighlight") =>
@@ -2794,6 +2835,27 @@ impl Server
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
+            (Phase::Running, "workspace/willRenameFiles") => {
+                match serde_json::from_value::<RenameFilesParams>(params) {
+                    Ok(params) => success(
+                        id,
+                        workspace.will_rename(self.peer, &Moves::of(&params.files)),
+                    ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "workspace/willCreateFiles" | "workspace/willDeleteFiles") => {
+                match serde_json::from_value::<FilesParams>(params) {
+                    Ok(_) => success(id, Answer::Nothing),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "textDocument/willSaveWaitUntil") => {
+                match serde_json::from_value::<DocumentParams>(params) {
+                    Ok(_) => success(id, Answer::Edits(Vec::new())),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
             (Phase::Running, "textDocument/documentSymbol") => {
                 match serde_json::from_value::<DocumentParams>(params) {
                     Ok(params) => success(
@@ -3012,14 +3074,17 @@ impl Server
     /// - witness: `server::tests::a_changed_file_rechecks_the_copies_whose_closure_names_it`
     /// - witness: `server::tests::an_editor_s_copy_shadows_the_disk_for_its_importers`
     /// - witness: `server::tests::a_folder_is_searched_while_the_client_holds_it_open`
+    /// - witness: `server::tests::a_file_operation_rechecks_the_copies_whose_closure_names_it`
     #[spec(
         captures: [phase = self.phase, count = workspace.documents.len()],
         ensures: |ret| self.phase == phase
             && (ret.messages.len() <= 1
                 || matches!(method.as_ref(), "textDocument/didOpen" | "textDocument/didChange" | "textDocument/didClose"
-                    | "workspace/didChangeConfiguration" | "workspace/didChangeWatchedFiles" | "initialized"))
+                    | "workspace/didChangeConfiguration" | "workspace/didChangeWatchedFiles" | "initialized"
+                    | "workspace/didCreateFiles" | "workspace/didDeleteFiles" | "workspace/didRenameFiles"))
             && match method.as_ref() {
-                "textDocument/didOpen" | "textDocument/didChange" | "workspace/didChangeWatchedFiles" =>
+                "textDocument/didOpen" | "textDocument/didChange" | "workspace/didChangeWatchedFiles"
+                | "workspace/didCreateFiles" | "workspace/didDeleteFiles" | "workspace/didRenameFiles" =>
                     ret.log.len() == ret.messages.len(),
                 "textDocument/didClose" => ret.log.len() == ret.messages.len().saturating_sub(1),
                 "workspace/didChangeConfiguration" => ret.log.len() <= ret.messages.len(),
@@ -3033,7 +3098,8 @@ impl Server
                             Maybe::Present(document) if params.version == Some(document.version)));
                         match method.as_ref() {
                             "textDocument/didOpen" | "textDocument/didChange" | "workspace/didChangeConfiguration"
-                            | "workspace/didChangeWatchedFiles" => current,
+                            | "workspace/didChangeWatchedFiles" | "workspace/didCreateFiles" | "workspace/didDeleteFiles"
+                            | "workspace/didRenameFiles" => current,
                             "textDocument/didClose" => current || (params.version.is_none() && params.diagnostics.is_empty()
                                 && workspace.documents.get(&params.uri)
                                     .is_none_or(|held| matches!(held.own(self.peer), Maybe::Absent(_)))),
@@ -3240,6 +3306,20 @@ impl Server
                     workspace,
                     Picks::Naming(&changed_paths(&changes), Origin::Disk),
                 )
+            },
+            (Phase::Running, "workspace/didCreateFiles" | "workspace/didDeleteFiles") => {
+                let Ok(FilesParams { files }) = serde_json::from_value(params)
+                else {
+                    return Outcome::quiet();
+                };
+                self.resynchronise(workspace, Picks::Under(&changed_paths(&files)))
+            },
+            (Phase::Running, "workspace/didRenameFiles") => {
+                let Ok(RenameFilesParams { files }) = serde_json::from_value(params)
+                else {
+                    return Outcome::quiet();
+                };
+                self.resynchronise(workspace, Picks::Under(&renamed_paths(&files)))
             },
             (Phase::Running, "workspace/didChangeWorkspaceFolders") => {
                 let Ok(FoldersChangedParams { event }) = serde_json::from_value(params)
@@ -4395,6 +4475,89 @@ impl Workspace
         Ok(Answer::Renamed(WorkspaceEdit { changes }))
     }
 
+    /// What a `workspace/willRenameFiles` request moving files and folders
+    /// as `moves` states answers, `peer` asking: the edits rewriting each path
+    /// import's address the moves change, in every document an editor holds
+    /// and every source under the folders the connections opened that moves
+    /// or imports a file that moves.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: Nothing when no address changes; otherwise, by URI, each
+    ///   document's edits as [`Reading::readdressed`] reads them, from the copy
+    ///   `peer` is answered from for a held document and from the file for a
+    ///   source [`Files::touching`] lists that no editor holds.
+    /// - provides: the answer to `workspace/willRenameFiles`.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — each document's edits are its reading's, whose own
+    ///   specification states them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a moved file's held importer and unheld importer are
+    ///   rewritten, its own imports follow it to another directory, a folder
+    ///   moved rewrites the imports reaching into it, and a move no import
+    ///   names answers Nothing.
+    /// - witness: `server::tests::a_moved_file_s_imports_follow_it`
+    fn will_rename(
+        &self,
+        peer: Peer,
+        moves: &Moves,
+    ) -> Answer
+    {
+        let mut changes = BTreeMap::new();
+        for uri in self.documents.keys() {
+            let Maybe::Present(document) = self.view(uri, peer)
+            else {
+                continue;
+            };
+            let text = document.text.source();
+            let edits = document.text.reading().readdressed(
+                &LineIndex::new(text.as_ref().into()),
+                &named_path(&uri.path()),
+                moves,
+            );
+            if !edits.is_empty() {
+                let _edited = changes.insert(uri.clone(), edits);
+            }
+        }
+        if let Ok(grammar) = grammar() {
+            let touched = self.files.borrow_mut().touching(grammar, moves);
+            let mut text = String::new();
+            for path in touched {
+                if self.paths.contains_key(&path) {
+                    continue;
+                }
+                let Some(uri) = DocumentUri::of_path(&path)
+                else {
+                    continue;
+                };
+                text.clear();
+                if std::fs::File::open(&path)
+                    .and_then(|mut file| std::io::Read::read_to_string(&mut file, &mut text))
+                    .is_err()
+                {
+                    continue;
+                }
+                let source = SourceText::from(text.as_str());
+                let edits = Reading::of(source).readdressed(
+                    &LineIndex::new(text.as_str().into()),
+                    &path,
+                    moves,
+                );
+                if !edits.is_empty() {
+                    let _edited = changes.insert(uri, edits);
+                }
+            }
+        }
+        if changes.is_empty() {
+            Answer::Nothing
+        }
+        else {
+            Answer::Renamed(WorkspaceEdit { changes })
+        }
+    }
+
     /// Refuse a rename of `spelled` to `new_name` that its declaring source,
     /// the document at `uri` reading `text` with `found` its sites, does not
     /// survive: the renamed text is tried beside `text` and must be ranked no
@@ -4702,6 +4865,27 @@ fn changed_paths(changes: &[FileEvent]) -> Vec<PathBuf>
     changed
 }
 
+/// The paths `renames` names, where each file or folder was and where it went,
+/// as [`named_path`] names each, sorted and without repeats.
+///
+/// # Specification
+/// trivial.
+fn renamed_paths(renames: &[FileRename]) -> Vec<PathBuf>
+{
+    let mut renamed: Vec<PathBuf> = renames
+        .iter()
+        .flat_map(|rename| {
+            [
+                named_path(&rename.old_uri.path()),
+                named_path(&rename.new_uri.path()),
+            ]
+        })
+        .collect();
+    renamed.sort_unstable();
+    renamed.dedup();
+    renamed
+}
+
 /// Whether a recheck picks a copy.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4727,6 +4911,9 @@ fn picked(
         Picks::File(path) => named
             .binary_search_by(|named| named.as_path().cmp(path))
             .is_ok(),
+        Picks::Under(changed) => named.iter().any(|named| {
+            !held.contains_key(named) && changed.iter().any(|path| named.starts_with(path))
+        }),
     })
 }
 
@@ -5269,7 +5456,19 @@ mod tests
                         "renameProvider":{"prepareProvider":true},
                         "documentLinkProvider":{"resolveProvider":true},
                         "linkedEditingRangeProvider":true,
-                        "workspace":{"workspaceFolders":{"supported":true,"changeNotifications":true}}},
+                        "workspace":{"workspaceFolders":{"supported":true,"changeNotifications":true},
+                            "fileOperations":{"didCreate":{"filters":[
+                                {"scheme":"file","pattern":{"glob":"**/*.gandr","matches":"file"}},
+                                {"scheme":"file","pattern":{"glob":"**","matches":"folder"}}]},
+                            "didRename":{"filters":[
+                                {"scheme":"file","pattern":{"glob":"**/*.gandr","matches":"file"}},
+                                {"scheme":"file","pattern":{"glob":"**","matches":"folder"}}]},
+                            "didDelete":{"filters":[
+                                {"scheme":"file","pattern":{"glob":"**/*.gandr","matches":"file"}},
+                                {"scheme":"file","pattern":{"glob":"**","matches":"folder"}}]},
+                            "willRename":{"filters":[
+                                {"scheme":"file","pattern":{"glob":"**/*.gandr","matches":"file"}},
+                                {"scheme":"file","pattern":{"glob":"**","matches":"folder"}}]}}}},
                     "serverInfo":{"name":"gandr","version":""#,
                 env!("CARGO_PKG_VERSION"),
                 r#""}}}]"#
@@ -6568,6 +6767,207 @@ mod tests
     }
 
     #[test]
+    fn a_file_operation_rechecks_the_copies_whose_closure_names_it()
+    {
+        let directory = std::env::temp_dir().join(format!("gandr-operated-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        let sources = [
+            (
+                "waiting.gandr",
+                "import \"./later.gandr\" ;\ndef three : Integer ;\ndef three = four ;\n",
+            ),
+            (
+                "nested.gandr",
+                "import \"./lib/five.gandr\" ;\ndef six : Integer ;\ndef six = five ;\n",
+            ),
+        ];
+        for (file, text) in sources {
+            std::fs::write(directory.join(file), text).expect("the source is written");
+        }
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        let mut server = initialized();
+        for (file, text) in sources {
+            let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                "textDocument": {"uri": uri(file), "languageId": "gandr", "version": 1_i32, "text": text}}});
+            let _published = send(&mut server, Json(&open.to_string()));
+        }
+        let operated = |server: &mut Connected, method: &str, files: Value| {
+            let notification = serde_json::json!({"jsonrpc": "2.0", "method": method,
+                "params": {"files": files}});
+            send(server, Json(&notification.to_string()))
+                .as_array()
+                .map(|messages| {
+                    messages
+                        .iter()
+                        .map(|message| {
+                            (
+                                message["params"]["uri"].as_str().map(String::from),
+                                message["params"]["diagnostics"]
+                                    .as_array()
+                                    .map_or(0_usize, Vec::len),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        std::fs::write(
+            directory.join("later.gandr"),
+            "def four : Integer ;\ndef four = 4 ;\n",
+        )
+        .expect("the missing import is written");
+        assert_eq!(
+            operated(
+                &mut server,
+                "workspace/didCreateFiles",
+                serde_json::json!([{"uri": uri("later.gandr")}])
+            ),
+            [(Some(uri("waiting.gandr")), 0_usize)],
+            "a file created republishes the copy that waited for it, now clean"
+        );
+        std::fs::create_dir_all(directory.join("lib")).expect("the folder is created");
+        std::fs::write(
+            directory.join("lib/five.gandr"),
+            "def five : Integer ;\ndef five = 5 ;\n",
+        )
+        .expect("the nested import is written");
+        assert_eq!(
+            operated(
+                &mut server,
+                "workspace/didCreateFiles",
+                serde_json::json!([{"uri": uri("lib")}])
+            ),
+            [(Some(uri("nested.gandr")), 0_usize)],
+            "a folder created republishes the copy importing a file under it"
+        );
+        std::fs::remove_file(directory.join("later.gandr")).expect("the import is deleted");
+        let deleted = operated(
+            &mut server,
+            "workspace/didDeleteFiles",
+            serde_json::json!([{"uri": uri("later.gandr")}]),
+        );
+        assert!(
+            matches!(deleted.as_slice(), [(Some(published), errors)] if *published == uri("waiting.gandr") && *errors > 0),
+            "a file deleted republishes its importer, now refused: {deleted:?}"
+        );
+        std::fs::rename(directory.join("lib"), directory.join("moved"))
+            .expect("the folder is renamed");
+        let renamed = operated(
+            &mut server,
+            "workspace/didRenameFiles",
+            serde_json::json!([{"oldUri": uri("lib"), "newUri": uri("moved")}]),
+        );
+        assert!(
+            matches!(renamed.as_slice(), [(Some(published), errors)] if *published == uri("nested.gandr") && *errors > 0),
+            "a folder renamed republishes the copy importing a file it held, now refused: {renamed:?}"
+        );
+        assert_eq!(
+            operated(
+                &mut server,
+                "workspace/didCreateFiles",
+                serde_json::json!([{"uri": uri("elsewhere.gandr")}])
+            ),
+            [],
+            "a file no closure names rechecks nothing"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_moved_file_s_imports_follow_it()
+    {
+        let directory = std::env::temp_dir().join(format!("gandr-moved-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(directory.join("deeper")).expect("the scratch tree is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        let top = "import \"./deeper/mid.gandr\" ;\ndef three : Integer ;\ndef three = two ;\n";
+        for (file, text) in [
+            ("base.gandr", "def one : Integer ;\ndef one = 1 ;\n"),
+            (
+                "deeper/mid.gandr",
+                "import \"../base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n",
+            ),
+            ("top.gandr", top),
+            ("lone.gandr", "def four : Integer ;\ndef four = 4 ;\n"),
+        ] {
+            std::fs::write(directory.join(file), text).expect("the source is written");
+        }
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        let mut server = Connected::default();
+        let initialize = serde_json::json!({"jsonrpc": "2.0", "id": 1_i32, "method": "initialize",
+            "params": {"capabilities": {}, "rootUri": format!("file://{}", directory.display())}});
+        let _answered = send(&mut server, Json(&initialize.to_string()));
+        let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+            "textDocument": {"uri": uri("top.gandr"), "languageId": "gandr", "version": 1_i32, "text": top}}});
+        let _published = send(&mut server, Json(&open.to_string()));
+        let mut ask = |method: &str, params: Value| {
+            let request = serde_json::json!({"jsonrpc": "2.0", "id": 10_i32, "method": method, "params": params});
+            send(&mut server, Json(&request.to_string()))
+                .get(0)
+                .map_or(Value::Null, |answer| answer["result"].clone())
+        };
+        let mut renamed = |from: &str, to: &str| {
+            ask(
+                "workspace/willRenameFiles",
+                serde_json::json!({"files": [{"oldUri": uri(from), "newUri": uri(to)}]}),
+            )
+        };
+        let edit = |line: u32, start: u32, end: u32, text: &str| {
+            serde_json::json!({"range": Range {
+                start: at(Line::from(line), Character::from(start)),
+                end: at(Line::from(line), Character::from(end)),
+            }, "newText": text})
+        };
+        assert_eq!(
+            renamed("base.gandr", "deeper/base.gandr"),
+            serde_json::json!({"changes": {uri("deeper/mid.gandr"): [edit(0, 8, 21, "./base.gandr")]}}),
+            "the importer no editor holds follows the moved file, read from disk"
+        );
+        assert_eq!(
+            renamed("deeper/mid.gandr", "mid.gandr"),
+            serde_json::json!({"changes": {
+                uri("deeper/mid.gandr"): [edit(0, 8, 21, "./base.gandr")],
+                uri("top.gandr"): [edit(0, 8, 26, "./mid.gandr")],
+            }}),
+            "the open importer follows the moved file, and the moved file's own import follows it to \
+             its new directory"
+        );
+        assert_eq!(
+            renamed("deeper", "renamed"),
+            serde_json::json!({"changes": {uri("top.gandr"): [edit(0, 8, 26, "./renamed/mid.gandr")]}}),
+            "a folder moved rewrites the imports reaching into it, and none of those moving with it"
+        );
+        assert_eq!(
+            renamed("lone.gandr", "alone.gandr"),
+            Value::Null,
+            "a move no import names answers nothing"
+        );
+        for method in ["workspace/willCreateFiles", "workspace/willDeleteFiles"] {
+            assert_eq!(
+                ask(
+                    method,
+                    serde_json::json!({"files": [{"uri": uri("lone.gandr")}]})
+                ),
+                Value::Null,
+                "{method} owes no edit"
+            );
+        }
+        assert_eq!(
+            ask(
+                "textDocument/willSaveWaitUntil",
+                serde_json::json!({"textDocument": {"uri": uri("top.gandr")}, "reason": 1_i32})
+            ),
+            serde_json::json!([]),
+            "nothing is owed before a save"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
     fn an_editor_s_copy_shadows_the_disk_for_its_importers()
     {
         let directory = std::env::temp_dir().join(format!("gandr-shadowed-{}", std::process::id()));
@@ -6729,6 +7129,18 @@ mod tests
                 ended("gandr/0/2")
             ),
             "a change to a file a closure names rechecks under the next token"
+        );
+        assert_eq!(
+            reported(
+                &mut shows,
+                &serde_json::json!({"jsonrpc": "2.0", "method": "workspace/didCreateFiles",
+                    "params": {"files": [{"uri": format!("file://{}", directory.display())}]}})
+            ),
+            (
+                begun("gandr/0/3", "Rechecking", "1 open document"),
+                ended("gandr/0/3")
+            ),
+            "a file operation on a folder holding a file a closure names rechecks under the next token"
         );
         assert_eq!(
             reported(&mut shows, &watched("elsewhere.gandr")),

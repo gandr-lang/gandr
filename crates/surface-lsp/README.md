@@ -33,10 +33,10 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - Incremental synchronisation: each content change applied in order and the document judged again in its session, which molds only the forms the change touched; one log line per synchronisation.
 - `Server::admit`: the kernel admission each synchronisation left, run once its diagnostics are published.
 - `read_frame`, `read_frame::Absent`, `write_frame`, `Body` and `TransportFault`: the base protocol's framing, with a ceiling on a header line and on a body.
-- The envelope: requests, notifications and responses told apart; a body outside the decoder-supported JSON fragment answered with a parse error, including invalid UTF-8 and exceeded number or nesting limits; a decoded batch or other invalid message refused as an invalid request.
+- The envelope: requests, notifications and responses told apart; a body outside the decoder-supported JSON fragment answered with a parse error; a decoded batch or other invalid message refused as an invalid request.
 - Published diagnostics: one per diagnostic the model builds for the document's step, at its lead range, under its code, with its message and related information; republished at every change, cleared at close.
-- The `gandr.diagnostics.verbosity` and `quiet` settings, read at `initialize`, at each `workspace/didChangeConfiguration` and, from a client that answers it, by `workspace/configuration`: a new verbosity republishes open documents; `quiet` is how long a diagnostic of the form being typed waits ([`quiet`](src/quiet.rs)).
-- Imports read an editor's copy before the disk: an edit or a changed `.gandr` file rechecks every open document whose imports name it.
+- The `gandr.diagnostics.verbosity` and `quiet` settings, read at `initialize`, at each `workspace/didChangeConfiguration` and by `workspace/configuration`: a new verbosity republishes open documents; `quiet` is how long a diagnostic of the form being typed waits ([`quiet`](src/quiet.rs)).
+- Imports read an editor's copy before the disk: an edit, or a `.gandr` file or folder changed, created, deleted or renamed, rechecks every open document whose imports name it.
 - Semantic tokens for the whole document and for a range, and `TOKEN_TYPES` and `TOKEN_MODIFIERS`, the legend.
 - Completion: the binders in scope, the import closure's names and the keywords the slot at the cursor admits, each starting with the word typed.
 - Cancellation: a request withdrawn by a `$/cancelRequest`, or by a change of the document it reads, before it is handled is answered without being run ([`quiet`](src/quiet.rs)).
@@ -46,7 +46,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - The outline: document symbols nesting each declaration inside its holder, folding ranges over multi-line forms, documentation and block comments, and selection ranges growing from the innermost node to the whole document.
 - Hover: the type of the innermost node under the cursor, and a declaration's documentation or refusal.
 - Definitions: what the name under the cursor refers to, and the families its type names, here or in an imported sibling; links: path imports to their files.
-- Highlights, and linked editing of a local binder: where the name under the cursor is declared and used in the document; references and rename: in every open document and importer under the opened folders.
+- Highlights, and linked editing of a local binder: where the name under the cursor is declared and used in the document; references and rename: in every open document and importer under the opened folders; a file renamed: its importers' addresses.
 - Workspace symbols: the names the open documents' import closures declare, each holding the query's characters in order.
 - Formatting: the whole document as one edit trimmed to the span its layout changes, and a range as one edit per top-level form it touches.
 - Positions in UTF-16 code units, a position past a line's end or past the last line clamped.
@@ -111,7 +111,7 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | Hover | [`hover`](src/hover.rs) |
 | Definitions | [`goto`](src/goto.rs) |
 | Workspace symbols | [`search`](src/search.rs) |
-| Highlights, references; rename | [`uses`](src/uses.rs); [`rename`](src/rename.rs) |
+| Highlights, references; rename; file moves | [`uses`](src/uses.rs); [`rename`](src/rename.rs); [`relocate`](src/relocate.rs) |
 | UTF-16 positions | [`position`](src/position.rs) |
 | The lifecycle, its error codes, document URIs | [`server`](src/server.rs) |
 | Formatting | [`format`](src/format.rs) |
