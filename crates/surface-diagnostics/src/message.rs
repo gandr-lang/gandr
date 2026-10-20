@@ -310,6 +310,10 @@ fn lowered(
                 ),
             }
         },
+        LoweringRefusal::BareFeedback { .. } => f.write_str(
+            "this port is fed back from the rule's own output and read under no observation of \
+             its sort, so the loop the feed closes is not guarded",
+        ),
         LoweringRefusal::GradedBridge { grade, .. } => write!(
             f,
             "the grade `{grade}` is not supported; only the default grade `ω` is"
@@ -1098,6 +1102,7 @@ mod tests
                 sort: FragmentSort::Value,
                 boundary: FragmentBoundary::WrongSort,
             },
+            LoweringRefusal::BareFeedback { span, rule: span },
             LoweringRefusal::GradedBridge { span, grade: name },
             LoweringRefusal::MalformedLiteral { span, form },
             LoweringRefusal::MalformedForm {

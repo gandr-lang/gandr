@@ -434,11 +434,7 @@ fn theory_declines_and_malformed_wiring_are_refused_apart()
 {
     let span = ByteSpan::new(0_usize.into(), 1_usize.into()).unwrap();
     let refusal = |fault| DescriptionDiagnostic { span, fault }.lowering_refusal();
-    for fault in [
-        SignatureFault::Wheel,
-        SignatureFault::OperationFiller,
-        SignatureFault::HigherCell,
-    ] {
+    for fault in [SignatureFault::OperationFiller, SignatureFault::HigherCell] {
         assert!(matches!(
             refusal(DescriptionFault::Signature(fault)),
             crate::LoweringRefusal::OutOfFragment {
@@ -454,6 +450,14 @@ fn theory_declines_and_malformed_wiring_are_refused_apart()
             ..
         }
     ));
+    let rule = ByteSpan::new(2_usize.into(), 3_usize.into()).unwrap();
+    assert_eq!(
+        refusal(DescriptionFault::Signature(SignatureFault::BareFeedback {
+            rule
+        })),
+        crate::LoweringRefusal::BareFeedback { span, rule },
+        "an unguarded feed is its own refusal, at its occurrence, naming its rule"
+    );
     for fault in [
         SignatureFault::SharedPort("v".into()),
         SignatureFault::MultipleOutputs(OutputCount(2_usize)),
@@ -469,7 +473,7 @@ fn theory_declines_and_malformed_wiring_are_refused_apart()
 #[test]
 fn a_refused_theory_block_states_its_refusal()
 {
-    let source = r#"@[ refuses("OutOfFragment") ]
+    let source = r#"@[ refuses("BareFeedback") ]
 theory Wheel {
   sort Nat : Type;
   oper zip : (s : Nat, t : Nat) --> (u : Nat);
@@ -505,16 +509,18 @@ theory Wheel {
         crate::module::Role::Declared,
         "its name is a declaration"
     );
-    assert!(matches!(
-        wheel.outcome(),
-        crate::DeclarationOutcome::Refused(crate::LoweringRefusal::OutOfFragment {
-            span,
-            boundary: crate::FragmentBoundary::Unadmitted,
-            ..
-        }) if source
-            .get(usize::from(span.start()) .. usize::from(span.end()))
-            .is_some_and(|member| member.starts_with("rule spin"))
-    ));
+    let text = |at: ByteSpan| source.get(usize::from(at.start()) .. usize::from(at.end()));
+    assert!(
+        matches!(
+            wheel.outcome(),
+            crate::DeclarationOutcome::Refused(crate::LoweringRefusal::BareFeedback { span, rule })
+                if text(span) == Some("state")
+                    && source.find("state)") == Some(usize::from(span.start()))
+                    && text(rule) == Some("spin")
+        ),
+        "refused at the bare occurrence in `zip`, naming the rule: {:?}",
+        wheel.outcome()
+    );
     assert!(
         source
             .get(usize::from(wheel.span().start()) .. usize::from(wheel.span().end()))
@@ -581,19 +587,74 @@ fn a_refused_top_level_operation_states_its_refusal()
 }
 
 #[test]
-fn a_feed_statement_declines_naming_the_wheel_obligation()
+fn a_fed_port_no_node_reads_is_refused_at_the_feed()
 {
-    let report = described(
-        "theory Wheel { sort Nat : Type; oper zip : (s : Nat, t : Nat) --> (u : Nat); rule spin : (data stream : Nat) ==> (out : Nat) { node : zip(stream, state) --> (out); feed : (out) --> (state); }; }",
-    );
-    assert!(
-        report.diagnostics.iter().any(
-            |diagnostic| diagnostic.fault == DescriptionFault::Signature(SignatureFault::Wheel)
-        ),
-        "{:?}",
-        report.diagnostics
+    let source = "theory Wheel { sort Nat : Type; oper zip : (s : Nat, t : Nat) --> (u : Nat); rule spin : (data stream : Nat, data seed : Nat) ==> (out : Nat) { node : zip(stream, seed) --> (out); feed : (out) --> (state); }; }";
+    let report = described(source);
+    let [ref diagnostic] = *report.diagnostics.as_slice()
+    else {
+        panic!("one refusal: {:?}", report.diagnostics)
+    };
+    let DescriptionFault::Signature(SignatureFault::BareFeedback { rule }) = diagnostic.fault
+    else {
+        panic!("a bare feedback: {:?}", diagnostic.fault)
+    };
+    let text = |at: ByteSpan| source.get(usize::from(at.start()) .. usize::from(at.end()));
+    assert_eq!(text(rule), Some("spin"));
+    assert_eq!(
+        (text(diagnostic.span), source.rfind("state")),
+        (Some("state"), Some(usize::from(diagnostic.span.start()))),
+        "with no occurrence to name, the feed's own port"
     );
     assert_eq!(report.declarations[0].description.circuits.as_ref(), []);
+}
+
+#[test]
+fn an_observed_feed_is_kept_beside_its_cut_open_wiring()
+{
+    let report = described(
+        "theory Wheel { sort Nat : Type; oper zip : (s : Nat, t : Nat) --> (u : Nat); obs emit : (s : Nat, x : Nat) --> (y : Nat); rule spin : (data stream : Nat) ==> (out : Nat) { node : emit(state, stream) --> (out); feed : (out) --> (state); }; }",
+    );
+    assert_eq!(report.diagnostics, []);
+    let [ref theory] = *report.declarations.as_slice()
+    else {
+        panic!("one theory")
+    };
+    let [ref rule] = *theory.description.circuits.as_ref()
+    else {
+        panic!("one circuit")
+    };
+    assert_eq!(*rule.body.feeds, [CircuitFeed {
+        source: "out".into(),
+        port: "state".into(),
+    }]);
+    let read = FreeTerm::op("emit", [FreeTerm::var("state"), FreeTerm::var("stream")]);
+    assert_eq!(
+        (&rule.sphere.lhs, &rule.sphere.rhs),
+        (&read, &read),
+        "the fed port is a boundary variable of the cut-open wiring"
+    );
+    assert_eq!(
+        crate::desc_cells::elaborate_desc_cells(&report.declarations).diagnostics,
+        [],
+        "the cut-open wiring is a cell the layer admits"
+    );
+    let Maybe::Present(ref presentation) = theory.presentation
+    else {
+        panic!("the block presents a theory")
+    };
+    let parts = presentation.value.decode().unwrap();
+    assert_eq!(
+        parts
+            .operations
+            .iter()
+            .map(|operation| (operation.name.as_ref(), operation.kind))
+            .collect::<Vec<_>>(),
+        [
+            ("zip", OperationKind::Operation),
+            ("emit", OperationKind::Observation)
+        ]
+    );
 }
 
 #[test]
@@ -912,7 +973,7 @@ fn a_theory_block_defines_its_presentation()
             .iter()
             .map(alloc::vec::Vec::len)
             .collect::<alloc::vec::Vec<_>>(),
-        [3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3],
+        [3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4],
         "each constructor's names, then its recursions"
     );
     let mut declarations = alloc::vec![gandr_core_checker::Declaration::data(

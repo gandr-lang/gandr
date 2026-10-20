@@ -17,18 +17,34 @@
 //! body rooted at several outputs derives its sphere root by root, a many-out
 //! frame's application standing for its whole result tuple when its ports
 //! leave together in order. A cycle or a derivation ceiling refuses that
-//! derivation rather than fabricating a boundary. A feed back-edge is a wheel
-//! refusal, a bodiless cell between composites of cells a higher-cell refusal,
-//! an operation filler, in a block or as a top-level `oper`, a filler refusal,
-//! and the reversible map `<->` is reserved. `<=>` is the equation: a face
-//! arrow whose direction the order chooses. Each refusal is a fragment
-//! boundary rather than malformed source. Witnesses:
+//! derivation rather than fabricating a boundary. A bodiless cell between
+//! composites of cells is a higher-cell refusal, an operation filler, in a
+//! block or as a top-level `oper`, a filler refusal, and the reversible map
+//! `<->` is reserved. `<=>` is the equation: a face arrow whose direction the
+//! order chooses. Each refusal is a fragment boundary rather than malformed
+//! source. Witnesses:
 //! `description::theory::tests::a_ruled_theory_block_lowers_its_members_into_a_description`,
 //! `description::theory::tests::a_many_out_frame_binds_every_port_and_roots_the_body`,
 //! `description::theory::tests::the_cat_shape_laws_are_written_faces`,
 //! `description::theory::tests::a_port_name_on_both_sides_is_two_ports`,
-//! `description::theory::tests::a_feed_statement_declines_naming_the_wheel_obligation`,
 //! `description::theory::tests::theory_declines_and_malformed_wiring_are_refused_apart`.
+//!
+//! # Wheels
+//!
+//! An `obs` member declares an observation of a sort, written as an
+//! operation's boundary is and kept in the value as an `Obs` member. A rule
+//! body's `feed : (out) --> (state);` carries the wire `out` back, one step
+//! later, as the port `state` its nodes read (Katis, Sabadini and Walters,
+//! _Feedback, Trace and Fixed-Point Semantics_, RAIRO-ITA 36(2), 2002). The
+//! nodes stay the body's cut-open wiring, where `state` is a boundary
+//! variable, and the rule keeps its feeds beside them. A fed port is read
+//! under an observation, one tick, or the rule is refused `BareFeedback` at
+//! its bare occurrence: the guard of the feedback rule of Di Lavore, de Felice
+//! and Román (_Monoidal Streams for Dataflow Programming_, LICS 2022).
+//! Witnesses:
+//! `description::theory::tests::an_observed_feed_is_kept_beside_its_cut_open_wiring`,
+//! `description::theory::tests::a_refused_theory_block_states_its_refusal`,
+//! `description::theory::tests::a_fed_port_no_node_reads_is_refused_at_the_feed`.
 //!
 //! # Second-order members
 //!
@@ -127,6 +143,7 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::Attrs;
 use gandr_theory_levitation::BridgeArity;
 use gandr_theory_levitation::CircuitBody;
+use gandr_theory_levitation::CircuitFeed;
 use gandr_theory_levitation::CircuitFrame;
 use gandr_theory_levitation::CircuitNode;
 use gandr_theory_levitation::CircuitRule;
@@ -137,6 +154,7 @@ use gandr_theory_levitation::Name;
 use gandr_theory_levitation::NominalId;
 use gandr_theory_levitation::NominalSerial;
 use gandr_theory_levitation::OperDesc;
+use gandr_theory_levitation::OperationKind;
 use gandr_theory_levitation::Representability;
 use gandr_theory_levitation::RewritePort;
 use gandr_theory_levitation::RuleFace;
@@ -257,6 +275,9 @@ enum HeadKind
     Constructor,
     /// An operation frame.
     Operation,
+    /// An observation frame: it reads its input under an observation of the
+    /// input's sort.
+    Observation,
     /// A rewrite head.
     Rewrite,
 }
@@ -270,7 +291,7 @@ impl HeadKind
     const fn row(self) -> ArrowRow
     {
         match self {
-            Self::Constructor | Self::Operation => ArrowRow::Mapping,
+            Self::Constructor | Self::Operation | Self::Observation => ArrowRow::Mapping,
             Self::Rewrite => ArrowRow::Face,
         }
     }
@@ -334,6 +355,9 @@ impl Reader<'_, '_>
             let kind = if reading.eat(Spelling("oper")).0 {
                 Some(HeadKind::Operation)
             }
+            else if reading.eat(Spelling("obs")).0 {
+                Some(HeadKind::Observation)
+            }
             else if reading.eat(Spelling("rule")).0 {
                 Some(HeadKind::Rewrite)
             }
@@ -383,15 +407,20 @@ impl Reader<'_, '_>
             else if reading.eat(Spelling("data")).0 {
                 Err(reading.signature_fault(SignatureFault::RetiredDataMember))
             }
-            else if reading.eat(Spelling("oper")).0 {
-                self.signature_operation(&mut reading, &parts.sorts).map(
-                    |(operation, tile, ports)| {
+            else if reading.eat(Spelling("oper")).0 || reading.at(Spelling("obs")).0 {
+                let kind = if reading.eat(Spelling("obs")).0 {
+                    OperationKind::Observation
+                }
+                else {
+                    OperationKind::Operation
+                };
+                self.signature_operation(&mut reading, &parts.sorts, kind)
+                    .map(|(operation, tile, ports)| {
                         parts.operations.push(operation);
                         placement.operations.push(tile);
                         operation_spans.push(span);
                         written.operations.push(ports);
-                    },
-                )
+                    })
             }
             else if reading.eat(Spelling("rule")).0 {
                 self.signature_rule(&mut reading, &parts.sorts, &scope)
@@ -475,7 +504,7 @@ impl Reader<'_, '_>
         let named = first.placed();
         let mut operations = Vec::new();
         let mut operation_spans = Vec::new();
-        match self.signature_operation(run, &[]) {
+        match self.signature_operation(run, &[], OperationKind::Operation) {
             Ok((operation, _tile, _written)) => {
                 operations.push(operation_desc(&operation));
                 operation_spans.push(at.span);
@@ -709,6 +738,7 @@ impl Reader<'_, '_>
         &self,
         run: &mut Run<'_>,
         sorts: &[TheorySort],
+        kind: OperationKind,
     ) -> Result<(TheoryOperation, Placed, WrittenOperation), DescriptionDiagnostic>
     {
         let name = run.take()?;
@@ -749,6 +779,7 @@ impl Reader<'_, '_>
         Ok((
             TheoryOperation {
                 name: self.text(name).0.into(),
+                kind,
                 inputs,
                 outputs,
             },
@@ -1000,9 +1031,31 @@ impl Reader<'_, '_>
         }
         let mut nodes = Vec::new();
         let mut frames = Vec::new();
+        let mut kinds = Vec::new();
+        let mut feeds = Vec::new();
+        let mut fed = Vec::new();
         while !run.eat(Spelling("}")).0 {
-            if run.at(Spelling("feed")).0 {
-                return Err(run.signature_fault(SignatureFault::Wheel));
+            if run.eat(Spelling("feed")).0 {
+                if !run.eat(Spelling(":")).0 {
+                    return Err(run.fault(DescriptionFault::Malformed));
+                }
+                let sources = self.wire_tuple(run)?;
+                run.arrow(Some(ArrowRow::Mapping))?;
+                let ports = self.wire_tuple(run)?;
+                if sources.is_empty() || sources.len() != ports.len() {
+                    return Err(run.fault(DescriptionFault::Malformed));
+                }
+                for (source, port) in sources.into_iter().zip(ports) {
+                    feeds.push(CircuitFeed {
+                        source: source.name,
+                        port: port.name.clone(),
+                    });
+                    fed.push(port);
+                }
+                if !run.eat(Spelling(";")).0 {
+                    return Err(run.fault(DescriptionFault::Malformed));
+                }
+                continue;
             }
             if !run.eat(Spelling("node")).0 {
                 return Err(run.fault(DescriptionFault::Malformed));
@@ -1043,6 +1096,7 @@ impl Reader<'_, '_>
                 .iter()
                 .map(|wire| FreeTerm::var(wire.name.clone()))
                 .collect();
+            kinds.push(kind);
             frames.push(WrittenFrame {
                 head: WrittenWire {
                     name: self.text(head).0.into(),
@@ -1069,9 +1123,8 @@ impl Reader<'_, '_>
                 else {
                     let head = match kind {
                         Some(HeadKind::Constructor) => FrameHead::Ctor(self.text(head).0.into()),
-                        Some(HeadKind::Operation | HeadKind::Rewrite) | None => {
-                            FrameHead::Op(self.text(head).0.into())
-                        },
+                        Some(HeadKind::Operation | HeadKind::Observation | HeadKind::Rewrite)
+                        | None => FrameHead::Op(self.text(head).0.into()),
                     };
                     CircuitNode::Frame(CircuitFrame::binding(head, arguments, outputs))
                 };
@@ -1081,12 +1134,32 @@ impl Reader<'_, '_>
             }
         }
         run.end()?;
+        for port in &fed {
+            let mut reads = frames.iter().zip(&kinds).flat_map(|(frame, &kind)| {
+                frame
+                    .arguments
+                    .iter()
+                    .filter(|wire| wire.name == port.name)
+                    .map(move |wire| (wire.span, kind))
+            });
+            if !reads
+                .clone()
+                .any(|(_, kind)| matches!(kind, Some(HeadKind::Observation)))
+            {
+                return Err(DescriptionDiagnostic {
+                    span: reads.next().map_or(port.span, |(span, _)| span),
+                    fault: DescriptionFault::Signature(SignatureFault::BareFeedback {
+                        rule: name.span,
+                    }),
+                });
+            }
+        }
         let roots: Vec<Name> = boundary
             .outputs
             .iter()
             .map(|output| output.name.clone())
             .collect();
-        let body = CircuitBody::rooted(nodes, roots);
+        let body = CircuitBody::rooted(nodes, roots).with_feeds(feeds);
         let derived = derive_boundaries(&body)
             .map_err(|error| run.signature_fault(SignatureFault::Derivation(error)))?;
         let vars = derive_cell_var_meta(&derived.source);

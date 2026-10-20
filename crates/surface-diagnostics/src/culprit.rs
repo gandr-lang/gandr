@@ -164,6 +164,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             FragmentBoundary::Held => "not a value a hold holds",
             FragmentBoundary::View => "not a view an access binds",
         },
+        LoweringRefusal::BareFeedback { .. } => "fed back, and read under no observation",
         LoweringRefusal::GradedBridge { .. } => "a grade other than `ω`",
         LoweringRefusal::MalformedLiteral { .. } => "not this literal's lexeme",
         LoweringRefusal::MalformedForm { fault, .. } => match fault {
@@ -492,6 +493,7 @@ mod tests
                 FragmentBoundary::Held => "not a value a hold holds",
                 FragmentBoundary::View => "not a view an access binds",
             },
+            LoweringRefusal::BareFeedback { .. } => "fed back, and read under no observation",
             LoweringRefusal::GradedBridge { .. } => "a grade other than `ω`",
             LoweringRefusal::MalformedLiteral { .. } => "not this literal's lexeme",
             LoweringRefusal::MalformedForm { fault, .. } => match fault {
@@ -691,6 +693,7 @@ mod tests
                 sort: FragmentSort::Value,
                 boundary: FragmentBoundary::View,
             },
+            LoweringRefusal::BareFeedback { span: at, rule: at },
             LoweringRefusal::GradedBridge {
                 span: at,
                 grade: name,

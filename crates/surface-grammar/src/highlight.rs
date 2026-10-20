@@ -36,7 +36,7 @@
 //!   a universe's bracket and operators elsewhere; `_` is a parameter inside a
 //!   parenthesised list and a variable elsewhere.
 //! - An `identifier` takes the role of its place: a definition after `def`,
-//!   `rec`, `op`, `oper`, `rule` or `data`; a binding after `as`, `for`,
+//!   `rec`, `op`, `oper`, `obs`, `rule` or `data`; a binding after `as`, `for`,
 //!   `leta`, `unpack`, `module`, `node` or `feed`; a parameter inside a
 //!   parenthesised list or an implicit `@[…]` binder; a member after `.`,
 //!   inside a record `#{…}` or a block of fields; a label for a world or a
@@ -158,9 +158,10 @@ const KEYWORDS: &[&str] = &[
     "codata", "continue", "data", "def", "drop", "dup", "else", "end", "extern", "feed", "fn",
     "for", "forall", "force", "fork", "from", "glob", "handle", "hold", "if", "import", "in",
     "infix", "infixl", "infixr", "leta", "loop", "migrate", "mobile", "module", "mu", "node",
-    "offer", "op", "oper", "pack", "package", "pi+", "postfix", "prefix", "pure", "rec", "recv",
-    "release", "resume", "return", "rule", "run", "select", "send", "shape", "sort", "tail",
-    "then", "theory", "thunk", "type", "unit", "unpack", "unwind", "val", "while", "with", "world",
+    "obs", "offer", "op", "oper", "pack", "package", "pi+", "postfix", "prefix", "pure", "rec",
+    "recv", "release", "resume", "return", "rule", "run", "select", "send", "shape", "sort",
+    "tail", "then", "theory", "thunk", "type", "unit", "unpack", "unwind", "val", "while", "with",
+    "world",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the
@@ -178,7 +179,7 @@ const PRIMITIVE_TYPES: &[&str] = &[
 ];
 
 /// The keywords whose next identifier names what the declaration defines.
-const DEFINERS: &[&str] = &["data", "def", "op", "oper", "rec", "rule"];
+const DEFINERS: &[&str] = &["data", "def", "obs", "op", "oper", "rec", "rule"];
 
 /// The keywords whose next identifier binds a name.
 const BINDERS: &[&str] = &[

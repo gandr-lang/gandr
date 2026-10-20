@@ -1,5 +1,6 @@
 //! Ruled circuit bodies, their literal wiring diagrams and matcher boundary.
 
+use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::CircuitDerivationError;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::PortInstantiationError;
@@ -41,8 +42,14 @@ pub enum SignatureFault
     MultipleOutputs(OutputCount),
     /// A circuit rule must name the output from which its boundary is derived.
     MissingOutput,
-    /// A feed line needs wheel semantics, not a term-shaped cell.
-    Wheel,
+    /// A fed-back port no observation reads: every occurrence of it in the
+    /// rule's body is bare, so the loop it closes is not guarded. The
+    /// diagnostic's span is the bare occurrence.
+    BareFeedback
+    {
+        /// The rule's name tile.
+        rule: ByteSpan,
+    },
     /// The glyph is reserved for reversible maps: `<->`.
     Reversible,
     /// The written arrow's row differs from the subject's declared kind.

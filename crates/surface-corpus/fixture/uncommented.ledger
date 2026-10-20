@@ -160,8 +160,6 @@ pathological/attributes/unknown-attribute.gandr:<file>
 pathological/attributes/unknown-attribute.gandr:f:6c7a03ac8be78ae4
 pathological/circuit/circuit-cyclic-wiring.gandr:<file>
 pathological/circuit/circuit-cyclic-wiring.gandr:Loop:35a722e1b8e00706
-pathological/circuit/circuit-feed-wheel.gandr:<file>
-pathological/circuit/circuit-feed-wheel.gandr:Wheel:d0d90ca75b0f2e70
 pathological/circuit/circuit-many-out-node.gandr:<file>
 pathological/circuit/circuit-many-out-node.gandr:Wide:2ec73c9ec35c72c0
 pathological/circuit/circuit-repeated-port.gandr:<file>

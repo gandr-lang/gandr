@@ -782,6 +782,17 @@ pub enum LoweringRefusal<'source>
         boundary: FragmentBoundary,
     },
 
+    /// A circuit rule's fed-back port that no observation reads: every
+    /// occurrence of it in the body is bare, so the loop the feed closes is
+    /// not guarded.
+    BareFeedback
+    {
+        /// The bare occurrence of the port.
+        span: ByteSpan,
+        /// The rule's name tile.
+        rule: ByteSpan,
+    },
+
     /// A thunk type written with a grade other than the default `ω`, which
     /// the core has no bridge for.
     GradedBridge
@@ -1207,6 +1218,10 @@ impl fmt::Display for LoweringRefusal<'_>
                 boundary,
                 ..
             } => write!(f, "{form}, read as {sort}, {boundary}"),
+            Self::BareFeedback { .. } => f.write_str(
+                "a fed-back port is read bare: the rule's body reads it under no observation of \
+                 its sort",
+            ),
             Self::GradedBridge { grade, .. } => write!(
                 f,
                 "the bridge's grade `{grade}` is not the default `ω`, the only grade the \
@@ -1410,6 +1425,7 @@ impl LoweringRefusal<'_>
             | Self::UnexportedName { span, .. }
             | Self::ShadowedBuiltin { span, .. }
             | Self::OutOfFragment { span, .. }
+            | Self::BareFeedback { span, .. }
             | Self::GradedBridge { span, .. }
             | Self::MalformedLiteral { span, .. }
             | Self::MalformedForm { span, .. }
@@ -1482,8 +1498,8 @@ mod tests
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the current 36-variant fixture has no repeated variant tag;
-    ///   source-bearing variants carry separately observable rejected spans.
+    /// - ensures: the fixture has no repeated variant tag; source-bearing
+    ///   variants carry separately observable rejected spans.
     /// - provides: a finite domain for the exact span projection witness.
     /// - fails: never.
     /// - panics: none.
@@ -1503,7 +1519,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 41_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 42_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -1694,6 +1710,10 @@ mod tests
                 span: s(77_usize, 78_usize),
                 first: s(0_usize, 1_usize),
             },
+            LoweringRefusal::BareFeedback {
+                span: s(79_usize, 80_usize),
+                rule: s(0_usize, 1_usize),
+            },
         ]
     }
 
@@ -1746,6 +1766,7 @@ mod tests
             s(73_usize, 74_usize),
             s(75_usize, 76_usize),
             s(77_usize, 78_usize),
+            s(79_usize, 80_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

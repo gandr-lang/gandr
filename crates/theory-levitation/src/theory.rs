@@ -65,7 +65,7 @@
 //!
 //! # One sort, chained
 //!
-//! `Theory` is one self-recursive sort of fifteen constructors, in tag order:
+//! `Theory` is one self-recursive sort of sixteen constructors, in tag order:
 //!
 //! | tag | constructor | fields |
 //! |---|---|---|
@@ -84,6 +84,7 @@
 //! | 12 | `Bound` | as `Port`, then its binders, before the rest |
 //! | 13 | `Shape` | name, size, its face chain, the rest of the sorts |
 //! | 14 | `Face` | name, its points, the rest of the faces |
+//! | 15 | `Obs` | as `Oper`, for an observation |
 //!
 //! Every list a presentation holds is a chain of its member constructor ended
 //! by `End`, and every name is a `String` field; an unnamed port carries the
@@ -147,6 +148,14 @@
 //!   have yet; that field replaces the numerals and re-keys every shaped
 //!   presentation.
 //!
+//! # Observations
+//!
+//! An `obs` member declares an observation of a sort: the coalgebraic dual of
+//! an operation, written with the same two port lists. It is an `Obs` member
+//! of the operation chain, in written order among the operations, with
+//! `Oper`'s fields. The constructor is appended to the table, so a
+//! presentation that declares no observation keeps the bytes it had.
+//!
 //! # What waits
 //!
 //! The constructors above are the part of the code grammar the fragment
@@ -199,7 +208,7 @@ use crate::rule::TermView;
 
 /// The names of `Theory`'s constructors, in tag order: the names a program that
 /// matches on a presentation writes.
-pub const THEORY_CONSTRUCTORS: [&str; 15] = [
+pub const THEORY_CONSTRUCTORS: [&str; 16] = [
     "Presents",
     "End",
     "Sort",
@@ -215,11 +224,12 @@ pub const THEORY_CONSTRUCTORS: [&str; 15] = [
     "Bound",
     "Shape",
     "Face",
+    "Obs",
 ];
 
 /// Each constructor of `Theory`, in tag order, with its count of `String`
 /// fields, which come first, and its count of recursive fields after them.
-const CONSTRUCTORS: [(&str, usize, usize); 15] = [
+const CONSTRUCTORS: [(&str, usize, usize); 16] = [
     (THEORY_CONSTRUCTORS[0], 0, 3),
     (THEORY_CONSTRUCTORS[1], 0, 0),
     (THEORY_CONSTRUCTORS[2], 1, 2),
@@ -235,6 +245,7 @@ const CONSTRUCTORS: [(&str, usize, usize); 15] = [
     (THEORY_CONSTRUCTORS[12], 2, 3),
     (THEORY_CONSTRUCTORS[13], 2, 2),
     (THEORY_CONSTRUCTORS[14], 2, 1),
+    (THEORY_CONSTRUCTORS[15], 1, 3),
 ];
 
 /// One constructor of `Theory`, by its tag.
@@ -271,6 +282,8 @@ enum Tag
     Shape,
     /// A face of the shape and the rest of the faces.
     Face,
+    /// An observation and the rest of the operations.
+    Obs,
 }
 
 impl Tag
@@ -298,11 +311,12 @@ impl Tag
             Self::Bound => 12,
             Self::Shape => 13,
             Self::Face => 14,
+            Self::Obs => 15,
         })
     }
 }
 
-/// The description of `Theory`, one data sort of fifteen constructors.
+/// The description of `Theory`, one data sort of sixteen constructors.
 ///
 /// The constructors stand in the order the module documentation tables; every
 /// name is a `String` field and every other field a recursive occurrence.
@@ -310,10 +324,10 @@ impl Tag
 /// # Specification
 /// - ensures: no parameters, one data sort `Theory`, and the constructors
 ///   `Presents`, `End`, `Sort`, `Oper`, `Port`, `Rule`, `Var`, `App`, `Con`,
-///   `Tuple`, `Arg`, `Representable`, `Bound`, `Shape` and `Face` in that
-///   order, each at the result sort `Theory`; a constructor's `String` fields
-///   carry `grade` and come first, two for `Port`, `Bound`, `Shape` and `Face`
-///   and one for every other constructor that names something, and its
+///   `Tuple`, `Arg`, `Representable`, `Bound`, `Shape`, `Face` and `Obs` in
+///   that order, each at the result sort `Theory`; a constructor's `String`
+///   fields carry `grade` and come first, two for `Port`, `Bound`, `Shape` and
+///   `Face` and one for every other constructor that names something, and its
 ///   remaining fields are `Theory`.
 /// - panics: none.
 ///
@@ -323,7 +337,7 @@ impl Tag
 ///   constructor table and the exact identity bytes of a presentation;
 ///   reordered constructors, a dropped field or a name read as a recursion
 ///   change them.
-/// - witness: `theory::tests::the_code_is_one_data_sort_of_fifteen_constructors`
+/// - witness: `theory::tests::the_code_is_one_data_sort_of_sixteen_constructors`
 /// - witness: `theory::tests::a_presentation_encodes_to_its_exact_identity_bytes`
 #[inline]
 #[must_use]
@@ -442,7 +456,8 @@ pub struct TheorySort
     pub representability: Representability,
 }
 
-/// One operation of a presentation: its name and its two port lists.
+/// One operation of a presentation: its name, its kind and its two port
+/// lists.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -457,10 +472,22 @@ pub struct TheoryOperation
 {
     /// The operation's name.
     pub name: Name,
+    /// Whether it is an operation or an observation.
+    pub kind: OperationKind,
     /// The input ports, in order.
     pub inputs: Vec<TheoryPort>,
     /// The output ports, in order.
     pub outputs: Vec<TheoryPort>,
+}
+
+/// Which member declared an operation of a presentation.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum OperationKind
+{
+    /// An `oper` member: a generator that builds its outputs.
+    Operation,
+    /// An `obs` member: an observation of its input's sort.
+    Observation,
 }
 
 /// One rule face of a presentation: its name and its two terms.
@@ -634,7 +661,11 @@ impl TheoryValue
         for operation in parts.operations.iter().rev() {
             let inputs = ports(&operation.inputs);
             let outputs = ports(&operation.outputs);
-            operations = value(Tag::Oper, vec![
+            let tag = match operation.kind {
+                OperationKind::Operation => Tag::Oper,
+                OperationKind::Observation => Tag::Obs,
+            };
+            operations = value(tag, vec![
                 leaf(&operation.name),
                 rec(inputs),
                 rec(outputs),
@@ -756,7 +787,17 @@ impl TheoryValue
         }
         let mut at = nested(operations)?;
         loop {
-            let next = member::<4>(at, Tag::Oper)?;
+            let kind = if at.ctor == Tag::Obs.constructor() {
+                OperationKind::Observation
+            }
+            else {
+                OperationKind::Operation
+            };
+            let tag = match kind {
+                OperationKind::Operation => Tag::Oper,
+                OperationKind::Observation => Tag::Obs,
+            };
+            let next = member::<4>(at, tag)?;
             let Maybe::Present([name, inputs, outputs, rest]) = next
             else {
                 break;
@@ -768,6 +809,7 @@ impl TheoryValue
             let outputs = read_ports(outputs)?;
             parts.operations.push(TheoryOperation {
                 name,
+                kind,
                 inputs,
                 outputs,
             });

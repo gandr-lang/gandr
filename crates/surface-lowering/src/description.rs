@@ -237,14 +237,15 @@ impl DescriptionDiagnostic
     /// # Specification
     /// - ensures: the module refusal covers exactly the diagnostic's source
     ///   site; a reserved glyph is a reserved form, a form the route parses and
-    ///   does not read yet (an operation filler, a fillerless higher cell, a
-    ///   wheel) an unadmitted one, and every other fault a malformed form.
+    ///   does not read yet (an operation filler or a fillerless higher cell) an
+    ///   unadmitted one, a feed no observation guards its own refusal, and
+    ///   every other fault a malformed form.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a refused middle member cannot erase either
-    ///   neighboring member, and a wheel, a reversible glyph and a cycle keep
-    ///   three classes apart.
+    ///   neighboring member, and an unguarded feed, a reversible glyph and a
+    ///   cycle keep three classes apart.
     /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
     /// - witness: `description::theory::tests::theory_declines_and_malformed_wiring_are_refused_apart`
     #[spec(ensures: |result| result.span() == Maybe::Present(self.span))]
@@ -264,9 +265,14 @@ impl DescriptionDiagnostic
             | DescriptionFault::NativeDecode(_)
             | DescriptionFault::Signature(
                 crate::circuit::SignatureFault::OperationFiller
-                | crate::circuit::SignatureFault::HigherCell
-                | crate::circuit::SignatureFault::Wheel,
+                | crate::circuit::SignatureFault::HigherCell,
             ) => unread(crate::FragmentBoundary::Unadmitted),
+            DescriptionFault::Signature(crate::circuit::SignatureFault::BareFeedback { rule }) => {
+                LoweringRefusal::BareFeedback {
+                    span: self.span,
+                    rule,
+                }
+            },
             DescriptionFault::Signature(crate::circuit::SignatureFault::Reversible) => {
                 unread(crate::FragmentBoundary::Reserved)
             },

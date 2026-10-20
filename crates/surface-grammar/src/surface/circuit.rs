@@ -7,7 +7,7 @@
 //! * **Declarations are judgments.** Every member reads `name : signature`, and
 //!   a block-bodied member reads `name : sphere { filler }` — the signature
 //!   left of the block is the boundary data. The kind keywords `sort` / `data`
-//!   / `oper` / `rule` carry the dimension.
+//!   / `oper` / `obs` / `rule` carry the dimension.
 //! * **The arrow grid, four glyphs and never more.** The shaft carries the
 //!   kind-class and the head carries directedness: `-->` / `<->` are the
 //!   circuit 1-cell formers and `==>` / `<=>` the rewrite faces at every
@@ -224,18 +224,22 @@ fn circuit_declarations(
     out.push(declaration);
 }
 
-/// Build a `theory` member led by `oper` or `rule`.
+/// Build a `theory` member led by `oper`, `obs` or `rule`.
 ///
-/// Both genuine judgments use `name : signature { filler }?`. An `oper` also
-/// preserves the parenthesis-led data-block spelling as one member so
-/// description elaboration can issue the block-aware decline without parser
-/// repair consuming a sibling. A `rule` carries the colon-led judgment and —
-/// for the same reason, so the decline can name the spelling at the member
-/// that wrote it — the data / codata **written face** `rule lhs ==> rhs`,
-/// whose arrow rides the shared grid and whose sides are ordinary
-/// expressions. The written face elaborates nowhere: description elaboration
-/// declines it by name, which is exactly why it must parse whole rather than
-/// leave its tail to parser repair, whose blob absorbs every member after it.
+/// The genuine judgments use `name : signature { filler }?`. `obs` declares an
+/// observation of a sort and shares `oper`'s whole tail, a second lead keyword
+/// rather than a second copy of the signature, so it costs one mold; a filler
+/// or a data-block spelling under it parses and is refused by the description
+/// route. An `oper` also preserves the parenthesis-led data-block spelling as
+/// one member so description elaboration can issue the block-aware decline
+/// without parser repair consuming a sibling. A `rule` carries the colon-led
+/// judgment and — for the same reason, so the decline can name the spelling at
+/// the member that wrote it — the data / codata **written face**
+/// `rule lhs ==> rhs`, whose arrow rides the shared grid and whose sides are
+/// ordinary expressions. The written face elaborates nowhere: description
+/// elaboration declines it by name, which is exactly why it must parse whole
+/// rather than leave its tail to parser repair, whose blob absorbs every member
+/// after it.
 ///
 /// The judgment block body is optional because a declaration may be a
 /// **boundary without a filler** — `oper add : (Nat, Nat) --> Nat` declares an
@@ -248,8 +252,8 @@ fn circuit_declarations(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: two keyword-discriminated `oper` and `rule` sequences, each with
-///   its local tail.
+/// - ensures: two keyword-discriminated sequences, `oper` or `obs` and then
+///   `rule`, each with its local tail.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -261,12 +265,12 @@ fn circuit_declarations(
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.iter().zip(["oper", "rule"]).all(|(branch, keyword)| matches!(branch.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == keyword)) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier"))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|branch| matches!(branch.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref keywords) if keywords.len() == 2 && keywords.iter().zip(["oper", "obs"]).all(|(keyword, label)| matches!(keyword.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label)))) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")))) && parts.get(1).is_some_and(|branch| matches!(branch.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "rule")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier"))))))]
 fn circuit_judgment() -> Regex
 {
     alt([
         seq([
-            t(TileLabel("oper")),
+            alt([t(TileLabel("oper")), t(TileLabel("obs"))]),
             t(TileLabel("identifier")),
             alt([circuit_judgment_tail(), data_spelled_oper_tail()]),
         ]),
@@ -524,10 +528,11 @@ fn top_level_judgment() -> Regex
 
 /// Build one inlined `theory` member.
 ///
-/// The four kind keywords carry the dimension, and each names what it declares:
-/// `sort` a colour, `data` a constructor, `oper` a circuit 1-cell, `rule` a
-/// rewrite face. `sort` and `data` are boundary-only; `oper` and `rule` may
-/// carry a filler. A fifth, `shape`, states the finite shape the signature's
+/// The kind keywords carry the dimension, and each names what it declares:
+/// `sort` a colour, `data` a constructor, `oper` a circuit 1-cell, `obs` an
+/// observation of a sort, `rule` a rewrite face. `sort` and `data` are
+/// boundary-only; `oper` and `rule` may carry a filler, and `obs` rides
+/// `oper`'s form. A sixth, `shape`, states the finite shape the signature's
 /// cells are stated over and its named faces, each the subshape of the points
 /// it lists; its spelling is provisional.
 ///

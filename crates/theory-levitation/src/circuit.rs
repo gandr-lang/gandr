@@ -275,13 +275,18 @@ impl CircuitNode
     }
 }
 
-/// A circuit rule's body: its wiring, plus the interface ports the diagram's
-/// results leave by.
+/// A circuit rule's body: its wiring, the interface ports the diagram's
+/// results leave by, and the feeds that close its loops.
 ///
 /// One declared output port is the common, term-shaped case. Several make the
 /// body many-rooted: each root's boundary is derived on its own and the
 /// derived boundary is the results tuple of them, in port order
 /// ([`FreeTerm::results`]).
+///
+/// A feed carries a source wire back, one step later, as a port the nodes
+/// read. The nodes and roots are the body's cut-open form: no node binds a fed
+/// port, so a boundary reading meets it as a boundary variable, and the feeds
+/// close the loop again.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct CircuitBody
 {
@@ -290,6 +295,19 @@ pub struct CircuitBody
     /// The declared output ports the boundary terms are read from, in port
     /// order; never empty.
     pub outs: Box<[Name]>,
+    /// The feeds, in source order.
+    pub feeds: Box<[CircuitFeed]>,
+}
+
+/// One feed of a circuit body: the wire it reads and the port it delivers
+/// that wire's value to one step later.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct CircuitFeed
+{
+    /// The wire fed back.
+    pub source: Name,
+    /// The port the nodes read it at.
+    pub port: Name,
 }
 
 /// How a body's declared output ports are read: one root, a many-out frame
@@ -345,6 +363,26 @@ impl CircuitBody
         Self {
             nodes: nodes.into(),
             outs: outs.into(),
+            feeds: Box::default(),
+        }
+    }
+
+    /// This body with `feeds` closing its loops.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_feeds<F>(
+        self,
+        feeds: F,
+    ) -> Self
+    where
+        F: Into<Box<[CircuitFeed]>>,
+    {
+        Self {
+            feeds: feeds.into(),
+            ..self
         }
     }
 
