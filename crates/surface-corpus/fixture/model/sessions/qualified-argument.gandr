@@ -1,0 +1,16 @@
+// A module's type written where an expression stands, `Seat.SeatEnd`, is the
+// code of the type it names, as its unqualified alias is: it reads as an
+// argument before a comma as after one (#1126).
+
+// The seat's protocol and its messages.
+import "./seat-base.gandr" ;
+
+/// The seat's protocol simulates itself, both sides named through the module.
+@[ checks ]
+def itself : Flow(Type, Seat.SeatEnd, Seat.SeatEnd) ;
+def itself = sim(Seat.SeatEnd, Seat.SeatEnd) ;
+
+/// The stationary flow at the seat's protocol, named through the module.
+@[ checks ]
+def kept : Flow(Type, Seat.SeatEnd, Seat.SeatEnd) ;
+def kept = stay(Seat.SeatEnd) ;

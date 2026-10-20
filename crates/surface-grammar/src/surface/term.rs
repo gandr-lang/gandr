@@ -1879,7 +1879,11 @@ fn expressions(
         seq([
             h(s),
             t(TileLabel(".")),
-            Regex::alt([t(TileLabel("identifier")), t(TileLabel("number"))]),
+            Regex::alt([
+                t(TileLabel("identifier")),
+                t(TileLabel("constructor")),
+                t(TileLabel("number")),
+            ]),
         ]),
     ));
     primary_expressions(out, p.atom);
