@@ -90,6 +90,13 @@
     )
 )]
 #![no_std]
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        allocation_in_repeated_body,
+        reason = "1 cost-shape site; #814 lists it"
+    )
+)]
 
 extern crate alloc;
 
