@@ -1,6 +1,7 @@
 use alloc::collections::BTreeSet;
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
+use core::fmt::Write as _;
 use core::iter;
 
 use anodized::spec;
@@ -147,6 +148,10 @@ fn placing_each_edge_recovers_its_child()
     // the support stands at `2k + 1`, so an edge read by position rather than
     // by rank lands on the wrong index.
     let spread = |index: DeBruijnIndex| DeBruijnIndex::from(2 * u32::from(index) + 1);
+    // One buffer per selection the passes below build, refilled per pass.
+    let mut own: Vec<(Zone, DeBruijnIndex)> = Vec::new();
+    let (mut ambient_intuitionistic, mut ambient_linear) = (Vec::new(), Vec::new());
+    let (mut expected_intuitionistic, mut expected_linear) = (Vec::new(), Vec::new());
     for crossed_intuitionistic in 0_usize ..= 2 {
         for crossed_linear in 0_usize ..= 1 {
             let crossing = Crossing::new(
@@ -158,18 +163,20 @@ fn placing_each_edge_recovers_its_child()
                     let child = thinning(&child_intuitionistic, &child_linear);
                     for own_intuitionistic in subsets(BinderDepth::from(3_usize)) {
                         for own_linear in subsets(BinderDepth::from(2_usize)) {
-                            let own: Vec<(Zone, DeBruijnIndex)> = own_intuitionistic
-                                .iter()
-                                .map(|&index| (Zone::Intuitionistic, index))
-                                .chain(own_linear.iter().map(|&index| (Zone::Linear, index)))
-                                .collect();
+                            own.clear();
+                            own.extend(
+                                own_intuitionistic
+                                    .iter()
+                                    .map(|&index| (Zone::Intuitionistic, index))
+                                    .chain(own_linear.iter().map(|&index| (Zone::Linear, index))),
+                            );
                             let cover =
                                 Cover::of(own.iter().copied(), &iter::once((&child, crossing)));
                             let union = reference_union(&own, &[(&child, crossing)]);
                             for zone in ZONES {
-                                let carried: BTreeSet<DeBruijnIndex> =
-                                    cover.support().indices(zone).collect();
-                                assert_eq!(union.get(&zone), Some(&carried));
+                                assert!(union.get(&zone).is_some_and(|carried| {
+                                    carried.iter().copied().eq(cover.support().indices(zone))
+                                }));
                             }
                             let [ref edge] = *cover.edges()
                             else {
@@ -186,18 +193,13 @@ fn placing_each_edge_recovers_its_child()
                                 ),
                                 Ok(())
                             );
-                            let ambient = thinning(
-                                &cover
-                                    .support()
-                                    .indices(Zone::Intuitionistic)
-                                    .map(spread)
-                                    .collect::<Vec<_>>(),
-                                &cover
-                                    .support()
-                                    .indices(Zone::Linear)
-                                    .map(spread)
-                                    .collect::<Vec<_>>(),
-                            );
+                            ambient_intuitionistic.clear();
+                            ambient_intuitionistic
+                                .extend(cover.support().indices(Zone::Intuitionistic).map(spread));
+                            ambient_linear.clear();
+                            ambient_linear
+                                .extend(cover.support().indices(Zone::Linear).map(spread));
+                            let ambient = thinning(&ambient_intuitionistic, &ambient_linear);
                             let lift = |zone: Zone, index: DeBruijnIndex| {
                                 let crossed = u32::try_from(usize::from(crossing.depth(zone)))
                                     .expect("small");
@@ -209,16 +211,17 @@ fn placing_each_edge_recovers_its_child()
                                         )
                                     })
                             };
-                            let expected = thinning(
-                                &child_intuitionistic
+                            expected_intuitionistic.clear();
+                            expected_intuitionistic.extend(
+                                child_intuitionistic
                                     .iter()
-                                    .map(|&index| lift(Zone::Intuitionistic, index))
-                                    .collect::<Vec<_>>(),
-                                &child_linear
-                                    .iter()
-                                    .map(|&index| lift(Zone::Linear, index))
-                                    .collect::<Vec<_>>(),
+                                    .map(|&index| lift(Zone::Intuitionistic, index)),
                             );
+                            expected_linear.clear();
+                            expected_linear.extend(
+                                child_linear.iter().map(|&index| lift(Zone::Linear, index)),
+                            );
+                            let expected = thinning(&expected_intuitionistic, &expected_linear);
                             assert_eq!(ambient.place(edge, crossing), Ok(expected));
                         }
                     }
@@ -231,12 +234,9 @@ fn placing_each_edge_recovers_its_child()
 #[test]
 fn a_cover_unions_its_children()
 {
-    let crossings: Vec<Crossing> = [(0_usize, 0_usize), (1, 0), (0, 1), (1, 1)]
-        .into_iter()
-        .map(|(intuitionistic, linear)| {
-            Crossing::new(BinderDepth::from(intuitionistic), BinderDepth::from(linear))
-        })
-        .collect();
+    let crossings = [(0_usize, 0_usize), (1, 0), (0, 1), (1, 1)].map(|(intuitionistic, linear)| {
+        Crossing::new(BinderDepth::from(intuitionistic), BinderDepth::from(linear))
+    });
     let mut children = Vec::new();
     for &crossing in &crossings {
         let wide =
@@ -253,8 +253,9 @@ fn a_cover_unions_its_children()
             let cover = Cover::of(iter::empty(), &pair.iter().copied());
             let union = reference_union(&[], &pair);
             for zone in ZONES {
-                let carried: BTreeSet<DeBruijnIndex> = cover.support().indices(zone).collect();
-                assert_eq!(union.get(&zone), Some(&carried));
+                assert!(union.get(&zone).is_some_and(|carried| {
+                    carried.iter().copied().eq(cover.support().indices(zone))
+                }));
             }
             assert_eq!(cover.edges().len(), 2);
             for (edge, &(child, crossing)) in cover.edges().iter().zip(&pair) {
@@ -641,6 +642,7 @@ fn one_encoding_per_selection()
 {
     let generated = selections();
     let mut built: Vec<Thinning> = Vec::new();
+    let mut reading = alloc::string::String::new();
     for (position, intuitionistic) in generated.iter().enumerate() {
         let partner = generated
             .get(position.wrapping_mul(7).wrapping_rem(generated.len()))
@@ -652,7 +654,10 @@ fn one_encoding_per_selection()
         ] {
             let held = thinning(int, lin);
             for (zone, listed) in [(Zone::Intuitionistic, int), (Zone::Linear, lin)] {
-                let reading = alloc::format!("{zone:?} of {held:?}");
+                reading.clear();
+                reading
+                    .write_fmt(format_args!("{zone:?} of {held:?}"))
+                    .expect("a reading writes");
                 assert_eq!(
                     held.indices(zone).len(),
                     listed.len(),
@@ -869,45 +874,48 @@ fn the_mode_switches_at_its_boundaries()
 fn union_is_canonical()
 {
     let index = DeBruijnIndex::from;
+    let beside = [index(1)];
+    // One buffer per selection the passes below build, refilled per pass.
+    let (mut lifted, mut moved) = (Vec::new(), Vec::new());
     for listed in selections() {
         for zone in ZONES {
             let other = match zone {
                 Zone::Intuitionistic => Zone::Linear,
                 Zone::Linear => Zone::Intuitionistic,
             };
-            let beside = alloc::vec![index(1)];
-            let (int, lin) = match zone {
-                Zone::Intuitionistic => (listed.clone(), beside.clone()),
-                Zone::Linear => (beside.clone(), listed.clone()),
+            let (int, lin): (&[DeBruijnIndex], &[DeBruijnIndex]) = match zone {
+                Zone::Intuitionistic => (&listed, &beside),
+                Zone::Linear => (&beside, &listed),
             };
-            let expected = thinning(&int, &lin);
+            let expected = thinning(int, lin);
             // Split between two children: one uncrossed, one standing under
             // `crossed` more binders, which selects every index raised past
             // them and binders of its own below them.
             let crossed = 3_u32;
             let half = listed.len().div_ceil(2);
             let (near, far) = listed.split_at(half);
-            let raised: Vec<DeBruijnIndex> = [index(0), index(2)]
-                .into_iter()
-                .chain(
+            lifted.clear();
+            lifted.extend(
+                [index(0), index(2)].into_iter().chain(
                     far.iter()
                         .filter_map(|&named| u32::from(named).checked_add(crossed).map(index)),
-                )
-                .collect();
-            if raised.len() != far.len().saturating_add(2) {
+                ),
+            );
+            if lifted.len() != far.len().saturating_add(2) {
                 continue;
             }
             let near = thinning(near, &[]);
-            let raised = thinning(&raised, &[]);
+            let raised = thinning(&lifted, &[]);
             let (near, raised) = match zone {
                 Zone::Intuitionistic => (near, raised),
-                Zone::Linear => (
-                    thinning(&[], &near.indices(Zone::Intuitionistic).collect::<Vec<_>>()),
-                    thinning(
-                        &[],
-                        &raised.indices(Zone::Intuitionistic).collect::<Vec<_>>(),
-                    ),
-                ),
+                Zone::Linear => {
+                    moved.clear();
+                    moved.extend(near.indices(Zone::Intuitionistic));
+                    let near = thinning(&[], &moved);
+                    moved.clear();
+                    moved.extend(raised.indices(Zone::Intuitionistic));
+                    (near, thinning(&[], &moved))
+                },
             };
             let depth = BinderDepth::from(usize::try_from(crossed).expect("small"));
             for order in [false, true] {

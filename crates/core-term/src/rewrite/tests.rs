@@ -2601,7 +2601,7 @@ fn an_elaboration_suspends_and_runs_as_decided()
     else {
         panic!("every run stands in a computation");
     };
-    let reported: Vec<Node> = carried
+    let reported: alloc::collections::BTreeSet<Node> = carried
         .iter()
         .map(|pair| match *pair {
             Carried::Value(_, written) => Node::Value(written),
