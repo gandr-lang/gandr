@@ -1295,6 +1295,38 @@ fn a_keyword_in_a_name_slot_stands_there_unmolded_722() -> Result<(), Box<dyn Er
     Ok(())
 }
 
+/// #1090: a statement that lost its `<-` closes at the next statement
+/// keyword, which starts the next statement. Every obligation the parse owes
+/// lies at or before that keyword. Read as a run-expression inside the broken
+/// statement, the keyword would swallow the next statement and owe its `:`
+/// and `<-` and the handler's `with` after it.
+#[test]
+fn a_statement_keyword_starts_the_next_statement_1090() -> Result<(), Box<dyn Error>>
+{
+    let source = "def swapped() -> -F Unit {\n  handle c : Proc {\n    handle e : Proc {\n      run d : Cap {exit} at e pure c ;\n      run f : Cap {exit} at c <- pure e ;\n      return unit\n    } with {\n      pure(x) => return x,\n      oper exit(code, k) => return unit\n    }\n  } with {\n    pure(x) => return x,\n    oper exit(code, k) => return unit\n  }\n}\n";
+    let result = parse(built(), SourceText::from(source))?;
+    let next = source
+        .find("run f")
+        .ok_or("the next statement is written")?;
+    let owed: Vec<_> = result
+        .obligations()
+        .iter()
+        .map(|obligation| {
+            (
+                obligation.class,
+                usize::from(obligation.span.start()),
+                usize::from(obligation.span.end()),
+            )
+        })
+        .collect();
+    assert!(!owed.is_empty(), "the statement missing its `<-` owes it");
+    assert!(
+        owed.iter().all(|&(_, _, end)| end <= next),
+        "every obligation lies at or before the next statement's keyword; got {owed:?}"
+    );
+    Ok(())
+}
+
 /// An unclosed value delimiter must be repaired at the declaration boundary,
 /// so a following definition remains a distinct top-level item.
 ///
