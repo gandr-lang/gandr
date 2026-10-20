@@ -119,6 +119,13 @@
     )
 )]
 #![no_std]
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        bucket_per_key,
+        reason = "1 cost-shape site (1 bucket_per_key); #814 lists it"
+    )
+)]
 
 extern crate alloc;
 
