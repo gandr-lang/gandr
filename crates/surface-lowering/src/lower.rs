@@ -10265,7 +10265,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — holes before, between and after other declarations,
     ///   in a pattern and in a body, each named by its written place.
-    /// - witness: `tests::source_holes_keep_their_families_and_distinct_occurrences`
+    /// - witness: `lower::tests::source_holes_keep_their_families_and_distinct_occurrences`
     #[spec(ensures: |ret| ret.is_err() || self.holes.binary_search(&(at.span.start(), at.node)).is_ok_and(|place| ret.as_ref().is_ok_and(|&hole| usize::try_from(u32::from(hole)) == Ok(place))))]
     fn hole(
         &mut self,
