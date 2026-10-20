@@ -49,7 +49,7 @@ fn fresh_leaves(
     after: &RecordTree,
 ) -> FreshLeafCount
 {
-    let old: Vec<NodeHash> = before.leaf_hashes().into_vec();
+    let old: alloc::collections::BTreeSet<NodeHash> = before.leaf_hashes().into_iter().collect();
 
     after
         .leaf_hashes()
