@@ -237,7 +237,6 @@ use crate::rpc::tell;
 use crate::rpc::trace;
 use crate::rpc::unregister;
 use crate::search::FOUND_HELD;
-use crate::search::kind_of;
 use crate::signature::help;
 use crate::syntax::printed;
 use crate::tokens::ResultId;
@@ -4542,11 +4541,12 @@ impl Workspace
                 };
                 found.push((entry.folded.clone(), SymbolInformation {
                     name: entry.name.clone(),
-                    kind: kind_of(entry.kind),
+                    kind: entry.kind,
                     location: Location {
                         uri: target,
                         range: entry.range,
                     },
+                    container_name: entry.container.clone(),
                 }));
             }
         }
@@ -6377,6 +6377,11 @@ mod tests
             ("second.gandr", disk[2].1),
             ("third.gandr", "def thrice : Integer ;\ndef thrice = 3 ;\n"),
             ("fourth.gandr", disk[4].1),
+            (
+                "fifth.gandr",
+                "theory Monoid {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\nmodule \
+                 Ints {\n  def twice = 2 ;\n}\n",
+            ),
         ];
         for (file, text) in opened {
             let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
@@ -6394,10 +6399,11 @@ mod tests
         assert_eq!(
             search(&mut server, "su"),
             serde_json::json!([{"jsonrpc": "2.0", "id": 9_i32, "result": [
-                {"name": "Succ", "kind": 9_i32, "location": {"uri": base_uri,
+                {"name": "Succ", "kind": 9_i32, "containerName": "Nat", "location": {"uri": base_uri,
                     "range": {"start": {"line": 2_i32, "character": 2_i32},
                               "end": {"line": 2_i32, "character": 6_i32}}}}]}]),
-            "a constructor a sibling two open closures read is found once, at the sibling's path"
+            "a constructor a sibling two open closures read is found once, at the sibling's path, \
+             held by its family"
         );
         let names = |answer: &Value| -> Vec<(String, u64, String)> {
             answer[0_usize]["result"]
@@ -6445,6 +6451,46 @@ mod tests
             names(&search(&mut server, "qq")),
             [],
             "a query no name holds finds nothing"
+        );
+        let held = |answer: &Value| -> Vec<(String, u64, Option<String>)> {
+            answer[0_usize]["result"]
+                .as_array()
+                .map(|found| {
+                    found
+                        .iter()
+                        .map(|symbol| {
+                            (
+                                symbol["name"]
+                                    .as_str()
+                                    .map(String::from)
+                                    .unwrap_or_default(),
+                                symbol["kind"].as_u64().unwrap_or_default(),
+                                symbol["containerName"].as_str().map(String::from),
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        assert_eq!(
+            held(&search(&mut server, "mono")),
+            [(String::from("Monoid"), 11_u64, None)],
+            "a theory, as an interface, at the top of its source"
+        );
+        assert_eq!(
+            held(&search(&mut server, "mul")),
+            [(String::from("mul"), 6_u64, Some(String::from("Monoid")))],
+            "a theory's operation, as a method held by its theory"
+        );
+        assert_eq!(
+            held(&search(&mut server, "twi")),
+            [(String::from("twice"), 12_u64, Some(String::from("Ints")))],
+            "a module's member, held by its module"
+        );
+        assert_eq!(
+            held(&search(&mut server, "nou")),
+            [(String::from("nought"), 12_u64, None)],
+            "a declaration written as a signature and a definition, once"
         );
         let _removed = std::fs::remove_dir_all(&directory);
     }

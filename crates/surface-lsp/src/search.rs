@@ -2,32 +2,34 @@
 //! once per text and searched by a query whose characters a name holds in
 //! order.
 //!
-//! A document copy's [`Found`] is read off the type table its hovers keep, at
-//! the first workspace-symbol request after its text changed: one entry per
-//! declared name, a family's constructors included, with the range of its name
-//! in the text of the source that writes it. A request reads every held
-//! document's index; a name is found when the query's characters, compared
-//! without case, occur in it in order.
+//! A document copy's [`Found`] is read at the first workspace-symbol request
+//! after its text changed, off the outline of each source of the closure its
+//! hovers' type table laid out: one entry per declaration the outline reads —
+//! a module's members, a theory's members and a family's constructors
+//! included — with the outline's kind, the name of the declaration holding
+//! it, and the range of its name in the text of the source that writes it. A
+//! request reads every held document's index; a name is found when the
+//! query's characters, compared without case, occur in it in order.
 
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
-use gandr_surface_dispatcher::NameKind;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_lowering::SourceIndex;
-use gandr_surface_render_remote::ByteOffset as RenderOffset;
-use gandr_surface_render_remote::LineIndex;
 use gandr_surface_syntax::SourceText;
 
 use crate::position::Range;
 use crate::protocol::SymbolKind;
+use crate::reading::Reading;
 
 /// The most symbols one workspace-symbol request answers.
 pub const FOUND_HELD: usize = 128;
 
 /// One declared name of a closure: its name, the name folded to lower case,
-/// what it declares, the source writing it and the range of its name there.
+/// what it declares, the declaration holding it, the source writing it and
+/// the range of its name there.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Entry
 {
@@ -35,8 +37,11 @@ pub struct Entry
     pub folded: String,
     /// The name as written.
     pub name: String,
-    /// What it declares.
-    pub kind: NameKind,
+    /// What it declares, as the outline names it.
+    pub kind: SymbolKind,
+    /// The name of the declaration holding it; none at the top of its
+    /// source.
+    pub container: Option<String>,
     /// The closure's source writing it.
     pub source: SourceIndex,
     /// The range of its name in that source's text.
@@ -62,66 +67,56 @@ pub struct Found(Vec<Entry>);
 
 impl Found
 {
-    /// The names `table`'s unit declares, each with the range of its name in
-    /// its source's text.
+    /// The declarations of the closure `table` laid out, each with the range
+    /// of its name in its source's text.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one entry per [`TypeTable::declared_names`] entry whose
-    ///   source's text holds its name, ascending, once; a name its source's
-    ///   text does not hold, or whose range does not count, is dropped.
+    /// - ensures: for each source of the table's unit, one entry per symbol
+    ///   [`Reading::symbols`] reads off its text, named, kinded and ranged as
+    ///   the symbol is, its container the name of the symbol holding it; a
+    ///   symbol with the holder, name and kind of one before it in its source —
+    ///   a definition after its signature — is left out. Ascending, once.
     /// - provides: the index a workspace-symbol request reads, built once per
     ///   text.
     /// - fails: never.
     /// - panics: none.
-    /// - intension: one pass over the declared names, one line index per
-    ///   source, and one sort.
+    /// - intension: one reading per source and one sort.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a sibling's names are found with the sibling's ranges
-    ///   and a family's constructors with their family.
+    /// - hypothesis: L3 — a sibling's names are found with the sibling's
+    ///   ranges, a family's constructors and a theory's members with their
+    ///   holder, and a declaration written as a signature and a definition
+    ///   once.
     /// - witness: `server::tests::workspace_symbols_find_the_names_the_open_closures_declare`
     #[spec(ensures: |ret| ret.0.windows(2).all(|pair| matches!(pair, [first, second] if first < second)))]
     #[must_use]
     pub fn of(table: &TypeTable) -> Self
     {
-        let mut indexes: Vec<Option<LineIndex<'_>>> = Vec::new();
-        let mut entries = Vec::with_capacity(table.declared_names().len());
-        for &(referent, kind) in table.declared_names() {
-            let source = referent.source();
-            let Some(text) = table.source_text(source).map(<&str>::from)
-            else {
-                continue;
-            };
-            let at = usize::from(source);
-            if indexes.len() <= at {
-                indexes.resize_with(at.saturating_add(1_usize), || None);
+        let mut entries = Vec::new();
+        let mut at = 0_usize;
+        while let Some(text) = table.source_text(SourceIndex::from(at)) {
+            let source = SourceIndex::from(at);
+            at = at.saturating_add(1_usize);
+            let symbols = Reading::of(text).symbols().0;
+            let mut written: BTreeSet<(Option<&str>, &str, SymbolKind)> = BTreeSet::new();
+            for symbol in &symbols {
+                let container = symbol
+                    .holder
+                    .and_then(|holder| symbols.get(holder))
+                    .map(|holder| holder.name.as_str());
+                if !written.insert((container, symbol.name.as_str(), symbol.kind)) {
+                    continue;
+                }
+                entries.push(Entry {
+                    folded: symbol.name.to_lowercase(),
+                    name: symbol.name.clone(),
+                    kind: symbol.kind,
+                    container: container.map(String::from),
+                    source,
+                    range: symbol.selection_range,
+                });
             }
-            let Some(index) = indexes
-                .get_mut(at)
-                .map(|slot| slot.get_or_insert_with(|| LineIndex::new(text.into())))
-            else {
-                continue;
-            };
-            let named = referent.named();
-            let (Some(name), Ok(range)) = (
-                text.get(usize::from(named.start()) .. usize::from(named.end())),
-                Range::of_bytes(
-                    index,
-                    RenderOffset::from(usize::from(named.start())),
-                    RenderOffset::from(usize::from(named.end())),
-                ),
-            )
-            else {
-                continue;
-            };
-            entries.push(Entry {
-                folded: name.to_lowercase(),
-                name: String::from(name),
-                kind,
-                source,
-                range,
-            });
         }
         entries.sort_unstable();
         entries.dedup();
@@ -157,35 +152,19 @@ impl Found
     }
 }
 
-/// The protocol's kind for a declared name of `kind`: a family is an enum, as
-/// the outline names a data declaration; a constructor is a constructor; any
-/// other declaration is a function.
-///
-/// # Specification
-/// trivial.
-#[must_use]
-pub const fn kind_of(kind: NameKind) -> SymbolKind
-{
-    match kind {
-        NameKind::Family => SymbolKind::ENUM,
-        NameKind::Constructor => SymbolKind::CONSTRUCTOR,
-        NameKind::Value => SymbolKind::FUNCTION,
-    }
-}
-
 #[cfg(test)]
 mod tests
 {
     use alloc::string::String;
     use alloc::vec::Vec;
 
-    use gandr_surface_dispatcher::NameKind;
     use gandr_surface_lowering::SourceIndex;
     use gandr_surface_syntax::SourceText;
 
     use super::Entry;
     use super::Found;
     use crate::position::Range;
+    use crate::protocol::SymbolKind;
 
     #[test]
     fn a_query_finds_the_names_holding_its_characters_in_order()
@@ -193,7 +172,8 @@ mod tests
         let entry = |name: &str| Entry {
             folded: name.to_lowercase(),
             name: String::from(name),
-            kind: NameKind::Value,
+            kind: SymbolKind::FUNCTION,
+            container: None,
             source: SourceIndex::from(0_usize),
             range: Range::default(),
         };
