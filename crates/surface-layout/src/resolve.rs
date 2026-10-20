@@ -3000,39 +3000,45 @@ mod tests
                 }
                 let all_plans: [Option<PlanId>; 3] =
                     core::array::from_fn(|index| candidates.get(index).map(|measure| measure.plan));
+                let dominated = |index: usize, candidate: &Measure| {
+                    candidates.iter().enumerate().any(|(other_index, other)| {
+                        match (
+                            other.cost.cmp(&candidate.cost),
+                            other.last_column.cmp(&candidate.last_column),
+                        ) {
+                            (
+                                core::cmp::Ordering::Less,
+                                core::cmp::Ordering::Less | core::cmp::Ordering::Equal,
+                            )
+                            | (core::cmp::Ordering::Equal, core::cmp::Ordering::Less) => true,
+                            (core::cmp::Ordering::Equal, core::cmp::Ordering::Equal) => {
+                                other_index < index
+                            },
+                            _ => false,
+                        }
+                    })
+                };
+                let kept: [bool; 3] = core::array::from_fn(|index| {
+                    candidates
+                        .get(index)
+                        .is_some_and(|candidate| !dominated(index, candidate))
+                });
                 expected.clear();
                 expected.extend(
                     candidates
                         .iter()
-                        .copied()
-                        .enumerate()
-                        .filter(|&(index, candidate)| {
-                            !candidates.iter().enumerate().any(|(other_index, other)| {
-                                match (
-                                    other.cost.cmp(&candidate.cost),
-                                    other.last_column.cmp(&candidate.last_column),
-                                ) {
-                                    (
-                                        core::cmp::Ordering::Less,
-                                        core::cmp::Ordering::Less | core::cmp::Ordering::Equal,
-                                    )
-                                    | (core::cmp::Ordering::Equal, core::cmp::Ordering::Less) => {
-                                        true
-                                    },
-                                    (core::cmp::Ordering::Equal, core::cmp::Ordering::Equal) => {
-                                        other_index < index
-                                    },
-                                    _ => false,
-                                }
-                            })
-                        })
-                        .map(|(_index, candidate)| candidate),
+                        .zip(kept)
+                        .filter_map(|(candidate, kept)| kept.then_some(*candidate)),
                 );
                 expected.sort_by_key(|measure| measure.cost);
                 let frontier = resolver.normalize(candidates).expect("normalized frontier");
                 assert_eq!(frontier, expected);
-                for plan in all_plans.into_iter().flatten() {
-                    if expected.iter().any(|measure| measure.plan == plan) {
+                for (plan, kept) in all_plans.into_iter().zip(kept) {
+                    let Some(plan) = plan
+                    else {
+                        continue;
+                    };
+                    if kept {
                         assert_eq!(resolver.plans.get(plan), Maybe::Present(PlanNode::Empty));
                     }
                     else {
