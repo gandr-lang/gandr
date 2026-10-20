@@ -396,13 +396,14 @@ impl Reader<'_, '_>
             if !reading.eat(Spelling("include")).0 {
                 continue;
             }
-            let (declaration, presented, included) = match self.included(&mut reading, earlier) {
-                Ok(found) => found,
-                Err(diagnostic) => {
-                    diagnostics.push(diagnostic);
-                    continue;
-                },
-            };
+            let (declaration, presented, included, include_tile) =
+                match self.included(&mut reading, earlier) {
+                    Ok(found) => found,
+                    Err(diagnostic) => {
+                        diagnostics.push(diagnostic);
+                        continue;
+                    },
+                };
             let read = Held {
                 sorts: parts.sorts.len(),
                 operations: parts.operations.len(),
@@ -469,6 +470,8 @@ impl Reader<'_, '_>
             inclusions.push(Included {
                 theory: declaration.description.id.clone(),
                 inclusion,
+                named: include_tile,
+                block: declaration.at,
             });
         }
         for member in &members {
@@ -622,12 +625,13 @@ impl Reader<'_, '_>
     }
 
     /// The `theory` block an `include` member names, the last of `earlier`
-    /// that presents under that name, and its presentation's members.
+    /// that presents under that name, its presentation's members, and the
+    /// member's name tile.
     ///
     /// # Specification
     /// - requires: `run` stands just past the member's `include` keyword.
-    /// - ensures: the block, its presentation, and the parts its value decodes
-    ///   to.
+    /// - ensures: the block, its presentation, the parts its value decodes to,
+    ///   and the tile naming it.
     /// - fails: a missing name is malformed; a name no block of `earlier`
     ///   presents is [`SignatureFault::UnknownInclude`]; a value that does not
     ///   decode is malformed.
@@ -641,7 +645,7 @@ impl Reader<'_, '_>
     /// - witness: `description::theory::tests::an_include_is_refused_at_its_member`
     /// - witness: `description::theory::tests::an_included_theory_is_the_extension_restricted`
     #[spec(ensures: |ret| match ret {
-        | Ok((found, presented, _)) => {
+        | Ok((found, presented, _, _)) => {
             matches!(found.presentation, Maybe::Present(ref own) if own == presented)
         },
         | Err(_) => true,
@@ -650,7 +654,15 @@ impl Reader<'_, '_>
         &self,
         run: &mut Run<'_>,
         earlier: &'earlier [Earlier],
-    ) -> Result<(&'earlier Earlier, &'earlier Presentation, TheoryParts), DescriptionDiagnostic>
+    ) -> Result<
+        (
+            &'earlier Earlier,
+            &'earlier Presentation,
+            TheoryParts,
+            Placed,
+        ),
+        DescriptionDiagnostic,
+    >
     {
         let named = run.take()?;
         let Written(name) = self.text(named);
@@ -673,7 +685,7 @@ impl Reader<'_, '_>
             .value
             .decode()
             .map_err(|_fault| run.fault(DescriptionFault::Malformed))?;
-        Ok((declaration, presented, parts))
+        Ok((declaration, presented, parts, named))
     }
 
     /// Read a top-level `oper` declaration as the one operation it declares,

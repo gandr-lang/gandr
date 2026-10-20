@@ -1582,7 +1582,15 @@ impl TypeTable
                 })
             })
             .collect();
-        let referents = Referents::of(&module, &arena, unit, base, &constructed, &hidden);
+        let referents = Referents::of(
+            &module,
+            &arena,
+            unit,
+            base,
+            &constructed,
+            &hidden,
+            &described.uses,
+        );
         Self {
             entries,
             declared,
@@ -3813,6 +3821,52 @@ mod tests
                             def rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero \
                             => n,\n    Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef two : Nat ;\n\
                             def two = Succ(Succ(Zero)) ;";
+
+    /// #1128: in theory blocks and module ascriptions each name refers to its
+    /// own declaration — an included theory, an ascribed one, a member its
+    /// rule or operation writes — and no referent covers a block whole.
+    #[test]
+    fn theory_names_refer_to_their_own_declarations_1128()
+    {
+        let source = SourceText::from(include_str!(
+            "../../surface-corpus/fixture/model/include/monoid.gandr"
+        ));
+        let table = table(source);
+        let at = |needle: &'static str| refers(&table, source, SourceText::from(needle));
+        let named = |needle: &'static str, name: &'static str| {
+            Some(site(
+                source,
+                SourceText::from(needle),
+                SourceText::from(name),
+            ))
+        };
+        assert_eq!(
+            at("include Semigroup;\n  oper one"),
+            None,
+            "a keyword inside a theory answers nothing, not the block whole"
+        );
+        assert_eq!(at("rule unitL"), None, "nor does a rule's keyword");
+        assert_eq!(
+            at("Semigroup;\n  oper one"),
+            named("Semigroup {", "Semigroup"),
+            "an include names the theory it includes"
+        );
+        assert_eq!(
+            at("Monoid) {"),
+            named("Monoid {", "Monoid"),
+            "a model ascription's argument names the theory, not a member of the module"
+        );
+        assert_eq!(
+            at("mul(one(), x) ==> x;\n  rule unitR"),
+            named("mul : (x", "mul"),
+            "an operation a rule applies names the operation, here the included one"
+        );
+        assert_eq!(
+            at("M;\n  rule unitL"),
+            named("M : Type", "M"),
+            "a sort an operation writes names the sort"
+        );
+    }
 
     /// #795: each written use answers the site of what it names — a binder,
     /// a declaration, a family, a constructor in a term and in a pattern — and

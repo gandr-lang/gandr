@@ -77,6 +77,7 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::DeclPolarity;
 use gandr_theory_levitation::FreeTerm;
@@ -156,7 +157,22 @@ pub struct DescribedType
     pub context: ContextIndex,
 }
 
-/// Every described node's type, and the contexts they are read in.
+/// A written use of a theory's sort or operation, beside the name tile the
+/// member is declared by.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DescribedUse
+{
+    /// The bytes the use names the member by.
+    pub span: ByteSpan,
+    /// The member's own name tile.
+    pub named: ByteSpan,
+}
+
+/// Every described node's type, the contexts they are read in, and each
+/// theory member's written uses.
 ///
 /// # Specification
 /// trivial.
@@ -168,6 +184,9 @@ pub struct DescribedTypes
     /// Each context: the names its binders are written under, outermost
     /// first; the first context is the empty one.
     pub contexts: Vec<Vec<Name>>,
+    /// Each written use of a theory's sort or operation: a written sort's
+    /// head, and an operation applied in a law or an index term.
+    pub uses: Vec<DescribedUse>,
 }
 
 /// One binder of the scope a type is minted under.
@@ -337,6 +356,9 @@ struct Typer<'arena>
     arena: &'arena mut CoreArena,
     /// What has been minted.
     types: DescribedTypes,
+    /// The name tile of each sort and operation of the theory being read, by
+    /// name; empty outside a theory.
+    members: BTreeMap<Name, ByteSpan>,
 }
 
 /// `term` with each variable `by` names replaced by the term it maps to.
@@ -457,6 +479,22 @@ impl Typer<'_>
             ty,
             context,
         });
+    }
+
+    /// Record `span` as a use of the theory member `name`, when the theory
+    /// being read declares one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn refer(
+        &mut self,
+        span: ByteSpan,
+        name: &Name,
+    )
+    {
+        if let Some(&named) = self.members.get(name) {
+            self.types.uses.push(DescribedUse { span, named });
+        }
     }
 
     /// The value universe at `level`.
@@ -657,6 +695,15 @@ impl Typer<'_>
             let closed = self.context(&Scope::default());
             self.emit(written.span, DescribedRole::Type, universe, closed);
         }
+        // The head is the sort's name, written first: `M`, or `Hom` in
+        // `Hom(a, b)`.
+        let start = written.span.start();
+        let end = usize::from(start)
+            .saturating_add(head.as_ref().len())
+            .min(usize::from(written.span.end()));
+        if let Ok(named) = ByteSpan::new(start, ByteOffset::from(end)) {
+            self.refer(named, head);
+        }
     }
 
     /// Record each node of a written sort's index terms, `raw` as written and
@@ -829,7 +876,9 @@ impl Typer<'_>
     /// - ensures: as the module documentation states for a theory: each sort,
     ///   operation and law at what its `Model(S)` component states, each port
     ///   at its sort, each node of a law at its sort, each written sort at its
-    ///   universe, each circuit's ports and wires at their sorts.
+    ///   universe, each circuit's ports and wires at their sorts; and each
+    ///   written sort's head and each operation applied, beside the name tile
+    ///   of the member it names.
     /// - fails: never; a presentation whose members cannot be read records
     ///   nothing, and a component the derivation cannot state records none of
     ///   the nodes its type would read, save a binding operation's ports, which
@@ -856,6 +905,17 @@ impl Typer<'_>
             return;
         };
         let model = derive_members(&members, &presentation.circuits);
+        self.members = members
+            .sorts
+            .iter()
+            .map(|sort| (sort.name.clone(), sort.named.span))
+            .chain(
+                members
+                    .operations
+                    .iter()
+                    .map(|operation| (operation.name.clone(), operation.named.span)),
+            )
+            .collect();
         let mut declared = Declared {
             sorts: members.sorts.iter().map(|sort| sort.name.clone()).collect(),
             operations: BTreeMap::new(),
@@ -980,6 +1040,7 @@ impl Typer<'_>
         for member in &written.circuits {
             self.circuit(&scope, &members, member, &declared.heads);
         }
+        self.members.clear();
     }
 
     /// Record each node of a law's side `side`, written as `nodes`, under
@@ -1041,6 +1102,9 @@ impl Typer<'_>
                         (written.head, declared.heads.get(name))
                     {
                         self.emit(head, DescribedRole::Term, ty, stated);
+                    }
+                    if let Maybe::Present(head) = written.head {
+                        self.refer(head, name);
                     }
                     let args: Vec<TermNode<'_>> = args.collect();
                     // The elaboration's arguments, when it reads the node as
@@ -1707,7 +1771,9 @@ impl LoweredModule<'_>
             types: DescribedTypes {
                 entries: Vec::new(),
                 contexts: Vec::from([Vec::new()]),
+                uses: Vec::new(),
             },
+            members: BTreeMap::new(),
         };
         let mut families: BTreeMap<Name, (ValueTypeId, ValueTypeId)> = BTreeMap::new();
         let mut constructors: BTreeMap<Name, (Vec<ValueTypeId>, ValueTypeId)> = BTreeMap::new();

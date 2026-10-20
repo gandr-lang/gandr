@@ -54,6 +54,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
@@ -97,6 +98,15 @@ use crate::model::ModelForm;
 use crate::model::ModelSignature;
 use crate::resolve::HeadArity;
 use crate::resolve::OperandCount;
+
+/// A model signature read off its `Model(S)`: the components the module
+/// states, the signature derived from `S`, and the `S` tile beside the slot of
+/// the theory it names.
+type ReadModel<'source> = (
+    Vec<Component<'source>>,
+    ModelSignature,
+    (ByteSpan, SlotIndex),
+);
 
 quenchant_shape::reason_enum! {
     /// Why a module carries no derived model signature.
@@ -336,7 +346,8 @@ impl<'source> Collector<'_, 'source>
     ///   member's name at the ascription's `S` tile: an unindexed sort an
     ///   abstract component of no kind, an indexed sort a derived family, and
     ///   every other component — one the derivation cannot state among them — a
-    ///   derived value.
+    ///   derived value; and the `S` tile beside the slot of the declaration it
+    ///   names.
     /// - provides: the model half of [`Self::header`].
     /// - fails: a misplaced tile for a former out of shape; an unresolved head
     ///   for a former other than `Model`, or for an `S` that names no
@@ -382,13 +393,14 @@ impl<'source> Collector<'_, 'source>
                             },
                         }
                 })
+                && found.0.iter().all(|component| component.named.span == found.2.0)
         }),
     )]
     pub(super) fn model_signature(
         &self,
         cursor: &mut Cursor<'_>,
         form: Placed,
-    ) -> Result<(Vec<Component<'source>>, ModelSignature), LoweringRefusal<'source>>
+    ) -> Result<ReadModel<'source>, LoweringRefusal<'source>>
     {
         let Maybe::Present(former) = cursor.tile(TileName::TYPE_IDENTIFIER)
         else {
@@ -444,23 +456,28 @@ impl<'source> Collector<'_, 'source>
                 }
             },
         };
-        let presented = position
-            .and_then(|position| self.collected.slots.get(position.0))
-            .filter(|slot| {
-                matches!(
-                    slot.definition,
-                    Maybe::Present(Half {
-                        operand: Operand::Presented,
-                        ..
-                    })
-                )
-            })
-            .and_then(|slot| self.collected.descriptions.get(&slot.introduced_by.node))
-            .and_then(|entry| match entry.presentation {
-                Maybe::Present(ref presentation) => Some(presentation),
+        let presented = position.and_then(|position| {
+            let slot = self.collected.slots.get(position.0)?;
+            if !matches!(
+                slot.definition,
+                Maybe::Present(Half {
+                    operand: Operand::Presented,
+                    ..
+                })
+            ) {
+                return None;
+            }
+            match self
+                .collected
+                .descriptions
+                .get(&slot.introduced_by.node)?
+                .presentation
+            {
+                Maybe::Present(ref presentation) => Some((position, presentation)),
                 Maybe::Absent(_) => None,
-            });
-        let Some(presentation) = presented
+            }
+        });
+        let Some((position, presentation)) = presented
         else {
             return Err(LoweringRefusal::UnresolvedTypeHead {
                 span: theory.span,
@@ -496,7 +513,7 @@ impl<'source> Collector<'_, 'source>
             })
             .collect();
 
-        Ok((components, model))
+        Ok((components, model, (theory.span, position)))
     }
 
     /// Read a type member's parameters, `( a : A, … )`, the cursor standing

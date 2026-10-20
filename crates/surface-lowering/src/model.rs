@@ -294,9 +294,9 @@ pub struct Presentation
     pub inclusions: Vec<Included>,
 }
 
-/// One theory a block includes: the included declaration's identity and the
-/// inclusion of its presentation in the block's, the theory morphism the
-/// block's models restrict along.
+/// One theory a block includes, and where the `include` names it.
+///
+/// The inclusion is the theory morphism the block's models restrict along.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -313,6 +313,10 @@ pub struct Included
     pub theory: NominalId,
     /// Where each of its members stands in the including presentation.
     pub inclusion: TheoryInclusion,
+    /// The tile the `include` member names the theory by.
+    pub named: Placed,
+    /// The included `theory` block.
+    pub block: Placed,
 }
 
 /// Where the members a presentation's value codes are written: one name tile

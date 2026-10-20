@@ -45,6 +45,7 @@ use gandr_surface_lowering::Resolution;
 use gandr_surface_lowering::Role;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::Unit;
+use gandr_surface_lowering::described::DescribedUse;
 use gandr_surface_lowering::description::written::WrittenConstructor;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
@@ -261,7 +262,8 @@ impl Referents
     /// - requires: `module` was lowered into `arena` over `unit`, `base` starts
     ///   the source the table is of, `patterns` holds each constructor
     ///   pattern's name span with the family and tag its scrutinee's type gives
-    ///   it, and `hidden` the forms whose sites answer nothing.
+    ///   it, `hidden` the forms whose sites answer nothing, and `members` each
+    ///   theory member's written use the description reading kept.
     /// - ensures: a use is kept when the source wrote it at or past `base` and
     ///   inside no `hidden` form, at its span moved back by `base`: each
     ///   written variable the origin table records a binder for, referring to
@@ -272,12 +274,13 @@ impl Referents
     ///   the family's declaration writes for the tag, extended by the family's
     ///   form; and each name the lowering's resolution record holds, a name of
     ///   a declaration it refused included, referring as the origin it would
-    ///   have left does; and the name tile of a declaration's half written
-    ///   after the one introducing it, referring to the declaration. A use both
-    ///   name at one span is kept once. Each declaration's halves are kept at
-    ///   their own name tiles and forms. A referent's spans are in the text of
-    ///   the source holding it. A use whose referent no record places is not
-    ///   kept.
+    ///   have left does; the name tile of a declaration's half written after
+    ///   the one introducing it, referring to the declaration; and each of
+    ///   `members`, a theory member's written use, referring to the member's
+    ///   name tile. A use both name at one span is kept once. Each
+    ///   declaration's halves are kept at their own name tiles and forms. A
+    ///   referent's spans are in the text of the source holding it. A use whose
+    ///   referent no record places is not kept.
     /// - provides: the index a definition request answers from.
     /// - fails: never.
     /// - panics: none.
@@ -302,6 +305,7 @@ impl Referents
         base: ByteOffset,
         patterns: &[(ByteSpan, ConstantIndex, ConstructorTag)],
         hidden: &[ByteSpan],
+        members: &[DescribedUse],
     ) -> Self
     {
         let origins = module.origins();
@@ -520,6 +524,15 @@ impl Referents
         }
         for &(span, constant) in &seconds {
             keep(span, declared(constant), false);
+        }
+        // A theory member's use, by the member's name tile.
+        for member in members {
+            let referent = placed(unit, member.named).map(|(source, named)| Referent {
+                source,
+                named,
+                extent: named,
+            });
+            keep(member.span, referent, false);
         }
         uses.sort_by_key(|&(span, _)| (span.start(), span.end()));
         uses.dedup_by_key(|&mut (span, _)| span);

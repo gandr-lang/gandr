@@ -3748,6 +3748,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             mut resolutions,
             ..
         } = self;
+        resolutions.extend(collected.declared_uses.iter().filter_map(|&(span, slot)| {
+            collected
+                .slots
+                .get(usize::from(slot))
+                .map(|named| (span, crate::Resolution::Declaration(named.constant)))
+        }));
         resolutions.sort_unstable();
         resolutions.dedup();
         let operation_rules = collected

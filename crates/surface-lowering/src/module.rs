@@ -1367,6 +1367,10 @@ pub struct Collected<'source>
     /// The slots declared `def rec`: in a mutual block, its recursive
     /// functions recurse through one another.
     pub recursive: BTreeSet<SlotIndex>,
+    /// Each declaration's name the collection resolved where it is written,
+    /// beside the slot it names: a model ascription's theory and a `theory`
+    /// block's include.
+    pub declared_uses: Vec<(ByteSpan, SlotIndex)>,
 }
 
 quenchant_shape::reason_enum! {
@@ -2279,6 +2283,7 @@ pub fn begin_collection<'source>(
         theory_sources: BTreeSet::new(),
         blocks: Vec::new(),
         recursive: BTreeSet::new(),
+        declared_uses: Vec::new(),
     })
 }
 
@@ -3663,7 +3668,9 @@ impl<'source> Collector<'_, 'source>
     ///   decorations file under the block are read off every one of them. The
     ///   slot owns the block and its decorations; an unreadable decoration, or
     ///   a `Theory` the module declared otherwise, refuses it; a name declared
-    ///   before refuses the block as a duplicate.
+    ///   before refuses the block as a duplicate. Each `include` the block
+    ///   writes is kept among the declared uses, its name tile beside the slot
+    ///   owning the theory it includes.
     /// - provides: `theory S { … }` as the declaration `S : Theory` whose body
     ///   is the presentation's value.
     /// - panics: none.
@@ -3688,6 +3695,19 @@ impl<'source> Collector<'_, 'source>
             return;
         };
         let named = entry.named;
+        let included: Vec<(ByteSpan, NodeIndex)> = match entry.presentation {
+            Maybe::Present(ref presentation) => presentation
+                .inclusions
+                .iter()
+                .map(|inclusion| (inclusion.named.span, inclusion.block.node))
+                .collect(),
+            Maybe::Absent(_) => Vec::new(),
+        };
+        for (span, block) in included {
+            if let Maybe::Present(slot) = self.collected.owner_of(block) {
+                self.collected.declared_uses.push((span, slot));
+            }
+        }
         let name = self.name_of(named);
         let mut refusals = self.described_refusals(child).into_iter().peekable();
         let minted = match refusals.peek() {
@@ -5271,8 +5291,9 @@ impl<'source> Collector<'_, 'source>
         let ascription = if sealed.0 || matches!(cursor.tile(TileName::COLON), Maybe::Present(_)) {
             let read = if let Maybe::Present(_) = cursor.at(TileName::TYPE_IDENTIFIER) {
                 self.model_signature(&mut cursor, form)
-                    .map(|(components, derived)| {
+                    .map(|(components, derived, named)| {
                         model = Maybe::Present(derived);
+                        self.collected.declared_uses.push(named);
                         components
                     })
             }
