@@ -63,8 +63,10 @@ use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Name;
+use gandr_surface_pretty::Notation;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Spelling;
+use gandr_surface_pretty::Unspelled;
 use gandr_surface_pretty::present_computation;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
@@ -579,15 +581,15 @@ fn a_body_names_its_match_arms_by_their_constructors_809()
     )
     .expect("the body lays out");
     // The anonymous fixpoint has no surface form, so the body is approximate
-    // as a whole; its arms leave nothing unspelled.
+    // as a whole and names that notation; its arms leave nothing unspelled.
     assert_eq!(
         (
             presentation.to_string(),
-            presentation.unspelled().is_empty()
+            presentation.unspelled().iter().copied().collect::<Vec<_>>()
         ),
         (
             String::from("rec a { fn (b) { case b { Zero => b, Succ(c) => a(c) } } }"),
-            true
+            vec![Unspelled::Notation(Notation::Fixpoint)]
         ),
         "each arm is written under the constructor it matches: {:?}",
         presentation.unspelled()

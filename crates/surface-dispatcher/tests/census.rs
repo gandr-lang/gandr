@@ -125,11 +125,12 @@ impl Census
             let tally = self.reasons.entry(format!("{reason:?}")).or_default();
             *tally = tally.saturating_add(1);
         }
-        if presentation
-            .unspelled()
-            .iter()
-            .any(|reason| !HONEST.contains(reason))
-        {
+        // A former in the printer's notation or a part left out writes no
+        // `?`: only a reason behind a `?` can be dishonest.
+        if presentation.unspelled().iter().any(|reason| {
+            !matches!(*reason, Unspelled::Notation(_) | Unspelled::Elided(_))
+                && !HONEST.contains(reason)
+        }) {
             self.dishonest.push(format!(
                 "{}@{site}: `{presentation}` {:?}",
                 path.display(),

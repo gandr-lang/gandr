@@ -220,8 +220,10 @@ use crate::compose::Doc;
 use crate::compose::Glyphs;
 use crate::error::PresentationError;
 use crate::former::Component;
+use crate::former::Elided;
 use crate::former::Former;
 use crate::former::Name;
+use crate::former::Notation;
 use crate::former::Placement;
 use crate::former::Source;
 use crate::former::Unreadable;
@@ -2735,8 +2737,7 @@ impl Walk<'_, '_>
         reason: Unspelled,
     ) -> Result<(), PresentationError>
     {
-        let _fresh = self.unspelled.insert(reason);
-        self.approximate(Glyphs("?"))
+        self.approximate(Glyphs("?"), reason)
     }
 
     /// A text leaf.
@@ -2814,14 +2815,14 @@ impl Walk<'_, '_>
         Ok(())
     }
 
-    /// Pushes an atom that stands for more than it says, and marks the
-    /// presentation approximate.
+    /// Pushes an atom that stands for more than it says, marks the
+    /// presentation approximate and records why.
     ///
     /// # Specification
     /// - requires: as [`Self::leaf`].
     /// - ensures: one atom piece holding `glyphs`; the fidelity is approximate
-    ///   from here on.
-    /// - provides: `?`, `<thunk>` and `<deep>`.
+    ///   from here on and `reason` is among the reasons recorded.
+    /// - provides: `?`, `<thunk>`, `<stack>` and `<deep>`.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
     ///
@@ -2830,15 +2831,17 @@ impl Walk<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — deep, opaque and unreadable nodes expose omitted
-    ///   approximation; a refused atom exposes a fidelity reset on failure.
-    ///   Unrepresented allocator failures are outside this evidence.
+    ///   approximation under their reason; a refused atom exposes a fidelity
+    ///   reset on failure. Unrepresented allocator failures are outside this
+    ///   evidence.
     /// - witness: `tests::goldens::beyond_the_depth_limit_renders_deep`
     /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
     /// - witness: `walk::tests::failed_atoms_do_not_push_pieces_or_restore_fidelity`
     #[spec(
         requires: !glyphs.0.contains(['\r', '\n', '\t']),
         captures: [entry = self.pieces.len()],
-        ensures: |ref ret| self.fidelity == Fidelity::Approximate && match *ret {
+        ensures: |ref ret| self.fidelity == Fidelity::Approximate && self.unspelled.contains(&reason)
+            && match *ret {
             | Ok(()) => entry.checked_add(1_usize) == Some(self.pieces.len())
                     && self.pieces.last().is_some_and(|piece| piece.binding == Binding::Atom),
             | Err(PresentationError::Build(_)) => self.pieces.len() == entry,
@@ -2848,10 +2851,36 @@ impl Walk<'_, '_>
     fn approximate(
         &mut self,
         glyphs: Glyphs<'_>,
+        reason: Unspelled,
     ) -> Result<(), PresentationError>
     {
-        self.fidelity = Fidelity::Approximate;
+        self.note(reason);
         self.atom(glyphs)
+    }
+
+    /// Marks the presentation approximate and records why: the walk writes a
+    /// former in its own notation, or leaves part of a node out.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the fidelity is approximate from here on and `reason` is
+    ///   among the reasons recorded.
+    /// - provides: every approximation the walk makes, so none goes unnamed.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each former the walk writes in its own notation
+    ///   records the notation it wrote.
+    /// - witness: `tests::goldens::an_approximate_printing_names_its_reason_820`
+    #[spec(ensures: self.fidelity == Fidelity::Approximate && self.unspelled.contains(&reason))]
+    fn note(
+        &mut self,
+        reason: Unspelled,
+    )
+    {
+        self.fidelity = Fidelity::Approximate;
+        let _fresh = self.unspelled.insert(reason);
     }
 
     /// Pushes a name, or `?` for a name the walk's spelling cannot write.
@@ -3954,7 +3983,16 @@ impl Walk<'_, '_>
         let kind = kind(&former);
         match reach(admits, depth, kind) {
             Reach::Spell => {},
-            Reach::Deep => return self.approximate(Glyphs("<deep>")),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a node past the depth limit is left out, written `<deep>`"
+                )
+            )]
+            Reach::Deep => {
+                return self.approximate(Glyphs("<deep>"), Unspelled::Elided(Elided::Deep));
+            },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
@@ -4065,7 +4103,18 @@ impl Walk<'_, '_>
                                     ),
                                 )
                             },
-                            None => self.approximate(Glyphs(spelled.as_str())),
+                            #[cfg_attr(
+                                dylint_lib = "quenchant_dylints",
+                                expect(
+                                    answer_totality,
+                                    reason = "a region past the scopes the source names has no \
+                                              name to write after `at`"
+                                )
+                            )]
+                            None => self.approximate(
+                                Glyphs(spelled.as_str()),
+                                Unspelled::Elided(Elided::Region),
+                            ),
                         }
                     },
                 };
@@ -4096,7 +4145,16 @@ impl Walk<'_, '_>
                 );
             },
             | Former::Thunk(_) => match self.bodies {
-                | Bodies::Opaque => return self.approximate(Glyphs("<thunk>")),
+                #[cfg_attr(
+                    dylint_lib = "quenchant_dylints",
+                    expect(
+                        answer_totality,
+                        reason = "a thunk presented with its body opaque is written `<thunk>`"
+                    )
+                )]
+                | Bodies::Opaque => {
+                    return self.approximate(Glyphs("<thunk>"), Unspelled::Elided(Elided::Thunk));
+                },
                 | Bodies::Spelled => Some(writes(Production("thunk_expression"), Join::Thunk)),
             },
             | Former::Run(_) => Some(writes(Production("run_expression"), Join::Prefix(Prefix::Run))),
@@ -4142,7 +4200,16 @@ impl Walk<'_, '_>
             | Former::WorldHold(_)
             | Former::Leta { .. }
             | Former::Migrate { .. } => Some(self.form(source, node, &former, admits)),
-            | Former::Reify => return self.approximate(Glyphs("<stack>")),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a reified stack has no surface spelling: written `<stack>`"
+                )
+            )]
+            | Former::Reify => {
+                return self.approximate(Glyphs("<stack>"), Unspelled::Elided(Elided::Stack));
+            },
             | Former::Stack(..) => {
                 Some(writes(Production("type_application"), Join::Bracket(Bracket::Stack)))
             },
@@ -4246,12 +4313,28 @@ impl Walk<'_, '_>
                 )
             )]
             | Former::Unreadable(reason) => return self.unspell(Unspelled::Unreadable(reason)),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the universe path has no surface syntax: written in the printer's \
+                              notation"
+                )
+            )]
             | Former::PathUniverse(..) => {
-                self.fidelity = Fidelity::Approximate;
+                self.note(Unspelled::Notation(Notation::PathUniverse));
                 Some(writes(Production("type_application"), Join::Bracket(Bracket::PathUniverse)))
             },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a universe path's reflexivity has no surface syntax: written in \
+                              the printer's notation"
+                )
+            )]
             | Former::PathRefl(_) => {
-                self.fidelity = Fidelity::Approximate;
+                self.note(Unspelled::Notation(Notation::PathRefl));
                 Some(writes(Production("call_expression"), Join::Bracket(Bracket::PathRefl)))
             },
             | Former::Here(_) => {
@@ -4314,8 +4397,16 @@ impl Walk<'_, '_>
                     ),
                 ))
             },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the path out of an equivalence has no surface syntax: written in \
+                              the printer's notation"
+                )
+            )]
             | Former::PathEquiv(..) => {
-                self.fidelity = Fidelity::Approximate;
+                self.note(Unspelled::Notation(Notation::PathEquiv));
                 Some(writes(Production("call_expression"), Join::Bracket(Bracket::PathEquiv)))
             },
             | Former::PathProduct(..) => {
@@ -4506,8 +4597,16 @@ impl Walk<'_, '_>
             },
             // An ascription outside a typed bind has no spelling of its own:
             // it stands as its body, its type unwritten.
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the surface writes an ascription only in a typed bind: elsewhere \
+                              it stands as its body"
+                )
+            )]
             | Former::Ascription { body, .. } => {
-                self.fidelity = Fidelity::Approximate;
+                self.note(Unspelled::Elided(Elided::Ascription));
                 shaped = Some(Vec::from([Slot::of(body, admits, Binds::NONE)]));
                 None
             },
@@ -5202,7 +5301,8 @@ impl Walk<'_, '_>
             answer_totality,
             reason = "a label, a name or an operation the source does not answer, a malformed \
                       source, has no spelling: `spelled` writes `?` under the reason each call \
-                      names"
+                      names; a former the grammar has no syntax for is written in the printer's \
+                      notation, under that reason"
         )
     )]
     fn form<S>(
@@ -5425,12 +5525,12 @@ impl Walk<'_, '_>
                 writes(Production("call_expression"), Binding::Atom)
             },
             Former::Transport(..) => {
-                self.fidelity = Fidelity::Approximate;
+                self.note(Unspelled::Notation(Notation::Transport));
                 let _ = parts.text("transport").arguments(Arity(2_usize));
                 writes(Production("call_expression"), Binding::Atom)
             },
             Former::Resume(..) => {
-                self.fidelity = Fidelity::Approximate;
+                self.note(Unspelled::Notation(Notation::Resume));
                 let _ = parts.text("resume").arguments(Arity(2_usize));
                 writes(Production("resume_expression"), Binding::Atom)
             },
@@ -5458,7 +5558,7 @@ impl Walk<'_, '_>
                 writes(Production("call_expression"), Binding::Atom)
             },
             Former::Fixpoint(_) => {
-                self.fidelity = Fidelity::Approximate;
+                self.note(Unspelled::Notation(Notation::Fixpoint));
                 let _ = parts
                     .text("rec ")
                     .part(Part::Binder(0_usize))
@@ -5467,12 +5567,12 @@ impl Walk<'_, '_>
                 Binding::Prefix
             },
             Former::Reset(_) => {
-                self.fidelity = Fidelity::Approximate;
+                self.note(Unspelled::Notation(Notation::Reset));
                 let _ = parts.text("reset {").body();
                 Binding::Prefix
             },
             Former::Shift(_) => {
-                self.fidelity = Fidelity::Approximate;
+                self.note(Unspelled::Notation(Notation::Shift));
                 let _ = parts
                     .text("shift ")
                     .part(Part::Binder(0_usize))
@@ -5583,14 +5683,14 @@ impl Walk<'_, '_>
                 writes(Production("projection_expression"), Binding::Atom)
             },
             Former::Project(side, _) => {
-                self.fidelity = Fidelity::Approximate;
+                self.note(Unspelled::Notation(Notation::Projection));
                 let _ = parts
                     .piece(Binding::Atom)
                     .text(format!(".{}", usize::from(side)));
                 writes(Production("projection_expression"), Binding::Atom)
             },
             Former::ListFold { .. } => {
-                self.fidelity = Fidelity::Approximate;
+                self.note(Unspelled::Notation(Notation::ListFold));
                 let _ = parts
                     .text("fold ")
                     .piece(Binding::Prefix)
@@ -6746,7 +6846,10 @@ mod tests
         assert!(walk.pieces.is_empty());
         assert_eq!(walk.fidelity, Fidelity::Faithful);
         assert!(matches!(
-            walk.approximate(super::Glyphs("?")),
+            walk.approximate(
+                super::Glyphs("?"),
+                super::Unspelled::Elided(crate::former::Elided::Deep)
+            ),
             Err(super::PresentationError::Build(
                 gandr_surface_layout::error::BuildError::LimitExceeded {
                     kind: gandr_surface_layout::error::BuildLimitKind::TextBytes,

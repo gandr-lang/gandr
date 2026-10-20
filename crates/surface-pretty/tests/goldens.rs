@@ -66,10 +66,12 @@ use gandr_surface_pretty::Constructors;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::DEPTH_LIMIT;
+use gandr_surface_pretty::Elided;
 use gandr_surface_pretty::Fidelity;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Former;
 use gandr_surface_pretty::Name;
+use gandr_surface_pretty::Notation;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Source;
@@ -3345,6 +3347,45 @@ fn a_typed_bind_spells_as_written()
         ("1".to_owned(), Fidelity::Approximate),
         "a lone ascription stands as its body"
     );
+}
+
+/// An approximate printing names why it is approximate (#820): a fixpoint
+/// written in the printer's `rec` notation, an ascription standing as its
+/// body and a thunk left opaque each record their reason, so no printing is
+/// approximate with nothing to say why.
+#[test]
+fn an_approximate_printing_names_its_reason_820()
+{
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Sign::NonNegative, Written("1"));
+    let pure_one = core.computation_return(one);
+    let recursive =
+        core.computation_fixpoint(pure_one, gandr_kernel_term::FixpointEvidence::Partial);
+    let integer_type = core.value_type_base(BaseType::Integer);
+    let returns_integer = core.comp_type_returner(integer_type);
+    let ascribed = core.computation_ascribe(pure_one, returns_integer);
+    let suspended = core.value_thunk(pure_one);
+    let source = CoreSource::new(&core, &[]);
+    let body = |id| Root::Computation(CoreNode::Computation(id));
+    for (root, expected, reason) in [
+        (
+            body(recursive),
+            "rec a { 1 }",
+            Unspelled::Notation(Notation::Fixpoint),
+        ),
+        (body(ascribed), "1", Unspelled::Elided(Elided::Ascription)),
+        (
+            Root::Value(CoreNode::Value(suspended)),
+            "<thunk>",
+            Unspelled::Elided(Elided::Thunk),
+        ),
+    ] {
+        assert_eq!(
+            spelled_as(&source, root, Spelling::Unicode),
+            ((expected.to_owned(), Fidelity::Approximate), vec![reason]),
+            "{expected}"
+        );
+    }
 }
 
 /// A capability living in a scope's region names that scope, `at c`,
