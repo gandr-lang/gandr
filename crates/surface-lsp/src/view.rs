@@ -156,6 +156,7 @@ mod tests
             &uri,
             &mut open(&uri),
             SourceText::from(text),
+            &gandr_surface_dispatcher::Unshadowed,
             Verbosity::User,
             gandr_surface_grammar::Spelling::Unicode,
             quenchant_shape::shape::Maybe::Absent(crate::quiet::formless::Absent::Uncareted),

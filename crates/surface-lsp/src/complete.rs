@@ -346,7 +346,12 @@ mod tests
             grammar().expect("the grammar builds"),
             forms().expect("the forms build"),
             source,
-            &hovering(source, std::path::Path::new(""), &session),
+            &hovering(
+                source,
+                std::path::Path::new(""),
+                &session,
+                &gandr_surface_dispatcher::Unshadowed,
+            ),
             position,
         );
         let mut offered = Offered::default();

@@ -429,6 +429,7 @@ fn connection<Log>(
     let mut server = Server::new(peer);
     let inbox = Inbox::default();
     let changes = inbox.changes();
+    lock(workspace).hear_edits(peer, inbox.changes());
     if writer.is_ok() {
         let _ended = paced(&mut reading, inbox, |met, deadlines| {
             let mut held = lock(workspace);
@@ -446,6 +447,13 @@ fn connection<Log>(
                         drop(outbox.send(message));
                     }
                     (reported.end, server.changed_on_disk(&mut held, &paths))
+                },
+                Met::Edited(paths) => {
+                    let reported = server.reported_elsewhere(&held, &paths);
+                    for message in reported.begin {
+                        drop(outbox.send(message));
+                    }
+                    (reported.end, server.edited_elsewhere(&mut held, &paths))
                 },
                 Met::Frame { message, later } => {
                     let reported = server.reported(&held, &message);
@@ -1161,6 +1169,77 @@ mod tests
             "the name the base no longer declares is refused: {rechecked}"
         );
         drop(client);
+        hub.join().expect("the hub exits");
+    }
+
+    #[test]
+    fn an_editor_s_copy_shadows_the_disk_for_every_connection()
+    {
+        let scratch = Scratch::new(Json("shadow"));
+        let socket = scratch.socket();
+        let hub = hub(&socket);
+        let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
+        let base = scratch.0.join("base.gandr");
+        std::fs::write(&base, "def one : Integer ;\ndef one = 1 ;\n").expect("the base is written");
+        let importing = scratch.0.join("importer.gandr");
+        std::fs::write(&importing, importer).expect("the importer is written");
+        let mut reader = Client::new(&socket);
+        let mut writer = Client::new(&socket);
+        for client in [&reader, &writer] {
+            client
+                .reading
+                .get_ref()
+                .set_read_timeout(Some(Duration::from_secs(20)))
+                .expect("the stream takes a timeout");
+        }
+        let open = |path: &Path, text: &str| {
+            serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                "textDocument": {"uri": format!("file://{}", path.display()), "languageId": "gandr",
+                    "version": 1_i32, "text": text}}})
+            .to_string()
+        };
+        reader.send(Json(&open(&importing, importer)));
+        assert_eq!(
+            reader.receive().pointer("/params/diagnostics"),
+            Some(&serde_json::json!([])),
+            "the importer checks against the base on disk"
+        );
+        writer.send(Json(&open(
+            &base,
+            "def other : Integer ;\ndef other = 1 ;\n",
+        )));
+        assert_eq!(
+            writer.receive().pointer("/params/diagnostics"),
+            Some(&serde_json::json!([])),
+            "the editor's copy of the base checks"
+        );
+        let edited = reader.receive();
+        assert_eq!(
+            edited.pointer("/params/uri"),
+            Some(&serde_json::json!(format!(
+                "file://{}",
+                importing.display()
+            ))),
+            "another editor's unsaved base republishes the importer: {edited}"
+        );
+        assert!(
+            edited
+                .pointer("/params/diagnostics")
+                .and_then(Value::as_array)
+                .is_some_and(|diagnostics| !diagnostics.is_empty()),
+            "the name the editor's base no longer declares is refused: {edited}"
+        );
+        let close = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didClose", "params": {
+            "textDocument": {"uri": format!("file://{}", base.display())}}});
+        writer.send(Json(&close.to_string()));
+        let restored = reader.receive();
+        assert_eq!(
+            restored.pointer("/params/diagnostics"),
+            Some(&serde_json::json!([])),
+            "once no editor holds the base, the importer reads the disk again: {restored}"
+        );
+        drop(writer);
+        drop(reader);
         hub.join().expect("the hub exits");
     }
 

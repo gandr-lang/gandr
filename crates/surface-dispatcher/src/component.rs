@@ -134,6 +134,7 @@ use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::root::SourceRoot;
+use crate::root::classify;
 use crate::walk::read_source;
 
 /// The keyword every import is written with: a source whose text never
@@ -511,28 +512,94 @@ pub fn named_path(path: &Path) -> PathBuf
     std::fs::canonicalize(path).unwrap_or_else(|_| missing(path))
 }
 
+/// The text an editor holds for a source, which an import of that source reads
+/// in place of the file at its path.
+pub trait Shadows
+{
+    /// The text held for the source at `named`, a path as [`named_path`]
+    /// names it; `None` when the file at the path is read instead.
+    ///
+    /// # Specification
+    /// trivial.
+    fn shadowed(
+        &self,
+        named: &Path,
+    ) -> Option<SourceText<'_>>;
+}
+
+/// No source shadowed: every import reads the file at its path.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Unshadowed;
+
+impl Shadows for Unshadowed
+{
+    /// Nothing held: the file at every path is read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn shadowed(
+        &self,
+        _named: &Path,
+    ) -> Option<SourceText<'_>>
+    {
+        None
+    }
+}
+
 /// One component's sources, by position in the graph, in admission order.
 #[repr(transparent)]
 #[derive(Debug)]
 struct Laying(Vec<Position>);
 
 /// The import closure of the source at `path`, read as `text` under `root`,
-/// laid out as one unit.
+/// laid out as one unit, every import read from its file.
+///
+/// # Specification
+/// - requires: `text` is the source at `path`, classified under `root`.
+/// - ensures: [`lay_out_shadowed`] with [`Unshadowed`].
+/// - provides: the unit a batch tool judges a source in.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the result is [`lay_out_shadowed`]'s under
+///   [`Unshadowed`], whose own predicate checks it; restating it here would lay
+///   the closure out twice.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`lay_out_shadowed`].
+/// - witness: `component::tests::an_importer_is_laid_after_what_it_imports`
+/// - witness: `component::tests::a_cycle_and_a_missing_path_leave_their_imports_unresolved`
+/// - witness: `component::tests::a_closure_names_every_path_its_imports_name_844`
+/// - witness: `component::tests::a_source_importing_nothing_is_alone`
+#[inline]
+pub fn lay_out(
+    grammar: &Pbg,
+    path: &Path,
+    root: SourceRoot,
+    text: SourceText<'_>,
+) -> Maybe<Laid, laid::Absent>
+{
+    lay_out_shadowed(grammar, path, root, text, &Unshadowed)
+}
+
+/// The import closure of the source at `path`, read as `text` under `root`,
+/// laid out as one unit, each import read as `shadows` holds it.
 ///
 /// # Specification
 /// - requires: `text` is the source at `path`, classified under `root`.
 /// - ensures: a source that writes a path import is laid out with every source
 ///   it reaches through path imports: each import's path is joined to its
-///   importer's directory and resolves when it names a readable source
-///   classified under `root` that parses; an import that is an edge of a cycle
-///   resolves to [`ImportTarget::Cycle`] and any other import that does not
-///   resolve to [`ImportTarget::Unresolved`]. The sources stand in dependency
-///   order, each after every source it imports, the importer last at
-///   [`Laid::base`], one newline apart; a source no resolved import reaches is
-///   not laid out. This is the component [`group`] lays out for the source
+///   importer's directory and resolves when it names a source classified under
+///   `root` that parses, read as `shadows` holds it, else from the file at the
+///   path; an import that is an edge of a cycle resolves to
+///   [`ImportTarget::Cycle`] and any other import that does not resolve to
+///   [`ImportTarget::Unresolved`]. The sources stand in dependency order, each
+///   after every source it imports, the importer last at [`Laid::base`], one
+///   newline apart; a source no resolved import reaches is not laid out. With
+///   [`Unshadowed`], this is the component [`group`] lays out for the source
 ///   given alone. [`Laid::named`] holds, sorted and once each, every path an
-///   import of a source the closure read names, resolved or not: canonical when
-///   it exists, else its directory's canonical path joined with its file name.
+///   import of a source the closure read names, resolved or not, as
+///   [`named_path`] names it.
 /// - provides: the unit the session judges a document in.
 /// - fails: never; a source that writes no path import, or does not parse, is
 ///   [`laid::Absent::Alone`].
@@ -542,11 +609,13 @@ struct Laying(Vec<Position>);
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a two-source closure, a cycle, a missing path, a sibling
-///   that does not parse and a source importing nothing, each laid out exactly.
+///   that does not parse, a source importing nothing, and a sibling an editor
+///   holds, each laid out exactly.
 /// - witness: `component::tests::an_importer_is_laid_after_what_it_imports`
 /// - witness: `component::tests::a_cycle_and_a_missing_path_leave_their_imports_unresolved`
 /// - witness: `component::tests::a_closure_names_every_path_its_imports_name_844`
 /// - witness: `component::tests::a_source_importing_nothing_is_alone`
+/// - witness: `component::tests::a_shadowed_import_is_read_as_its_editor_holds_it`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref laid) => laid.text.get(usize::from(laid.base) ..) == Some(text.as_ref())
         && laid.paths.len() == laid.unit.sources().len()
@@ -554,11 +623,12 @@ struct Laying(Vec<Position>);
     Maybe::Absent(_) => true,
 })]
 #[inline]
-pub fn lay_out(
+pub fn lay_out_shadowed(
     grammar: &Pbg,
     path: &Path,
     root: SourceRoot,
     text: SourceText<'_>,
+    shadows: &dyn Shadows,
 ) -> Maybe<Laid, laid::Absent>
 {
     if !text.as_ref().contains(IMPORT) {
@@ -570,7 +640,7 @@ pub fn lay_out(
     };
     let mut graph = Graph::default();
     let importer = graph.admit(canonical, root, String::from(text.as_ref()));
-    graph.expand(grammar);
+    graph.expand(grammar, shadows);
     match graph.read.get(importer.0) {
         Some(read) if read.parse == Parse::Parsed && !read.edges.is_empty() => {},
         Some(_) | None => return Maybe::Absent(laid::Absent::Alone),
@@ -660,7 +730,7 @@ pub fn group(
         .into_iter()
         .map(|source| graph.admit(source.path, source.root, source.text))
         .collect();
-    graph.expand(grammar);
+    graph.expand(grammar, &Unshadowed);
     let layings = graph.layings(&positions);
     let mut where_laid: BTreeMap<Position, Placed> = BTreeMap::new();
     let mut components = Vec::with_capacity(layings.len());
@@ -749,9 +819,10 @@ impl Graph
     /// - requires: nothing.
     /// - ensures: each source whose text spells `import` is read for its path
     ///   imports as the graph's [`Reading`] says and its imports resolved in
-    ///   the order it writes them. Read whole, it is [`Parse::Parsed`] with its
-    ///   edges, or [`Parse::Unparsed`] with none; read by its import forms, it
-    ///   is [`Parse::Parsed`] with its edges when they write a path import and
+    ///   the order it writes them, each read as [`Graph::resolve`] reads it
+    ///   under `shadows`. Read whole, it is [`Parse::Parsed`] with its edges,
+    ///   or [`Parse::Unparsed`] with none; read by its import forms, it is
+    ///   [`Parse::Parsed`] with its edges when they write a path import and
     ///   stays [`Parse::Unchecked`] otherwise. Each source an edge names is
     ///   [`Parse::Parsed`] or [`Parse::Unparsed`]; every other source stays
     ///   [`Parse::Unchecked`].
@@ -766,10 +837,12 @@ impl Graph
     /// - witness: `component::tests::an_importer_is_laid_after_what_it_imports`
     /// - witness: `component::tests::a_cycle_and_a_missing_path_leave_their_imports_unresolved`
     /// - witness: `component::tests::an_importer_s_forms_are_read_as_its_parse_reads_them`
+    /// - witness: `component::tests::a_shadowed_import_is_read_as_its_editor_holds_it`
     #[spec(captures: [admitted = self.read.len()], ensures: self.read.len() >= admitted)]
     fn expand(
         &mut self,
         grammar: &Pbg,
+        shadows: &dyn Shadows,
     )
     {
         let mut next = 0_usize;
@@ -805,7 +878,7 @@ impl Graph
             self.parsed.absorb(parsed);
             let edges: Vec<Edge> = written
                 .iter()
-                .map(|address| self.resolve(&directory.join(address), root))
+                .map(|address| self.resolve(&directory.join(address), root, shadows))
                 .collect();
             if let Some(reading) = self.read.get_mut(next) {
                 reading.parse = parse;
@@ -854,18 +927,20 @@ impl Graph
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the position of the source at `target`'s canonical path, read
-    ///   and appended when new; [`Edge::Unresolved`] when the path cannot be
-    ///   canonicalised or read, or names a source under a root other than
-    ///   `root`. Either way the graph names `target`: canonical when it exists,
-    ///   else its directory's canonical path joined with its file name.
+    /// - ensures: the graph names `target` as [`named_path`] names it. The
+    ///   position of the source at that path, appended when new: read as
+    ///   `shadows` holds it when it holds it, else from the file there;
+    ///   [`Edge::Unresolved`] when neither `shadows` nor a readable file holds
+    ///   it, or it is classified under a root other than `root`.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a sibling, a second import of it, and a missing path.
+    /// - hypothesis: L3 — a sibling, a second import of it, a missing path, and
+    ///   a sibling an editor holds, on disk and not yet written.
     /// - witness: `component::tests::a_cycle_and_a_missing_path_leave_their_imports_unresolved`
     /// - witness: `component::tests::a_component_lays_each_source_once`
+    /// - witness: `component::tests::a_shadowed_import_is_read_as_its_editor_holds_it`
     #[spec(ensures: |ret| match ret {
         Edge::To(position) => position.0 < self.read.len(),
         Edge::Unresolved => true,
@@ -874,15 +949,14 @@ impl Graph
         &mut self,
         target: &Path,
         root: SourceRoot,
+        shadows: &dyn Shadows,
     ) -> Edge
     {
-        let Ok(canonical) = std::fs::canonicalize(target)
-        else {
-            let _named = self.named.insert(missing(target));
-            return Edge::Unresolved;
-        };
-        let _named = self.named.insert(canonical.clone());
-        if let Some(&known) = self.index.get(&canonical) {
+        let canonical = std::fs::canonicalize(target);
+        let exists = canonical.is_ok();
+        let named = canonical.unwrap_or_else(|_| missing(target));
+        let _named = self.named.insert(named.clone());
+        if let Some(&known) = self.index.get(&named) {
             return if self.read.get(known.0).is_some_and(|read| read.root == root) {
                 Edge::To(known)
             }
@@ -891,9 +965,24 @@ impl Graph
             };
         }
         let mut text = String::new();
-        match read_source(&canonical, &mut text) {
-            Ok(found) if found == root => Edge::To(self.admit(canonical, root, text)),
-            Ok(_) | Err(_) => Edge::Unresolved,
+        let found = if let Some(held) = shadows.shadowed(&named) {
+            text.push_str(held.as_ref());
+            classify(&named)
+        }
+        else if exists {
+            match read_source(&named, &mut text) {
+                Ok(found) => found,
+                Err(_) => return Edge::Unresolved,
+            }
+        }
+        else {
+            return Edge::Unresolved;
+        };
+        if found == root {
+            Edge::To(self.admit(named, root, text))
+        }
+        else {
+            Edge::Unresolved
         }
     }
 
@@ -1598,6 +1687,7 @@ fn reaches(read: &[Read]) -> Vec<BTreeSet<Position>>
 #[cfg(test)]
 mod tests
 {
+    use alloc::collections::BTreeMap;
     use std::path::Path;
     use std::path::PathBuf;
 
@@ -1615,8 +1705,10 @@ mod tests
     use super::ParsedBytes;
     use super::Placed;
     use super::Reading;
+    use super::Shadows;
     use super::group;
     use super::lay_out;
+    use super::lay_out_shadowed;
     use super::named_path;
     use crate::root::SourceRoot;
 
@@ -1680,6 +1772,27 @@ mod tests
         fn drop(&mut self)
         {
             let _removed = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// The sources an editor holds, by the path a closure names each by.
+    #[repr(transparent)]
+    struct Held(BTreeMap<PathBuf, String>);
+
+    impl Shadows for Held
+    {
+        /// The text held at `named`, if any.
+        ///
+        /// # Specification
+        /// trivial.
+        fn shadowed(
+            &self,
+            named: &Path,
+        ) -> Option<SourceText<'_>>
+        {
+            self.0
+                .get(named)
+                .map(|text| SourceText::from(text.as_str()))
         }
     }
 
@@ -1900,6 +2013,60 @@ mod tests
             ),
             Maybe::Absent(_)
         ));
+    }
+
+    #[test]
+    fn a_shadowed_import_is_read_as_its_editor_holds_it()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let importer = SourceText::from(
+            "import \"./base.gandr\" ;\nimport \"./draft.gandr\" ;\ndef four : Integer ;\ndef \
+             four = one ;",
+        );
+        let tree = Scratch::new(Path::new("shadowed"), &[
+            (
+                Path::new("base.gandr"),
+                SourceText::from("def one : Integer ;\ndef one = 1 ;"),
+            ),
+            (Path::new("main.gandr"), importer),
+        ]);
+        let main = tree.0.join("main.gandr");
+        let held = Held(BTreeMap::from([
+            (
+                named_path(&tree.0.join("base.gandr")),
+                String::from("def one : Integer ;\ndef one = 2 ;"),
+            ),
+            (
+                named_path(&tree.0.join("draft.gandr")),
+                String::from("def three : Integer ;\ndef three = 3 ;"),
+            ),
+        ]));
+        let Maybe::Present(shadowed) =
+            lay_out_shadowed(&grammar, &main, SourceRoot::Strict, importer, &held)
+        else {
+            panic!("an importer of held siblings is laid out");
+        };
+        assert!(
+            shadowed.text.contains("def one = 2 ;") && !shadowed.text.contains("def one = 1 ;"),
+            "the sibling on disk is read as the editor holds it: {}",
+            shadowed.text
+        );
+        assert!(
+            shadowed.text.contains("def three = 3 ;"),
+            "a sibling only the editor holds is laid out: {}",
+            shadowed.text
+        );
+        assert_eq!(shadowed.paths.len(), 3_usize);
+        let Maybe::Present(unshadowed) = lay_out(&grammar, &main, SourceRoot::Strict, importer)
+        else {
+            panic!("an importer of a sibling on disk is laid out");
+        };
+        assert!(
+            unshadowed.text.contains("def one = 1 ;") && !unshadowed.text.contains("def three"),
+            "unshadowed, the file is read and the unwritten sibling is unresolved: {}",
+            unshadowed.text
+        );
+        assert_eq!(unshadowed.paths.len(), 2_usize);
     }
 
     #[test]
