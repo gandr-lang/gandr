@@ -43,6 +43,7 @@ fn advertised_capabilities_name_the_token_legend()
                 "workspaceSymbolProvider": true,
                 "documentHighlightProvider": true,
                 "referencesProvider": true,
+                "renameProvider": {"prepareProvider": true},
             },
             "serverInfo": {"name": "gandr", "version": env!("CARGO_PKG_VERSION")},
         }),

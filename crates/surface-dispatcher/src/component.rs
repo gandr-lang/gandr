@@ -1427,21 +1427,11 @@ fn paths_formed(
 {
     let source = text.as_ref();
     let mut forms = String::new();
-    for (at, _) in source.match_indices(IMPORT) {
-        let before = source.get(.. at).unwrap_or_default();
-        let indent = before.rsplit('\n').next().unwrap_or_default();
-        let after = source.get(at ..).unwrap_or_default();
-        let spaced = after
-            .get(IMPORT.len() ..)
-            .and_then(|rest| rest.chars().next())
-            .is_some_and(|next| next.is_whitespace() || next == '"');
-        if !indent.trim().is_empty() || !spaced {
-            continue;
-        }
-        let end = after
-            .find(END)
-            .map_or(after.len(), |end| end.saturating_add(END.len()));
-        forms.push_str(after.get(.. end).unwrap_or_default());
+    for form in source
+        .match_indices(IMPORT)
+        .filter_map(|(at, _)| import_form(text, ByteOffset::from(at)))
+    {
+        forms.push_str(form.as_ref());
         forms.push('\n');
     }
     parsed.absorb(ParsedBytes::from(forms.len()));
@@ -1498,6 +1488,90 @@ fn paths_written(
             .map(|import| String::from(import.uri.as_ref()))
             .collect(),
     )
+}
+
+/// The import form the `import` at byte `at` of `source` opens: the text from
+/// it through the first `;` after it, or through the text's end, when it opens
+/// a line past its indentation and a space or a quote follows it.
+///
+/// # Specification
+/// trivial.
+fn import_form(
+    text: SourceText<'_>,
+    at: ByteOffset,
+) -> Option<SourceText<'_>>
+{
+    let source = <&str>::from(text);
+    let at = usize::from(at);
+    let before = source.get(.. at)?;
+    let indent = before.rsplit('\n').next().unwrap_or_default();
+    let after = source.get(at ..)?;
+    let spaced = after
+        .get(IMPORT.len() ..)
+        .and_then(|rest| rest.chars().next())
+        .is_some_and(|next| next.is_whitespace() || next == '"');
+    if !indent.trim().is_empty() || !spaced {
+        return None;
+    }
+    let end = after
+        .find(END)
+        .map_or(after.len(), |end| end.saturating_add(END.len()));
+    after.get(.. end).map(SourceText::from)
+}
+
+/// The files `text`, the source at `path`, imports by path: each path address
+/// its imports write, joined to `path`'s directory and named as
+/// [`named_path`] names it, in source order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a text that never spells `import` imports nothing and is not
+///   parsed; one each of whose `import`s opens an import form is read from its
+///   forms alone, as [`Reading::ImportForms`] reads it; any other is read
+///   whole, as [`Reading::Whole`] reads it, a text this process read whole
+///   before answering what that reading found. A source whose imports do not
+///   read, or that does not parse, imports nothing.
+/// - provides: an importer's edges, read without judging it: what a table of
+///   every source under a root keeps to answer a file's importers.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause would read the text again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — imports read from their forms and an import written after
+///   a declaration on its line each name their file, a scheme import names
+///   none, and a source that never spells `import` names none.
+/// - witness: `component::tests::a_source_names_the_files_it_imports`
+#[inline]
+#[must_use]
+pub fn imports_named(
+    grammar: &Pbg,
+    path: &Path,
+    text: SourceText<'_>,
+) -> Vec<PathBuf>
+{
+    let source = text.as_ref();
+    if !source.contains(IMPORT) {
+        return Vec::new();
+    }
+    let mut parsed = ParsedBytes::default();
+    let formed = source
+        .match_indices(IMPORT)
+        .all(|(at, _)| import_form(text, ByteOffset::from(at)).is_some());
+    let written = if formed {
+        paths_formed(grammar, text, &mut parsed)
+    }
+    else {
+        match read_whole(grammar, text, &mut parsed) {
+            Maybe::Present(written) => written,
+            Maybe::Absent(_) => Vec::new(),
+        }
+    };
+    let directory = path.parent().unwrap_or(path);
+    written
+        .iter()
+        .map(|address| named_path(&directory.join(address)))
+        .collect()
 }
 
 /// The most sources [`READINGS`] holds before it lets the one read longest
@@ -1707,6 +1781,7 @@ mod tests
     use super::Reading;
     use super::Shadows;
     use super::group;
+    use super::imports_named;
     use super::lay_out;
     use super::lay_out_shadowed;
     use super::named_path;
@@ -2211,6 +2286,41 @@ mod tests
                 .collect::<Vec<_>>(),
             [nested],
             "read whole, the nested source imports nothing and stands alone"
+        );
+    }
+
+    #[test]
+    fn a_source_names_the_files_it_imports()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let base = "def one : Integer ;\ndef one = 1 ;";
+        let importer = "/// Imports the base.\nimport \"./base.gandr\" ;\nimport \
+                        \"file:///far.gandr\" as far ;\ndef two : Integer ;\ndef two = one ;";
+        // The second import does not open its line, so the source is read
+        // whole, and both are named, the file not yet written among them.
+        let crowded = "import \"./base.gandr\" ; import \"./later.gandr\" ;\ndef three : Integer \
+                       ;\ndef three = 3 ;";
+        let tree = Scratch::new(Path::new("named"), &[(
+            Path::new("base.gandr"),
+            SourceText::from(base),
+        )]);
+        let named = |file: &str, text: &str| {
+            imports_named(&grammar, &tree.0.join(file), SourceText::from(text))
+        };
+        assert_eq!(
+            named("importer.gandr", importer),
+            [tree.0.join("base.gandr")],
+            "the path import names its file; the scheme import names none"
+        );
+        assert_eq!(
+            named("crowded.gandr", crowded),
+            ["base.gandr", "later.gandr"].map(|file| tree.0.join(file)),
+            "an import past the start of its line is read from the whole source"
+        );
+        assert_eq!(
+            named("base.gandr", base),
+            Vec::<PathBuf>::new(),
+            "a source that never spells `import` names nothing"
         );
     }
 }

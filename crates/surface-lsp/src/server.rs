@@ -51,6 +51,8 @@
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use core::cell::OnceCell;
+use core::cell::RefCell;
+use core::convert::Infallible;
 use core::fmt;
 use core::ops::ControlFlow;
 use core::time::Duration;
@@ -64,6 +66,7 @@ use std::time::Instant;
 use anodized::spec;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::Shadows;
+use gandr_surface_dispatcher::imports_named;
 use gandr_surface_dispatcher::named_path;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Spelling;
@@ -79,6 +82,7 @@ use serde::Deserialize as _;
 use serde_json::Value;
 
 use crate::complete::completions;
+use crate::files::Files;
 use crate::format::edits;
 use crate::goto::Goto;
 use crate::goto::targets;
@@ -123,15 +127,18 @@ use crate::protocol::RangeParams;
 use crate::protocol::ReferenceContext;
 use crate::protocol::ReferenceParams;
 use crate::protocol::RegistrationParams;
+use crate::protocol::RenameParams;
 use crate::protocol::SelectionRangeParams;
 use crate::protocol::SemanticTokens;
 use crate::protocol::Settings;
+use crate::protocol::Severity;
 use crate::protocol::ShowsProgress;
 use crate::protocol::StringValue;
 use crate::protocol::SymbolInformation;
 use crate::protocol::WatchedFilesParams;
 use crate::protocol::WatchesFiles;
 use crate::protocol::WorkTitle;
+use crate::protocol::WorkspaceEdit;
 use crate::protocol::WorkspaceSymbolParams;
 use crate::quiet::Changes;
 use crate::quiet::Holding;
@@ -150,6 +157,13 @@ use crate::recheck::forms;
 use crate::recheck::grammar;
 use crate::recheck::open;
 use crate::recheck::recheck;
+use crate::recheck::trial;
+use crate::rename::NewName;
+use crate::rename::Unrenamed;
+use crate::rename::prepared;
+use crate::rename::sites;
+use crate::rename::spliced;
+use crate::rename::text_edits;
 use crate::rpc::Classified;
 use crate::rpc::ErrorCode;
 use crate::rpc::Incoming;
@@ -172,6 +186,7 @@ use crate::tokens::overlapping;
 use crate::transport::Body;
 use crate::transport::TransportFault;
 use crate::transport::write_frame;
+use crate::uses::Written;
 use crate::uses::highlights;
 use crate::uses::located;
 use crate::uses::placed;
@@ -832,6 +847,11 @@ pub struct Workspace
     /// types in until its editor's `gandr.presentation.spelling` says
     /// otherwise, and what a query writes them in.
     spelling: Spelling,
+    /// Every source under the folders the connections opened, with the files
+    /// each imports: where a reference or rename request finds the importers
+    /// no editor holds. A cache the answers refresh, so it changes under a
+    /// shared borrow.
+    files: RefCell<Files>,
 }
 
 /// The copies the editors hold, read by an import in place of the file at
@@ -865,6 +885,20 @@ impl Shadows for Shadowing<'_>
         let held = self.held.get(uri).or_else(|| self.pending?.get(uri))?;
         Some(held.view(self.peer).text.source())
     }
+}
+
+/// A document a reference or rename request reads: its URI, its canonical
+/// path, its text and what its hovers read.
+struct Writer<'read>
+{
+    /// Its URI.
+    uri: &'read DocumentUri,
+    /// Its canonical path.
+    path: &'read Path,
+    /// Its text.
+    text: SourceText<'read>,
+    /// What its hovers read, its type table among it.
+    hovering: &'read Hovering,
 }
 
 impl Workspace
@@ -2206,6 +2240,19 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
+            (Phase::Running, "textDocument/prepareRename") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Renaming(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
+            (Phase::Running, "textDocument/rename") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Renamed(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } =>
+                        error.code == ErrorCode::INVALID_PARAMS || error.code == ErrorCode::REQUEST_FAILED,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
             (Phase::Running, "textDocument/documentHighlight") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Highlights(_), .. } => true,
@@ -2271,6 +2318,7 @@ impl Server
                 self.offsets = initial_offsets(&params);
                 self.watching = initial_watching(&params);
                 self.progress = initial_progress(&params);
+                workspace.rooted(&initial_roots(&params));
                 success(
                     id,
                     Answer::Initialize(Box::new(InitializeResult::advertised())),
@@ -2373,6 +2421,33 @@ impl Server
                             params.context,
                         ),
                     ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "textDocument/prepareRename") => {
+                match serde_json::from_value::<PositionParams>(params) {
+                    Ok(params) => success(
+                        id,
+                        workspace.prepare_rename(
+                            &params.text_document.uri,
+                            self.peer,
+                            params.position,
+                        ),
+                    ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "textDocument/rename") => {
+                match serde_json::from_value::<RenameParams>(params) {
+                    Ok(params) => match workspace.rename(
+                        &params.text_document.uri,
+                        self.peer,
+                        params.position,
+                        NewName(&params.new_name),
+                    ) {
+                        Ok(answer) => success(id, answer),
+                        Err(refused) => failure(id, ErrorCode::REQUEST_FAILED, refused),
+                    },
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
@@ -2819,6 +2894,21 @@ impl Workspace
             })
     }
 
+    /// Add each of `roots`, a folder a connection opened, to the path table.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rooted(
+        &self,
+        roots: &[PathBuf],
+    )
+    {
+        let mut files = self.files.borrow_mut();
+        for root in roots {
+            files.root(root);
+        }
+    }
+
     /// The tokens of the copy of the document at `uri` that `peer` is
     /// answered from, in `window`.
     ///
@@ -2847,7 +2937,7 @@ impl Workspace
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), Window::Whole | Window::Within(_) => true },
         Answer::Initialize(_) | Answer::Completions(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
-            | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) => false,
+            | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_) => false,
     })]
     fn tokens(
         &self,
@@ -2901,7 +2991,7 @@ impl Workspace
             && list.items.iter().all(|item| item.range.start <= position && position <= item.range.end),
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Signatures(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
-            | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) => false,
+            | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_) => false,
     })]
     fn inline(
         &self,
@@ -3326,18 +3416,21 @@ impl Workspace
     ///   yields Nothing; otherwise, for the name [`placed`] places, its
     ///   declaring name first when `context` asks for it, at the open document
     ///   whose path is the name's source when one is open and at that path
-    ///   otherwise; then each open document's own uses of it, as [`located`]
-    ///   answers, in URI order. No name answers the empty list.
+    ///   otherwise; then the uses of it each document [`Self::writers`] visits
+    ///   makes, as [`located`] answers, in the order it visits them. No name
+    ///   answers the empty list.
     /// - provides: the answer to `textDocument/references`.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a sibling's name asked from an importer is found in
-    ///   the sibling and in every open importer, with its declaration when
-    ///   asked and without it otherwise; a binder's uses stay in its document;
-    ///   an unknown document answers `null`.
+    ///   the sibling, in every open importer and in an importer no editor
+    ///   holds, with its declaration when asked and without it otherwise; a
+    ///   binder's uses stay in its document; an unknown document answers
+    ///   `null`.
     /// - witness: `server::tests::references_find_a_name_s_uses_in_every_open_document`
+    /// - witness: `server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Locations(_))
         && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
     fn references(
@@ -3377,6 +3470,54 @@ impl Workspace
         {
             found.push(Location { uri: target, range });
         }
+        let Ok(()) = self.writers::<Infallible>(&name, peer, &shadows, &mut |writer| {
+            found.extend(located(
+                writer.text,
+                writer.uri,
+                writer.path,
+                writer.hovering,
+                &name.path,
+                name.named,
+            ));
+            Ok(())
+        });
+        Answer::Locations(found)
+    }
+
+    /// Visit each document that may write the name `written` places, as
+    /// `peer` is answered: every open document's copy, in URI order, then each
+    /// source the path table finds importing the name's source, and that
+    /// source itself, that no editor holds and whose file spells the name,
+    /// read from disk and laid out with each import read as the editors hold
+    /// it.
+    ///
+    /// # Specification
+    /// - requires: `shadows` reads the copies `peer` is answered from.
+    /// - ensures: `visit` is called once per document visited, in the order
+    ///   above, until it fails; a document whose session holds no grammar, a
+    ///   file that cannot be read and a path no URI names are passed over.
+    /// - provides: the documents a reference or rename request reads, so the
+    ///   two cannot answer a different set.
+    /// - fails: the first failure `visit` returns.
+    /// - panics: none.
+    /// - executable: none — the visits are the caller's effects.
+    ///
+    /// # Errors
+    /// The first failure `visit` returns.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an open importer, the unopened declaring source and
+    ///   an unopened importer are each visited once, and a source importing
+    ///   nothing is not.
+    /// - witness: `server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
+    fn writers<Failure>(
+        &self,
+        written: &Written,
+        peer: Peer,
+        shadows: &Shadowing<'_>,
+        visit: &mut dyn FnMut(Writer<'_>) -> Result<(), Failure>,
+    ) -> Result<(), Failure>
+    {
         for held in self.documents.keys() {
             let Maybe::Present(document) = self.view(held, peer)
             else {
@@ -3386,16 +3527,296 @@ impl Workspace
             else {
                 continue;
             };
-            found.extend(located(
-                document.text.source(),
-                held,
-                &named_path(&held.path()),
-                document.text.hovering(&held.path(), session, &shadows),
-                &name.path,
-                name.named,
-            ));
+            visit(Writer {
+                uri: held,
+                path: &named_path(&held.path()),
+                text: document.text.source(),
+                hovering: document.text.hovering(&held.path(), session, shadows),
+            })?;
         }
-        Answer::Locations(found)
+        let Ok(grammar) = grammar()
+        else {
+            return Ok(());
+        };
+        let copies: Vec<(PathBuf, Vec<PathBuf>)> = self
+            .paths
+            .iter()
+            .filter_map(|(path, uri)| match self.view(uri, peer) {
+                Maybe::Present(document) => Some((
+                    path.clone(),
+                    imports_named(grammar, path, document.text.source()),
+                )),
+                Maybe::Absent(_) => None,
+            })
+            .collect();
+        let mut unheld = self
+            .files
+            .borrow_mut()
+            .importers(grammar, &written.path, &copies);
+        unheld.push(written.path.clone());
+        unheld.sort_unstable();
+        unheld.dedup();
+        let mut session: Option<DocumentSession> = None;
+        let mut text = String::new();
+        for path in unheld {
+            if self.paths.contains_key(&path) {
+                continue;
+            }
+            let Some(uri) = DocumentUri::of_path(&path)
+            else {
+                continue;
+            };
+            text.clear();
+            let read = std::fs::File::open(&path)
+                .and_then(|mut file| std::io::Read::read_to_string(&mut file, &mut text));
+            if read.is_err() || !text.contains(written.spelled.as_str()) {
+                continue;
+            }
+            let Ok(ref judging) = *session.get_or_insert_with(|| open(&uri))
+            else {
+                return Ok(());
+            };
+            let source = SourceText::from(text.as_str());
+            visit(Writer {
+                uri: &uri,
+                path: &path,
+                text: source,
+                hovering: &hovering(source, &path, judging, shadows),
+            })?;
+        }
+        Ok(())
+    }
+
+    /// What a prepare-rename request at `position` of the copy of the
+    /// document at `uri` that `peer` is answered from answers.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI and any position are admitted.
+    /// - ensures: what [`prepared`] answers off the copy, when the name it
+    ///   places is declared in a document an editor holds or under a folder a
+    ///   connection opened; Nothing otherwise, and for an unknown document or
+    ///   one whose session holds no grammar.
+    /// - provides: the answer to `textDocument/prepareRename`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaring name and an imported name are prepared at
+    ///   their written ranges, a keyword is not.
+    /// - witness: `server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
+    #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Renaming(_))
+        && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
+    fn prepare_rename(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        position: Position,
+    ) -> Answer
+    {
+        let shadows = self.shadowing(peer);
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Answer::Nothing;
+        };
+        let Ok(session) = document.session.as_ref()
+        else {
+            return Answer::Nothing;
+        };
+        let text = document.text.source();
+        let table = document.text.hovering(&uri.path(), session, &shadows);
+        let renamable = placed(text, &named_path(&uri.path()), table, position)
+            .is_some_and(|name| matches!(self.renamable(&name), Ok(())));
+        if !renamable {
+            return Answer::Nothing;
+        }
+        prepared(text, table, position).map_or(Answer::Nothing, Answer::Renaming)
+    }
+
+    /// Whether a rename may rewrite the name `written` places: it is declared
+    /// in a document an editor holds or under a folder a connection opened.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// Why it may not, as a rename request is refused.
+    fn renamable(
+        &self,
+        written: &Written,
+    ) -> Result<(), String>
+    {
+        if self.paths.contains_key(&written.path)
+            || self.files.borrow().root_of(&written.path).is_some()
+        {
+            return Ok(());
+        }
+        Err(format!(
+            "`{}` is declared outside every folder the editor opened; it is not renamed",
+            written.spelled
+        ))
+    }
+
+    /// What a rename request at `position` of the copy of the document at
+    /// `uri` that `peer` is answered from answers: the edits writing
+    /// `new_name` wherever the name there is written.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI, any position and any name are
+    ///   admitted.
+    /// - ensures: Nothing for an unknown document or one whose session holds no
+    ///   grammar; otherwise, for the name [`placed`] places, the edits
+    ///   replacing each of its [`sites`] in each document [`Self::writers`]
+    ///   visits with `new_name`, by URI. The declaring source, with its sites
+    ///   replaced, is tried beside its present text, each import read as `peer`
+    ///   is answered.
+    /// - provides: the answer to `textDocument/rename`.
+    /// - fails: when no name is placed; when it is declared outside the
+    ///   documents held and the folders opened; when a use does not end with
+    ///   the name ([`Unrenamed`]); when the trial ranks the renamed source
+    ///   lower or reports more errors for it than for its present text.
+    /// - panics: none.
+    /// - executable: none — the edits are each document's sites, whose own
+    ///   specification states them.
+    ///
+    /// # Errors
+    /// Why nothing is renamed, as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sibling's name renamed from an importer rewrites
+    ///   the sibling, the open importer and an importer no editor holds; a
+    ///   binder renames in its document alone; a keyword, a name already
+    ///   declared and a position on nothing are refused.
+    /// - witness: `server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
+    fn rename(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        position: Position,
+        new_name: NewName<'_>,
+    ) -> Result<Answer, String>
+    {
+        let shadows = self.shadowing(peer);
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Ok(Answer::Nothing);
+        };
+        let Ok(session) = document.session.as_ref()
+        else {
+            return Ok(Answer::Nothing);
+        };
+        let Some(name) = placed(
+            document.text.source(),
+            &named_path(&uri.path()),
+            document.text.hovering(&uri.path(), session, &shadows),
+            position,
+        )
+        else {
+            return Err("no name is written at the position".to_owned());
+        };
+        self.renamable(&name)?;
+        let mut changes = BTreeMap::new();
+        let mut declaring = None;
+        self.writers(&name, peer, &shadows, &mut |writer| {
+            let found = sites(writer.text, writer.path, writer.hovering, &name)?;
+            if found.is_empty() {
+                return Ok(());
+            }
+            let _edited = changes.insert(
+                writer.uri.clone(),
+                text_edits(writer.text, &found, new_name),
+            );
+            if writer.path == name.path {
+                declaring = Some((
+                    writer.uri.clone(),
+                    String::from(<&str>::from(writer.text)),
+                    found,
+                ));
+            }
+            Ok(())
+        })
+        .map_err(|unrenamed: Unrenamed| unrenamed.to_string())?;
+        if let Some((source, text, found)) = declaring {
+            self.judged(
+                &source,
+                peer,
+                (SourceText::from(text.as_str()), &found),
+                (SourceText::from(name.spelled.as_str()), new_name),
+                &shadows,
+            )?;
+        }
+        Ok(Answer::Renamed(WorkspaceEdit { changes }))
+    }
+
+    /// Refuse a rename of `spelled` to `new_name` that its declaring source,
+    /// the document at `uri` reading `text` with `found` its sites, does not
+    /// survive: the renamed text is tried beside `text` and must be ranked no
+    /// lower and report no more errors.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The first error the renamed text reports that the present text does
+    /// not, when the rename is refused.
+    fn judged(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        (text, found): (SourceText<'_>, &[ByteSpan]),
+        (spelled, new_name): (SourceText<'_>, NewName<'_>),
+        shadows: &Shadowing<'_>,
+    ) -> Result<(), String>
+    {
+        let renamed = spliced(text, found, new_name);
+        let fresh;
+        let session = match self.view(uri, peer) {
+            Maybe::Present(document) => &document.session,
+            Maybe::Absent(_) => {
+                fresh = open(uri);
+                &fresh
+            },
+        };
+        let tried = trial(
+            uri,
+            session,
+            &[text, SourceText::from(renamed.as_str())],
+            shadows,
+        );
+        let of = |index: usize| {
+            tried
+                .iter()
+                .find(|tried| usize::from(tried.candidate) == index)
+        };
+        let (Some(before), Some(after)) = (of(0), of(1))
+        else {
+            return Ok(());
+        };
+        let errors = |tried: &Tried| {
+            tried
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.severity == Severity::ERROR)
+                .count()
+        };
+        if after.reached <= before.reached && errors(after) <= errors(before) {
+            return Ok(());
+        }
+        let held: BTreeSet<&str> = before
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.message.as_str())
+            .collect();
+        let new = after
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.severity == Severity::ERROR)
+            .find(|diagnostic| !held.contains(diagnostic.message.as_str()))
+            .map_or("", |diagnostic| diagnostic.message.as_str());
+        Err(format!(
+            "renaming `{}` to `{}` leaves its source with an error it did not have: {new}",
+            <&str>::from(spelled),
+            new_name.0
+        ))
     }
 
     /// The answer to a formatting request `id` over `window` of the copy of
@@ -3553,6 +3974,18 @@ fn initial_progress(params: &Value) -> ShowsProgress
 {
     InitializeParams::deserialize(params)
         .map(|params| params.shows_progress())
+        .unwrap_or_default()
+}
+
+/// The folders the client `initialize` names in `params` opened, each a
+/// `file` URI's path; none when the parameters do not read.
+///
+/// # Specification
+/// trivial.
+fn initial_roots(params: &Value) -> Vec<PathBuf>
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.roots())
         .unwrap_or_default()
 }
 
@@ -4119,7 +4552,8 @@ mod tests
                         "codeActionProvider":true,
                         "workspaceSymbolProvider":true,
                         "documentHighlightProvider":true,
-                        "referencesProvider":true},
+                        "referencesProvider":true,
+                        "renameProvider":{"prepareProvider":true}},
                     "serverInfo":{"name":"gandr","version":""#,
                 env!("CARGO_PKG_VERSION"),
                 r#""}}}]"#
@@ -4379,6 +4813,164 @@ mod tests
         );
         assert_eq!(
             references("closed.gandr", 0, 0, true),
+            Value::Null,
+            "a document the server does not hold answers null"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_rename_rewrites_a_name_everywhere_it_is_written()
+    {
+        let directory = std::env::temp_dir().join(format!("gandr-rename-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        let disk = [
+            (
+                "base.gandr",
+                "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
+                 def rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    \
+                 Succ(p) => Succ(plus[<](n, p))\n  }\n}\n",
+            ),
+            (
+                "first.gandr",
+                "import \"./base.gandr\" ;\ndef nought : Nat ;\ndef nought = Zero ;\n",
+            ),
+            (
+                "unopened.gandr",
+                "import \"./base.gandr\" ;\ndef unseen : Nat ;\ndef unseen = Zero ;\n",
+            ),
+            ("apart.gandr", "def apart : Integer ;\ndef apart = 1 ;\n"),
+        ];
+        for (file, text) in disk {
+            std::fs::write(directory.join(file), text).expect("the source is written");
+        }
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        let mut server = Connected::default();
+        let initialize = serde_json::json!({"jsonrpc": "2.0", "id": 1_i32, "method": "initialize",
+            "params": {"capabilities": {}, "rootUri": format!("file://{}", directory.display())}});
+        let _answered = send(&mut server, Json(&initialize.to_string()));
+        let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+            "textDocument": {"uri": uri("first.gandr"), "languageId": "gandr", "version": 1_i32,
+                "text": disk[1].1}}});
+        let _published = send(&mut server, Json(&open.to_string()));
+        let mut ask = |method: &str, file: &str, line: u32, character: u32, extra: Value| {
+            let mut params = serde_json::json!({"textDocument": {"uri": uri(file)},
+                "position": at(Line::from(line), Character::from(character))});
+            if let (Some(params), Value::Object(extra)) = (params.as_object_mut(), extra) {
+                params.extend(extra);
+            }
+            let request = serde_json::json!({"jsonrpc": "2.0", "id": 10_i32, "method": method, "params": params});
+            send(&mut server, Json(&request.to_string()))
+                .get(0)
+                .cloned()
+                .unwrap_or(Value::Null)
+        };
+        let range = |line: u32, start: u32, end: u32| Range {
+            start: at(Line::from(line), Character::from(start)),
+            end: at(Line::from(line), Character::from(end)),
+        };
+        let location = |file: &str, line: u32, start: u32, end: u32| serde_json::json!({"uri": uri(file), "range": range(line, start, end)});
+        assert_eq!(
+            ask(
+                "textDocument/references",
+                "first.gandr",
+                2,
+                14,
+                serde_json::json!({"context": {"includeDeclaration": true}})
+            )["result"],
+            serde_json::json!([
+                location("base.gandr", 1, 2, 6),
+                location("first.gandr", 2, 13, 17),
+                location("base.gandr", 6, 4, 8),
+                location("unopened.gandr", 2, 13, 17),
+            ]),
+            "the declaration, then the open importer's use, then the uses of the sources no editor \
+             holds, read from disk"
+        );
+        assert_eq!(
+            ask(
+                "textDocument/prepareRename",
+                "first.gandr",
+                2,
+                14,
+                Value::Null
+            )["result"],
+            serde_json::json!({"range": range(2, 13, 17), "placeholder": "Zero"}),
+            "a use prepares the name as written there"
+        );
+        assert_eq!(
+            ask(
+                "textDocument/prepareRename",
+                "first.gandr",
+                1,
+                1,
+                Value::Null
+            )["result"],
+            Value::Null,
+            "a keyword prepares nothing"
+        );
+        let edit = |line: u32, start: u32, end: u32| serde_json::json!({"range": range(line, start, end), "newText": "Nought"});
+        assert_eq!(
+            ask(
+                "textDocument/rename",
+                "first.gandr",
+                2,
+                14,
+                serde_json::json!({"newName": "Nought"})
+            )["result"],
+            serde_json::json!({"changes": {
+                uri("base.gandr"): [edit(1, 2, 6), edit(6, 4, 8)],
+                uri("first.gandr"): [edit(2, 13, 17)],
+                uri("unopened.gandr"): [edit(2, 13, 17)],
+            }}),
+            "a sibling's constructor is renamed at its declaration and every use, open or not; a \
+             source importing nothing is untouched"
+        );
+        let refused = |answer: Value| {
+            answer.pointer("/error/code") == Some(&serde_json::json!(-32803_i32))
+                && answer.get("result").is_none()
+        };
+        assert!(
+            refused(ask(
+                "textDocument/rename",
+                "first.gandr",
+                2,
+                14,
+                serde_json::json!({"newName": "def"})
+            )),
+            "a keyword is refused as the new name"
+        );
+        assert!(
+            refused(ask(
+                "textDocument/rename",
+                "first.gandr",
+                2,
+                14,
+                serde_json::json!({"newName": "Succ"})
+            )),
+            "a name the declaring source declares already is refused"
+        );
+        assert!(
+            refused(ask(
+                "textDocument/rename",
+                "first.gandr",
+                1,
+                1,
+                serde_json::json!({"newName": "x"})
+            )),
+            "a position on no name is refused"
+        );
+        assert_eq!(
+            ask(
+                "textDocument/rename",
+                "closed.gandr",
+                0,
+                0,
+                serde_json::json!({"newName": "x"})
+            )["result"],
             Value::Null,
             "a document the server does not hold answers null"
         );
