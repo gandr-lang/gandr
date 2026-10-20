@@ -243,15 +243,18 @@ fn an_edit_under_every_cut_affects_exactly_its_path()
             "cap {cap}: every constructor below the root begins a chunk"
         );
 
+        // Each edit commits into the store the edits before it grew: every
+        // path chunk holds its own leaf's edit, so no earlier edit made it.
+        let mut edited = value.clone();
         for &leaf in &leaves {
-            let mut edited = value.clone();
+            edited.0.clone_from(&value.0);
             edited.edit(leaf);
-            let mut grown = store.clone();
-            let after = cam_commit(&mut grown, &profile, &edited)
+            let held = usize::from(store.chunk_count());
+            let after = cam_commit(&mut store, &profile, &edited)
                 .expect("the edit commits")
                 .root();
             let measured =
-                measure_edit(&grown, before, after, leaf.depth).expect("the edit measures");
+                measure_edit(&store, before, after, leaf.depth).expect("the edit measures");
 
             let path = usize::try_from(u64::from(leaf.depth))
                 .expect("a witness depth")
@@ -271,7 +274,7 @@ fn an_edit_under_every_cut_affects_exactly_its_path()
                 "cap {cap}, {leaf:?}: the edit shares every other chunk"
             );
             assert_eq!(
-                usize::from(grown.chunk_count()).checked_sub(constructors),
+                usize::from(store.chunk_count()).checked_sub(held),
                 Some(path),
                 "cap {cap}, {leaf:?}: the store grows by the path alone"
             );

@@ -1287,13 +1287,18 @@ fn build(
         let _built = arena.step(step);
     }
 
-    let mut frontier = arena.frontier();
-    while frontier.len() > 1_usize && arena.records(&fan(&frontier)) > RECORD_BUDGET {
-        frontier.remove(0_usize);
+    // The oldest roots drop off the front: the kept roots are a suffix.
+    let frontier = arena.frontier();
+    let mut kept = frontier.as_slice();
+    while let [_oldest, ref newer @ ..] = *kept
+        && !newer.is_empty()
+        && arena.records(&fan(kept)) > RECORD_BUDGET
+    {
+        kept = newer;
     }
-    let root = match *frontier.as_slice() {
+    let root = match *kept {
         [only] => only,
-        _ => arena.list(&frontier),
+        _ => arena.list(kept),
     };
 
     arena.tree(root)
