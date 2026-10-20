@@ -274,7 +274,9 @@ const EXPLICIT: &str = "@[ form(explicit) ]\ndef  shown : +U (-F Integer) ;\ndef
 /// #492: the gate's invariant made visible. The formatter keeps every
 /// token, so a source spelled in the explicit form comes back in the
 /// explicit form, laid out, under every option: its declaration wins over
-/// an option asking for the sugared form.
+/// an option asking for the sugared form. A source that opens with a `rec`
+/// group declares it on the group's first declaration, where a block before
+/// `rec` would refuse the module.
 #[test]
 fn an_explicit_source_keeps_its_explicit_spelling()
 {
@@ -282,9 +284,17 @@ fn an_explicit_source_keeps_its_explicit_spelling()
     let kept = "@[ form(explicit) ]\ndef shown : +U (-F Integer) ;\ndef shown = thunk { run n \
                     <- force one ; become read(n) } ;\n";
     let imported = "import \"./base.gandr\" ;\n";
+    let grouped = "rec {\n@[ form(explicit) ]\ndef shown : +U (-F Integer) ;\ndef shown = \
+                   thunk {   run n <- force one ;  become read(n) } ;\n}\n";
+    let grouped_kept = "rec {\n  @[ form(explicit) ]\n  def shown : +U (-F Integer) ;\n  def \
+                        shown = thunk { run n <- force one ; become read(n) } ;\n}\n";
     for (written, expected) in [
         (String::from(EXPLICIT), String::from(kept)),
         (format!("{imported}{EXPLICIT}"), format!("{imported}{kept}")),
+        (
+            format!("{imported}{grouped}"),
+            format!("{imported}{grouped_kept}"),
+        ),
     ] {
         let parsed =
             parse(&grammar, SourceText::from(written.as_str())).expect("the source parses");

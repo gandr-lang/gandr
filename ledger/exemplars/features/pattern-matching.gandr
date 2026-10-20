@@ -23,5 +23,5 @@ def depth(m : Outer) -> -F Integer {
 
 /// The match run on a value holding 41.
 @[ runs("41") ]
-def found : +U (-F Integer) ;
+def found : () => Integer ;
 def found = thunk { become depth(Some(Yes(41))) } ;

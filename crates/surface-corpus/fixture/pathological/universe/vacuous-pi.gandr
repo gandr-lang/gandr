@@ -4,7 +4,7 @@
 // at the arrow to any one type.
 
 /// Natural numbers, free: every constructor term is its own value.
-@[ checks ]
+@[ checks, form(explicit) ]
 data Nat : Type {
   Zero : Nat;
   Succ : (n : Nat) --> Nat;
@@ -16,7 +16,7 @@ data Nat : Type {
 def pick(n : Nat) -> -F Type {
   case n {
     Zero => return Nat,
-    Succ(m) => return (Nat => Nat)
+    Succ(m) => return (+U (Nat -> -F Nat))
   }
 }
 

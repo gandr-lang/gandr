@@ -38,7 +38,7 @@ def etaRecordTwo(e : #{l : Integer, r : Integer}) -> -F Path(
 @[ checks ]
 def etaFiber(e : #{n : Integer, v : Path(Integer, n, n)}) -> -F Path(
   #{n : Integer, v : Path(Integer, n, n)},
-  #{e.n, e.v},
+  (e.n, e.v),
   e
 ) {
   return here(e)

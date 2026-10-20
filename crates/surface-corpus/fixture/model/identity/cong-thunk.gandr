@@ -3,7 +3,7 @@
 // between integers to one between the thunks the function returns.
 
 /// An integer added to itself.
-@[ checks ]
+@[ checks, form(explicit) ]
 def double(x: Integer) -> -F Integer {
   become x + x
 }
@@ -31,7 +31,7 @@ def cong_delay(a: Integer, b: Integer, p: Path(Integer, a, b)) -> -F Path(
   delay(a),
   delay(b)
 ) {
-  become cong(delay, p)
+  become transport(\c. Path(+U (-F Integer), delay(a), delay(c)), p, here(delay(a)))
 }
 
 /// Reflexivity at four carried along the suspended doubling by a run.

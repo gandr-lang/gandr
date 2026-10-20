@@ -11,7 +11,7 @@
 import "../data/data-base.gandr" ;
 
 /// The codes: the naturals, and the functions from one coded type to another.
-@[ checks ]
+@[ checks, form(explicit) ]
 data U : Type {
   NatC : U;
   Arrow : (a : U, b : U) --> U;
@@ -23,20 +23,20 @@ data U : Type {
 def rec el(u : U) -> -F Type {
   case u {
     NatC => return Nat,
-    Arrow(a, b) => { run x <- el[<](a); run y <- el[<](b); return (x => y) }
+    Arrow(a, b) => { run x <- el[<](a); run y <- el[<](b); return (+U (x -> -F y)) }
   }
 }
 
 /// The arrow from a type to itself, quoted in a body past two parameters no
 /// type names: the quote reads `a`, not `v` (#540).
 @[ checks ]
-def endo(a : Type, n : Nat, v : a) -> -F Type { return (a => a) }
+def endo(a : Type, n : Nat, v : a) -> -F Type { return (+U (a -> -F a)) }
 
 /// The same arrow past one parameter no type names: the quote's read of `a`
 /// leaves the signature non-dependent, so it prints as `Type -> Nat -> -F
 /// Type` and reads back to itself (#547).
 @[ checks ]
-def endoBare(a : Type, n : Nat) -> -F Type { return (a => a) }
+def endoBare(a : Type, n : Nat) -> -F Type { return (+U (a -> -F a)) }
 
 /// The functions from a code to its decode, quoted in a body: the codomain
 /// `el(c)` names the arrow's own binder, which no signature type names, so

@@ -12,7 +12,7 @@ data Ix(n : Integer) : Type {
 /// A label a later entry names binds there: the type is a dependent pair.
 @[ checks ]
 def tagged : #{n : Integer, w : Ix(n)} ;
-def tagged = #{3, (MkIx : Ix(3))} ;
+def tagged = (3, (MkIx : Ix(3))) ;
 
 /// The first component of a dependent pair, by a match.
 @[ checks ]
@@ -24,7 +24,7 @@ def tag_of(p : #{n : Integer, w : Ix(n)}) -> -F Integer {
 
 /// The tag of `tagged`.
 @[ runs("3") ]
-def tag : +U (-F Integer) ;
+def tag : () => Integer ;
 def tag = thunk { become tag_of(tagged) } ;
 
 /// The first component of a dependent pair, selected by its label.
@@ -35,13 +35,13 @@ def index_of(p : #{n : Integer, w : Ix(n)}) -> -F Integer {
 
 /// The index of `tagged`.
 @[ runs("3") ]
-def index : +U (-F Integer) ;
+def index : () => Integer ;
 def index = thunk { become index_of(tagged) } ;
 
 /// A pair whose second component is a loop at its first.
 @[ checks ]
 def ring : #{n : Integer, v : Path(Integer, n, n)} ;
-def ring = #{2, here(2)} ;
+def ring = (2, here(2)) ;
 
 /// The second projection's type reads the first.
 @[ checks ]
@@ -69,7 +69,7 @@ def rebuilt(p : #{
   v : Path(Integer, n, n)
 }) -> -F Path(#{n : Integer, v : Path(Integer, n, n)}, p, p) {
   case p {
-    #{.n = m, .v = w} => return here(#{m, w})
+    #{.n = m, .v = w} => return here((m, w))
   }
 }
 
@@ -85,22 +85,22 @@ def middle(t : #{a : Integer, b : Integer, c : Path(Integer, a, a)}) -> -F Integ
 /// A path between pairs is a path between the first components and, over
 /// it, a path between the second.
 @[ checks ]
-def both : Path(#{n : Integer, v : Path(Integer, n, n)}, #{2, here(2)}, #{2, here(2)}) ;
-def both = #{here(2), here(here(2))} ;
+def both : Path(#{n : Integer, v : Path(Integer, n, n)}, (2, here(2)), (2, here(2))) ;
+def both = (here(2), here(here(2))) ;
 
 /// A declared pair's path reads the pair it unfolds to.
 @[ checks ]
 def ring_around : Path(#{n : Integer, v : Path(Integer, n, n)}, ring, ring) ;
-def ring_around = #{here(2), here(here(2))} ;
+def ring_around = (here(2), here(here(2))) ;
 
 /// The constant path at `tagged`, the second component's over the first's.
 @[ checks ]
 def tagged_around : Path(#{n : Integer, w : Ix(n)}, tagged, tagged) ;
-def tagged_around = #{here(3), here((MkIx : Ix(3)))} ;
+def tagged_around = (here(3), here((MkIx : Ix(3)))) ;
 
 /// Five, carried along `both` through the constant family.
 @[ checks ]
-def moved : +U (-F Integer) ;
+def moved : () => Integer ;
 def moved = thunk { transport(\s. Integer, both, 5) } ;
 
 /// A later entry's type may apply the earlier one: the type printed for the
@@ -110,6 +110,6 @@ def moved = thunk { transport(\s. Integer, both, 5) } ;
 def calledFiber(e : #{
   cell : Integer => Integer,
   fix : Path(Integer, cell(0), 0)
-}) -> -F Path(#{cell : Integer => Integer, fix : Path(Integer, cell(0), 0)}, #{e.cell, e.fix}, e) {
+}) -> -F Path(#{cell : Integer => Integer, fix : Path(Integer, cell(0), 0)}, (e.cell, e.fix), e) {
   return here(e)
 }

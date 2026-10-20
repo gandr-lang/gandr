@@ -17,5 +17,5 @@ def join(
 
 /// Reflexivity composed with itself by a run.
 @[ checks ]
-def joined : +U (-F Path(Integer, 4, 4)) ;
+def joined : () => Path(Integer, 4, 4) ;
 def joined = thunk { become join(4, 4, 4, four_eq_four, four_eq_four) } ;

@@ -8,7 +8,7 @@
 import "../data/data-base.gandr" ;
 
 /// The constant family: the naturals at every natural.
-@[ checks ]
+@[ checks, form(explicit) ]
 def always(n : Nat) -> -F Type { return Nat }
 
 /// The identity over the constant family, at a dependent arrow whose codomain

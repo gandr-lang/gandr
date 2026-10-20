@@ -1,4 +1,4 @@
-@[ owes(1) ]
+@[ owes(1), form(explicit) ]
 def later : +U (-F Integer) ;
 
 @[ runs("blame: `later` is owed its body") ]

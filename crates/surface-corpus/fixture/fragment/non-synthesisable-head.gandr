@@ -1,3 +1,3 @@
-@[ refuses("NotSynthesisable") ]
+@[ refuses("NotSynthesisable"), form(explicit) ]
 def applied : +U (-F Integer) ;
 def applied = thunk { become (fn (x) { return x })(3) } ;

@@ -1,4 +1,4 @@
-@[ refuses("LevelMismatch") ]
+@[ refuses("LevelMismatch"), form(explicit) ]
 def too_big : Type ;
 def too_big = Type ;
 

@@ -26,5 +26,5 @@ def arity(presented : Theory) -> -F Integer {
 
 /// `Monoid` declares two operations.
 @[ runs("2") ]
-def counted : +U (-F Integer) ;
+def counted : () => Integer ;
 def counted = thunk { become arity(Monoid) } ;

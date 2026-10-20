@@ -1,4 +1,4 @@
-@[ checks ]
+@[ checks, form(explicit) ]
 def point : #{n : Integer, s : String} ;
 def point = #{.s = "x", .n = 3} ;
 
