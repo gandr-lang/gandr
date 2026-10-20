@@ -397,7 +397,7 @@ impl Style
     ///
     /// # Specification
     /// trivial.
-    const fn printed(self) -> gandr_surface_pretty::Style
+    pub const fn printed(self) -> gandr_surface_pretty::Style
     {
         gandr_surface_pretty::Style {
             form: self.form,

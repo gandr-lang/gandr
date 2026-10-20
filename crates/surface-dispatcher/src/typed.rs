@@ -1881,33 +1881,45 @@ impl TypeTable
         self.referents.offered()
     }
 
-    /// The written names of the binders in scope at `offset` of the source's
-    /// own text, innermost first, a shadowed binder included.
+    /// The binders in scope at `offset` of the source's own text, innermost
+    /// first, a shadowed binder included: each one's written name, and where
+    /// the source's own text writes it.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the text of each binder [`InScope::binders_at`] answers at
-    ///   `offset` moved into the unit's text, in its order.
-    /// - provides: the binders a completion at `offset` offers.
+    /// - ensures: for each binder [`InScope::binders_at`] answers at `offset`
+    ///   moved into the unit's text, in its order, the text of its name and its
+    ///   span moved back into the source's own text; a binder whose name the
+    ///   unit's text does not hold, or that lies before the source's own text,
+    ///   is skipped.
+    /// - provides: the binders a completion at `offset` offers, and the site
+    ///   [`Self::at`] types each by.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the answer is a lazy iterator over the chain.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a pattern's binder in its arm and not in its sibling,
-    ///   a parameter in the body of a refused declaration.
+    ///   a parameter in the body of a refused declaration, each at its written
+    ///   name.
     /// - witness: `typed::tests::the_binders_in_scope_are_spelled_in_the_source_s_text_831`
     #[inline]
     pub fn binders_at(
         &self,
         offset: ByteOffset,
-    ) -> impl Iterator<Item = SourceText<'_>>
+    ) -> impl Iterator<Item = (SourceText<'_>, ByteSpan)>
     {
-        let at = ByteOffset::from(usize::from(offset).saturating_add(usize::from(self.base)));
-        self.in_scope.binders_at(at).filter_map(|site| {
-            <&str>::from(self.naming.text())
-                .get(usize::from(site.start()) .. usize::from(site.end()))
-                .map(SourceText::from)
+        let base = usize::from(self.base);
+        let at = ByteOffset::from(usize::from(offset).saturating_add(base));
+        self.in_scope.binders_at(at).filter_map(move |site| {
+            let name = <&str>::from(self.naming.text())
+                .get(usize::from(site.start()) .. usize::from(site.end()))?;
+            let own = ByteSpan::new(
+                ByteOffset::from(usize::from(site.start()).checked_sub(base)?),
+                ByteOffset::from(usize::from(site.end()).checked_sub(base)?),
+            )
+            .ok()?;
+            Some((SourceText::from(name), own))
         })
     }
 
@@ -4075,7 +4087,8 @@ mod tests
     }
 
     /// #831: the binders in scope at an offset of the source's own text are
-    /// spelled from that text, the declaration being typed refused.
+    /// spelled from that text, the declaration being typed refused, and each
+    /// is placed where that text writes its name.
     #[test]
     fn the_binders_in_scope_are_spelled_in_the_source_s_text_831()
     {
@@ -4088,9 +4101,26 @@ mod tests
         let at = |needle: &'static str| {
             table
                 .binders_at(found(typing, SourceText::from(needle)))
-                .map(|name| String::from(<&str>::from(name)))
+                .map(|(name, site)| {
+                    assert_eq!(
+                        <&str>::from(typing)
+                            .get(usize::from(site.start()) .. usize::from(site.end())),
+                        Some(<&str>::from(name)),
+                        "a binder is placed at its written name"
+                    );
+                    String::from(<&str>::from(name))
+                })
                 .collect::<Vec<_>>()
         };
+        assert_eq!(
+            table
+                .binders_at(found(typing, SourceText::from("pl)")))
+                .map(|(_, site)| site.start())
+                .collect::<Vec<_>>(),
+            ["p) =>", "m : Nat)", "plus(", "n : Nat,"]
+                .map(|needle| found(typing, SourceText::from(needle))),
+            "each binder at its own written name, the arm's before the function's"
+        );
         assert_eq!(
             at("pl)"),
             ["p", "m", "plus", "n"],

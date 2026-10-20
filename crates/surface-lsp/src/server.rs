@@ -136,6 +136,7 @@ use crate::protocol::InitializeResult;
 use crate::protocol::InlineCompletionItem;
 use crate::protocol::InlineCompletionList;
 use crate::protocol::LabelOffsets;
+use crate::protocol::LabelsDetailed;
 use crate::protocol::Linked;
 use crate::protocol::ListsFolders;
 use crate::protocol::Location;
@@ -1315,6 +1316,7 @@ impl Workspace
             },
             linked: Linked(true),
             offsets: LabelOffsets(true),
+            detailing: LabelsDetailed(true),
             watching: WatchesFiles(false),
             progress: ShowsProgress(false),
             reported: 0_u64,
@@ -1542,6 +1544,9 @@ pub struct Server
     /// Whether its client takes a signature's parameters as their places in
     /// the label, read at `initialize`.
     offsets: LabelOffsets,
+    /// Whether its client shows a completion's label details, read at
+    /// `initialize`.
+    detailing: LabelsDetailed,
     /// Whether its client watches files for it once asked, read at
     /// `initialize`.
     watching: WatchesFiles,
@@ -1661,6 +1666,7 @@ impl Server
             style: STYLE,
             linked: Linked(false),
             offsets: LabelOffsets(false),
+            detailing: LabelsDetailed(false),
             watching: WatchesFiles(false),
             progress: ShowsProgress(false),
             reported: 0_u64,
@@ -3031,6 +3037,7 @@ impl Server
                 };
                 self.linked = initial_links(&params);
                 self.offsets = initial_offsets(&params);
+                self.detailing = initial_detailing(&params);
                 self.watching = initial_watching(&params);
                 self.progress = initial_progress(&params);
                 self.refreshing = initial_refreshing(&params);
@@ -3104,7 +3111,12 @@ impl Server
                 match serde_json::from_value::<PositionParams>(params) {
                     Ok(params) => success(
                         id,
-                        workspace.completion(&params.text_document.uri, self.peer, params.position),
+                        workspace.completion(
+                            &params.text_document.uri,
+                            self.peer,
+                            params.position,
+                            (self.style.printed(), self.detailing),
+                        ),
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
@@ -4373,14 +4385,15 @@ impl Workspace
     }
 
     /// What a completion request at `position` of the copy of the document at
-    /// `uri` that `peer` is answered from offers.
+    /// `uri` that `peer` is answered from offers, its types spelled in the
+    /// printer style and its label details given as `presented` says.
     ///
     /// # Specification
     /// - requires: nothing; an unknown URI and any position are admitted.
     /// - ensures: an unknown document, and one whose session or grammar did not
     ///   build, yields Nothing; otherwise the list [`completions`] answers off
     ///   the copy's text and what it keeps for its hovers, made now when no
-    ///   request has asked since the text last changed.
+    ///   request has asked since the text last changed, as `presented` says.
     /// - provides: the answer to `textDocument/completion`.
     /// - fails: never.
     /// - panics: none.
@@ -4396,6 +4409,7 @@ impl Workspace
         uri: &DocumentUri,
         peer: Peer,
         position: Position,
+        presented: (gandr_surface_pretty::Style, LabelsDetailed),
     ) -> Answer
     {
         let Maybe::Present(document) = self.view(uri, peer)
@@ -4414,6 +4428,7 @@ impl Workspace
                 .text
                 .hovering(&uri.path(), session, &self.shadowing(peer)),
             (uri, position),
+            presented,
         ))
     }
 
@@ -5369,6 +5384,18 @@ fn initial_offsets(params: &Value) -> LabelOffsets
         .unwrap_or_default()
 }
 
+/// Whether the client `initialize` names in `params` shows a completion's
+/// label details; not when the parameters do not read.
+///
+/// # Specification
+/// trivial.
+fn initial_detailing(params: &Value) -> LabelsDetailed
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.label_details())
+        .unwrap_or_default()
+}
+
 /// Whether the client `initialize` names in `params` watches files for the
 /// server once asked; not when the parameters do not read.
 ///
@@ -6090,7 +6117,8 @@ mod tests
                                 "tokenModifiers":["declaration","defaultLibrary"]},
                             "full":{"delta":true},
                             "range":true},
-                        "completionProvider":{"resolveProvider":true},
+                        "completionProvider":{"resolveProvider":true,
+                            "completionItem":{"labelDetailsSupport":true}},
                         "inlineCompletionProvider":true,
                         "documentSymbolProvider":true,
                         "foldingRangeProvider":true,
@@ -6253,7 +6281,8 @@ mod tests
                 r#"[{"jsonrpc":"2.0","id":8,"result":{"isIncomplete":false,"items":[
                     {"label":"one","kind":3,"sortText":"0","textEdit":{
                         "range":{"start":{"line":3,"character":10},"end":{"line":3,"character":12}},
-                        "newText":"one"},"data":{"uri":"file:///tmp/typing.gandr"}}]}}]"#
+                        "newText":"one"},"detail":"one : Integer",
+                        "data":{"uri":"file:///tmp/typing.gandr"}}]}}]"#
             )),
             "`on` in a value: the declaration starting with it, written over the word"
         );
