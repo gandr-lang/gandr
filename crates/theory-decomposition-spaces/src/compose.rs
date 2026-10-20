@@ -43,6 +43,7 @@
 //! incidental count of pairs.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -471,9 +472,10 @@ fn participating_cells<A>(tracelet: &Tracelet<A>) -> Vec<CellId>
 where
     A: CellAlphabet,
 {
+    let mut seen = BTreeSet::new();
     let mut cells = Vec::new();
     for step in tracelet.path_a.iter().chain(&tracelet.path_b) {
-        if !cells.contains(&step.cell) {
+        if seen.insert(step.cell) {
             cells.push(step.cell);
         }
     }
@@ -497,10 +499,11 @@ fn seam_holes<A>(cmd: &A::Cmd) -> Vec<A::Hole>
 where
     A: CellAlphabet,
 {
+    let mut seen: BTreeSet<A::Hole> = BTreeSet::new();
     let mut holes: Vec<A::Hole> = Vec::new();
     for var in A::metavariables(cmd) {
         let hole = A::hole_of(&var);
-        if !holes.contains(&hole) {
+        if seen.insert(hole.clone()) {
             holes.push(hole);
         }
     }
