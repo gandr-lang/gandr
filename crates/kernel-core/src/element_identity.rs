@@ -805,6 +805,8 @@ pub(crate) fn related_endpoints(
     {
         return Ok(crate::replay::EndpointReading::Apart);
     }
+    // One buffer for every pair's set-aside endpoints, cleared per pair.
+    let mut pending = Vec::new();
     for set_aside in pairs {
         let (left, right) = match set_aside {
             crate::conv::SetAside::Values(left, right) => (left, right),
@@ -821,7 +823,7 @@ pub(crate) fn related_endpoints(
                 return Ok(crate::replay::EndpointReading::Apart);
             },
         };
-        let mut pending = Vec::new();
+        pending.clear();
         if crate::conv::pending_endpoints(
             arena,
             unfoldings.presentations(),

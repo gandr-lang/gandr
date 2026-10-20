@@ -419,6 +419,8 @@ fn translate(
         (AnyNode::Computation(left), false),
     ];
     pending.extend(bodies.iter().map(|&body| (AnyNode::Value(body), false)));
+    // One buffer per operand kind, refilled for each tuple, case and product.
+    let (mut operands, mut branch_ids, mut part_ids) = (Vec::new(), Vec::new(), Vec::new());
     while let Some((node, expanded)) = pending.pop() {
         if !expanded {
             if !seen.insert(node) {
@@ -488,12 +490,11 @@ fn translate(
                     Value::Variable(index) => core.value_variable(Zone::Intuitionistic, index),
                     Value::Constant(index) => core.value_constant(index),
                     Value::Literal(ref literal) => core.value_literal(literal.clone()),
-                    Value::Tuple(ref components) => core.value_tuple(
-                        &components
-                            .iter()
-                            .map(|component| values[component])
-                            .collect::<Vec<_>>(),
-                    ),
+                    Value::Tuple(ref components) => {
+                        operands.clear();
+                        operands.extend(components.iter().map(|component| values[component]));
+                        core.value_tuple(&operands)
+                    },
                     Value::Injection(summand, body) => core.value_injection(summand, values[&body]),
                     Value::Thunk(body) => core.value_thunk(computations[&body]),
                     Value::Lift { ref target, body } => {
@@ -570,13 +571,11 @@ fn translate(
                     Computation::Case {
                         scrutinee,
                         ref branches,
-                    } => core.computation_case(
-                        values[&scrutinee],
-                        &branches
-                            .iter()
-                            .map(|branch| computations[branch])
-                            .collect::<Vec<_>>(),
-                    ),
+                    } => {
+                        branch_ids.clear();
+                        branch_ids.extend(branches.iter().map(|branch| computations[branch]));
+                        core.computation_case(values[&scrutinee], &branch_ids)
+                    },
                 };
                 computations.insert(id, computation);
             },
@@ -610,11 +609,16 @@ fn translate(
                     ValueType::Staged { base, stage } => {
                         core.value_type_staged(types[&base], stage)
                     },
-                    ValueType::Product(ref parts) => core.value_type_product(
-                        &parts.iter().map(|part| types[part]).collect::<Vec<_>>(),
-                    ),
-                    ValueType::Sum(ref parts) => core
-                        .value_type_sum(&parts.iter().map(|part| types[part]).collect::<Vec<_>>()),
+                    ValueType::Product(ref parts) => {
+                        part_ids.clear();
+                        part_ids.extend(parts.iter().map(|part| types[part]));
+                        core.value_type_product(&part_ids)
+                    },
+                    ValueType::Sum(ref parts) => {
+                        part_ids.clear();
+                        part_ids.extend(parts.iter().map(|part| types[part]));
+                        core.value_type_sum(&part_ids)
+                    },
                     ValueType::Thunk(body) => core.value_type_thunk(comp_types[&body]),
                     ValueType::Universe { sort, ref level } => {
                         core.value_type_universe(gandr_core_term::Sort::Ground(sort), level.clone())
