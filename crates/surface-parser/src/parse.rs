@@ -1288,6 +1288,7 @@ pure greeting
         let files = gandr_files(&corpus_root());
         assert!(!files.is_empty(), "the corpus sources are present");
         let mut molder = Molder::new(&pbg);
+        let mut parked: Vec<ParkedUnit> = Vec::new();
         for path in &files {
             let src = read_source(path)?;
             let source = SourceText::from(src.as_str());
@@ -1297,7 +1298,8 @@ pure greeting
                 .iter()
                 .map(|&run| split.mold(&mut molder, run))
                 .collect();
-            let parked: Vec<ParkedUnit> = fresh.iter().map(FormUnit::park).collect();
+            parked.clear();
+            parked.extend(fresh.iter().map(FormUnit::park));
             let resumed: Vec<_> = split
                 .runs()
                 .iter()
@@ -1408,6 +1410,7 @@ pure greeting
         let mut molder = Molder::new(&pbg);
         let mut edited_sources = 0_usize;
         let mut reused_units = 0_usize;
+        let mut edited = String::new();
         for path in gandr_files(&corpus_root()) {
             let src = read_source(&path)?;
             let before = FormSplit::new(&molder, SourceText::from(src.as_str()));
@@ -1430,7 +1433,10 @@ pure greeting
             let (head, tail) = src
                 .split_at_checked(at)
                 .ok_or("a token starts at a character")?;
-            let edited = format!("{head}def inserted = 1;\n{tail}");
+            edited.clear();
+            for part in [head, "def inserted = 1;\n", tail] {
+                edited.push_str(part);
+            }
             let parked = parked_by_identity(&mut molder, &before);
             let after = FormSplit::new(&molder, SourceText::from(edited.as_str()));
             assert_eq!(after.runs().get(middle.saturating_sub(1)), Some(&previous));

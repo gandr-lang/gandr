@@ -52,6 +52,10 @@ const RECOVERY: Sample = Sample {
 /// The step between the token rows the recovery sample checks.
 const RECOVERY_STRIDE: usize = 16;
 
+/// The most tab-separated fields a recovery record row holds, with room
+/// to spare: a row with more is read as its first this many.
+const ROW_FIELDS: usize = 8;
+
 /// The table sweep's sample: twelve sources, the rows of every sixteenth
 /// significant token of each, every sixty-fourth under `anodized_panic`.
 const TABLES: Sample = Sample {
@@ -212,6 +216,8 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
     let mut stale = Vec::new();
     let mut moved = Vec::new();
     let mut worse: Vec<(usize, usize, String)> = Vec::new();
+    let mut observed = String::new();
+    let mut dropped = String::new();
     for source in &sources {
         let rel = source.name.as_ref();
         let record = records.join(rel).with_extension("recovery");
@@ -230,7 +236,7 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
             .map_err(|error| format!("{}: {error}", source.path.display()))?;
         let whole = parse(pbg, SourceText::from(src.as_str()))?;
         let digest = fingerprint(whole.tree());
-        let mut observed = String::new();
+        observed.clear();
         writeln!(
             observed,
             "W\t{}\t{}\t{digest}",
@@ -249,7 +255,7 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
             let end = usize::try_from(token.end)?;
             let cut = parse(pbg, SourceText::from(src.get(.. end).unwrap_or_default()))?;
             let cut_digest = fingerprint(cut.tree());
-            let mut dropped = String::with_capacity(src.len());
+            dropped.clear();
             dropped.push_str(src.get(.. start).unwrap_or_default());
             dropped.push_str(src.get(end ..).unwrap_or_default());
             let variant = parse(pbg, SourceText::from(dropped.as_str()))?;
@@ -281,9 +287,21 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
         }
         for (row, (got, want)) in observed.lines().zip(recorded.lines()).enumerate() {
             let token = row.saturating_sub(1);
-            let fields: Vec<&str> = got.split('\t').collect();
-            let recorded_fields: Vec<&str> = want.split('\t').collect();
-            match (fields.as_slice(), recorded_fields.as_slice()) {
+            // Each row's fields, the observed then the recorded, split into
+            // fixed slots rather than a fresh vector per row.
+            let mut slots = [[""; ROW_FIELDS]; 2];
+            let mut counts = [0_usize; 2];
+            for ((row_slots, count), text) in slots.iter_mut().zip(&mut counts).zip([got, want]) {
+                for (slot, field) in row_slots.iter_mut().zip(text.split('\t')) {
+                    *slot = field;
+                    *count = count.saturating_add(1);
+                }
+            }
+            let ([ref observed_slots, ref recorded_slots], [count, recorded_count]) =
+                (slots, counts);
+            let fields = observed_slots.get(.. count).unwrap_or(&[]);
+            let recorded_fields = recorded_slots.get(.. recorded_count).unwrap_or(&[]);
+            match (fields, recorded_fields) {
                 (&["T"], &["T", ..]) => {},
                 (&["W", ..], &["W", ..]) => {
                     if got != want {
@@ -432,6 +450,7 @@ fn table_verdicts_equal_dry_run_verdicts() -> Result<(), Box<dyn Error>>
     for stray in STRAYS {
         differential(&|| format!("stray {stray:?}"), stray);
     }
+    let mut dropped = String::new();
     for source in sweep.visit_rotating(TABLES, &corpus::sources()?) {
         let rel = source.name.as_ref();
         let src = std::fs::read_to_string(&source.path)
@@ -450,7 +469,7 @@ fn table_verdicts_equal_dry_run_verdicts() -> Result<(), Box<dyn Error>>
                 &|| format!("{rel} cut after token {index}"),
                 src.get(.. end).unwrap_or_default(),
             );
-            let mut dropped = String::with_capacity(src.len());
+            dropped.clear();
             dropped.push_str(src.get(.. start).unwrap_or_default());
             dropped.push_str(src.get(end ..).unwrap_or_default());
             differential(&|| format!("{rel} drop {index}"), &dropped);

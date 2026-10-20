@@ -8595,6 +8595,7 @@ mod tests
                 }
             }
         }
+        let mut golden = Vec::new();
         for (role, suffix) in roles {
             let cell = super::Cell {
                 emit: super::EmitId(0x0102_0304),
@@ -8603,9 +8604,10 @@ mod tests
                 sort: Sort::Type,
                 role,
             };
-            let mut golden = vec![
+            golden.clear();
+            golden.extend_from_slice(&[
                 4, 3, 2, 1, 0x44, 0x33, 0x22, 0x11, 0x88, 0x77, 0x66, 0x55, 3, 0,
-            ];
+            ]);
             golden.extend_from_slice(&suffix);
             let mut writer = super::Writer { bytes: Vec::new() };
             super::write_cell(&mut writer, cell);
@@ -9255,6 +9257,8 @@ mod tests
         let plus = only(&pbg, TileLabel("+"));
         let cases: &[(&str, &[usize])] =
             &[("+", &[0, 1]), ("+x", &[0]), ("x+", &[2]), ("x+x", &[])];
+        let mut pending = Vec::new();
+        let mut expected_points = Vec::new();
         for &(source, points) in cases {
             let mut state = MeldState::new(&pbg);
             for text in source.split("").filter(|part| !part.is_empty()) {
@@ -9270,37 +9274,38 @@ mod tests
             };
             assert_eq!(completion.expected(), expected);
             assert_eq!(bool::from(completion.is_complete()), !source.ends_with('+'));
-            let mut pending: Vec<_> = completion
-                .obligations()
-                .iter()
-                .map(|obligation| {
-                    (
-                        obligation.class,
-                        usize::from(obligation.span.start()),
-                        usize::from(obligation.span.end()),
-                    )
-                })
-                .collect();
+            pending.clear();
+            pending.extend(completion.obligations().iter().map(|obligation| {
+                (
+                    obligation.class,
+                    usize::from(obligation.span.start()),
+                    usize::from(obligation.span.end()),
+                )
+            }));
             pending.sort_unstable();
-            let expected: Vec<_> = points
-                .iter()
-                .map(|&point| (Oblig::MissingMeld, point, point))
-                .collect();
-            assert_eq!(pending, expected, "{source}");
+            expected_points.clear();
+            expected_points.extend(
+                points
+                    .iter()
+                    .map(|&point| (Oblig::MissingMeld, point, point)),
+            );
+            assert_eq!(pending, expected_points, "{source}");
             let (tree, obligations) = state.commit_with_obligations(SourceText::from(source))?;
             assert_eq!(crate::testing::reconstruct(&tree), source);
-            let observed: Vec<_> = obligations
-                .iter()
-                .map(|obligation| {
-                    (
-                        obligation.class,
-                        usize::from(obligation.span.start()),
-                        usize::from(obligation.span.end()),
-                    )
-                })
-                .collect();
-            assert_eq!(observed, expected, "{source}");
-            let grouts: Vec<_> = tree
+            assert!(
+                obligations
+                    .iter()
+                    .map(|obligation| {
+                        (
+                            obligation.class,
+                            usize::from(obligation.span.start()),
+                            usize::from(obligation.span.end()),
+                        )
+                    })
+                    .eq(expected_points.iter().copied()),
+                "{source}: the committed obligations are {obligations:?}"
+            );
+            let grouts = tree
                 .positions()
                 .filter_map(|position| tree.node(position))
                 .filter(|node| {
@@ -9314,14 +9319,10 @@ mod tests
                         usize::from(node.span().start()),
                         usize::from(node.span().end()),
                     )
-                })
-                .collect();
-            assert_eq!(
-                grouts,
-                points
-                    .iter()
-                    .map(|&point| (point, point))
-                    .collect::<Vec<_>>()
+                });
+            assert!(
+                grouts.eq(points.iter().map(|&point| (point, point))),
+                "{source}: one convex grout at each missing operand"
             );
         }
         Ok(())
