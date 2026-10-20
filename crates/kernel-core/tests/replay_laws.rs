@@ -1,4 +1,4 @@
-//! Unit-law goldens, replay purity and the refusal vocabulary.
+//! Unit-law goldens, composition, replay purity and the refusal vocabulary.
 //!
 //! Replay laws exercised through the public kernel API.
 
@@ -7,6 +7,7 @@ use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_core::EngineClaim;
 use gandr_kernel_core::KernelVerdict;
 use gandr_kernel_core::ParameterCount;
+use gandr_kernel_core::RefusalClass;
 use gandr_kernel_core::ReplayBudget;
 use gandr_kernel_core::ReplayDecline;
 use gandr_kernel_core::ReplayNode;
@@ -199,42 +200,42 @@ fn every_replay_refusal_carries_its_pinned_class()
             EngineClaim::Convertible,
             &[],
             ReplayRefusal::Unreadable,
-            "ill-formed query",
+            RefusalClass::IllFormedQuery,
         ),
         (
             defined,
             EngineClaim::Convertible,
             &[force],
             ReplayRefusal::Inapplicable { at },
-            "foreign answer",
+            RefusalClass::ForeignAnswer,
         ),
         (
             defined,
             EngineClaim::NotConvertible,
             &[shortcut],
             ReplayRefusal::NonAuthoritative { at },
-            "foreign answer",
+            RefusalClass::ForeignAnswer,
         ),
         (
             units,
             EngineClaim::NotConvertible,
             &[],
             ReplayRefusal::Contradicted { at },
-            "path disagreement",
+            RefusalClass::PathDisagreement,
         ),
         (
             defined,
             EngineClaim::Convertible,
             &[],
             ReplayRefusal::Exhausted,
-            "path disagreement",
+            RefusalClass::PathDisagreement,
         ),
         (
             units,
             EngineClaim::Convertible,
             &[force],
             ReplayRefusal::Leftover { at },
-            "path disagreement",
+            RefusalClass::PathDisagreement,
         ),
     ];
     let mut covered = [false; 6];
@@ -258,9 +259,122 @@ fn every_replay_refusal_carries_its_pinned_class()
                 ReplayBudget::DEFAULT
             ),
             KernelVerdict::Declined(ReplayDecline::Refused(reason)),
-            "{class} keeps {reason:?}",
+            "{class:?} keeps {reason:?}",
         );
+        assert_eq!(reason.class(), class, "{reason:?} is {class:?}");
         assert_eq!(arena.watermark(), mark);
     }
     assert_eq!(covered, [true; 6]);
+}
+
+#[test]
+fn an_ill_formed_query_and_a_path_disagreement_are_two_diagnostics()
+{
+    let mut arena = TermArena::new();
+    let unit = arena.value_unit();
+    let bound = arena.value_variable(DeBruijnIndex::from(0));
+    let named = arena.value_constant(ConstantIndex::from(0_usize));
+    let mark = arena.watermark();
+    let dangling = arena.value_unit();
+    arena.truncate_to(mark);
+    let unfoldings = Unfoldings::new(vec![Unfoldable::Body(unit)]);
+    let mut diagnostic = |sides| match replay(
+        &mut arena,
+        &unfoldings,
+        sides,
+        EngineClaim::Convertible,
+        [],
+        ReplayBudget::DEFAULT,
+    ) {
+        KernelVerdict::Declined(decline @ ReplayDecline::Refused(_)) => decline.to_string(),
+        verdict @ (KernelVerdict::Convertible
+        | KernelVerdict::NotConvertible
+        | KernelVerdict::Declined(_)) => panic!("the claim is refused: {verdict:?}"),
+    };
+    assert_eq!(
+        diagnostic(ReplaySides::Values(dangling, unit)),
+        "an ill-formed query: the replay reached a term the arena does not resolve or no rule \
+         reads",
+        "a side the arena does not hold is a question with no answer"
+    );
+    assert_eq!(
+        diagnostic(ReplaySides::Values(named, bound)),
+        "a path disagreement: the trace ended while a goal still needed a decision",
+        "a well-posed goal the trace stops short of is a dialogue that reaches no verdict"
+    );
+}
+
+#[test]
+fn a_pair_replays_as_its_components_traces_in_order()
+{
+    let mut arena = TermArena::new();
+    let unit = arena.value_unit();
+    let (first, second) = (ConstantIndex::from(0_usize), ConstantIndex::from(1_usize));
+    let unfoldings = Unfoldings::new(vec![Unfoldable::Body(unit), Unfoldable::Body(unit)]);
+    let (left, right) = (arena.value_constant(first), arena.value_constant(second));
+    let unfold = |constant| {
+        [
+            ConversionDecision::Unfold {
+                constant: ReplayNode::Constant(constant),
+            },
+            ConversionDecision::ReduceLeft {
+                redex: ReplayNode::Constant(constant),
+            },
+        ]
+    };
+    let (first_trace, second_trace) = (unfold(first), unfold(second));
+    let verdict = |arena: &mut TermArena, sides, trace: &[ConversionDecision<ReplayNode>]| {
+        replay(
+            arena,
+            &unfoldings,
+            sides,
+            EngineClaim::Convertible,
+            trace.iter().copied(),
+            ReplayBudget::DEFAULT,
+        )
+    };
+    for (sides, trace) in [
+        (ReplaySides::Values(left, unit), first_trace.as_slice()),
+        (ReplaySides::Values(right, unit), second_trace.as_slice()),
+    ] {
+        assert_eq!(
+            verdict(&mut arena, sides, trace),
+            KernelVerdict::Convertible,
+            "each component's trace certifies it"
+        );
+    }
+    let pair = ReplaySides::Values(
+        arena.value_tuple(&[left, right]),
+        arena.value_tuple(&[unit, unit]),
+    );
+    let composite = [first_trace, second_trace].concat();
+    assert_eq!(
+        verdict(&mut arena, pair, &composite),
+        KernelVerdict::Convertible,
+        "the components' traces, first component first, certify the pair"
+    );
+    let swapped = [second_trace, first_trace].concat();
+    assert_eq!(
+        verdict(&mut arena, pair, &swapped),
+        KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Inapplicable {
+            at: TracePosition::from(1_usize)
+        })),
+        "the second component's trace read first answers a goal it is not"
+    );
+    let same = ReplaySides::Values(
+        arena.value_tuple(&[left, unit]),
+        arena.value_tuple(&[left, unit]),
+    );
+    assert_eq!(
+        verdict(&mut arena, same, &[SHARED]),
+        KernelVerdict::Convertible,
+        "an alpha-equal pair closes whole on the unit dialogue"
+    );
+    assert_eq!(
+        verdict(&mut arena, same, &[SHARED, SHARED]),
+        KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Leftover {
+            at: TracePosition::from(1_usize)
+        })),
+        "and leaves a second component's unit unread"
+    );
 }
