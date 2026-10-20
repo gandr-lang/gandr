@@ -5723,11 +5723,13 @@ pub(crate) fn form_declared(
     let mut census = ExpansionCensus::new();
     let presentations = crate::presented::Presentations::of(judgement.entries);
     let judgement = judgement.presenting(&presentations);
+    // As a lone declaration's, the declared type forms through the seal rule.
+    let unsealed = seal::unseal(arena, judgement.entries, judgement.manifest, declared)?;
     let mut owed: Vec<CodeObligation> = Vec::new();
     let _level = type_level(
         arena,
         judgement,
-        TypeLevelGoal::Value(declared),
+        TypeLevelGoal::Value(unsealed),
         Vec::new(),
         Recording {
             memo: &mut memo,
@@ -5917,11 +5919,17 @@ where
             (judgement, occurrence::Accessibility::unwalked())
         },
     };
+    // The seal rule: inside the admission that minted an atom, a declaration
+    // is checked at its representation — its declared type forms there, as
+    // every constant it calls is read, and a definition's body is checked at
+    // it. The declaration keeps its declared type, so a member is exported at
+    // the atom.
+    let unsealed = seal::unseal(arena, judgement.entries, judgement.manifest, declared)?;
     let mut owed: Vec<CodeObligation> = Vec::new();
     let _level = type_level(
         arena,
         judgement,
-        TypeLevelGoal::Value(declared),
+        TypeLevelGoal::Value(unsealed),
         Vec::new(),
         Recording {
             memo,
@@ -6108,12 +6116,8 @@ where
             }
             Ok(())
         },
-        DeclarationContent::Def { declared, body } => {
-            // The seal rule: inside the admission that minted an atom, a member
-            // declared at the atom is checked at its representation. The
-            // declaration keeps its declared type, so the member is exported at
-            // the atom.
-            let unsealed = seal::unseal(arena, judgement.entries, judgement.manifest, declared)?;
+        DeclarationContent::Def { body, .. } => {
+            // The body is checked at the declared type the seal rule read.
             let context: Vec<ValueTypeId> = Vec::new();
             // A block's definition whose body thunks a fixpoint is that
             // fixpoint: inside it, the definition's own constant — which only
