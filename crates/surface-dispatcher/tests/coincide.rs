@@ -266,10 +266,10 @@ fn every_run_through_a_described_operation_is_its_calls_normal_form()
                 .or_insert(declaration);
         }
         for (constant, name, call, engine) in calls {
-            let stated = declared
-                .get(&constant)
-                .map(|declaration| declaration.stated().clone());
-            if !matches!(stated, Some(Stated::Verdict(Outcome::Runs(_)))) {
+            let runs = declared.get(&constant).is_some_and(|declaration| {
+                matches!(declaration.stated(), Stated::Verdict(Outcome::Runs(_)))
+            });
+            if !runs {
                 continue;
             }
             let machine = program.run(constant);

@@ -16,11 +16,6 @@
 //! Only sources that parse with no obligation are read, so a seed never
 //! carries grout.
 
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(clone_in_loop, reason = "1 cost-shape site; #814 lists it")
-)]
-
 extern crate alloc;
 
 use alloc::collections::BTreeMap;
@@ -234,11 +229,11 @@ fn main() -> Result<(), Failure>
             // Formatting into a `String` cannot fail.
             let _written =
                 core::fmt::Write::write_fmt(&mut origin, format_args!("{}:{line}", path.display()));
-            let form_text = <&str>::from(fragment).to_owned();
+            let form_text = <&str>::from(fragment);
             for rule in rules_under(&pbg, tree, form) {
                 Seed::keep(&mut syntax, rule.0.to_owned(), Seed {
                     origin: origin.clone(),
-                    text: form_text.clone(),
+                    text: String::from(form_text),
                 });
             }
             if let Some(block) = form_text.strip_prefix("@[") {
