@@ -1,13 +1,13 @@
-// The twin of `model/desc/lc/subst-subst.gandr`'s `substTwiceUnderLam`:
-// substitution whose lifting is a definition rather than the constructor
-// `Lift`. Two such substitutions at an abstraction unfold the outer one at
-// the inner one's stuck call beside the lifting call, and conversion refuses
-// the step (#879); with lifting a constructor it converts, and
-// `substSquare`'s abstraction case rests on it.
+// Substitution whose lifting is a definition rather than the constructor
+// `Lift`, beside `subst-subst`'s `substTwiceUnderLam`. Two such
+// substitutions at an abstraction unfold the outer one at the inner one's
+// stuck call, beside the lifting call that unfolds to `Lift`; the two
+// recursive calls compare part by part, so the step converts as it does with
+// lifting a constructor (#879).
 
 // The naturals; the terms and the lookup.
-import "../../../model/desc/model-in-source.gandr" ;
-import "../../../model/desc/lc/syntax.gandr" ;
+import "../model-in-source.gandr" ;
+import "./syntax.gandr" ;
 
 /// Lifting as a definition, building the constructor.
 @[ checks ]
@@ -25,8 +25,8 @@ def rec substLifting(t : Term, s : Env) -> -F Term {
   }
 }
 
-/// Two substitutions at an abstraction, both unfolded once: refused (#879).
-@[ refuses("EndpointMismatch") ]
+/// Two substitutions at an abstraction, both unfolded once.
+@[ checks ]
 def substLiftingTwiceUnderLam(b : Term, s1 : Env, s2 : Env) -> -F Path(
   Term,
   substLifting(substLifting(Lam(b), s1), s2),
