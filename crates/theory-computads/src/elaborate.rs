@@ -845,7 +845,8 @@ pub enum DescReading
     Generative,
     /// A presentation's laws: over unindexed sorts, a face the sequent reading
     /// cannot shape — an operation applied where an argument stands,
-    /// `turn(unturn(x))` — is read over terms; over an indexed sort it is
+    /// `turn(unturn(x))`, or a call with no argument to cut against,
+    /// `f(x) ==> zero()` — is read over terms; over an indexed sort it is
     /// declined as under the generative reading.
     Shape,
 }
@@ -897,7 +898,8 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
 /// - ensures: a face calls for terms when it passed the operation gate and is
 ///   constructor-headed, or, under [`DescReading::Shape`] with every sort
 ///   unindexed, when its sequent elaboration fails with
-///   [`ElaborateError::UnsupportedShape`]; otherwise that failure declines the
+///   [`ElaborateError::UnsupportedShape`] or
+///   [`ElaborateError::EmptyOperation`]; otherwise that failure declines the
 ///   face.
 /// - ensures: `presented` is present exactly when a face calls for terms, and
 ///   then holds every face that passed the operation gate and, if it does not
@@ -933,6 +935,7 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
 /// - witness: `elaborate::tests::a_two_redex_circuit_rule_is_declined_its_composite`
 /// - witness: `elaborate::tests::empty_descriptions_and_mixed_reports_preserve_declaration_indices`
 /// - witness: `elaborate::tests::a_presented_types_rules_are_read_over_terms`
+/// - witness: `elaborate::tests::a_law_returning_a_nullary_operation_is_read_over_terms_909`
 #[spec(
     ensures: |ret| {
     ret.opers.len().saturating_add(ret.declined_opers.len()) == desc.opers.len()
@@ -1023,7 +1026,11 @@ fn elaborate_desc<G>(
                     admitted_faces.push((AdmittedFaceIndex::from(index), cell));
                     Ok(false)
                 },
-                Err(ElaborateError::UnsupportedShape) if laws_over_terms => Ok(true),
+                Err(ElaborateError::UnsupportedShape | ElaborateError::EmptyOperation)
+                    if laws_over_terms =>
+                {
+                    Ok(true)
+                },
                 Err(error) => Err(error),
             }
         };
@@ -3727,7 +3734,7 @@ mod tests
             face(call("turn", call("unturn", x())), x()),
             add_zero_face(),
             face(call("unturn", call("turn", x())), x()),
-            face(FreeTerm::op("turn", []), x()),
+            face(x(), x()),
         ]);
         let family = elaborate_data_desc(&laws);
         assert_eq!(
@@ -3742,7 +3749,7 @@ mod tests
                 ),
                 (
                     DeclinedFaceIndex::from(3_usize),
-                    ElaborateError::EmptyOperation
+                    ElaborateError::LhsNotOperation
                 ),
             ],
             family.declined_faces,
@@ -3757,7 +3764,7 @@ mod tests
         assert_eq!(
             vec![(
                 DeclinedFaceIndex::from(3_usize),
-                ElaborateError::EmptyOperation
+                ElaborateError::LhsNotOperation
             )],
             presentation.declined_faces,
             "a presentation declines only the law no reading admits"
@@ -3799,6 +3806,55 @@ mod tests
             Maybe::Absent(presented_reading::Absent::NoTermFace),
             presentation.presented,
             "and has no term reading"
+        );
+    }
+
+    #[test]
+    fn a_law_returning_a_nullary_operation_is_read_over_terms_909()
+    {
+        // `rule r : f(x) ==> zero()`: the sequent reading has no producer to
+        // cut the nullary call against, so a family declines the law and a
+        // presentation reads it over terms.
+        let x = || FreeTerm::var("x");
+        let laws = nat_with([op("zero", []), op("f", [SortRef::new("x", "Nat")])], [
+            face(FreeTerm::op("f", [x()]), FreeTerm::op("zero", [])),
+        ]);
+        assert_eq!(
+            vec![(
+                DeclinedFaceIndex::from(0_usize),
+                ElaborateError::EmptyOperation
+            )],
+            elaborate_data_desc(&laws).declined_faces,
+            "a family declines the law"
+        );
+        let presentation = elaborate_theory_desc(&laws);
+        assert_eq!(
+            Vec::<(DeclinedFaceIndex, ElaborateError)>::new(),
+            presentation.declined_faces,
+            "a presentation declines nothing"
+        );
+        let Maybe::Present(presented) = presentation.presented
+        else {
+            panic!("the law is read over terms");
+        };
+        assert_eq!(
+            vec![(AdmittedFaceIndex::from(0_usize), CellId::from(0_usize))],
+            presented.faces,
+            "the one law is the one term cell"
+        );
+        // Over an indexed sort the law stays declined, as every term law does.
+        let mut indexed = laws;
+        indexed.sorts = [SortDesc::family("Nat", DeclPolarity::Data, [
+            SortIndex::new("n", "Nat"),
+        ])]
+        .into();
+        assert_eq!(
+            vec![(
+                DeclinedFaceIndex::from(0_usize),
+                ElaborateError::EmptyOperation
+            )],
+            elaborate_theory_desc(&indexed).declined_faces,
+            "an indexed presentation declines it"
         );
     }
 

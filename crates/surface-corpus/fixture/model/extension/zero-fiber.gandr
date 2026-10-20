@@ -1,0 +1,33 @@
+// An extension type stated as the signature the face theory generates for it.
+// `ext Val on left is zero` over the two points of `Two` is the type of cells
+// fixed to `zero` on the face `left`: a cell holds its value off the face,
+// `ins` introduces it and `out0`, `out1` read it at each point. The boundary,
+// β and η are the signature's laws, so each holds by conversion, on a neutral
+// cell as on an introduced one (Tesla Zhang, _Three non-cubical applications
+// of extension types_, arXiv:2311.05658). The surface spelling `ext A on φ is
+// u` waits on #641.
+
+/// The cells of `Val` over `Two` fixed to `zero` on `left`, with `c` a cell
+/// nothing introduces. The boundary reads `zero` at `left` of every cell, `c`
+/// included; β reads an introduced cell's value at the point off the face; η
+/// rebuilds a cell from its value there.
+@[ normalizes("cells(out0(c), out1(ins(one)), ins(out1(c))) ~> cells(zero, one, c)") ]
+theory ZeroFiber {
+  shape Two : 2 {
+    left = {0};
+  };
+  sort Val : Type;
+  sort Ext : Type;
+
+  oper zero : Val;
+  oper one : Val;
+  oper c : Ext;
+  oper cells : (b : Val, v : Val, e : Ext) --> Val;
+  oper ins : (y : Val) --> Ext;
+  oper out0 : (e : Ext) --> Val;
+  oper out1 : (e : Ext) --> Val;
+
+  rule boundary : out0(e) ==> zero();
+  rule beta : out1(ins(y)) ==> y;
+  rule eta : ins(out1(e)) ==> e;
+}
