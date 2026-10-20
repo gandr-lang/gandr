@@ -1524,13 +1524,15 @@ fn the_gates_own_graph_streamed_incrementally_reproduces_its_verdict()
     let mut edges_streamed: usize = 0;
     let mut admitted_rows_with_edges: usize = 0;
     let mut refused_rows_with_edges: usize = 0;
+    let mut reversed: Vec<EdgeId> = Vec::new();
 
     for &(label, ref store, ref left, ref right) in &corpus {
         let gate_declines = compose_directed(left, right, store).is_err();
         let stream = characterized_stream(left, right, store);
         edges_streamed = edges_streamed.saturating_add(stream.len());
 
-        let reversed: Vec<EdgeId> = stream.iter().rev().copied().collect();
+        reversed.clear();
+        reversed.extend(stream.iter().rev().copied());
         for (arrival, offers) in [("as derived", &stream), ("reversed", &reversed)] {
             let mut maintenance =
                 AcyclicityMaintenance::new().expect("a fresh structure is available");
