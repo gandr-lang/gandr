@@ -296,27 +296,34 @@ env.CARGO_TARGET_DIR = "{{ config_root }}/target/evidence"
 run = "cargo doc --workspace --locked --no-deps --document-private-items"
 
 # Lists the changed items against the base, the obligations they raise and the
-# witnesses to rerun, and writes the pull-request comment and the witness
-# selection beside the records. The base defaults to where HEAD left
-# origin/main, so work landed on main since is not read as this change.
-# `--previous` reads an earlier comment back: its ticked boxes hold while the
-# clause and the items it names are unchanged.
+# witnesses to rerun, and writes the pull-request comment (the witnesses) and
+# the witness selection beside the records. The base defaults to where HEAD
+# left origin/main, so work landed on main since is not read as this change.
+# `--body` reads a pull-request body's ticked boxes and writes the body back
+# with its `## Re-verification` section, one line per prose obligation; a tick
+# holds while the clause and the items it names are unchanged. `--previous`
+# reads the ticks from a file it leaves alone. `--require-acknowledged` exits 2
+# while any prose obligation is unticked.
 ["evidence:obligations"]
 description = "List the specifications a change obliges to re-verify"
 depends = ["check:dylint", "evidence:rustdoc", "workflow:install"]
 usage = '''
 arg "[base]" help="the revision the change is measured against; defaults to the merge base with origin/main"
-flag "--previous <comment>" help="an earlier obligations comment whose acknowledgements carry over"
+flag "--previous <file>" help="a pull-request body whose acknowledgements carry over, left unchanged"
+flag "--body <file>" help="a pull-request body whose acknowledgements carry over, rewritten with its re-verification section"
+flag "--require-acknowledged" help="exit 2 while any prose obligation is unticked"
 '''
 env.PATH = "{{ config_root }}/target/workflow-tools/bin:{{ env.PATH }}"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 base=${usage_base:-$(git merge-base origin/main HEAD)}
-previous=()
-if [[ -n ${usage_previous:-} ]]; then previous=(--previous "$usage_previous"); fi
+extra=()
+if [[ -n ${usage_previous:-} ]]; then extra+=(--previous "$usage_previous"); fi
+if [[ -n ${usage_body:-} ]]; then extra+=(--body "$usage_body"); fi
+if [[ ${usage_require_acknowledged:-false} == true ]]; then extra+=(--require-acknowledged); fi
 quenchant-gates obligations --manifest-path Cargo.toml --base "$base" \
-  --records target/evidence/records --rustdoc target/evidence/doc "${previous[@]}" \
+  --records target/evidence/records --rustdoc target/evidence/doc "${extra[@]}" \
   --comment target/evidence/comment.md --selection target/evidence/selection
 '''
 
