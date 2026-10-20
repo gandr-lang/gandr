@@ -659,12 +659,14 @@ impl Annotations
 ///   missing nodes. Computation mismatches and shape failures expose context
 ///   order; selected whole-declaration failures expose fallback precedence; a
 ///   session mismatch and disagreeing offer arms expose the fork and the first
-///   arm. Other checker constructors are not individually enumerated.
+///   arm; every checker refusal is constructed once, its culprit label and its
+///   context slots each asserted.
 /// - witness: `tests::diagnostics::a_type_mismatch_is_located_at_its_term`
 /// - witness: `tests::diagnostics::a_report_exposes_the_context_it_marks`
 /// - witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`
 /// - witness: `locus::tests::checker_fallbacks_preserve_causal_roles`
 /// - witness: `locus::tests::session_refusals_point_at_the_fork_and_name_the_action`
+/// - witness: `locus::tests::every_checker_refusal_keeps_its_culprit_and_causal_labels`
 #[spec(ensures: |ref ret| {
     let label = Label::Culprit(Culprit::of(Refusal::Checking(refusal)));
     let labelled = match ret.primary {
@@ -678,13 +680,15 @@ impl Annotations
         Maybe::Absent(report_context::Absent::Unnamed | report_context::Absent::OutsideText) => false,
     };
     labelled && match refusal {
-        CheckRefusal::DataFieldLevel {..} | CheckRefusal::MissingRecordField {..} => role(&ret.context[0_usize],Label::Expected) && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
-        CheckRefusal::TypeMismatch(_) | CheckRefusal::SortMismatch { .. }
+        CheckRefusal::DataFieldLevel {..} | CheckRefusal::RepresentationAboveKind {..} | CheckRefusal::MissingRecordField {..}
+            | CheckRefusal::CapabilityForged {..} => role(&ret.context[0_usize],Label::Expected) && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
+        CheckRefusal::TypeMismatch(_) | CheckRefusal::CapabilityAmplified(_) | CheckRefusal::SortMismatch { .. }
             | CheckRefusal::LevelMismatch { .. } | CheckRefusal::FamilyArgumentClassifier { .. }
             | CheckRefusal::NotOver { .. } =>
             role(&ret.context[0_usize], Label::Expected) && role(&ret.context[1_usize], Label::Synthesised),
-        CheckRefusal::DependentBind { .. } | CheckRefusal::CompoundEndpoint { .. } | CheckRefusal::FunextUnsupported { .. }
-            | CheckRefusal::EquivUnsupported { .. } | CheckRefusal::UncertifiedStratum { .. } => role(&ret.context[0_usize], Label::Synthesised)
+        CheckRefusal::DependentBind { .. } | CheckRefusal::DependentStack { .. } | CheckRefusal::CompoundEndpoint { .. }
+            | CheckRefusal::FunextUnsupported { .. } | CheckRefusal::EquivUnsupported { .. } | CheckRefusal::UncertifiedStratum { .. }
+            | CheckRefusal::CapabilityEscaped { .. } => role(&ret.context[0_usize], Label::Synthesised)
             && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
         CheckRefusal::ShapeMismatch { wanted, .. } => role(&ret.context[0_usize], Label::Met(wanted))
             && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
@@ -706,7 +710,7 @@ impl Annotations
             | CheckRefusal::MachineInvariant | CheckRefusal::CapabilityUngranted { .. } => ret.primary == Maybe::Present(Annotation {
                 span: declaration, label,
             }) && ret.context == UNNAMED,
-        CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::RepresentationAboveKind { .. } | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::DependentStack { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityForged { .. } | CheckRefusal::CapabilityAmplified(_) | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityEscaped { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
+        CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
     }
 })]
 fn checked(
@@ -1859,6 +1863,7 @@ mod tests
     use alloc::string::String;
 
     use gandr_core_checker::CheckRefusal;
+    use gandr_core_checker::CheckingForm;
     use gandr_core_checker::CoreNode;
     use gandr_core_checker::ExpectedShape;
     use gandr_core_checker::Mismatch;
@@ -2435,5 +2440,997 @@ mod tests
             seat.contains("declaration 3"),
             "a declared world is named by its declaration: {seat}"
         );
+    }
+
+    #[test]
+    fn every_checker_refusal_keeps_its_culprit_and_causal_labels()
+    {
+        use gandr_core_checker::LoopRespect;
+        use gandr_core_checker::RunFault;
+        use gandr_core_checker::access::AccessDefect;
+        use gandr_core_checker::ua::StratumDefect;
+        use gandr_core_checker::ua::UaDefect;
+        use gandr_core_checker::worlds::Crossed;
+        use gandr_core_checker::worlds::LocatedDefect;
+        use gandr_core_checker::worlds::Predicate;
+        use gandr_kernel_term::CellIndex;
+        use gandr_kernel_term::DeBruijnIndex;
+        use gandr_kernel_term::RuleFault;
+        use gandr_kernel_term::RuleIndex;
+        use gandr_kernel_term::RuleRefusal;
+        use gandr_theory_sites::ElementIndex;
+        use gandr_theory_sites::PortCount;
+        use gandr_theory_sites::Profile;
+        use gandr_theory_sites::ShapeIndex;
+        use gandr_theory_sites::ShapeSize;
+
+        let spans: [ByteSpan; 16_usize] = core::array::from_fn(|index| {
+            ByteSpan::new(
+                ByteOffset::from(index * 10_usize),
+                ByteOffset::from(index * 10_usize + 5_usize),
+            )
+            .expect("ordered fixture spans")
+        });
+        let recorded: [Origin; 16_usize] =
+            core::array::from_fn(|index| Origin::new(NodeIndex::from(index), spans[index]));
+        let mut arena = CoreArena::new();
+        let value = arena.value_unit();
+        let computation = arena.computation_return(value);
+        let value_type = arena.value_type_unit();
+        let comp_type = arena.comp_type_returner(value_type);
+        let mut origins = OriginTable::new();
+        origins.record_value(value, recorded[0_usize]);
+        origins.record_computation(computation, recorded[1_usize]);
+        origins.record_value_type(value_type, recorded[2_usize]);
+        origins.record_comp_type(comp_type, recorded[3_usize]);
+        let declaration = ByteSpan::new(ByteOffset::from(90_usize), ByteOffset::from(99_usize))
+            .expect("the declaration is distinct from every node");
+        let comp = CoreNode::Term(TermNode::Computation(computation));
+        let refusals = [
+            CheckRefusal::DataKindNotUniverse(value_type),
+            CheckRefusal::DataArgumentArity(value_type),
+            CheckRefusal::AbstractKindNotUniverse(value_type),
+            CheckRefusal::CapabilityConsumable(value_type),
+            CheckRefusal::RuleNotPresentable {
+                kind: value_type,
+                refusal: RuleRefusal {
+                    rule: RuleIndex::from(1_usize),
+                    fault: RuleFault::VariableHeaded,
+                },
+            },
+            CheckRefusal::DataFieldLevel {
+                field: value_type,
+                kind: value_type,
+            },
+            CheckRefusal::RepresentationAboveKind {
+                representation: value_type,
+                kind: value_type,
+            },
+            CheckRefusal::UnknownConstructor {
+                at: value,
+                tag: 3_usize.into(),
+            },
+            CheckRefusal::ConstructorArity(value),
+            CheckRefusal::MissingRecordField {
+                at: value,
+                expected: value_type,
+            },
+            CheckRefusal::CapabilityForged {
+                at: value,
+                expected: value_type,
+            },
+            CheckRefusal::DependentStack {
+                at: value,
+                synthesised: comp_type,
+            },
+            CheckRefusal::CompoundEndpoint {
+                at: value,
+                synthesised: comp_type,
+            },
+            CheckRefusal::EndpointMismatch {
+                at: value,
+                left: value,
+                right: value,
+            },
+            CheckRefusal::FunextUnsupported {
+                at: value,
+                classifier: value_type,
+            },
+            CheckRefusal::EquivUnsupported {
+                at: value,
+                classifier: value_type,
+            },
+            CheckRefusal::UncertifiedStratum {
+                at: value,
+                code: value_type,
+            },
+            CheckRefusal::EffectSignatureConflict {
+                at: computation,
+                first: comp_type,
+                second: comp_type,
+            },
+            CheckRefusal::TypeMismatch(Mismatch::Value {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            }),
+            CheckRefusal::CapabilityAmplified(Mismatch::Value {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            }),
+            CheckRefusal::SortMismatch {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            },
+            CheckRefusal::LevelMismatch {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            },
+            CheckRefusal::FamilyArgumentClassifier {
+                at: value,
+                position: 2_u32.into(),
+                synthesised: value_type,
+                expected: value_type,
+            },
+            CheckRefusal::NotOver {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            },
+            CheckRefusal::TypeMismatch(Mismatch::Computation {
+                at: computation,
+                synthesised: comp_type,
+                expected: comp_type,
+            }),
+            CheckRefusal::CapabilityAmplified(Mismatch::Computation {
+                at: computation,
+                synthesised: comp_type,
+                expected: comp_type,
+            }),
+            CheckRefusal::DependentBind {
+                at: computation,
+                synthesised: comp_type,
+            },
+            CheckRefusal::ShapeMismatch {
+                at: TermNode::Computation(computation),
+                wanted: ExpectedShape::Arrow,
+                found: TypeNode::Computation(comp_type),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Reify(value),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::List(value),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Injection(value),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Thunk(value),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::StaticLambda(value),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Nested(value),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Run(value),
+            },
+            CheckRefusal::PathCode(value),
+            CheckRefusal::UnknownConstant {
+                at: value,
+                constant: 4_usize.into(),
+            },
+            CheckRefusal::UnboundIndex {
+                at: value,
+                zone: gandr_core_term::Zone::Intuitionistic,
+                index: DeBruijnIndex::from(1_u32),
+                depth: gandr_core_term::BinderDepth::from(0_usize),
+            },
+            CheckRefusal::Undecided { at: value },
+            CheckRefusal::FamilyArity {
+                at: value,
+                expected: 1_u32.into(),
+                actual: 2_u32.into(),
+            },
+            CheckRefusal::StaticLambdaArgument { at: value },
+            CheckRefusal::PointwiseDistinct { at: value },
+            CheckRefusal::RoundTripDistinct { at: value },
+            CheckRefusal::UaUncertified {
+                at: value,
+                stratum: StratumDefect::Degree {
+                    degree: gandr_theory_sites::Degree::from(3_usize),
+                },
+            },
+            CheckRefusal::UaUncertified {
+                at: value,
+                stratum: StratumDefect::Allowance {
+                    bound: ShapeSize::from(6_usize),
+                },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::UnknownGenerator {
+                    way: gandr_core_checker::ua::Way::Forward,
+                },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::PastTheBound {
+                    profile: Profile {
+                        inputs: PortCount::from(1_usize),
+                        outputs: PortCount::from(2_usize),
+                    },
+                },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::Cardinality {
+                    corolla: ShapeIndex::from(1_usize),
+                },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::Tables {
+                    corolla: ShapeIndex::from(1_usize),
+                },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::NotInverse {
+                    corolla: ShapeIndex::from(1_usize),
+                    element: ElementIndex::from(0_usize),
+                },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::NotNatural {
+                    corolla: ShapeIndex::from(1_usize),
+                    element: ElementIndex::from(0_usize),
+                },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::Stuck {
+                    corolla: ShapeIndex::from(1_usize),
+                    element: ElementIndex::from(0_usize),
+                },
+            },
+            CheckRefusal::UnenclosedRun { at: value },
+            CheckRefusal::SessionNotEquivalent { at: value },
+            CheckRefusal::SessionNotSubtype { at: value },
+            CheckRefusal::SessionCodeExpected { at: value },
+            CheckRefusal::RunNotAdmitted {
+                at: value,
+                fault: RunFault::WrongDirection(gandr_core_checker::RunStep::from(0_u32)),
+            },
+            CheckRefusal::RunNotAdmitted {
+                at: value,
+                fault: RunFault::WrongLabel(gandr_core_checker::RunStep::from(0_u32)),
+            },
+            CheckRefusal::RunNotAdmitted {
+                at: value,
+                fault: RunFault::ResumeAfterEnd(gandr_core_checker::RunStep::from(0_u32)),
+            },
+            CheckRefusal::RunNotAdmitted {
+                at: value,
+                fault: RunFault::Incomplete(gandr_core_checker::RunStep::from(2_u32)),
+            },
+            CheckRefusal::RunNotAdmitted {
+                at: value,
+                fault: RunFault::OfferNarrowed,
+            },
+            CheckRefusal::ForwardUnsupported { at: value },
+            CheckRefusal::StageNotBelow {
+                at: value,
+                found: Standing::Top,
+                bound: Stage::At(StageId::from(0_usize)),
+            },
+            CheckRefusal::StageNotBelow {
+                at: value,
+                found: Standing::Staged(Stage::At(StageId::from(0_usize))),
+                bound: Stage::At(StageId::from(0_usize)),
+            },
+            CheckRefusal::StaticClassifierExpected {
+                at: value_type,
+                found: value_type,
+            },
+            CheckRefusal::CapabilityEscaped {
+                at: TermNode::Computation(computation),
+                found: TypeNode::Value(value_type),
+            },
+            CheckRefusal::UnknownOperation { at: computation },
+            CheckRefusal::HandlerCoverage { at: computation },
+            CheckRefusal::ShiftWithoutReset { at: computation },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Handle(computation),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Reset(computation),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Shift(computation),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::With(computation),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Case(computation),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Split(computation),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Lambda(computation),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Return(computation),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Fixpoint(computation),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Offer(computation),
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Scope(computation),
+            },
+            CheckRefusal::CapabilityOutsideAuthority {
+                at: computation,
+                capability: value_type,
+            },
+            CheckRefusal::NonExhaustiveDataCase(computation),
+            CheckRefusal::UndecidedCoverage(computation),
+            CheckRefusal::RuleNotRespected {
+                at: computation,
+                rule: RuleIndex::from(1_usize),
+                left: value,
+                right: value,
+            },
+            CheckRefusal::NotApart {
+                at: computation,
+                reason: gandr_kernel_term::Apartness::Apart,
+            },
+            CheckRefusal::NotApart {
+                at: computation,
+                reason: gandr_kernel_term::Apartness::Agree,
+            },
+            CheckRefusal::NotApart {
+                at: computation,
+                reason: gandr_kernel_term::Apartness::Open,
+            },
+            CheckRefusal::NotApart {
+                at: computation,
+                reason: gandr_kernel_term::Apartness::Leaf,
+            },
+            CheckRefusal::NotApart {
+                at: computation,
+                reason: gandr_kernel_term::Apartness::Diverges {
+                    outer: RuleIndex::from(1_usize),
+                    inner: RuleIndex::from(2_usize),
+                },
+            },
+            CheckRefusal::NotApart {
+                at: computation,
+                reason: gandr_kernel_term::Apartness::Undecided,
+            },
+            CheckRefusal::LoopNotRespected {
+                at: computation,
+                cell: CellIndex::from(1_usize),
+                left: computation,
+                right: computation,
+                reason: LoopRespect::Apart,
+            },
+            CheckRefusal::LoopNotRespected {
+                at: computation,
+                cell: CellIndex::from(1_usize),
+                left: computation,
+                right: computation,
+                reason: LoopRespect::NotPresentedSet,
+            },
+            CheckRefusal::LoopUndecided {
+                at: computation,
+                cell: CellIndex::from(1_usize),
+            },
+            CheckRefusal::AbsentRecordField(computation),
+            CheckRefusal::AbsentTupleComponent(computation),
+            CheckRefusal::NonCovariantMotive { at: computation },
+            CheckRefusal::RideUnsupported { at: computation },
+            CheckRefusal::OutOfFragment {
+                at: comp,
+                former: UnadmittedFormer::Reify,
+            },
+            CheckRefusal::DanglingNode { node: comp },
+            CheckRefusal::NotADataType(5_usize.into()),
+            CheckRefusal::NotAnAbstractType(6_usize.into()),
+            CheckRefusal::SealSiteRepeated(gandr_core_checker::SealSite::new(
+                gandr_core_checker::SealingSite::from(1_usize),
+                gandr_core_checker::ComponentOrdinal::from(0_usize),
+            )),
+            CheckRefusal::NegativeOccurrence(OccurrenceSite::Field {
+                tag: ConstructorTag::from(3_usize),
+                field: FieldPosition::from(5_usize),
+            }),
+            CheckRefusal::NestedOccurrence(OccurrenceSite::Field {
+                tag: ConstructorTag::from(3_usize),
+                field: FieldPosition::from(5_usize),
+            }),
+            CheckRefusal::IndexOccurrence(OccurrenceSite::Parameter(ParameterPosition::from(
+                2_usize,
+            ))),
+            CheckRefusal::NonUniformOccurrence(OccurrenceSite::Field {
+                tag: ConstructorTag::from(3_usize),
+                field: FieldPosition::from(5_usize),
+            }),
+            CheckRefusal::CrossBlockReference {
+                site: OccurrenceSite::Field {
+                    tag: ConstructorTag::from(3_usize),
+                    field: FieldPosition::from(5_usize),
+                },
+                index: 9_usize.into(),
+            },
+            CheckRefusal::BudgetExceeded {
+                budget: gandr_core_checker::CheckBudget::from(1_usize),
+            },
+            CheckRefusal::CapabilityUngranted {
+                constant: 7_usize.into(),
+                declared: value_type,
+            },
+            CheckRefusal::Access {
+                at: comp,
+                defect: AccessDefect::NotHeld,
+            },
+            CheckRefusal::Access {
+                at: comp,
+                defect: AccessDefect::Lent,
+            },
+            CheckRefusal::Access {
+                at: comp,
+                defect: AccessDefect::HeldCaptured { by: Capture::Thunk },
+            },
+            CheckRefusal::Access {
+                at: comp,
+                defect: AccessDefect::Escaped { by: Capture::Thunk },
+            },
+            CheckRefusal::Access {
+                at: comp,
+                defect: AccessDefect::Unended,
+            },
+            CheckRefusal::Access {
+                at: comp,
+                defect: AccessDefect::Spent,
+            },
+            CheckRefusal::Access {
+                at: comp,
+                defect: AccessDefect::NotAView,
+            },
+            CheckRefusal::Access {
+                at: comp,
+                defect: AccessDefect::UnwindEffect,
+            },
+            CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Result,
+                    ty: value_type,
+                    former: value_type,
+                    predicate: Predicate::Mobile,
+                },
+            },
+            CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Constant,
+                    ty: value_type,
+                    former: value_type,
+                    predicate: Predicate::Open,
+                },
+            },
+            CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::CapabilityCaptured {
+                    world: gandr_core_term::world::World::Host,
+                    by: Capture::Thunk,
+                },
+            },
+            CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::Elsewhere {
+                    bound: gandr_core_term::world::World::Host,
+                },
+            },
+            CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::HoldElsewhere {
+                    wanted: gandr_core_term::world::World::Host,
+                },
+            },
+            CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::Unlocated,
+            },
+            CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::UndeclaredWorld {
+                    world: 8_usize.into(),
+                },
+            },
+            CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::HostWorldUndeclared,
+            },
+            CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::MarkUnfounded {
+                    atom: 9_usize.into(),
+                    former: value_type,
+                    predicate: Predicate::Mobile,
+                },
+            },
+            CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::MarkUnfounded {
+                    atom: 9_usize.into(),
+                    former: value_type,
+                    predicate: Predicate::Open,
+                },
+            },
+            CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::EntryNamed {
+                    constant: 10_usize.into(),
+                },
+            },
+            CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::EntryUngranted {
+                    constant: 11_usize.into(),
+                },
+            },
+            CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::NotAHandle { found: value_type },
+            },
+            CheckRefusal::UaUncertified {
+                at: value,
+                stratum: StratumDefect::Condition {
+                    degree: gandr_theory_sites::Degree::from(2_usize),
+                },
+            },
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Hole(gandr_kernel_term::ConstantIndex::from(0_usize)),
+            },
+            CheckRefusal::SessionMismatch {
+                at: computation,
+                endpoint: gandr_core_checker::session::Endpoint {
+                    fork: computation,
+                    side: gandr_core_checker::session::ForkSide::Child,
+                },
+                state: value_type,
+                defect: gandr_core_checker::session::ProtocolDefect::Label,
+            },
+            CheckRefusal::SessionMismatch {
+                at: computation,
+                endpoint: gandr_core_checker::session::Endpoint {
+                    fork: computation,
+                    side: gandr_core_checker::session::ForkSide::Child,
+                },
+                state: value_type,
+                defect: gandr_core_checker::session::ProtocolDefect::Arms,
+            },
+            CheckRefusal::Linearity {
+                at: comp,
+                defect: gandr_core_checker::session::LinearityDefect::Residue {
+                    endpoint: gandr_core_checker::session::Endpoint {
+                        fork: computation,
+                        side: gandr_core_checker::session::ForkSide::Child,
+                    },
+                    state: value_type,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: comp,
+                defect: gandr_core_checker::session::LinearityDefect::Closed {
+                    endpoint: gandr_core_checker::session::Endpoint {
+                        fork: computation,
+                        side: gandr_core_checker::session::ForkSide::Child,
+                    },
+                },
+            },
+            CheckRefusal::Linearity {
+                at: comp,
+                defect: gandr_core_checker::session::LinearityDefect::UsedTwice {
+                    endpoint: gandr_core_checker::session::Endpoint {
+                        fork: computation,
+                        side: gandr_core_checker::session::ForkSide::Child,
+                    },
+                },
+            },
+            CheckRefusal::Linearity {
+                at: comp,
+                defect: gandr_core_checker::session::LinearityDefect::Captured {
+                    endpoint: gandr_core_checker::session::Endpoint {
+                        fork: computation,
+                        side: gandr_core_checker::session::ForkSide::Child,
+                    },
+                    by: Capture::Thunk,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: comp,
+                defect: gandr_core_checker::session::LinearityDefect::Delegated,
+            },
+            CheckRefusal::Linearity {
+                at: comp,
+                defect: gandr_core_checker::session::LinearityDefect::AsValue {
+                    endpoint: gandr_core_checker::session::Endpoint {
+                        fork: computation,
+                        side: gandr_core_checker::session::ForkSide::Child,
+                    },
+                },
+            },
+            CheckRefusal::Linearity {
+                at: comp,
+                defect: gandr_core_checker::session::LinearityDefect::ArmsDisagree {
+                    endpoint: gandr_core_checker::session::Endpoint {
+                        fork: computation,
+                        side: gandr_core_checker::session::ForkSide::Child,
+                    },
+                    first: computation,
+                    other: computation,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: comp,
+                defect: gandr_core_checker::session::LinearityDefect::Unrestricted,
+            },
+            CheckRefusal::Linearity {
+                at: comp,
+                defect: gandr_core_checker::session::LinearityDefect::Unbound {
+                    index: DeBruijnIndex::from(0_u32),
+                },
+            },
+            CheckRefusal::Located {
+                at: comp,
+                defect: LocatedDefect::CapabilityMissing {
+                    world: gandr_core_term::world::World::Host,
+                },
+            },
+            CheckRefusal::Boundary { at: value },
+        ];
+        for refusal in refusals {
+            let found = Annotations::refusal(Refusal::Checking(refusal), declaration, &origins);
+            assert_eq!(
+                found.primary,
+                Maybe::Present(Annotation {
+                    span: match refusal {
+                        CheckRefusal::DataKindNotUniverse(_)
+                        | CheckRefusal::DataArgumentArity(_)
+                        | CheckRefusal::AbstractKindNotUniverse(_)
+                        | CheckRefusal::CapabilityConsumable(_)
+                        | CheckRefusal::RuleNotPresentable { .. }
+                        | CheckRefusal::DataFieldLevel { .. }
+                        | CheckRefusal::RepresentationAboveKind { .. }
+                        | CheckRefusal::StaticClassifierExpected { .. } => spans[2_usize],
+                        CheckRefusal::UnknownConstructor { .. }
+                        | CheckRefusal::ConstructorArity(_)
+                        | CheckRefusal::MissingRecordField { .. }
+                        | CheckRefusal::CapabilityForged { .. }
+                        | CheckRefusal::DependentStack { .. }
+                        | CheckRefusal::CompoundEndpoint { .. }
+                        | CheckRefusal::EndpointMismatch { .. }
+                        | CheckRefusal::FunextUnsupported { .. }
+                        | CheckRefusal::EquivUnsupported { .. }
+                        | CheckRefusal::UncertifiedStratum { .. }
+                        | CheckRefusal::TypeMismatch(Mismatch::Value { .. })
+                        | CheckRefusal::CapabilityAmplified(Mismatch::Value { .. })
+                        | CheckRefusal::SortMismatch { .. }
+                        | CheckRefusal::LevelMismatch { .. }
+                        | CheckRefusal::FamilyArgumentClassifier { .. }
+                        | CheckRefusal::NotOver { .. }
+                        | CheckRefusal::PathCode(_)
+                        | CheckRefusal::UnknownConstant { .. }
+                        | CheckRefusal::UnboundIndex { .. }
+                        | CheckRefusal::Undecided { .. }
+                        | CheckRefusal::FamilyArity { .. }
+                        | CheckRefusal::StaticLambdaArgument { .. }
+                        | CheckRefusal::PointwiseDistinct { .. }
+                        | CheckRefusal::RoundTripDistinct { .. }
+                        | CheckRefusal::UaUncertified { .. }
+                        | CheckRefusal::UaInequivalent { .. }
+                        | CheckRefusal::UnenclosedRun { .. }
+                        | CheckRefusal::SessionNotEquivalent { .. }
+                        | CheckRefusal::SessionNotSubtype { .. }
+                        | CheckRefusal::SessionCodeExpected { .. }
+                        | CheckRefusal::RunNotAdmitted { .. }
+                        | CheckRefusal::ForwardUnsupported { .. }
+                        | CheckRefusal::StageNotBelow { .. }
+                        | CheckRefusal::Boundary { .. }
+                        | CheckRefusal::NotSynthesisable {
+                            form:
+                                CheckingForm::Reify(_)
+                                | CheckingForm::List(_)
+                                | CheckingForm::Injection(_)
+                                | CheckingForm::Thunk(_)
+                                | CheckingForm::StaticLambda(_)
+                                | CheckingForm::Nested(_)
+                                | CheckingForm::Run(_),
+                        }
+                        | CheckRefusal::MachineInvariant => spans[0_usize],
+                        CheckRefusal::EffectSignatureConflict { .. }
+                        | CheckRefusal::TypeMismatch(Mismatch::Computation { .. })
+                        | CheckRefusal::CapabilityAmplified(Mismatch::Computation { .. })
+                        | CheckRefusal::DependentBind { .. }
+                        | CheckRefusal::UnknownOperation { .. }
+                        | CheckRefusal::HandlerCoverage { .. }
+                        | CheckRefusal::ShiftWithoutReset { .. }
+                        | CheckRefusal::CapabilityOutsideAuthority { .. }
+                        | CheckRefusal::NonExhaustiveDataCase(_)
+                        | CheckRefusal::UndecidedCoverage(_)
+                        | CheckRefusal::RuleNotRespected { .. }
+                        | CheckRefusal::NotApart { .. }
+                        | CheckRefusal::LoopNotRespected { .. }
+                        | CheckRefusal::LoopUndecided { .. }
+                        | CheckRefusal::AbsentRecordField(_)
+                        | CheckRefusal::AbsentTupleComponent(_)
+                        | CheckRefusal::NonCovariantMotive { .. }
+                        | CheckRefusal::RideUnsupported { .. }
+                        | CheckRefusal::NotSynthesisable {
+                            form:
+                                CheckingForm::Handle(_)
+                                | CheckingForm::Reset(_)
+                                | CheckingForm::Shift(_)
+                                | CheckingForm::With(_)
+                                | CheckingForm::Case(_)
+                                | CheckingForm::Split(_)
+                                | CheckingForm::Lambda(_)
+                                | CheckingForm::Return(_)
+                                | CheckingForm::Fixpoint(_)
+                                | CheckingForm::Offer(_)
+                                | CheckingForm::Scope(_),
+                        }
+                        | CheckRefusal::SessionMismatch { .. }
+                        | CheckRefusal::Linearity { .. }
+                        | CheckRefusal::ShapeMismatch { .. }
+                        | CheckRefusal::CapabilityEscaped { .. }
+                        | CheckRefusal::OutOfFragment { .. }
+                        | CheckRefusal::DanglingNode { .. }
+                        | CheckRefusal::Access { .. }
+                        | CheckRefusal::Located { .. } => spans[1_usize],
+                        CheckRefusal::NotSynthesisable {
+                            form: CheckingForm::Hole(_),
+                        }
+                        | CheckRefusal::NotADataType(_)
+                        | CheckRefusal::NotAnAbstractType(_)
+                        | CheckRefusal::SealSiteRepeated(_)
+                        | CheckRefusal::NegativeOccurrence(_)
+                        | CheckRefusal::NestedOccurrence(_)
+                        | CheckRefusal::IndexOccurrence(_)
+                        | CheckRefusal::NonUniformOccurrence(_)
+                        | CheckRefusal::CrossBlockReference { .. }
+                        | CheckRefusal::BudgetExceeded { .. }
+                        | CheckRefusal::CapabilityUngranted { .. }
+                        | CheckRefusal::AdmissionOrder { .. } => declaration,
+                    },
+                    label: Label::Culprit(Culprit::of(Refusal::Checking(refusal))),
+                }),
+                "the culprit is the node the refusal names"
+            );
+        }
+        let context = |refusal: CheckRefusal| {
+            Annotations::refusal(Refusal::Checking(refusal), declaration, &origins).context
+        };
+        let expected = |span: ByteSpan| {
+            [
+                Maybe::Present(Annotation {
+                    span,
+                    label: Label::Expected,
+                }),
+                Maybe::Absent(report_context::Absent::Unnamed),
+            ]
+        };
+        let synthesised = |span: ByteSpan| {
+            [
+                Maybe::Present(Annotation {
+                    span,
+                    label: Label::Synthesised,
+                }),
+                Maybe::Absent(report_context::Absent::Unnamed),
+            ]
+        };
+        let both = |expected: ByteSpan, synthesised: ByteSpan| {
+            [
+                Maybe::Present(Annotation {
+                    span: expected,
+                    label: Label::Expected,
+                }),
+                Maybe::Present(Annotation {
+                    span: synthesised,
+                    label: Label::Synthesised,
+                }),
+            ]
+        };
+        for refusal in [
+            CheckRefusal::DataFieldLevel {
+                field: value_type,
+                kind: value_type,
+            },
+            CheckRefusal::RepresentationAboveKind {
+                representation: value_type,
+                kind: value_type,
+            },
+            CheckRefusal::MissingRecordField {
+                at: value,
+                expected: value_type,
+            },
+            CheckRefusal::CapabilityForged {
+                at: value,
+                expected: value_type,
+            },
+        ] {
+            assert_eq!(context(refusal), expected(spans[2_usize]));
+        }
+        for refusal in [
+            CheckRefusal::DependentStack {
+                at: value,
+                synthesised: comp_type,
+            },
+            CheckRefusal::CompoundEndpoint {
+                at: value,
+                synthesised: comp_type,
+            },
+        ] {
+            assert_eq!(context(refusal), synthesised(spans[3_usize]));
+        }
+        for refusal in [
+            CheckRefusal::FunextUnsupported {
+                at: value,
+                classifier: value_type,
+            },
+            CheckRefusal::EquivUnsupported {
+                at: value,
+                classifier: value_type,
+            },
+            CheckRefusal::UncertifiedStratum {
+                at: value,
+                code: value_type,
+            },
+        ] {
+            assert_eq!(context(refusal), synthesised(spans[2_usize]));
+        }
+        assert_eq!(
+            context(CheckRefusal::EndpointMismatch {
+                at: value,
+                left: value,
+                right: value,
+            }),
+            [
+                Maybe::Present(Annotation {
+                    span: spans[0_usize],
+                    label: Label::Endpoint,
+                }),
+                Maybe::Present(Annotation {
+                    span: spans[0_usize],
+                    label: Label::Endpoint,
+                }),
+            ]
+        );
+        for refusal in [
+            CheckRefusal::TypeMismatch(Mismatch::Value {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            }),
+            CheckRefusal::CapabilityAmplified(Mismatch::Value {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            }),
+            CheckRefusal::SortMismatch {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            },
+            CheckRefusal::LevelMismatch {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            },
+            CheckRefusal::FamilyArgumentClassifier {
+                at: value,
+                position: 2_u32.into(),
+                synthesised: value_type,
+                expected: value_type,
+            },
+            CheckRefusal::NotOver {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            },
+        ] {
+            assert_eq!(context(refusal), both(spans[2_usize], spans[2_usize]));
+        }
+        for refusal in [
+            CheckRefusal::TypeMismatch(Mismatch::Computation {
+                at: computation,
+                synthesised: comp_type,
+                expected: comp_type,
+            }),
+            CheckRefusal::CapabilityAmplified(Mismatch::Computation {
+                at: computation,
+                synthesised: comp_type,
+                expected: comp_type,
+            }),
+        ] {
+            assert_eq!(context(refusal), both(spans[3_usize], spans[3_usize]));
+        }
+        assert_eq!(
+            context(CheckRefusal::DependentBind {
+                at: computation,
+                synthesised: comp_type,
+            }),
+            synthesised(spans[3_usize])
+        );
+        assert_eq!(
+            context(CheckRefusal::ShapeMismatch {
+                at: TermNode::Computation(computation),
+                wanted: ExpectedShape::Arrow,
+                found: TypeNode::Computation(comp_type),
+            }),
+            [
+                Maybe::Present(Annotation {
+                    span: spans[3_usize],
+                    label: Label::Met(ExpectedShape::Arrow),
+                }),
+                Maybe::Absent(report_context::Absent::Unnamed),
+            ]
+        );
+        for refusal in [
+            CheckRefusal::NotADataType(5_usize.into()),
+            CheckRefusal::NotAnAbstractType(6_usize.into()),
+            CheckRefusal::SealSiteRepeated(gandr_core_checker::SealSite::new(
+                gandr_core_checker::SealingSite::from(1_usize),
+                gandr_core_checker::ComponentOrdinal::from(0_usize),
+            )),
+            CheckRefusal::NegativeOccurrence(OccurrenceSite::Field {
+                tag: ConstructorTag::from(3_usize),
+                field: FieldPosition::from(5_usize),
+            }),
+            CheckRefusal::NestedOccurrence(OccurrenceSite::Field {
+                tag: ConstructorTag::from(3_usize),
+                field: FieldPosition::from(5_usize),
+            }),
+            CheckRefusal::IndexOccurrence(OccurrenceSite::Parameter(ParameterPosition::from(
+                2_usize,
+            ))),
+            CheckRefusal::NonUniformOccurrence(OccurrenceSite::Field {
+                tag: ConstructorTag::from(3_usize),
+                field: FieldPosition::from(5_usize),
+            }),
+            CheckRefusal::CrossBlockReference {
+                site: OccurrenceSite::Field {
+                    tag: ConstructorTag::from(3_usize),
+                    field: FieldPosition::from(5_usize),
+                },
+                index: 9_usize.into(),
+            },
+            CheckRefusal::BudgetExceeded {
+                budget: gandr_core_checker::CheckBudget::from(1_usize),
+            },
+            CheckRefusal::CapabilityUngranted {
+                constant: 7_usize.into(),
+                declared: value_type,
+            },
+        ] {
+            assert_eq!(
+                context(refusal),
+                UNNAMED,
+                "a declaration-wide refusal marks no context"
+            );
+        }
     }
 }
