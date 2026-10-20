@@ -1442,6 +1442,29 @@ mod tests
     }
 
     #[test]
+    fn a_builtin_namespace_hovers_the_path_it_qualifies_1170()
+    {
+        let call = |marked_at: &str| {
+            marked(SourceText::from(
+                format!(
+                    "def quotientOf(c : Integer) -> -F Integer {{\n  run lead <- {marked_at}(c, \
+                     64);\n  return lead\n}}\n"
+                )
+                .as_str(),
+            ))
+        };
+        let path = call("int.di$0v");
+        assert_eq!(
+            path,
+            Ok(fenced(SourceText::from(
+                "+U (Integer -> Integer -> -F Integer)"
+            ))),
+            "the primitive answers its type"
+        );
+        assert_eq!(call("in$0t.div"), path, "its namespace answers as the path");
+    }
+
+    #[test]
     fn the_parentheses_around_an_inverted_letter_answer_the_cons_pattern_408()
     {
         assert_eq!(

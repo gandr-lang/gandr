@@ -2,7 +2,7 @@
 // and remainder, a list's length and element, and string append and length.
 // Each is reached by projection from its namespace, which the lowering admits
 // for no builtin yet (#1106), but where the definition's value is first a
-// computation with no stated type.
+// computation with no stated type. Division with its type stated checks.
 
 /// Negation of a comparison. A comparison is a computation, and a definition
 /// with no stated type reads its value where nothing infers that type.
@@ -16,6 +16,14 @@ def quotient = int.div(7, 2);
 /// The remainder of a negative number, its argument a computation as above.
 @[ refuses("NotSynthesisable") ]
 def remainder = int.mod(-7, 2);
+
+/// Integer division with its type stated, which checks; the namespace `int`
+/// qualifies the path, and the path answers for it (#1170).
+@[ checks ]
+def quotientOf(c : Integer) -> -F Integer {
+  run lead <- int.div(c, 64);
+  return lead
+}
 
 /// A list's length.
 @[ refuses("OutOfFragment") ]
