@@ -1,0 +1,41 @@
+// An extension type stated by its `ext` member: `ext Cell = Val on left is
+// zero` declares the sort of cells of `Val` fixed to `zero` on the face
+// `left`, and the face theory generates its signature — `inCell` introducing
+// a cell by its values off the face, `outCellp` reading it at each point `p`,
+// and the boundary, β and η laws among the block's rules (Tesla Zhang, _Three
+// non-cubical applications of extension types_, arXiv:2311.05658). Over two
+// points it is the signature `zero-fiber.gandr` writes by hand (#641).
+
+/// The cells of `Val` over `Two` fixed to `zero` on `left`, with `c` a cell
+/// nothing introduces. The boundary reads `zero` at `left` of every cell, `c`
+/// included; β reads an introduced cell's value at the point off the face; η
+/// rebuilds a cell from its value there.
+@[ normalizes("cells(outCell0(c), outCell1(inCell(one)), inCell(outCell1(c))) ~> cells(zero, one, c)") ]
+theory Generated {
+  shape Two : 2 {
+    left = {0};
+  };
+  sort Val : Type;
+
+  oper zero : Val;
+  oper one : Val;
+  ext Cell = Val on left is zero;
+  oper c : Cell;
+  oper cells : (b : Val, v : Val, e : Cell) --> Val;
+}
+
+/// Over three points with one on the face, a cell holds two values: `inWide`
+/// takes both, β reads each back, and η rebuilds a cell from its two reads.
+@[ normalizes("cells(outWide0(d), outWide2(inWide(one, zero)), inWide(outWide1(d), outWide2(d))) ~> cells(zero, zero, d)") ]
+theory Wider {
+  shape Three : 3 {
+    left = {0};
+  };
+  sort Val : Type;
+
+  oper zero : Val;
+  oper one : Val;
+  ext Wide = Val on left is zero;
+  oper d : Wide;
+  oper cells : (b : Val, v : Val, e : Wide) --> Val;
+}

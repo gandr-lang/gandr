@@ -74,6 +74,27 @@ pub enum SignatureFault
     UnknownInclude(Name),
     /// The included theory's members do not extend the block's.
     IncludeClash(IncludeClash),
+    /// An `ext` member states no extension type the block can generate.
+    Extension(ExtensionFault),
+}
+
+/// Why an `ext Cell = Val on left is zero` member generates nothing.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExtensionFault
+{
+    /// The block states no `shape` for a cell to be stated over.
+    Unshaped,
+    /// The shape has no face of the name the member fixes the cell on.
+    UnknownFace(Name),
+    /// The face holds every point of the shape, so a cell has no value of its
+    /// own and its η law no direction.
+    CoveringFace(Name),
+    /// The extended type is not an unindexed sort of the block, or is the
+    /// cell sort itself.
+    Carrier(Name),
+    /// The boundary is not an operation of no inputs and one output at the
+    /// extended type.
+    Boundary(Name),
 }
 
 pub mod embed;

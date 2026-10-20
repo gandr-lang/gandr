@@ -4,8 +4,8 @@
 // `ins` introduces it and `out0`, `out1` read it at each point. The boundary,
 // β and η are the signature's laws, so each holds by conversion, on a neutral
 // cell as on an introduced one (Tesla Zhang, _Three non-cubical applications
-// of extension types_, arXiv:2311.05658). The surface spelling `ext A on φ is
-// u` waits on #641.
+// of extension types_, arXiv:2311.05658). The member `ext` generates this
+// signature from its spelling (`generated.gandr`).
 
 /// The cells of `Val` over `Two` fixed to `zero` on `left`, with `c` a cell
 /// nothing introduces. The boundary reads `zero` at `left` of every cell, `c`

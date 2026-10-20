@@ -35,6 +35,9 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The port is written as its sort alone, `(Nat, Nat) --> Nat`.
             Unnamed,
+            /// The port belongs to a member an `ext` member generates, which
+            /// no source writes.
+            Generated,
         }
     }
 }
@@ -48,6 +51,9 @@ quenchant_shape::reason_enum! {
             /// A `data` family's rule, `rule add(Zero, n) ==> n`, which names
             /// its operation rather than itself.
             Anonymous,
+            /// A law an `ext` member generates, named by the generation
+            /// rather than by a written tile.
+            Generated,
         }
     }
 }

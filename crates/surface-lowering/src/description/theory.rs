@@ -330,7 +330,9 @@ impl Reader<'_, '_>
     /// Read each theory member independently, preserving its declared sort set,
     /// into the block's `Theory` value and the description that value reads as.
     /// Each `include` member first extends the presentation by the members of
-    /// the block it names, read before this one in `earlier`.
+    /// the block it names, read before this one in `earlier`; each `ext`
+    /// member declares its cell sort among the block's sorts and generates its
+    /// operations and laws after the written ones.
     ///
     /// # Specification
     /// - ensures: an unreadable member does not consume a following member;
@@ -339,10 +341,12 @@ impl Reader<'_, '_>
     ///   circuits added. The included presentations come first, in written
     ///   order, each by [`TheoryParts::include`], with the inclusion kept
     ///   beside the value and each included member's provenance its own
-    ///   block's.
+    ///   block's. An `ext` member's generated operations and laws follow the
+    ///   written ones, each placed at the member's keyword.
     /// - fails: a malformed signature head refuses the whole declaration; an
     ///   `include` that names no earlier block or whose members clash with the
-    ///   presentation's is that member's own diagnostic.
+    ///   presentation's, and an `ext` member the block cannot generate, is that
+    ///   member's own diagnostic.
     /// - panics: none.
     /// - executable: none — a member's independence is a relation between the
     ///   source's members and the report, which the call does not retain.
@@ -354,12 +358,14 @@ impl Reader<'_, '_>
     /// - hypothesis: L3 — a declined rule member between readable ones leaves
     ///   both neighbours read, and an unreadable member keeps its own report; a
     ///   block that includes another restricts along the inclusion to it, and
-    ///   an include of an unknown or clashing block is refused at the member.
+    ///   an include of an unknown or clashing block is refused at the member;
+    ///   an extension generates the signature a hand-written block states.
     /// - witness: `description::theory::tests::a_declined_rule_member_leaves_the_members_after_it_intact`
     /// - witness: `description::theory::tests::an_unreadable_member_keeps_its_own_report`
     /// - witness: `description::theory::tests::the_description_is_read_off_the_value`
     /// - witness: `description::theory::tests::an_included_theory_is_the_extension_restricted`
     /// - witness: `description::theory::tests::an_include_is_refused_at_its_member`
+    /// - witness: `description::theory::tests::an_extension_generates_its_signature`
     pub(super) fn signature(
         &self,
         at: Placed,
@@ -383,6 +389,7 @@ impl Reader<'_, '_>
         let mut presented_circuits = Vec::new();
         let mut inclusions = Vec::new();
         let mut included_circuits = BTreeSet::new();
+        let mut extensions = Vec::new();
         for member in &members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
@@ -498,6 +505,18 @@ impl Reader<'_, '_>
                 }
                 continue;
             }
+            if reading.at(Spelling("ext")).0 {
+                match self.extension_member(&mut reading) {
+                    Ok((extension, sort, member)) => {
+                        parts.sorts.push(sort);
+                        placement.sorts.push(extension.cell());
+                        written.sorts.push(member);
+                        extensions.push(extension);
+                    },
+                    Err(diagnostic) => diagnostics.push(diagnostic),
+                }
+                continue;
+            }
             if !reading.eat(Spelling("sort")).0 {
                 continue;
             }
@@ -550,7 +569,7 @@ impl Reader<'_, '_>
                         },
                     })
             }
-            else if reading.eat(Spelling("include")).0 {
+            else if reading.eat(Spelling("include")).0 || reading.eat(Spelling("ext")).0 {
                 continue;
             }
             else {
@@ -558,6 +577,25 @@ impl Reader<'_, '_>
             };
             if let Err(diagnostic) = result {
                 diagnostics.push(diagnostic);
+            }
+        }
+        for extension in &extensions {
+            match self.extended(extension, &parts) {
+                Ok(generated) => {
+                    for (operation, tile, ports) in generated.operations {
+                        parts.operations.push(operation);
+                        placement.operations.push(tile);
+                        operation_spans.push(extension.span());
+                        written.operations.push(ports);
+                    }
+                    for (law, tile, sides) in generated.laws {
+                        parts.rules.push(law);
+                        placement.laws.push(tile);
+                        placement.faces.push(extension.span());
+                        written.faces.push(sides);
+                    }
+                },
+                Err(diagnostic) => diagnostics.push(diagnostic),
             }
         }
         let presentation = Presentation {
@@ -1930,6 +1968,8 @@ fn spelled(port: &TheoryPort) -> Name
 {
     Name::from(FreeTerm::op(port.sort.clone(), port.indices.iter().cloned()).to_string())
 }
+
+mod extension;
 
 #[cfg(test)]
 mod tests;
