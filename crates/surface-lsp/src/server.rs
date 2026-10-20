@@ -99,11 +99,16 @@ use crate::position::Range;
 use crate::proposal::Proposal;
 use crate::proposal::ProposalRefusal;
 use crate::proposal::actions;
+use crate::proposal::applied;
 use crate::proposal::check;
 use crate::proposal::ghosts;
 use crate::proposal::lenses;
 use crate::proposal::notes;
+use crate::protocol::APPLY_FILL;
 use crate::protocol::Answer;
+use crate::protocol::AppliedEdit;
+use crate::protocol::AppliesEdits;
+use crate::protocol::ApplyEditParams;
 use crate::protocol::CancelProgressParams;
 use crate::protocol::ChoiceParams;
 use crate::protocol::CompletionItem;
@@ -116,6 +121,7 @@ use crate::protocol::DidOpenParams;
 use crate::protocol::DocumentParams;
 use crate::protocol::DocumentUri;
 use crate::protocol::DocumentVersion;
+use crate::protocol::ExecuteCommandParams;
 use crate::protocol::FORM_CLOSER;
 use crate::protocol::FileEvent;
 use crate::protocol::FileRename;
@@ -156,6 +162,7 @@ use crate::protocol::Severity;
 use crate::protocol::ShowsProgress;
 use crate::protocol::StringValue;
 use crate::protocol::SymbolInformation;
+use crate::protocol::TextEdit;
 use crate::protocol::Trace;
 use crate::protocol::TraceParams;
 use crate::protocol::TypedParams;
@@ -203,6 +210,7 @@ use crate::rpc::RequestId;
 use crate::rpc::Requests;
 use crate::rpc::Told;
 use crate::rpc::Withdrawn;
+use crate::rpc::apply_edit;
 use crate::rpc::choose;
 use crate::rpc::classify;
 use crate::rpc::failure;
@@ -1286,6 +1294,7 @@ impl Workspace
             cancelled: Vec::new(),
             trace: Trace::Off,
             pulling: PullsConfiguration(false),
+            applying: AppliesEdits(false),
             choices: Vec::new(),
             streams: BTreeMap::new(),
         };
@@ -1522,6 +1531,10 @@ pub struct Server
     /// Whether its client answers a pull of its settings, read at
     /// `initialize`.
     pulling: PullsConfiguration,
+    /// Whether its client applies an edit the server asks it to, read at
+    /// `initialize`: a lens over one checked fill then runs the command
+    /// applying it.
+    applying: AppliesEdits,
     /// Each choice this connection put to its user, by the request that put
     /// it, with the answer once read.
     choices: Vec<(RequestId, Choice)>,
@@ -1595,6 +1608,7 @@ impl Server
             cancelled: Vec::new(),
             trace: Trace::Off,
             pulling: PullsConfiguration(false),
+            applying: AppliesEdits(false),
             choices: Vec::new(),
             streams: BTreeMap::new(),
         }
@@ -1951,7 +1965,9 @@ impl Server
     ///   `later` is answered with the error the withdrawal owes, under its own
     ///   identifier, and not run; a `shutdown` of a running session whose
     ///   client watches files for it is answered after the request withdrawing
-    ///   the watcher; a response is handled as `Server::response` states.
+    ///   the watcher; a `workspace/executeCommand` of a running session is run
+    ///   as `Server::execute` states; a response is handled as
+    ///   `Server::response` states.
     /// - provides: the step of [`serve`] and of each hub connection, which read
     ///   ahead of the message they handle.
     /// - fails: never; every refusal is a message to the client.
@@ -1963,6 +1979,7 @@ impl Server
     ///   cancelled after it, are each asserted at their answer.
     /// - witness: `server::tests::a_request_withdrawn_by_a_later_message_is_not_run`
     /// - witness: `server::tests::a_watching_client_is_asked_to_watch_every_source`
+    /// - witness: `server::tests::a_lens_applies_its_one_checked_fill`
     #[spec(
         captures: phase = self.phase,
         ensures: |ret| ret.log.len() <= ret.messages.len()
@@ -1993,6 +2010,12 @@ impl Server
                 let unwatching = self.phase == Phase::Running
                     && method.as_ref() == "shutdown"
                     && self.watching.0;
+                if withdrawn.is_none()
+                    && self.phase == Phase::Running
+                    && method.as_ref() == "workspace/executeCommand"
+                {
+                    return self.execute(workspace, id, params);
+                }
                 let answered = match withdrawn {
                     Some(withdrawn) => withdrawn.response(id),
                     None => self.request(workspace, id, &method, params),
@@ -2014,6 +2037,92 @@ impl Server
             Ok(Incoming::Notification { method, params }) => {
                 self.notification(workspace, &method, params)
             },
+        }
+    }
+
+    /// Run the command `params` names, answering request `id`:
+    /// [`APPLY_FILL`] asks the client to apply the checked fill its
+    /// arguments name.
+    ///
+    /// # Specification
+    /// - requires: nothing; any parameters are admissible input.
+    /// - ensures: for [`APPLY_FILL`] naming a fill the document at its URI
+    ///   still keeps, a `workspace/applyEdit` request carrying the fill's edit
+    ///   under a fresh numbered identifier, then the answer `null`; for one
+    ///   naming a fill the document does not keep, `ContentModified`; for any
+    ///   other command, or arguments that do not read, `InvalidParams`.
+    /// - fails: never; every refusal is an answer.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the lens's command run, run again after the
+    ///   document's next edit, an unknown command and arguments of another
+    ///   shape, each asserted at its exact messages.
+    /// - witness: `server::tests::a_lens_applies_its_one_checked_fill`
+    #[spec(ensures: |ret| ret.flow == Flow::Continue && ret.log.is_empty()
+        && matches!(ret.messages.as_slice(),
+            [Outgoing::Failure { .. }]
+            | [Outgoing::Request { .. }, Outgoing::Success { result: Answer::Nothing, .. }]))]
+    fn execute(
+        &mut self,
+        workspace: &Workspace,
+        id: RequestId,
+        params: Value,
+    ) -> Outcome
+    {
+        let named = serde_json::from_value::<ExecuteCommandParams>(params)
+            .map_err(|error| error.to_string())
+            .and_then(|params| {
+                if params.command != APPLY_FILL {
+                    return Err(format!("the server runs no command `{}`", params.command));
+                }
+                match *params.arguments.as_slice() {
+                    [ref uri, ref range, Value::String(ref text)] => Ok((
+                        DocumentUri::deserialize(uri).map_err(|error| error.to_string())?,
+                        TextEdit {
+                            range: Range::deserialize(range).map_err(|error| error.to_string())?,
+                            new_text: text.clone(),
+                        },
+                    )),
+                    _ => Err(format!(
+                        "`{APPLY_FILL}` takes a document's URI, a range and the fill's text"
+                    )),
+                }
+            });
+        let (uri, fill) = match named {
+            Ok(named) => named,
+            Err(message) => {
+                return Outcome::say(failure(id, ErrorCode::INVALID_PARAMS, message));
+            },
+        };
+        let edit = match workspace.view(&uri, self.peer) {
+            Maybe::Present(document) => applied(&uri, &document.proposals, fill),
+            Maybe::Absent(_) => None,
+        };
+        let Some(edit) = edit
+        else {
+            return Outcome::say(failure(
+                id,
+                ErrorCode::CONTENT_MODIFIED,
+                String::from(
+                    "the fill is no longer kept: the document changed since it was offered",
+                ),
+            ));
+        };
+        let sent = self.next_request();
+        Outcome {
+            messages: Vec::from([
+                apply_edit(
+                    ApplyEditParams {
+                        label: "Apply the checked fill",
+                        edit,
+                    },
+                    sent,
+                ),
+                success(id, Answer::Nothing),
+            ]),
+            log: Vec::new(),
+            flow: Flow::Continue,
         }
     }
 
@@ -2740,6 +2849,7 @@ impl Server
                 self.refreshing = initial_refreshing(&params);
                 self.trace = initial_trace(&params);
                 self.pulling = initial_pulling(&params);
+                self.applying = initial_applying(&params);
                 workspace.rooted(self.peer, &initial_roots(&params));
                 success(
                     id,
@@ -3088,7 +3198,11 @@ impl Server
                     Ok(params) => success(
                         id,
                         match workspace.view(&params.text_document.uri, self.peer) {
-                            Maybe::Present(document) => Answer::Lenses(lenses(&document.proposals)),
+                            Maybe::Present(document) => Answer::Lenses(lenses(
+                                &params.text_document.uri,
+                                &document.proposals,
+                                self.applying,
+                            )),
                             Maybe::Absent(_) => Answer::Nothing,
                         },
                     ),
@@ -3558,7 +3672,8 @@ impl Server
 
     /// Handle the client's answer `result` to the request of this
     /// connection's that `id` names: a pull's settings applied, a choice
-    /// recorded, every other answer read and left.
+    /// recorded, an edit the client did not apply logged, every other answer
+    /// read and left.
     ///
     /// # Specification
     /// - requires: nothing; any response is admissible input.
@@ -3566,17 +3681,20 @@ impl Server
     ///   as [`Server::configured`] does, and one that does not read is logged
     ///   to the client as a warning; a pull answered with null or an error
     ///   applies nothing; a choice this connection put is recorded as chosen
-    ///   when the answer names an action, dismissed otherwise; nothing else
-    ///   changes.
+    ///   when the answer names an action, dismissed otherwise; an edit the
+    ///   client answers it did not apply is logged to it as a warning, with its
+    ///   reason when it gave one; nothing else changes.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a pull answered with settings, with a section that
     ///   does not read, with null and with an error; a choice answered with an
-    ///   action, null and an error; a registration's answer.
+    ///   action, null and an error; an edit applied and one refused; a
+    ///   registration's answer.
     /// - witness: `server::tests::a_pulled_setting_applies_as_a_pushed_one`
     /// - witness: `server::tests::a_choice_put_to_the_user_reads_its_answer`
+    /// - witness: `server::tests::a_lens_applies_its_one_checked_fill`
     #[spec(ensures: |ret| ret.log.len() <= ret.messages.len() && ret.flow == Flow::Continue)]
     fn response(
         &mut self,
@@ -3615,6 +3733,21 @@ impl Server
                 }
                 Outcome::quiet()
             },
+            Answered::Applied => result
+                .and_then(|result| serde_json::from_value::<AppliedEdit>(result).ok())
+                .filter(|answer| !answer.applied)
+                .map_or_else(Outcome::quiet, |refused| {
+                    Outcome::say(tell(Told::Logged, MessageParams {
+                        kind: MessageType::WARNING,
+                        message: format!(
+                            "the editor did not apply the checked fill: {}",
+                            refused
+                                .failure_reason
+                                .as_deref()
+                                .unwrap_or("it gave no reason")
+                        ),
+                    }))
+                }),
             Answered::Other => Outcome::quiet(),
         }
     }
@@ -4988,6 +5121,18 @@ fn initial_pulling(params: &Value) -> PullsConfiguration
         .unwrap_or_default()
 }
 
+/// Whether the client `initialize` names in `params` applies an edit the
+/// server asks it to; not when the parameters do not read.
+///
+/// # Specification
+/// trivial.
+fn initial_applying(params: &Value) -> AppliesEdits
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.applies_edits())
+        .unwrap_or_default()
+}
+
 /// The warning logged to the client when its `gandr` settings do not read:
 /// what `error` says, and that none of them is applied.
 ///
@@ -5616,6 +5761,7 @@ mod tests
                         "documentOnTypeFormattingProvider":{"firstTriggerCharacter":";"},
                         "codeLensProvider":{"resolveProvider":true},
                         "codeActionProvider":{"resolveProvider":true},
+                        "executeCommandProvider":{"commands":["gandr.applyFill"]},
                         "workspaceSymbolProvider":{"resolveProvider":true},
                         "documentHighlightProvider":true,
                         "referencesProvider":true,
@@ -9498,6 +9644,15 @@ mod tests
                 Some(serde_json::json!("1 checked fill"))
             ])
         );
+        assert!(
+            lenses
+                .as_array()
+                .is_some_and(|lenses| lenses.iter().all(|lens| {
+                    lens.pointer("/command/command") == Some(&serde_json::json!(""))
+                        && lens.pointer("/command/arguments").is_none()
+                })),
+            "a client that applies no edit the server asks of it is offered no lens command: {lenses}"
+        );
         let actions = asked(
             &workspace,
             Json("textDocument/codeAction"),
@@ -9531,6 +9686,118 @@ mod tests
                 .and_then(Value::as_str)
                 .is_some_and(|value| value.contains("**Checked fill** `42`: the answer")),
             "{hovered}"
+        );
+    }
+
+    /// A lens over a range's one checked fill runs the command applying it:
+    /// the server asks the client to apply the fill's edit and answers the
+    /// command with nothing, a refused edit is logged with its reason, and
+    /// once the document's next edit withdraws the fill the same command is
+    /// refused as content modified.
+    #[test]
+    fn a_lens_applies_its_one_checked_fill()
+    {
+        let mut server = Connected::default();
+        let _answered = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{"workspace":{"applyEdit":true}}}}"#,
+            ),
+        );
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/fill.gandr","languageId":"gandr","version":1,
+                     "text":"def f : Integer ;\ndef f = missing ;\n"}}}"#,
+            ),
+        );
+        let uri = DocumentUri::from("file:///tmp/fill.gandr");
+        let version = serde_json::from_value(serde_json::json!(1_i32)).expect("a version");
+        let hole = on_line(
+            Line::from(1_u32),
+            Character::from(8_u32),
+            Character::from(15_u32),
+        );
+        assert!(
+            server
+                .workspace
+                .propose(&uri, version, fill(hole, Json("42"), None))
+                .is_ok(),
+            "the fill settles the document and is kept"
+        );
+        let range = serde_json::json!({"start": {"line": 1_u32, "character": 8_u32},
+            "end": {"line": 1_u32, "character": 15_u32}});
+        assert_eq!(
+            send(
+                &mut server,
+                Json(
+                    r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/codeLens","params":{"textDocument":{"uri":"file:///tmp/fill.gandr"}}}"#,
+                ),
+            )
+            .pointer("/0/result/0/command"),
+            Some(&serde_json::json!({"title": "1 checked fill", "command": "gandr.applyFill",
+                "arguments": ["file:///tmp/fill.gandr", range, "42"]})),
+            "the one fill's lens names the command and the fill"
+        );
+        let execute = |id: u32| {
+            format!(
+                r#"{{"jsonrpc":"2.0","id":{id},"method":"workspace/executeCommand","params":{{"command":"gandr.applyFill","arguments":["file:///tmp/fill.gandr",{range},"42"]}}}}"#
+            )
+        };
+        assert_eq!(
+            send(&mut server, Json(&execute(3))),
+            serde_json::json!([
+                {"jsonrpc": "2.0", "id": "workspace/applyEdit/1", "method": "workspace/applyEdit",
+                    "params": {"label": "Apply the checked fill",
+                        "edit": {"changes": {"file:///tmp/fill.gandr": [{"range": range, "newText": "42"}]}}}},
+                {"jsonrpc": "2.0", "id": 3_u32, "result": null}
+            ]),
+            "the server asks the client to apply the fill, then answers the command"
+        );
+        assert_eq!(
+            send(
+                &mut server,
+                Json(
+                    r#"{"jsonrpc":"2.0","id":"workspace/applyEdit/1","result":{"applied":false,"failureReason":"the document is read-only"}}"#,
+                ),
+            ),
+            serde_json::json!([{"jsonrpc": "2.0", "method": "window/logMessage",
+                "params": {"type": 2_u8,
+                    "message": "the editor did not apply the checked fill: the document is read-only"}}]),
+            "an edit the client refused is logged with its reason"
+        );
+        assert_eq!(
+            send(
+                &mut server,
+                Json(r#"{"jsonrpc":"2.0","id":"workspace/applyEdit/1","result":{"applied":true}}"#),
+            ),
+            serde_json::json!([]),
+            "an applied one is read and left"
+        );
+        let _changed = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":
+                    {"uri":"file:///tmp/fill.gandr","version":2},
+                    "contentChanges":[{"text":"def f : Integer ;\ndef f = missing ;\n"}]}}"#,
+            ),
+        );
+        assert_eq!(
+            send(&mut server, Json(&execute(4))).pointer("/0/error/code"),
+            Some(&serde_json::json!(-32_801_i32)),
+            "a fill the next edit withdrew is no longer applied"
+        );
+        assert_eq!(
+            send(
+                &mut server,
+                Json(
+                    r#"{"jsonrpc":"2.0","id":5,"method":"workspace/executeCommand","params":{"command":"gandr.unknown"}}"#,
+                ),
+            )
+            .pointer("/0/error/code"),
+            Some(&serde_json::json!(-32_602_i32)),
+            "a command the server does not run is refused"
         );
     }
 

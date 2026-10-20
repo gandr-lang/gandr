@@ -34,6 +34,7 @@ fn advertised_capabilities_name_the_token_legend()
                 "completionProvider": {"resolveProvider": true},
                 "inlineCompletionProvider": true,
                 "documentSymbolProvider": true,
+                "executeCommandProvider": {"commands": ["gandr.applyFill"]},
                 "foldingRangeProvider": true,
                 "selectionRangeProvider": true,
                 "hoverProvider": true,

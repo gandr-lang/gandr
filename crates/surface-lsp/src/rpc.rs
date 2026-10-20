@@ -11,6 +11,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::protocol::Answer;
+use crate::protocol::ApplyEditParams;
 use crate::protocol::ChoiceParams;
 use crate::protocol::CreateProgressParams;
 use crate::protocol::MessageParams;
@@ -44,6 +45,9 @@ const PULL_CONFIGURATION: &str = "workspace/configuration";
 
 /// The method a server puts a choice to the user with.
 const CHOOSE: &str = "window/showMessageRequest";
+
+/// The method a server asks the client to apply an edit with.
+const APPLY_EDIT: &str = "workspace/applyEdit";
 
 /// The method a server traces its exchanges under.
 const LOG_TRACE: &str = "$/logTrace";
@@ -448,6 +452,8 @@ pub enum Asked
     Pulling(PullParams),
     /// `window/showMessageRequest`.
     Choosing(ChoiceParams),
+    /// `workspace/applyEdit`.
+    Applying(ApplyEditParams),
 }
 
 /// A message reporting the progress of work the server started.
@@ -768,6 +774,26 @@ pub fn choose(
     }
 }
 
+/// The request asking the client to apply the edit `params` carries, the
+/// `sent`th numbered request this connection sent.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn apply_edit(
+    params: ApplyEditParams,
+    sent: Requests,
+) -> Outgoing
+{
+    Outgoing::Request {
+        jsonrpc: VERSION,
+        id: numbered(Called(APPLY_EDIT), sent),
+        method: APPLY_EDIT,
+        params: Some(Asked::Applying(params)),
+    }
+}
+
 /// What a response's identifier names: the request of the server's it
 /// answers, by the method the identifier is numbered under.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -777,6 +803,8 @@ pub enum Answered
     Pulled,
     /// A `window/showMessageRequest` choice.
     Chosen,
+    /// A `workspace/applyEdit` edit.
+    Applied,
     /// Any other request: a registration, a refresh, a progress token.
     Other,
 }
@@ -802,6 +830,9 @@ impl Answered
         }
         else if numbered_under(CHOOSE) {
             Self::Chosen
+        }
+        else if numbered_under(APPLY_EDIT) {
+            Self::Applied
         }
         else {
             Self::Other

@@ -6,7 +6,8 @@
 //! fill that checks is kept beside the document. The editor then reads the
 //! kept proposals through four surfaces: ghost text at the cursor, a lens
 //! counting the checked fills of a range, an action applying one, and a hover
-//! carrying the model's explanation.
+//! carrying the model's explanation. A lens over one fill applies it when
+//! chosen, in an editor that applies edits the server asks it to.
 //!
 //! # Model proposals reach the editor once they check
 //!
@@ -33,8 +34,11 @@
 //! is kept would show the lens at once, at the cost of a server-to-client
 //! request the relay and every client must answer; the editor asks for lenses
 //! again on its own triggers, and ghost text and actions are pulled at the
-//! cursor. Lenses run no command: applying a fill is the code action's, and a
-//! lens command would need a client command the extension registers.
+//! cursor. A lens over a range with one checked fill runs [`APPLY_FILL`],
+//! which the server executes by asking the client to apply the fill
+//! (`workspace/applyEdit`), so the lens applies the fill in any editor that
+//! applies such edits, with no command of the editor's own; a range with
+//! several fills is left to the actions, which name each.
 //!
 //! **Reversal.** A proposal that should survive an edit far from its range
 //! moves with the edit and is checked again; an editor measured to show stale
@@ -47,12 +51,15 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_surface_syntax::SourceText;
+use serde_json::Value;
 
 use crate::markup::Code;
 use crate::markup::Host;
 use crate::markup::Markup;
 use crate::position::Position;
 use crate::position::Range;
+use crate::protocol::APPLY_FILL;
+use crate::protocol::AppliesEdits;
 use crate::protocol::CodeAction;
 use crate::protocol::CodeLens;
 use crate::protocol::Command;
@@ -269,45 +276,101 @@ pub fn ghosts(
         .collect()
 }
 
-/// One lens per range `proposals` fill, counting its checked fills.
+/// One lens per range `proposals` fill, counting its checked fills; over a
+/// range with one, the command applying it to the document at `uri` when
+/// the client `applies` edits the server asks it to.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one lens per distinct range, in range order, titled with the
-///   number of proposals for it; the lens runs no command.
+///   number of proposals for it; a lens over one proposal runs [`APPLY_FILL`]
+///   with the URI, the range and the fill's text when `applies` holds, and
+///   every other lens runs no command.
 /// - provides: the answer to `textDocument/codeLens`.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — two proposals for one range and one for another show two
-///   lenses counting two and one.
+///   lenses counting two and one, the one alone carrying the command for a
+///   client that applies edits and none for one that does not.
 /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
+/// - witness: `server::tests::a_lens_applies_its_one_checked_fill`
 #[spec(ensures: |ret| ret.len() <= proposals.len()
-    && ret.is_sorted_by(|earlier, later| earlier.range < later.range))]
+    && ret.is_sorted_by(|earlier, later| earlier.range < later.range)
+    && ret.iter().all(|lens| lens.command.name.is_empty() || (applies.0 && lens.command.arguments.len() == 3)))]
 #[must_use]
-pub fn lenses(proposals: &[Proposal]) -> Vec<CodeLens>
+pub fn lenses(
+    uri: &DocumentUri,
+    proposals: &[Proposal],
+    applies: AppliesEdits,
+) -> Vec<CodeLens>
 {
-    let mut counts: BTreeMap<Range, usize> = BTreeMap::new();
+    let mut kept: BTreeMap<Range, Vec<&Proposal>> = BTreeMap::new();
     for proposal in proposals {
-        let count = counts.entry(proposal.range).or_default();
-        *count = count.saturating_add(1);
+        kept.entry(proposal.range).or_default().push(proposal);
     }
-    counts
-        .into_iter()
-        .map(|(range, count)| CodeLens {
-            range,
-            command: Command {
-                title: if count == 1 {
-                    String::from("1 checked fill")
-                }
-                else {
-                    alloc::format!("{count} checked fills")
+    kept.into_iter()
+        .map(|(range, fills)| {
+            let (command, arguments) = match *fills.as_slice() {
+                [only] if applies.0 => (
+                    APPLY_FILL,
+                    Vec::from([
+                        serde_json::to_value(uri).unwrap_or(Value::Null),
+                        serde_json::to_value(range).unwrap_or(Value::Null),
+                        Value::from(only.text.as_str()),
+                    ]),
+                ),
+                _ => ("", Vec::new()),
+            };
+            CodeLens {
+                range,
+                command: Command {
+                    title: if fills.len() == 1 {
+                        String::from("1 checked fill")
+                    }
+                    else {
+                        alloc::format!("{} checked fills", fills.len())
+                    },
+                    name: command,
+                    arguments,
                 },
-                command: "",
-            },
+            }
         })
         .collect()
+}
+
+/// The workspace edit making `named` to the document at `uri`, while one
+/// of `proposals` is the fill it names.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `named` alone, under `uri`, exactly when a proposal fills
+///   `named`'s range with its text; `None` otherwise.
+/// - provides: what [`APPLY_FILL`] asks the client to apply.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the lens's arguments find the kept fill; after the
+///   document's next edit withdraws it, they find none.
+/// - witness: `server::tests::a_lens_applies_its_one_checked_fill`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|edit| edit.changes.len() == 1))]
+#[must_use]
+pub fn applied(
+    uri: &DocumentUri,
+    proposals: &[Proposal],
+    named: TextEdit,
+) -> Option<WorkspaceEdit>
+{
+    proposals
+        .iter()
+        .any(|proposal| {
+            (proposal.range, proposal.text.as_str()) == (named.range, named.new_text.as_str())
+        })
+        .then(|| WorkspaceEdit {
+            changes: BTreeMap::from([(uri.clone(), Vec::from([named]))]),
+        })
 }
 
 /// One action per proposal of the document at `uri` whose range meets
