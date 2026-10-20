@@ -1,0 +1,25 @@
+// A module sealed by a theory with a law, `:> Model(S)`: the law's member
+// is checked at the representation and crosses the kernel at the abstract
+// sort (#1073).
+
+/// A unital magma: a carrier, a unit, a product, and the left unit law.
+theory Unital {
+  sort M : Type;
+  oper e : () --> M;
+  oper mul : (x : M, y : M) --> M;
+  rule unitL : mul(e(), x) <=> x;
+}
+
+/// The integers under the right projection, sealed: outside, `M` is a fresh
+/// type, and the law is stated over it.
+module Sealed :> Model(Unital) {
+  type M = Integer;
+
+  def e() -> -F Integer { return 0 }
+
+  def mul(x : Integer, y : Integer) -> -F Integer { return y }
+
+  /// The unit law holds by computation: `mul(e(), x)` returns `x`.
+  @[ checks ]
+  def unitL(x : Integer) -> -F Path(Integer, mul(e(), x), x) { return here(x) }
+}
