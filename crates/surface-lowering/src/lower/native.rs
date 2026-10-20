@@ -7608,7 +7608,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   each after it. Inside a joint fixpoint ([`Joint`]) a head naming a
     ///   sibling member stands as the function's own fixpoint binder, and
     ///   either head's call injects its argument at the called member's
-    ///   summand.
+    ///   summand. The head's name, its marker aside, keeps what it names: the
+    ///   fixpoint binder, or the sibling member's declaration.
     /// - provides: the head of a recursive call, and the self reference a value
     ///   position passes on.
     /// - fails: the reserved refusal for any other resident, a termination
@@ -7691,9 +7692,11 @@ impl<'source> Lowerer<'_, 'source>
         let resolved = self.scope.resolve(frame, name, &mut self.fuel)?;
         // A sibling of the joint answers by the function's own fixpoint
         // binder: the joint fixpoint is the function's own, read at the
-        // sibling's summand.
+        // sibling's summand. The head's name, without its marker, keeps what
+        // it calls: the function's own binder, or the sibling's declaration.
         let (bound, summand) = match resolved {
             Maybe::Present(bound) if self.recursions.contains_key(&bound.binder) => {
+                self.resolved(head.span, Resolved::Binder(bound));
                 (bound, joint.summand())
             },
             Maybe::Present(_) => return Err(site.out(FragmentBoundary::Unadmitted)),
@@ -7703,6 +7706,15 @@ impl<'source> Lowerer<'_, 'source>
                 else {
                     return Err(site.out(FragmentBoundary::Unadmitted));
                 };
+                if let Some(constant) = joint
+                    .members
+                    .get(usize::from(called))
+                    .and_then(|&member| self.collected.slots.get(usize::from(member)))
+                    .map(|slot| slot.constant)
+                {
+                    let declared = Maybe::Absent(binder_type::Absent::Untyped);
+                    self.resolved(head.span, Resolved::Declaration { constant, declared });
+                }
                 let Some(own) = self
                     .collected
                     .slots

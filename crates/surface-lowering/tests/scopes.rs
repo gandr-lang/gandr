@@ -193,3 +193,53 @@ fn a_refused_declaration_keeps_the_names_it_resolved_836()
         "the constructor's tile in its family, though `k` is refused"
     );
 }
+
+/// A rose tree's node and forest, one block, measured by two functions that
+/// call each other through their descent marker.
+const MUTUAL: &str = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\nrec {\n  \
+                      data Rose : Type { Node : (kids : Forest) --> Rose; }\n  data Forest : \
+                      Type { Empty : Forest; More : (head : Rose, tail : Forest) --> Forest; \
+                      }\n  def rec size(t : Rose) -> -F Nat { case t { Node(kids) => { run s \
+                      <- sizes[<](kids); return Succ(s) } } }\n  def rec sizes(ts : Forest) \
+                      -> -F Nat { case ts { Empty => return Zero, More(t, rest) => { run a <- \
+                      size[<](t); sizes[<](rest) } } }\n}\n";
+
+/// #827: a call head written with its descent marker keeps what its name
+/// names at the name alone, the marker aside: the function's own fixpoint
+/// binder, or a sibling member's declaration.
+#[test]
+fn a_marked_call_head_keeps_its_name_s_referent_827()
+{
+    let pair = |name: &str, site: &str| (String::from(name), String::from(site));
+    assert_eq!(
+        resolved(SourceText::from(WRITTEN), SourceText::from("plus[<]")),
+        [
+            pair("plus", "plus"),
+            pair("n", "n"),
+            pair("p", "p"),
+            pair("Nat", "Nat"),
+            pair("Nat", "Nat"),
+            pair("Succ", "Succ"),
+            pair("x", "x")
+        ],
+        "the function's own call names its binder from its name"
+    );
+    assert_eq!(
+        resolved(SourceText::from(MUTUAL), SourceText::from("sizes[<](kids)")),
+        [
+            pair("sizes", "sizes"),
+            pair("kids", "kids"),
+            pair("Succ", "Succ"),
+            pair("s", "s"),
+            pair("Forest", "Forest"),
+            pair("Nat", "Nat"),
+            pair("ts", "ts"),
+            pair("Zero", "Zero"),
+            pair("size", "size"),
+            pair("t", "t"),
+            pair("sizes", "sizes"),
+            pair("rest", "rest")
+        ],
+        "a sibling's call names its declaration from its name"
+    );
+}
