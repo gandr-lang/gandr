@@ -10,17 +10,19 @@
 //! Built with `--features hotpath`, which turns on the profiler in every
 //! measured crate, counts allocations through the profiler's global
 //! allocator, and links the upload client. The run prints the report on exit;
-//! with `HOTPATH_UPLOAD` set in GitHub Actions it uploads the report, and
-//! hotpath Cloud compares a pull request's report with its base's and
-//! comments the comparison on the pull request.
+//! `mise run ci:hotpath` runs it twice in GitHub Actions and uploads it as
+//! `gandr` and as `gandr-timing`, and hotpath Cloud compares a pull request's
+//! reports with its base's and comments when one changed.
 //!
 //! # Decision
 //!
 //! hotpath 0.28 was chosen for its CI comparison service: a pull request gets
 //! a per-function comparison of time and allocations against its base, with
 //! no baseline storage of our own. Allocation counts are exact for a fixed
-//! workload; wall-clock time on a shared runner is not, so the policy
-//! (`hotpath/policy.toml`) judges allocations and lists time unjudged.
+//! workload, so `gandr` (`hotpath/gandr-policy.toml`) judges them at 2% in
+//! every crate; wall-clock time on a shared runner is not, so `gandr-timing`
+//! (`hotpath/gandr-timing-policy.toml`) judges the average of functions called
+//! at least 20 times at 5%, only in the crates a change reaches.
 //! Rejected: criterion and divan time a closure in isolation and keep their
 //! baselines on the machine that ran them; iai-callgrind counts instructions
 //! exactly but needs valgrind and gives no per-function allocation view. The
