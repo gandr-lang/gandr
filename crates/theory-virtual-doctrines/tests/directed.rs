@@ -350,14 +350,14 @@ mod tests
             fn fubini_swap_is_an_involution(
                 entries in prop::collection::vec(((0_u32 .. 4, 0_u32 .. 4), 0_u32 .. 6), 0_usize .. 6),
             ) {
+                let mut spelled = String::new();
                 let bi_diagram = BiDiagram::new(
                     entries
                         .iter()
-                        .map(|&entry| {
-                            let ((x, y), payload) = entry;
+                        .map(|&((x, y), payload)| {
                             (
-                                (ct(NameRef::from(format!("X{x}").as_str())), ct(NameRef::from(format!("Y{y}").as_str()))),
-                                ct(NameRef::from(format!("P{payload}").as_str())),
+                                (spelled_ct(&mut spelled, format_args!("X{x}")), spelled_ct(&mut spelled, format_args!("Y{y}"))),
+                                spelled_ct(&mut spelled, format_args!("P{payload}")),
                             )
                         })
                         .collect::<Vec<_>>(),
@@ -374,14 +374,14 @@ mod tests
             fn fubini_preserves_the_iterated_end(
                 entries in prop::collection::vec(((0_u32 .. 4, 0_u32 .. 4), 0_u32 .. 6), 0_usize .. 6),
             ) {
+                let mut spelled = String::new();
                 let bi_diagram = BiDiagram::new(
                     entries
                         .iter()
-                        .map(|&entry| {
-                            let ((x, y), payload) = entry;
+                        .map(|&((x, y), payload)| {
                             (
-                                (ct(NameRef::from(format!("X{x}").as_str())), ct(NameRef::from(format!("Y{y}").as_str()))),
-                                ct(NameRef::from(format!("P{payload}").as_str())),
+                                (spelled_ct(&mut spelled, format_args!("X{x}")), spelled_ct(&mut spelled, format_args!("Y{y}"))),
+                                spelled_ct(&mut spelled, format_args!("P{payload}")),
                             )
                         })
                         .collect::<Vec<_>>(),
@@ -424,10 +424,11 @@ mod tests
                 indices in prop::collection::vec(0_u32 .. 6, 1_usize .. 6),
                 pick in 0_usize .. 64,
             ) {
+                let mut spelled = String::new();
                 let diagram = Diagram::new(
                     indices
                         .iter()
-                        .map(|index| (ct(NameRef::from(format!("P{index}").as_str())), ct(NameRef::from(format!("V{index}").as_str()))))
+                        .map(|&index| (spelled_ct(&mut spelled, format_args!("P{index}")), spelled_ct(&mut spelled, format_args!("V{index}"))))
                         .collect::<Vec<_>>(),
                 );
                 let chosen = pick.checked_rem(diagram.entries.len()).expect("entries are nonempty");
@@ -696,6 +697,23 @@ mod tests
     fn ct(name: NameRef<'_>) -> TermRef
     {
         TermRef::new(FreeTerm::ctor(name, Vec::new()))
+    }
+
+    /// The nullary-constructor reflected term named by `spelling`, written
+    /// into `spelled`, which is reused across calls.
+    /// # Specification
+    /// trivial.
+    fn spelled_ct(
+        spelled: &mut String,
+        spelling: core::fmt::Arguments<'_>,
+    ) -> TermRef
+    {
+        use core::fmt::Write as _;
+        spelled.clear();
+        spelled
+            .write_fmt(spelling)
+            .expect("writing into a string succeeds");
+        ct(NameRef::from(spelled.as_str()))
     }
 
     // ---- fixtures ---------------------------------------------------------

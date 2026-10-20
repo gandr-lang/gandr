@@ -1,17 +1,5 @@
 //! Public-API law witnesses.
 
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        allocation_in_repeated_body,
-        reason = "8 cost-shape sites; #814 lists them"
-    )
-)]
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(clone_in_loop, reason = "3 cost-shape sites; #814 lists them")
-)]
-
 extern crate alloc;
 
 #[cfg(test)]
