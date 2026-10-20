@@ -17,6 +17,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::identity::Relation;
+use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
 use gandr_core_term::world::World;
@@ -1373,8 +1374,13 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Computation::Memory(ref form)), _) => match (form, ret) {
             | (&MemoryForm::Hold { value, body }, Former::Hold { value: held, body: scope }) =>
                 held == CoreNode::Value(value) && scope == CoreNode::Computation(body),
-            | (&MemoryForm::Access { held, body, unwind }, Former::Access { held: actual, body: lent, unwind: unwound }) =>
-                held == actual && lent == CoreNode::Computation(body) && unwound == CoreNode::Computation(unwind),
+            | (&MemoryForm::Access { held, body, mode }, Former::Access { held: actual, body: lent, mode: printed }) =>
+                held == actual && lent == CoreNode::Computation(body) && match (mode, printed) {
+                    | (AccessMode::Exclusive { unwind }, AccessMode::Exclusive { unwind: unwound }) =>
+                        unwound == CoreNode::Computation(unwind),
+                    | (AccessMode::Shared, AccessMode::Shared) => true,
+                    | _ => false,
+                },
             | (&MemoryForm::Resume { view, value }, Former::ResumeView { view: actual, value: written }) =>
                 view == actual && written == CoreNode::Value(value),
             | (&MemoryForm::Abort { view }, Former::AbortView(actual)) => view == actual,
@@ -1615,10 +1621,15 @@ impl<'arena> CoreSource<'arena>
                     value: value(held),
                     body: computation(body),
                 },
-                MemoryForm::Access { held, body, unwind } => Former::Access {
+                MemoryForm::Access { held, body, mode } => Former::Access {
                     held,
                     body: computation(body),
-                    unwind: computation(unwind),
+                    mode: match mode {
+                        AccessMode::Exclusive { unwind } => AccessMode::Exclusive {
+                            unwind: computation(unwind),
+                        },
+                        AccessMode::Shared => AccessMode::Shared,
+                    },
                 },
                 MemoryForm::Resume {
                     view,

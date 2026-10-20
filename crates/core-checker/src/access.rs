@@ -1,6 +1,6 @@
-//! Temporary access in the judgement: a value held exclusively, the access
-//! that lends it to a view, the view's two eliminators, and the refusals
-//! that name them.
+//! Temporary access in the judgement: a held value, the access that lends
+//! it to a view in a mode, the view's two eliminators, and the refusals that
+//! name them.
 //!
 //! # Temporary access is a yield-once accessor
 //!
@@ -15,18 +15,22 @@
 //! aborted coroutine may not throw — and one-shot costs no expressiveness.
 //!
 //! ```text
-//! x : A held exclusively      Σ, w : View A ⊢ t ⇓ F B      w ∉ fv(B)
-//! ──────────────────────────────────────────────────── (Access)
-//! Σ ⊢ access x as w { t } unwind { u } ⇓ F B
-//!     resume(w, v) writes v back into x;  abort(w) runs u : F^∅ 1
+//! x : A held, not lent exclusively      Σ, w : View^m A ⊢ t ⇓ F B      w ∉ fv(B)
+//! ─────────────────────────────────────────────────────────────── (Access)
+//! Σ ⊢ access^m x as w { t } ⇓ F B
+//!   m = exclusive: x unreadable for t; resume(w, v) writes v back into x;
+//!                  abort(w) runs the unwind u : F^∅ 1
+//!   m = shared:    x not lent at all to an exclusive access; x readable and
+//!                  frozen for t; w ends with t, no eliminator, no unwind
 //! ```
 //!
 //! |form|written|rule|
 //! |---|---|---|
 //! |hold|`hold x = v; t`|`v` synthesises `A`; `t` runs with `x`, a slot of `Σ` at `A`|
-//! |access|`access x as w { t } unwind { u }`|`x` is lent; `t` runs with `w`, a slot of `Σ` at `A`|
-//! |resume|`resume(w, v)`|`v` checks against `A`; `w` is spent; synthesises `F 1`|
-//! |abort|`abort(w)`|`w` is spent; synthesises `F 1`|
+//! |access|`access x as w { t } unwind { u }`|`x` is lent exclusively; `t` runs with `w`, a slot of `Σ` at `A`|
+//! |shared access|`access shared x as w { t }`|`x` is lent shared; `t` runs with `w`, a slot of `Σ` at `A`|
+//! |resume|`resume(w, v)`|`w` is exclusive; `v` checks against `A`; `w` is spent; synthesises `F 1`|
+//! |abort|`abort(w)`|`w` is exclusive; `w` is spent; synthesises `F 1`|
 //!
 //! The rules run as frames of the judgement's one machine:
 //!
@@ -34,61 +38,60 @@
 //! |---|---|---|
 //! |hold|`HoldValue`|the held value's synthesis, then opens the slot|
 //! |hold|`HoldBody`|the scope's judgement, then drops the slot|
-//! |access|`AccessBody`|the body's judgement, then requires the view spent|
-//! |access|`AccessUnwind`|the unwind's check against the pure `F 1`|
+//! |access|`AccessBody`|the body's judgement, then requires an exclusive view spent|
+//! |access|`AccessUnwind`|an exclusive access's unwind, checked against the pure `F 1`|
 //! |resume|`ResumeValue`|the written value's check, then spends the view|
 //!
-//! # Held exclusively is a linear hypothesis
+//! # Held is a linear hypothesis
 //!
 //! The core offers no grades today: the capability's consumable grade is
-//! refused and graded hypotheses are not scheduled, so a value held
-//! exclusively is a slot of `Σ`, opened by `hold` and by nothing else. A
-//! read of the slot copies the value it holds and spends nothing; the slot
-//! is dropped where the hold's scope ends. Exclusivity is the zone's: the
-//! slot is never captured by a thunk, a fixpoint, a branch, a handler, a
-//! first-class stack or a shift ([`AccessDefect::HeldCaptured`]), and the
-//! hold stands at a pure returner, as a fork does, so no operation a handler
-//! could resume twice runs while it holds. **Alternative.** A graded
-//! hypothesis at grade one, which needs the grades the core does not have.
-//! **Reversal.** Grades arriving: a held value becomes a grade-one
-//! hypothesis and the hold's slot its binder.
+//! refused and graded hypotheses are not scheduled, so a held value is a
+//! slot of `Σ`, opened by `hold` and by nothing else. A read of the slot
+//! copies the value it holds and spends nothing; the slot is dropped where
+//! the hold's scope ends. Exclusivity is the zone's: the slot is never
+//! captured by a thunk, a fixpoint, a branch, a handler, a first-class stack
+//! or a shift ([`AccessDefect::HeldCaptured`]), and the hold stands at a pure
+//! returner, as a fork does, so no operation a handler could resume twice
+//! runs while it holds.
 //!
 //! # The view is a slot, not a type
 //!
 //! `View^m A` is the role of the view's slot, not a type former: the slot is
-//! declared at `A`, the checker marks it a view, and a read of it copies the
-//! value it was lent. A view is never a value, so the rule's side condition
-//! `w ∉ fv(B)` is that the view does not escape the body: a view named by a
-//! former that may run it other than once, or that outlives the body, is
-//! [`AccessDefect::Escaped`]. While the access lends `x`, `x` is unreadable
-//! and cannot be accessed again ([`AccessDefect::Lent`]): that is the access
-//! law, exclusivity for the body's extent. The mode `m` admits one mode
-//! today, exclusive; shared views are an open design question, and nothing
-//! here reads a mode. **Reversal.** The region index: when it
-//! arrives, the view's extent becomes an erased index `ρ`, the view's slot a
-//! type `View^m_ρ A`, and the escape refusal the index's own side condition.
+//! declared at `A`, the checker marks it a view of its access, whose mode the
+//! access names, and a read of it copies the value it was lent. A view is
+//! never a value, so the rule's side condition `w ∉ fv(B)` is that the view
+//! does not escape the body: a view named by a former that may run it other
+//! than once, or that outlives the body, is [`AccessDefect::Escaped`], in
+//! either mode.
+//!
+//! # Modes: exclusive, or shared and frozen
+//!
+//! An access lends its held slot in one of two modes, and the lending is the
+//! access law: shared beside shared, nothing beside exclusive. Lent
+//! exclusively, `x` is unreadable and cannot be accessed again for the
+//! body's extent ([`AccessDefect::Lent`]). Lent shared, `x` stays readable
+//! and can be accessed shared again, nested or in turn, but an exclusive
+//! access of it is [`AccessDefect::Lent`] until the shared access ends: `x`
+//! is frozen for the extent, so every read of `x` and of each shared view
+//! answers the one value. A shared view is read-only: it ends with its
+//! body, nothing is written back, and an eliminator of it is
+//! [`AccessDefect::ReadOnly`]. The machine runs a shared access as no
+//! access at all — the view is the held cell itself, and no frame waits on
+//! the body.
 //!
 //! # Two eliminators, one shot
 //!
-//! The body ends its view exactly once. `resume(w, v)` spends the view and
-//! records `v`; the machine writes `v` back into `x` when it pops the
-//! access's frame. `abort(w)` spends the view and records nothing; the
-//! machine runs the unwind when it pops the frame, and `x` keeps the value
-//! it had. A view still live when the body ends is
-//! [`AccessDefect::Unended`]; a view used after either eliminator — read,
-//! resumed again or aborted — is [`AccessDefect::Spent`]. The eliminators
-//! stand in the body's tail; nothing refuses one elsewhere, because after
-//! either the view is spent and `x` is lent until the body ends, so nothing
-//! after it can observe the access. The access answers what its body
-//! answers.
-//!
-//! **Choice.** The write-back runs on `resume` only. **Alternative.** The
-//! staged register's earlier form, where abandoning an accessor runs the
-//! write-back automatically: an abort that writes back is a resume, and the
-//! unwind would have no edge of its own. **Alternative.** A plain mutable
-//! binding — a `var`, or a `let`-bound mutable view — which has no
-//! eliminator to end the access, so neither the write-back's moment nor the
-//! unwind exists, and exclusivity is a lint rather than the zone's.
+//! The body of an exclusive access ends its view exactly once.
+//! `resume(w, v)` spends the view and records `v`; the machine writes `v`
+//! back into `x` when it pops the access's frame. `abort(w)` spends the view
+//! and records nothing; the machine runs the unwind when it pops the frame,
+//! and `x` keeps the value it had. An exclusive view still live when the
+//! body ends is [`AccessDefect::Unended`]; a view used after either
+//! eliminator — read, resumed again or aborted — is [`AccessDefect::Spent`].
+//! The eliminators stand in the body's tail; nothing refuses one elsewhere,
+//! because after either the view is spent and `x` is lent until the body
+//! ends, so nothing after it can observe the access. The access answers what
+//! its body answers, and the write-back runs on `resume` alone.
 //!
 //! # The unwind runs under the empty row
 //!
@@ -102,19 +105,18 @@
 //! # Spelling
 //!
 //! `hold x = e;` binds the held value, `access x as w { t } unwind { u }`
-//! the view, `resume(w, e)` and `abort(w)` end it; the unwind clause is
-//! optional and absent means `unwind { pure unit }`. The mode is unwritten:
-//! exclusive is the only one. **Alternatives.** `var x = e;` for the
-//! binding, which reads as plain mutability, the declined alternative;
-//! member calls `w.resume(e)` and `w.abort()`, which read a view as a value
-//! with methods.
+//! the exclusive view, `access shared x as w { t }` the shared one, and
+//! `resume(w, e)` and `abort(w)` end an exclusive view. The mode is a word
+//! after `access`: exclusive is the default, unwritten, and
+//! `access exclusive x as w { … }` spells it; the unwind clause is an
+//! exclusive access's alone, optional, and absent means `unwind { pure unit }`.
 //!
 //! # What later work may assume
 //!
 //! - A region index: a view is a slot of `Σ` declared at the held type; its
 //!   extent is its access's body, decided by the zone's discipline and refused
 //!   by [`AccessDefect::Escaped`]; no type mentions a view. The index replaces
-//!   that refusal and nothing else.
+//!   that refusal and nothing else, in either mode.
 //! - An `io_uring` mock: a held value lives in one machine cell for its hold's
 //!   scope; an access pushes one constant frame, `resume` records the new value
 //!   and `abort` records nothing, and the frame's pop writes back or runs the
@@ -144,7 +146,9 @@ pub enum AccessDefect
     /// An access names a linear slot that holds no value: an endpoint or a
     /// view.
     NotHeld,
-    /// A held value was read, or accessed again, while an access lends it.
+    /// A held value was read while an access lends it exclusively, or
+    /// accessed again where its lending excludes the access: anything beside
+    /// an exclusive lend, or an exclusive access beside a shared one.
     Lent,
     /// A held value was named where its holding may run other than once, or
     /// a hold stands where a handler could resume it twice.
@@ -160,12 +164,16 @@ pub enum AccessDefect
         /// What may run it.
         by: Capture,
     },
-    /// An access's body ended with its view neither resumed nor aborted.
+    /// An exclusive access's body ended with its view neither resumed nor
+    /// aborted.
     Unended,
     /// A view was used after its resume or abort.
     Spent,
     /// A resume or an abort names a linear slot that is no view.
     NotAView,
+    /// A resume or an abort names a shared view: a shared view is read-only
+    /// and ends with its body.
+    ReadOnly,
     /// An access's unwind performs an effect: an unwind runs under the empty
     /// row.
     UnwindEffect,

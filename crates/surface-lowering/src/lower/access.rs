@@ -1,27 +1,26 @@
 //! Temporary access in the lowering: the statement that holds a value, the
-//! access that lends it to a view, and the two eliminators that end the view.
+//! access that lends it to a view in a mode, and the two eliminators that end
+//! the view.
 //!
 //! # A held value and a view are names in the linear zone
 //!
 //! `hold x = e ;` holds the value `e` in the linear slot `x` over the rest of
 //! its block, as `fork` binds an endpoint over the rest of its block: the
 //! core hold, whose scope is that rest. `access x as v { t } unwind { u }`
-//! lends the slot `x` names and binds the view `v`, linearly, over the body
-//! `t`; the unwind `u` reads where the access stands, and a missing unwind is
-//! `unwind { pure unit }`. `resume(v, e)` and `abort(v)` end the view `v`
-//! names, `e` read as a value. Each name a form lends or ends resolves to a
-//! linear binder, counted among the linear binders alone as an endpoint is
+//! lends the slot `x` names exclusively and binds the view `v`, linearly,
+//! over the body `t`; the unwind `u` reads where the access stands, and a
+//! missing unwind is `unwind { pure unit }`. `access exclusive x as v { … }`
+//! spells the same mode. `access shared x as v { t }` lends `x` shared: the
+//! view ends with the body, so the form takes no unwind, and an `unwind`
+//! after it is a misplaced tile. `resume(v, e)` and `abort(v)` end the view
+//! `v` names, `e` read as a value. Each name a form lends or ends resolves to
+//! a linear binder, counted among the linear binders alone as an endpoint is
 //! (the `lower::session` module); a name resolving to anything else is
 //! refused here, [`FragmentBoundary::Held`] for an access and
 //! [`FragmentBoundary::View`] for an eliminator. Which linear binder it is —
-//! a held value, a view or an endpoint — is the checker's to judge. A read of
-//! either name elsewhere is a linear variable, which the checker reads as the
-//! value the slot holds.
-//!
-//! - Alternatives: the held value as an ordinary binder, which the core's
-//!   access could not lend; the view's name bound in the access's own frame,
-//!   which would let the unwind name a view the abort has spent.
-//! - Reversal: a core context whose zones share one index space.
+//! a held value, a view or an endpoint — and whether a view's mode admits an
+//! eliminator are the checker's to judge. A read of either name elsewhere is
+//! a linear variable, which the checker reads as the value the slot holds.
 //!
 //! # The body and the unwind are no bodies
 //!
@@ -32,13 +31,13 @@
 //! as a handled subject's is. A hold's scope is the rest of its block, which
 //! an early exit commutes through, as it does a fork's parent: the hold binds
 //! no intuitionistic variable (the `lower::exits` module). A hold in a block
-//! whose ends an early exit continues is declined as unadmitted, as a fork
+//! whose ends an early exit continues is refused as unadmitted, as a fork
 //! is: the rest copied under the hold would need its linear indices
 //! renumbered past the held slot, which the commuting does not carry.
-//! Reversal: a commuting that relocates linear indices too.
 
 use anodized::spec;
 use gandr_core_term::Zone;
+use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::NodeIndex;
@@ -90,15 +89,16 @@ mod tests;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Accessed
 {
-    /// `access x as v { t } unwind { u }`.
+    /// `access x as v { t } unwind { u }` or `access shared x as v { t }`.
     Access
     {
+        /// The mode the slot is lent in, with an exclusive access's unwind
+        /// when one is written.
+        mode: AccessMode<Maybe<Block, unwound::Absent>>,
         /// The held slot lent, a linear index where the access stands.
         held: DeBruijnIndex,
         /// The body, under the view's linear binder.
         body: Block,
-        /// The unwind, where the access stands, when one is written.
-        unwind: Maybe<Block, unwound::Absent>,
     },
     /// `resume(v, e)`.
     Resume
@@ -305,15 +305,18 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// Read an access, `access x as v { t } unwind { u }`, at `site` under
-    /// `frame`.
+    /// Read an access, `access x as v { t } unwind { u }` or
+    /// `access shared x as v { t }`, at `site` under `frame`.
     ///
     /// # Specification
     /// - requires: `pieces` are the access's own, from its `access` tile.
-    /// - ensures: the slot `x` names, resolved under `frame`; `t` read as a
-    ///   block under `v`'s linear binder over `frame`, and `u`, when written,
-    ///   as a block under `frame`, each block's last computation its result.
-    /// - fails: as [`Self::access_form`].
+    /// - ensures: the mode the word after `access` names, exclusive when none
+    ///   is written; the slot `x` names, resolved under `frame`; `t` read as a
+    ///   block under `v`'s linear binder over `frame`, and an exclusive
+    ///   access's `u`, when written, as a block under `frame`, each block's
+    ///   last computation its result.
+    /// - fails: as [`Self::access_form`]; a misplaced-tile fault at the
+    ///   `unwind` of a shared access.
     /// - panics: none.
     ///
     /// # Errors
@@ -322,6 +325,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::access_form`].
     /// - witness: `lower::access::tests::the_counter_lowers_to_its_memory_forms`
+    /// - witness: `lower::access::tests::a_shared_access_lowers_without_an_unwind`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |accessed| matches!(*accessed, Accessed::Access { body, .. } if self.results.contains(&body.last))))]
     fn access(
         &mut self,
@@ -343,6 +347,13 @@ impl<'source> Lowerer<'_, 'source>
         };
         let mut cursor = Cursor::new(head, site.at.span);
         closed(site, &mut cursor, TileName::ACCESS)?;
+        let mode = match cursor.tile(TileName::SHARED) {
+            Maybe::Present(_) => AccessMode::Shared,
+            Maybe::Absent(_) => {
+                let _written = cursor.tile(TileName::EXCLUSIVE);
+                AccessMode::Exclusive { unwind: () }
+            },
+        };
         let Maybe::Present(lent) = cursor.tile(TileName::IDENTIFIER)
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
@@ -360,18 +371,28 @@ impl<'source> Lowerer<'_, 'source>
             .extend_linear(frame, name, Maybe::Present(viewer.span));
         let body = self.block(site, &mut cursor, Frame::Inner(viewed))?;
         let _result = self.results.insert(body.last);
-        let unwind = if tail.is_empty() {
-            Maybe::Absent(unwound::Absent::Unwritten)
-        }
-        else {
-            let mut cursor = Cursor::new(tail, site.at.span);
-            closed(site, &mut cursor, TileName::UNWIND)?;
-            let unwind = self.block(site, &mut cursor, frame)?;
-            let _result = self.results.insert(unwind.last);
-            Maybe::Present(unwind)
+        let mut cursor = Cursor::new(tail, site.at.span);
+        let mode = match (mode, tail.is_empty()) {
+            (AccessMode::Shared, true) => AccessMode::Shared,
+            // A shared view ends with its body: nothing aborts it, so there is
+            // no unwind to run.
+            (AccessMode::Shared, false) => {
+                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            },
+            (AccessMode::Exclusive { .. }, true) => AccessMode::Exclusive {
+                unwind: Maybe::Absent(unwound::Absent::Unwritten),
+            },
+            (AccessMode::Exclusive { .. }, false) => {
+                closed(site, &mut cursor, TileName::UNWIND)?;
+                let unwind = self.block(site, &mut cursor, frame)?;
+                let _result = self.results.insert(unwind.last);
+                AccessMode::Exclusive {
+                    unwind: Maybe::Present(unwind),
+                }
+            },
         };
 
-        Ok(Accessed::Access { held, body, unwind })
+        Ok(Accessed::Access { mode, held, body })
     }
 
     /// Mint the temporary-access form `accessed` plans.
@@ -379,15 +400,15 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: every node the plan names is already minted or absent.
     /// - ensures: the memory form over its children's lowered nodes at
-    ///   `origin`, an access's blocks minted as blocks and a missing unwind
-    ///   minted as `pure unit` at `origin`; the first absence among the
-    ///   children otherwise.
+    ///   `origin`, an access's blocks minted as blocks and an exclusive
+    ///   access's missing unwind minted as `pure unit` at `origin`; the first
+    ///   absence among the children otherwise.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the counter's forms, an unwind written and one left
-    ///   out.
+    ///   out, and a shared access with none.
     /// - witness: `lower::access::tests::the_counter_lowers_to_its_memory_forms`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
@@ -402,25 +423,30 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let form = match accessed {
-            Accessed::Access { held, body, unwind } => {
+            Accessed::Access { mode, held, body } => {
                 let body = match self.mint_block(body, sink) {
                     Maybe::Present(body) => body,
                     Maybe::Absent(reason) => return Maybe::Absent(reason),
                 };
-                let unwind = match unwind {
-                    Maybe::Present(unwind) => match self.mint_block(unwind, sink) {
-                        Maybe::Present(unwind) => unwind,
+                let mode = match mode {
+                    AccessMode::Shared => AccessMode::Shared,
+                    AccessMode::Exclusive {
+                        unwind: Maybe::Present(unwind),
+                    } => match self.mint_block(unwind, sink) {
+                        Maybe::Present(unwind) => AccessMode::Exclusive { unwind },
                         Maybe::Absent(reason) => return Maybe::Absent(reason),
                     },
-                    Maybe::Absent(unwound::Absent::Unwritten) => {
+                    AccessMode::Exclusive {
+                        unwind: Maybe::Absent(unwound::Absent::Unwritten),
+                    } => {
                         let unit = sink.arena.value_unit();
                         sink.origins.record_value(unit, origin);
                         let returned = sink.arena.computation_return(unit);
                         sink.origins.record_computation(returned, origin);
-                        returned
+                        AccessMode::Exclusive { unwind: returned }
                     },
                 };
-                MemoryForm::Access { held, body, unwind }
+                MemoryForm::Access { mode, held, body }
             },
             Accessed::Resume { view, value } => match self.value_at(value) {
                 Maybe::Present(value) => MemoryForm::Resume { view, value },

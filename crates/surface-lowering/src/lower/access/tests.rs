@@ -7,9 +7,11 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::Zone;
+use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
 use gandr_surface_syntax::SourceText;
 
+use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
 use crate::error::LoweringRefusal;
@@ -38,8 +40,8 @@ const COUNTER: &str = r"def counter(n : Integer) -> -F Integer {
 
 /// The temporary-access forms reachable from `tail` through binds, splits,
 /// lambdas and memory forms, in source order, one token each: `hold`,
-/// `access @i`, `resume @i` and `abort @i` naming each slot's linear index,
-/// and `read @i` for a `return` of a linear variable.
+/// `access @i` or `access shared @i`, `resume @i` and `abort @i` naming each
+/// slot's linear index, and `read @i` for a `return` of a linear variable.
 ///
 /// # Specification
 /// trivial.
@@ -68,7 +70,16 @@ fn forms(
             Some(&Computation::Memory(ref form)) => {
                 seen.push(match *form {
                     MemoryForm::Hold { .. } => String::from("hold"),
-                    MemoryForm::Access { held, .. } => format!("access @{}", u32::from(held)),
+                    MemoryForm::Access {
+                        mode: AccessMode::Exclusive { .. },
+                        held,
+                        ..
+                    } => format!("access @{}", u32::from(held)),
+                    MemoryForm::Access {
+                        mode: AccessMode::Shared,
+                        held,
+                        ..
+                    } => format!("access shared @{}", u32::from(held)),
                     MemoryForm::Resume { view, .. } => format!("resume @{}", u32::from(view)),
                     MemoryForm::Abort { view } => format!("abort @{}", u32::from(view)),
                 });
@@ -100,6 +111,49 @@ fn the_counter_lowers_to_its_memory_forms()
          each view is the innermost linear slot, and the read after both is the count"
     );
     assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_shared_access_lowers_without_an_unwind()
+{
+    let source = SourceText::from(
+        r"def frozen() -> -F Integer {
+  hold c = 2;
+  access exclusive c as v { resume(v, v + 1) };
+  access shared c as w { pure w }
+}
+def unwound() -> -F Unit {
+  hold c = 0;
+  access shared c as w { pure unit } unwind { pure unit }
+}
+",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("frozen")));
+    assert_eq!(
+        forms(&arena, tail),
+        [
+            "hold",
+            "access @0",
+            "resume @0",
+            "access shared @0",
+            "read @0"
+        ],
+        "`exclusive` spells the default mode, and the shared view is read in its body"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("unwound")),
+            LoweringRefusal::MalformedForm { span, fault: FormFault::MisplacedTile, .. }
+                if span == spelled_within(
+                    source,
+                    SourceText::from("unwind { pure unit }"),
+                    SourceText::from("unwind")
+                )
+        ),
+        "a shared view ends with its body, so its access takes no unwind"
+    );
 }
 
 #[test]

@@ -335,6 +335,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
             AccessDefect::Unended => "a view neither resumed nor aborted",
             AccessDefect::Spent => "a view already ended",
             AccessDefect::NotAView => "no view here",
+            AccessDefect::ReadOnly => "a shared view, which is read-only",
             AccessDefect::UnwindEffect => "an effect in an unwind",
         },
         CheckRefusal::Codata { fault, .. } => match fault {

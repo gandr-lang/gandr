@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
+use super::AccessMode;
 use super::MemoryForm;
 use super::MemoryKind;
 use crate::Binders;
@@ -51,7 +52,11 @@ fn forms_name_their_resident_and_children()
         "a reverse map is the canonical order reversed, across families"
     );
     assert_eq!(mapped, hold, "and keeps each child in its place");
-    let access: MemoryForm = MemoryForm::Access { held, body, unwind };
+    let access: MemoryForm = MemoryForm::Access {
+        mode: AccessMode::Exclusive { unwind },
+        held,
+        body,
+    };
     assert_eq!(access.kind(), MemoryKind::Access, "an access is an access");
     assert_eq!(
         access.resident(),
@@ -62,6 +67,37 @@ fn forms_name_their_resident_and_children()
         access.scoped().collect::<Vec<_>>(),
         [(body, Binders::ONE), (unwind, Binders::NONE)],
         "its body stands under the view's binder, its unwind under none"
+    );
+    let shared: MemoryForm = MemoryForm::Access {
+        mode: AccessMode::Shared,
+        held,
+        body,
+    };
+    assert_eq!(
+        shared.scoped().collect::<Vec<_>>(),
+        [(body, Binders::ONE)],
+        "a shared access has its body alone: no unwind"
+    );
+    assert_ne!(
+        shared.shape(),
+        access.shape(),
+        "a shared access and an exclusive one of one slot are two formers"
+    );
+    assert!(
+        matches!(
+            (shared.shape(), access.shape()),
+            (
+                MemoryForm::Access {
+                    mode: AccessMode::Shared,
+                    ..
+                },
+                MemoryForm::Access {
+                    mode: AccessMode::Exclusive { .. },
+                    ..
+                }
+            )
+        ),
+        "each keeps its mode through the map"
     );
     let view = DeBruijnIndex::from(0_u32);
     let resume: MemoryForm = MemoryForm::Resume { view, value: unit };

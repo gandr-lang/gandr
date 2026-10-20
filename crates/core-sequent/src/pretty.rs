@@ -20,6 +20,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::Zone;
+use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
@@ -426,13 +427,27 @@ fn command(
                     text!("; (l; α) ⇒ "),
                     Piece::Command(body, depth),
                 ],
-                MemoryForm::Access { held, body, unwind } => alloc::vec![
+                MemoryForm::Access {
+                    mode: AccessMode::Exclusive { unwind },
+                    held,
+                    body,
+                } => alloc::vec![
                     text!("access("),
                     linear(held),
                     text!("; (l; α) ⇒ "),
                     Piece::Command(body, depth),
                     text!(" | unwind(α) ⇒ "),
                     Piece::Command(unwind, depth),
+                ],
+                MemoryForm::Access {
+                    mode: AccessMode::Shared,
+                    held,
+                    body,
+                } => alloc::vec![
+                    text!("access_shared("),
+                    linear(held),
+                    text!("; (l; α) ⇒ "),
+                    Piece::Command(body, depth),
                 ],
                 MemoryForm::Resume { view, value } => alloc::vec![
                     text!("writeback("),

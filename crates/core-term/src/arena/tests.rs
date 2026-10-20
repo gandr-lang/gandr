@@ -12,6 +12,7 @@ use super::CoreArena;
 use super::ValueId;
 use crate::classifier::Sort;
 use crate::control::StackFrame;
+use crate::memory::AccessMode;
 use crate::memory::MemoryForm;
 use crate::session::SessionAction;
 use crate::support::Thinning;
@@ -842,9 +843,9 @@ fn every_binder_former_carries_its_bodys_support_past_its_binders()
         view: DeBruijnIndex::from(1_u32),
     });
     let access = arena.computation_memory(MemoryForm::Access {
+        mode: AccessMode::Exclusive { unwind: aborted },
         held: DeBruijnIndex::from(0_u32),
         body: resumed,
-        unwind: aborted,
     });
     cases.push((
         "an access",

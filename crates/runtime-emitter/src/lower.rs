@@ -106,6 +106,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::control::StackFrame;
 use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::OperationName;
+use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::primitive::Primitive;
 use gandr_kernel_term::Component;
@@ -1518,8 +1519,10 @@ impl Lowering<'_>
 
     /// Lower the memory form `form` of the command `id` with its continuation
     /// in `scope`. A linear binder's slot holds a cell: a hold's holds the
-    /// value, an access's view holds the value lent, how the view ended and
-    /// the held cell it writes back to.
+    /// value, an exclusive access's view holds the value lent, how the view
+    /// ended and the held cell it writes back to. A shared access's view is
+    /// the held cell itself: the held value is frozen for the body, nothing
+    /// ends the view, and the body answers to the continuation directly.
     ///
     /// # Specification
     /// trivial.
@@ -1547,7 +1550,28 @@ impl Lowering<'_>
                 self.tasks.push(Task::Producer(value, scope));
                 self.tasks.push(Task::Load(continuation, scope));
             },
-            MemoryForm::Access { held, body, unwind } => {
+            MemoryForm::Access {
+                mode: AccessMode::Shared,
+                held,
+                body,
+            } => {
+                let cell = self
+                    .scopes
+                    .slot(scope, Binding::Linear, Index(u32::from(held)))?;
+                let (viewed, view) = self.bind(scope, Binding::Linear);
+                let (inner, _) = self.bind(viewed, Binding::FallThrough);
+                self.tasks.push(Task::Command(body, inner));
+                self.tasks
+                    .push(Task::Emit(StencilId::Bind, view.operand(), Operand::Unused));
+                self.tasks
+                    .push(Task::Emit(StencilId::Var, cell.operand(), Operand::Unused));
+                self.tasks.push(Task::Load(continuation, scope));
+            },
+            MemoryForm::Access {
+                mode: AccessMode::Exclusive { unwind },
+                held,
+                body,
+            } => {
                 let cell = self
                     .scopes
                     .slot(scope, Binding::Linear, Index(u32::from(held)))?;

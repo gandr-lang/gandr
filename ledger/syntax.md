@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0xe99a0724af6d1b68`
+- Grammar fingerprint: `0xf15d14f7b87489a0`
 - Rules: 152 — 151 committed, 1 internal
-- Molds: 2839
+- Molds: 2841
 - Attributes: 11
 
 ## Reading a form
@@ -118,7 +118,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`select_expression`](exemplars/syntax/select_expression.gandr) | `select ( EXPRESSION , ‹identifier› )` | `expression.atom` | `select_expression` | Keyword, Other, Label |
 | [`dup_expression`](exemplars/syntax/dup_expression.gandr) | `dup ( EXPRESSION )` | `expression.atom` | `dup_expression` | Keyword, Other |
 | [`drop_expression`](exemplars/syntax/drop_expression.gandr) | `drop ( EXPRESSION )` | `expression.atom` | `drop_expression` | Keyword, Other |
-| [`access_expression`](exemplars/syntax/access_expression.gandr) | `access ‹identifier› as ‹identifier› ⟨block⟩ ⦅ unwind ⟨block⟩ ⦆?` | `expression.atom` | `access_expression` * | Keyword, Variable, VariableDef, Other, Operator, VariableParam |
+| [`access_expression`](exemplars/syntax/access_expression.gandr) | `access ⦅ shared ‖ exclusive ⦆? ‹identifier› as ‹identifier› ⟨block⟩ ⦅ unwind ⟨block⟩ ⦆?` | `expression.atom` | `access_expression` * | Keyword, Other, Variable, VariableDef, Operator, VariableParam |
 | [`resume_expression`](exemplars/syntax/resume_expression.gandr) | `resume ( ‹identifier› , EXPRESSION )` | `expression.atom` | `resume_expression` * | Keyword, Other, Variable |
 | [`abort_expression`](exemplars/syntax/abort_expression.gandr) | `abort ( ‹identifier› )` | `expression.atom` | `abort_expression` * | Keyword, Other, Variable |
 | [`shell_block`](exemplars/syntax/shell_block.gandr) | `#!{ ⦅ EXPRESSION ⦆? }` | `expression.atom` | `shell_block` | Other |

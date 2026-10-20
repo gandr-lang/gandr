@@ -3082,11 +3082,13 @@ fn session_expressions(
 ///
 /// `access x as v { t } unwind { u }` names the held slot `x` and binds the
 /// view `v` over the body `t`; the optional `unwind` block runs when an
-/// `abort` ends the view and defaults to nothing. `resume(v, e)` ends the view
-/// writing `e` back and `abort(v)` ends it with nothing written. Each opens
-/// on its own reserved lead and names its view by an identifier tile, so no
-/// expression hole competes with the name. The tree-sitter grammar has no
-/// temporary access, so the kinds are in `PBG_ONLY_KINDS`.
+/// `abort` ends the view and defaults to nothing. A mode word after `access`,
+/// `shared` or `exclusive`, names the mode; the grammar admits an `unwind`
+/// after either, and lowering refuses one after `shared`. `resume(v, e)` ends
+/// the view writing `e` back and `abort(v)` ends it with nothing written. Each
+/// opens on its own reserved lead and names its view by an identifier tile,
+/// so no expression hole competes with the name. The tree-sitter grammar has
+/// no temporary access, so the kinds are in `PBG_ONLY_KINDS`.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -3113,6 +3115,7 @@ fn access_expressions(
         p,
         seq([
             t(TileLabel("access")),
+            opt(alt([t(TileLabel("shared")), t(TileLabel("exclusive"))])),
             t(TileLabel("identifier")),
             t(TileLabel("as")),
             t(TileLabel("identifier")),

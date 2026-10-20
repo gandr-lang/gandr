@@ -531,6 +531,11 @@ impl TileName
     pub const UNPACK: Self = Self("unpack");
     /// The unwind of a temporary access, `unwind`.
     pub const UNWIND: Self = Self("unwind");
+    /// The mode word `shared` of a temporary access.
+    pub const SHARED: Self = Self("shared");
+    /// The mode word `exclusive` of a temporary access, the mode an access
+    /// with no word has.
+    pub const EXCLUSIVE: Self = Self("exclusive");
     /// The keyword `val`, opening a statement.
     pub const VAL: Self = Self("val");
     /// The match keyword `case`.

@@ -194,6 +194,7 @@ use anodized::spec;
 use gandr_core_term::Sort;
 use gandr_core_term::Zone;
 use gandr_core_term::identity::Relation;
+use gandr_core_term::memory::AccessMode;
 use gandr_core_term::session::ActionKind;
 use gandr_core_term::session::PayloadSlot;
 use gandr_core_term::session::Protocol;
@@ -959,7 +960,7 @@ where
         && ret.get(1_usize).is_some_and(|slot| slot.admits == Admits::Computation(Tail::Continues)),
     | Former::Hold { .. } => ret.len() == 2_usize
         && ret.last().is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize }),
-    | Former::Access { .. } => ret.len() == 2_usize
+    | Former::Access { mode, .. } => ret.len() == match mode { AccessMode::Exclusive { .. } => 2_usize, AccessMode::Shared => 1_usize }
         && ret.first().is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize }),
     | Former::BaseType(_) | Former::Universe { .. } | Former::Abstract(_) | Former::Capability { .. }
         | Former::Variable { .. } | Former::Constant(_) | Former::Unit | Former::ListNil | Former::Literal(_)
@@ -1297,13 +1298,16 @@ where
                 count: 1_usize,
             }),
         ]),
-        Former::Access { body, unwind, .. } => Vec::from([
-            ends(body, Binds {
+        Former::Access { body, mode, .. } => {
+            let body = ends(body, Binds {
                 zone: Zone::Linear,
                 count: 1_usize,
-            }),
-            ends(unwind, Binds::NONE),
-        ]),
+            });
+            match mode {
+                AccessMode::Exclusive { unwind } => Vec::from([body, ends(unwind, Binds::NONE)]),
+                AccessMode::Shared => Vec::from([body]),
+            }
+        },
         Former::BaseType(_)
         | Former::Universe { .. }
         | Former::Abstract(_)
@@ -6528,16 +6532,20 @@ impl Walk<'_, '_>
                     .piece(Binding::Sequence);
                 writes(Production("block"), Binding::Sequence)
             },
-            Former::Access { held, .. } => {
+            Former::Access { held, mode, .. } => {
+                let _ = parts.text(match mode {
+                    AccessMode::Exclusive { .. } => "access ",
+                    AccessMode::Shared => "access shared ",
+                });
                 let _ = parts
-                    .text("access ")
                     .part(Part::Endpoint(held))
                     .text(" as ")
                     .part(Part::Binder(0_usize))
                     .text(" {")
-                    .body()
-                    .text(" unwind {")
                     .body();
+                if let AccessMode::Exclusive { .. } = mode {
+                    let _ = parts.text(" unwind {").body();
+                }
                 writes(Production("access_expression"), Binding::Prefix)
             },
             Former::ResumeView { view, .. } => {

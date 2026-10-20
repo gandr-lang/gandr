@@ -22,6 +22,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::effect::Purity;
+use gandr_core_term::memory::AccessMode;
 use gandr_core_term::session::ActionKind;
 use gandr_core_term::session::SessionAction;
 use gandr_core_term::session::SessionType;
@@ -97,6 +98,16 @@ pub(super) struct Opened
     pub depth: BinderDepth,
 }
 
+/// A held slot an access lends: where it stands and the mode it is lent in.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct Lent
+{
+    /// The held slot's position above the run's base.
+    pub position: usize,
+    /// The mode the access lends it in.
+    pub mode: AccessMode<()>,
+}
+
 /// The linear state of one run: who bound each linear slot it opened, the
 /// held slots its accesses lend, the zones its offers restore and compare,
 /// and the free linear indices of the terms it read.
@@ -107,9 +118,9 @@ pub(super) struct Sessions
     pub base: BinderDepth,
     /// One entry per linear slot above `base`, outermost first.
     pub opened: Vec<Opened>,
-    /// The position above `base` of each held slot an access lends, the
-    /// innermost access last.
-    pub lent: Vec<usize>,
+    /// Each held slot an access lends, with its mode, the innermost access
+    /// last.
+    pub lent: Vec<Lent>,
     /// Each open offer's zone as the offer found it, then as its first arm
     /// left it, innermost offer last.
     zones: Vec<LinearZone>,

@@ -12,6 +12,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
 use gandr_core_term::effect::Purity;
 use gandr_core_term::effect::RowInclusion;
+use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
 use gandr_kernel_term::DeBruijnIndex;
 
@@ -22,6 +23,7 @@ use super::Goal;
 use super::Machine;
 use super::Produced;
 use super::Step;
+use super::session::Lent;
 use super::session::Opened;
 use super::session::Resided;
 use super::session::Resident;
@@ -38,8 +40,8 @@ use crate::view::comp_type_view;
 impl Machine<'_, '_>
 {
     /// The rules of the memory forms: a hold synthesises its value, an
-    /// access lends its held slot, a resume checks its value, an abort ends
-    /// its view at once.
+    /// access lends its held slot in its mode, a resume checks its value, an
+    /// abort ends its view at once.
     ///
     /// # Specification
     /// - requires: `term` is a memory form.
@@ -50,11 +52,12 @@ impl Machine<'_, '_>
     ///   returner of the unit.
     /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::HeldCaptured`]
     ///   for a hold at an impure type, [`AccessDefect::NotHeld`] for an access
-    ///   of a slot that holds no value, [`AccessDefect::Lent`] for an access of
-    ///   a lent one, [`AccessDefect::NotAView`] for an eliminator of a slot
-    ///   that is no view and [`AccessDefect::Spent`] for one of a spent view;
-    ///   [`CheckRefusal::Linearity`] naming [`LinearityDefect::Unbound`] for an
-    ///   index past the zone.
+    ///   of a slot that holds no value, [`AccessDefect::Lent`] for an access
+    ///   its slot's lending excludes, [`AccessDefect::NotAView`] for an
+    ///   eliminator of a slot that is no view, [`AccessDefect::Spent`] for one
+    ///   of a spent view and [`AccessDefect::ReadOnly`] for one of a shared
+    ///   view; [`CheckRefusal::Linearity`] naming [`LinearityDefect::Unbound`]
+    ///   for an index past the zone.
     /// - panics: none.
     ///
     /// # Errors
@@ -66,6 +69,7 @@ impl Machine<'_, '_>
     /// - witness: `judgement::access::tests::a_counter_observes_write_back_on_resume_and_none_on_abort`
     /// - witness: `judgement::access::tests::a_view_resumed_twice_is_refused`
     /// - witness: `judgement::access::tests::a_held_value_lent_or_misnamed_is_refused`
+    /// - witness: `judgement::access::tests::a_shared_view_reads_beside_its_held_value_and_ends_with_its_body`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(_) | Step::Ascend(Produced::CompType(_)))))]
     pub(super) fn memory(
         &mut self,
@@ -91,7 +95,9 @@ impl Machine<'_, '_>
                     direction: Direction::Synthesise,
                 }))
             },
-            MemoryForm::Access { held, body, .. } => self.access(term, held, body, direction),
+            MemoryForm::Access { mode, held, body } => {
+                self.access(term, held, mode.mode(), body, direction)
+            },
             MemoryForm::Resume { view, value } => {
                 let node = CoreNode::Term(TermNode::Computation(term));
                 let lent = self.live_view(node, view)?;
@@ -259,16 +265,17 @@ impl Machine<'_, '_>
         }
     }
 
-    /// Start the access `at` of the held slot `held`: lend it and judge the
-    /// body with the view bound at the held slot's type.
+    /// Start the access `at` of the held slot `held` in `mode`: lend it and
+    /// judge the body with the view bound at the held slot's type.
     ///
     /// # Specification
-    /// - requires: `at` is an access of `held` with body `body`.
-    /// - ensures: the held slot is lent; one linear slot more, the view, at the
-    ///   held slot's type read where the access stands; one `AccessBody` frame
-    ///   waits on the body.
+    /// - requires: `at` is an access of `held` in `mode` with body `body`.
+    /// - ensures: the held slot is lent in `mode`; one linear slot more, the
+    ///   view, at the held slot's type read where the access stands; one
+    ///   `AccessBody` frame waits on the body.
     /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::NotHeld`] for a
-    ///   slot that holds no value and [`AccessDefect::Lent`] for a lent one;
+    ///   slot that holds no value, and [`AccessDefect::Lent`] for a slot lent
+    ///   exclusively, or lent shared to an exclusive access;
     ///   [`CheckRefusal::Linearity`] naming [`LinearityDefect::Unbound`] for an
     ///   index past the zone.
     /// - panics: none.
@@ -278,9 +285,12 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the counter's two accesses lend it in turn; an access
-    ///   inside another of the same slot and one of a view are refused.
+    ///   inside another of the same slot and one of a view are refused; two
+    ///   shared accesses nest, and an exclusive one inside a shared one is
+    ///   refused.
     /// - witness: `judgement::access::tests::a_counter_observes_write_back_on_resume_and_none_on_abort`
     /// - witness: `judgement::access::tests::a_held_value_lent_or_misnamed_is_refused`
+    /// - witness: `judgement::access::tests::a_shared_view_reads_beside_its_held_value_and_ends_with_its_body`
     #[spec(
         captures: lent = self.sessions.lent.len(),
         ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(Goal::Computation { .. })))
@@ -290,6 +300,7 @@ impl Machine<'_, '_>
         &mut self,
         at: ComputationId,
         held: DeBruijnIndex,
+        mode: AccessMode<()>,
         body: ComputationId,
         direction: Direction<CompTypeId>,
     ) -> Result<Step, CheckRefusal>
@@ -305,14 +316,21 @@ impl Machine<'_, '_>
                 });
             },
         }
-        if self.sessions.lent.contains(&found.position) {
+        // Shared beside shared is the one lending two accesses of a slot share.
+        if self.sessions.lent.iter().any(|lent| {
+            lent.position == found.position
+                && !matches!((lent.mode, mode), (AccessMode::Shared, AccessMode::Shared))
+        }) {
             return Err(CheckRefusal::Access {
                 at: node,
                 defect: AccessDefect::Lent,
             });
         }
         let view = self.here(found.state, found.depth)?;
-        self.sessions.lent.push(found.position);
+        self.sessions.lent.push(Lent {
+            position: found.position,
+            mode,
+        });
         let depth = self.context.depth(Zone::Intuitionistic);
         self.context.binders().open(Zone::Linear, view);
         self.sessions.opened.push(Opened {
@@ -326,17 +344,19 @@ impl Machine<'_, '_>
         }))
     }
 
-    /// Continue an access whose body was judged: require the view spent,
-    /// close it, take back the held slot, and check the unwind against the
-    /// pure returner of the unit.
+    /// Continue an access whose body was judged. An exclusive access requires
+    /// its view spent, closes it, takes back the held slot, and checks the
+    /// unwind against the pure returner of the unit; a shared access spends
+    /// its view itself, closes it and takes back the held slot.
     ///
     /// # Specification
     /// - requires: the body was judged.
     /// - ensures: the view's slot is closed and the held slot no longer lent;
-    ///   one `AccessUnwind` frame, carrying the body's result, waits on the
-    ///   unwind's check.
-    /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::Unended`] at
-    ///   the access for a view neither resumed nor aborted;
+    ///   for an exclusive access, one `AccessUnwind` frame, carrying the body's
+    ///   result, waits on the unwind's check; a shared access hands the body's
+    ///   result on.
+    /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::Unended`] at an
+    ///   exclusive access whose view was neither resumed nor aborted;
     ///   [`CheckRefusal::MachineInvariant`] when the innermost slot is not this
     ///   access's view.
     /// - panics: none.
@@ -345,18 +365,20 @@ impl Machine<'_, '_>
     /// As above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a body that leaves its view live is refused, and the
-    ///   counter's bodies each end theirs.
+    /// - hypothesis: L3 — a body that leaves its exclusive view live is
+    ///   refused, the counter's bodies each end theirs, and a shared view needs
+    ///   no eliminator.
     /// - witness: `judgement::access::tests::a_view_left_live_is_refused`
     /// - witness: `judgement::access::tests::a_counter_observes_write_back_on_resume_and_none_on_abort`
-    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Computation { .. }))))]
+    /// - witness: `judgement::access::tests::a_shared_view_reads_beside_its_held_value_and_ends_with_its_body`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Computation { .. }) | Step::Ascend(_))))]
     pub(super) fn accessed(
         &mut self,
         at: ComputationId,
         produced: Produced,
     ) -> Result<Step, CheckRefusal>
     {
-        let Computation::Memory(MemoryForm::Access { unwind, .. }) = *self.computation(at)?
+        let Computation::Memory(MemoryForm::Access { mode, .. }) = *self.computation(at)?
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
@@ -365,11 +387,22 @@ impl Machine<'_, '_>
         if innermost.resident != (Resident::View { at }) {
             return Err(CheckRefusal::MachineInvariant);
         }
-        if innermost.use_state == LinearUse::Available {
-            return Err(CheckRefusal::Access {
-                at: node,
-                defect: AccessDefect::Unended,
-            });
+        match mode {
+            AccessMode::Exclusive { .. } if innermost.use_state == LinearUse::Available => {
+                return Err(CheckRefusal::Access {
+                    at: node,
+                    defect: AccessDefect::Unended,
+                });
+            },
+            // The access, not the program, ends a shared view: a read copies.
+            AccessMode::Shared if innermost.use_state == LinearUse::Available => {
+                let _ended = self
+                    .context
+                    .binders()
+                    .occurrence(Zone::Linear, DeBruijnIndex::from(0_u32))
+                    .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+            },
+            AccessMode::Exclusive { .. } | AccessMode::Shared => {},
         }
         self.close_resident()?;
         let _returned = self
@@ -377,12 +410,17 @@ impl Machine<'_, '_>
             .lent
             .pop()
             .ok_or(CheckRefusal::MachineInvariant)?;
-        let unit = self.unit_returner();
-        self.wait(Frame::AccessUnwind { at, produced });
-        Ok(Step::Descend(Goal::Computation {
-            term: unwind,
-            direction: Direction::Check(unit),
-        }))
+        match mode {
+            AccessMode::Exclusive { unwind } => {
+                let unit = self.unit_returner();
+                self.wait(Frame::AccessUnwind { at, produced });
+                Ok(Step::Descend(Goal::Computation {
+                    term: unwind,
+                    direction: Direction::Check(unit),
+                }))
+            },
+            AccessMode::Shared => Ok(Step::Ascend(produced)),
+        }
     }
 
     /// Finish a resume whose value checked: spend its view.
@@ -417,11 +455,11 @@ impl Machine<'_, '_>
     ///
     /// # Specification
     /// - requires: `term` is the variable `index` of the linear zone.
-    /// - ensures: a held slot not lent and a live view synthesise their
-    ///   declared type, read where the variable stands; nothing is spent.
+    /// - ensures: a held slot not lent exclusively and a live view synthesise
+    ///   their declared type, read where the variable stands; nothing is spent.
     /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::Lent`] for a
-    ///   lent held slot and [`AccessDefect::Spent`] for a spent view; as
-    ///   [`Self::endpoint_as_value`] for an endpoint;
+    ///   held slot lent exclusively and [`AccessDefect::Spent`] for a spent
+    ///   view; as [`Self::endpoint_as_value`] for an endpoint;
     ///   [`CheckRefusal::UnboundIndex`] for an index past the zone.
     /// - panics: none.
     ///
@@ -430,9 +468,11 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the counter reads its held value after both accesses
-    ///   and its view inside the first; a read of a lent value is refused.
+    ///   and its view inside the first; a read of a value lent exclusively is
+    ///   refused, and one of a value lent shared reads it.
     /// - witness: `judgement::access::tests::a_counter_observes_write_back_on_resume_and_none_on_abort`
     /// - witness: `judgement::access::tests::a_held_value_lent_or_misnamed_is_refused`
+    /// - witness: `judgement::access::tests::a_shared_view_reads_beside_its_held_value_and_ends_with_its_body`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::ValueType(_)))))]
     pub(super) fn linear_read(
         &mut self,
@@ -459,7 +499,12 @@ impl Machine<'_, '_>
         let defect = match read.resident {
             Resident::Endpoint(_) => return self.endpoint_as_value(term, index),
             Resident::Capability { .. } => AccessDefect::NotHeld,
-            Resident::Held { .. } if self.sessions.lent.contains(&read.position) => {
+            Resident::Held { .. }
+                if self.sessions.lent.iter().any(|lent| {
+                    lent.position == read.position
+                        && matches!(lent.mode, AccessMode::Exclusive { .. })
+                }) =>
+            {
                 AccessDefect::Lent
             },
             Resident::View { .. } if read.use_state == LinearUse::Consumed => AccessDefect::Spent,
@@ -574,24 +619,25 @@ impl Machine<'_, '_>
         Ok(found.is_subset(wanted, arena))
     }
 
-    /// The live view `index` names, read at `node`.
+    /// The live view `index` names, read at `node` by an eliminator.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the view's slot, still available.
+    /// - ensures: the view's slot, still available, its access exclusive.
     /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::NotAView`] for
-    ///   a slot no access bound and [`AccessDefect::Spent`] for a spent view;
-    ///   as [`Self::resided`].
+    ///   a slot no access bound, [`AccessDefect::Spent`] for a spent view and
+    ///   [`AccessDefect::ReadOnly`] for a shared view; as [`Self::resided`].
     /// - panics: none.
     ///
     /// # Errors
     /// As above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an eliminator of a held value and one after a resume
-    ///   are refused by name.
+    /// - hypothesis: L3 — an eliminator of a held value, one after a resume and
+    ///   one of a shared view are refused by name.
     /// - witness: `judgement::access::tests::a_view_resumed_twice_is_refused`
     /// - witness: `judgement::access::tests::a_held_value_lent_or_misnamed_is_refused`
+    /// - witness: `judgement::access::tests::a_shared_view_reads_beside_its_held_value_and_ends_with_its_body`
     #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|read| read.use_state == LinearUse::Available))]
     fn live_view(
         &mut self,
@@ -601,7 +647,16 @@ impl Machine<'_, '_>
     {
         let read = self.resided(node, index)?;
         let defect = match (read.resident, read.use_state) {
-            (Resident::View { .. }, LinearUse::Available) => return Ok(read),
+            (Resident::View { at }, LinearUse::Available) => {
+                let Computation::Memory(MemoryForm::Access { mode, .. }) = *self.computation(at)?
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                match mode {
+                    AccessMode::Exclusive { .. } => return Ok(read),
+                    AccessMode::Shared => AccessDefect::ReadOnly,
+                }
+            },
             (Resident::View { .. }, LinearUse::Consumed) => AccessDefect::Spent,
             (Resident::Endpoint(_) | Resident::Held { .. } | Resident::Capability { .. }, _) => {
                 AccessDefect::NotAView

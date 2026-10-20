@@ -34,6 +34,7 @@ use core::borrow::Borrow;
 use anodized::spec;
 use gandr_core_term::Sort;
 use gandr_core_term::Zone;
+use gandr_core_term::memory::AccessMode;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
@@ -860,16 +861,16 @@ pub enum Former<'source, Node>
         /// The scope.
         body: Node,
     },
-    /// An access, `access x as w { t } unwind { u }`: the body under the
-    /// view's linear binder.
+    /// An access, `access x as w { t } unwind { u }` or
+    /// `access shared x as w { t }`: the body under the view's linear binder.
     Access
     {
         /// The held slot lent, a linear index.
         held: DeBruijnIndex,
         /// The body.
         body: Node,
-        /// The unwind.
-        unwind: Node,
+        /// The mode, and an exclusive access's unwind.
+        mode: AccessMode<Node>,
     },
     /// A view's resume, `resume(w, v)`.
     ResumeView
