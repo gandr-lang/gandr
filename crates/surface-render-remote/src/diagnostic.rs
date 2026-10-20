@@ -628,15 +628,21 @@ mod tests
     #[test]
     fn registry_codes_are_dense_unique_and_round_trip()
     {
+        let mut spelling = String::new();
         for (index, code) in DIAGNOSTIC_CODES.iter().copied().enumerate() {
             assert!(!DIAGNOSTIC_CODES[.. index].contains(&code));
-            let spelling = code.to_string();
+            spelling.clear();
+            core::fmt::Write::write_fmt(&mut spelling, format_args!("{code}"))
+                .expect("a code writes");
             let digits = spelling.strip_prefix(['E', 'W']).expect("severity prefix");
             assert_eq!(digits.parse::<usize>(), Ok(index.saturating_add(1)));
         }
-        for (expected, spelling) in CODE_CASES {
-            assert_eq!(spelling.parse::<DiagnosticCode>(), Ok(expected));
-            assert_eq!(expected.to_string(), spelling);
+        for (expected, written) in CODE_CASES {
+            assert_eq!(written.parse::<DiagnosticCode>(), Ok(expected));
+            spelling.clear();
+            core::fmt::Write::write_fmt(&mut spelling, format_args!("{expected}"))
+                .expect("a code writes");
+            assert_eq!(spelling, written);
         }
         for spelling in ["E0013", "e0001", " E0001", "E1", "Ｅ0001"] {
             assert_eq!(
