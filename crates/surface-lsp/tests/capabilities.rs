@@ -45,6 +45,7 @@ fn advertised_capabilities_name_the_token_legend()
                 "referencesProvider": true,
                 "renameProvider": {"prepareProvider": true},
                 "documentLinkProvider": {"resolveProvider": false},
+                "linkedEditingRangeProvider": true,
                 "workspace": {"workspaceFolders": {"supported": true, "changeNotifications": true}},
             },
             "serverInfo": {"name": "gandr", "version": env!("CARGO_PKG_VERSION")},

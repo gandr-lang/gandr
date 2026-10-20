@@ -1199,8 +1199,8 @@ impl InitializeResult
     ///   a `,` is typed and again at a `)`; definition and type definition;
     ///   formatting over the whole document and over a range; code lenses,
     ///   resolved in the answer, and code actions; document links, resolved in
-    ///   the answer; workspace folders, with a notification as they change; the
-    ///   server named `gandr` at this crate's version.
+    ///   the answer; linked editing; workspace folders, with a notification as
+    ///   they change; the server named `gandr` at this crate's version.
     /// - provides: the one capabilities answer, written by `initialize` and by
     ///   the driver's `gandr lsp --capabilities` alike.
     /// - fails: never.
@@ -1237,6 +1237,7 @@ impl InitializeResult
             && !ret.capabilities.document_link_provider.resolve_provider
             && ret.capabilities.workspace.workspace_folders.supported
             && ret.capabilities.workspace.workspace_folders.change_notifications
+            && ret.capabilities.linked_editing_range_provider.0
             && !ret.capabilities.code_lens_provider.resolve_provider
             && !ret.capabilities.completion_provider.resolve_provider)]
     #[inline]
@@ -1287,6 +1288,7 @@ impl InitializeResult
                 document_link_provider: DocumentLinkOptions {
                     resolve_provider: false,
                 },
+                linked_editing_range_provider: Provider::ANSWERED,
                 workspace: WorkspaceOptions {
                     workspace_folders: FoldersOptions {
                         supported: true,
@@ -1357,6 +1359,9 @@ pub struct ServerCapabilities
     /// Document links are answered, each resolved in the answer: every path
     /// import's address, linked to the file it names.
     pub document_link_provider: DocumentLinkOptions,
+    /// Linked editing is answered: a binder local to a declaration and its
+    /// uses, an edit of one applying to all.
+    pub linked_editing_range_provider: Provider,
     /// The workspace features answered.
     pub workspace: WorkspaceOptions,
 }
@@ -1525,6 +1530,9 @@ pub enum Answer
     /// What a document-link request answers for an open document: each path
     /// import's address, in source order.
     Imports(Vec<DocumentLink>),
+    /// What a linked-editing request answers: the ranges an edit of one
+    /// applies to.
+    Mirrored(LinkedEditingRanges),
     /// `null`: what `shutdown` answers, a request about a document that is not
     /// open, and a hover over nothing the server knows.
     Nothing,
@@ -1544,6 +1552,16 @@ pub struct LocationLink
     pub target_range: Range,
     /// The target's name, inside the whole target.
     pub target_selection_range: Range,
+}
+
+/// The ranges of a document that an edit of one applies to, each spelling
+/// the same name.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct LinkedEditingRanges
+{
+    /// The ranges: a binder's name, then its uses.
+    pub ranges: Vec<Range>,
 }
 
 /// A range of a document that names another file: a path import's address.

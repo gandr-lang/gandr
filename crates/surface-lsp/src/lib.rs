@@ -137,7 +137,7 @@
 //! | document highlight | `textDocument/documentHighlight` | served: the declaring name and every use of the name at a position, within the document, read off the type table's reverse use index, as the `uses` module states; a recursive call's use spans its marker with its name |
 //! | references | `textDocument/references` | served: the declaring name when asked, then the uses of the name at a position in every open document and in every source under the folders the editor opened that imports its source, read from disk, matched by its source's path and its span, as the `uses` module states |
 //! | rename | `textDocument/prepareRename`, `rename` | served: the declaring name and each use the reference request finds, narrowed to the name's spelling; the declaring source is tried with its edits applied and a rename that adds an error is refused, as the `rename` module states |
-//! | linked editing | `textDocument/linkedEditingRange` | blocked: a binder's ranges within its declaration, read off the reverse use index |
+//! | linked editing | `textDocument/linkedEditingRange` | served: a binder local to a declaration and each of its uses, read off the type table's reverse use index, as the `uses` module states; a name the unit declares links nothing, since importers may write it, and rename serves it |
 //! | call hierarchy | `textDocument/prepareCallHierarchy`, `callHierarchy/*` | blocked: the declaration enclosing each use |
 //! | type hierarchy | `textDocument/prepareTypeHierarchy`, `typeHierarchy/*` | declined: the core has no subtyping to arrange types by |
 //! | formatting | `textDocument/formatting`, `rangeFormatting` | served |

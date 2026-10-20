@@ -46,9 +46,9 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - The outline: document symbols nesting each declaration inside its holder, folding ranges over multi-line forms, documentation and block comments, and selection ranges growing from the innermost node to the whole document.
 - Hover: the type of the innermost node under the cursor, and a declaration's documentation or refusal.
 - Definitions: what the name under the cursor refers to, and the families its type names, here or in an imported sibling; links: path imports to their files.
-- Highlights: where the name under the cursor is declared and used in the document; references and rename: in every open document and importer under the opened folders.
+- Highlights, and linked editing of a local binder: where the name under the cursor is declared and used in the document; references and rename: in every open document and importer under the opened folders.
 - Workspace symbols: the names the open documents' import closures declare, each holding the query's characters in order.
-- Formatting: the whole document as one edit trimmed to the span its layout changes, and a range as one edit per top-level form it touches, each from `gandr-surface-format`.
+- Formatting: the whole document as one edit trimmed to the span its layout changes, and a range as one edit per top-level form it touches.
 - Positions in UTF-16 code units, a position past a line's end or past the last line clamped.
 - `Capabilities`: the `initialize` result as one line of JSON.
 - A `file` URI's percent-decoded path.

@@ -1,19 +1,22 @@
 //! Uses: where the name at a position is declared and where the documents of
 //! the workspace use it.
 //!
-//! A highlight, reference or rename request finds the name at the position:
-//! the use holding it, read off the referent index the document's type table
-//! keeps ([`TypeTable::referent`]), or else the declaring name holding it
-//! ([`TypeTable::named_at`]). It answers that name's uses from the reverse
-//! index built beside the referent index, once per text
+//! A highlight, linked-editing, reference or rename request finds the name at
+//! the position: the use holding it, read off the referent index the document's
+//! type table keeps ([`TypeTable::referent`]), or else the declaring name
+//! holding it ([`TypeTable::named_at`]). It answers that name's uses from the
+//! reverse index built beside the referent index, once per text
 //! ([`TypeTable::uses_of`]), and the declaring name when the document writes
 //! it. A use and a declaring name are one name when they name the same written
 //! name, so a recursive declaration's call, which the lowering binds as a
 //! binder, is a use of the declaration. No name is resolved again and the text
 //! is never searched for one. A position just past a name answers the name.
 //!
-//! A highlight reads the requesting document alone. A reference or rename
-//! request reads every open document's own uses, and those of every source
+//! A highlight reads the requesting document alone, and so does linked
+//! editing, which answers only a binder local to one of its declarations: a
+//! name the unit declares may be written by importers, which an edit mirrored
+//! in one document would leave behind. A reference or rename request reads
+//! every open document's own uses, and those of every source
 //! under the workspace's roots that imports the name's source and no editor
 //! holds, read from disk: a name is the same across documents when its
 //! source's canonical path and its span agree, so an importer finds a
@@ -44,6 +47,7 @@ use crate::protocol::Answer;
 use crate::protocol::DocumentHighlight;
 use crate::protocol::DocumentUri;
 use crate::protocol::HighlightKind;
+use crate::protocol::LinkedEditingRanges;
 use crate::protocol::Location;
 
 /// What is written at `at` of the table's own source, and the name it means:
@@ -158,6 +162,66 @@ pub fn highlights(
             )
             .collect(),
     )
+}
+
+/// What a linked-editing request at `position` of `text`, whose copy keeps
+/// `hovering`, answers: the name of a binder local to a declaration of the
+/// document and each of its uses, an edit of one applying to all; nothing for
+/// a name the unit declares, which other documents may write.
+///
+/// # Specification
+/// - requires: `hovering` holds the type table of `text`.
+/// - ensures: [`Answer::Nothing`] when no name is at the position, when the
+///   name is one the document's unit declares or is written in another source,
+///   or when a use of it is spelled otherwise than its binder; otherwise
+///   [`Answer::Mirrored`] holding the binder's range, then each use's,
+///   ascending, every range spelling the binder's text.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a parameter at its binder and at a use, and a pattern's
+///   binder, answer the binder and its uses; a declaration's name and a
+///   constructor answer nothing.
+/// - witness: `server::tests::linked_editing_mirrors_a_binder_within_its_declaration`
+#[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Mirrored(_)))]
+#[must_use]
+pub fn mirrored(
+    text: SourceText<'_>,
+    hovering: &Hovering,
+    position: Position,
+) -> Answer
+{
+    let table = hovering.table();
+    let index = LineIndex::new(<&str>::from(text).into());
+    let at = ByteOffset::from(usize::from(position.byte(&index)));
+    let Some(referent) = named(table, at)
+    else {
+        return Answer::Nothing;
+    };
+    let declared = table
+        .declared_names()
+        .binary_search_by(|&(held, _)| held.cmp(&referent))
+        .is_ok();
+    if declared || referent.source() != table.own_source() {
+        return Answer::Nothing;
+    }
+    let Some(spelled) = spelling(text, referent.named()).map(<&str>::from)
+    else {
+        return Answer::Nothing;
+    };
+    let mut ranges = Vec::new();
+    for span in
+        core::iter::once(referent.named()).chain(table.uses_of(referent.source(), referent.named()))
+    {
+        let alike = spelling(text, span).map(<&str>::from) == Some(spelled);
+        let Some(range) = alike.then(|| ranged(&index, span)).flatten()
+        else {
+            return Answer::Nothing;
+        };
+        ranges.push(range);
+    }
+    Answer::Mirrored(LinkedEditingRanges { ranges })
 }
 
 /// Where a name is written: its source's canonical path, its span in that
