@@ -896,6 +896,12 @@ const KEYWORDS: &[&str] = &[
     "resume", "abort", "world", "mobile", "inf",
 ];
 
+/// The keywords that open a block's statements: one that no open form
+/// continues ends the statement it stands in, and starts the next.
+const STATEMENT_LEADS: &[&str] = &[
+    "val", "run", "unpack", "leta", "hold", "recv", "acquire", "release", "fork",
+];
+
 /// Return the grammar tile labels to enumerate for a labeled token.
 ///
 /// The returned slice is in a fixed order; the molder unions the `candidates`
@@ -1556,6 +1562,7 @@ impl<'pbg> Molder<'pbg>
         let labels = candidate_labels(token.lexeme, text);
         self.settle_shadowing(state, &labels);
         self.gather(state, token.lexeme, text, &labels);
+        self.settle_statement(state, token.lexeme, text, &labels, Ahead::Nothing);
         state.settle_declaration_boundary(&self.candidates);
         let best = self.choose(state, text, Ahead::Nothing);
         Self::push_choice(state, best, text);
@@ -1657,6 +1664,12 @@ impl<'pbg> Molder<'pbg>
                 let labels = candidate_labels(token.lexeme, text);
                 self.settle_shadowing(state, &labels);
                 self.gather(state, token.lexeme, text, &labels);
+                let ahead = Ahead::Stream {
+                    tokens,
+                    index: TokenIndex::from(index),
+                    source: &source,
+                };
+                self.settle_statement(state, token.lexeme, text, &labels, ahead);
                 state.settle_declaration_boundary(&self.candidates);
                 let best = self.choose_stream(state, tokens, TokenIndex::from(index), &source);
                 Self::push_choice(state, best, text);
@@ -1976,6 +1989,113 @@ impl<'pbg> Molder<'pbg>
         }
         self.gather_reserved_fallback(state, lexeme, text, open);
         self.drop_stray_keyword(state, lexeme, text);
+    }
+
+    /// Close the statement a statement keyword stands in, when the keyword
+    /// continues no open form and fills no empty slot.
+    ///
+    /// The keyword's whole declared menu names the close
+    /// ([`MeldState::statement_close`]). On the stream path the keyword's
+    /// window is molded twice under a mark, read as it stands and after the
+    /// close, and the close is applied unless the window read as it stands
+    /// owes less; on the single-token path it is applied. The keyword's
+    /// menu is then gathered again at the frontier the close leaves.
+    ///
+    /// # Specification
+    /// - requires: `labels` are `text`'s candidate labels and the candidate
+    ///   buffer holds their gathered menu at `state`'s frontier.
+    /// - ensures: `state` is closed by [`MeldState::statement_close`]'s close
+    ///   exactly when `text` is a statement lead that no candidate continues or
+    ///   fills an empty slot with, a close is offered, and (on the stream path)
+    ///   the window after the close owes no more than the window without it;
+    ///   the candidate buffer, sorted, holds the menu gathered at the resulting
+    ///   frontier; consumes no source.
+    /// - provides: the statement close at a statement keyword.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a statement that lost its `<-` before the next `run`,
+    ///   and a `fork` that lost its `as` before the next `recv`, expose both
+    ///   sides of the window: closing the first keeps the next statement whole,
+    ///   and closing the second would owe its `as`, name and `;` again where
+    ///   the keyword read as it stands owes less.
+    /// - witness: `tests::acceptance::a_statement_keyword_starts_the_next_statement_1090`
+    /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body gathers the candidate menu the clause walks to check it sorted"
+        )
+    )]
+    #[spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
+    fn settle_statement(
+        &mut self,
+        state: &mut MeldState<'_>,
+        lexeme: Lexeme,
+        text: TokenText<'_>,
+        labels: &TokenLabels<'_>,
+        ahead: Ahead<'_, '_>,
+    )
+    {
+        if !matches!(lexeme, Lexeme::LowerWord) || !STATEMENT_LEADS.contains(&<&str>::from(text)) {
+            return;
+        }
+        let frontier = state.admissibility_frontier();
+        if self
+            .candidates
+            .iter()
+            .any(|&mold| bool::from(state.would_continue_form(mold)))
+        {
+            return;
+        }
+        // A keyword that heads an expression in an empty slot (an inline
+        // `run`) stays that expression.
+        if !bool::from(frontier.head_operand)
+            && self
+                .candidates
+                .iter()
+                .any(|&mold| bool::from(state.admits_at(mold, &frontier)))
+        {
+            return;
+        }
+        self.gather_menu(labels, frontier.open, CandidateMenu::Declared);
+        let Some(close) = state.statement_close(&self.candidates)
+        else {
+            self.gather(state, lexeme, text, labels);
+            return;
+        };
+        let closes = match ahead {
+            Ahead::Stream {
+                tokens,
+                index,
+                source,
+            } => {
+                let mark = state.mark();
+                let end =
+                    self.mold_window(state, tokens, index, source, &mark, WindowBound::Unbounded);
+                let standing = (end == WindowEnd::Molded)
+                    .then(|| state.completion_delta(state.delta_since(&mark)));
+                state.rollback_to(&mark);
+                let mark = state.mark();
+                state.close_statement(close);
+                let bound = standing.map_or(WindowBound::Unbounded, WindowBound::Below);
+                let end = self.mold_window(state, tokens, index, source, &mark, bound);
+                let closed = (end == WindowEnd::Molded)
+                    .then(|| state.completion_delta(state.delta_since(&mark)));
+                state.rollback_to(&mark);
+                match (standing, closed) {
+                    (Some(standing), Some(closed)) => closed <= standing,
+                    (_, closed) => closed.is_some(),
+                }
+            },
+            Ahead::Nothing => true,
+        };
+        if closes {
+            state.close_statement(close);
+        }
+        self.gather(state, lexeme, text, labels);
     }
 
     /// Mark the window being molded exposed when this token's declared menu

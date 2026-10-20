@@ -780,6 +780,33 @@ primitive_copy_wrapper!(
     pub struct CompletionStatus(bool);
 );
 
+/// The most tiles of an open form a statement keyword's close pushes over no
+/// text to reach the tile the keyword continues.
+const STATEMENT_REACH: usize = 3;
+
+/// The mid tiles of an open form a statement close owes, the first `length`
+/// of `tiles`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct StatementChain
+{
+    /// The tiles, the first `length` of them owed.
+    tiles: [MoldId; STATEMENT_REACH],
+    /// How many of `tiles` are owed.
+    length: usize,
+}
+
+/// The close of the open statement a statement keyword stands in: the
+/// frontier at stack `index` stays open, everything above it closes, and
+/// `chain`'s tiles are owed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StatementClose
+{
+    /// The stack index of the frontier kept open.
+    index: usize,
+    /// The tiles owed after it.
+    chain: StatementChain,
+}
+
 /// One reducible head action selected by the collapse worklist.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CollapseStep
@@ -1670,6 +1697,190 @@ impl<'pbg> MeldState<'pbg>
                 });
             },
         }
+    }
+
+    /// Push a tile of `mold` over no text, owed as a missing tile at the
+    /// place the source omits it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn push_missing(
+        &mut self,
+        mold: MoldId,
+    )
+    {
+        let at = SourceOffset::from(u32::try_from(self.source.len()).unwrap_or(u32::MAX));
+        self.push_text(mold, TileText::from(""));
+        self.flag(Oblig::MissingTile, SourceSpan { start: at, end: at });
+    }
+
+    /// The close a statement keyword that continues no open form offers.
+    ///
+    /// Each open frontier from which one to [`STATEMENT_REACH`] mid tiles of
+    /// its form reach one that a mold of `candidates` continues can close
+    /// over the fewest such tiles. The innermost such frontier is the
+    /// close, unless one further out needs at least two tiles fewer: the
+    /// first of those, innermost first, is. A frontier the keyword continues
+    /// with no tile between is no close: continuing it would read the forms
+    /// above it as standing before its first statement.
+    ///
+    /// # Specification
+    /// - requires: `candidates` are sorted molds of this state's PBG.
+    /// - ensures: `None` exactly when no open frontier reaches a candidate
+    ///   within [`STATEMENT_REACH`] mid tiles; otherwise a close at an open
+    ///   frontier whose first `length` chain tiles, each a mid tile, lead to a
+    ///   tile a candidate continues; leaves `self` unchanged.
+    /// - provides: the statement close the molder weighs.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a statement that lost its `<-` before the next
+    ///   statement keyword exposes the close: taking no close reads the keyword
+    ///   inside the broken statement and owes the next statement's tiles, and
+    ///   closing at the block's brace reads the broken statement before the
+    ///   block's first.
+    /// - witness: `tests::acceptance::a_statement_keyword_starts_the_next_statement_1090`
+    #[spec(ensures: |ret| ret.is_none_or(|close| (1 ..= STATEMENT_REACH).contains(&close.chain.length)))]
+    pub(crate) fn statement_close(
+        &self,
+        candidates: &[MoldId],
+    ) -> Option<StatementClose>
+    {
+        let mut innermost: Option<StatementClose> = None;
+        for &index in self.frontiers.iter().rev() {
+            let Some(&Cell {
+                role: Role::FormTile {
+                    mold, open: true, ..
+                },
+                ..
+            }) = self.stack.get(index)
+            else {
+                continue;
+            };
+            let Some(chain) = self.statement_chain(mold, candidates)
+            else {
+                continue;
+            };
+            let close = StatementClose { index, chain };
+            match innermost {
+                None => innermost = Some(close),
+                Some(first) if chain.length.saturating_add(2) <= first.chain.length => {
+                    return Some(close);
+                },
+                Some(_) => {},
+            }
+        }
+        innermost
+    }
+
+    /// Apply `close`: every form and operator above its frontier closes,
+    /// and its tiles are pushed over no text, each owed as a missing tile.
+    ///
+    /// # Specification
+    /// - requires: `close` came from [`statement_close`](Self::statement_close)
+    ///   on this state, unchanged since.
+    /// - ensures: every form and operator above the kept frontier is closed and
+    ///   the pushed tiles continue its form; consumes no source and owes one
+    ///   missing tile per pushed tile.
+    /// - provides: the statement close's application.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the close of a statement that lost its `<-` owes
+    ///   exactly its missing tiles at the next statement's keyword; closing
+    ///   below the frontier or pushing no tiles moves the obligations into the
+    ///   next statement.
+    /// - witness: `tests::acceptance::a_statement_keyword_starts_the_next_statement_1090`
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before)]
+    pub(crate) fn close_statement(
+        &mut self,
+        close: StatementClose,
+    )
+    {
+        self.collapse(StackFloor::from(StackIndex::from(
+            close.index.saturating_add(1),
+        )));
+        for &tile in close
+            .chain
+            .tiles
+            .get(.. close.chain.length)
+            .unwrap_or_default()
+        {
+            self.push_missing(tile);
+        }
+    }
+
+    /// The fewest mid tiles of `from`'s form, one to [`STATEMENT_REACH`],
+    /// that lead from `from` to a tile one of `candidates` continues.
+    ///
+    /// A depth-first walk of the form's `≐`-successors under an explicit
+    /// frame per depth, run once per length from one up, so the first chain
+    /// found is a shortest.
+    ///
+    /// # Specification
+    /// trivial.
+    fn statement_chain(
+        &self,
+        from: MoldId,
+        candidates: &[MoldId],
+    ) -> Option<StatementChain>
+    {
+        let adjacencies = self.pbg.adjacencies();
+        let successors = |mold: MoldId| {
+            (
+                adjacencies.partition_point(|&(left, _)| left < mold),
+                adjacencies.partition_point(|&(left, _)| left <= mold),
+            )
+        };
+        for length in 1 ..= STATEMENT_REACH {
+            let mut tiles = [MoldId::from(0_u32); STATEMENT_REACH];
+            // Each depth's frame: the next successor to try and the end of
+            // its successors.
+            let mut frames = [(0_usize, 0_usize); STATEMENT_REACH];
+            if let Some(frame) = frames.first_mut() {
+                *frame = successors(from);
+            }
+            let mut depth = 0_usize;
+            while let Some(frame) = frames.get_mut(depth) {
+                let (cursor, end) = *frame;
+                if cursor >= end {
+                    let Some(above) = depth.checked_sub(1)
+                    else {
+                        break;
+                    };
+                    depth = above;
+                    continue;
+                }
+                frame.0 = cursor.saturating_add(1);
+                let Some(&(_, next)) = adjacencies.get(cursor)
+                else {
+                    break;
+                };
+                if !matches!(self.classify(next), Kind::FormMid) {
+                    continue;
+                }
+                if let Some(slot) = tiles.get_mut(depth) {
+                    *slot = next;
+                }
+                let below = depth.saturating_add(1);
+                if below == length {
+                    if candidates
+                        .iter()
+                        .any(|&mold| bool::from(self.adjacent(next, mold)))
+                    {
+                        return Some(StatementChain { tiles, length });
+                    }
+                    continue;
+                }
+                if let Some(frame) = frames.get_mut(below) {
+                    *frame = successors(next);
+                }
+                depth = below;
+            }
+        }
+        None
     }
 
     /// Return whether `mold` would `≐`-continue the topmost open form frontier.
