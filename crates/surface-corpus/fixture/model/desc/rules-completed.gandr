@@ -23,5 +23,5 @@ data NatSwap : Type {
 
 /// Zero swapped with one, where the two rules overlap.
 @[ runs("Succ(Zero)") ]
-def zero_swap_one : +U (-F NatSwap) ;
+def zero_swap_one : () => NatSwap ;
 def zero_swap_one = thunk { become swap(Zero, Succ(Zero)) } ;

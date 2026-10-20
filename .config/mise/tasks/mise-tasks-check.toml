@@ -488,12 +488,15 @@ run = "cargo nextest run --workspace --locked --profile {{ env.NEXTEST_PROFILE |
 # The corpus's two roots, run through the driver as an author runs them: the
 # strict root under `check`, every declaration checking and owing nothing;
 # the fixture root under `test`, every fixture settled and every pending
-# source still pending. A red root exits nonzero and fails the gate.
+# source still pending; and the fixture root in the sugared form, every
+# source but those declaring `form(explicit)` written as the formatter's
+# sugared form writes it. A red root exits nonzero and fails the gate.
 ["check:corpus"]
-description = "The strict root under `gandr check`, the fixture root under `gandr test`"
+description = "The strict root under `gandr check`, the fixture root under `gandr test` and in the sugared form"
 run = [
   "cargo run --locked --quiet --profile test --package gandr-lang -- check crates/surface-corpus/strict",
   "cargo run --locked --quiet --profile test --package gandr-lang -- test crates/surface-corpus/fixture",
+  "cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check --form=sugared crates/surface-corpus/fixture",
 ]
 
 # Merge residue never lands: a conflict marker, or the resolution trailer a
