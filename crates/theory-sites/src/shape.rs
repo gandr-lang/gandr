@@ -1087,11 +1087,13 @@ impl fmt::Display for EndLabel
 pub fn shapes_up_to(bound: ShapeSize) -> Result<Vec<Shape>, ShapeObstruction>
 {
     let mut classes: BTreeMap<ShapeKey, Shape> = BTreeMap::new();
+    let mut cursor: Vec<usize> = Vec::new();
     for vertices in 0 ..= bound.0 {
         let wires = bound.0.saturating_sub(vertices);
         let kinds = end_pairs(EdgeCount::from(vertices));
         for width in 0 ..= wires {
-            let mut cursor: Vec<usize> = vec![0; width];
+            cursor.clear();
+            cursor.resize(width, 0);
             loop {
                 let ends: Vec<Ends> = cursor
                     .iter()

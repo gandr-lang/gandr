@@ -120,17 +120,20 @@ fn decomposes(
 pub fn grounded_stratum(catalogue: &Catalogue) -> Outcome<Shape>
 {
     let mut tally = Tally::default();
+    let mut named: BTreeSet<Edge> = BTreeSet::new();
     for shape in catalogue.shapes() {
         tally.count();
-        let named: BTreeSet<Edge> = shape
-            .ends()
-            .iter()
-            .flat_map(|ends| [ends.producer(), ends.consumer()])
-            .filter_map(|end| match end {
-                End::Open => None,
-                End::Vertex(vertex) => Some(vertex),
-            })
-            .collect();
+        named.clear();
+        named.extend(
+            shape
+                .ends()
+                .iter()
+                .flat_map(|ends| [ends.producer(), ends.consumer()])
+                .filter_map(|end| match end {
+                    End::Open => None,
+                    End::Vertex(vertex) => Some(vertex),
+                }),
+        );
         let grounded = named.len() == usize::from(shape.vertex_count());
         if grounded != (usize::from(shape.point_count()) == 0) {
             return tally.fails(shape.clone());

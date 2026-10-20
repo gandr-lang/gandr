@@ -387,10 +387,11 @@ fn two_sided(
     for shape in diagrams.shapes() {
         tally.count();
         let wiring = labelled_by_arity(shape).map_err(ShapeObstruction::Carrier)?;
-        let form = canonicalize(&wiring).form().clone();
+        let canonical = canonicalize(&wiring);
+        let form = canonical.form();
         let before = merge(unit, &wiring).map_err(ShapeObstruction::Carrier)?;
         let after = merge(&wiring, unit).map_err(ShapeObstruction::Carrier)?;
-        if *canonicalize(&before).form() != form || *canonicalize(&after).form() != form {
+        if canonicalize(&before).form() != form || canonicalize(&after).form() != form {
             return Ok(tally.fails(shape.clone()));
         }
     }

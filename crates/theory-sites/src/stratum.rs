@@ -104,6 +104,7 @@
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -428,15 +429,16 @@ impl Labelling
 fn permutations(count: PortCount) -> Vec<Box<[Port]>>
 {
     let mut partial: Vec<Vec<Port>> = vec![Vec::new()];
+    let mut used: BTreeSet<Port> = BTreeSet::new();
     for _ in 0 .. count.0 {
         let mut longer = Vec::new();
         for prefix in &partial {
-            for port in (0 .. count.0).map(Port) {
-                if !prefix.contains(&port) {
-                    let mut extended = prefix.clone();
-                    extended.push(port);
-                    longer.push(extended);
-                }
+            used.clear();
+            used.extend(prefix.iter().copied());
+            for port in (0 .. count.0).map(Port).filter(|port| !used.contains(port)) {
+                let mut extended = prefix.clone();
+                extended.push(port);
+                longer.push(extended);
             }
         }
         partial = longer;
@@ -1329,6 +1331,7 @@ fn probed(
         .iter()
         .map(Corolla::index)
         .chain(stratum.cocones.iter().map(Cocone::shape));
+    let mut legs: Vec<Legs> = Vec::new();
     for source in sources {
         let (Maybe::Present(form), Some(at_source)) = (
             catalogue.shape(source),
@@ -1337,10 +1340,8 @@ fn probed(
         else {
             return Verdict::Fails;
         };
-        let legs: Vec<Legs> = form
-            .vertices()
-            .map(|vertex| Legs::of(form, vertex))
-            .collect();
+        legs.clear();
+        legs.extend(form.vertices().map(|vertex| Legs::of(form, vertex)));
         let read = (sides.0.labellings(form), sides.1.labellings(form));
         for (target, shape) in catalogue.entries() {
             let (Maybe::Present(maps), Some(at_target)) = (

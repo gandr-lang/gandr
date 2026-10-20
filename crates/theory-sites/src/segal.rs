@@ -548,9 +548,10 @@ fn colimit(
         .collect();
     let families = families(&candidates, &cocone.grafts, cocones);
     let mut hits = alloc::vec![0_usize; families.len()];
+    let mut restricted = Vec::with_capacity(candidates.len());
     for map in hom(cocone.shape) {
         let stray = || SegalDefect::Stray { map: map.clone() };
-        let mut restricted = Vec::with_capacity(candidates.len());
+        restricted.clear();
         for (inclusion, options) in cocone.inclusions.iter().zip(&candidates) {
             let Ok(leg) = inclusion.map.then(map)
             else {

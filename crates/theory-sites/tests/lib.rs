@@ -3,14 +3,6 @@
 //! One target rather than one per area, so a witness path names the area it
 //! belongs to (`tests::maps::…`) instead of a file.
 
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        allocation_in_repeated_body,
-        reason = "1 cost-shape site; #814 lists it"
-    )
-)]
-
 extern crate alloc;
 
 /// One wire end: `o` for open, a vertex number otherwise.
