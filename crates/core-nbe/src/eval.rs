@@ -300,11 +300,13 @@ use crate::domain::Elimination;
 use crate::domain::Glued;
 use crate::domain::LiftTarget;
 use crate::domain::NeutralHead;
+use crate::domain::Projector;
 use crate::domain::Suspended;
 use crate::domain::TermFace;
 use crate::domain::Unfolding;
 use crate::free::CoreTerm;
 use crate::free::Free;
+use crate::rules::ProjectionKey;
 
 mod words;
 
@@ -1199,9 +1201,9 @@ enum Task
     },
     /// Reapply a suspended split after its head unfolds.
     SplitClosure(CompClosureId),
-    /// Select the source's field or component from an evaluated record or
+    /// Select the projector's field or component from an evaluated record or
     /// tuple.
-    Projection(ComputationId),
+    Projection(Projector),
     /// Enter a source or native computation body.
     Body
     {
@@ -4363,7 +4365,9 @@ fn step_comp(
             Ok(())
         },
         Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => {
-            machine.tasks.push(Task::Projection(term));
+            machine
+                .tasks
+                .push(Task::Projection(Projector::Source(term)));
             machine.tasks.push(Task::Value { term: record, env });
             Ok(())
         },
@@ -6812,7 +6816,7 @@ fn read_through(
     | Some(&(DomainComp::Lambda { .. } | DomainComp::Fixpoint { .. })) => ret == Err(EvalFault::ReturnedNonReturner),
     | None => ret == Err(EvalFault::Domain(DomainFault::Dangling)),
 })]
-fn returned_value(
+pub fn returned_value(
     domain: &mut DomainArena,
     computation: DomainCompId,
 ) -> Result<DomainValueId, EvalFault>
@@ -7237,27 +7241,18 @@ fn step_projection(
     core: &CoreArena,
     domain: &mut DomainArena,
     machine: &mut Machine<'_>,
-    term: ComputationId,
+    projector: Projector,
 ) -> Result<(), EvalFault>
 {
-    let Some(matched_native_node) = core.computation(term)
-    else {
-        return Err(EvalFault::DanglingTerm);
-    };
+    let key =
+        crate::rules::projection_key(core, projector).map_err(|_fault| EvalFault::DanglingTerm)?;
     let projected = machine.pop_value()?;
     let operand = *domain
         .value(projected)
         .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
-    let (fields, position) = match (matched_native_node, operand) {
-        (
-            &Computation::RecordProjection(_, ref label),
-            DomainValue::Record { source, fields, .. },
-        ) => {
-            let Some(matched_native_node) = core.value(source)
-            else {
-                return Err(EvalFault::DanglingTerm);
-            };
-            let Value::Record(ref source_fields) = *matched_native_node
+    let (fields, position) = match (key, operand) {
+        (ProjectionKey::Label(label), DomainValue::Record { source, fields, .. }) => {
+            let Some(&Value::Record(ref source_fields)) = core.value(source)
             else {
                 return Err(EvalFault::DanglingTerm);
             };
@@ -7267,60 +7262,26 @@ fn step_projection(
                 .ok_or(EvalFault::AbsentRecordField)?;
             (fields, position)
         },
-        (&Computation::TupleProjection(_, component), DomainValue::Tuple { fields, .. }) => {
+        (ProjectionKey::Component(component), DomainValue::Tuple { fields, .. }) => {
             (fields, usize::from(component))
         },
-        (
-            &(Computation::RecordProjection(..) | Computation::TupleProjection(..)),
-            DomainValue::Neutral { neutral, .. },
-        ) => {
-            let grown = extend_spine(domain, neutral, Elimination::Projection(term))?;
+        (_, DomainValue::Neutral { neutral, .. }) => {
+            let grown = extend_spine(domain, neutral, Elimination::Projection(projector))?;
             machine
                 .comps
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
             return Ok(());
         },
-        (&Computation::RecordProjection(..), _) => return Err(EvalFault::ProjectedNonRecord),
-        (&Computation::TupleProjection(..), _) => return Err(EvalFault::ProjectedNonTuple),
-        _ => return Err(EvalFault::DanglingTerm),
+        (ProjectionKey::Label(_), _) => return Err(EvalFault::ProjectedNonRecord),
+        (ProjectionKey::Component(_), _) => return Err(EvalFault::ProjectedNonTuple),
     };
     let value = *domain
         .fields(fields)
         .map_err(EvalFault::Domain)?
         .get(position)
-        .ok_or(match *matched_native_node {
-            Computation::TupleProjection(..) => EvalFault::AbsentTupleComponent,
-            Computation::Primitive { .. }
-            | Computation::Transport(..)
-            | Computation::PathTransport { .. }
-            | Computation::Ride { .. }
-            | Computation::TelescopeTransport { .. }
-            | Computation::Lambda(_)
-            | Computation::Fixpoint { .. }
-            | Computation::Application(..)
-            | Computation::Return(_)
-            | Computation::Bind(..)
-            | Computation::Ascribe { .. }
-            | Computation::Force(_)
-            | Computation::Case { .. }
-            | Computation::Split { .. }
-            | Computation::DataCase { .. }
-            | Computation::RecordProjection(..)
-            | Computation::Hole(_)
-            | Computation::Mark { .. }
-            | Computation::ListFold { .. }
-            | Computation::Perform { .. }
-            | Computation::Handle { .. }
-            | Computation::Exercise { .. }
-            | Computation::Scope { .. }
-            | Computation::Resume(..)
-            | Computation::Reset(_)
-            | Computation::Shift(_)
-            | Computation::With(..)
-            | Computation::Project(..)
-            | Computation::Session(_)
-            | Computation::Memory(_)
-            | Computation::World(_) => EvalFault::MachineInvariant,
+        .ok_or(match key {
+            ProjectionKey::Component(_) => EvalFault::AbsentTupleComponent,
+            ProjectionKey::Label(_) => EvalFault::MachineInvariant,
         })?;
     machine
         .comps

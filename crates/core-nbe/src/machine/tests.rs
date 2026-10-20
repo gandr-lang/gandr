@@ -5771,6 +5771,74 @@ fn tuple_projections_of_one_neutral_compare_by_component()
         );
     }
 }
+
+/// A tuple of a neutral's own projections converts to the neutral, on either
+/// side, and a record of its own fields likewise; swapped projections, a
+/// different neutral and a record missing a field stay apart. The kernel
+/// replays each verdict (#715).
+#[test]
+fn a_tuple_of_a_neutrals_projections_is_the_neutral_715()
+{
+    use alloc::collections::BTreeMap;
+    use alloc::string::String;
+
+    use gandr_core_term::Component;
+    use gandr_core_term::FieldLabel;
+    let mut core = CoreArena::new();
+    let rigid = core.value_constant(Name::Rigid.constant());
+    let other = core.value_constant(Name::Zero.constant());
+    let projected = |core: &mut CoreArena, position: usize| {
+        let projection = core.computation_tuple_projection(rigid, Component::from(position));
+        core.value_returned(projection)
+    };
+    let first = projected(&mut core, 0_usize);
+    let second = projected(&mut core, 1_usize);
+    let expanded = core.value_tuple(&[first, second]);
+    let swapped = core.value_tuple(&[second, first]);
+    let field = |core: &mut CoreArena, label: &str| {
+        let projection =
+            core.computation_record_projection(rigid, FieldLabel::from(String::from(label)));
+        core.value_returned(projection)
+    };
+    let left = field(&mut core, "l");
+    let right = field(&mut core, "r");
+    let record = core.value_record(BTreeMap::from([
+        (FieldLabel::from(String::from("l")), left),
+        (FieldLabel::from(String::from("r")), right),
+    ]));
+    let crossed = core.value_record(BTreeMap::from([
+        (FieldLabel::from(String::from("l")), right),
+        (FieldLabel::from(String::from("r")), left),
+    ]));
+    let world = World::new(core, &[]);
+    for (sides, expected) in [
+        (Sides::Values(expanded, rigid), MachineVerdict::Convertible),
+        (Sides::Values(rigid, expanded), MachineVerdict::Convertible),
+        (Sides::Values(record, rigid), MachineVerdict::Convertible),
+        (Sides::Values(rigid, record), MachineVerdict::Convertible),
+        (
+            Sides::Values(swapped, rigid),
+            MachineVerdict::NotConvertible,
+        ),
+        (
+            Sides::Values(crossed, rigid),
+            MachineVerdict::NotConvertible,
+        ),
+        (
+            Sides::Values(expanded, other),
+            MachineVerdict::NotConvertible,
+        ),
+    ] {
+        let (verdict, decisions) = world.traced(sides);
+        assert_eq!(verdict, expected, "{sides:?}");
+        assert_eq!(
+            world.replayed(sides, verdict, &decisions),
+            certified(expected),
+            "{sides:?}: {decisions:?}"
+        );
+    }
+}
+
 /// A split computes on the tuple a definition unfolds to, and two splits
 /// stuck on one neutral compare by arity and by their bodies opened under
 /// one variable per component. The kernel has no split, so the verdicts

@@ -2192,6 +2192,73 @@ fn a_lazy_pairing_meets_a_neutral_by_its_projections()
     }
 }
 
+/// A tuple of a neutral's own projections is that neutral, on either side, and
+/// a record of its own fields likewise, with no decision for the η step; a
+/// tuple projecting the second component first is refuted by its first
+/// premise only, through the decision naming it (#715).
+#[test]
+fn a_tuple_meets_a_neutral_by_its_projections_715()
+{
+    use alloc::collections::BTreeMap;
+    use alloc::string::String;
+
+    use gandr_kernel_term::Component;
+    use gandr_kernel_term::FieldLabel;
+    let mut arena = TermArena::new();
+    let none = Unfoldings::default();
+    let neutral = arena.value_variable(DeBruijnIndex::from(0));
+    let projected = |arena: &mut TermArena, position: usize| {
+        let projection = arena.computation_tuple_projection(neutral, Component::from(position));
+        arena.value_returned(projection)
+    };
+    let first = projected(&mut arena, 0_usize);
+    let second = projected(&mut arena, 1_usize);
+    let expanded = arena.value_tuple(&[first, second]);
+    let swapped = arena.value_tuple(&[second, first]);
+    let label = |name: &str| FieldLabel::from(String::from(name));
+    let left = arena.computation_record_projection(neutral, label("l"));
+    let left = arena.value_returned(left);
+    let right = arena.computation_record_projection(neutral, label("r"));
+    let right = arena.value_returned(right);
+    let record = arena.value_record(BTreeMap::from([(label("l"), left), (label("r"), right)]));
+    let negative = |position| ConversionDecision::NegativeSubgoal {
+        position: SubgoalPosition::from(position),
+    };
+
+    for sides in [
+        ReplaySides::Values(expanded, neutral),
+        ReplaySides::Values(neutral, expanded),
+        ReplaySides::Values(record, neutral),
+        ReplaySides::Values(neutral, record),
+    ] {
+        assert_eq!(
+            run(&mut arena, &none, sides, EngineClaim::Convertible, &[]),
+            KernelVerdict::Convertible,
+            "{sides:?}"
+        );
+    }
+
+    for sides in [
+        ReplaySides::Values(swapped, neutral),
+        ReplaySides::Values(neutral, swapped),
+    ] {
+        assert_eq!(
+            run(&mut arena, &none, sides, EngineClaim::NotConvertible, &[
+                negative(0_u32)
+            ]),
+            KernelVerdict::NotConvertible,
+            "{sides:?}"
+        );
+        assert_eq!(
+            run(&mut arena, &none, sides, EngineClaim::Convertible, &[]),
+            refused(ReplayRefusal::Contradicted {
+                at: TracePosition::from(0),
+            }),
+            "{sides:?}"
+        );
+    }
+}
+
 #[test]
 fn neutral_spines_keep_subgoal_order_and_reject_kind_mismatches()
 {

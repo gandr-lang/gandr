@@ -252,6 +252,31 @@ pub enum NeutralHead
     Returned(DomainCompId),
 }
 
+/// What a projection selects.
+///
+/// A projection the source wrote names its selector by its term; one the
+/// conversion mints when it expands a neutral tuple or record into its
+/// projections names its selector itself, since the conversion mints no
+/// source term.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Projector
+{
+    /// The record or tuple projection the source wrote, naming the field's
+    /// label or the component's position.
+    Source(gandr_core_term::ComputationId),
+    /// A tuple's component.
+    Component(gandr_core_term::Component),
+    /// The field at a position among a record literal's labels, in label
+    /// order.
+    Field
+    {
+        /// The source record whose labels name the field.
+        record: gandr_core_term::ValueId,
+        /// The field's position among those labels.
+        at: gandr_core_term::Component,
+    },
+}
+
 /// A hole or a mark held with its environment: what a hole-headed or a
 /// mark-headed neutral stands on.
 ///
@@ -278,9 +303,9 @@ pub enum Elimination
     DataCase(CompClosureId),
     /// A product elimination, retaining its arity and body over a capture.
     Split(CompClosureId),
-    /// A record or tuple projection, retaining its source term, which names
-    /// the field's label or the component's position.
-    Projection(gandr_core_term::ComputationId),
+    /// A record or tuple projection, retaining what names the field's label or
+    /// the component's position.
+    Projection(Projector),
     /// Transport under a neutral path head.
     Transport(DomainValueId),
     /// Product transport waiting for a neutral pair operand.
