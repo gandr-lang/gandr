@@ -327,6 +327,10 @@ pub struct InitializeParams
     /// folders.
     #[serde(default)]
     pub root_uri: Option<DocumentUri>,
+    /// How much of its exchanges the client has the server trace, when it
+    /// says.
+    #[serde(default)]
+    pub trace: Option<Trace>,
 }
 
 /// A folder the client opened.
@@ -547,6 +551,127 @@ impl InitializeParams
             folds: refreshes(workspace.folding_range),
         }
     }
+
+    /// How much of its exchanges this client has the server trace: `off`
+    /// when it does not say.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn trace(&self) -> Trace
+    {
+        self.trace.unwrap_or_default()
+    }
+
+    /// Whether this client answers a pull of its settings: when it declares
+    /// `workspace.configuration`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn pulls_configuration(&self) -> PullsConfiguration
+    {
+        PullsConfiguration(
+            self.capabilities
+                .as_ref()
+                .and_then(|capabilities| capabilities.workspace)
+                .and_then(|workspace| workspace.configuration)
+                .unwrap_or(false),
+        )
+    }
+}
+
+/// Whether a client answers a pull of its settings.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PullsConfiguration(pub bool);
+
+/// How much of its exchanges the server traces to the client.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Trace
+{
+    /// Nothing.
+    #[default]
+    Off,
+    /// Each log line's subject.
+    Messages,
+    /// Each log line's subject and its detail.
+    Verbose,
+}
+
+/// The parameters of `$/setTrace`: the level the client sets.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct SetTraceParams
+{
+    /// The level.
+    pub value: Trace,
+}
+
+/// The parameters of `$/logTrace`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct TraceParams
+{
+    /// What is traced.
+    pub message: String,
+    /// Its detail, at [`Trace::Verbose`] alone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verbose: Option<String>,
+}
+
+/// How a window message reads, as the protocol numbers it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct MessageType(u8);
+
+impl MessageType
+{
+    /// An error.
+    pub const ERROR: Self = Self(1);
+    /// A warning.
+    pub const WARNING: Self = Self(2);
+    /// Information.
+    pub const INFO: Self = Self(3);
+    /// A log line.
+    pub const LOG: Self = Self(4);
+}
+
+/// The parameters of `window/showMessage` and `window/logMessage`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct MessageParams
+{
+    /// How it reads.
+    #[serde(rename = "type")]
+    pub kind: MessageType,
+    /// The message.
+    pub message: String,
+}
+
+/// The parameters of `window/showMessageRequest`: a message and the choices
+/// put with it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ChoiceParams
+{
+    /// How it reads.
+    #[serde(rename = "type")]
+    pub kind: MessageType,
+    /// The message.
+    pub message: String,
+    /// The choices, in the order shown.
+    pub actions: Vec<MessageAction>,
+}
+
+/// One choice put to the user, and the one the client answers with.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct MessageAction
+{
+    /// The text shown.
+    pub title: String,
 }
 
 /// Whether a client takes a definition as links from the name asked about.
@@ -639,6 +764,9 @@ pub struct WorkspaceCapabilities
     /// `workspace.foldingRange`.
     #[serde(default)]
     pub folding_range: Option<RefreshCapabilities>,
+    /// `workspace.configuration`: whether it answers a pull of its settings.
+    #[serde(default)]
+    pub configuration: Option<bool>,
 }
 
 /// What the client offers of requesting a feature's answers again.
@@ -733,6 +861,81 @@ impl RegistrationParams
                     }]),
                 },
             }]),
+        }
+    }
+}
+
+/// The parameters of `client/unregisterCapability`: the registrations
+/// withdrawn, under the field name the protocol spells.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct UnregistrationParams
+{
+    /// The registrations withdrawn.
+    pub unregisterations: Vec<Unregistration>,
+}
+
+/// One registration withdrawn: the identifier and method it was registered
+/// under.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct Unregistration
+{
+    /// The identifier.
+    pub id: &'static str,
+    /// The method.
+    pub method: &'static str,
+}
+
+impl UnregistrationParams
+{
+    /// The withdrawal of the registration
+    /// [`RegistrationParams::watched_files`] makes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn watched_files() -> Self
+    {
+        Self {
+            unregisterations: Vec::from([Unregistration {
+                id: "workspace/didChangeWatchedFiles",
+                method: "workspace/didChangeWatchedFiles",
+            }]),
+        }
+    }
+}
+
+/// The parameters of `workspace/configuration`: the sections pulled.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct PullParams
+{
+    /// One item per section.
+    pub items: Vec<PulledSection>,
+}
+
+/// One section pulled.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct PulledSection
+{
+    /// The section's name.
+    pub section: &'static str,
+}
+
+impl PullParams
+{
+    /// The pull of the `gandr` section alone.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn gandr() -> Self
+    {
+        Self {
+            items: Vec::from([PulledSection { section: "gandr" }]),
         }
     }
 }

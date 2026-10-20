@@ -491,6 +491,9 @@ fn connection<Log>(
                 drop(writeln!(written, "{line}"));
             }
             drop(written);
+            for message in server.traced(&outcome.log) {
+                drop(outbox.send(message));
+            }
             Ok(match outcome.flow {
                 Flow::Exit(_) => ControlFlow::Break(()),
                 Flow::Continue => ControlFlow::Continue(()),
@@ -562,7 +565,7 @@ where
                     false
                 },
                 Ok(Incoming::Notification { ref method, .. }) => method.as_ref() == "exit",
-                Ok(Incoming::Response) | Err(_) => false,
+                Ok(Incoming::Response { .. }) | Err(_) => false,
             };
             if exit {
                 // The verdict is sent before the hub can read `exit`, so it
