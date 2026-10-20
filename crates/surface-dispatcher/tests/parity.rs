@@ -514,9 +514,6 @@ enum Held
     /// A printing in the printer's own notation, which the grammar does not
     /// read back (#941).
     Notation,
-    /// A printing that, substituted for the declaration, does not lower back
-    /// to itself (#815).
-    Unread,
     /// A printing whose sugared and explicit spellings, each substituted
     /// for the declaration, lower to different core, where the sugared
     /// spelling writes no path composite (#808).
@@ -539,7 +536,6 @@ impl fmt::Display for Held
     {
         f.write_str(match *self {
             Self::Notation => "#941, written in the printer's own notation",
-            Self::Unread => "#815, the printing does not lower back",
             Self::Apart => "#808, the two spellings lower apart",
             Self::ApartComposite => "#803, the two spellings of a composite lower apart",
         })
@@ -1034,10 +1030,11 @@ struct Bodies
     compared: usize,
 }
 
-/// The body parity over `written`: each completed declaration whose
-/// printing reads back to itself in both forms, substituted for its forms in
-/// one form, is formatted into the other — and into its own — exactly as
-/// the printer spells it there, signature and body.
+/// The body parity over `written`: each completed declaration's printing,
+/// substituted for its forms in one form, reads back to itself in both forms
+/// — a printing that does not is a miss — and is formatted into the other,
+/// and into its own, exactly as the printer spells it there, signature and
+/// body.
 ///
 /// # Specification
 /// trivial.
@@ -1083,11 +1080,12 @@ fn bodies(
     let (read_back, unread): (Vec<&Printed>, Vec<&Printed>) = all
         .into_iter()
         .partition(|declaration| back.contains(&declaration.name));
-    holding.extend(
-        unread
-            .iter()
-            .map(|declaration| (Held::Unread, declaration.name.as_str())),
-    );
+    for declaration in unread {
+        found.misses.push(format!(
+            "{name}: `{}` does not lower back to itself",
+            declaration.name
+        ));
+    }
     let parted = apart(grammar, written, &read_back);
     let (held, parted): (Vec<&Printed>, Vec<&Printed>) = read_back
         .into_iter()
