@@ -50,12 +50,12 @@ pub fn points(count: PointCount) -> impl Iterator<Item = Point>
 pub fn subsets(count: PointCount) -> Vec<(Mask, Subshape)>
 {
     let width = u32::try_from(usize::from(count)).expect("a small carrier");
+    let mut inside: Vec<Point> = Vec::new();
     (0 .. 1_usize.checked_shl(width).expect("a small carrier"))
         .map(|bits| {
             let mask = Mask(bits);
-            let inside: Vec<Point> = points(count)
-                .filter(|point| mask.at(*point) == Membership::Inside)
-                .collect();
+            inside.clear();
+            inside.extend(points(count).filter(|point| mask.at(*point) == Membership::Inside));
             (
                 mask,
                 Subshape::new(count, &inside).expect("a subset of the carrier"),
