@@ -322,8 +322,9 @@ enum Placed
     /// former reads off the literal's digits, never a term, so the call
     /// the annotation heads answers (#298).
     Stratum,
-    /// The module a path selects from, `M` in `M.x` or `M.T`, and `M.N` in
-    /// `M.N.x`: a namespace, neither a term nor a type, so the path answers.
+    /// The module or the builtin namespace a path selects from, `M` in `M.x`
+    /// or `M.T`, `M.N` in `M.N.x`, and `int` in `int.div(c, 64)`: a
+    /// namespace, neither a term nor a type, so the path answers (#1170).
     Qualifier,
     /// A move of a run literal, its head, or the label it names: read by
     /// its shape, never resolved, so the run answers.
@@ -365,6 +366,16 @@ fn gated(
 ) -> Vec<(String, ByteSpan, Option<Placed>)>
 {
     let source: &str = tree.source().into();
+    // The namespaces the builtin primitives are written under, each proper
+    // prefix of a primitive's name, as the lowering seeds them.
+    let namespaces: BTreeSet<&str> = gandr_core_term::primitive::PRELUDE
+        .iter()
+        .flat_map(|primitive| {
+            let name: &'static str = primitive.name().into();
+            name.match_indices('.')
+                .filter_map(move |(at, _)| name.get(.. at))
+        })
+        .collect();
     let mut gated = Vec::new();
     let mut stack = vec![(
         tree.root(),
@@ -500,13 +511,16 @@ fn gated(
         let qualifier = parent.is_some_and(|(_, _, _, qualifying, _)| qualifying)
             && if melded {
                 def.label == "."
-                    && text
+                    && (text
                         .split('.')
                         .next()
                         .is_some_and(|head| head.trim_start().starts_with(char::is_uppercase))
+                        || namespaces.contains(text.trim()))
             }
             else {
-                def.label == "constructor" || def.label == "type_identifier"
+                def.label == "constructor"
+                    || def.label == "type_identifier"
+                    || (def.label == "identifier" && namespaces.contains(text))
             };
         let moved = match run {
             Run::Outside => false,
