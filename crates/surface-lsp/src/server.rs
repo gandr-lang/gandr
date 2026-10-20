@@ -103,6 +103,7 @@ use crate::proposal::ghosts;
 use crate::proposal::lenses;
 use crate::proposal::notes;
 use crate::protocol::Answer;
+use crate::protocol::CancelProgressParams;
 use crate::protocol::CompletionItem;
 use crate::protocol::ConfigurationParams;
 use crate::protocol::ContentChange;
@@ -129,7 +130,7 @@ use crate::protocol::PublishParams;
 use crate::protocol::RangeParams;
 use crate::protocol::ReferenceContext;
 use crate::protocol::ReferenceParams;
-use crate::protocol::RefreshesLenses;
+use crate::protocol::Refreshing;
 use crate::protocol::RegistrationParams;
 use crate::protocol::RenameParams;
 use crate::protocol::SelectionRangeParams;
@@ -139,6 +140,7 @@ use crate::protocol::Severity;
 use crate::protocol::ShowsProgress;
 use crate::protocol::StringValue;
 use crate::protocol::SymbolInformation;
+use crate::protocol::Unresolved;
 use crate::protocol::WatchedFilesParams;
 use crate::protocol::WatchesFiles;
 use crate::protocol::WorkTitle;
@@ -173,6 +175,7 @@ use crate::rpc::ErrorCode;
 use crate::rpc::Incoming;
 use crate::rpc::Method;
 use crate::rpc::Outgoing;
+use crate::rpc::Refreshed;
 use crate::rpc::Refreshes;
 use crate::rpc::RequestId;
 use crate::rpc::Withdrawn;
@@ -181,7 +184,7 @@ use crate::rpc::failure;
 use crate::rpc::progress_begun;
 use crate::rpc::progress_ended;
 use crate::rpc::publish;
-use crate::rpc::refresh_lenses;
+use crate::rpc::refresh;
 use crate::rpc::register;
 use crate::rpc::success;
 use crate::search::FOUND_HELD;
@@ -1244,8 +1247,9 @@ impl Workspace
             watching: WatchesFiles(false),
             progress: ShowsProgress(false),
             reported: 0_u64,
-            refreshing: RefreshesLenses(false),
+            refreshing: Refreshing::NONE,
             refreshed: Refreshes(0_u64),
+            cancelled: Vec::new(),
         };
         let answer = match classify(request) {
             Err(malformed) => malformed.response(),
@@ -1462,13 +1466,21 @@ pub struct Server
     /// How many pieces of work its progress was reported for; the next one's
     /// token is numbered after them.
     reported: u64,
-    /// Whether its client requests its code lenses again when asked, read at
+    /// Which answers its client requests again when asked, read at
     /// `initialize`.
-    refreshing: RefreshesLenses,
+    refreshing: Refreshing,
     /// How many times its client was asked to; the next request is numbered
     /// after them.
     refreshed: Refreshes,
+    /// The tokens of the work this connection reported progress for that its
+    /// client asked to cancel, in the order it asked.
+    cancelled: Vec<ProgressToken>,
 }
+
+/// Whether a client asked to cancel the work under a progress token.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Cancelled(pub bool);
 
 /// The style a connection hovers in until `initialize` says otherwise: the
 /// sugared form, in Unicode, in markdown.
@@ -1512,8 +1524,9 @@ impl Server
             watching: WatchesFiles(false),
             progress: ShowsProgress(false),
             reported: 0_u64,
-            refreshing: RefreshesLenses(false),
+            refreshing: Refreshing::NONE,
             refreshed: Refreshes(0_u64),
+            cancelled: Vec::new(),
         }
     }
 
@@ -1527,11 +1540,113 @@ impl Server
     #[inline]
     pub fn proposed_elsewhere(&mut self) -> Option<Outgoing>
     {
-        if self.phase != Phase::Running || self.refreshing == RefreshesLenses(false) {
-            return None;
+        (self.phase == Phase::Running && self.refreshing.lenses)
+            .then(|| self.asked(Refreshed::Lenses))
+    }
+
+    /// The requests asking this connection's client for its semantic tokens
+    /// and folding ranges again, once something other than a document's own
+    /// text changed what they answer: one for each its client requests again
+    /// when asked, none when the connection is not running. Every token and
+    /// fold this server answers is read off the document's own text, so
+    /// nothing in this crate calls it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: while running, a tokens request when the client refreshes its
+    ///   tokens, then a folds request when it refreshes its folds; nothing
+    ///   otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a client refreshing both, either and neither, and one
+    ///   not yet initialised, are asked exactly what they refresh.
+    /// - witness: `server::tests::a_refreshing_client_is_asked_for_its_tokens_and_folds_once_invalidated`
+    #[spec(ensures: |ret| ret.len() == if self.phase == Phase::Running {
+        usize::from(self.refreshing.tokens).saturating_add(usize::from(self.refreshing.folds))
+    } else {
+        0
+    })]
+    #[inline]
+    #[must_use]
+    pub fn invalidated_elsewhere(&mut self) -> Vec<Outgoing>
+    {
+        if self.phase != Phase::Running {
+            return Vec::new();
         }
+        let mut asked = Vec::new();
+        if self.refreshing.tokens {
+            asked.push(self.asked(Refreshed::Tokens));
+        }
+        if self.refreshing.folds {
+            asked.push(self.asked(Refreshed::Folds));
+        }
+        asked
+    }
+
+    /// The next request asking the client for `answer` again, counted.
+    ///
+    /// # Specification
+    /// trivial.
+    fn asked(
+        &mut self,
+        answer: Refreshed,
+    ) -> Outgoing
+    {
         self.refreshed = Refreshes(self.refreshed.0.saturating_add(1_u64));
-        Some(refresh_lenses(self.refreshed))
+        refresh(answer, self.refreshed)
+    }
+
+    /// Whether this connection's client asked to cancel the work under
+    /// `token`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn cancelled(
+        &self,
+        token: &ProgressToken,
+    ) -> Cancelled
+    {
+        Cancelled(self.cancelled.contains(token))
+    }
+
+    /// Record that the client asked to cancel the work under `token`, when
+    /// this connection reported progress under it. The work has ended by the
+    /// time the cancellation is read, since it runs within the handling of
+    /// the message that started it, so the record is all a cancellation does.
+    ///
+    /// # Specification
+    /// - requires: nothing; any token is admissible input.
+    /// - ensures: the token is recorded once when it is one this connection
+    ///   issued, `gandr/<peer>/<n>` for `n` from one to the pieces of work
+    ///   reported; nothing changes otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a token issued, the same again, one not yet issued
+    ///   and another connection's are recorded once, once, never and never.
+    /// - witness: `server::tests::a_cancelled_progress_is_recorded_against_its_token`
+    #[spec(
+        captures: count = self.cancelled.len(),
+        ensures: self.cancelled.len() == count || self.cancelled.len() == count.saturating_add(1),
+    )]
+    fn cancel(
+        &mut self,
+        token: ProgressToken,
+    )
+    {
+        let issued = token
+            .0
+            .strip_prefix(&format!("gandr/{}/", self.peer.0))
+            .and_then(|count| count.parse::<u64>().ok())
+            .is_some_and(|count| (1_u64 ..= self.reported).contains(&count));
+        if issued && !self.cancelled.contains(&token) {
+            self.cancelled.push(token);
+        }
     }
 
     /// How long a document goes without a change before the diagnostics held
@@ -2222,6 +2337,7 @@ impl Server
     /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
     /// - witness: `server::tests::formatting_answers_the_edits_that_lay_a_document_out`
     /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
+    /// - witness: `server::tests::a_listed_item_resolves_as_it_came`
     #[spec(
         captures: [phase = self.phase, initial = initial_settings(&params), markup = initial_markup(&params),
             linked = initial_links(&params), offsets = initial_offsets(&params), watching = initial_watching(&params),
@@ -2262,6 +2378,12 @@ impl Server
             (Phase::Running, "completionItem/resolve") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Resolved(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
+            (Phase::Running, "codeAction/resolve" | "codeLens/resolve" | "documentLink/resolve" | "workspaceSymbol/resolve") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Unchanged(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
@@ -2428,6 +2550,24 @@ impl Server
             (Phase::Running, "completionItem/resolve") => {
                 match serde_json::from_value::<CompletionItem>(params) {
                     Ok(item) => success(id, workspace.resolve_completion(item, self.peer)),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (
+                Phase::Running,
+                name @ ("codeAction/resolve"
+                | "codeLens/resolve"
+                | "documentLink/resolve"
+                | "workspaceSymbol/resolve"),
+            ) => {
+                let kind = match name {
+                    "codeAction/resolve" => Unresolved::Action,
+                    "codeLens/resolve" => Unresolved::Lens,
+                    "documentLink/resolve" => Unresolved::Link,
+                    _ => Unresolved::Symbol,
+                };
+                match kind.read(&params) {
+                    Ok(()) => success(id, Answer::Unchanged(params)),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
@@ -2975,6 +3115,12 @@ impl Server
                 workspace.rooted(self.peer, &event.added());
                 Outcome::quiet()
             },
+            (Phase::Running, "window/workDoneProgress/cancel") => {
+                if let Ok(CancelProgressParams { token }) = serde_json::from_value(params) {
+                    self.cancel(token);
+                }
+                Outcome::quiet()
+            },
             (Phase::Waiting | Phase::Running | Phase::ShuttingDown, _) => Outcome::quiet(),
         }
     }
@@ -3061,7 +3207,7 @@ impl Workspace
         Answer::Initialize(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
-            | Answer::Imports(_) | Answer::Mirrored(_) => false,
+            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) => false,
     })]
     fn tokens(
         &self,
@@ -3116,7 +3262,7 @@ impl Workspace
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
-            | Answer::Imports(_) | Answer::Mirrored(_) => false,
+            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) => false,
     })]
     fn inline(
         &self,
@@ -4188,15 +4334,15 @@ fn initial_progress(params: &Value) -> ShowsProgress
         .unwrap_or_default()
 }
 
-/// Whether the client `initialize` names in `params` requests its code
-/// lenses again when asked; not when the parameters do not read.
+/// Which answers the client `initialize` names in `params` requests again
+/// when asked; none when the parameters do not read.
 ///
 /// # Specification
 /// trivial.
-fn initial_refreshing(params: &Value) -> RefreshesLenses
+fn initial_refreshing(params: &Value) -> Refreshing
 {
     InitializeParams::deserialize(params)
-        .map(|params| params.refreshes_lenses())
+        .map(|params| params.refreshing())
         .unwrap_or_default()
 }
 
@@ -4509,6 +4655,7 @@ mod tests
     use gandr_surface_dispatcher::named_path;
     use serde_json::Value;
 
+    use super::Cancelled;
     use super::Flow;
     use super::Outcome;
     use super::Peer;
@@ -4525,6 +4672,7 @@ mod tests
     use crate::protocol::ContentChange;
     use crate::protocol::DocumentUri;
     use crate::protocol::Linked;
+    use crate::protocol::ProgressToken;
     use crate::rpc::Classified;
     use crate::rpc::Outgoing;
     use crate::server::Logged;
@@ -4775,13 +4923,13 @@ mod tests
                         "typeDefinitionProvider":true,
                         "documentFormattingProvider":true,
                         "documentRangeFormattingProvider":true,
-                        "codeLensProvider":{"resolveProvider":false},
-                        "codeActionProvider":true,
-                        "workspaceSymbolProvider":true,
+                        "codeLensProvider":{"resolveProvider":true},
+                        "codeActionProvider":{"resolveProvider":true},
+                        "workspaceSymbolProvider":{"resolveProvider":true},
                         "documentHighlightProvider":true,
                         "referencesProvider":true,
                         "renameProvider":{"prepareProvider":true},
-                        "documentLinkProvider":{"resolveProvider":false},
+                        "documentLinkProvider":{"resolveProvider":true},
                         "linkedEditingRangeProvider":true,
                         "workspace":{"workspaceFolders":{"supported":true,"changeNotifications":true}}},
                     "serverInfo":{"name":"gandr","version":""#,
@@ -5561,6 +5709,179 @@ mod tests
             None,
             "nor is one not yet initialised"
         );
+    }
+
+    #[test]
+    fn a_refreshing_client_is_asked_for_its_tokens_and_folds_once_invalidated()
+    {
+        let started = |workspace: &str| {
+            let mut server = Connected::default();
+            let initialize = format!(
+                r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
+                {{"workspace":{workspace}}}}}}}"#
+            );
+            let _answered = send(&mut server, Json(&initialize));
+            server
+        };
+        let asked = |method: &str, number: u32| serde_json::json!({"jsonrpc": "2.0", "id": format!("{method}/{number}"), "method": method});
+        let invalidated = |server: &mut Connected| {
+            serde_json::to_value(server.server.invalidated_elsewhere())
+                .expect("the requests encode")
+        };
+        let tokens = "workspace/semanticTokens/refresh";
+        let folds = "workspace/foldingRange/refresh";
+        let mut every = started(
+            r#"{"codeLens":{"refreshSupport":true},"semanticTokens":{"refreshSupport":true},
+                "foldingRange":{"refreshSupport":true}}"#,
+        );
+        assert_eq!(
+            invalidated(&mut every),
+            serde_json::json!([asked(tokens, 1), asked(folds, 2)]),
+            "a client refreshing both is asked for its tokens, then its folds"
+        );
+        assert_eq!(
+            serde_json::to_value(every.server.proposed_elsewhere()).expect("the request encodes"),
+            asked("workspace/codeLens/refresh", 3),
+            "every refresh is counted on the one connection"
+        );
+        assert_eq!(
+            invalidated(&mut started(
+                r#"{"semanticTokens":{"refreshSupport":true}}"#
+            )),
+            serde_json::json!([asked(tokens, 1)]),
+            "one refreshing its tokens alone is asked for those"
+        );
+        assert_eq!(
+            invalidated(&mut started(r#"{"foldingRange":{"refreshSupport":true}}"#)),
+            serde_json::json!([asked(folds, 1)]),
+            "one refreshing its folds alone is asked for those"
+        );
+        assert_eq!(
+            invalidated(&mut started(r#"{"codeLens":{"refreshSupport":true}}"#)),
+            serde_json::json!([]),
+            "one refreshing neither is asked nothing"
+        );
+        assert_eq!(
+            invalidated(&mut Connected::default()),
+            serde_json::json!([]),
+            "nor is one not yet initialised"
+        );
+    }
+
+    #[test]
+    fn a_cancelled_progress_is_recorded_against_its_token()
+    {
+        let mut server = Connected::default();
+        let _answered = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":
+                    {"window":{"workDoneProgress":true}}}}"#,
+            ),
+        );
+        let open = Body::from(
+            br#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                {"uri":"file:///tmp/progress.gandr","languageId":"gandr","version":1,
+                 "text":"def one : Integer ;\ndef one = 1 ;\n"}}}"#
+                .to_vec(),
+        );
+        let reported = server
+            .server
+            .reported(&server.workspace, &crate::rpc::classify(&open));
+        assert_eq!(
+            reported.end.len(),
+            1,
+            "the open is reported under `gandr/0/1`"
+        );
+        let token = |name: &str| ProgressToken(String::from(name));
+        let cancel = |server: &mut Connected, name: &str| {
+            let message = serde_json::json!({"jsonrpc": "2.0", "method": "window/workDoneProgress/cancel",
+                "params": {"token": name}});
+            send(server, Json(&message.to_string()))
+        };
+        assert_eq!(
+            server.server.cancelled(&token("gandr/0/1")),
+            Cancelled(false),
+            "nothing is cancelled before the client asks"
+        );
+        assert_eq!(
+            cancel(&mut server, "gandr/0/1"),
+            serde_json::json!([]),
+            "a cancellation is a notification, answered with nothing"
+        );
+        assert_eq!(
+            server.server.cancelled(&token("gandr/0/1")),
+            Cancelled(true),
+            "the work it names is recorded as cancelled"
+        );
+        let _again = cancel(&mut server, "gandr/0/1");
+        let _unissued = cancel(&mut server, "gandr/0/2");
+        let _elsewhere = cancel(&mut server, "gandr/1/1");
+        let _unread = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"window/workDoneProgress/cancel","params":{"token":7}}"#,
+            ),
+        );
+        assert_eq!(
+            server.server.cancelled,
+            [token("gandr/0/1")],
+            "the same token again, one not yet issued, another connection's and one that does not \
+             read record nothing more"
+        );
+    }
+
+    #[test]
+    fn a_listed_item_resolves_as_it_came()
+    {
+        let mut server = initialized();
+        let resolve = |server: &mut Connected, method: &str, item: &Value| {
+            let request = serde_json::json!({"jsonrpc": "2.0", "id": 4_i32, "method": method, "params": item});
+            send(server, Json(&request.to_string()))
+        };
+        let range = serde_json::json!({"start": {"line": 0_i32, "character": 0_i32},
+            "end": {"line": 0_i32, "character": 3_i32}});
+        for (method, item) in [
+            (
+                "codeAction/resolve",
+                serde_json::json!({"title": "Fill", "kind": "quickfix", "isPreferred": true,
+                    "edit": {"changes": {"file:///tmp/a.gandr": [{"range": range, "newText": "1"}]}},
+                    "data": {"kept": 2_i32}}),
+            ),
+            (
+                "codeLens/resolve",
+                serde_json::json!({"range": range, "command": {"title": "✓ checks", "command": ""}}),
+            ),
+            (
+                "documentLink/resolve",
+                serde_json::json!({"range": range, "target": "file:///tmp/base.gandr",
+                    "tooltip": "base"}),
+            ),
+            (
+                "workspaceSymbol/resolve",
+                serde_json::json!({"name": "Succ", "kind": 9_i32,
+                    "location": {"uri": "file:///tmp/base.gandr", "range": range}}),
+            ),
+        ] {
+            assert_eq!(
+                resolve(&mut server, method, &item),
+                serde_json::json!([{"jsonrpc": "2.0", "id": 4_i32, "result": item}]),
+                "{method}: the item as it came, every field the client sent kept"
+            );
+        }
+        for method in [
+            "codeAction/resolve",
+            "codeLens/resolve",
+            "documentLink/resolve",
+            "workspaceSymbol/resolve",
+        ] {
+            assert_eq!(
+                resolve(&mut server, method, &serde_json::json!({"kind": 9_i32}))
+                    .pointer("/0/error/code"),
+                Some(&serde_json::json!(-32_602_i32)),
+                "{method}: an item without what its kind requires is refused"
+            );
+        }
     }
 
     #[test]

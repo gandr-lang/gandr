@@ -116,17 +116,17 @@
 //! | ------- | ------- | ----- |
 //! | lifecycle | `initialize`, `initialized`, `shutdown`, `exit` | served |
 //! | cancellation | `$/cancelRequest` | served: a request is answered `RequestCancelled` when its cancellation was read before it was handled, and `ContentModified` when a change of the document it reads was, without being run |
-//! | progress | `window/workDoneProgress/create`, `$/progress` | served: to a client that declares `window.workDoneProgress`, an open begins `Checking` on the document's file name and a change of files on disk that rechecks open copies begins `Rechecking` on how many, under a token of its own, ended once the admissions ran; none is cancellable, so `window/workDoneProgress/cancel` is never needed |
+//! | progress | `window/workDoneProgress/create`, `$/progress`, `window/workDoneProgress/cancel` | served: to a client that declares `window.workDoneProgress`, an open begins `Checking` on the document's file name and a change of files on disk that rechecks open copies begins `Rechecking` on how many, under a token of its own, ended once the admissions ran; none is cancellable, and a cancellation naming a token the connection issued is recorded against it, the work it names having ended within the message that started it |
 //! | document synchronisation | `textDocument/didOpen`, `didChange` (incremental), `didClose` | served: an editor's copy shadows the file at its path for every import on every connection, and an open, change or close of it rechecks and republishes every open copy whose closure names it, on each connection holding one, as the `server` module's `Workspace` states |
 //! | save notifications | `textDocument/willSave`, `willSaveWaitUntil`, `didSave` | declined: every change is judged as it arrives, so a save changes nothing the server holds |
 //! | notebook synchronisation | `notebookDocument/*` | declined: gandr has no notebook format |
 //! | published diagnostics | `textDocument/publishDiagnostics` | served |
 //! | pulled diagnostics | `textDocument/diagnostic`, `workspace/diagnostic` | declined: every synchronisation publishes; reverses for a client that reads only pulled diagnostics |
-//! | semantic tokens | `textDocument/semanticTokens/full`, `range` | served |
+//! | semantic tokens | `textDocument/semanticTokens/full`, `range`, `workspace/semanticTokens/refresh` | served; the refresh is asked of a client that declares it once tokens change from outside the document's text, which no token this server answers does |
 //! | semantic token deltas | `textDocument/semanticTokens/full/delta` | declined: a full answer per request; reverses when a measurement shows the transfer matters |
 //! | inline completion | `textDocument/inlineCompletion` | served |
 //! | document symbols | `textDocument/documentSymbol` | served |
-//! | folding ranges | `textDocument/foldingRange` | served |
+//! | folding ranges | `textDocument/foldingRange`, `workspace/foldingRange/refresh` | served; the refresh as for semantic tokens |
 //! | selection ranges | `textDocument/selectionRange` | served |
 //! | hover | `textDocument/hover` | served |
 //! | inlay hints | `textDocument/inlayHint` | blocked: a face that reads each binder's type off the hover's type table, which is built on demand rather than per revision |
@@ -142,13 +142,13 @@
 //! | type hierarchy | `textDocument/prepareTypeHierarchy`, `typeHierarchy/*` | declined: the core has no subtyping to arrange types by |
 //! | formatting | `textDocument/formatting`, `rangeFormatting` | served |
 //! | on-type formatting | `textDocument/onTypeFormatting` | declined: a form's layout is decided once the form is whole, which range formatting at the cursor already serves on request |
-//! | code actions, code lenses | `textDocument/codeAction`, `codeLens`, `workspace/codeLens/refresh` | served for model proposals: a quick fix applying each checked fill, a lens counting a range's checked fills; once a fill is kept, the editor holding the document is asked for its lenses again when its client says it refreshes them |
+//! | code actions, code lenses | `textDocument/codeAction`, `codeAction/resolve`, `codeLens`, `codeLens/resolve`, `workspace/codeLens/refresh` | served for model proposals: a quick fix applying each checked fill, a lens counting a range's checked fills, each whole in its answer and resolved as it came; once a fill is kept, the editor holding the document is asked for its lenses again when its client says it refreshes them |
 //! | commands | `workspace/executeCommand` | blocked: no command the pipeline produces |
-//! | document links | `textDocument/documentLink` | served: each path import's address, between its quotes, linked to the file the dispatcher reads for it, read off the document's held reading, as the `reading` module states; a scheme import links nowhere |
+//! | document links | `textDocument/documentLink`, `documentLink/resolve` | served: each path import's address, between its quotes, linked to the file the dispatcher reads for it, read off the document's held reading, as the `reading` module states, and resolved as it came; a scheme import links nowhere |
 //! | document colours | `textDocument/documentColor`, `colorPresentation` | declined: gandr has no colour literals |
 //! | inline values | `textDocument/inlineValue` | declined: they serve a debugger, and gandr has no debug adapter |
 //! | monikers | `textDocument/moniker` | declined: no cross-repository index reads them |
-//! | workspace symbols | `workspace/symbol` | served: every name the open documents' import closures declare whose characters the query holds in order, without case, at most 128, as the `search` module states; a source no open document's closure reads is not searched |
+//! | workspace symbols | `workspace/symbol`, `workspaceSymbol/resolve` | served: every name the open documents' import closures declare whose characters the query holds in order, without case, at most 128, as the `search` module states, each with its location and resolved as it came; a source no open document's closure reads is not searched |
 //! | file watching | `client/registerCapability`, `workspace/didChangeWatchedFiles` | served: a client that registers watchers dynamically is asked at `initialized` to watch `**/*.gandr`; on the hub, a connection whose client does not is watched by the hub itself, over the files its copies' closures name, as the `disk` module states; a changed file rechecks and republishes every open copy whose closure named it at its last judgement, a missing import written included, as the `server` module states; a change on disk to a file an editor holds is not read, its copy standing for it |
 //! | workspace folders | `workspace/didChangeWorkspaceFolders` | served: the folders a client opens, at `initialize` and as it opens and closes them, are the path table's roots while a connection holds them open, as the `files` module states |
 //! | file operations | `workspace/willRenameFiles`, `willCreateFiles` and the other file operations | blocked: a file renamed rewrites the imports naming it, which the path table's importers find, but the server answers no file operation yet |

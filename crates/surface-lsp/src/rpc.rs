@@ -33,6 +33,14 @@ const REGISTER_CAPABILITY: &str = "client/registerCapability";
 /// The method a server asks the client to request its code lenses again with.
 const REFRESH_LENSES: &str = "workspace/codeLens/refresh";
 
+/// The method a server asks the client to request its semantic tokens again
+/// with.
+const REFRESH_TOKENS: &str = "workspace/semanticTokens/refresh";
+
+/// The method a server asks the client to request its folding ranges again
+/// with.
+const REFRESH_FOLDS: &str = "workspace/foldingRange/refresh";
+
 /// The method a server asks the client to show progress under a token with.
 const CREATE_PROGRESS: &str = "window/workDoneProgress/create";
 
@@ -574,12 +582,24 @@ pub fn register(params: RegistrationParams) -> Outgoing
     }
 }
 
-/// How many times a connection asked its client for its code lenses again.
+/// How many times a connection asked its client for an answer again.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Refreshes(pub u64);
 
-/// The request asking the client to request every code lens again, the
+/// An answer a client requests again when the server asks.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Refreshed
+{
+    /// Its code lenses.
+    Lenses,
+    /// Its semantic tokens.
+    Tokens,
+    /// Its folding ranges.
+    Folds,
+}
+
+/// The request asking the client to request every `answer` again, the
 /// `asked`th this connection sent, its identifier the method's own name and
 /// that count.
 ///
@@ -587,12 +607,20 @@ pub struct Refreshes(pub u64);
 /// trivial.
 #[inline]
 #[must_use]
-pub fn refresh_lenses(Refreshes(asked): Refreshes) -> Outgoing
+pub fn refresh(
+    answer: Refreshed,
+    Refreshes(asked): Refreshes,
+) -> Outgoing
 {
+    let method = match answer {
+        Refreshed::Lenses => REFRESH_LENSES,
+        Refreshed::Tokens => REFRESH_TOKENS,
+        Refreshed::Folds => REFRESH_FOLDS,
+    };
     Outgoing::Request {
         jsonrpc: VERSION,
-        id: RequestId(Value::from(alloc::format!("{REFRESH_LENSES}/{asked}"))),
-        method: REFRESH_LENSES,
+        id: RequestId(Value::from(alloc::format!("{method}/{asked}"))),
+        method,
         params: None,
     }
 }

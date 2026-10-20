@@ -521,23 +521,31 @@ impl InitializeParams
         )
     }
 
-    /// Whether this client requests its code lenses again when asked to:
-    /// when it declares `workspace.codeLens.refreshSupport`.
+    /// Which answers this client requests again when asked to: each it
+    /// declares `refreshSupport` for under `workspace.codeLens`,
+    /// `workspace.semanticTokens` and `workspace.foldingRange`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn refreshes_lenses(&self) -> RefreshesLenses
+    pub fn refreshing(&self) -> Refreshing
     {
-        RefreshesLenses(
-            self.capabilities
-                .as_ref()
-                .and_then(|capabilities| capabilities.workspace)
-                .and_then(|workspace| workspace.code_lens)
-                .and_then(|lenses| lenses.refresh_support)
-                .unwrap_or(false),
-        )
+        let workspace = self
+            .capabilities
+            .as_ref()
+            .and_then(|capabilities| capabilities.workspace)
+            .unwrap_or_default();
+        let refreshes = |answer: Option<RefreshCapabilities>| {
+            answer
+                .and_then(|answer| answer.refresh_support)
+                .unwrap_or(false)
+        };
+        Refreshing {
+            lenses: refreshes(workspace.code_lens),
+            tokens: refreshes(workspace.semantic_tokens),
+            folds: refreshes(workspace.folding_range),
+        }
     }
 }
 
@@ -561,10 +569,27 @@ pub struct WatchesFiles(pub bool);
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ShowsProgress(pub bool);
 
-/// Whether a client requests its code lenses again when the server asks.
-#[repr(transparent)]
+/// Which answers a client requests again when the server asks.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct RefreshesLenses(pub bool);
+pub struct Refreshing
+{
+    /// Its code lenses.
+    pub lenses: bool,
+    /// Its semantic tokens.
+    pub tokens: bool,
+    /// Its folding ranges.
+    pub folds: bool,
+}
+
+impl Refreshing
+{
+    /// A client that requests nothing again.
+    pub const NONE: Self = Self {
+        lenses: false,
+        tokens: false,
+        folds: false,
+    };
+}
 
 /// The client capabilities the server reads.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
@@ -608,6 +633,12 @@ pub struct WorkspaceCapabilities
     /// `workspace.codeLens`.
     #[serde(default)]
     pub code_lens: Option<RefreshCapabilities>,
+    /// `workspace.semanticTokens`.
+    #[serde(default)]
+    pub semantic_tokens: Option<RefreshCapabilities>,
+    /// `workspace.foldingRange`.
+    #[serde(default)]
+    pub folding_range: Option<RefreshCapabilities>,
 }
 
 /// What the client offers of requesting a feature's answers again.
@@ -728,7 +759,7 @@ pub struct FileEvent
 
 /// The token one piece of work's progress is reported under.
 #[repr(transparent)]
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct ProgressToken(pub String);
 
@@ -737,6 +768,16 @@ pub struct ProgressToken(pub String);
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[repr(transparent)]
 pub struct CreateProgressParams
+{
+    /// The token.
+    pub token: ProgressToken,
+}
+
+/// The parameters of `window/workDoneProgress/cancel`: the token of the work
+/// the client asks to cancel.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct CancelProgressParams
 {
     /// The token.
     pub token: ProgressToken,
@@ -1198,10 +1239,10 @@ impl InitializeResult
     ///   folding ranges and selection ranges; hover; signature help, asked for
     ///   as a call's `(` or a `,` is typed and again at a `)`; definition and
     ///   type definition; formatting over the whole document and over a range;
-    ///   code lenses, resolved in the answer, and code actions; document links,
-    ///   resolved in the answer; linked editing; workspace folders, with a
-    ///   notification as they change; the server named `gandr` at this crate's
-    ///   version.
+    ///   code lenses, code actions, document links and workspace symbols, each
+    ///   whole in its answer and resolved by a second request as it came;
+    ///   linked editing; workspace folders, with a notification as they change;
+    ///   the server named `gandr` at this crate's version.
     /// - provides: the one capabilities answer, written by `initialize` and by
     ///   the driver's `gandr lsp --capabilities` alike.
     /// - fails: never.
@@ -1230,16 +1271,16 @@ impl InitializeResult
             && ret.capabilities.type_definition_provider.0
             && ret.capabilities.document_formatting_provider.0
             && ret.capabilities.document_range_formatting_provider.0
-            && ret.capabilities.code_action_provider.0
-            && ret.capabilities.workspace_symbol_provider.0
+            && ret.capabilities.code_action_provider.resolve_provider
+            && ret.capabilities.workspace_symbol_provider.resolve_provider
             && ret.capabilities.document_highlight_provider.0
             && ret.capabilities.references_provider.0
             && ret.capabilities.rename_provider.prepare_provider
-            && !ret.capabilities.document_link_provider.resolve_provider
+            && ret.capabilities.document_link_provider.resolve_provider
             && ret.capabilities.workspace.workspace_folders.supported
             && ret.capabilities.workspace.workspace_folders.change_notifications
             && ret.capabilities.linked_editing_range_provider.0
-            && !ret.capabilities.code_lens_provider.resolve_provider
+            && ret.capabilities.code_lens_provider.resolve_provider
             && ret.capabilities.completion_provider.resolve_provider)]
     #[inline]
     #[must_use]
@@ -1260,7 +1301,7 @@ impl InitializeResult
                     full: true,
                     range: true,
                 },
-                completion_provider: CompletionOptions {
+                completion_provider: ResolveOptions {
                     resolve_provider: true,
                 },
                 inline_completion_provider: Provider::ANSWERED,
@@ -1276,18 +1317,22 @@ impl InitializeResult
                 type_definition_provider: Provider::ANSWERED,
                 document_formatting_provider: Provider::ANSWERED,
                 document_range_formatting_provider: Provider::ANSWERED,
-                code_lens_provider: CodeLensOptions {
-                    resolve_provider: false,
+                code_lens_provider: ResolveOptions {
+                    resolve_provider: true,
                 },
-                code_action_provider: Provider::ANSWERED,
-                workspace_symbol_provider: Provider::ANSWERED,
+                code_action_provider: ResolveOptions {
+                    resolve_provider: true,
+                },
+                workspace_symbol_provider: ResolveOptions {
+                    resolve_provider: true,
+                },
                 document_highlight_provider: Provider::ANSWERED,
                 references_provider: Provider::ANSWERED,
                 rename_provider: RenameOptions {
                     prepare_provider: true,
                 },
-                document_link_provider: DocumentLinkOptions {
-                    resolve_provider: false,
+                document_link_provider: ResolveOptions {
+                    resolve_provider: true,
                 },
                 linked_editing_range_provider: Provider::ANSWERED,
                 workspace: WorkspaceOptions {
@@ -1317,7 +1362,7 @@ pub struct ServerCapabilities
     /// The semantic tokens the server answers.
     pub semantic_tokens_provider: SemanticTokensProvider,
     /// Completion is answered, each item resolved by a second request.
-    pub completion_provider: CompletionOptions,
+    pub completion_provider: ResolveOptions,
     /// Inline completion is answered.
     pub inline_completion_provider: Provider,
     /// Document symbols are answered.
@@ -1341,13 +1386,14 @@ pub struct ServerCapabilities
     pub document_formatting_provider: Provider,
     /// Formatting a range is answered.
     pub document_range_formatting_provider: Provider,
-    /// Code lenses are answered, each resolved in the answer.
-    pub code_lens_provider: CodeLensOptions,
-    /// Code actions are answered.
-    pub code_action_provider: Provider,
+    /// Code lenses are answered, each whole, and resolved as it came.
+    pub code_lens_provider: ResolveOptions,
+    /// Code actions are answered, each with its edit, and resolved as it
+    /// came.
+    pub code_action_provider: ResolveOptions,
     /// Workspace symbols are answered: the names the open documents' import
-    /// closures declare.
-    pub workspace_symbol_provider: Provider,
+    /// closures declare, each with its location, and resolved as it came.
+    pub workspace_symbol_provider: ResolveOptions,
     /// Document highlights are answered: the declaring name and the uses of
     /// the name at a position, within the document.
     pub document_highlight_provider: Provider,
@@ -1357,9 +1403,9 @@ pub struct ServerCapabilities
     /// Renaming is answered, a rename prepared first: the name at a position,
     /// its declaring name and its uses in every source importing it.
     pub rename_provider: RenameOptions,
-    /// Document links are answered, each resolved in the answer: every path
-    /// import's address, linked to the file it names.
-    pub document_link_provider: DocumentLinkOptions,
+    /// Document links are answered, each with its target, and resolved as it
+    /// came: every path import's address, linked to the file it names.
+    pub document_link_provider: ResolveOptions,
     /// Linked editing is answered: a binder local to a declaration and its
     /// uses, an edit of one applying to all.
     pub linked_editing_range_provider: Provider,
@@ -1377,14 +1423,67 @@ pub struct RenameOptions
     pub prepare_provider: bool,
 }
 
-/// The document-link provider, as advertised.
+/// A provider whose answers a second request resolves, as advertised.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[repr(transparent)]
-pub struct DocumentLinkOptions
+pub struct ResolveOptions
 {
-    /// Whether a link's target is resolved by a second request: never.
+    /// Whether an answer is resolved by a second request.
     pub resolve_provider: bool,
+}
+
+/// An item a second request resolves as it came: what the first answered
+/// whole.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Unresolved
+{
+    /// A code action, its edit carried by the listing.
+    Action,
+    /// A code lens, its command carried by the listing.
+    Lens,
+    /// A document link, its target carried by the listing.
+    Link,
+    /// A workspace symbol, its location carried by the listing.
+    Symbol,
+}
+
+impl Unresolved
+{
+    /// Whether `item` holds what the protocol requires of this kind of item:
+    /// a code action's title, a code lens's or a document link's range, a
+    /// workspace symbol's name and location.
+    ///
+    /// # Specification
+    /// - requires: nothing; any value is admissible input.
+    /// - ensures: `Ok` exactly when `item` is an object holding each field the
+    ///   kind requires, a title and a name as strings and a range as a range.
+    /// - fails: the first field missing or of another shape.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each kind's item as listed reads; one without its
+    ///   required field, and one of another kind, are refused.
+    /// - witness: `protocol::tests::a_resolved_item_needs_what_its_kind_requires`
+    #[spec(ensures: |ret| ret.is_err() || item.is_object())]
+    pub fn read(
+        self,
+        item: &Value,
+    ) -> Result<(), serde_json::Error>
+    {
+        let field = |name: &'static str| {
+            item.get(name)
+                .ok_or_else(|| <serde_json::Error as serde::de::Error>::missing_field(name))
+        };
+        match self {
+            Self::Action => String::deserialize(field("title")?).map(drop),
+            Self::Lens | Self::Link => Range::deserialize(field("range")?).map(drop),
+            Self::Symbol => {
+                String::deserialize(field("name")?)?;
+                field("location").map(drop)
+            },
+        }
+    }
 }
 
 /// The workspace features, as advertised.
@@ -1493,6 +1592,10 @@ pub enum Answer
     /// name's head and documentation; boxed, one item outweighing a list's
     /// handle.
     Resolved(Box<CompletionItem>),
+    /// What a code action's, code lens's, document link's or workspace
+    /// symbol's resolution answers: the item as it came, every field the
+    /// client sent kept.
+    Unchanged(Value),
     /// What a signature-help request answers at a position of an open
     /// document: the declared head of the call the position stands in.
     Signatures(SignatureHelp),
@@ -1657,17 +1760,6 @@ impl CompletionItemKind
     pub const KEYWORD: Self = Self(14);
     /// A binder in scope.
     pub const VARIABLE: Self = Self(6);
-}
-
-/// The completion provider, as advertised.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-#[repr(transparent)]
-pub struct CompletionOptions
-{
-    /// Whether an item is resolved by a second request: always, a declared
-    /// name's head and documentation read then.
-    pub resolve_provider: bool,
 }
 
 /// The characters that ask for signature help as they are typed: the `(` that
@@ -1992,16 +2084,6 @@ pub struct PrepareRename
     pub placeholder: String,
 }
 
-/// The code-lens provider, as advertised.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-#[repr(transparent)]
-pub struct CodeLensOptions
-{
-    /// Whether a lens is resolved by a second request: never.
-    pub resolve_provider: bool,
-}
-
 /// Text in a markup the client renders.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct MarkupContent
@@ -2221,6 +2303,7 @@ mod tests
     use super::DocumentUri;
     use super::InitializeParams;
     use super::SymbolKind;
+    use super::Unresolved;
     use crate::position::Range;
 
     #[test]
@@ -2343,6 +2426,39 @@ mod tests
                 .and_then(serde_json::Value::as_str),
             Some("inner"),
             "an earlier holder holds its symbol"
+        );
+    }
+
+    #[test]
+    fn a_resolved_item_needs_what_its_kind_requires()
+    {
+        let range = serde_json::json!({"start": {"line": 0_u8, "character": 0_u8},
+            "end": {"line": 0_u8, "character": 3_u8}});
+        let action = serde_json::json!({"title": "Fill", "kind": "quickfix", "edit": {"changes": {}},
+            "isPreferred": true});
+        let lens = serde_json::json!({"range": range, "command": {"title": "✓", "command": ""}});
+        let link = serde_json::json!({"range": range, "target": "file:///tmp/base.gandr"});
+        let symbol = serde_json::json!({"name": "Succ", "kind": 9_u8,
+            "location": {"uri": "file:///tmp/base.gandr"}});
+        let reads = |kind: Unresolved, item: &serde_json::Value| kind.read(item).is_ok();
+        assert!(
+            reads(Unresolved::Action, &action)
+                && reads(Unresolved::Lens, &lens)
+                && reads(Unresolved::Link, &link)
+                && reads(Unresolved::Symbol, &symbol),
+            "each kind's item as listed reads, a field it does not require kept aside"
+        );
+        assert!(
+            !reads(Unresolved::Action, &serde_json::json!({"kind": "quickfix"}))
+                && !reads(Unresolved::Lens, &serde_json::json!({"command": {}}))
+                && !reads(Unresolved::Link, &serde_json::json!({"range": "0:0"}))
+                && !reads(Unresolved::Symbol, &serde_json::json!({"name": "Succ"}))
+                && !reads(Unresolved::Symbol, &serde_json::json!([])),
+            "an item without a required field, or with one of another shape, is refused"
+        );
+        assert!(
+            !reads(Unresolved::Action, &lens) && !reads(Unresolved::Lens, &action),
+            "an item of another kind is refused"
         );
     }
 }
