@@ -915,6 +915,20 @@ impl<'source> Lowering<'source>
     {
         self.lowered
     }
+
+    /// The lowering's refusal of the source as a whole, when it refused it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn refused(&self) -> Option<&LoweringRefusal<'source>>
+    {
+        match self.lowered {
+            Lowered::Refused(ref refusal) => Some(refusal),
+            Lowered::Module { .. } => None,
+        }
+    }
 }
 
 /// Parse and lower one source: the first half of the composition.

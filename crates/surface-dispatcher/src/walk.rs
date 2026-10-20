@@ -76,6 +76,7 @@
 //! threads.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::collections::btree_map;
 use core::cell::OnceCell;
 use core::cmp::Reverse;
@@ -587,11 +588,15 @@ impl Walk
             },
         };
         let grant = &self.grant;
-        let grouped = group(grammar, given, Reading::ImportForms);
+        let grouped = group(grammar, given, Reading::ImportForms, &BTreeSet::new());
         self.report.parsed_mut().absorb(grouped.parsed);
         // Each component its parse did not confirm, grouped again once its
         // turn comes.
         let regrouped: Vec<OnceCell<Grouped>> =
+            grouped.components.iter().map(|_| OnceCell::new()).collect();
+        // Each component the lowering refused as a whole within one of its
+        // sources, grouped again with that source set apart.
+        let parted: Vec<OnceCell<Grouped>> =
             grouped.components.iter().map(|_| OnceCell::new()).collect();
         // How many steps still to come stand at each source of each
         // component: its compositions are held until the last is handed over.
@@ -706,15 +711,37 @@ impl Walk
                             self.report.lowerings_mut().absorb(job.lowerings);
                             self.report.parsed_mut().absorb(job.parsed);
                             let held = if let Some(lowering) = job.lowering {
-                                judge(
-                                    &mut self.report,
-                                    (root.corpus_root(), grant),
-                                    component,
-                                    lowering,
-                                )
-                                .into_iter()
-                                .map(Some)
-                                .collect()
+                                let refused = lowering
+                                    .as_ref()
+                                    .ok()
+                                    .and_then(|lowering| refused_member(lowering, component));
+                                if let Some(first) = refused {
+                                    let Some(again) = parted.get(placed.component).map(|cell| {
+                                        cell.get_or_init(|| {
+                                            part(grammar, &mut self.report, component, first)
+                                        })
+                                    })
+                                    else {
+                                        continue;
+                                    };
+                                    judge_regrouped(
+                                        &mut self.report,
+                                        grammar,
+                                        (root.corpus_root(), grant),
+                                        again,
+                                    )
+                                }
+                                else {
+                                    judge(
+                                        &mut self.report,
+                                        (root.corpus_root(), grant),
+                                        component,
+                                        lowering,
+                                    )
+                                    .into_iter()
+                                    .map(Some)
+                                    .collect()
+                                }
                             }
                             else {
                                 let Some(again) = regrouped
@@ -1213,7 +1240,22 @@ fn regroup(
     component: &Component,
 ) -> Grouped
 {
-    let given = component
+    group(
+        grammar,
+        given_of(component),
+        Reading::Whole,
+        &BTreeSet::new(),
+    )
+}
+
+/// `component`'s sources, in member order, each with its path, root and own
+/// text, as a grouping is given them.
+///
+/// # Specification
+/// trivial.
+fn given_of(component: &Component) -> Vec<Given>
+{
+    component
         .sources
         .iter()
         .zip(&component.members)
@@ -1227,8 +1269,112 @@ fn regroup(
                     .unwrap_or_default(),
             ),
         })
-        .collect();
-    group(grammar, given, Reading::Whole)
+        .collect()
+}
+
+/// The path of the source of `component` whose bytes hold the refusal by
+/// which `lowering` refused the component as a whole.
+///
+/// # Specification
+/// - requires: `lowering` is what the lowering made of `component`'s text.
+/// - ensures: the path of the member whose bytes hold the start of the
+///   refusal's span, when the component has more than one member and the
+///   lowering refused it as a whole at a span; none otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`part`].
+/// - witness: `walk::tests::a_source_refused_whole_refuses_only_itself_and_its_importers_1027`
+#[spec(ensures: |ref ret| ret.is_none() || (component.members.len() > 1_usize
+    && component.sources.iter().any(|source| Some(&source.path) == ret.as_ref())))]
+fn refused_member(
+    lowering: &Lowering<'_>,
+    component: &Component,
+) -> Option<PathBuf>
+{
+    if component.members.len() < 2_usize {
+        return None;
+    }
+    let Maybe::Present(span) = lowering.refused()?.span()
+    else {
+        return None;
+    };
+    let at = span.start();
+    component
+        .members
+        .iter()
+        .zip(&component.sources)
+        .find(|&(member, _)| member.start <= at && at < member.end)
+        .map(|(_, source)| source.path.clone())
+}
+
+/// `component`'s sources grouped again with the source at `first` set
+/// apart, and with it each source a regrouped part's lowering refuses as a
+/// whole, until no part of more than one source is refused within one of
+/// them.
+///
+/// # Specification
+/// - requires: `component` was laid out by `component::group`, and its lowering
+///   refused it as a whole within the bytes of the source at `first`.
+/// - ensures: [`group`] under [`Reading::Whole`] of the component's sources, in
+///   member order, apart from `first` and from each source [`refused_member`]
+///   finds in a part of a round's grouping; `placed` holds each member's place,
+///   in member order. Each part of more than one source is lowered once per
+///   round to find them, counted into `report` with its text counted parsed, as
+///   is each round's grouping but the last.
+/// - fails: never.
+/// - panics: none.
+/// - intension: one round per source set apart, at most one per member;
+///   recursion-free.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a base, a source refused whole that imports it, a sibling
+///   that imports it too and a source that imports the refused one: the refused
+///   source stands alone, its importer refuses its import, and the others
+///   settle as they do alone.
+/// - witness: `walk::tests::a_source_refused_whole_refuses_only_itself_and_its_importers_1027`
+#[spec(ensures: |ref ret| ret.placed.len() == component.members.len())]
+fn part(
+    grammar: &Pbg,
+    report: &mut RunReport,
+    component: &Component,
+    first: PathBuf,
+) -> Grouped
+{
+    let mut apart = BTreeSet::from([first]);
+    loop {
+        let again = group(grammar, given_of(component), Reading::Whole, &apart);
+        let before = apart.len();
+        for piece in again
+            .components
+            .iter()
+            .filter(|piece| piece.members.len() > 1_usize)
+        {
+            let mut lowerings = LoweringCount::default();
+            let lowering = lower_unit_source(
+                grammar,
+                SourceText::from(piece.text.as_str()),
+                &piece.unit,
+                &mut lowerings,
+            );
+            report.lowerings_mut().absorb(lowerings);
+            report
+                .parsed_mut()
+                .absorb(ParsedBytes::from(piece.text.len()));
+            if let Some(found) = lowering
+                .as_ref()
+                .ok()
+                .and_then(|lowering| refused_member(lowering, piece))
+            {
+                let _fresh = apart.insert(found);
+            }
+        }
+        if apart.len() == before {
+            return again;
+        }
+        report.parsed_mut().absorb(again.parsed);
+    }
 }
 
 /// Classify the source at `path` by its canonical path and read it, as a
@@ -2198,6 +2344,70 @@ pub mod tests
             importing.saturating_mul(100) <= flat.saturating_mul(102),
             "the importing walk parses {importing} bytes against the flat walk's {flat}"
         );
+    }
+
+    /// #1027: a source the lowering refuses as a whole is refused alone. The
+    /// source it imports and a sibling importing that source too settle as
+    /// they do alone, and a source importing the refused one refuses its
+    /// import, at every width.
+    #[test]
+    fn a_source_refused_whole_refuses_only_itself_and_its_importers_1027()
+    {
+        let scratch = Scratch::new(Path::new("refused-whole"));
+        let sources = [
+            ("base", "@[ checks ]\ndef one : Integer ;\ndef one = 1 ;\n"),
+            // An attribute block before `rec` refuses the source as a whole.
+            (
+                "bad",
+                "import \"./base.gandr\" ;\n\n@[ checks ]\nrec {\n  @[ checks ]\n  def two : \
+                 Integer ;\n  def two = one ;\n}\n",
+            ),
+            (
+                "sibling",
+                "import \"./base.gandr\" ;\n\n@[ checks ]\ndef three : Integer ;\ndef three = \
+                 one ;\n",
+            ),
+            (
+                "top",
+                "import \"./bad.gandr\" ;\n\n@[ refuses(\"ImportUnresolved\") ]\ndef four : \
+                 Integer ;\ndef four = 4 ;\n",
+            ),
+        ];
+        for (name, text) in sources {
+            scratch.file(
+                Path::new(&format!("fixture/{name}.gandr")),
+                SourceText::from(text),
+            );
+        }
+        for width in widths() {
+            let mut standings = Vec::new();
+            let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.join("fixture")]).visit(
+                width,
+                |step| -> ControlFlow<Infallible> {
+                    if let Step::Source { path, standing, .. } = step {
+                        standings.push((
+                            path.file_stem()
+                                .map(|stem| stem.to_string_lossy().into_owned())
+                                .unwrap_or_default(),
+                            standing,
+                        ));
+                    }
+                    ControlFlow::Continue(())
+                },
+            );
+            standings.sort_by(|left, right| left.0.cmp(&right.0));
+            assert_eq!(
+                standings,
+                [
+                    (String::from("bad"), Standing::Refused),
+                    (String::from("base"), Standing::Settled),
+                    (String::from("sibling"), Standing::Settled),
+                    (String::from("top"), Standing::Settled),
+                ],
+                "at {width:?}, only the refused source is refused whole, and its \
+                 importer refuses its import"
+            );
+        }
     }
 
     /// #617: a walk reads an importer's imports from its import forms and

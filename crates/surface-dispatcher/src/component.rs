@@ -40,9 +40,11 @@
 //! `ImportUnresolved` at the import. An import that is an edge of a cycle is
 //! `ImportCycle` the same way, so each source of a cycle is refused whole,
 //! naming the edge it leaves by, and lowered apart from the sources of the
-//! cycle. A sibling that does not parse is unresolved too, and lowered apart;
-//! a sibling the lowering refuses as a whole refuses its component whole with
-//! its refusal.
+//! cycle. A sibling that does not parse is unresolved too, and lowered apart.
+//! A source the lowering refuses as a whole is set apart the same way once
+//! the walk has lowered its component: it is refused alone, each import
+//! naming it is unresolved, and the rest of the component is grouped and
+//! lowered again without it.
 //!
 //! # A walk parses each importer once
 //!
@@ -439,6 +441,9 @@ enum Parse
     Parsed,
     /// It does not parse.
     Unparsed,
+    /// The lowering refused it as a whole: no import of it or by it is
+    /// usable.
+    Apart,
 }
 
 /// How far the ordering walk has come at one source.
@@ -692,7 +697,10 @@ pub fn lay_out_shadowed(
 ///   source's text as it was read. Under [`Reading::Whole`] each importer's
 ///   imports are those [`lay_out`] reads; under [`Reading::ImportForms`] they
 ///   are those its import forms alone write, an importer whose forms write a
-///   path import taken to parse, which [`Component::confirms`] checks.
+///   path import taken to parse, which [`Component::confirms`] checks. A source
+///   at a path of `apart` is set apart: no import of it or by it joins a
+///   component, each import naming it is unresolved, and a given one is laid
+///   out alone, its own imports unresolved.
 /// - provides: the units a walk lowers, each once.
 /// - fails: never.
 /// - panics: none.
@@ -708,6 +716,7 @@ pub fn lay_out_shadowed(
 ///   either reading.
 /// - witness: `component::tests::a_component_lays_each_source_once`
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
+/// - witness: `walk::tests::a_source_refused_whole_refuses_only_itself_and_its_importers_1027`
 #[spec(
     captures: [offered = given.len()],
     ensures: |ref ret| ret.placed.len() == offered
@@ -720,6 +729,7 @@ pub fn group(
     grammar: &Pbg,
     given: Vec<Given>,
     reading: Reading,
+    apart: &BTreeSet<PathBuf>,
 ) -> Grouped
 {
     let mut graph = Graph {
@@ -731,6 +741,13 @@ pub fn group(
         .map(|source| graph.admit(source.path, source.root, source.text))
         .collect();
     graph.expand(grammar, &Unshadowed);
+    for path in apart {
+        if let Some(&position) = graph.index.get(path)
+            && let Some(read) = graph.read.get_mut(position.0)
+        {
+            read.parse = Parse::Apart;
+        }
+    }
     let layings = graph.layings(&positions);
     let mut where_laid: BTreeMap<Position, Placed> = BTreeMap::new();
     let mut components = Vec::with_capacity(layings.len());
@@ -1143,10 +1160,11 @@ impl Graph
     ///
     /// # Specification
     /// - requires: `reaches` is [`reaches`] of the graph.
-    /// - ensures: [`ImportTarget::Cycle`] for an edge whose target leads back
-    ///   to `from`; [`ImportTarget::Source`] holding the target's graph
-    ///   position for a resolved edge whose target parses;
-    ///   [`ImportTarget::Unresolved`] otherwise.
+    /// - ensures: [`ImportTarget::Unresolved`] for every edge of a source set
+    ///   apart; otherwise [`ImportTarget::Cycle`] for an edge whose target
+    ///   leads back to `from`; [`ImportTarget::Source`] holding the target's
+    ///   graph position for a resolved edge whose target parses and is not set
+    ///   apart; [`ImportTarget::Unresolved`] otherwise.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1164,6 +1182,13 @@ impl Graph
         edge: Edge,
     ) -> ImportTarget
     {
+        if self
+            .read
+            .get(from.0)
+            .is_some_and(|read| read.parse == Parse::Apart)
+        {
+            return ImportTarget::Unresolved;
+        }
         match edge {
             Edge::To(to)
                 if from == to
@@ -1762,6 +1787,7 @@ fn reaches(read: &[Read]) -> Vec<BTreeSet<Position>>
 mod tests
 {
     use alloc::collections::BTreeMap;
+    use alloc::collections::BTreeSet;
     use std::path::Path;
     use std::path::PathBuf;
 
@@ -1962,6 +1988,7 @@ mod tests
                     tree.given(Path::new("second.gandr")),
                 ]),
                 reading,
+                &BTreeSet::new(),
             );
             assert_eq!(
                 grouped.components.len(),
@@ -2036,6 +2063,7 @@ mod tests
                 &grammar,
                 Vec::from([tree.given(Path::new("importer.gandr"))]),
                 Reading::Whole,
+                &BTreeSet::new(),
             )
         };
         let first = grouped();
@@ -2175,6 +2203,7 @@ mod tests
                     tree.given(Path::new("base.gandr")),
                 ]),
                 reading,
+                &BTreeSet::new(),
             );
 
             let [ref alone, ref diamond] = *grouped.components.as_slice()
@@ -2253,6 +2282,7 @@ mod tests
                 &grammar,
                 Vec::from([tree.given(Path::new(given))]),
                 Reading::ImportForms,
+                &BTreeSet::new(),
             );
             let [ref component] = *grouped.components.as_slice()
             else {
@@ -2277,6 +2307,7 @@ mod tests
             &grammar,
             Vec::from([tree.given(Path::new("nested.gandr"))]),
             Reading::Whole,
+            &BTreeSet::new(),
         );
         assert_eq!(
             whole
