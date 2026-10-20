@@ -129,6 +129,7 @@ use crate::protocol::FileEvent;
 use crate::protocol::FileRename;
 use crate::protocol::FilesParams;
 use crate::protocol::FoldersChangedParams;
+use crate::protocol::FoldsCollapsed;
 use crate::protocol::Hover;
 use crate::protocol::ImportFilesParams;
 use crate::protocol::InitializeParams;
@@ -1316,6 +1317,7 @@ impl Workspace
             linked: Linked(true),
             offsets: LabelOffsets(true),
             detailing: LabelsDetailed(true),
+            collapsing: FoldsCollapsed(true),
             watching: WatchesFiles(false),
             progress: ShowsProgress(false),
             reported: 0_u64,
@@ -1546,6 +1548,8 @@ pub struct Server
     /// Whether its client shows a completion's label details, read at
     /// `initialize`.
     detailing: LabelsDetailed,
+    /// Whether its client shows the text a fold names, read at `initialize`.
+    collapsing: FoldsCollapsed,
     /// Whether its client watches files for it once asked, read at
     /// `initialize`.
     watching: WatchesFiles,
@@ -1666,6 +1670,7 @@ impl Server
             linked: Linked(false),
             offsets: LabelOffsets(false),
             detailing: LabelsDetailed(false),
+            collapsing: FoldsCollapsed(false),
             watching: WatchesFiles(false),
             progress: ShowsProgress(false),
             reported: 0_u64,
@@ -3037,6 +3042,7 @@ impl Server
                 self.linked = initial_links(&params);
                 self.offsets = initial_offsets(&params);
                 self.detailing = initial_detailing(&params);
+                self.collapsing = initial_collapsing(&params);
                 self.watching = initial_watching(&params);
                 self.progress = initial_progress(&params);
                 self.refreshing = initial_refreshing(&params);
@@ -3283,7 +3289,13 @@ impl Server
                     Ok(params) => success(
                         id,
                         workspace.outline(&params.text_document.uri, self.peer, |reading, _| {
-                            Answer::Folds(reading.folds().to_vec())
+                            Answer::Folds(
+                                reading
+                                    .folds()
+                                    .iter()
+                                    .map(|fold| fold.answered(self.collapsing))
+                                    .collect(),
+                            )
                         }),
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
@@ -5393,6 +5405,18 @@ fn initial_detailing(params: &Value) -> LabelsDetailed
 {
     InitializeParams::deserialize(params)
         .map(|params| params.label_details())
+        .unwrap_or_default()
+}
+
+/// Whether the client `initialize` names in `params` shows the text a fold
+/// names; not when the parameters do not read.
+///
+/// # Specification
+/// trivial.
+fn initial_collapsing(params: &Value) -> FoldsCollapsed
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.collapsed_folds())
         .unwrap_or_default()
 }
 
@@ -8227,6 +8251,40 @@ mod tests
                 "{method} about a document the server does not hold answers null"
             );
         }
+    }
+
+    #[test]
+    fn a_fold_shows_its_head_only_to_a_client_that_takes_collapsed_text()
+    {
+        let folds = |capabilities: &str| {
+            let mut server = Connected::default();
+            let initialize = format!(
+                r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":{capabilities}}}}}"#
+            );
+            let _answered = send(&mut server, Json(&initialize));
+            let open = r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                {"uri":"file:///tmp/folded.gandr","languageId":"gandr","version":1,
+                 "text":"def f(x: Integer) -> -F Integer {\n  return x\n}\n"}}}"#;
+            let _published = send(&mut server, Json(open));
+            let request = r#"{"jsonrpc":"2.0","id":9,"method":"textDocument/foldingRange",
+                "params":{"textDocument":{"uri":"file:///tmp/folded.gandr"}}}"#;
+            send(&mut server, Json(request))
+                .pointer("/0/result")
+                .cloned()
+                .unwrap_or(Value::Null)
+        };
+        assert_eq!(
+            folds(r#"{"textDocument":{"foldingRange":{"foldingRange":{"collapsedText":true}}}}"#),
+            wire(Json(
+                r#"[{"startLine":0,"endLine":2,"collapsedText":"def f(x: Integer) -> -F Integer { … }"}]"#
+            )),
+            "a client that takes collapsed text is shown the function's head"
+        );
+        assert_eq!(
+            folds("{}"),
+            wire(Json(r#"[{"startLine":0,"endLine":2}]"#)),
+            "one that does not is sent the lines alone"
+        );
     }
 
     #[test]

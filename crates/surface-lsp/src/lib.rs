@@ -137,7 +137,7 @@
 //! | semantic tokens | `textDocument/semanticTokens/full`, `full/delta`, `range`, `workspace/semanticTokens/refresh` | served: a full answer carries its stream's digest as its id, a delta naming the stream the connection last sent answers one edit over the tokens between the ends the two streams share, and any other id the full stream; the refresh is asked of a client that declares it once tokens change from outside the document's text, which no token this server answers does |
 //! | inline completion | `textDocument/inlineCompletion` | served |
 //! | document symbols | `textDocument/documentSymbol` | served: every declaration, nested in the one holding it — a module's members, and the members a theory, a family or a codata declaration writes among its own tiles — each with what it writes between its name and its body as its detail |
-//! | folding ranges | `textDocument/foldingRange`, `workspace/foldingRange/refresh` | served, a multi-line member included; the refresh as for semantic tokens |
+//! | folding ranges | `textDocument/foldingRange`, `workspace/foldingRange/refresh` | served, a multi-line member included, each form's range with what it writes before its body as its collapsed text for a client that shows one; the refresh as for semantic tokens |
 //! | selection ranges | `textDocument/selectionRange` | served, through a member before the form holding it |
 //! | hover | `textDocument/hover` | served |
 //! | inlay hints | `textDocument/inlayHint` | blocked: a face that reads each binder's type off the hover's type table, which is built on demand rather than per revision |
