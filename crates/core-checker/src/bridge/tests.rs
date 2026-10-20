@@ -4730,8 +4730,17 @@ fn an_operations_rules_cross_at_kernel_positions_and_the_kernel_decides_them()
     let mut arena = CoreArena::new();
     let unit_type = arena.value_type_unit();
     let unit = arena.value_unit();
+    // `f(x) ==> x`'s tree is its one leaf: `thunk(fix. λx. return x)`.
+    let returns_unit = arena.comp_type_returner(unit_type);
+    let arrow = arena.comp_type_arrow(unit_type, returns_unit);
+    let function = arena.value_type_thunk(arrow);
+    let input = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(input);
+    let lambda = arena.computation_lambda(returned);
+    let fixpoint = arena.computation_fixpoint(lambda, gandr_kernel_term::FixpointEvidence::Partial);
+    let tree = arena.value_thunk(fixpoint);
     let ruled = |right: &[OperationNode]| {
-        declaration(At(1), Maybe::Present(unit_type), Maybe::Present(unit)).ruled(rules(own, right))
+        declaration(At(1), Maybe::Present(function), Maybe::Present(tree)).ruled(rules(own, right))
     };
     let first = || declaration(At(0), Maybe::Present(unit_type), Maybe::Present(unit));
     // `f(x) ==> x`, written over module positions, crosses over kernel ones.
@@ -4759,13 +4768,24 @@ fn an_operations_rules_cross_at_kernel_positions_and_the_kernel_decides_them()
         ),
         "a rule rebuilding its own call is the kernel's to refuse"
     );
+    // The same rule on a body that is no tree crosses and the kernel refuses it.
+    let untreed =
+        declaration(At(1), Maybe::Present(unit_type), Maybe::Present(unit)).ruled(rules(own, &[x]));
+    let (_, readmission) = judge_and_readmit(&mut arena, &[first(), untreed]);
+    assert_eq!(
+        readmission.readmitted()[1].outcome(),
+        &Outcome::Rejected(gandr_kernel_core::KernelError::OperationBodyUnlinked(
+            gandr_kernel_core::OperationBodyFault::Shape
+        )),
+        "a ruled body must be its rules' decision tree"
+    );
     // A call to a position that never crossed withholds the definition.
     let absent = ConstantIndex::from(5_usize);
     let (_, readmission) = judge_and_readmit(&mut arena, &[first(), ruled(&[call(absent), x])]);
     assert_eq!(
         readmission.readmitted()[1].outcome(),
         &Outcome::Refused(Refusal::Withheld {
-            at: unit,
+            at: tree,
             constant: absent,
         }),
         "a rule naming an uncrossed declaration is withheld with its definition"

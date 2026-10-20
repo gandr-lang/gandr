@@ -2032,6 +2032,55 @@ mod kernel_presented_readmission
     }
 
     #[test]
+    fn rules_the_body_does_not_compute_are_refused_by_the_kernel_322()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixture/model/desc/rules-overlap-joinable.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the overlapping naturals lower");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let arena = decoded.arena().clone();
+        let add = declarations
+            .iter()
+            .position(|marked| marked.declaration().operation_rules().rules().len() == 3)
+            .expect("`add` crosses carrying its three rules");
+        let marked = &declarations[add];
+        let &[ref zero, _, ref recursion] = marked.declaration().operation_rules().rules()
+        else {
+            panic!("`add` carries its three rules");
+        };
+        // Without `add(m, Zero) ==> m` the other two rules still converge, but
+        // the body's leaf at `add(Succ(m), Zero)` returns its first input, which
+        // the recursion `add(Succ(m), n) ==> Succ(add(m, n))` does not.
+        let twin_declaration =
+            marked
+                .declaration()
+                .clone()
+                .ruled(gandr_kernel_term::OperationRules::new(vec![
+                    zero.clone(),
+                    recursion.clone(),
+                ]));
+        let mut twin = declarations.clone();
+        twin[add] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("the body computes a rule the twin dropped");
+        assert_eq!(usize::from(refusal.position()), add);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::OperationBodyUnlinked(gandr_kernel_core::OperationBodyFault::Apart(
+                RuleIndex::from(1_usize)
+            )),
+            "the kernel names the rule the leaf is not"
+        );
+    }
+
+    #[test]
     fn a_section_at_a_variable_readmits_and_a_tampered_twin_is_refused_by_name()
     {
         let pbg = built_in().expect("the built-in grammar builds");
