@@ -1,0 +1,21 @@
+// A rule that reads an introduced cell's value on the face it is fixed on
+// violates the boundary its `ext` member generates: the boundary law and the
+// rule rewrite one term to `zero()` and to a variable, no rule the path order
+// orients joins them, and the block's rules are refused by name. The
+// extension type of `../../model/extension/generated.gandr` reads `zero` at
+// the face of every cell (#641).
+
+/// `outCell0(inCell(y1))` reads `zero` by the boundary and `y1` by the
+/// written rule (#641).
+@[ refuses("RulesUncompleted") ]
+theory Leaked {
+  shape Two : 2 {
+    left = {0};
+  };
+  sort Val : Type;
+
+  oper zero : Val;
+  ext Cell = Val on left is zero;
+
+  rule leaked : outCell0(inCell(y1)) ==> y1;
+}

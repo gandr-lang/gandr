@@ -1793,3 +1793,85 @@ fn an_include_is_refused_at_its_member()
         "a block included before its declaration is unknown, and the rest reads"
     );
 }
+
+#[test]
+fn an_extension_generates_its_signature()
+{
+    let generated = described(
+        "theory Gen {\n  shape Two : 2 {\n    left = {0};\n  };\n  sort Val : Type;\n  oper zero : Val;\n  oper one : Val;\n  ext Cell = Val on left is zero;\n}\n",
+    );
+    let written = described(
+        "theory Gen {\n  shape Two : 2 {\n    left = {0};\n  };\n  sort Val : Type;\n  sort Cell : Type;\n  oper zero : Val;\n  oper one : Val;\n  oper inCell : (y1 : Val) --> Cell;\n  oper outCell0 : (e : Cell) --> Val;\n  oper outCell1 : (e : Cell) --> Val;\n  rule boundaryCell0 : outCell0(e) ==> zero();\n  rule betaCell1 : outCell1(inCell(y1)) ==> y1;\n  rule etaCell : inCell(outCell1(e)) ==> e;\n}\n",
+    );
+    assert_eq!(generated.diagnostics, []);
+    assert_eq!(written.diagnostics, []);
+    assert_eq!(
+        presented(&generated.declarations[0])
+            .value
+            .decode()
+            .unwrap(),
+        presented(&written.declarations[0]).value.decode().unwrap(),
+        "the member generates the signature written by hand"
+    );
+}
+
+#[test]
+fn an_extension_is_refused_by_name()
+{
+    let shaped = "  shape Two : 2 {\n    left = {0};\n    both = {0, 1};\n  };\n";
+    let refused = |fault| DescriptionFault::Signature(SignatureFault::Extension(fault));
+    for (shape, member, fault) in [
+        (
+            "",
+            "ext Cell = Val on left is zero",
+            refused(crate::circuit::ExtensionFault::Unshaped),
+        ),
+        (
+            shaped,
+            "ext Cell = Val on right is zero",
+            refused(crate::circuit::ExtensionFault::UnknownFace(Name::from(
+                "right",
+            ))),
+        ),
+        (
+            shaped,
+            "ext Cell = Val on both is zero",
+            refused(crate::circuit::ExtensionFault::CoveringFace(Name::from(
+                "both",
+            ))),
+        ),
+        (
+            shaped,
+            "ext Cell = Nat on left is zero",
+            refused(crate::circuit::ExtensionFault::Carrier(Name::from("Nat"))),
+        ),
+        (
+            shaped,
+            "ext Cell = Val on left is twice",
+            refused(crate::circuit::ExtensionFault::Boundary(Name::from(
+                "twice",
+            ))),
+        ),
+    ] {
+        let source = format!(
+            "theory T {{\n{shape}  sort Val : Type;\n  oper zero : Val;\n  oper twice : (v : Val) --> Val;\n  {member};\n}}\n"
+        );
+        let report = described(source.as_str());
+        let faults = report
+            .diagnostics
+            .iter()
+            .map(|diagnostic| {
+                (
+                    diagnostic.fault.clone(),
+                    source
+                        .get(
+                            usize::from(diagnostic.span.start())
+                                .. usize::from(diagnostic.span.end()),
+                        )
+                        .unwrap_or_default(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(faults, [(fault, member)], "{source}");
+    }
+}
