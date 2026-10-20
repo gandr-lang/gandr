@@ -3232,7 +3232,14 @@ impl<'source> Lowerer<'_, 'source>
         };
         let root = match (answered, derived.derivation, right) {
             (Answered::Path, Derivation::Back { .. }, Maybe::Present(right)) => {
-                gandr_core_term::identity::back(sink.arena, carrier, right, first)
+                // Reflexivity at a looped point is its empty word, as a
+                // written `here` there reads.
+                match self.looped_reflexivity(right, sink) {
+                    Some(empty) => gandr_core_term::identity::back_from(
+                        sink.arena, carrier, right, empty, first,
+                    ),
+                    None => gandr_core_term::identity::back(sink.arena, carrier, right, first),
+                }
             },
             (Answered::Flow, Derivation::Back { .. }, Maybe::Present(right)) => {
                 gandr_core_term::identity::back_flow(sink.arena, carrier, right, first)
@@ -3273,6 +3280,83 @@ impl<'source> Lowerer<'_, 'source>
         }
 
         Maybe::Present(Lowered::Computation(root))
+    }
+
+    /// The empty word at `point` when `point` is a looped point: the
+    /// reflexivity a written `here(point)` lowers to there.
+    ///
+    /// # Specification
+    /// - requires: `point` is minted in `sink`'s arena.
+    /// - ensures: for the first words whose point `point` spells — a closed
+    ///   constructor term of the words' family, unapplied, whose tags in
+    ///   pre-order are the point's — that words' empty word, minted as a
+    ///   written `here` at the point mints it; none for any other value.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is minted, and the words it matches are
+    ///   read off the collection a predicate would read again.
+    /// - intension: one pre-order walk of `point` per words, cut at the point's
+    ///   length; recursion-free.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `back(loop)` at the circle's point moves the empty
+    ///   word, and `back(p)` over a parameter's point moves `here`.
+    /// - witness: `lower::identity::tests::back_at_a_looped_point_moves_its_empty_word_1003`
+    /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
+    fn looped_reflexivity(
+        &self,
+        point: ValueId,
+        sink: &mut Sink<'_>,
+    ) -> Option<ValueId>
+    {
+        let constant = |slot: crate::module::SlotIndex| {
+            self.collected
+                .slots
+                .get(usize::from(slot))
+                .map(|entry| entry.constant)
+        };
+        let mut tags = Vec::new();
+        let mut pending = Vec::new();
+        let words = self.collected.words.iter().find(|words| {
+            let Some(family) = self
+                .collected
+                .data
+                .get(words.family)
+                .and_then(|form| constant(form.slot))
+            else {
+                return false;
+            };
+            tags.clear();
+            pending.clear();
+            pending.push(point);
+            while let Some(at) = pending.pop() {
+                let Some(&Value::Constructor {
+                    datatype,
+                    tag,
+                    ref fields,
+                }) = sink.arena.value(at)
+                else {
+                    return false;
+                };
+                let unapplied = matches!(
+                    sink.arena.value_type(datatype),
+                    Some(&ValueType::Data { declaration, ref arguments })
+                        if declaration == family && arguments.is_empty()
+                );
+                if !unapplied || tags.len() >= words.point.len() {
+                    return false;
+                }
+                tags.push(gandr_core_term::RuleNode::Constructor(tag));
+                pending.extend(fields.iter().rev());
+            }
+            *tags == *words.point
+        })?;
+        let own = constant(words.slot)?;
+        let word = sink.arena.value_type_data(own, Vec::new());
+        Some(
+            sink.arena
+                .value_constructor(word, gandr_core_term::FreeCells::nil(), Vec::new()),
+        )
     }
 
     /// The identity type `answer` writes, relocated to `frame` where the

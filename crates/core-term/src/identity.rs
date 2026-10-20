@@ -358,12 +358,45 @@ pub fn back(
     path: ValueId,
 ) -> ComputationId
 {
+    let base = arena.value_here(fixed);
+    back_from(arena, carrier, fixed, base, path)
+}
+
+/// `back(p) : Path(A, b, a)` for `p : Path(A, a, b)`, moving `reflexivity`, a
+/// reflexivity at `a`: the transport of `reflexivity` along `p` in the family
+/// `y. Path(A, y, a)`.
+///
+/// # Specification
+/// - requires: as [`back`]; `reflexivity` is read in the context the result
+///   stands in, and stands at `Path(A, a, a)`: `here(a)`, or the empty word
+///   where `a` is a looped point.
+/// - ensures: the transport `tr(y. Path(A↑, y, a↑), path, reflexivity)`, the
+///   carrier and the endpoint shifted past the motive's binder.
+/// - provides: the inverse of a path, derived from a reflexivity its caller
+///   reads.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`back`], the base the reflexivity given.
+/// - witness: `identity::tests::back_transports_reflexivity_into_the_reversed_family`
+#[spec(ensures: |ret| matches!(arena.computation(ret), Some(&crate::syntax::Computation::PathTransport { path: along, value, .. })
+    if along == path && value == reflexivity))]
+#[inline]
+#[must_use]
+pub fn back_from(
+    arena: &mut CoreArena,
+    carrier: ValueTypeId,
+    fixed: ValueId,
+    reflexivity: ValueId,
+    path: ValueId,
+) -> ComputationId
+{
     let lifted_carrier = shift_value_type(arena, carrier, Binders::ONE).settle(arena);
     let lifted_fixed = shift_value(arena, fixed, Binders::ONE).settle(arena);
     let endpoint = moving(arena);
     let motive = arena.value_type_path(lifted_carrier, endpoint, lifted_fixed);
-    let base = arena.value_here(fixed);
-    arena.computation_path_transport(motive, path, base)
+    arena.computation_path_transport(motive, path, reflexivity)
 }
 
 /// `then(p, q) : Path(A, a, c)` for `p : Path(A, a, b)` and `q : Path(A, b,
