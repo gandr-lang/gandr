@@ -329,7 +329,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::access::tests::the_counter_lowers_to_its_memory_forms`
     /// - witness: `lower::access::tests::an_access_names_a_held_value_and_an_eliminator_its_view`
     /// - witness: `lower::access::tests::an_exit_inside_an_access_is_refused`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Access(_))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Access(_))))]
     pub(super) fn access_form(
         &mut self,
         site: Site,

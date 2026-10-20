@@ -353,7 +353,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   minted type or refusal.
     /// - witness: `lower::capability::tests::a_capability_type_lowers_to_its_authority`
     /// - witness: `lower::capability::tests::an_unknown_operation_or_interface_is_refused_by_name`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&super::Plan::Capability(..))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&super::Plan::Capability(..))))]
     pub(super) fn capability_type(
         &mut self,
         site: Site,
@@ -438,9 +438,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::capability::tests::a_capability_at_a_scope_lives_in_its_region`
     /// - witness: `lower::world::tests::the_located_forms_lower_to_their_world_forms`
     #[spec(ensures: |ret| ret.is_err()
-        || matches!(self.plans.get(usize::from(site.at.node)), Some(&super::Plan::Transparent(operand)) if self.regions.contains_key(&operand))
-        || matches!(self.plans.get(usize::from(site.at.node)), Some(&super::Plan::Kept(..)))
-        || matches!(self.plans.get(usize::from(site.at.node)), Some(&super::Plan::World(super::world::Worlded::At { .. }))))]
+        || matches!(self.plans.get(site.at.node), Some(&super::Plan::Transparent(operand)) if self.regions.contains_key(&operand))
+        || matches!(self.plans.get(site.at.node), Some(&super::Plan::Kept(..)))
+        || matches!(self.plans.get(site.at.node), Some(&super::Plan::World(super::world::Worlded::At { .. }))))]
     pub(super) fn at_type(
         &mut self,
         site: Site,
@@ -613,7 +613,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::returner_row`].
     /// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&super::Plan::Effectful(_, child)) if child == argument))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&super::Plan::Effectful(_, child)) if child == argument))]
     pub(super) fn effectful(
         &mut self,
         site: Site,
@@ -692,7 +692,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   refused by the checker by name.
     /// - witness: `lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
     /// - witness: `lower::capability::tests::a_scope_handles_its_capability_and_resumes`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(usize::from(site.at.node)), Some(&super::Plan::Exercise(_))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&super::Plan::Exercise(_))))]
     pub(super) fn exercise(
         &mut self,
         site: Site,
@@ -805,7 +805,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a clause resuming its subject lowers to the
     ///   resumption of `pure unit` and checks.
     /// - witness: `lower::capability::tests::a_scope_handles_its_capability_and_resumes`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(usize::from(site.at.node)), Some(&super::Plan::Resume(..))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&super::Plan::Resume(..))))]
     pub(super) fn resumption(
         &mut self,
         site: Site,
@@ -879,7 +879,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::capability::tests::a_scope_handles_its_capability_and_resumes`
     /// - witness: `lower::capability::tests::a_scoped_capability_cannot_escape`
     /// - witness: `lower::capability::tests::an_unknown_operation_or_interface_is_refused_by_name`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&super::Plan::Scope(_))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&super::Plan::Scope(_))))]
     pub(super) fn capability_scope(
         &mut self,
         site: Site,

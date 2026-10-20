@@ -354,7 +354,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   as a continuation, each asserted as the exact protocol or refusal.
     /// - witness: `lower::session::tests::a_session_type_lowers_to_its_protocol`
     /// - witness: `lower::session::tests::a_malformed_protocol_is_refused_where_it_is_written`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Session(..))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Session(..))))]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -908,7 +908,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
     /// - witness: `lower::session::tests::an_action_on_no_endpoint_is_refused`
     /// - witness: `lower::session::tests::an_offer_arm_is_one_label`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Action(..))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Action(..))))]
     pub(super) fn session_action(
         &mut self,
         site: Site,

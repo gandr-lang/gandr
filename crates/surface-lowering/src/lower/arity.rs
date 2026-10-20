@@ -1335,7 +1335,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
     /// - witness: `lower::arity::tests::a_later_label_reading_an_earlier_one_lowers_to_nested_pairs`
     /// - witness: `lower::arity::tests::each_label_names_what_it_labels`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&(Plan::Product(_) | Plan::RecordType(..)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Product(_) | Plan::RecordType(..)))))]
     pub(super) fn telescope_type(
         &mut self,
         site: Site,
@@ -1430,7 +1430,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — the empty sum, a positional and a labelled sum.
     /// - witness: `lower::arity::tests::a_sum_over_labels_lowers_to_the_sum_of_its_entries`
     /// - witness: `lower::arity::tests::a_session_entry_reads_the_select_and_the_offer`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&(Plan::Sum(_) | Plan::Session(..)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Sum(_) | Plan::Session(..)))))]
     pub(super) fn labelled_sum_type(
         &mut self,
         site: Site,
@@ -1478,7 +1478,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — none, one, two and three entries.
     /// - witness: `lower::arity::tests::a_lazy_record_lowers_to_one_lazy_product`
     /// - witness: `lower::arity::tests::a_session_entry_reads_the_select_and_the_offer`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Session(..) | &Plan::With(_))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Session(..) | &Plan::With(_))))]
     pub(super) fn lazy_record_type(
         &mut self,
         site: Site,
@@ -1527,7 +1527,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   value.
     /// - witness: `lower::arity::tests::a_telescope_value_lowers_by_its_arity`
     /// - witness: `lower::arity::tests::a_record_update_is_declined_by_name`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&(Plan::Tuple(_) | Plan::Record(_)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Tuple(_) | Plan::Record(_)))))]
     pub(super) fn telescope(
         &mut self,
         site: Site,
@@ -1965,7 +1965,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — an index past the binary sum, a label under an
     ///   annotation, a label without one, and a label the sum lacks.
     /// - witness: `lower::arity::tests::an_injection_takes_its_index_from_its_label`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Injection(..))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Injection(..))))]
     pub(super) fn injection(
         &mut self,
         site: Site,
@@ -2027,7 +2027,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   the stated order, labelled clauses with no answer, one clause and
     ///   none.
     /// - witness: `lower::arity::tests::a_copattern_block_orders_its_clauses_by_its_answer`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Copattern(_))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Copattern(_))))]
     pub(super) fn copattern(
         &mut self,
         site: Site,
@@ -2228,7 +2228,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   lacks, and each observation of a stream.
     /// - witness: `lower::arity::tests::an_observation_projects_its_entry`
     /// - witness: `lower::arity::tests::a_copattern_block_orders_its_clauses_by_its_codata_answer`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Observe(..))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Observe(..))))]
     pub(super) fn observation(
         &mut self,
         site: Site,
@@ -2316,7 +2316,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — the first and the last entry of a dependent record of
     ///   two and of three, and a label it lacks.
     /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Select(..))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Select(..))))]
     pub(super) fn selection(
         &mut self,
         site: Site,
@@ -2405,7 +2405,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — both positions of a dependent pair, the second's type
     ///   reading the first, and a third position refused.
     /// - witness: `lower::arity::tests::a_selection_by_position_projects_a_pair_401`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Select(_, Observed { count: 2, .. }, None))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Select(_, Observed { count: 2, .. }, None))))]
     pub(super) fn positional(
         &mut self,
         site: Site,
@@ -2583,7 +2583,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a telescope whose second type names the first binder,
     ///   a mixed one, and a binder written twice.
     /// - witness: `lower::arity::tests::a_telescope_binds_each_entry_in_the_ones_after_it`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Telescope(..))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Telescope(..))))]
     pub(super) fn telescope_function(
         &mut self,
         site: Site,
@@ -2815,7 +2815,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   the binder before it, mint the same telescope the value-function alias
     ///   spells, and a binder nothing names mints the plain arrow.
     /// - witness: `lower::arity::tests::a_dependent_arrow_is_the_telescope_the_alias_abbreviates`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::DependentArrow(..))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::DependentArrow(..))))]
     pub(super) fn dependent_arrow(
         &mut self,
         site: Site,
@@ -3219,7 +3219,7 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         if let Some(&(stated, ref label)) = labelled
-            && let Some(&Plan::RecordType(_, binders, last)) = self.plans.get(usize::from(stated))
+            && let Some(&Plan::RecordType(_, binders, last)) = self.plans.get(stated)
             && !bool::from(self.binds_any(binders, last))
         {
             let id = sink

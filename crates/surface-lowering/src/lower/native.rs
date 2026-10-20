@@ -1929,7 +1929,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
     /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
     /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Constructor(planned)) if planned.fields == fields))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Constructor(planned)) if planned.fields == fields))]
     pub(super) fn construct(
         &mut self,
         site: Site,
@@ -2361,7 +2361,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   and the name inside the inverse labelled at the path type, and a left
     ///   operand that is no loop is refused.
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Constructor(_))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Constructor(_))))]
     pub(super) fn cons(
         &mut self,
         site: Site,
@@ -2633,7 +2633,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::an_injection_takes_its_index_from_its_label`
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
     /// - witness: `lower::native::tests::an_annotation_at_a_statement_is_unadmitted`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Transparent(_))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Transparent(_))))]
     pub(super) fn annotated(
         &mut self,
         site: Site,
@@ -2795,7 +2795,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a family over one and over two arguments, and over
     ///   too few, each asserted as the exact nominal type or refusal.
     /// - witness: `lower::native::tests::a_data_family_applies_to_its_parameters`
-    #[spec(ensures: |ret| ret.is_err() || self.plans.get(usize::from(site.at.node)) == Some(&Plan::Data(constant, applied)))]
+    #[spec(ensures: |ret| ret.is_err() || self.plans.get(site.at.node) == Some(&Plan::Data(constant, applied)))]
     pub(super) fn family(
         &mut self,
         site: Site,
@@ -2878,7 +2878,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a codata family read as a function's answer lowers to
     ///   the nominal computation type over its argument.
     /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
-    #[spec(ensures: |ret| ret.is_err() || self.plans.get(usize::from(site.at.node)) == Some(&Plan::Codata(constant, applied)))]
+    #[spec(ensures: |ret| ret.is_err() || self.plans.get(site.at.node) == Some(&Plan::Codata(constant, applied)))]
     pub(super) fn codata_type(
         &mut self,
         site: Site,
@@ -2943,7 +2943,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_match_of_no_arms_eliminates_the_empty_sum`
     /// - witness: `lower::exits::tests::a_match_continuing_its_block_answers_what_the_block_does`
     /// - witness: `lower::native::tests::an_or_pattern_settles_each_alternative`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&(Plan::Case(_) | Plan::EmptyCase(_)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Case(_) | Plan::EmptyCase(_)))))]
     pub(super) fn case(
         &mut self,
         site: Site,
@@ -3178,7 +3178,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   separate the empty sum's case, the data switch and the refusal.
     /// - witness: `lower::native::tests::a_match_of_no_arms_eliminates_the_empty_sum`
     /// - witness: `lower::native::tests::a_match_of_no_arms_switches_on_empty_data_and_on_a_path`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&(Plan::Case(_) | Plan::EmptyCase(_)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Case(_) | Plan::EmptyCase(_)))))]
     fn empty_case(
         &mut self,
         site: Site,
@@ -4526,10 +4526,10 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(None);
         };
-        while let Some(&Plan::Transparent(inner)) = self.plans.get(usize::from(at)) {
+        while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
             at = inner;
         }
-        match self.plans.get(usize::from(at)) {
+        match self.plans.get(at) {
             Some(&Plan::Atom(atom)) => return Ok(Some(atom)),
             Some(&Plan::Unplanned) | None => {},
             Some(_) => return Ok(None),
@@ -6036,7 +6036,7 @@ impl<'source> Lowerer<'_, 'source>
         let (mut classifier, mut family) = (classifier, family);
         let mut fields = Vec::new();
         while let Classifier::Field(field) = classifier {
-            let Some(&Plan::Constructor(outer)) = self.plans.get(usize::from(field.around))
+            let Some(&Plan::Constructor(outer)) = self.plans.get(field.around)
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
@@ -6153,7 +6153,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<ValueTypeId, lowered::Absent>
     {
         let unminted = Maybe::Absent(lowered::Absent::Unminted);
-        let Some(&Plan::Constructor(outer)) = self.plans.get(usize::from(field.around))
+        let Some(&Plan::Constructor(outer)) = self.plans.get(field.around)
         else {
             return unminted;
         };
@@ -8220,7 +8220,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::an_unapplied_claim_lowers_to_the_self_binder`
     /// - witness: `lower::native::tests::a_productive_call_is_the_whole_arm_of_a_copattern_block`
     /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&(Plan::Variable(..) | Plan::Application(..)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Variable(..) | Plan::Application(..)))))]
     pub(super) fn instantiation(
         &mut self,
         site: Site,
@@ -9084,7 +9084,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   unquotes, and a descent on a name no fixpoint binds, refused as
     ///   unadmitted.
     /// - witness: `lower::native::tests::a_decoders_descent_in_its_returned_type_unquotes_the_fixpoint`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Unquote(Code::Bound { .. }, ..))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Unquote(Code::Bound { .. }, ..))))]
     pub(super) fn staged_unquote(
         &mut self,
         site: Site,

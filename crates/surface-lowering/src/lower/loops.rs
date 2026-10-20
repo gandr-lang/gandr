@@ -344,7 +344,7 @@ impl<'source> Lowerer<'_, 'source>
         ensures: |ret| {
             ret.is_err()
                 || (self.exitable.contains(&site.at.node)
-                    && matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Loop(body))
+                    && matches!(self.plans.get(site.at.node), Some(&Plan::Loop(body))
                         if self.looping.contains(&body.last)))
         },
     )]
@@ -399,7 +399,7 @@ impl<'source> Lowerer<'_, 'source>
         ensures: |ret| {
             ret.is_err()
                 || (self.exitable.contains(&site.at.node)
-                    && matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::While(condition, body))
+                    && matches!(self.plans.get(site.at.node), Some(&Plan::While(condition, body))
                         if self.looping.contains(&body.last)
                             && self.tested.contains(&condition)
                             && matches!(self.reading(condition), Reading::Computation(Frame::Inner(_)))))
@@ -654,7 +654,7 @@ impl<'source> Lowerer<'_, 'source>
         ensures: |ret| {
             ret.is_err()
                 || (self.exitable.contains(&site.at.node)
-                    && matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::For(list, body))
+                    && matches!(self.plans.get(site.at.node), Some(&Plan::For(list, body))
                         if self.looping.contains(&body.last)
                             && matches!(self.reading(list), Reading::Value(_))))
         },
@@ -774,7 +774,7 @@ impl<'source> Lowerer<'_, 'source>
             ret.is_err()
                 || (self.looping.contains(&site.at.node)
                     && self.breaking.contains(&site.at.node)
-                    && matches!(self.plans.get(usize::from(site.at.node)), Some(&(Plan::Break | Plan::Return(_)))))
+                    && matches!(self.plans.get(site.at.node), Some(&(Plan::Break | Plan::Return(_)))))
         },
     )]
     pub(super) fn broken(
@@ -828,7 +828,7 @@ impl<'source> Lowerer<'_, 'source>
             ret.is_err()
                 || (self.looping.contains(&site.at.node)
                     && self.leaving.contains(&site.at.node)
-                    && matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Reenter(_))))
+                    && matches!(self.plans.get(site.at.node), Some(&Plan::Reenter(_))))
         },
     )]
     pub(super) fn continued(

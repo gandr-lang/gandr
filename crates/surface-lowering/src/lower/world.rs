@@ -151,7 +151,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   and a migration to a name nothing declares is refused at the name.
     /// - witness: `lower::world::tests::the_located_forms_lower_to_their_world_forms`
     /// - witness: `lower::world::tests::a_world_named_where_none_is_declared_is_unresolved`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::World(Worlded::Hold { .. } | Worlded::Migrate { .. }))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::World(Worlded::Hold { .. } | Worlded::Migrate { .. }))))]
     pub(super) fn world_form(
         &mut self,
         site: Site,
@@ -208,7 +208,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a handle at a declared world mints the handle type.
     /// - witness: `lower::world::tests::the_located_forms_lower_to_their_world_forms`
-    #[spec(ensures: |ret| ret.is_ok() && matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::World(Worlded::At { inner, world: World::Declared(declared) })) if inner == operand.node && declared == constant))]
+    #[spec(ensures: |ret| ret.is_ok() && matches!(self.plans.get(site.at.node), Some(&Plan::World(Worlded::At { inner, world: World::Declared(declared) })) if inner == operand.node && declared == constant))]
     pub(super) fn located_type(
         &mut self,
         site: Site,

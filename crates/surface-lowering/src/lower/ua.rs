@@ -252,7 +252,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   refused by its count.
     /// - witness: `lower::ua::tests::a_statement_lowers_to_univalence_at_its_stratum`
     /// - witness: `lower::ua::tests::a_statement_the_syntax_cannot_read_is_refused`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Ua { .. })))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Ua { .. })))]
     pub(super) fn ua_call(
         &mut self,
         site: Site,

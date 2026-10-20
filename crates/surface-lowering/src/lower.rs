@@ -692,6 +692,10 @@ mod native;
 
 mod phase;
 
+mod plans;
+
+use plans::Plans;
+
 mod sealing;
 
 mod session;
@@ -2761,7 +2765,7 @@ struct Lowerer<'run, 'source>
     readings: Vec<Reading>,
     /// What the mint sweep does for each node, kept once it is done: a later
     /// source's classification reads an earlier source's plans.
-    plans: Vec<Plan>,
+    plans: Plans,
     /// Each written name resolved, with what it names, in the order resolved:
     /// a name of a declaration refused later is kept.
     resolutions: Vec<(ByteSpan, crate::Resolution)>,
@@ -3881,7 +3885,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let count = usize::from(tree.node_count());
         self.tree = tree;
         self.readings.resize(count, Reading::Unread);
-        self.plans.resize(count, Plan::Unplanned);
+        self.plans.widen(tree.node_count());
         self.taken.resize(count, false);
         self.bridges.resize(count, Bridge::Bare);
         self.lowered
@@ -3926,7 +3930,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .readings
                     .iter()
                     .all(|reading| matches!(*reading, Reading::Unread))
-                && ret.plans.len() == count
+                && usize::from(ret.plans.count()) == count
                 && ret
                     .plans
                     .iter()
@@ -3974,8 +3978,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let count = usize::from(tree.node_count());
         let mut readings = Vec::new();
         readings.resize(count, Reading::Unread);
-        let mut plans = Vec::new();
-        plans.resize(count, Plan::Unplanned);
+        let plans = Plans::unplanned(tree.node_count());
         let mut taken = Vec::new();
         taken.resize(count, false);
         let mut bridges = Vec::new();
@@ -4923,11 +4926,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         captures: before = (
             self.fuel.remaining,
             self.collected.slots.len(),
-            self.plans.len(),
+            self.plans.count(),
         ),
         ensures: |ret| {
             self.collected.slots.len() == before.1
-                && self.plans.len() == before.2
+                && self.plans.count() == before.2
                 && self.fuel.remaining <= before.0
                 && ret
                     .as_ref()
@@ -5262,7 +5265,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 || ret.is_err()
                 || self
                     .plans
-                    .get(usize::from(position))
+                    .get(position)
                     .is_some_and(|plan| *plan != Plan::Unplanned))
                 && (self.reading(position) != Reading::Unread || ret.is_ok())
         },
@@ -5360,14 +5363,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     && (ret.is_err()
                         || self
                             .plans
-                            .get(usize::from(site.at.node))
+                            .get(site.at.node)
                             .is_some_and(|plan| *plan != Plan::Unplanned))
             }
             else {
                 ret.is_err()
                     || self
                         .plans
-                        .get(usize::from(site.at.node))
+                        .get(site.at.node)
                         .is_some_and(|plan| *plan != Plan::Unplanned)
             }
         },
@@ -6130,7 +6133,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&(Plan::Variable(..) | Plan::Constant(_) | Plan::Primitive(_) | Plan::StaticApplication(..) | Plan::ListNil))
                 )
         },
@@ -6211,7 +6214,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(
                         &(Plan::Variable(..)
                             | Plan::StaticApplication(..)
@@ -6551,7 +6554,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&Plan::Literal(Literal::Integer(_)))
                 )
         },
@@ -6603,7 +6606,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&Plan::Literal(Literal::Text(_)))
                 )
         },
@@ -6667,7 +6670,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&(Plan::Transparent(_) | Plan::Tuple(_)))
                 )
         },
@@ -6735,7 +6738,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Transparent(child)) if self.reading(child) == site.reading)
+                || matches!(self.plans.get(site.at.node), Some(&Plan::Transparent(child)) if self.reading(child) == site.reading)
         },
     )]
     fn type_quote(
@@ -6782,7 +6785,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&Plan::Tuple(members)) if members.end.saturating_sub(members.start) >= 1_usize
                 )
         },
@@ -6843,7 +6846,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Thunk(Block { statements, .. })) if statements.start <= statements.end && statements.end <= self.statements.len())
+                || matches!(self.plans.get(site.at.node), Some(&Plan::Thunk(Block { statements, .. })) if statements.start <= statements.end && statements.end <= self.statements.len())
         },
     )]
     fn thunk(
@@ -6901,7 +6904,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Lambda(Block { statements, .. }, _)) if statements.start <= statements.end && statements.end <= self.statements.len())
+                || matches!(self.plans.get(site.at.node), Some(&Plan::Lambda(Block { statements, .. }, _)) if statements.start <= statements.end && statements.end <= self.statements.len())
         },
     )]
     fn lambda(
@@ -7066,7 +7069,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Block(Block { statements, .. })) if statements.start <= statements.end && statements.end <= self.statements.len())
+                || matches!(self.plans.get(site.at.node), Some(&Plan::Block(Block { statements, .. })) if statements.start <= statements.end && statements.end <= self.statements.len())
         },
     )]
     fn sequenced(
@@ -7146,7 +7149,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || self
                     .plans
-                    .get(usize::from(site.at.node))
+                    .get(site.at.node)
                     .is_some_and(|plan| match *plan {
                         | Plan::Function(ref function) => {
                             function.parameters.start == parameters
@@ -7852,7 +7855,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || match self.plans.get(usize::from(site.at.node)) {
+                || match self.plans.get(site.at.node) {
                     | Some(&Plan::Force(operand)) => {
                         keyword == TileName::FORCE
                             && self.reading(operand) == Reading::Value(site.reading.frame())
@@ -7951,7 +7954,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Run(operand))
+                || matches!(self.plans.get(site.at.node), Some(&Plan::Run(operand))
                     if self.reading(operand) == Reading::Computation(site.reading.frame()))
         },
     )]
@@ -8003,7 +8006,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Transparent(operand))
+                || matches!(self.plans.get(site.at.node), Some(&Plan::Transparent(operand))
                     if self.exitable.contains(&site.at.node) && self.leaving.contains(&site.at.node)
                         && !self.exits.contains(&operand) && self.exitable.contains(&operand)
                         && self.reading(operand) == Reading::Computation(site.reading.frame()))
@@ -8091,7 +8094,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         captures: start = self.operands.len(),
         ensures: |ret| {
             ret.is_err()
-                || match self.plans.get(usize::from(site.at.node)) {
+                || match self.plans.get(site.at.node) {
                     | Some(&Plan::Application(head, arguments)) => {
                         let end = self.operands.len();
                         let descends = self.descents.get(&head).is_some_and(|descent| {
@@ -8241,7 +8244,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
     /// - witness: `lower::tests::a_prefix_operator_takes_its_one_operand`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(Plan::PrimitiveCall(..) | Plan::Derived(_) | Plan::FlowThen(..) | Plan::Constructor(_))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(Plan::PrimitiveCall(..) | Plan::Derived(_) | Plan::FlowThen(..) | Plan::Constructor(_))))]
     fn operator(
         &mut self,
         site: Site,
@@ -8349,7 +8352,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Data(..) | Plan::Codata(..) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..)))
                 )
         },
@@ -8599,7 +8602,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 else {
                     matches!(ret, Err(LoweringRefusal::PhaseDependence { .. }))
                         || ret.is_ok()
-                            && matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Constant(constant)) if constant == entry.constant)
+                            && matches!(self.plans.get(site.at.node), Some(&Plan::Constant(constant)) if constant == entry.constant)
                 }
             },
         },
@@ -8683,7 +8686,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && self.manifests.len() <= before.saturating_add(1_usize)
                 && (ret.is_err()
                     || matches!(
-                        self.plans.get(usize::from(site.at.node)),
+                        self.plans.get(site.at.node),
                         Some(
                             &(Plan::Transparent(_)
                                 | Plan::Sealed(_)
@@ -8776,9 +8779,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 || (self.manifests.len() == before.saturating_add(1_usize)
                     && self.manifests.last() == Some(&(stated.held, site.at.node))
                     && match stated.meaning {
-                        | TypeMeaning::Manifest(defined) => matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Transparent(node)) if node == defined.node),
-                        | TypeMeaning::Sealed => matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Sealed(atom)) if usize::from(atom) == usize::from(stated.held)),
-                        | TypeMeaning::Instantiated { defined, instance } => matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Instantiated(read, node)) if read == instance && node == defined.node),
+                        | TypeMeaning::Manifest(defined) => matches!(self.plans.get(site.at.node), Some(&Plan::Transparent(node)) if node == defined.node),
+                        | TypeMeaning::Sealed => matches!(self.plans.get(site.at.node), Some(&Plan::Sealed(atom)) if usize::from(atom) == usize::from(stated.held)),
+                        | TypeMeaning::Instantiated { defined, instance } => matches!(self.plans.get(site.at.node), Some(&Plan::Instantiated(read, node)) if read == instance && node == defined.node),
                         | TypeMeaning::Family(_) => false,
                     })
         },
@@ -8992,7 +8995,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Data(..)))
                 )
         },
@@ -9221,7 +9224,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&Plan::Universe(_))
                 )
         },
@@ -9494,7 +9497,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Data(..) | Plan::Codata(..) | Plan::Expansion(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Relation(..) | Plan::Stack(..) | Plan::Constructor(_)))
                 )
         },
@@ -9618,7 +9621,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.operands.len() == written.start
                 && (ret.is_err()
                     || matches!(
-                        self.plans.get(usize::from(site.at.node)),
+                        self.plans.get(site.at.node),
                         Some(&(Plan::Former(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Relation(..)))
                     ))
         },
@@ -9783,7 +9786,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&Plan::Stack(input, output))
                         if [input, output] == written
                             && self.reading(input) == Reading::CompType(site.reading.frame())
@@ -9861,7 +9864,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || match self.plans.get(usize::from(site.at.node)) {
+                || match self.plans.get(site.at.node) {
                     | Some(&Plan::StaticApplication(_, planned)) => {
                         planned == applied && matches!(site.reading, Reading::Value(_))
                     },
@@ -10014,7 +10017,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&(Plan::Former(_, _) | Plan::Effectful(..)))
                 )
         },
@@ -10152,7 +10155,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || (matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Former(stored, child)) if stored == former && child == argument)
+                || (matches!(self.plans.get(site.at.node), Some(&Plan::Former(stored, child)) if stored == former && child == argument)
                     && self.reading(argument)
                         == match former {
                             | TypeFormer::Thunk => Reading::CompType(site.reading.frame()),
@@ -10221,7 +10224,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || match self.plans.get(usize::from(site.at.node)) {
+                || match self.plans.get(site.at.node) {
                     | Some(&Plan::StaticPi(..)) => matches!(site.reading, Reading::ValueType(_)),
                     | Some(&(Plan::Arrow(..) | Plan::DependentArrow(..))) => !matches!(site.reading, Reading::ValueType(_)),
                     | _ => false,
@@ -10308,7 +10311,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&(Plan::Product(components) | Plan::Sum(components) | Plan::With(components))) if components.end.saturating_sub(components.start) >= 2_usize
                 )
         },
@@ -10477,7 +10480,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&(Plan::ValueFunction(..) | Plan::Telescope(..)))
                 )
         },
@@ -10625,7 +10628,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&Plan::StaticLambda(_))
                 )
         },
@@ -10689,7 +10692,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Transparent(child)) if self.reading(child) == site.reading)
+                || matches!(self.plans.get(site.at.node), Some(&Plan::Transparent(child)) if self.reading(child) == site.reading)
         },
     )]
     fn parenthesized_type(
@@ -10808,12 +10811,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::force_and_application_lower_over_their_children`
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
     #[spec(
-        captures: before = (self.plans.len(), core::mem::discriminant(&plan)),
+        captures: before = (self.plans.count(), core::mem::discriminant(&plan)),
         ensures: |_| {
-            self.plans.len() == before.0
+            self.plans.count() == before.0
                 && self
                     .plans
-                    .get(usize::from(site.at.node))
+                    .get(site.at.node)
                     .is_none_or(|held| core::mem::discriminant(held) == before.1)
         },
     )]
@@ -10823,7 +10826,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         plan: Plan,
     )
     {
-        if let Some(held) = self.plans.get_mut(usize::from(site.at.node)) {
+        if let Some(held) = self.plans.get_mut(site.at.node) {
             *held = plan;
         }
     }
@@ -11286,14 +11289,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             (self.collected.refused(position).0 && !self.in_payload(position).0)
                 || self.awaiting.contains(&position),
             matches!(
-                self.plans.get(usize::from(position)),
+                self.plans.get(position),
                 None | Some(&Plan::Unplanned)
             ) || self.taken.get(usize::from(position)) == Some(&true),
             self.lowered_at(position),
-            self.plans.len(),
+            self.plans.count(),
             self.lowered.len(),
         ),
-        ensures: self.plans.len() == before.3
+        ensures: self.plans.count() == before.3
             && self.lowered.len() == before.4
             && (if before.0 || before.1 {
                 self.lowered_at(position) == before.2
@@ -11354,7 +11357,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut work: Vec<(NodeIndex, bool)> = Vec::new();
         let mut next = Some((position, false));
         while let Some((at, released)) = next {
-            let waiting = match self.plans.get(usize::from(at)) {
+            let waiting = match self.plans.get(at) {
                 Some(&Plan::Data(_, arguments)) if !released => Some(arguments),
                 Some(&Plan::Constructor(constructed)) if !released => Some(constructed.fields),
                 Some(_) | None => None,
@@ -11410,14 +11413,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         captures: before = (
             matches!(
-                self.plans.get(usize::from(position)),
+                self.plans.get(position),
                 None | Some(&Plan::Unplanned)
             ) || self.taken.get(usize::from(position)) == Some(&true),
             self.lowered_at(position),
-            self.plans.len(),
+            self.plans.count(),
             self.lowered.len(),
         ),
-        ensures: self.plans.len() == before.2
+        ensures: self.plans.count() == before.2
             && self.lowered.len() == before.3
             && (if before.0 {
                 self.lowered_at(position) == before.1
@@ -11439,7 +11442,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if core::mem::replace(taken, true) {
             return;
         }
-        let Some(plan) = self.plans.get(usize::from(position))
+        let Some(plan) = self.plans.get(position)
         else {
             return;
         };
