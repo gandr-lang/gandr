@@ -109,6 +109,7 @@ fn judged(
                     Maybe::Present(body),
                 ),
                 DeclarationOutcome::Data(_)
+                | DeclarationOutcome::Codata(_)
                 | DeclarationOutcome::Abstract(_)
                 | DeclarationOutcome::World
                 | DeclarationOutcome::Refused(_) => return None,
@@ -215,6 +216,7 @@ fn tail_of(
         DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => body,
         other @ (DeclarationOutcome::Uncompleted { .. }
         | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
         | DeclarationOutcome::Abstract(_)
         | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => panic!("`{name:?}` lowers a body: {other:?}"),

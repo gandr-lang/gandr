@@ -57,7 +57,7 @@
 //! Witnesses:
 //! `description::tests::native_data_keeps_telescope_and_nominal_heads`,
 //! `description::tests::member_refusals_keep_their_spans_and_other_declarations`,
-//! `description::tests::codata_is_refused_by_the_decoder_and_data_beside_it_is_native`,
+//! `description::tests::a_codata_declaration_lowers_to_its_signature`,
 //! `lower::native::tests::operation_and_rule_members_are_left_to_the_description_route`,
 //! and the description reader's declaration and refusal witnesses in
 //! `description::tests`.
@@ -368,8 +368,8 @@ pub struct DescriptionReport
 /// A nullary observation or a parameterized observation boundary.
 enum Observation
 {
-    /// A result code at the family's polarity.
-    Nullary(CtorDesc<DescriptionGrade>),
+    /// A result code at the family's polarity, and where it is written.
+    Nullary(CtorDesc<DescriptionGrade>, written::WrittenObservation),
     /// An observation with explicit input ports and one result port.
     Parameterized(gandr_theory_levitation::OperDesc),
 }
@@ -835,7 +835,10 @@ impl Reader<'_, '_>
                         }),
                     DeclPolarity::Codata => self.observation(&mut member, &family).map(
                         |observation| match observation {
-                            Observation::Nullary(ctor) => ctors.push(ctor),
+                            Observation::Nullary(ctor, observed) => {
+                                ctors.push(ctor);
+                                written.observations.push(observed);
+                            },
                             Observation::Parameterized(operation) => {
                                 operations.push(operation);
                                 operation_spans.push(span);
@@ -957,7 +960,7 @@ impl Reader<'_, '_>
                     (first, Maybe::Absent(written::port_name::Absent::Unnamed))
                 };
                 match self.field(ty, family, grade, &bound) {
-                    Ok(field) => fields.push(field),
+                    Ok((field, _written)) => fields.push(field),
                     Err(diagnostic) if UNCODED.contains(&diagnostic.fault) => {
                         let _first = uncoded.get_or_insert(diagnostic);
                     },
@@ -981,7 +984,7 @@ impl Reader<'_, '_>
             if run.eat(Spelling("-->")).0 {
                 match self.field(first, family, DescriptionGrade::Finite(Multiplicity(1)), &[
                 ]) {
-                    Ok(field) => fields.push(field),
+                    Ok((field, _written)) => fields.push(field),
                     Err(diagnostic) if UNCODED.contains(&diagnostic.fault) => {
                         let _first = uncoded.get_or_insert(diagnostic);
                     },
@@ -1024,7 +1027,9 @@ impl Reader<'_, '_>
     /// Read a codata observation, retaining its declared input boundary.
     ///
     /// # Specification
-    /// - ensures: retains observation name, grade and result code.
+    /// - ensures: retains observation name, grade and result code, and for a
+    ///   nullary observation where its name and each node of its type are
+    ///   written.
     /// - fails: constructor and operation leads refuse the wrong polarity.
     /// - panics: none.
     ///
@@ -1036,7 +1041,7 @@ impl Reader<'_, '_>
     ///   observations from data generators.
     /// - witness: `description::tests::codata_observations_preserve_their_codes`
     #[spec(ensures: |result| match result {
-        Ok(Observation::Nullary(ref ctor)) => ctor.result == *family,
+        Ok(Observation::Nullary(ref ctor, ref written)) => ctor.result == *family && !written.ty.nodes.is_empty(),
         Ok(Observation::Parameterized(ref operation)) => operation.arity.outputs.len() == 1,
         Err(_) => true,
     })]
@@ -1073,15 +1078,16 @@ impl Reader<'_, '_>
             return Err(run.fault(DescriptionFault::Malformed));
         }
         let ty = run.take()?;
-        let code = self.field(ty, family, grade, &[])?;
+        let (code, written) = self.field(ty, family, grade, &[])?;
         let attrs = self.attrs(run)?;
         run.end()?;
-        Ok(Observation::Nullary(CtorDesc::new(
-            self.text(named).0,
-            code,
-            family.clone(),
-            attrs,
-        )))
+        Ok(Observation::Nullary(
+            CtorDesc::new(self.text(named).0, code, family.clone(), attrs),
+            written::WrittenObservation {
+                named: named.span,
+                ty: written,
+            },
+        ))
     }
 
     /// Read a finite or unrestricted field grade.
@@ -1120,12 +1126,14 @@ impl Reader<'_, '_>
         Ok(DescriptionGrade::Finite(Multiplicity(1)))
     }
 
-    /// Interpret a first-order field, recognizing the recursive family head.
+    /// Interpret a first-order field, recognizing the recursive family head,
+    /// and keep where each node of its type is written.
     ///
     /// # Specification
     /// - requires: `bound` holds the binders of the fields before this one.
     /// - ensures: self references become recursive code, whatever their indices
-    ///   name, and other fields retain symbolic types.
+    ///   name, and other fields retain symbolic types; the written term is the
+    ///   type's, as [`Self::type_reference`] keeps it.
     /// - fails: unreadable type forms return their located refusal, and a
     ///   symbolic type naming a binder of `bound` refuses as dependent.
     /// - panics: none.
@@ -1145,7 +1153,7 @@ impl Reader<'_, '_>
     ///   parameter.
     /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
     /// - witness: `description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`
-    #[spec(ensures: |result| result.as_ref().map_or(true, |code| code.recursive_sorts().all(|sort| sort == family)))]
+    #[spec(ensures: |result| result.as_ref().map_or(true, |&(ref code, _)| code.recursive_sorts().all(|sort| sort == family)))]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -1159,11 +1167,11 @@ impl Reader<'_, '_>
         family: &Name,
         grade: DescriptionGrade,
         bound: &[Placed],
-    ) -> Result<Code<DescriptionGrade>, DescriptionDiagnostic>
+    ) -> Result<(Code<DescriptionGrade>, written::WrittenTerm), DescriptionDiagnostic>
     {
-        let reference = self.type_reference(at)?;
+        let (reference, written) = self.type_reference(at)?;
         if &reference.head_name() == family {
-            return Ok(Code::var(family.clone()));
+            return Ok((Code::var(family.clone()), written));
         }
         let mut pending = Vec::from([reference.to_node()]);
         while let Some(node) = pending.pop() {
@@ -1182,14 +1190,17 @@ impl Reader<'_, '_>
                 ValueTypeView::Ctor { args, .. } => pending.extend(args),
             }
         }
-        Ok(Code::field(reference, grade, Attrs::empty()))
+        Ok((Code::field(reference, grade, Attrs::empty()), written))
     }
 
-    /// Read symbolic first-order types with an explicit postorder stack.
+    /// Read symbolic first-order types with an explicit postorder stack, and
+    /// keep where each node is written.
     ///
     /// # Specification
     /// - ensures: applications preserve the head and argument order without
-    ///   Rust recursion.
+    ///   Rust recursion. The written term holds one node per node of the type,
+    ///   in pre-order, each at its own bytes and an application with its
+    ///   head's.
     /// - fails: function fields, universes and unknown type shapes are refused
     ///   at their written node.
     /// - panics: none.
@@ -1203,14 +1214,15 @@ impl Reader<'_, '_>
     /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
     /// - witness: `description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`
     /// - witness: `description::tests::a_field_reads_each_primitive_and_each_applied_argument`
-    #[spec(ensures: |result| result.is_ok() || self.tree.node(at.node).is_some())]
+    #[spec(ensures: |result| result.as_ref().map_or_else(|_| self.tree.node(at.node).is_some(), |&(_, ref written)| written.nodes.first().is_some_and(|node| node.span == at.span)))]
     fn type_reference(
         &self,
         at: Placed,
-    ) -> Result<ValueTypeRef, DescriptionDiagnostic>
+    ) -> Result<(ValueTypeRef, written::WrittenTerm), DescriptionDiagnostic>
     {
         let mut pending = vec![TypeFrame::Read(at)];
         let mut values = Vec::new();
+        let mut written = written::WrittenTerm::default();
         while let Some(frame) = pending.pop() {
             match frame {
                 TypeFrame::Read(at) => {
@@ -1238,6 +1250,10 @@ impl Reader<'_, '_>
                             },
                         };
                         values.push(ty);
+                        written.nodes.push(written::WrittenNode {
+                            span: at.span,
+                            head: Maybe::Absent(written::head::Absent::Leaf),
+                        });
                         continue;
                     }
                     if pieces.iter().any(|piece| matches!(piece, Piece::Tile { label, .. } if matches!(label.as_ref(), "->" | "=>"))) {
@@ -1255,6 +1271,10 @@ impl Reader<'_, '_>
                             return Err(run.fault(DescriptionFault::TypeShape));
                         }
                     }
+                    written.nodes.push(written::WrittenNode {
+                        span: at.span,
+                        head: Maybe::Present(head.span),
+                    });
                     pending.push(TypeFrame::Apply(
                         Name::from(self.text(head).0),
                         ArgumentCount(args.len()),
@@ -1274,10 +1294,11 @@ impl Reader<'_, '_>
                 },
             }
         }
-        values.pop().ok_or(DescriptionDiagnostic {
+        let value = values.pop().ok_or(DescriptionDiagnostic {
             span: at.span,
             fault: DescriptionFault::TypeShape,
-        })
+        })?;
+        Ok((value, written))
     }
 }
 

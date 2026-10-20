@@ -173,7 +173,8 @@ pub enum DecodeError
 {
     /// Atom abstraction needs its own native former.
     AtomAbstraction,
-    /// The negative greatest-fixpoint former is absent.
+    /// A codata description read where a value type or a data signature is
+    /// wanted: codata decodes to a computation type, by [`decode_codata`].
     CodataNu,
     /// The payload-coproduct reading has no summand; native empty data remains
     /// valid.
@@ -208,7 +209,7 @@ impl core::fmt::Display for DecodeError
     {
         match *self {
             Self::AtomAbstraction => f.write_str("atom abstraction has no native former"),
-            Self::CodataNu => f.write_str("codata requires the negative greatest-fixpoint former"),
+            Self::CodataNu => f.write_str("codata decodes to a computation type, not a value type"),
             Self::Uninhabited => f.write_str("an empty payload coproduct has no summand"),
             Self::ForeignSort(ref name) => write!(f, "recursive sort `{name}` is not bound"),
             Self::MultiSorted => f.write_str("this interpretation requires one declared sort"),
@@ -418,6 +419,69 @@ pub fn decode_signature<G>(
         constructors.push(fields);
     }
     Ok(DataSignature::new(parameters, constructors, kind))
+}
+
+/// Decode a codata description into a native codata signature, `itself` the
+/// declaration applied to its own parameters.
+///
+/// # Specification
+/// - requires: parameter classifiers and `context` have matching de Bruijn
+///   scopes; `itself` is the declaration's codata type at its parameter
+///   variables, in that scope.
+/// - ensures: parameters and kind are retained; observations follow declaration
+///   order; an observation written as the declaration itself is `itself`, and
+///   one written as a value type `A` is the returner `F A`.
+/// - fails: a data or multi-sort description, a mismatched parameter arity, an
+///   observation naming another sort, an observation of any other code and an
+///   unreadable field type are declined explicitly.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `MalformedCode` for a data description or an observation that is
+/// neither a field nor the declaration, `MultiSorted`, `ParameterArity`,
+/// `ForeignSort`, or a `decode` refusal of a field type.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a stream's two observations decode to the returner of its
+///   parameter and to the stream itself, in written order, and a data
+///   description is declined.
+/// - witness: `description::tests::a_codata_description_decodes_its_observations`
+#[inline]
+#[spec(ensures: |result| result.as_ref().map_or(true, |signature| signature.observations().len() == description.ctors.len() && signature.parameters().len() == description.params.len() && signature.kind() == kind))]
+pub fn decode_codata<G>(
+    arena: &mut CoreArena,
+    description: &TheoryDesc<G>,
+    (context, itself): (DecodeContext<'_>, crate::CompTypeId),
+    parameters: Vec<ValueTypeId>,
+    kind: ValueTypeId,
+) -> Result<crate::CodataSignature, DecodeError>
+{
+    if description.polarity != DeclPolarity::Codata {
+        return Err(DecodeError::MalformedCode);
+    }
+    if description.sorts.len() != 1 {
+        return Err(DecodeError::MultiSorted);
+    }
+    if parameters.len() != description.params.len() {
+        return Err(DecodeError::ParameterArity);
+    }
+    let mut observations = Vec::with_capacity(description.ctors.len());
+    for observation in &description.ctors {
+        let node = observation.code.to_node();
+        let observed = match node.view() {
+            CodeView::Var(sort) if sort.as_ref() == context.self_sort.as_ref() => itself,
+            CodeView::Var(sort) => return Err(DecodeError::ForeignSort(sort.clone())),
+            CodeView::Field { .. } => {
+                let field = interpret(arena, vec![Frame::Code(node)], context)?;
+                arena.comp_type_returner(field)
+            },
+            CodeView::Unit | CodeView::Prod(_) | CodeView::Sum(_) | CodeView::Bind { .. } => {
+                return Err(DecodeError::MalformedCode);
+            },
+        };
+        observations.push(observed);
+    }
+    Ok(crate::CodataSignature::new(parameters, observations, kind))
 }
 
 /// Enforce the single positive sort boundary of the native data interpretation.

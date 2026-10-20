@@ -1894,6 +1894,7 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
                     | DeclarationOutcome::Uncompleted { .. }
                     | DeclarationOutcome::Bodied { .. }
                     | DeclarationOutcome::Data(_)
+                    | DeclarationOutcome::Codata(_)
                     | DeclarationOutcome::Abstract(_)
                     | DeclarationOutcome::World,
                     ..,
@@ -1945,10 +1946,10 @@ fn declared_worlds(module: &LoweredModule<'_>) -> BTreeMap<WorldName, ConstantIn
 ///   uncompleted one its declared type and a hole, a bodiless definition its
 ///   body and no signature, each of the three the laws its `respects` attribute
 ///   names and the entry its `entry` attribute names; a data declaration
-///   carries its native signature, shared with the lowered module, a sealed
-///   abstract type its kind, representation, extent, site and mobility, and a
-///   world declaration nothing but its position. A refused declaration is not
-///   offered.
+///   carries its native signature and a codata declaration its decoded one,
+///   each shared with the lowered module, a sealed abstract type its kind,
+///   representation, extent, site and mobility, and a world declaration nothing
+///   but its position. A refused declaration is not offered.
 /// - provides: the one place that names both the lowering's module and the
 ///   checker's declaration input.
 /// - fails: never.
@@ -1978,6 +1979,8 @@ fn declared_worlds(module: &LoweredModule<'_>) -> BTreeMap<WorldName, ConstantIn
                     actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Present(body)},
                 DeclarationOutcome::Data(index) =>
                     matches!(*actual.content(), gandr_core_checker::DeclarationContent::Data(ref held) if module.data(index) == Maybe::Present(held)),
+                DeclarationOutcome::Codata(index) =>
+                    matches!(*actual.content(), gandr_core_checker::DeclarationContent::Codata(ref held) if module.codata(index) == Maybe::Present(held)),
                 DeclarationOutcome::Abstract(sealing) =>
                     *actual.content() == gandr_core_checker::DeclarationContent::Abstract(abstract_type(sealing)),
                 DeclarationOutcome::World =>
@@ -2006,6 +2009,16 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
             DeclarationOutcome::Data(index) => {
                 if let Maybe::Present(signature) = module.data(index) {
                     declarations.push(Declaration::data(
+                        lowered.constant(),
+                        Arc::clone(signature),
+                        OriginToken::from(usize::from(lowered.origin())),
+                    ));
+                }
+                continue;
+            },
+            DeclarationOutcome::Codata(index) => {
+                if let Maybe::Present(signature) = module.codata(index) {
+                    declarations.push(Declaration::codata(
                         lowered.constant(),
                         Arc::clone(signature),
                         OriginToken::from(usize::from(lowered.origin())),
@@ -3151,6 +3164,7 @@ def h = 1 ;"#,
                 | DeclarationOutcome::Bodied { body } => body,
                 other @ (DeclarationOutcome::Uncompleted { .. }
                 | DeclarationOutcome::Data(_)
+                | DeclarationOutcome::Codata(_)
                 | DeclarationOutcome::Abstract(_)
                 | DeclarationOutcome::World
                 | DeclarationOutcome::Refused(_)) => {
@@ -3274,6 +3288,7 @@ def h = 1 ;"#,
             | DeclarationOutcome::Uncompleted { declared_type } => declared_type,
             other @ (DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::World
             | DeclarationOutcome::Refused(_)) => {
@@ -3285,6 +3300,7 @@ def h = 1 ;"#,
             other @ (DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::World
             | DeclarationOutcome::Refused(_)) => panic!("`{wanted}` lowers a body, not {other:?}"),

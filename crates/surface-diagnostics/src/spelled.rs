@@ -615,6 +615,7 @@ fn words_point(
             | DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::World
             | DeclarationOutcome::Refused(_) => None,

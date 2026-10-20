@@ -498,6 +498,7 @@ use core::ops::ControlFlow;
 
 use anodized::spec;
 use gandr_core_term::Binders;
+use gandr_core_term::CodataSignature;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
@@ -574,6 +575,7 @@ use crate::form::shape_of;
 use crate::import::ImportBinding;
 use crate::import::ImportResolution;
 use crate::import::ModuleImports;
+use crate::module::CodataIndex;
 use crate::module::Collected;
 use crate::module::ComponentScope;
 use crate::module::Container;
@@ -2246,6 +2248,10 @@ enum Plan
     /// The nominal family declared at this admission position, over the
     /// arguments in the lowerer's operand store, left to right.
     Data(ConstantIndex, Stretch),
+    /// The codata declaration at this admission position, applied to the
+    /// arguments in the lowerer's operand store, left to right: a
+    /// computation type.
+    Codata(ConstantIndex, Stretch),
     /// The type family member at this place of the collection's family list,
     /// its type expanded over the arguments in the lowerer's operand store,
     /// left to right.
@@ -2795,6 +2801,9 @@ struct Lowerer<'run, 'source>
     /// or a match's answer states it, or the block a statement's local ends
     /// continue answers.
     answers: BTreeMap<NodeIndex, native::Answer>,
+    /// The body of every copattern clause: the arms a productive self-call
+    /// `f[>](…)` may stand as.
+    cocased: BTreeSet<NodeIndex>,
     /// Each derived operation standing where no type is answered, its motive
     /// synthesised from its operands: the innermost first once
     /// [`Self::refuse_unsynthesised`] has read them, for the mint sweep.
@@ -2922,6 +2931,11 @@ struct Lowerer<'run, 'source>
     /// The names of each data declaration's constructors in tag order, by
     /// [`DataIndex`].
     constructors: Vec<Vec<String>>,
+    /// The position each codata declaration's decoded signature takes, by its
+    /// slot.
+    codata_described: BTreeMap<SlotIndex, CodataIndex>,
+    /// The codata declarations' signatures, by [`CodataIndex`].
+    codata: Vec<Arc<CodataSignature>>,
     /// Each recursive function's own name, by the frame that binds it.
     recursions: BTreeMap<ScopeId, native::Recursion>,
     /// Each recursive function's parameter, by the frame it binds: the
@@ -3462,6 +3476,7 @@ pub fn lower_unit<'source>(
         recognition,
         data,
         constructors,
+        codata,
         mut resolutions,
         ..
     } = lowerer;
@@ -3487,6 +3502,7 @@ pub fn lower_unit<'source>(
     )
     .with_documentation(documentation)
     .with_constructors(constructors)
+    .with_codata(codata)
     .with_inferred_exits(inferred)
     .with_nested_sites(nested)
     .with_in_scope(in_scope)
@@ -3622,6 +3638,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             index_frames: Vec::new(),
             stand_ins: BTreeSet::new(),
             answers: BTreeMap::new(),
+            cocased: BTreeSet::new(),
             synthesised: Vec::new(),
             in_type: BTreeSet::new(),
             in_quote: BTreeSet::new(),
@@ -3658,6 +3675,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             described: BTreeMap::new(),
             data: Vec::new(),
             constructors: Vec::new(),
+            codata_described: BTreeMap::new(),
+            codata: Vec::new(),
             resolutions: Vec::new(),
             recursions: BTreeMap::new(),
             staged_parameters: BTreeMap::new(),
@@ -5795,6 +5814,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             | Plan::Universe(_)
                             | Plan::Constructor(_)
                             | Plan::Data(..)
+                            | Plan::Codata(..)
                             | Plan::Transparent(_)
                             | Plan::Sealed(_)
                             | Plan::Instantiated(..))
@@ -5826,6 +5846,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     end: self.operands.len(),
                 };
                 return self.family(site, constant, arity, none);
+            }
+            if let Resolved::Declaration { constant, .. } = resolved
+                && let Maybe::Present(arity) = self.codata_family(constant)
+            {
+                let none = Stretch {
+                    start: self.operands.len(),
+                    end: self.operands.len(),
+                };
+                return self.codata_type(site, constant, arity, none);
             }
             let frame = self.require(site, Produced::Value)?;
             let plan = self.resolved_term(site, frame, resolved);
@@ -7837,7 +7866,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..)))
+                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Data(..) | Plan::Codata(..)))
                 )
         },
     )]
@@ -7873,6 +7902,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && let Maybe::Present(arity) = self.data_family(constant)
             {
                 return self.family(site, constant, arity, none);
+            }
+            if let Resolved::Declaration { constant, .. } = resolved
+                && let Maybe::Present(arity) = self.codata_family(constant)
+            {
+                return self.codata_type(site, constant, arity, none);
             }
             let frame = self.require(site, Produced::Value)?;
             let plan = self.resolved_term(site, frame, resolved);
@@ -8107,10 +8141,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   atom a sealed component's abstract type declares. Otherwise a head a
     ///   binder answers is that code; past the binders, a head naming a type
     ///   member written before it in its own module or an enclosing one stands
-    ///   for that member's type; then a head an earlier declaration answers is
-    ///   that code, read as the static application of it to no arguments. Any
-    ///   other head resolves against the nullary table and is planned as its
-    ///   atom.
+    ///   for that member's type; then a head naming a codata family stands as
+    ///   that family's computation type at no arguments; then a head an earlier
+    ///   declaration answers is that code, read as the static application of it
+    ///   to no arguments. Any other head resolves against the nullary table and
+    ///   is planned as its atom.
     /// - provides: the type-head half of resolution, the expansion of a
     ///   manifest type component and a type member, the atom of a sealed one,
     ///   and the decode of a value name in type position.
@@ -8152,6 +8187,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                 | Plan::Decode(_, _, _)
                                 | Plan::StaticApplication(_, _)
                                 | Plan::Data(_, _)
+                                | Plan::Codata(_, _)
                                 | Plan::Constructor(_))
                         )
                     ))
@@ -8887,10 +8923,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   family declared strictly earlier stands as that constructor applied to
     ///   the arguments, as [`Self::construct`] plans it. Otherwise a head
     ///   naming a type family, as a component or a member, expands to the
-    ///   family's type over the arguments; a head a binder or an earlier
-    ///   declaration answers is read as the static application of that code to
-    ///   the arguments, left to right, or, holding a function where a value is
-    ///   read, as its call; any other head is the type former
+    ///   family's type over the arguments; a head naming a codata family stands
+    ///   as that family's computation type over the arguments; a head a binder
+    ///   or an earlier declaration answers is read as the static application of
+    ///   that code to the arguments, left to right, or, holding a function
+    ///   where a value is read, as its call; any other head is the type former
     ///   [`Self::applied_head`] plans.
     /// - provides: the applied half of type-head resolution.
     /// - fails: yields the unresolved-head refusal for a head nothing answers
@@ -8920,7 +8957,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Relation(..) | Plan::Stack(..) | Plan::Constructor(_)))
+                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Data(..) | Plan::Codata(..) | Plan::Expansion(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Relation(..) | Plan::Stack(..) | Plan::Constructor(_)))
                 )
         },
     )]
@@ -9298,7 +9335,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Some(&Plan::Decode(_, planned, _) | &Plan::Unquote(_, planned, _)) => {
                         planned == applied && !matches!(site.reading, Reading::Value(_))
                     },
-                    | Some(&Plan::Data(_, planned)) => planned == applied,
+                    | Some(&(Plan::Data(_, planned) | Plan::Codata(_, planned))) => planned == applied,
                     | _ => false,
                 }
         },
@@ -9314,6 +9351,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && let Maybe::Present(arity) = self.data_family(constant)
         {
             return self.family(site, constant, arity, applied);
+        }
+        if let Resolved::Declaration { constant, .. } = resolved
+            && let Maybe::Present(arity) = self.codata_family(constant)
+        {
+            return self.codata_type(site, constant, arity, applied);
         }
         let from = site.reading.frame();
         let telescope = self.telescope_at(site.at.node);
@@ -10956,7 +10998,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Capability(..)
                 | Plan::Session(..)
                 | Plan::World(world::Worlded::At { .. }) => Some(Produced::ValueType),
-                | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::With(_) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
+                | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::With(_) | Plan::Codata(..) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
                     Some(Produced::CompType)
                 },
                 | Plan::Decode(_, _, universe) | Plan::Unquote(_, _, universe) => Some(match universe.sort {
@@ -11136,6 +11178,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Plan::Function(function) => self.mint_function(&function, sink, origin),
             Plan::Data(constant, arguments) => self.mint_family(constant, arguments, sink, origin),
+            Plan::Codata(constant, arguments) => {
+                self.mint_codata(constant, arguments, sink, origin)
+            },
             Plan::Expansion(family, arguments) => {
                 self.mint_expansion(family, arguments, sink, origin)
             },
@@ -12165,6 +12210,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Application(..)
             | Plan::Function(_)
             | Plan::Data(..)
+            | Plan::Codata(..)
             | Plan::Expansion(..)
             | Plan::Constructor(_)
             | Plan::Case(_)
@@ -14056,6 +14102,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else if let Some(&index) = self.described.get(&position) {
                 ret == Maybe::Present(DeclarationOutcome::Data(index))
             }
+            else if let Some(&index) = self.codata_described.get(&position) {
+                ret == Maybe::Present(DeclarationOutcome::Codata(index))
+            }
             else if let Maybe::Present(Half { operand: Operand::Operation, .. }) = slot.definition {
                 ret == self.operated.get(&position).map_or(Maybe::Absent(lowered::Absent::Unminted), |&(declared_type, body)| Maybe::Present(DeclarationOutcome::Completed { declared_type, body }))
             }
@@ -14112,7 +14161,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Maybe::Absent(reason) => {
                         declared == Maybe::Absent(reason) && matches!(body, Maybe::Absent(_))
                     },
-                    | Maybe::Present(DeclarationOutcome::Refused(_) | DeclarationOutcome::Data(_) | DeclarationOutcome::Abstract(_) | DeclarationOutcome::World) => false,
+                    | Maybe::Present(DeclarationOutcome::Refused(_) | DeclarationOutcome::Data(_) | DeclarationOutcome::Codata(_) | DeclarationOutcome::Abstract(_) | DeclarationOutcome::World) => false,
                 }
             }
         },
@@ -14177,6 +14226,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         if let Some(&index) = self.described.get(&position) {
             return Maybe::Present(DeclarationOutcome::Data(index));
+        }
+        if let Some(&index) = self.codata_described.get(&position) {
+            return Maybe::Present(DeclarationOutcome::Codata(index));
         }
         if let Maybe::Present(Half {
             operand: Operand::Operation,
@@ -16033,6 +16085,7 @@ mod tests
             },
             DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::World
             | DeclarationOutcome::Refused(_) => {
@@ -16066,6 +16119,7 @@ mod tests
             | DeclarationOutcome::Uncompleted { declared_type } => declared_type,
             DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::World
             | DeclarationOutcome::Refused(_) => {

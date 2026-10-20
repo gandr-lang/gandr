@@ -421,6 +421,9 @@ impl TileName
     pub const FORK: Self = Self("fork");
     /// The equals sign `=` opening a definition tail.
     pub const EQUALS: Self = Self("=");
+    /// The greater-than sign `>`: an instantiation's productivity claim, a
+    /// self-call standing as a copattern arm.
+    pub const GREATER_THAN: Self = Self(">");
     /// The value function space's `=>`.
     pub const FAT_ARROW: Self = Self("=>");
     /// An escape sequence inside a string's own tiles.

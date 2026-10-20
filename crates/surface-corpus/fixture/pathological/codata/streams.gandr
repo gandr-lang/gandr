@@ -1,0 +1,85 @@
+// What codata refuses (#644). A family's kind is a computation universe; a
+// copattern block answers each observation once; a call claiming `>` is the
+// whole arm of a copattern block, and one anywhere else — under another
+// call, under `become`, outside any block — is refused by name until `>`
+// carries the sized rung's evidence (#392). The twin of
+// `../../model/codata/streams.gandr`.
+
+/// A stream of integers, the family every definition here builds.
+@[ checks ]
+codata Stream : Type[-] {
+  head : Integer;
+  tail : Stream;
+}
+
+/// A point at the value universe: an observation is a computation, so the
+/// family's kind is a computation universe.
+@[ refuses("CodataKindNotUniverse") ]
+codata Point : Type {
+  x : Integer;
+  depth : Integer;
+}
+
+/// Three readings of a position.
+@[ checks ]
+codata Spot : Type[-] {
+  x : Integer;
+  y : Integer;
+  depth : Integer;
+}
+
+/// A block that leaves the `depth` observation unanswered.
+@[ refuses("MalformedForm") ]
+def shallow(n : Integer) -> Spot {
+  &{ .x => return n, .y => return n }
+}
+
+/// A block answering an observation the family does not have.
+@[ refuses("UnresolvedName") ]
+def stray(n : Integer) -> Spot {
+  &{ .x => return n, .y => return n, .z => return n }
+}
+
+/// The head of a stream.
+@[ checks ]
+def peek(s : +U Stream) -> -F Integer {
+  become s.head
+}
+
+/// A stream pointwise sum, the call the refusals below nest a productive
+/// call under.
+@[ checks ]
+def rec sums(s : +U Stream, t : +U Stream) -> Stream {
+  &{
+    .head => {
+      run x <- peek(s);
+      run y <- peek(t);
+      return x + y
+    },
+    .tail => sums[>](thunk { s.tail }, thunk { t.tail })
+  }
+}
+
+/// The Fibonacci numbers as a stream summed with its own tail: the productive
+/// calls stand under `sums`, which the guard cannot see through; the sized
+/// rung's `>` admits it (#392).
+@[ refuses("UnguardedCorecursion") ]
+def rec fibs(n : Integer) -> Stream {
+  &{
+    .head => return n,
+    .tail => sums(thunk { fibs[>](n) }, thunk { fibs[>](n) })
+  }
+}
+
+/// A productive call under `become` is not the arm itself.
+@[ refuses("UnguardedCorecursion") ]
+def rec deferred(n : Integer) -> Stream {
+  &{ .head => return n, .tail => become deferred[>](n) }
+}
+
+/// A productive call outside any copattern block: nothing is observed before
+/// the function runs again.
+@[ refuses("UnguardedCorecursion") ]
+def rec bare(n : Integer) -> Stream {
+  bare[>](n)
+}

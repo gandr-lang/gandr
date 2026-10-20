@@ -133,6 +133,8 @@ enum Amounts<'source>
     Bodied,
     /// A native data signature.
     Data,
+    /// A decoded codata signature.
+    Codata,
     /// A sealed abstract type.
     Abstract,
     /// A world declaration.
@@ -352,6 +354,7 @@ impl Stratum
                     },
                     | DeclarationOutcome::Bodied { body } => ret.arena.value(body).is_some(),
                     | DeclarationOutcome::Data(index) => matches!(ret.module.data(index), Maybe::Present(signature) if ret.arena.value_type(signature.kind()).is_some()),
+                    | DeclarationOutcome::Codata(index) => matches!(ret.module.codata(index), Maybe::Present(signature) if ret.arena.value_type(signature.kind()).is_some()),
                     | DeclarationOutcome::Abstract(sealing) => ret.arena.value_type(sealing.kind).is_some() && ret.arena.value_type(sealing.representation).is_some(),
                     | DeclarationOutcome::Refused(_) | DeclarationOutcome::World => true,
                 })
@@ -406,6 +409,7 @@ where
                     },
                     | DeclarationOutcome::Bodied { body } => ret.arena.value(body).is_some(),
                     | DeclarationOutcome::Data(index) => matches!(ret.module.data(index), Maybe::Present(signature) if ret.arena.value_type(signature.kind()).is_some()),
+                    | DeclarationOutcome::Codata(index) => matches!(ret.module.codata(index), Maybe::Present(signature) if ret.arena.value_type(signature.kind()).is_some()),
                     | DeclarationOutcome::Abstract(sealing) => ret.arena.value_type(sealing.kind).is_some() && ret.arena.value_type(sealing.representation).is_some(),
                     | DeclarationOutcome::Refused(_) | DeclarationOutcome::World => true,
                 })
@@ -460,6 +464,7 @@ where
                     },
                     | DeclarationOutcome::Bodied { body } => ret.arena.value(body).is_some(),
                     | DeclarationOutcome::Data(index) => matches!(ret.module.data(index), Maybe::Present(signature) if ret.arena.value_type(signature.kind()).is_some()),
+                    | DeclarationOutcome::Codata(index) => matches!(ret.module.codata(index), Maybe::Present(signature) if ret.arena.value_type(signature.kind()).is_some()),
                     | DeclarationOutcome::Abstract(sealing) => ret.arena.value_type(sealing.kind).is_some() && ret.arena.value_type(sealing.representation).is_some(),
                     | DeclarationOutcome::Refused(_) | DeclarationOutcome::World => true,
                 })
@@ -571,6 +576,7 @@ fn dotted(
                                 )
                                 | (Amounts::Bodied, DeclarationOutcome::Bodied { .. })
                                 | (Amounts::Data, DeclarationOutcome::Data(_))
+                                | (Amounts::Codata, DeclarationOutcome::Codata(_))
                                 | (Amounts::Abstract, DeclarationOutcome::Abstract(_))
                                 | (Amounts::World, DeclarationOutcome::World) => true,
                                 | (
@@ -595,6 +601,7 @@ fn rows<'source>(lowered: &Lowered<'source>) -> Vec<(String, Role, Amounts<'sour
                 DeclarationOutcome::Uncompleted { .. } => Amounts::Uncompleted,
                 DeclarationOutcome::Bodied { .. } => Amounts::Bodied,
                 DeclarationOutcome::Data(_) => Amounts::Data,
+                DeclarationOutcome::Codata(_) => Amounts::Codata,
                 DeclarationOutcome::Abstract(_) => Amounts::Abstract,
                 DeclarationOutcome::World => Amounts::World,
                 DeclarationOutcome::Refused(refusal) => Amounts::Refused(refusal),
@@ -714,6 +721,7 @@ where
         DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => body,
         outcome @ (DeclarationOutcome::Uncompleted { .. }
         | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
         | DeclarationOutcome::Abstract(_)
         | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => {
@@ -812,6 +820,7 @@ where
         | DeclarationOutcome::Uncompleted { declared_type } => declared_type,
         outcome @ (DeclarationOutcome::Bodied { .. }
         | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
         | DeclarationOutcome::Abstract(_)
         | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => {
@@ -984,6 +993,16 @@ fn report(lowered: &mut Lowered<'_>) -> ModuleReport
                 DeclarationOutcome::Data(index) => {
                     return match lowered.module.data(index) {
                         Maybe::Present(signature) => Some(Declaration::data(
+                            declaration.constant(),
+                            Arc::clone(signature),
+                            OriginToken::from(usize::from(declaration.origin())),
+                        )),
+                        Maybe::Absent(_) => None,
+                    };
+                },
+                DeclarationOutcome::Codata(index) => {
+                    return match lowered.module.codata(index) {
+                        Maybe::Present(signature) => Some(Declaration::codata(
                             declaration.constant(),
                             Arc::clone(signature),
                             OriginToken::from(usize::from(declaration.origin())),
@@ -3108,6 +3127,7 @@ fn a_malformed_member_named_by_the_signature_is_reported_once()
             | Amounts::Uncompleted
             | Amounts::Bodied
             | Amounts::Data
+            | Amounts::Codata
             | Amounts::Abstract
             | Amounts::World => None,
         })
@@ -3132,6 +3152,7 @@ fn a_malformed_member_named_by_the_signature_is_reported_once()
             | Amounts::Uncompleted
             | Amounts::Bodied
             | Amounts::Data
+            | Amounts::Codata
             | Amounts::Abstract
             | Amounts::World => None,
         })

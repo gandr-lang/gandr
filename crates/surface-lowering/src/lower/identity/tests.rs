@@ -114,6 +114,7 @@ pub(in crate::lower) fn judged(
                     Maybe::Present(body),
                 ),
                 DeclarationOutcome::Data(_)
+                | DeclarationOutcome::Codata(_)
                 | DeclarationOutcome::Abstract(_)
                 | DeclarationOutcome::World
                 | DeclarationOutcome::Refused(_) => return None,
@@ -198,6 +199,7 @@ fn tail_of(
         DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => body,
         other @ (DeclarationOutcome::Uncompleted { .. }
         | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
         | DeclarationOutcome::Abstract(_)
         | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => panic!("`{name:?}` lowers a body: {other:?}"),
@@ -839,6 +841,7 @@ fn a_derived_operation_synthesises_its_path_at_the_words()
         other @ (DeclarationOutcome::Uncompleted { .. }
         | DeclarationOutcome::Bodied { .. }
         | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
         | DeclarationOutcome::Abstract(_)
         | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers both halves: {other:?}"),
@@ -1526,6 +1529,7 @@ fn a_move_out_of_shape_is_refused()
         | DeclarationOutcome::Uncompleted { .. }
         | DeclarationOutcome::Bodied { .. }
         | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
         | DeclarationOutcome::Abstract(_)
         | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_) => None,
@@ -1587,6 +1591,7 @@ fn a_relation_lowers_to_the_type_it_abbreviates()
         other @ (DeclarationOutcome::Completed { .. }
         | DeclarationOutcome::Bodied { .. }
         | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
         | DeclarationOutcome::Abstract(_)
         | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => panic!("`{name}` is a signature: {other:?}"),

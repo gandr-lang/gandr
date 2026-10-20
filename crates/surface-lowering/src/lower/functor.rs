@@ -662,6 +662,7 @@ impl<'source> Lowerer<'_, 'source>
                 let renamed = match own {
                     DeclarationOutcome::Refused(_)
                     | DeclarationOutcome::Data(_)
+                    | DeclarationOutcome::Codata(_)
                     | DeclarationOutcome::World => continue,
                     DeclarationOutcome::Completed {
                         declared_type,

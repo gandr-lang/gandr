@@ -1170,7 +1170,8 @@ impl<'arena> CoreSource<'arena>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: each computation-type former read as its [`Former`];
+    /// - ensures: each computation-type former read as its [`Former`], a codata
+    ///   family applied named as its declaration is named;
     ///   [`Former::Unreadable`] for an id the arena does not hold.
     /// - provides: the computation-type half of [`Source::read`].
     /// - fails: never.
@@ -1185,11 +1186,14 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
     /// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
     /// - witness: `tests::goldens::dependent_function_type_breaks_before_codomain`
+    /// - witness: `tests::goldens::a_codata_family_spells_as_its_name_applied`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     #[spec(ensures: |ret| match (self.arena.comp_type(id), ret) {
         | (Some(&CompType::With(first, second)), Former::With(a, b)) => a == CoreNode::CompType(first) && b == CoreNode::CompType(second),
-        | (Some(&CompType::Unknown), Former::Unreadable(Unreadable::UnknownType)) | (Some(&CompType::Codata { .. }), Former::Unreadable(Unreadable::Codata)) | (None, Former::Unreadable(Unreadable::Dangling)) => true,
+        | (Some(&CompType::Unknown), Former::Unreadable(Unreadable::UnknownType)) | (None, Former::Unreadable(Unreadable::Dangling)) => true,
+        | (Some(&CompType::Codata { declaration, ref arguments }), Former::Codata { name, arity }) =>
+            usize::from(arity) == arguments.len() && self.name(declaration) == name,
         | (Some(&CompType::Returner { result, ref effects }), Former::Returner(actual)) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Pure,
         | (Some(&CompType::Returner { result, ref effects }), Former::EffectfulReturner { result: actual, .. }) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Effectful,
         | (Some(&CompType::Arrow { domain, codomain }), Former::Arrow { domain: actual_domain, codomain: actual_codomain })
@@ -1251,15 +1255,13 @@ impl<'arena> CoreSource<'arena>
                 codomain: CoreNode::CompType(codomain),
             },
             CompType::Element { code, .. } => Former::ComputationElement(CoreNode::Value(code)),
-            #[cfg_attr(
-                dylint_lib = "quenchant_dylints",
-                expect(
-                    answer_totality,
-                    reason = "a codata application: a computation type the surface grammar has \
-                              no syntax for yet"
-                )
-            )]
-            CompType::Codata { .. } => Former::Unreadable(Unreadable::Codata),
+            CompType::Codata {
+                declaration,
+                ref arguments,
+            } => Former::Codata {
+                name: self.name(declaration),
+                arity: Arity::from(arguments.len()),
+            },
         }
     }
 
@@ -1663,12 +1665,12 @@ impl Source for CoreSource<'_>
     /// - ensures: of the node `node` restores to, the value type at `index`
     ///   among a held product's, sum's or record type's components and a
     ///   session type's payloads; the value at `index` among a held tuple's,
-    ///   record's or constructor's fields and a family's arguments; the value
-    ///   among a primitive's arguments and the computation among a case's or a
-    ///   data case's branches, a handler's operation clauses and an offer's
-    ///   arms; a record's fields and an offer's arms in label order; none for
-    ///   an index past them, another former, another family or a missing
-    ///   handle.
+    ///   record's or constructor's fields and a family's arguments, a codata
+    ///   family's included; the value at `index` among a primitive's arguments
+    ///   and the computation among a case's or a data case's branches, a
+    ///   handler's operation clauses and an offer's arms; a record's fields and
+    ///   an offer's arms in label order; none for an index past them, another
+    ///   former, another family or a missing handle.
     /// - provides: the printer's reading of an n-ary former.
     /// - fails: never.
     /// - panics: none.
@@ -1686,6 +1688,7 @@ impl Source for CoreSource<'_>
     /// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `core_source::tests::components_read_in_order_and_stop_at_the_arity`
+    /// - witness: `tests::goldens::a_codata_family_spells_as_its_name_applied`
     #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| match restored {
         | CoreNode::ValueType(id) => ret == match self.arena.value_type(self.unstaged(id)) {
             | Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => parts.get(usize::from(index)).map(|&part| CoreNode::ValueType(part)),
@@ -1703,7 +1706,10 @@ impl Source for CoreSource<'_>
             | Some(_) | None => None,
         },
         | CoreNode::Computation(id) => self.arena.computation(id).is_some() || ret.is_none(),
-        | CoreNode::CompType(_) => ret.is_none(),
+        | CoreNode::CompType(id) => ret == match self.arena.comp_type(id) {
+            | Some(&CompType::Codata { ref arguments, .. }) => arguments.get(usize::from(index)).map(|&argument| CoreNode::Value(argument)),
+            | Some(_) | None => None,
+        },
     })]
     #[inline]
     fn component(
@@ -1851,7 +1857,17 @@ impl Source for CoreSource<'_>
                 | Computation::With(..)
                 | Computation::Project(..) => None,
             },
-            CoreNode::CompType(_) => None,
+            CoreNode::CompType(id) => match *self.arena.comp_type(id)? {
+                CompType::Codata { ref arguments, .. } => {
+                    arguments.get(at).map(|&argument| CoreNode::Value(argument))
+                },
+                CompType::Unknown
+                | CompType::With(..)
+                | CompType::Returner { .. }
+                | CompType::Arrow { .. }
+                | CompType::Pi { .. }
+                | CompType::Element { .. } => None,
+            },
         }
     }
 

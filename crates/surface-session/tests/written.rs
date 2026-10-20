@@ -109,6 +109,7 @@ pub fn refusal<'source, 'function>(
         | DeclarationOutcome::Uncompleted { .. }
         | DeclarationOutcome::Bodied { .. }
         | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
         | DeclarationOutcome::Abstract(_)
         | DeclarationOutcome::World => None,
     }
@@ -192,6 +193,7 @@ impl Written
                 other @ (DeclarationOutcome::Completed { .. }
                 | DeclarationOutcome::Uncompleted { .. }
                 | DeclarationOutcome::Bodied { .. }
+                | DeclarationOutcome::Codata(_)
                 | DeclarationOutcome::Abstract(_)
                 | DeclarationOutcome::World
                 | DeclarationOutcome::Refused(_))
@@ -202,6 +204,7 @@ impl Written
                 DeclarationOutcome::Completed { .. }
                 | DeclarationOutcome::Uncompleted { .. }
                 | DeclarationOutcome::Bodied { .. }
+                | DeclarationOutcome::Codata(_)
                 | DeclarationOutcome::Abstract(_)
                 | DeclarationOutcome::World
                 | DeclarationOutcome::Refused(_) => {},

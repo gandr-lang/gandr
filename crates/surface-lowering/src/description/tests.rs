@@ -947,6 +947,7 @@ fn an_unended_family_is_refused_once_at_its_close()
                 | DeclarationOutcome::Uncompleted { .. }
                 | DeclarationOutcome::Bodied { .. }
                 | DeclarationOutcome::Data(_)
+                | DeclarationOutcome::Codata(_)
                 | DeclarationOutcome::Abstract(_)
                 | DeclarationOutcome::World => None,
             })
@@ -974,16 +975,16 @@ fn an_unended_family_is_refused_once_at_its_close()
 }
 
 #[test]
-fn codata_is_refused_by_the_decoder_and_data_beside_it_is_native()
+fn a_codata_declaration_lowers_to_its_signature()
 {
-    use gandr_core_term::description::DecodeError;
+    use gandr_core_term::CompType;
 
     use crate::DeclarationOutcome;
     use crate::LoweringBudget;
     use crate::lower_module;
     use crate::namespace::Recognition;
     let grammar = grammar();
-    let source = "data Flag : Type { Off : Flag; On : Flag; }\ncodata Stream(a : Type) : Type { head : a; tail : Stream(a); }\ndef later = 7;";
+    let source = "data Flag : Type { Off : Flag; On : Flag; }\ncodata Stream(a : Type) : Type[-] { head : a; tail : Stream(a); }\ndef ones : +U Stream(Integer) ;\ndef later = 7;";
     let tree = parsed(&grammar, source.into());
     let mut arena = gandr_core_term::CoreArena::new();
     let module = lower_module(
@@ -994,9 +995,9 @@ fn codata_is_refused_by_the_decoder_and_data_beside_it_is_native()
         Recognition::default(),
     )
     .unwrap();
-    let [ref flag, ref stream, ref later] = *module.declarations()
+    let [ref flag, ref stream, ref ones, ref later] = *module.declarations()
     else {
-        panic!("data, codata and a later declaration")
+        panic!("data, codata, a stream and a later declaration")
     };
     let DeclarationOutcome::Data(index) = flag.outcome()
     else {
@@ -1008,26 +1009,40 @@ fn codata_is_refused_by_the_decoder_and_data_beside_it_is_native()
     };
     assert_eq!(signature.constructors(), [vec![], vec![]]);
     assert_eq!(stream.name().as_ref(), "Stream");
-    let DeclarationOutcome::Refused(refusal) = stream.outcome()
+    let DeclarationOutcome::Codata(index) = stream.outcome()
     else {
-        panic!("the codata family is refused")
+        panic!("the codata family lowers: {:?}", stream.outcome())
     };
-    let Maybe::Present(span) = refusal.span()
+    let Maybe::Present(codata) = module.codata(index)
     else {
-        panic!("located family")
+        panic!("the module holds the codata family's signature")
     };
-    assert_eq!(
-        source.get(usize::from(span.start()) .. usize::from(span.end())),
-        Some("codata Stream(a : Type) : Type { head : a; tail : Stream(a); }")
+    assert_eq!(codata.parameters().len(), 1, "one parameter");
+    let [head, tail] = *codata.observations()
+    else {
+        panic!("two observations")
+    };
+    assert!(
+        matches!(arena.comp_type(head), Some(&CompType::Returner { .. })),
+        "the head returns its value"
     );
-    assert_eq!(
-        module
-            .descriptions()
-            .diagnostics
-            .iter()
-            .map(|diagnostic| &diagnostic.fault)
-            .collect::<Vec<_>>(),
-        [&DescriptionFault::NativeDecode(DecodeError::CodataNu)]
+    assert!(
+        matches!(arena.comp_type(tail), Some(&CompType::Codata { declaration, .. }) if declaration == stream.constant()),
+        "the tail is the family itself"
+    );
+    assert!(module.descriptions().diagnostics.is_empty());
+    let DeclarationOutcome::Uncompleted { declared_type } = ones.outcome()
+    else {
+        panic!("the stream is declared: {:?}", ones.outcome())
+    };
+    let Some(&gandr_core_term::ValueType::Thunk(answer)) = arena.value_type(declared_type)
+    else {
+        panic!("the stream is a thunk")
+    };
+    assert!(
+        matches!(arena.comp_type(answer), Some(&CompType::Codata { declaration, .. }) if declaration == stream.constant()),
+        "the stream's answer is the codata type at its argument: {:?}",
+        arena.comp_type(answer)
     );
     assert!(matches!(later.outcome(), DeclarationOutcome::Bodied { .. }));
 }
@@ -1044,7 +1059,7 @@ fn an_attribute_block_decorates_the_codata_declaration_after_it()
     use crate::namespace::Recognition;
     use crate::resolve::SurfaceName;
     let grammar = grammar();
-    let source = "@[ refuses(\"OutOfFragment\") ]\ncodata Stream(a : Type) : Type { head : a; tail : Stream(a); }\ndef later = 7;";
+    let source = "@[ refuses(\"OutOfFragment\") ]\ncodata Stream(a : Type) : Type[-] { head : a; tail : Stream(a); }\ndef later = 7;";
     let tree = parsed(&grammar, source.into());
     let mut arena = gandr_core_term::CoreArena::new();
     let module = lower_module(
@@ -1059,7 +1074,7 @@ fn an_attribute_block_decorates_the_codata_declaration_after_it()
     else {
         panic!("the codata family and the later declaration are declared")
     };
-    assert!(matches!(stream.outcome(), DeclarationOutcome::Refused(_)));
+    assert!(matches!(stream.outcome(), DeclarationOutcome::Codata(_)));
     let Maybe::Present(written) = stream.signature()
     else {
         panic!("the codata family keeps its digest")

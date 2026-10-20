@@ -169,6 +169,7 @@ fn a_statement_the_syntax_cannot_read_is_refused()
             | DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::World) => panic!("`{written}` is refused: {other:?}"),
         }

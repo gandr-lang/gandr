@@ -412,7 +412,7 @@ enum Kind
         | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
         | Former::Path { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Data { .. } | Former::RunType(_) | Former::Located { .. }),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
-        | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_)),
+        | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_) | Former::Codata { .. }),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
         | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk(_)
         | Former::Reify | Former::ListNil | Former::ListCons(..)
@@ -460,7 +460,8 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::EffectfulReturner { .. }
         | Former::Arrow { .. }
         | Former::Pi { .. }
-        | Former::ComputationElement(_) => Kind::CompType,
+        | Former::ComputationElement(_)
+        | Former::Codata { .. } => Kind::CompType,
         Former::PathRefl(_)
         | Former::PathProduct(..)
         | Former::PathEquiv(..)
@@ -905,10 +906,10 @@ where
 ///   there one whose type nothing states, and a bind's rest and the branches of
 ///   a case what its own position admits; a data case's motive is a type under
 ///   one binder where `written` writes it; a thunk's body is a child only where
-///   bodies are spelled; a family's arguments admit values their parameters
-///   state the type of, and a constructor's classifier is a child only where
-///   bodies are spelled and its position states no type; every leaf former has
-///   none.
+///   bodies are spelled; a family's arguments, a codata family's included,
+///   admit values their parameters state the type of, and a constructor's
+///   classifier is a child only where bodies are spelled and its position
+///   states no type; every leaf former has none.
 /// - provides: the one table of child positions the scan and the walk share.
 /// - fails: never.
 /// - panics: none.
@@ -929,7 +930,7 @@ where
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
     | Former::Tuple(arity) | Former::Record(arity) | Former::Primitive { arity, .. } => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
-    | Former::Data { arity, .. } => ret.len() == usize::from(arity)
+    | Former::Data { arity, .. } | Former::Codata { arity, .. } => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::Stated && slot.binds == Binds::NONE),
     | Former::Constructor { arity, classifier, .. } => {
         let annotated = classifier.is_some() && bodies == Bodies::Spelled && admits != Admits::Stated;
@@ -1022,7 +1023,9 @@ where
         | Former::Recorded {
             payloads: arity, ..
         } => components(arity, Admits::Value, Binds::NONE, None),
-        Former::Data { arity, .. } => components(arity, Admits::Stated, Binds::NONE, None),
+        Former::Data { arity, .. } | Former::Codata { arity, .. } => {
+            components(arity, Admits::Stated, Binds::NONE, None)
+        },
         Former::Constructor {
             arity, classifier, ..
         } => {
@@ -2677,6 +2680,9 @@ where
         | Former::Data {
             name: Some(name), ..
         }
+        | Former::Codata {
+            name: Some(name), ..
+        }
         | Former::Constructor {
             name: Some(name), ..
         }
@@ -3760,6 +3766,7 @@ impl Walk<'_, '_>
                 | Former::Ua { .. }
                 | Former::Path { .. }
                 | Former::Data { .. }
+                | Former::Codata { .. }
                 | Former::Constructor { .. }
                 | Former::Flow { .. }
                 | Former::Relation { .. }
@@ -4442,6 +4449,7 @@ impl Walk<'_, '_>
             | Former::Flow { .. }
             | Former::Relation { .. }
             | Former::Data { .. }
+            | Former::Codata { .. }
             | Former::Constructor { .. }
             | Former::Recorded { .. }
             | Former::Primitive { .. }
@@ -5696,7 +5704,7 @@ impl Walk<'_, '_>
                     .piece(Binding::Cons);
                 writes(Production("binary_expression.cons"), Binding::Cons)
             },
-            Former::Data { name, arity } => {
+            Former::Data { name, arity } | Former::Codata { name, arity } => {
                 let name = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
                 let _ = parts.text(name);
                 if usize::from(arity) > 0_usize {

@@ -148,6 +148,7 @@
 //!   printer.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -156,10 +157,13 @@ use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Summand;
 use gandr_surface_syntax::NodeIndex;
+use gandr_theory_levitation::DeclPolarity;
+use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
 
 use super::Block;
@@ -1774,6 +1778,140 @@ impl<'source> Lowerer<'_, 'source>
         found
     }
 
+    /// The observation labels of the codata family the type at `node`
+    /// applies, read through parentheses and, when `thunked`, one `+U`.
+    ///
+    /// # Specification
+    /// - requires: `node` is a type's syntax node, read under `frame`.
+    /// - ensures: the labels of the family's observations in declaration order
+    ///   when the type, so read, is a codata family bare or applied; nothing
+    ///   for any other type.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`]; the type's own
+    ///   malformation; the head's resolution refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// Every round descends to a child of the finite tree and spends one step
+    /// of the allowance.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a copattern block under a stream answer and an
+    ///   observation of a thunked stream each read their labels here.
+    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |labels| !matches!(*labels, Maybe::Present(ref labels) if labels.is_empty())))]
+    pub(super) fn stated_observations(
+        &mut self,
+        site: Site,
+        (node, frame): (NodeIndex, Frame),
+        thunked: Thunked,
+    ) -> Result<Maybe<Vec<Name>, stated_labels::Absent>, LoweringRefusal<'source>>
+    {
+        let mut at = node;
+        let mut through = thunked;
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let head = loop {
+            if let Err(refusal) = self.fuel.spend() {
+                break Err(refusal);
+            }
+            let Some(tree) = self.tree.node(at)
+            else {
+                break Ok(None);
+            };
+            let placed = Placed::of(at, tree);
+            let held = match self.form_at(placed) {
+                Ok(Some((_, held))) => held,
+                Ok(None) => break Ok(None),
+                Err(refusal) => break Err(refusal),
+            };
+            if held == Former::TypeHead {
+                break Ok(Some(placed));
+            }
+            if let Err(refusal) = read_pieces(self.pbg, self.tree, at, &mut scratch) {
+                break Err(refusal);
+            }
+            if held == Former::TypeApplication {
+                break Ok(scratch.pieces.first().and_then(|piece| match *piece {
+                    Piece::Tile { label, at } if label == TileName::TYPE_IDENTIFIER => Some(at),
+                    Piece::Tile { .. } | Piece::Operand(_) => None,
+                }));
+            }
+            let inner = if held == Former::ParenthesizedType {
+                scratch.pieces.iter().find_map(|piece| match *piece {
+                    Piece::Operand(inner) => Some(inner),
+                    Piece::Tile { .. } => None,
+                })
+            }
+            else if held == Former::ThunkType && through.0 {
+                through = Thunked(false);
+                scratch.pieces.iter().rev().find_map(|piece| match *piece {
+                    Piece::Operand(inner) => Some(inner),
+                    Piece::Tile { .. } => None,
+                })
+            }
+            else {
+                None
+            };
+            let Some(inner) = inner
+            else {
+                break Ok(None);
+            };
+            at = inner.node;
+        };
+        self.scratch = scratch;
+        let Some(head) = head?
+        else {
+            return Ok(Maybe::Absent(stated_labels::Absent::Otherwise));
+        };
+        let named = Site { at: head, ..site };
+        let Maybe::Present(Resolved::Declaration { constant, .. }) =
+            self.resolve_name(named, frame, self.name_at(head))?
+        else {
+            return Ok(Maybe::Absent(stated_labels::Absent::Otherwise));
+        };
+        Ok(self.codata_observations(constant))
+    }
+
+    /// The observation labels of the codata family declared at `constant`,
+    /// in declaration order.
+    ///
+    /// # Specification
+    /// - ensures: the family's observation labels when `constant` declares a
+    ///   codata family with at least one; nothing otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::stated_observations`].
+    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+    #[spec(ensures: |ret| !matches!(ret, Maybe::Present(ref labels) if labels.is_empty()))]
+    fn codata_observations(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<Vec<Name>, stated_labels::Absent>
+    {
+        self.collected
+            .slots
+            .get(usize::from(constant))
+            .and_then(|slot| self.collected.descriptions.get(&slot.introduced_by.node))
+            .filter(|entry| {
+                entry.description.polarity == DeclPolarity::Codata
+                    && !entry.description.ctors.is_empty()
+            })
+            .map_or(Maybe::Absent(stated_labels::Absent::Otherwise), |entry| {
+                Maybe::Present(
+                    entry
+                        .description
+                        .ctors
+                        .iter()
+                        .map(|observation| observation.name.clone())
+                        .collect(),
+                )
+            })
+    }
+
     /// The components of the chain of `link` at `chain`, `A + B + …` or `A *
     /// B * …`, as the positional entries of the labelled sum `+{A, B, …}` or
     /// the telescope `#{A, B, …}` it is.
@@ -1973,37 +2111,30 @@ impl<'source> Lowerer<'_, 'source>
                 };
                 clauses.into_iter().zip(typed).collect()
             },
-            Arranged::Labelled(clauses) => {
-                let Maybe::Present(stated) = stated
-                else {
-                    return Err(site.out(FragmentBoundary::Unannotated));
-                };
-                for clause in &clauses {
-                    if let Key::Label(name, written) = clause.key {
-                        let _index = Self::labelled_in(&stated, name, written)?;
-                    }
-                }
-                let mut ordered = Vec::with_capacity(stated.len());
-                for entry in &stated {
-                    let Key::Label(name, _) = entry.key
+            Arranged::Labelled(clauses) => match stated {
+                Maybe::Present(stated) => Self::stated_clauses(site, &clauses, &stated)?,
+                Maybe::Absent(_) => {
+                    let observed = match answer {
+                        Some(answer) => self.stated_observations(
+                            site,
+                            (answer.node, answer.frame),
+                            Thunked(false),
+                        )?,
+                        None => Maybe::Absent(stated_labels::Absent::Otherwise),
+                    };
+                    let Maybe::Present(observed) = observed
                     else {
                         return Err(site.out(FragmentBoundary::Unannotated));
                     };
-                    let Some(&clause) = clauses
-                        .iter()
-                        .find(|clause| matches!(clause.key, Key::Label(held, _) if held == name))
-                    else {
-                        return Err(site.fault(site.at.span, FormFault::MissingOperand));
-                    };
-                    ordered.push((clause, Some(entry.held.at().node)));
-                }
-                ordered
+                    Self::observed_clauses(site, &clauses, &observed)?
+                },
             },
         };
         let start = self.operands.len();
         for &(clause, typed) in &clauses {
             let body = clause.held.at().node;
             self.operands.push(body);
+            let _first = self.cocased.insert(body);
             self.read(body, Reading::Computation(frame));
             let stated = match (answer, typed) {
                 (Some(answer), Some(typed)) => {
@@ -2030,27 +2161,128 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
+    /// The labelled clauses of a copattern block in the order of the entries
+    /// of the lazy record its answer states, each with its entry's type.
+    ///
+    /// # Specification
+    /// - requires: `stated` are a stated lazy record's entries.
+    /// - ensures: one clause per entry, in the entries' order, with the entry's
+    ///   type node.
+    /// - fails: the unresolved-name refusal for a label `stated` lacks; a
+    ///   missing operand at the block for a label it has and `clauses` do not;
+    ///   the unannotated refusal for a positional entry.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::copattern`].
+    /// - witness: `lower::arity::tests::a_copattern_block_orders_its_clauses_by_its_answer`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |ordered| ordered.len() == stated.len()))]
+    fn stated_clauses(
+        site: Site,
+        clauses: &[Entry<'source>],
+        stated: &[Entry<'source>],
+    ) -> Result<Vec<(Entry<'source>, Option<NodeIndex>)>, LoweringRefusal<'source>>
+    {
+        for clause in clauses {
+            if let Key::Label(name, written) = clause.key {
+                let _index = Self::labelled_in(stated, name, written)?;
+            }
+        }
+        let mut ordered = Vec::with_capacity(stated.len());
+        for entry in stated {
+            let Key::Label(name, _) = entry.key
+            else {
+                return Err(site.out(FragmentBoundary::Unannotated));
+            };
+            let Some(&clause) = clauses
+                .iter()
+                .find(|clause| matches!(clause.key, Key::Label(held, _) if held == name))
+            else {
+                return Err(site.fault(site.at.span, FormFault::MissingOperand));
+            };
+            ordered.push((clause, Some(entry.held.at().node)));
+        }
+
+        Ok(ordered)
+    }
+
+    /// The labelled clauses of a copattern block in the order of the
+    /// observations of the codata family its answer applies.
+    ///
+    /// # Specification
+    /// - requires: `observed` are a codata family's observation labels.
+    /// - ensures: one clause per observation, in declaration order, with no
+    ///   stated type: the checker reads each against the family's observation.
+    /// - fails: the unresolved-name refusal for a label no observation has; a
+    ///   missing operand at the block for an observation `clauses` lack.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a stream's clauses written in and out of declaration
+    ///   order, and a clause naming no observation.
+    /// - witness: `lower::arity::tests::a_copattern_block_orders_its_clauses_by_its_codata_answer`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |ordered| ordered.len() == observed.len()))]
+    fn observed_clauses(
+        site: Site,
+        clauses: &[Entry<'source>],
+        observed: &[Name],
+    ) -> Result<Vec<(Entry<'source>, Option<NodeIndex>)>, LoweringRefusal<'source>>
+    {
+        let known: BTreeSet<&str> = observed.iter().map(AsRef::as_ref).collect();
+        for clause in clauses {
+            if let Key::Label(name, written) = clause.key
+                && !known.contains(name.as_ref())
+            {
+                return Err(LoweringRefusal::UnresolvedName {
+                    span: written.span,
+                    name,
+                });
+            }
+        }
+        let mut ordered = Vec::with_capacity(observed.len());
+        for label in observed {
+            let Some(&clause) = clauses.iter().find(
+                |clause| matches!(clause.key, Key::Label(held, _) if held.as_ref() == label.as_ref()),
+            )
+            else {
+                return Err(site.fault(site.at.span, FormFault::MissingOperand));
+            };
+            ordered.push((clause, None));
+        }
+
+        Ok(ordered)
+    }
+
     /// Classify a selection `m.l` as an observation when `m` is a name whose
-    /// written type is a thunked lazy record over labels.
+    /// written type is a thunked lazy record over labels or a thunked codata
+    /// family.
     ///
     /// # Specification
     /// - requires: `site` is a projection; `pieces` is its reading.
     /// - ensures: planned when the position reads a computation and the
     ///   selection is one link off a name whose binder or declaration was
-    ///   written with the type `+U &{…}`: the entry the label names, of the
-    ///   thunk the name holds, read as a value under the form's frame; nothing
-    ///   is planned otherwise.
-    /// - fails: the unresolved-name refusal for a label the lazy record lacks;
-    ///   the name's own resolution refusals.
+    ///   written with the type `+U &{…}` or `+U F(…)` for a codata family `F`:
+    ///   the entry or the observation the label names, of the thunk the name
+    ///   holds, read as a value under the form's frame; nothing is planned
+    ///   otherwise.
+    /// - fails: the unresolved-name refusal for a label the lazy record or the
+    ///   family lacks; the name's own resolution refusals.
     /// - panics: none.
     ///
     /// # Errors
     /// The observation's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — each entry of a lazy record of three, and a label it
-    ///   lacks.
+    /// - hypothesis: L3 — each entry of a lazy record of three, a label it
+    ///   lacks, and each observation of a stream.
     /// - witness: `lower::arity::tests::an_observation_projects_along_the_nesting`
+    /// - witness: `lower::arity::tests::a_copattern_block_orders_its_clauses_by_its_codata_answer`
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Observe(..))))]
     pub(super) fn observation(
         &mut self,
@@ -2083,21 +2315,34 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
-        let Maybe::Present(stated) =
-            self.stated_entries(site, declared, Former::LazyRecordType, Thunked(true))?
-        else {
-            return Ok(Planned(false));
-        };
-        let (Place(index), _) = Self::labelled_in(&stated, self.name_at(selected), selected)?;
+        let label = self.name_at(selected);
+        let (index, count) =
+            match self.stated_entries(site, declared, Former::LazyRecordType, Thunked(true))? {
+                Maybe::Present(stated) => (
+                    Self::labelled_in(&stated, label, selected)?.0.0,
+                    stated.len(),
+                ),
+                Maybe::Absent(_) => {
+                    let Maybe::Present(observed) =
+                        self.stated_observations(site, (declared, frame), Thunked(true))?
+                    else {
+                        return Ok(Planned(false));
+                    };
+                    let Some(index) = observed
+                        .iter()
+                        .position(|held| held.as_ref() == label.as_ref())
+                    else {
+                        return Err(LoweringRefusal::UnresolvedName {
+                            span: selected.span,
+                            name: label,
+                        });
+                    };
+                    (index, observed.len())
+                },
+            };
         let frame = self.require(site, Produced::Computation)?;
         self.read(target.node, Reading::Value(frame));
-        self.plan(
-            site,
-            Plan::Observe(target.node, Observed {
-                index,
-                count: stated.len(),
-            }),
-        );
+        self.plan(site, Plan::Observe(target.node, Observed { index, count }));
 
         Ok(Planned(true))
     }

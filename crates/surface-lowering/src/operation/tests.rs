@@ -108,7 +108,8 @@ fn judged(
                         Maybe::Absent(_) => None,
                     };
                 },
-                DeclarationOutcome::Abstract(_)
+                DeclarationOutcome::Codata(_)
+                | DeclarationOutcome::Abstract(_)
                 | DeclarationOutcome::World
                 | DeclarationOutcome::Refused(_) => return None,
             };

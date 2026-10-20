@@ -109,6 +109,17 @@
 //!                     Maybe::Absent(_) => None,
 //!                 };
 //!             },
+//!             DeclarationOutcome::Codata(index) => {
+//!                 let origin = OriginToken::from(usize::from(lowered.origin()));
+//!                 return match module.codata(index) {
+//!                     Maybe::Present(signature) => Some(Declaration::codata(
+//!                         lowered.constant(),
+//!                         std::sync::Arc::clone(signature),
+//!                         origin,
+//!                     )),
+//!                     Maybe::Absent(_) => None,
+//!                 };
+//!             },
 //!             DeclarationOutcome::Abstract(sealing) => {
 //!                 let site = SealSite::new(
 //!                     SealingSite::from(usize::from(sealing.sealing)),

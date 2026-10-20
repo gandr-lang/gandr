@@ -280,6 +280,51 @@ fn decode_desc_declines_codata_and_the_uninhabited()
 }
 
 #[test]
+fn a_codata_description_decodes_its_observations()
+{
+    let mut arena = CoreArena::new();
+    let carrier = arena.value_type_unit();
+    let types = BTreeMap::new();
+    let context = context(carrier, &types);
+    let itself = arena.comp_type_codata(ConstantIndex::from(2_usize), Vec::new());
+    let kind = arena.value_type_universe(
+        Sort::Ground(gandr_kernel_term::GroundSort::Computation),
+        Level::constant(gandr_kernel_strata::LevelConstant::ZERO),
+    );
+    let mut desc = description(vec![field(PrimTy::Integer), Code::var("Self")]);
+    assert_eq!(
+        decode_codata(&mut arena, &desc, (context, itself), Vec::new(), kind),
+        Err(DecodeError::MalformedCode),
+        "a data description is no codata"
+    );
+    desc.polarity = DeclPolarity::Codata;
+    let signature = decode_codata(&mut arena, &desc, (context, itself), Vec::new(), kind)
+        .expect("a stream of integers");
+    let integer = arena.value_type_base(BaseType::Integer);
+    let [head, tail] = *signature.observations()
+    else {
+        panic!("two observations")
+    };
+    assert_eq!(tail, itself, "the tail observes the family itself");
+    let Some(&crate::CompType::Returner { result, .. }) = arena.comp_type(head)
+    else {
+        panic!("the head returns its value")
+    };
+    assert_eq!(
+        crate::equal_type_syntax(&arena, result, integer),
+        crate::CertificateEquality::Equal,
+        "the head returns an integer"
+    );
+    assert_eq!(signature.kind(), kind);
+    let mut foreign = description(vec![Code::var("Tree")]);
+    foreign.polarity = DeclPolarity::Codata;
+    assert_eq!(
+        decode_codata(&mut arena, &foreign, (context, itself), Vec::new(), kind),
+        Err(DecodeError::ForeignSort(Name::from("Tree")))
+    );
+}
+
+#[test]
 fn decode_desc_declines_a_multi_sorted_signature()
 {
     let mut arena = CoreArena::new();

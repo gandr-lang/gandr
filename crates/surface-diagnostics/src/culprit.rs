@@ -198,6 +198,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::LowercaseModuleName { .. } => "a lowercase initial",
         LoweringRefusal::NonExhaustiveMatch { .. } => "some value matches no arm",
         LoweringRefusal::UnmarkedSelfReference { .. } => "recursion without a claim",
+        LoweringRefusal::UnguardedCorecursion { .. } => "not the whole arm of a copattern",
         LoweringRefusal::DescentOnSeveralParameters { .. } => "descends on another parameter",
         LoweringRefusal::Unreachable { .. } => "no path reaches this",
         LoweringRefusal::OutsideLoop { .. } => "no loop to leave",
@@ -526,6 +527,7 @@ mod tests
             LoweringRefusal::LowercaseModuleName { .. } => "a lowercase initial",
             LoweringRefusal::NonExhaustiveMatch { .. } => "some value matches no arm",
             LoweringRefusal::UnmarkedSelfReference { .. } => "recursion without a claim",
+            LoweringRefusal::UnguardedCorecursion { .. } => "not the whole arm of a copattern",
             LoweringRefusal::DescentOnSeveralParameters { .. } => "descends on another parameter",
             LoweringRefusal::Unreachable { .. } => "no path reaches this",
             LoweringRefusal::OutsideLoop { .. } => "no loop to leave",
@@ -754,6 +756,7 @@ mod tests
             LoweringRefusal::LowercaseModuleName { span: at, name },
             LoweringRefusal::NonExhaustiveMatch { span: at },
             LoweringRefusal::UnmarkedSelfReference { span: at, name },
+            LoweringRefusal::UnguardedCorecursion { span: at, name },
             LoweringRefusal::DescentOnSeveralParameters {
                 span: at,
                 staged: name,

@@ -1306,6 +1306,36 @@ pub fn equal_type_syntax(
     )
 }
 
+/// Compare computation type syntax as [`equal_type_syntax`] compares value
+/// types.
+///
+/// # Specification
+/// - ensures: equal roots have the same former and structurally equal children.
+/// - fails: unreadable roots or children compare different.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two separately allocated codata types over one argument
+///   compare equal; a different argument compares different.
+/// - witness: `syntax::tests::computation_type_syntax_ignores_allocation_identity`
+#[spec(ensures: |ret| ret != CertificateEquality::Equal || match (arena.comp_type(left), arena.comp_type(right)) {
+    (Some(left), Some(right)) => core::mem::discriminant(left) == core::mem::discriminant(right),
+    _ => false,
+})]
+#[inline]
+#[must_use]
+pub fn equal_comp_type_syntax(
+    arena: &crate::CoreArena,
+    left: CompTypeId,
+    right: CompTypeId,
+) -> CertificateEquality
+{
+    equal_syntax(
+        arena,
+        Reading::Syntax,
+        StructuralGoal::CompType(left, right),
+    )
+}
+
 /// Compare type syntax as [`equal_type_syntax`] does, as a printed type reads.
 ///
 /// Those read as one are the types every checker reads alike — a
@@ -3426,6 +3456,33 @@ mod tests
             equal_type_syntax(&arena, unit, pair),
             CertificateEquality::Different,
             "and no arity but zero is the unit"
+        );
+    }
+
+    #[test]
+    fn computation_type_syntax_ignores_allocation_identity()
+    {
+        let mut arena = crate::CoreArena::new();
+        let stream = gandr_kernel_term::ConstantIndex::from(0_usize);
+        let over = |arena: &mut crate::CoreArena, index: u32| {
+            let argument = arena.value_variable(
+                crate::Zone::Intuitionistic,
+                gandr_kernel_term::DeBruijnIndex::from(index),
+            );
+            arena.comp_type_codata(stream, alloc::vec![argument])
+        };
+        let first = over(&mut arena, 0);
+        let twin = over(&mut arena, 0);
+        let other = over(&mut arena, 1);
+        assert_eq!(
+            equal_comp_type_syntax(&arena, first, twin),
+            CertificateEquality::Equal,
+            "two allocations of one codata type are one type"
+        );
+        assert_eq!(
+            equal_comp_type_syntax(&arena, first, other),
+            CertificateEquality::Different,
+            "a different argument is a different type"
         );
     }
 

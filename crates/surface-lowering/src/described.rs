@@ -40,6 +40,10 @@
 //!   naming a parameter at that parameter's classifier. A family the native
 //!   reading owns whole ([`crate::description::NativeFamily`]) reads the same
 //!   way, at its native signature, with or without parameters.
+//! - **A codata family's** observations read under its parameters: each node of
+//!   an observation's type at its universe — the family itself at its kind, a
+//!   parameter read as a type at the universe its code is read out of — and
+//!   each argument naming a parameter at that parameter's classifier.
 //!
 //! A component the derivation cannot state answers nowhere, and neither does
 //! a node no position sorts.
@@ -58,9 +62,12 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::Binders;
+use gandr_core_term::CodataSignature;
+use gandr_core_term::CompType;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DataSignature;
 use gandr_core_term::Sort;
+use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
@@ -398,6 +405,19 @@ fn substitute(
         }
     }
     built.pop().unwrap_or_else(|| term.clone())
+}
+
+/// What a node of a written observation type is read as.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy)]
+enum Observed
+{
+    /// A type, which answers at its universe.
+    Type(ValueTypeId),
+    /// An argument: a parameter, or the code of a type.
+    Value(ValueId),
 }
 
 impl Typer<'_>
@@ -1520,6 +1540,132 @@ impl Typer<'_>
             }
         }
     }
+
+    /// Record the type each observation of the codata family `constant`,
+    /// whose parameters are `parameters` and whose signature is `signature`,
+    /// writes, as `written` keeps it.
+    ///
+    /// # Specification
+    /// - requires: `written` is where the family's reader read its
+    ///   observations, in the order `signature` lists them; `kinds` holds the
+    ///   universe of each data family the module declares.
+    /// - ensures: under the parameters, each node of an observation's type, in
+    ///   pre-order, answers at its universe: the family itself at the family's
+    ///   kind, a parameter read as a type at the universe its code is read out
+    ///   of, a base type at `Type`, and a data family applied at its kind; an
+    ///   argument naming a parameter answers at that parameter's classifier,
+    ///   and any other argument as the type it quotes. The walk stops at the
+    ///   first node no rule above types, so no node answers out of place.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::theory`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Stream(a)`'s observations `head : a` and `tail :
+    ///   Stream(a)` answer under `a`: `a` read as a type at `Type`, the family
+    ///   at `Type[-]` and its argument at the parameter's classifier; a base
+    ///   type observed by an unparameterised family at `Type`.
+    /// - witness: `described::tests::a_codata_observation_s_type_answers_at_its_universe`
+    fn codata(
+        &mut self,
+        parameters: &[FamilyParameter],
+        written: &WrittenMembers,
+        (constant, signature): (ConstantIndex, &CodataSignature),
+        kinds: &BTreeMap<ConstantIndex, ValueTypeId>,
+    )
+    {
+        let mut scope = Scope::default();
+        for parameter in parameters {
+            scope.push(&parameter.name, Dependent(true));
+        }
+        let context = self.context(&scope);
+        let count = signature.parameters().len();
+        let mut classifiers = Vec::with_capacity(count);
+        for (place, &classifier) in signature.parameters().iter().enumerate() {
+            let lift = u32::try_from(count.saturating_sub(place)).unwrap_or(u32::MAX);
+            let lifted =
+                gandr_core_term::shift_value_type(self.arena, classifier, Binders::from(lift));
+            classifiers.push(lifted.settle(self.arena));
+        }
+        // The classifier of the parameter a variable of the context names.
+        let classifier = |index: DeBruijnIndex| {
+            let index = usize::try_from(u32::from(index)).ok()?;
+            let place = count.checked_sub(index)?.checked_sub(1_usize)?;
+            classifiers.get(place).copied()
+        };
+        for (&observation, member) in signature.observations().iter().zip(&written.observations) {
+            let mut nodes = member.ty.nodes.iter();
+            let mut pending = match self.arena.comp_type(observation) {
+                Some(&CompType::Returner { result, .. }) => Vec::from([Observed::Type(result)]),
+                Some(&CompType::Codata {
+                    declaration,
+                    ref arguments,
+                }) if declaration == constant => {
+                    let below: Vec<Observed> = arguments
+                        .iter()
+                        .rev()
+                        .map(|&argument| Observed::Value(argument))
+                        .collect();
+                    let Some(node) = nodes.next()
+                    else {
+                        continue;
+                    };
+                    self.emit(node.span, DescribedRole::Type, signature.kind(), context);
+                    below
+                },
+                Some(_) | None => continue,
+            };
+            while let Some(observed) = pending.pop() {
+                let Some(node) = nodes.next()
+                else {
+                    break;
+                };
+                let ty = match observed {
+                    Observed::Type(ty) => ty,
+                    Observed::Value(value) => match self.arena.value(value) {
+                        Some(&Value::Quote(ty)) => ty,
+                        Some(&Value::Variable { index, .. }) => {
+                            let Some(at) = classifier(index)
+                            else {
+                                break;
+                            };
+                            self.emit(node.span, DescribedRole::Type, at, context);
+                            continue;
+                        },
+                        Some(_) | None => break,
+                    },
+                };
+                let (universe, below) = match self.arena.value_type(ty) {
+                    Some(&ValueType::Base(_)) => (Some(self.universe(Level::zero())), Vec::new()),
+                    Some(&ValueType::Product(ref parts)) if parts.is_empty() => {
+                        (Some(self.universe(Level::zero())), Vec::new())
+                    },
+                    Some(&ValueType::Element { ref target, .. }) => {
+                        let target = target.clone();
+                        (Some(self.universe(target)), Vec::new())
+                    },
+                    Some(&ValueType::Data {
+                        declaration,
+                        ref arguments,
+                    }) => (
+                        kinds.get(&declaration).copied(),
+                        arguments
+                            .iter()
+                            .rev()
+                            .map(|&argument| Observed::Value(argument))
+                            .collect(),
+                    ),
+                    Some(_) | None => break,
+                };
+                let Some(universe) = universe
+                else {
+                    break;
+                };
+                self.emit(node.span, DescribedRole::Type, universe, context);
+                pending.extend(below);
+            }
+        }
+    }
 }
 
 impl LoweredModule<'_>
@@ -1533,7 +1679,9 @@ impl LoweredModule<'_>
     ///   member states, as the [`crate::described`] documentation lays out,
     ///   each read in its context; a parameterised family's constructors, and
     ///   those of a family the native reading owns whole, at its native
-    ///   signature under its parameters; the first context is the empty one.
+    ///   signature under its parameters; each node of a codata family's
+    ///   observation types at its universe under its parameters; the first
+    ///   context is the empty one.
     /// - provides: what a face answers inside a described declaration.
     /// - fails: never; a node no type is stated for records nothing.
     /// - panics: none.
@@ -1545,6 +1693,7 @@ impl LoweredModule<'_>
     /// - witness: `described::tests::a_theory_answers_at_every_member`
     /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
     /// - witness: `described::tests::a_family_the_native_reading_owns_answers_at_its_signature`
+    /// - witness: `described::tests::a_codata_observation_s_type_answers_at_its_universe`
     #[spec(ensures: |ret| ret.contexts.first().is_some_and(Vec::is_empty)
         && ret.entries.iter().all(|entry| usize::from(entry.context) < ret.contexts.len()))]
     #[inline]
@@ -1563,6 +1712,8 @@ impl LoweredModule<'_>
         let mut families: BTreeMap<Name, (ValueTypeId, ValueTypeId)> = BTreeMap::new();
         let mut constructors: BTreeMap<Name, (Vec<ValueTypeId>, ValueTypeId)> = BTreeMap::new();
         let mut signatures: BTreeMap<Name, (ConstantIndex, &DataSignature)> = BTreeMap::new();
+        let mut codatas: BTreeMap<Name, (ConstantIndex, &CodataSignature)> = BTreeMap::new();
+        let mut kinds: BTreeMap<ConstantIndex, ValueTypeId> = BTreeMap::new();
         let base = typer.universe(Level::zero());
         for (name, atom) in [("Integer", BaseType::Integer), ("String", BaseType::String)] {
             let ty = typer.arena.value_type_base(atom);
@@ -1576,14 +1727,28 @@ impl LoweredModule<'_>
             if declaration.role() == crate::module::Role::Words {
                 continue;
             }
-            let DeclarationOutcome::Data(index) = declaration.outcome()
-            else {
-                continue;
+            let (index, signature) = match declaration.outcome() {
+                DeclarationOutcome::Data(index) => match self.data(index) {
+                    Maybe::Present(signature) => (index, signature),
+                    Maybe::Absent(_) => continue,
+                },
+                DeclarationOutcome::Codata(index) => {
+                    if let Maybe::Present(signature) = self.codata(index) {
+                        let _first = codatas.insert(
+                            Name::from(declaration.name().as_ref()),
+                            (declaration.constant(), signature),
+                        );
+                    }
+                    continue;
+                },
+                DeclarationOutcome::Uncompleted { .. }
+                | DeclarationOutcome::Completed { .. }
+                | DeclarationOutcome::Bodied { .. }
+                | DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::World
+                | DeclarationOutcome::Refused(_) => continue,
             };
-            let Maybe::Present(signature) = self.data(index)
-            else {
-                continue;
-            };
+            let _first = kinds.insert(declaration.constant(), signature.kind());
             let _first = signatures.insert(
                 Name::from(declaration.name().as_ref()),
                 (declaration.constant(), signature),
@@ -1612,7 +1777,10 @@ impl LoweredModule<'_>
                     typer.theory(presentation, &described.written);
                 },
                 Maybe::Absent(_) => {
-                    if described.description.polarity != DeclPolarity::Data {
+                    if described.description.polarity == DeclPolarity::Codata {
+                        if let Some(&codata) = codatas.get(&described.description.id.name) {
+                            typer.codata(&described.parameters, &described.written, codata, &kinds);
+                        }
                         continue;
                     }
                     if described.parameters.is_empty() {

@@ -19,6 +19,7 @@ use gandr_core_term::CertificateEquality;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::equal_certificate_syntax;
+use gandr_core_term::equal_comp_type_syntax;
 use gandr_core_term::equal_type_syntax;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
@@ -102,6 +103,7 @@ pub fn refused(
             | DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::World => None,
         })
@@ -301,6 +303,29 @@ pub fn agree(
                         _ => false,
                     },
                     (
+                        DeclarationOutcome::Codata(left_index),
+                        DeclarationOutcome::Codata(right_index),
+                    ) => match (before.codata(left_index), after.codata(right_index)) {
+                        (
+                            quenchant_shape::shape::Maybe::Present(left_codata),
+                            quenchant_shape::shape::Maybe::Present(right_codata),
+                        ) => {
+                            all_types(left_codata.parameters(), right_codata.parameters())
+                                && types(left_codata.kind(), right_codata.kind())
+                                && left_codata.observations().len()
+                                    == right_codata.observations().len()
+                                && left_codata
+                                    .observations()
+                                    .iter()
+                                    .zip(right_codata.observations())
+                                    .all(|(&left, &right)| {
+                                        equal_comp_type_syntax(arena, left, right)
+                                            == CertificateEquality::Equal
+                                    })
+                        },
+                        _ => false,
+                    },
+                    (
                         DeclarationOutcome::Abstract(left_seal),
                         DeclarationOutcome::Abstract(right_seal),
                     ) => {
@@ -364,6 +389,7 @@ fn reason(outcome: DeclarationOutcome<'_>) -> Withdrawn
         | DeclarationOutcome::Uncompleted { .. }
         | DeclarationOutcome::Bodied { .. }
         | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
         | DeclarationOutcome::Abstract(_)
         | DeclarationOutcome::World => Withdrawn::Lowered,
     }

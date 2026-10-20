@@ -228,6 +228,9 @@ fn judge(
                         OriginToken::from(usize::from(declaration.origin())),
                     );
                 },
+                DeclarationOutcome::Codata(index) => {
+                    panic!("no fixture declares codata: {index:?}")
+                },
                 DeclarationOutcome::Abstract(sealing) => {
                     panic!("no fixture seals a module: {sealing:?}")
                 },

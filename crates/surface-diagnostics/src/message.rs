@@ -426,6 +426,11 @@ fn lowered(
             f,
             "`{name}` calls itself without saying how it recurses; write `{name}[<](…)`"
         ),
+        LoweringRefusal::UnguardedCorecursion { name, .. } => write!(
+            f,
+            "`{name}[>](…)` must be the whole arm of a copattern block, so each observation \
+             yields before `{name}` runs again"
+        ),
         LoweringRefusal::DescentOnSeveralParameters {
             staged, claimed, ..
         } => write!(
@@ -1155,6 +1160,7 @@ mod tests
             LoweringRefusal::LowercaseModuleName { span, name },
             LoweringRefusal::NonExhaustiveMatch { span },
             LoweringRefusal::UnmarkedSelfReference { span, name },
+            LoweringRefusal::UnguardedCorecursion { span, name },
             LoweringRefusal::DescentOnSeveralParameters {
                 span,
                 staged: name,

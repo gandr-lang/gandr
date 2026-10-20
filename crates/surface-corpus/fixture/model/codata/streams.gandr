@@ -1,0 +1,77 @@
+// Streams as codata (#644): a family known by its observations, built by a
+// copattern block that answers each one, and taken apart by observing a
+// thunk of it. A recursive call claiming `>` is productive when it is the
+// whole arm of a copattern block: each observation yields before the
+// function runs again, so the fixpoint needs no termination claim. What
+// refuses is in `../../pathological/codata/streams.gandr`.
+
+/// A stream of values of `a`: its head, and the stream after it.
+@[ checks ]
+codata Stream(a : Type) : Type[-] {
+  head : a;
+  tail : Stream(a);
+}
+
+/// The integers from `n` upward, one observation at a time.
+@[ checks ]
+def rec upward(n : Integer) -> Stream(Integer) {
+  &{ .head => return n, .tail => upward[>](n + 1) }
+}
+
+/// `n` forever, its clauses written tail first: a copattern block answers
+/// the observations in the order the declaration states them.
+@[ checks ]
+def rec always(n : Integer) -> Stream(Integer) {
+  &{ .tail => always[>](n), .head => return n }
+}
+
+/// The head of a stream: observing a thunk of it.
+@[ checks ]
+def first(s : +U Stream(Integer)) -> -F Integer {
+  become s.head
+}
+
+/// The head of a stream's tail.
+@[ checks ]
+def second(s : +U Stream(Integer)) -> -F Integer {
+  first(thunk { s.tail })
+}
+
+/// Two streams combined pointwise by `f`: every parameter varies from call
+/// to call, and the call stays productive.
+@[ checks ]
+def rec zipWith(
+  f : +U (Integer -> Integer -> -F Integer),
+  s : +U Stream(Integer),
+  t : +U Stream(Integer)
+) -> Stream(Integer) {
+  &{
+    .head => {
+      run x <- first(s);
+      run y <- first(t);
+      f(x, y)
+    },
+    .tail => zipWith[>](f, thunk { s.tail }, thunk { t.tail })
+  }
+}
+
+/// Addition, as the function `zipWith` combines with.
+@[ checks ]
+def add(x : Integer, y : Integer) -> -F Integer {
+  return x + y
+}
+
+/// The integers from three, observed at the head.
+@[ runs("3") ]
+def three : +U (-F Integer) ;
+def three = thunk { first(thunk { upward(3) }) } ;
+
+/// The integers from three, observed one further.
+@[ runs("4") ]
+def four : +U (-F Integer) ;
+def four = thunk { second(thunk { upward(3) }) } ;
+
+/// The integers from one added to the sevens, one further: `2 + 7`.
+@[ runs("9") ]
+def nine : +U (-F Integer) ;
+def nine = thunk { second(thunk { zipWith(add, thunk { upward(1) }, thunk { always(7) }) }) } ;

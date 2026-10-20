@@ -135,6 +135,16 @@ pub(in crate::lower) fn judged(
                         Maybe::Absent(_) => None,
                     };
                 },
+                DeclarationOutcome::Codata(index) => {
+                    return match module.codata(index) {
+                        Maybe::Present(held) => Some(Declaration::codata(
+                            declaration.constant(),
+                            Arc::clone(held),
+                            origin,
+                        )),
+                        Maybe::Absent(_) => None,
+                    };
+                },
                 DeclarationOutcome::World => {
                     return Some(Declaration::world(declaration.constant(), origin));
                 },
@@ -251,6 +261,7 @@ pub(in crate::lower) fn body_named(
         DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => body,
         other @ (DeclarationOutcome::Uncompleted { .. }
         | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
         | DeclarationOutcome::Abstract(_)
         | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a body: {other:?}"),
@@ -1240,38 +1251,61 @@ fn a_recursive_call_passes_its_leading_parameters_unchanged()
 }
 
 #[test]
-fn only_the_descent_claim_heads_a_recursive_call()
+fn a_productive_call_is_the_whole_arm_of_a_copattern_block()
 {
     let mut arena = CoreArena::new();
+    let stream = "codata Stream(a : Type) : Type[-] { head : a; tail : Stream(a); }\n";
     let source = alloc::format!(
-        "{NAT}def rec ahead(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become ahead[>](p) }} }}\ndef rec both(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become both[<, >](p) }} }}\n"
+        "{NAT}{stream}def rec upward(n : Nat, m : Nat) -> Stream(Nat) {{ &{{.head => return n, .tail => upward[>](m, Succ(n))}} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
-    let declined = |name: &'static str, boundary: FragmentBoundary| {
+    let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("upward"));
+
+    assert_eq!(
+        outside,
+        ParameterAt(0),
+        "a productive call varies every parameter"
+    );
+    assert!(
+        matches!(
+            arena.computation(fixpoint),
+            Some(&Computation::Fixpoint {
+                evidence: FixpointEvidence::Partial,
+                ..
+            })
+        ),
+        "a productive call claims nothing of termination"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}{stream}def rec ahead(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become ahead[>](p) }} }}\ndef rec wrapped(n : Nat) -> Stream(Nat) {{ &{{.head => return n, .tail => become wrapped[>](n)}} }}\ndef rec both(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become both[<, >](p) }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let unguarded = |name: &'static str| {
         matches!(
             refusal_of(&module, SurfaceName::from(name)),
-            LoweringRefusal::OutOfFragment { form, boundary: refused, .. }
-                if form == FormName::INSTANTIATION && refused == boundary
+            LoweringRefusal::UnguardedCorecursion { name: called, .. } if called == SurfaceName::from(name)
         )
     };
 
     assert!(
-        declined("ahead", FragmentBoundary::Reserved),
-        "productivity is reserved"
+        unguarded("ahead"),
+        "a productive call outside a copattern block is unguarded: {:?}",
+        refusal_of(&module, SurfaceName::from("ahead"))
     );
-    let claim = source
-        .find("ahead[>]")
-        .map_or(0_usize, |at| at.saturating_add("ahead[".len()));
+    assert!(
+        unguarded("wrapped"),
+        "and so is one under a `become` inside an arm: {:?}",
+        refusal_of(&module, SurfaceName::from("wrapped"))
+    );
     assert!(
         matches!(
-            refusal_of(&module, SurfaceName::from("ahead")),
-            LoweringRefusal::OutOfFragment { span, .. }
-                if usize::from(span.start()) == claim && usize::from(span.end()) == claim.saturating_add(1_usize)
+            refusal_of(&module, SurfaceName::from("both")),
+            LoweringRefusal::OutOfFragment { form, boundary: FragmentBoundary::Reserved, .. }
+                if form == FormName::INSTANTIATION
         ),
-        "the reserved claim is refused at itself, not at the whole instantiation"
-    );
-    assert!(
-        declined("both", FragmentBoundary::Reserved),
         "combined claims are reserved"
     );
 }
@@ -3202,6 +3236,7 @@ fn a_loop_mints_the_words_at_its_point()
             DeclarationOutcome::Completed { .. }
             | DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Codata(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::World
             | DeclarationOutcome::Refused(_) => panic!("the words are data"),
