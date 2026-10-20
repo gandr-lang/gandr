@@ -1456,21 +1456,27 @@ pub fn corolla(site: &Site<'_>) -> Outcome<Shape>
         tally.count();
         return tally.fails(Shape::default());
     };
+    let mut raising: Vec<&Arrow<'_>> = Vec::new();
+    let mut sorted: Vec<VertexSet> = Vec::new();
+    let mut expected: Vec<VertexSet> = Vec::new();
     for (index, shape) in site.nodes.iter().enumerate() {
         tally.count();
-        let raising: Vec<&Arrow<'_>> = site
-            .arrows(point, Node(index))
-            .iter()
-            .filter(|arrow| arrow.raising == Membership::Inside)
-            .collect();
-        let inclusions: Vec<VertexSet> = raising
-            .iter()
-            .map(|arrow| arrow.map.image(Edge::from(0_usize)))
-            .filter(|image| usize::from(image.count()) == 1)
-            .collect();
-        let expected: Vec<VertexSet> = shape.points().into_iter().map(VertexSet::single).collect();
-        let mut sorted = inclusions.clone();
+        raising.clear();
+        raising.extend(
+            site.arrows(point, Node(index))
+                .iter()
+                .filter(|arrow| arrow.raising == Membership::Inside),
+        );
+        sorted.clear();
+        sorted.extend(
+            raising
+                .iter()
+                .map(|arrow| arrow.map.image(Edge::from(0_usize)))
+                .filter(|image| usize::from(image.count()) == 1),
+        );
         sorted.sort_unstable();
+        expected.clear();
+        expected.extend(shape.points().into_iter().map(VertexSet::single));
         let endomorphisms = Node(index) != point
             || raising
                 .iter()

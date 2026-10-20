@@ -67,19 +67,18 @@ fn brute_force(
     let vertex_digits = vec![subsets; usize::from(source.vertex_count())];
     let wire_digits = vec![usize::from(target.wire_count()); usize::from(source.wire_count())];
     let mut found = Vec::new();
-    for images in readings(&vertex_digits) {
-        let images: Vec<VertexSet> = images
-            .into_iter()
-            .map(|subset| {
-                (0 .. vertices)
-                    .filter(|vertex| subset.checked_shr(*vertex).unwrap() & 1 == 1)
-                    .fold(VertexSet::EMPTY, |set, vertex| {
-                        set.union(VertexSet::single(Edge::from(
-                            usize::try_from(vertex).unwrap(),
-                        )))
-                    })
-            })
-            .collect();
+    let mut images: Vec<VertexSet> = Vec::new();
+    for reading in readings(&vertex_digits) {
+        images.clear();
+        images.extend(reading.into_iter().map(|subset| {
+            (0 .. vertices)
+                .filter(|vertex| subset.checked_shr(*vertex).unwrap() & 1 == 1)
+                .fold(VertexSet::EMPTY, |set, vertex| {
+                    set.union(VertexSet::single(Edge::from(
+                        usize::try_from(vertex).unwrap(),
+                    )))
+                })
+        }));
         for wires in readings(&wire_digits) {
             let candidate =
                 SiteMap::new(images.clone(), wires.into_iter().map(Wire::from).collect());
