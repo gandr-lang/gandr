@@ -2259,9 +2259,9 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
-            (Phase::Running, "textDocument/documentSymbol" | "textDocument/foldingRange" | "textDocument/selectionRange") =>
+            (Phase::Running, "textDocument/documentSymbol" | "textDocument/foldingRange" | "textDocument/selectionRange" | "textDocument/documentLink") =>
                 self.phase == phase && match ret {
-                    Outgoing::Success { result: Answer::Nothing | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_), .. } => true,
+                    Outgoing::Success { result: Answer::Nothing | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_) | Answer::Imports(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
@@ -2470,6 +2470,26 @@ impl Server
                             Answer::Folds(reading.folds().to_vec())
                         }),
                     ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "textDocument/documentLink") => {
+                match serde_json::from_value::<DocumentParams>(params) {
+                    Ok(params) => {
+                        let path = named_path(&params.text_document.uri.path());
+                        success(
+                            id,
+                            workspace.outline(
+                                &params.text_document.uri,
+                                self.peer,
+                                |reading, text| {
+                                    Answer::Imports(
+                                        reading.links(&LineIndex::new(text.as_ref().into()), &path),
+                                    )
+                                },
+                            ),
+                        )
+                    },
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
@@ -2937,7 +2957,8 @@ impl Workspace
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), Window::Whole | Window::Within(_) => true },
         Answer::Initialize(_) | Answer::Completions(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
-            | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_) => false,
+            | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
+            | Answer::Imports(_) => false,
     })]
     fn tokens(
         &self,
@@ -2991,7 +3012,8 @@ impl Workspace
             && list.items.iter().all(|item| item.range.start <= position && position <= item.range.end),
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Signatures(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
-            | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_) => false,
+            | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
+            | Answer::Imports(_) => false,
     })]
     fn inline(
         &self,
@@ -4277,9 +4299,11 @@ where
 #[cfg(test)]
 mod tests
 {
+    use std::path::Path;
     use std::sync::mpsc::channel;
 
     use anodized::spec;
+    use gandr_surface_dispatcher::named_path;
     use serde_json::Value;
 
     use super::Flow;
@@ -4553,7 +4577,8 @@ mod tests
                         "workspaceSymbolProvider":true,
                         "documentHighlightProvider":true,
                         "referencesProvider":true,
-                        "renameProvider":{"prepareProvider":true}},
+                        "renameProvider":{"prepareProvider":true},
+                        "documentLinkProvider":{"resolveProvider":false}},
                     "serverInfo":{"name":"gandr","version":""#,
                 env!("CARGO_PKG_VERSION"),
                 r#""}}}]"#
@@ -5537,6 +5562,7 @@ mod tests
             "textDocument/documentSymbol",
             "textDocument/foldingRange",
             "textDocument/selectionRange",
+            "textDocument/documentLink",
         ] {
             assert_eq!(
                 ask(
@@ -5549,6 +5575,55 @@ mod tests
                 "{method} about a document the server does not hold answers null"
             );
         }
+    }
+
+    #[test]
+    fn a_path_import_links_to_the_file_it_names()
+    {
+        let mut server = initialized();
+        let open = |server: &mut Connected, uri: &str, text: &str| {
+            let notification = format!(
+                r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":
+                    {{"uri":"{uri}","languageId":"gandr","version":1,"text":"{text}"}}}}}}"#
+            );
+            drop(send(server, Json(&notification)));
+        };
+        let links = |server: &mut Connected, uri: &str| {
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":9,"method":"textDocument/documentLink","params":{{
+                    "textDocument":{{"uri":"{uri}"}}}}}}"#
+            );
+            send(server, Json(&request))
+        };
+        let importer = "file:///tmp/links/main.gandr";
+        open(
+            &mut server,
+            importer,
+            r#"import \"lib/base.gandr\" as b;\nimport \"std:prelude\";\ndef answer = 1 ;\n"#,
+        );
+        let target = DocumentUri::of_path(&named_path(Path::new("/tmp/links/lib/base.gandr")))
+            .expect("an absolute path names a file URI");
+        assert_eq!(
+            links(&mut server, importer),
+            wire(Json(&format!(
+                r#"[{{"jsonrpc":"2.0","id":9,"result":[{{
+                    "range":{{"start":{{"line":0,"character":8}},"end":{{"line":0,"character":22}}}},
+                    "target":"{target}"}}]}}]"#
+            ))),
+            "the path import's address links to the file beside the importer; the scheme import \
+             links nowhere"
+        );
+        let malformed = "file:///tmp/links/malformed.gandr";
+        open(
+            &mut server,
+            malformed,
+            r#"import \"lib/base.gandr\" as ;\n"#,
+        );
+        assert_eq!(
+            links(&mut server, malformed),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":[]}]"#)),
+            "imports that do not read link nowhere"
+        );
     }
 
     #[test]

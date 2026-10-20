@@ -3,12 +3,13 @@
 //!
 //! # A held text is parsed once
 //!
-//! Semantic tokens, document symbols, folding ranges, selection ranges, a
-//! hover, signature help and the render bus's report all read the molded tree
-//! of the same text. A copy of a document holds that text beside a [`Reading`]
-//! of it, made by the first such request after the text last changed: one
-//! parse, from which the highlighter's spans, the declarations with their form
-//! keys, the folds, the selection skeleton and the calls are read and kept.
+//! Semantic tokens, document symbols, folding ranges, selection ranges,
+//! document links, a hover, signature help and the render bus's report all
+//! read the molded tree of the same text. A copy of a document holds that text
+//! beside a [`Reading`] of it, made by the first such request after the text
+//! last changed: one parse, from which the highlighter's spans, the
+//! declarations with their form keys, the folds, the selection skeleton, the
+//! calls and the path imports are read and kept.
 //! Every later request until the next change answers from them. A change to
 //! the text drops the reading, so every answer is read off the text the copy
 //! holds.
@@ -30,8 +31,12 @@
 //!   beside an owned text instead.
 
 use alloc::vec::Vec;
+use std::path::Path;
 
 use anodized::spec;
+use gandr_surface_dispatcher::named_path;
+use gandr_surface_lowering::Address;
+use gandr_surface_lowering::written_imports;
 use gandr_surface_parser::parse;
 use gandr_surface_render_remote::ByteOffset as RenderOffset;
 use gandr_surface_render_remote::HlSpan;
@@ -45,13 +50,16 @@ use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
+use crate::goto::ranged;
 use crate::outline::Skeleton;
 use crate::outline::declarations;
 use crate::outline::folds;
 use crate::position::Position;
 use crate::position::Range;
+use crate::protocol::DocumentLink;
 use crate::protocol::DocumentSymbol;
 use crate::protocol::DocumentSymbols;
+use crate::protocol::DocumentUri;
 use crate::protocol::FoldingRange;
 use crate::protocol::SelectionRange;
 use crate::recheck::grammar;
@@ -125,8 +133,19 @@ fn head(
     }
 }
 
+/// A path import a read text writes: where its address is written and the
+/// address, its escapes decoded.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PathImport
+{
+    /// The bytes between the address's quotes.
+    addressed: ByteSpan,
+    /// The address.
+    address: String,
+}
+
 /// What one parse of a text answers: its highlighter spans, declarations,
-/// folds, selection skeleton and calls.
+/// folds, selection skeleton, calls and path imports.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Readout
 {
@@ -140,6 +159,8 @@ struct Readout
     skeleton: Skeleton,
     /// The calls, by where their arguments open.
     calls: Calls,
+    /// The path imports, in source order; none when the imports do not read.
+    imports: Vec<PathImport>,
 }
 
 /// The reading of one text, or why it has none.
@@ -157,9 +178,10 @@ impl Reading
     ///   [`unread::Absent::Unparsed`] when the parser could not commit a tree;
     ///   otherwise the highlighter's spans over the tree, sorted, pairwise
     ///   disjoint and on character boundaries of `text`, its declarations each
-    ///   beside its declaring form's key, its folds, its selection skeleton and
+    ///   beside its declaring form's key, its folds, its selection skeleton,
     ///   its calls, as [`crate::outline`] and [`Calls::of`] read each off the
-    ///   tree.
+    ///   tree, and the address of each path import as [`written_imports`] reads
+    ///   it, none when the imports do not read.
     /// - provides: the one parse a held text's structural requests share.
     /// - fails: never; an unread text names its reason.
     /// - panics: none.
@@ -173,6 +195,7 @@ impl Reading
     ///   reads off its own, so a reading kept past a change, or read off
     ///   another text, disagrees at the keystroke that changed it.
     /// - witness: `recheck::tests::a_definition_produces_semantic_tokens`
+    /// - witness: `server::tests::a_path_import_links_to_the_file_it_names`
     /// - witness: `outline::tests::declarations_nest_as_symbols`
     /// - witness: `tests::session::sweeps::corpus_tokens_cover_the_highlighted_bytes`
     /// - witness: `tests::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
@@ -210,6 +233,19 @@ impl Reading
             folds: folds(&tree, &index),
             skeleton: Skeleton::of(&tree),
             calls: Calls::of(grammar, &tree),
+            imports: written_imports(grammar, &tree).map_or_else(
+                |_refused| Vec::new(),
+                |written| {
+                    written
+                        .into_iter()
+                        .filter(|import| import.address == Address::Path)
+                        .map(|import| PathImport {
+                            addressed: import.addressed,
+                            address: String::from(import.uri.as_ref()),
+                        })
+                        .collect()
+                },
+            ),
         }))
     }
 
@@ -267,6 +303,37 @@ impl Reading
             Maybe::Present(ref readout) => &readout.folds,
             Maybe::Absent(_) => &[],
         }
+    }
+
+    /// The links of the text, the document at `path`: each path import's
+    /// address, ranged through `index`, to the file the dispatcher reads for
+    /// it, the address joined to `path`'s directory; none when the text was
+    /// not read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn links(
+        &self,
+        index: &LineIndex<'_>,
+        path: &Path,
+    ) -> Vec<DocumentLink>
+    {
+        let Maybe::Present(ref readout) = self.0
+        else {
+            return Vec::new();
+        };
+        let directory = path.parent().unwrap_or(path);
+        readout
+            .imports
+            .iter()
+            .filter_map(|import| {
+                Some(DocumentLink {
+                    range: ranged(index, import.addressed)?,
+                    target: DocumentUri::of_path(&named_path(&directory.join(&import.address)))?,
+                })
+            })
+            .collect()
     }
 
     /// The head of the innermost call whose arguments hold `offset`, and the
