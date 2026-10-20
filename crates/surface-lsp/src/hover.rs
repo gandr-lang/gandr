@@ -160,6 +160,7 @@ use crate::protocol::MarkupContent;
 use crate::protocol::SymbolKind;
 use crate::reading::Declaration;
 use crate::reading::Reading;
+use crate::reading::Written;
 use crate::recheck::roles;
 use crate::search::Found;
 use crate::signature::Signatures;
@@ -475,6 +476,10 @@ pub fn hover<Store, Blocks>(
     else {
         return Maybe::Absent(hovered::Absent::Unparsed);
     };
+    // A member written among its holder's tiles has no form of its own to key
+    // a type or documentation by; the table types its name where it is
+    // written.
+    let forms = || found.iter().filter(|found| found.written == Written::Form);
     let table = &hovering.table;
     let index = LineIndex::new(<&str>::from(text).into());
     let quoted = Quoted {
@@ -482,7 +487,7 @@ pub fn hover<Store, Blocks>(
         index: &index,
         spans: reading.spans(),
     };
-    if let Some(named) = found.iter().find(|found| {
+    if let Some(named) = forms().find(|found| {
         found.symbol.selection_range.start <= position
             && position <= found.symbol.selection_range.end
     }) {
@@ -513,7 +518,7 @@ pub fn hover<Store, Blocks>(
         // over it whole, so its members answer for themselves; an
         // instantiation's entry is one of the members it instantiates, so a
         // module answers its own entry or nothing (#405).
-        if let Some(whole) = found.iter().rfind(|found| {
+        if let Some(whole) = forms().rfind(|found| {
             range.start <= found.symbol.selection_range.start
                 && found.symbol.range.end <= range.end
                 && found.symbol.range.start <= position
@@ -574,7 +579,7 @@ pub fn hover<Store, Blocks>(
     }
     // The head answers its declaration, and so do the attributes before it,
     // about their own stretch.
-    let enclosing = found.iter().rfind(|found| {
+    let enclosing = forms().rfind(|found| {
         found.symbol.kind != SymbolKind::MODULE
             && found.symbol.range.start <= position
             && position < found.head.end

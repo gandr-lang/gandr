@@ -25,6 +25,14 @@
 //!   range is its form's, widened over the attribute blocks standing directly
 //!   before it, and its selection range is the name's tile. An attribute block
 //!   is a form with no such tile, so it is no symbol.
+//! - **Members.** A `theory` block, a `data` declaration and a `codata`
+//!   declaration write their members among their own tiles, not as forms, so
+//!   each `;`-ended run between the form's braces is read as a member nested
+//!   under it: a theory's `sort`, `shape` and `ext` as `TypeParameter`, `oper`
+//!   as `Method`, `obs` as `Field`, `rule` as `Property` and `data` as
+//!   `Constructor`; a family's constructors as `Constructor`; a codata
+//!   declaration's observations as `Field`. An `include` names a theory
+//!   declared elsewhere and is no member.
 //! - **Folding.** Every form, documentation node and block comment that ends on
 //!   a later line than it starts folds from its first line to its last. Forms
 //!   often share a first line, a function and its block say, and the client
@@ -36,14 +44,8 @@
 //!   there, so a cursor just past a name selects the name. Layout is skipped,
 //!   and a span its child repeats is given once. A document that does not parse
 //!   answers the empty range at each position.
-//!
-//! The alternatives were the lowered module, whose declarations carry names and
-//! spans but only for a document that lowers, and the highlighter's spans,
-//! which classify a name but say nothing of what encloses it. The choice
-//! reverses when a declaration's symbol must say what only lowering knows, its
-//! type in the symbol's detail say: the symbol then reads the session's lowered
-//! module, the tree still giving its ranges.
 
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -78,8 +80,21 @@ const ATTRIBUTE_BLOCK: &str = "attribute_block";
 /// The opening of a block comment.
 const BLOCK_COMMENT: &str = "/*";
 
-/// The declarations of `tree`, each beside the form declaring it and holding
-/// the declarations written inside it.
+/// What declares a symbol: a form of its own, or a member written among the
+/// tiles of the form holding it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Declarer
+{
+    /// The form at the node declares it.
+    Form(NodeIndex),
+    /// A member of the `theory` block, `data` declaration or `codata`
+    /// declaration at the node declares it, written among that form's own
+    /// tiles over the span.
+    Member(NodeIndex, ByteSpan),
+}
+
+/// The declarations of `tree`, each beside what declares it and holding the
+/// declarations written inside it.
 ///
 /// # Specification
 /// - requires: `tree` was parsed under `grammar`, and `index` built over its
@@ -90,24 +105,29 @@ const BLOCK_COMMENT: &str = "/*";
 ///   or [`HlRole::Type`]. The symbol's range is the form's, widened to the
 ///   attribute blocks standing directly before it, its selection range the
 ///   name's, and its kind a function, a value, or by the form's first keyword a
-///   module, a data declaration, a codata declaration or a signature. Symbols
+///   module, a data declaration, a codata declaration or a signature. A
+///   signature, data declaration or codata declaration holds one symbol per
+///   member written between its own braces, as [`members`] reads them. Symbols
 ///   are in source order, each after the declaration holding it, which it names
-///   by position; a top-level one names none. Each is beside the node of the
-///   form that declares it.
+///   by position; a top-level one names none. Each is beside the form that
+///   declares it, or the form whose member it is.
 /// - provides: the declarations the document symbols and a hover read.
 /// - fails: never.
 /// - panics: none.
-/// - intension: one walk of the tree with an explicit stack.
+/// - intension: one walk of the tree with an explicit stack, and one more of a
+///   container's own children.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a function, a value, a data declaration, a module with a
-///   nested module, documentation and attribute blocks before a definition and
-///   a data declaration are asserted at the exact symbol tree. Taking a
-///   declaration's range from its name or its form alone, dropping a nested
-///   member, reversing source order or reading an attribute name as the
-///   declared one changes it; a hover finds each declaration's documentation
-///   under its own form.
+/// - hypothesis: L3 — a function, a value, a data declaration with its
+///   constructors, a codata declaration with its observations, a module with a
+///   nested module, a theory with a member of every kind, documentation and
+///   attribute blocks before a definition and a data declaration are asserted
+///   at the exact symbol tree. Taking a declaration's range from its name or
+///   its form alone, dropping a nested member, reversing source order or
+///   reading an attribute name as the declared one changes it; a hover finds
+///   each declaration's documentation under its own form.
 /// - witness: `outline::tests::declarations_nest_as_symbols`
+/// - witness: `outline::tests::a_theory_holds_its_members`
 /// - witness: `hover::tests::a_declaration_hovers_its_type_and_documentation`
 #[spec(ensures: |ret| ret.iter().enumerate().all(|(position, found)|
     !found.1.name.is_empty() && found.1.holder.is_none_or(|holder| holder < position)))]
@@ -116,18 +136,26 @@ pub fn declarations(
     roles: &RoleTable,
     tree: &SyntaxTree<'_>,
     index: &LineIndex<'_>,
-) -> Vec<(NodeIndex, DocumentSymbol)>
+) -> Vec<(Declarer, DocumentSymbol)>
 {
     // A depth-first walk in source order meets each declaration after the
     // one holding it.
-    let mut found: Vec<(NodeIndex, DocumentSymbol)> = Vec::new();
+    let mut found: Vec<(Declarer, DocumentSymbol)> = Vec::new();
     let mut pending: Vec<(NodeIndex, Option<usize>, Option<ByteSpan>)> =
         Vec::from([(tree.root(), None, None)]);
     while let Some((at, holder, decorated)) = pending.pop() {
         let holder =
             declared(grammar, roles, tree, index, at, decorated).map_or(holder, |symbol| {
-                found.push((at, DocumentSymbol { holder, ..symbol }));
-                Some(found.len().saturating_sub(1))
+                let container = matches!(
+                    symbol.kind,
+                    SymbolKind::INTERFACE | SymbolKind::ENUM | SymbolKind::STRUCT
+                );
+                found.push((Declarer::Form(at), DocumentSymbol { holder, ..symbol }));
+                let held = found.len().saturating_sub(1);
+                if container {
+                    members(roles, tree, index, at, &mut found);
+                }
+                Some(held)
             });
         let first = pending.len();
         // The attribute blocks standing before a form decorate it, layout
@@ -237,34 +265,216 @@ fn kind_of(
     }
 }
 
-/// The runs of lines of `tree`'s text a client can fold.
+/// Push onto `found` a symbol for each member written between the first `{`
+/// among the own tiles of the form at `at` and the `}` closing it, held by
+/// the symbol last in `found`, the form's own.
 ///
 /// # Specification
-/// - requires: `index` was built over `tree`'s text.
-/// - ensures: one range per line at which a form, a documentation node or a
-///   block comment starts that ends on a later line, from its first line to its
-///   last; at a line where several start, the outermost. Documentation and
-///   block comments carry the `comment` kind, forms none. Ascending by first
-///   line.
+/// - requires: the form at `at` declares the symbol last in `found`.
+/// - ensures: the members are the runs of the form's own children between its
+///   outermost braces, each ended by a `;` the braces hold directly or by the
+///   closing `}`; a brace a member writes nests, so a `shape`'s faces stay in
+///   its member. A member's name is its first own tile at the braces' depth
+///   that the highlighter classifies as a definition, a type, a constructor or
+///   a member, and its keyword the first keyword before that name. A named
+///   member pushes one symbol, unless its keyword is `include`, which names a
+///   theory declared elsewhere: its range from its first child to its `;`, its
+///   selection range the name's, its kind [`member_kind`]'s, held by the form's
+///   symbol and beside [`Declarer::Member`] of `at`. Layout and documentation
+///   start no member.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`declarations`].
+/// - witness: `outline::tests::a_theory_holds_its_members`
+/// - witness: `outline::tests::declarations_nest_as_symbols`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body pushes each member once; the check reads the pushed ones once more"
+    )
+)]
+#[spec(
+    captures: before = found.len(),
+    ensures: |()| found.iter().skip(before).all(|pushed|
+        pushed.1.holder == before.checked_sub(1) && matches!(pushed.0, Declarer::Member(form, _) if form == at)),
+)]
+fn members(
+    roles: &RoleTable,
+    tree: &SyntaxTree<'_>,
+    index: &LineIndex<'_>,
+    at: NodeIndex,
+    found: &mut Vec<(Declarer, DocumentSymbol)>,
+)
+{
+    let Some(holder) = found.len().checked_sub(1)
+    else {
+        return;
+    };
+    let mut depth = 0_usize;
+    let mut written: Option<ByteSpan> = None;
+    let mut keyword: Option<SourceFragment<'_>> = None;
+    let mut name: Option<(NodeIndex, HlRole)> = None;
+    for child in tree.children(at) {
+        let Some(node) = tree.node(child)
+        else {
+            continue;
+        };
+        let tile = match node.label() {
+            NodeLabel::Space | NodeLabel::Doc => continue,
+            NodeLabel::Tile(tile) => Some(tile),
+            NodeLabel::Meld(_)
+            | NodeLabel::Wald
+            | NodeLabel::Grout { .. }
+            | NodeLabel::GhostClose { .. } => None,
+        };
+        let text = tile.and_then(|_| tree.fragment(child)).map(<&str>::from);
+        match (depth, text) {
+            (0, Some("{")) => {
+                depth = 1;
+                continue;
+            },
+            (0, _) => continue,
+            (1, Some(closer @ (";" | "}"))) => {
+                let span = match closer {
+                    ";" => written.map(|run| run.join(node.span())),
+                    _ => written,
+                };
+                if let Some(span) = span
+                    && let Some(symbol) = member(tree, index, span, keyword, name)
+                {
+                    found.push((Declarer::Member(at, span), DocumentSymbol {
+                        holder: Some(holder),
+                        ..symbol
+                    }));
+                }
+                (written, keyword, name) = (None, None, None);
+                if closer == "}" {
+                    break;
+                }
+                continue;
+            },
+            (_, Some("{")) => depth = depth.saturating_add(1),
+            (_, Some("}")) => depth = depth.saturating_sub(1),
+            _ => {},
+        }
+        let span = node.span();
+        written = Some(written.map_or(span, |run| run.join(span)));
+        if depth == 1
+            && name.is_none()
+            && let Some(tile) = tile
+        {
+            match roles.role_of(tile) {
+                Ok(HlRole::Keyword) if keyword.is_none() => keyword = tree.fragment(child),
+                Ok(
+                    role @ (HlRole::FunctionDef
+                    | HlRole::VariableDef
+                    | HlRole::Type
+                    | HlRole::Constructor
+                    | HlRole::Member),
+                ) => name = Some((child, role)),
+                Ok(_) | Err(_) => {},
+            }
+        }
+    }
+}
+
+/// The symbol of a member written over `span` after its keyword `keyword`,
+/// named by the tile at `name`, or none for an unnamed member or an
+/// `include`.
+///
+/// # Specification
+/// trivial.
+fn member(
+    tree: &SyntaxTree<'_>,
+    index: &LineIndex<'_>,
+    span: ByteSpan,
+    keyword: Option<SourceFragment<'_>>,
+    name: Option<(NodeIndex, HlRole)>,
+) -> Option<DocumentSymbol>
+{
+    let (named, role) = name?;
+    if keyword.map(<&str>::from) == Some("include") {
+        return None;
+    }
+    Some(DocumentSymbol {
+        name: String::from(<&str>::from(tree.fragment(named)?)),
+        kind: member_kind(role, keyword),
+        range: range_of(index, span)?,
+        selection_range: range_of(index, tree.node(named)?.span())?,
+        holder: None,
+    })
+}
+
+/// What a member named by a tile of `role` declares, after its keyword
+/// `keyword`: a law for `rule`, an observation for `obs` or a codata
+/// declaration's member, a constructor for `data` or a family's constructor, a
+/// type the theory is over for a sort, a shape or an extension, an operation
+/// for any other definition.
+///
+/// # Specification
+/// trivial.
+fn member_kind(
+    role: HlRole,
+    keyword: Option<SourceFragment<'_>>,
+) -> SymbolKind
+{
+    match (role, keyword.map(<&str>::from)) {
+        (_, Some("rule")) => SymbolKind::PROPERTY,
+        (_, Some("obs")) | (HlRole::Member, _) => SymbolKind::FIELD,
+        (_, Some("data")) | (HlRole::Constructor, _) => SymbolKind::CONSTRUCTOR,
+        (HlRole::Type, _) => SymbolKind::TYPE_PARAMETER,
+        (HlRole::FunctionDef, _) => SymbolKind::METHOD,
+        (_, Some(_) | None) => SymbolKind::VARIABLE,
+    }
+}
+
+/// The runs of lines of `tree`'s text a client can fold, the members
+/// `members` writes among their holders' tiles included.
+///
+/// # Specification
+/// - requires: `index` was built over `tree`'s text, and each of `members` is
+///   the span of a member of the form at its node.
+/// - ensures: one range per line at which a form, a member, a documentation
+///   node or a block comment starts that ends on a later line, from its first
+///   line to its last; at a line where several start, the one reaching
+///   furthest, the outermost of those nested there. Documentation and block
+///   comments carry the `comment` kind, forms and members none. Ascending by
+///   first line.
 /// - provides: the answer to `textDocument/foldingRange`.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a multi-line function with a block inside it, a one-line
-///   declaration, a documentation run and a block comment are asserted at the
-///   exact ranges. Folding a one-line form, keeping the inner of two forms
-///   starting on one line or losing the comment kind changes them.
+///   declaration, a documentation run, a block comment, and a theory with a
+///   multi-line member and a one-line one are asserted at the exact ranges.
+///   Folding a one-line form or member, keeping the inner of two ranges
+///   starting on one line, dropping a member or losing the comment kind changes
+///   them.
 /// - witness: `outline::tests::multi_line_forms_and_documentation_fold`
 #[spec(ensures: |ret| ret.iter().all(|fold| fold.start_line < fold.end_line)
     && ret.windows(2).all(|pair| matches!(pair, [first, second] if first.start_line < second.start_line)))]
 pub fn folds(
     tree: &SyntaxTree<'_>,
     index: &LineIndex<'_>,
+    members: &[(NodeIndex, ByteSpan)],
 ) -> Vec<FoldingRange>
 {
     let mut folds: Vec<FoldingRange> = Vec::new();
-    // Level order visits a form before every form inside it.
+    let mut fold = |span: ByteSpan, kind: Option<&'static str>| {
+        if let Some(range) = range_of(index, span)
+            && range.start.line < range.end.line
+        {
+            folds.push(FoldingRange {
+                start_line: range.start.line,
+                end_line: range.end.line,
+                kind,
+            });
+        }
+    };
     for position in tree.positions() {
         let Some(node) = tree.node(position)
         else {
@@ -286,19 +496,12 @@ pub fn folds(
             | NodeLabel::Grout { .. }
             | NodeLabel::GhostClose { .. } => continue,
         };
-        let Some(range) = range_of(index, node.span())
-        else {
-            continue;
-        };
-        if range.start.line < range.end.line {
-            folds.push(FoldingRange {
-                start_line: range.start.line,
-                end_line: range.end.line,
-                kind,
-            });
-        }
+        fold(node.span(), kind);
     }
-    folds.sort_by_key(|fold| fold.start_line);
+    for &(_, span) in members {
+        fold(span, None);
+    }
+    folds.sort_by_key(|fold| (fold.start_line, core::cmp::Reverse(fold.end_line)));
     folds.dedup_by_key(|fold| fold.start_line);
     folds
 }
@@ -323,27 +526,36 @@ pub struct Skeleton(Vec<Bone>);
 
 impl Skeleton
 {
-    /// The skeleton of `tree`.
+    /// The skeleton of `tree`, each of `members` a bone between the form at
+    /// its node and the children the member covers.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: each of `members` is the span of a member of the form at its
+    ///   node, in source order.
     /// - ensures: a bone for the root, at position zero, and one for every node
     ///   below it that is neither layout nor empty, each beside the positions
-    ///   of such children of its node, in source order; nothing for an empty
+    ///   of such children of its node, in source order; a member's bone stands
+    ///   among its form's children where its first covered child would, and
+    ///   holds every child of the form its span covers. Nothing for an empty
     ///   tree.
     /// - provides: what a selection walks once the tree is let go.
     /// - fails: never.
     /// - panics: none.
-    /// - intension: one walk of the tree with an explicit stack.
+    /// - intension: one walk of the tree with an explicit stack, and one map of
+    ///   `members` by form.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the selection witness walks a skeleton down to a
-    ///   number inside a call and to a name; a skipped child, a layout bone or
-    ///   a reordered child changes the chains it asserts.
+    ///   number inside a call, to a name, and to a theory member's name; a
+    ///   skipped child, a layout bone, a reordered child or a member's bone
+    ///   left out changes the chains it asserts.
     /// - witness: `outline::tests::a_selection_grows_from_the_innermost_form`
     #[spec(ensures: |ret| ret.0.iter().all(|bone| bone.children.iter().all(|&child| child < ret.0.len())))]
     #[must_use]
-    pub fn of(tree: &SyntaxTree<'_>) -> Self
+    pub fn of(
+        tree: &SyntaxTree<'_>,
+        members: &[(NodeIndex, ByteSpan)],
+    ) -> Self
     {
         let Some(root) = tree.node(tree.root())
         else {
@@ -353,8 +565,15 @@ impl Skeleton
             span: root.span(),
             children: Vec::new(),
         }]);
+        // Each form's members, each with its bone once a covered child has
+        // placed it.
+        let mut held: BTreeMap<NodeIndex, Vec<(ByteSpan, Option<usize>)>> = BTreeMap::new();
+        for &(form, span) in members {
+            held.entry(form).or_default().push((span, None));
+        }
         let mut pending: Vec<(NodeIndex, usize)> = Vec::from([(tree.root(), 0_usize)]);
         while let Some((at, holder)) = pending.pop() {
+            let mut runs = held.remove(&at).unwrap_or_default();
             for child in tree.children(at) {
                 let Some(node) = tree
                     .node(child)
@@ -363,12 +582,32 @@ impl Skeleton
                 else {
                     continue;
                 };
+                let span = node.span();
+                let parent = match runs
+                    .iter_mut()
+                    .find(|run| run.0.start() <= span.start() && span.end() <= run.0.end())
+                {
+                    Some(&mut (_, Some(bone))) => bone,
+                    Some(run) => {
+                        let bone = bones.len();
+                        bones.push(Bone {
+                            span: run.0,
+                            children: Vec::new(),
+                        });
+                        if let Some(form) = bones.get_mut(holder) {
+                            form.children.push(bone);
+                        }
+                        run.1 = Some(bone);
+                        bone
+                    },
+                    None => holder,
+                };
                 let position = bones.len();
                 bones.push(Bone {
-                    span: node.span(),
+                    span,
                     children: Vec::new(),
                 });
-                if let Some(bone) = bones.get_mut(holder) {
+                if let Some(bone) = bones.get_mut(parent) {
                     bone.children.push(position);
                 }
                 pending.push((child, position));
@@ -532,6 +771,7 @@ mod tests
             "twice 12 1:0-4:1 at 2:4-2:9",
             "answer 12 5:0-5:17 at 5:4-5:10",
             "Color 10 6:0-7:34 at 7:5-7:10",
+            "  Red 9 7:20-7:32 at 7:20-7:23",
             "Outer 2 8:0-13:1 at 8:7-8:12",
             "  inner 12 9:2-9:17 at 9:6-9:11",
             "  Nested 2 10:2-12:3 at 10:9-10:15",
@@ -571,11 +811,42 @@ mod tests
         );
     }
 
+    /// A theory's members nest under it, one of each kind with its own kind;
+    /// a face list's braces and `;` stay inside its shape; an `include` is no
+    /// member; and a codata declaration's observations nest under it.
+    #[test]
+    fn a_theory_holds_its_members()
+    {
+        let source = "theory Shapes {\n  sort M : Type;\n  data Unit : M;\n  oper mul : (x : M, y \
+                      : M) --> M;\n  obs size : (m : M) --> M;\n  rule assoc : mul(mul(x, y), z) \
+                      ==> mul(x, mul(y, z));\n  shape Square : 4 {\n    left = {0, 2};\n  };\n  \
+                      ext Cell = M on left is zero;\n}\ntheory Monoid {\n  include Shapes;\n  oper \
+                      one : () --> M;\n}\ncodata Stream : Type {\n  head : M;\n  tail : \
+                      Stream;\n}\n";
+        assert_eq!(outline(&Reading::of(SourceText::from(source)).symbols()), [
+            "Shapes 11 0:0-10:1 at 0:7-0:13",
+            "  M 26 1:2-1:16 at 1:7-1:8",
+            "  Unit 9 2:2-2:16 at 2:7-2:11",
+            "  mul 6 3:2-3:34 at 3:7-3:10",
+            "  size 8 4:2-4:27 at 4:6-4:10",
+            "  assoc 7 5:2-5:55 at 5:7-5:12",
+            "  Square 26 6:2-8:4 at 6:8-6:14",
+            "  Cell 26 9:2-9:31 at 9:6-9:10",
+            "Monoid 11 11:0-14:1 at 11:7-11:13",
+            "  one 6 13:2-13:22 at 13:7-13:10",
+            "Stream 23 15:0-18:1 at 15:7-15:13",
+            "  head 8 16:2-16:11 at 16:2-16:6",
+            "  tail 8 17:2-17:16 at 17:2-17:6",
+        ]);
+    }
+
     #[test]
     fn multi_line_forms_and_documentation_fold()
     {
         let source = "/// One.\n/// Two.\ndef f(x: Integer) -> -F Integer {\n  return x\n}\n\
-                      def g = 1 ;\n/* a\n   block */\ndef h = 2 ;\n";
+                      def g = 1 ;\n/* a\n   block */\ndef h = 2 ;\n\
+                      theory T {\n  sort M : Type;\n  shape Square : 4 {\n    left = {0, 2};\n  \
+                      };\n}\n";
         let answered: Vec<(u64, u64, Option<&str>)> = Reading::of(SourceText::from(source))
             .folds()
             .iter()
@@ -590,9 +861,12 @@ mod tests
             [
                 (0, 1, Some("comment")),
                 (2, 4, None),
-                (6, 7, Some("comment"))
+                (6, 7, Some("comment")),
+                (9, 14, None),
+                (11, 13, None)
             ],
-            "documentation, the function and the block comment fold; the one-line forms do not"
+            "documentation, the function, the block comment, the theory and its multi-line \
+             member fold; the one-line forms and members do not"
         );
     }
 
@@ -639,6 +913,23 @@ mod tests
                 .and_then(|chain| chain.first().cloned()),
             Some("0:9-0:10".to_owned()),
             "where one token ends and the next starts, the one starting is selected"
+        );
+        let theory =
+            SourceText::from("theory T {\n  sort M : Type;\n  oper mul : (x : M) --> M;\n}\n");
+        let member =
+            Reading::of(theory).selections(&LineIndex::new(theory.as_ref().into()), &[at(
+                Line::from(2),
+                Character::from(8),
+            )]);
+        assert_eq!(
+            member.iter().map(chain).next(),
+            Some(vec![
+                "2:7-2:10".to_owned(),
+                "2:2-2:27".to_owned(),
+                "0:0-3:1".to_owned(),
+                "0:0-4:0".to_owned()
+            ]),
+            "a theory member's name grows to its member before the theory"
         );
     }
 }

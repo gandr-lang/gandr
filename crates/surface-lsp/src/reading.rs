@@ -52,6 +52,7 @@ use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::goto::ranged;
+use crate::outline::Declarer;
 use crate::outline::Skeleton;
 use crate::outline::declarations;
 use crate::outline::folds;
@@ -87,18 +88,33 @@ quenchant_shape::reason_enum! {
 }
 
 /// A declaration of a read text: its symbol, the key of the form that
-/// declares it, and the extent of its head.
+/// declares it, the extent of its head, and whether a form of its own writes
+/// it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Declaration
 {
-    /// The key of the declaring form, when the tree keys it.
+    /// The key of the declaring form, when the tree keys it; none for a
+    /// member, which no form of its own declares.
     pub key: Option<NodeKey>,
     /// The symbol it declares.
     pub symbol: DocumentSymbol,
     /// Its head: from the declaring form's own start — past any attribute
     /// block before it — to the brace opening the form's own body, or to the
-    /// symbol's end for a form without one.
+    /// symbol's end for a form without one; a member's whole range.
     pub head: Range,
+    /// Whether a form of its own writes it, or the form holding it.
+    pub written: Written,
+}
+
+/// What writes a declaration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Written
+{
+    /// A form of its own.
+    Form,
+    /// The form holding it, among its own tiles: a member of a `theory`
+    /// block, a `data` declaration or a `codata` declaration.
+    Member,
 }
 
 /// The head of the form at `at` declaring `symbol`: from the form's own start
@@ -217,18 +233,35 @@ impl Reading
         };
         let tree = parsed.into_tree();
         let index = LineIndex::new(<&str>::from(text).into());
+        let declared = declarations(grammar, roles, &tree, &index);
+        let members: Vec<(NodeIndex, ByteSpan)> = declared
+            .iter()
+            .filter_map(|&(declarer, _)| match declarer {
+                Declarer::Member(form, span) => Some((form, span)),
+                Declarer::Form(_) => None,
+            })
+            .collect();
         let mut readout = Readout {
             spans: roles.highlight(&tree).unwrap_or_default(),
-            declarations: declarations(grammar, roles, &tree, &index)
+            declarations: declared
                 .into_iter()
-                .map(|(at, symbol)| Declaration {
-                    key: tree.key(at),
-                    head: head(&tree, &index, at, &symbol),
-                    symbol,
+                .map(|(declarer, symbol)| match declarer {
+                    Declarer::Form(at) => Declaration {
+                        key: tree.key(at),
+                        head: head(&tree, &index, at, &symbol),
+                        symbol,
+                        written: Written::Form,
+                    },
+                    Declarer::Member(..) => Declaration {
+                        key: None,
+                        head: symbol.range,
+                        symbol,
+                        written: Written::Member,
+                    },
                 })
                 .collect(),
-            folds: folds(&tree, &index),
-            skeleton: Skeleton::of(&tree),
+            folds: folds(&tree, &index, &members),
+            skeleton: Skeleton::of(&tree, &members),
             calls: Calls::of(grammar, &tree),
             imports_end: None,
             imports: Vec::new(),
