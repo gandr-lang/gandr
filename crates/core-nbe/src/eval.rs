@@ -3243,9 +3243,27 @@ fn run(
             Task::Body { body: crate::closure::CompBody::RideArgument { motive, .. }, .. } => machine.comps.len() == entry_comps
                 && machine.values.len() == entry_values.saturating_add(2)
                 && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::BindClosure(_), Task::BindClosure(_), Task::Ride(held)]) if held == motive),
-            Task::Body { body: crate::closure::CompBody::ForceApplied(function), .. } => machine.comps.len() == entry_comps
+            Task::Body { body: crate::closure::CompBody::TransportFunction { .. }, .. } => machine.values.len() == entry_values
+                && machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps.saturating_add(1)
+                && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Lambda { .. })),
+            Task::Body { body: crate::closure::CompBody::TransportArgument { argument, result, .. }, .. } => {
+                let binds = 1_usize.saturating_add(usize::from(result.is_some()));
+                machine.tasks.get(entry_tasks..entry_tasks.saturating_add(binds)).is_some_and(|pushed| pushed.iter().all(|task| matches!(task, Task::BindClosure(_))))
+                && if argument.is_some() { machine.tasks.len() > entry_tasks.saturating_add(binds) && machine.comps.len() == entry_comps }
+                    else { machine.tasks.len() == entry_tasks.saturating_add(binds) && machine.comps.len() == entry_comps.saturating_add(1) }
+            },
+            Task::Body { body: crate::closure::CompBody::TransportAlong { motive, path }, env } => machine.comps.len() == entry_comps
+                && machine.env(env).is_ok_and(|environment| environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)).is_some_and(|bound| machine.values.ends_with(&[path, bound])))
+                && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::PathTransport(held)]) if held == motive),
+            Task::Body { body: crate::closure::CompBody::ForceApplied(function) | crate::closure::CompBody::TransportApplied(function), .. } => machine.comps.len() == entry_comps
                 && machine.values.len() == entry_values.saturating_add(1)
                 && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::Apply, Task::Force, Task::Supply(held)]) if held == function),
+            Task::Body { body: crate::closure::CompBody::Projected(component), .. } => machine.comps.len() == entry_comps
+                && machine.values.len() == entry_values.saturating_add(1)
+                && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::Projection(Projector::Component(held))]) if held == component),
+            Task::Body { body: crate::closure::CompBody::AppliedTo(argument), .. } => machine.comps.len() == entry_comps
+                && machine.values.len() == entry_values.saturating_add(1) && machine.values.last() == Some(&argument)
+                && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::Apply, Task::Force, Task::Supply(_)])),
             Task::Body { body: crate::closure::CompBody::RidePair { motive, flow, value }, .. } => machine.comps.len() == entry_comps
                 && machine.values.len() == entry_values.saturating_add(2) && machine.values.ends_with(&[flow, value])
                 && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::BindClosure(_), Task::Ride(held)]) if held == motive),
@@ -3402,6 +3420,30 @@ fn step(
                 .push(domain.comp_lambda(applied, CompTermFace::Reduced));
             Ok(())
         },
+        // The thunk a function transport along a universe path moves a
+        // function to, forced: the lambda that moves its argument back,
+        // applies the function and moves the result forward.
+        Task::Body {
+            body:
+                crate::closure::CompBody::TransportFunction {
+                    argument,
+                    result,
+                    path,
+                    function,
+                },
+            ..
+        } => {
+            let applied = domain.native_continuation(crate::closure::CompBody::TransportArgument {
+                argument,
+                result,
+                path,
+                function,
+            });
+            machine
+                .comps
+                .push(domain.comp_lambda(applied, CompTermFace::Reduced));
+            Ok(())
+        },
         Task::Body { body, env } => {
             let bound = machine
                 .env(env)?
@@ -3409,7 +3451,10 @@ fn step(
                 .ok_or(EvalFault::MachineInvariant)?;
             match body {
                 crate::closure::CompBody::Source(_)
-                | crate::closure::CompBody::RideFunction { .. } => Err(EvalFault::MachineInvariant),
+                | crate::closure::CompBody::RideFunction { .. }
+                | crate::closure::CompBody::TransportFunction { .. } => {
+                    Err(EvalFault::MachineInvariant)
+                },
                 crate::closure::CompBody::Pair(first) => {
                     let pair = domain.value_tuple([first, bound], TermFace::Reduced);
                     machine
@@ -3485,11 +3530,63 @@ fn step(
                     machine.values.extend([argument, bound]);
                     Ok(())
                 },
-                crate::closure::CompBody::ForceApplied(function) => {
+                // `a'. a ← tr(A, back(p), a'); b ← force f a; tr(B, p, b)`:
+                // the argument moves back along the path, unchanged when its
+                // type reads no binder, the function applies, and the result
+                // moves forward in its own motive, unchanged when that reads
+                // no binder.
+                crate::closure::CompBody::TransportArgument {
+                    argument,
+                    result,
+                    path,
+                    function,
+                } => {
+                    if let Some(motive) = result {
+                        let onward =
+                            domain.native_continuation(crate::closure::CompBody::TransportAlong {
+                                motive,
+                                path,
+                            });
+                        machine.tasks.push(Task::BindClosure(onward));
+                    }
+                    let applied = domain
+                        .native_continuation(crate::closure::CompBody::TransportApplied(function));
+                    machine.tasks.push(Task::BindClosure(applied));
+                    if let Some(motive) = argument {
+                        back_along(core, domain, machine, motive, (path, bound))
+                    }
+                    else {
+                        machine
+                            .comps
+                            .push(domain.comp_return(bound, CompTermFace::Reduced));
+                        Ok(())
+                    }
+                },
+                crate::closure::CompBody::TransportAlong { motive, path } => {
+                    machine.tasks.push(Task::PathTransport(motive));
+                    machine.values.extend([path, bound]);
+                    Ok(())
+                },
+                crate::closure::CompBody::ForceApplied(function)
+                | crate::closure::CompBody::TransportApplied(function) => {
                     machine.values.push(bound);
                     machine.tasks.push(Task::Apply);
                     machine.tasks.push(Task::Force);
                     machine.tasks.push(Task::Supply(function));
+                    Ok(())
+                },
+                crate::closure::CompBody::Projected(component) => {
+                    machine.values.push(bound);
+                    machine
+                        .tasks
+                        .push(Task::Projection(Projector::Component(component)));
+                    Ok(())
+                },
+                crate::closure::CompBody::AppliedTo(argument) => {
+                    machine.values.push(argument);
+                    machine.tasks.push(Task::Apply);
+                    machine.tasks.push(Task::Force);
+                    machine.tasks.push(Task::Supply(bound));
                     Ok(())
                 },
                 // `x. y ← ride(P, g, b); return (x, y)`: the right component
@@ -5131,9 +5228,12 @@ fn step_case(
 ///   same bind, the closure reused rather than re-captured, except under a
 ///   word's first letter ([`crate::closure::CompBody::Prefixed`]), which
 ///   returns the letter before the neutral held as the value it stands for, and
-///   under a composite's second path ([`crate::closure::CompBody::AlongThen`]),
-///   whose body is pushed with that held value bound as a returner's would be;
-///   a fixpoint unfolds once beneath the same bind.
+///   under a composite's second path ([`crate::closure::CompBody::AlongThen`])
+///   or a transported function's argument or result
+///   ([`crate::closure::CompBody::TransportApplied`],
+///   [`crate::closure::CompBody::TransportAlong`]), whose body is pushed with
+///   that held value bound as a returner's would be; a fixpoint unfolds once
+///   beneath the same bind.
 /// - provides: [`step_bind`] for a continuation a spine already captured, which
 ///   is how an unfolding re-applies a stuck bind.
 /// - fails: [`EvalFault::MachineInvariant`] when the operand is missing,
@@ -5150,6 +5250,7 @@ fn step_case(
 /// - witness: `eval::tests::reapplied_closures_keep_stuck_spines_and_refuse_wrong_formers`
 /// - witness: `eval::words::tests::a_word_appends_on_its_first_word`
 /// - witness: `identity::tests::transport_along_then_moves_a_stuck_first_leg_on`
+/// - witness: `identity::tests::a_transported_function_returns_a_stuck_result_as_its_value`
 #[spec(
     captures: [entry_values = machine.values.len(), entry_comps = machine.comps.len(), entry_tasks = machine.tasks.len()],
     ensures: |ret| ((ret == Err(EvalFault::MachineInvariant)) == (entry_comps == 0_usize))
@@ -5192,10 +5293,17 @@ fn step_bind_closure(
                     .push(domain.comp_return(prefixed, CompTermFace::Reduced));
                 return Ok(());
             }
-            // A composite's first path moved the value by a transport, which
-            // is pure, so a stuck one is bound as the value it stands for, as
-            // the kernel's reduct hands it to the second path.
-            if let Some(crate::closure::CompBody::AlongThen { .. }) = continuation {
+            // A composite's first path moved the value by a transport, and a
+            // transported function moves its argument and returns its result
+            // without effect, so a stuck one is bound as the value it stands
+            // for, as the kernel's reduct hands it on and reads `E[c]` as
+            // `c to x. E[x]`.
+            if let Some(
+                crate::closure::CompBody::AlongThen { .. }
+                | crate::closure::CompBody::TransportApplied(_)
+                | crate::closure::CompBody::TransportAlong { .. },
+            ) = continuation
+            {
                 returned_value(domain, bound)?
             }
             else {
@@ -5479,8 +5587,11 @@ fn step_transport(
 ///   Path(D, l, y)`, its carrier and left endpoint closed over the binder, read
 ///   against reflexivity returns the path itself; a word moves by the rules of
 ///   the `words` module, and in that singleton a path no word rule reads moves
-///   the empty word or a letter-headed word by appending on it; any other
-///   configuration over a stuck path stacks the transport on the path's spine.
+///   the empty word or a letter-headed word by appending on it; a function
+///   motive along `ua(e)` or a held transport returns the thunk
+///   [`CompBody::TransportFunction`] holds, wherever [`function_parts`] reads
+///   its motives; any other configuration over a stuck path stacks the
+///   transport on the path's spine.
 /// - provides: transport's computation rules — identity on `here` and in a
 ///   constant motive, through the motive's constructors, the singleton's, and
 ///   along a word — and its stuck form.
@@ -5509,6 +5620,8 @@ fn step_transport(
 /// - witness: `identity::tests::transport_moves_a_list_through_a_universe_path`
 /// - witness: `eval::words::tests::a_word_appends_on_its_first_word`
 /// - witness: `identity::tests::transport_in_the_decoded_binder_along_a_stuck_path_stays_in_its_motive`
+/// - witness: `identity::tests::a_function_moves_along_univalence_by_its_maps`
+/// - witness: `identity::tests::a_function_with_a_constant_argument_moves_its_result_only`
 #[spec(
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err()
@@ -5636,6 +5749,26 @@ fn step_path_transport(
             ) && matches!(carried, DomainValue::HeldTransport { .. }) =>
         {
             return along_held(core, domain, machine, motive, (carried, value));
+        },
+        // A function motive `y. U(A(y) → F B(y))` along a universe path
+        // moves the function to the thunk that moves its argument back along
+        // the path, applies the function and moves its result forward.
+        (Some(&ValueType::Thunk(function_type)), _) => {
+            if let Some((argument, result)) =
+                function_parts(core, domain, (function_type, environment), carried)?
+            {
+                let body = domain.native_continuation(CompBody::TransportFunction {
+                    argument,
+                    result,
+                    path,
+                    function: value,
+                });
+                let thunk = domain.value_thunk(body, TermFace::Reduced);
+                machine
+                    .comps
+                    .push(domain.comp_return(thunk, CompTermFace::Reduced));
+                return Ok(());
+            }
         },
         (Some(&ValueType::Path { .. }), DomainValue::Here { .. }) => {
             match crate::identity::transport_family(core, family).map_err(free)? {
@@ -5786,14 +5919,16 @@ fn along_held(
 /// # Specification
 /// - requires: `along` is the path a held `back` moved along; `motive` closes
 ///   the decode of its own binder.
-/// - ensures: back along `ua(e)` whose record is a tuple of the equivalence's
-///   shape applies the left inverse, the record's `e.1.0.0`, to the operand;
-///   back along a held `back(p)` transports the operand along `p` in `motive`.
+/// - ensures: back along `ua(e)`, the kernel's reduct `x ← e.1; l ← x.0; g ←
+///   l.0; force g v`, run by the machine: a literal record selects its left
+///   inverse, and a record held as a definition or a variable keeps each
+///   projection on its spine for the conversion to unfold; back along a held
+///   `back(p)`, transport of the operand along `p` in `motive`.
 /// - provides: the reverse half of the decode rows: the kernel's reducts `g ←
 ///   e.1.0.0; g(x)` and `tr(El, p, x)`.
-/// - fails: [`EvalFault::TransportedNonPath`] for any other path, and for a
-///   record that is no tuple of that shape; domain faults for dangling nodes;
-///   [`EvalFault::DanglingTerm`] for a family naming no core node.
+/// - fails: [`EvalFault::TransportedNonPath`] for any other path; domain faults
+///   for dangling nodes; [`EvalFault::DanglingTerm`] for a family naming no
+///   core node.
 /// - panics: none.
 ///
 /// # Errors
@@ -5801,15 +5936,17 @@ fn along_held(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the left inverse, not the forward map or the right
-///   inverse, reaches the operand, and back along a `back` moves forward.
+///   inverse, reaches the operand; a held record projects it rather than
+///   faulting; and back along a `back` moves forward.
 /// - witness: `identity::tests::transport_back_along_univalence_applies_the_left_inverse`
+/// - witness: `identity::tests::transport_back_along_univalence_projects_a_held_record`
 #[spec(
     captures: [tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err() || machine.tasks.len() > tasks,
 )]
 fn back_along(
     core: &CoreArena,
-    domain: &DomainArena,
+    domain: &mut DomainArena,
     machine: &mut Machine<'_>,
     motive: crate::arena::ValueClosureId,
     (along, value): (DomainValueId, DomainValueId),
@@ -5817,19 +5954,19 @@ fn back_along(
 {
     let dangling = EvalFault::Domain(DomainFault::Dangling);
     match *domain.value(along).ok_or(dangling)? {
+        // `#{f, #{#{g, s}, #{h, r}}}`: the left inverse is `g`, projected
+        // one component at a time and forced at the operand.
         DomainValue::Univalence { record, .. } => {
-            // `#{f, #{#{g, s}, #{h, r}}}`: the left inverse is `g`.
-            let mut inverse = record;
-            for component in [1_usize, 0_usize, 0_usize] {
-                let node = domain.value(inverse).ok_or(dangling)?;
-                inverse = *domain
-                    .components(node)
-                    .and_then(|fields| fields.get(component))
-                    .ok_or(EvalFault::TransportedNonPath)?;
-            }
-            machine.values.extend([value, inverse]);
-            machine.tasks.push(Task::Apply);
-            machine.tasks.push(Task::Force);
+            let first = gandr_core_term::Component::from(0_usize);
+            let applied = domain.native_continuation(CompBody::AppliedTo(value));
+            let section = domain.native_continuation(CompBody::Projected(first));
+            machine.tasks.push(Task::BindClosure(applied));
+            machine.tasks.push(Task::BindClosure(section));
+            machine.tasks.push(Task::BindClosure(section));
+            machine.tasks.push(Task::Projection(Projector::Component(
+                gandr_core_term::Component::from(1_usize),
+            )));
+            machine.values.push(record);
             Ok(())
         },
         DomainValue::HeldTransport {
@@ -5859,6 +5996,113 @@ fn back_along(
         | DomainValue::Code { .. }
         | DomainValue::StaticLambda { .. } => Err(EvalFault::TransportedNonPath),
     }
+}
+
+/// The motives a function transport moves its argument back and its result
+/// forward through, the argument's first, each none when its type reads no
+/// binder.
+type FunctionMotives = (
+    Option<crate::arena::ValueClosureId>,
+    Option<crate::arena::ValueClosureId>,
+);
+
+/// The motives a function transport along a universe path moves through:
+/// the argument's, back along the path, and the result's, forward.
+///
+/// # Specification
+/// - requires: `function_type` is the motive's thunk type under its own binder
+///   and `environment` the motive's captures; `carried` is the path.
+/// - ensures: for a non-dependent `U(A → F B)` whose returner performs no
+///   effect, along `ua(e)` or a held transport, each motive is none when its
+///   type reads no binder; the result's closes `B` over `environment`
+///   otherwise, and the argument's closes `A` when `A` is the decode of the
+///   binder and moving back along the path needs no endpoint: the path is
+///   `ua(e)` or a held `back`. `None` for any other type, returner, path or
+///   argument.
+/// - provides: the function row's guard and the motives its reduct reads.
+/// - fails: [`EvalFault::DanglingTerm`] for a type naming no core node; domain
+///   faults for a dangling held transport.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the decoded argument moves back along `ua(e)` by the left
+///   inverse and a constant argument stays as it is, while a dependent
+///   function, a neutral path and a decoded argument along a held `then` keep
+///   the transport as it was; swapping the motives or moving the argument
+///   forward changes the transported function.
+/// - witness: `identity::tests::a_function_moves_along_univalence_by_its_maps`
+/// - witness: `identity::tests::a_function_with_a_constant_argument_moves_its_result_only`
+/// - witness: `identity::tests::a_function_with_a_constant_result_leaves_its_call_unmoved`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |parts| parts.is_none()
+    || matches!(core.comp_type(function_type), Some(&CompType::Arrow { .. }))))]
+fn function_parts(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    (function_type, environment): (gandr_core_term::CompTypeId, Environment),
+    carried: DomainValue,
+) -> Result<Option<FunctionMotives>, EvalFault>
+{
+    let Some(&CompType::Arrow {
+        domain: argument_type,
+        codomain,
+    }) = core.comp_type(function_type)
+    else {
+        return Ok(None);
+    };
+    let Some(&CompType::Returner {
+        result: result_type,
+        ref effects,
+    }) = core.comp_type(codomain)
+    else {
+        return Ok(None);
+    };
+    // The result moves forward as the value the call returns, which only a
+    // returner that performs nothing hands over without running.
+    if effects.signatures().next().is_some() {
+        return Ok(None);
+    }
+    let back_reads = if matches!(carried, DomainValue::Univalence { .. }) {
+        true
+    }
+    else if let DomainValue::HeldTransport { motive: formed, .. } = carried {
+        held_family(core, domain, formed)? == crate::identity::TransportFamily::Reversed
+    }
+    else {
+        return Ok(None);
+    };
+    let free = |fault| match fault {
+        crate::free::FreeFault::Dangling => EvalFault::DanglingTerm,
+        crate::free::FreeFault::MachineInvariant => EvalFault::MachineInvariant,
+    };
+    let argument = match crate::identity::binder_read(core, argument_type).map_err(free)? {
+        crate::free::Membership::Absent => None,
+        crate::free::Membership::Held => {
+            let decoded = matches!(
+                core.value_type(argument_type),
+                Some(&ValueType::Element { code, .. }) if matches!(
+                    core.value(code),
+                    Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if u32::from(index) == 0
+                )
+            );
+            if !(decoded && back_reads) {
+                return Ok(None);
+            }
+            Some(domain.value_closure_node(
+                crate::ValueBody::ValueType(argument_type),
+                environment.clone(),
+            ))
+        },
+    };
+    let result = match crate::identity::binder_read(core, result_type).map_err(free)? {
+        crate::free::Membership::Absent => None,
+        crate::free::Membership::Held => {
+            Some(domain.value_closure_node(crate::ValueBody::ValueType(result_type), environment))
+        },
+    };
+    Ok(Some((argument, result)))
 }
 
 /// How a held transport's family reads: `back`'s reversed singleton or

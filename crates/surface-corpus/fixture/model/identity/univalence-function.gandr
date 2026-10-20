@@ -1,0 +1,23 @@
+// Transport of a function along `ua`: the cubical case table of Cohen,
+// Coquand, Huber and Mörtberg, _Cubical Type Theory: a constructive
+// interpretation of the univalence axiom_ (TYPES 2015, arXiv:1611.02108),
+// § 4.5, read at a function type. The argument moves back along the path by
+// the record's left inverse, the function applies, and the result moves
+// forward by the record's map.
+
+// The circle, the presented integers, the winding number and spinning.
+import "./circle-base.gandr" ;
+// The loops at the point as the integers, `loopsAreIntegers`.
+import "./univalence.gandr" ;
+
+/// A function on the loops at the point, carried along `ua(winding)`, is the
+/// function on the integers that spins its argument back to a loop, applies
+/// `f` and winds the result, by conversion.
+@[ checks ]
+def funBeta(f : +U (Path(Circle, Base, Base) -> -F Path(Circle, Base, Base))) -> -F Path(
+  +U (Int -> -F Int),
+  transport(\X. +U (X -> -F X), loopsAreIntegers, f),
+  thunk { fn (n) { wind(f(spin(n))) } }
+) {
+  return here(thunk { fn (n) { wind(f(spin(n))) } })
+}

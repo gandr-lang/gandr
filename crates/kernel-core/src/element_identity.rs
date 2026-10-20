@@ -1911,11 +1911,13 @@ pub(crate) struct ElementTransport
 /// - hypothesis: L3 — `here` transports to the value; a product, a sum and a
 ///   list motive compute constructorwise, a list one cell per step; the
 ///   universe clause reaches native transport along any path but a returned
-///   one, which sticks here for the word rows to run; a neutral path over a
+///   one, which sticks here for the word rows to run; a function motive along
+///   `ua(e)` moves the function by the record's maps; a neutral path over a
 ///   dependent motive sticks.
 /// - witness: `element_identity::tests::transport_on_here_is_the_identity_by_replay`
 /// - witness: `element_identity::tests::transport_computes_through_the_fold_clauses`
 /// - witness: `path_universe::tests::recursive_transport_tests::negation_moves_a_list_one_cell_at_a_time`
+/// - witness: `element_identity::tests::a_function_moves_along_univalence_by_its_maps`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |reduction| match *reduction {
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
@@ -2035,6 +2037,12 @@ where
                 (head, tail),
             )))
         },
+        ValueType::Thunk(function_type) => {
+            Ok(
+                transported_function(arena, table, memo, function_type, (path, value))
+                    .map_or(Reduction::Stuck, Reduction::Reduced),
+            )
+        },
         ValueType::Data { .. }
         | ValueType::Record(_)
         | ValueType::Session { .. }
@@ -2044,7 +2052,6 @@ where
         | ValueType::Bridge { .. }
         | ValueType::Base(_)
         | ValueType::Sigma { .. }
-        | ValueType::Thunk(_)
         | ValueType::Universe { .. }
         | ValueType::Lift { .. }
         | ValueType::Abstract(_)
@@ -2176,38 +2183,153 @@ where
             let first = arena.value_returned(first);
             Some(arena.computation_path_transport(motive, along, first))
         },
-        Held::Back => match arena.value(along) {
-            // `#{f, #{#{g, s}, #{h, r}}}`: the left inverse is `g`.
-            Some(&Value::Univalence(record)) => {
-                let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
-                let left = gandr_kernel_term::Component::from(0_usize);
-                let inverses = arena.computation_tuple_projection(
-                    record,
-                    gandr_kernel_term::Component::from(1_usize),
-                );
-                let section = arena.computation_tuple_projection(bound, left);
-                let force = arena.computation_force(bound);
-                let value = shift_value(
-                    arena,
-                    table,
-                    memo,
-                    value,
-                    BinderDepth::default(),
-                    BinderDepth::from(3_u32),
-                );
-                let applied = arena.computation_application(force, value);
-                let applied = arena.computation_bind(section, applied);
-                let applied = arena.computation_bind(section, applied);
-                Some(arena.computation_bind(inverses, applied))
-            },
-            _ => match held(arena, table, memo, along)? {
-                (Held::Back, inner, _) => {
-                    Some(arena.computation_path_transport(motive, inner, value))
-                },
-                (Held::Then, ..) => None,
-            },
+        Held::Back => back_along(arena, table, memo, motive, (along, value)),
+    }
+}
+
+/// Transport at the universe's decode back along a universe path.
+///
+/// # Specification
+/// - requires: `motive` is the decode of the motive's own binder at level zero.
+/// - ensures: back along `ua(e)`, the reduct `x ← e.1; l ← x.0; g ← l.0; g(v)`,
+///   which applies the record's left inverse; back along a held `back(p)`,
+///   transport along `p` in `motive`. `None` for any other path.
+/// - provides: the reverse half of the decode rows, which `back` and a
+///   transported function's argument read.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the left inverse, not the forward map or the right
+///   inverse, reaches the operand, and back along a `back` moves forward.
+/// - witness: `element_identity::tests::transport_back_along_univalence_applies_the_left_inverse`
+/// - witness: `element_identity::tests::a_function_moves_along_univalence_by_its_maps`
+#[spec(ensures: |ret| ret.is_none_or(|reduct| arena.computation(reduct).is_some()))]
+fn back_along<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    motive: ValueTypeId,
+    (along, value): (ValueId, ValueId),
+) -> Option<ComputationId>
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    match arena.value(along) {
+        // `#{f, #{#{g, s}, #{h, r}}}`: the left inverse is `g`.
+        Some(&Value::Univalence(record)) => {
+            let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let left = gandr_kernel_term::Component::from(0_usize);
+            let inverses = arena
+                .computation_tuple_projection(record, gandr_kernel_term::Component::from(1_usize));
+            let section = arena.computation_tuple_projection(bound, left);
+            let force = arena.computation_force(bound);
+            let value = shift_value(
+                arena,
+                table,
+                memo,
+                value,
+                BinderDepth::default(),
+                BinderDepth::from(3_u32),
+            );
+            let applied = arena.computation_application(force, value);
+            let applied = arena.computation_bind(section, applied);
+            let applied = arena.computation_bind(section, applied);
+            Some(arena.computation_bind(inverses, applied))
+        },
+        _ => match held(arena, table, memo, along)? {
+            (Held::Back, inner, _) => Some(arena.computation_path_transport(motive, inner, value)),
+            (Held::Then, ..) => None,
         },
     }
+}
+
+/// Transport of a function in `y. U(A(y) → F B(y))` along a universe path.
+///
+/// # Specification
+/// - requires: `function_type` is the motive's thunk type under its own binder.
+/// - ensures: for a non-dependent arrow into a returner along `ua(e)` or a held
+///   `back` or `then`, the reduct `return thunk(λa. tr(B, p, ⟨force f m⟩))`,
+///   the call moving as the value it returns as `then`'s first leg does, or
+///   `return thunk(λa. force f m)` when `B` ignores the binder; the argument
+///   `m` is `a` when `A` ignores the binder and `⟨tr(A, back(p), a)⟩`, by
+///   [`back_along`], when `A` is the binder's decode and the path reads back;
+///   `None` for any other type, path or argument.
+/// - provides: the cubical table's function row, as the evaluator's transported
+///   function mirrors it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the argument moves back by the left inverse and the
+///   result forward by the forward map; moving the argument forward, by the
+///   right inverse, or leaving the result where it is changes the reduct.
+/// - witness: `element_identity::tests::a_function_moves_along_univalence_by_its_maps`
+#[spec(ensures: |ret| ret.is_none_or(|reduct| arena.computation(reduct).is_some()))]
+fn transported_function<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    function_type: CompTypeId,
+    (path, function): (ValueId, ValueId),
+) -> Option<ComputationId>
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let Some(&CompType::Arrow {
+        domain: argument,
+        codomain,
+    }) = arena.comp_type(function_type)
+    else {
+        return None;
+    };
+    let Some(&CompType::Returner(result)) = arena.comp_type(codomain)
+    else {
+        return None;
+    };
+    if !matches!(arena.value(path), Some(&Value::Univalence(_)))
+        && held(arena, table, memo, path).is_none()
+    {
+        return None;
+    }
+    let one = BinderDepth::from(1_u32);
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    // Under `λa`, the argument moves back along the path as the value the
+    // move returns.
+    let moved = if binder_use(arena, table, memo, Family::Type(argument)) == BinderUse::Ignored {
+        bound
+    }
+    else {
+        let decoded = matches!(
+            arena.value_type(argument),
+            Some(&ValueType::Element { code, ref target }) if *target == Level::zero()
+                && matches!(arena.value(code), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
+        );
+        if !decoded {
+            return None;
+        }
+        let along = shift_value(arena, table, memo, path, BinderDepth::default(), one);
+        let back = back_along(arena, table, memo, argument, (along, bound))?;
+        arena.value_returned(back)
+    };
+    // The function applies to the moved argument, and the call's result
+    // moves along the path as the value it returns, unless its type reads no
+    // binder.
+    let function = shift_value(arena, table, memo, function, BinderDepth::default(), one);
+    let forced = arena.computation_force(function);
+    let applied = arena.computation_application(forced, moved);
+    let body = if binder_use(arena, table, memo, Family::Type(result)) == BinderUse::Ignored {
+        applied
+    }
+    else {
+        let returned = arena.value_returned(applied);
+        let result = shift_value_type(arena, table, memo, result, one, one);
+        let forward = shift_value(arena, table, memo, path, BinderDepth::default(), one);
+        arena.computation_path_transport(result, forward, returned)
+    };
+    let lambda = arena.computation_lambda(body);
+    let thunk = arena.value_thunk(lambda);
+    Some(arena.computation_return(thunk))
 }
 
 quenchant_shape::reason_enum! {
