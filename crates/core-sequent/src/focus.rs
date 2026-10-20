@@ -2116,11 +2116,60 @@ impl<'run> Focusing<'run>
                 path,
                 value,
             } => {
-                crate::identity::readable(self.core, motive).map_err(|unread| match unread {
+                // A returned value, `back(p)` or `p then q` among them, is
+                // the computation that returns it, run first: the kernel
+                // reads `E[c]` as `c to x. E[x]`.
+                let core = self.core;
+                let held = |operand: ValueId| {
+                    if let Some(&Value::Returned(computation)) = core.value(operand) {
+                        Some(computation)
+                    }
+                    else {
+                        None
+                    }
+                };
+                let (held_path, held_value) = (held(path), held(value));
+                // Along a reflexivity the value stays, whatever the motive:
+                // the kernel's first transport row, read before the motive.
+                if let Some(&Value::Here(_)) = core.value(path) {
+                    if let Some(computation) = held_value {
+                        self.tasks.push(Task::Computation {
+                            computation,
+                            continuation,
+                        });
+                    }
+                    else {
+                        self.tasks.push(Task::Cut {
+                            origin: FocusOrigin::Return,
+                            polarity: Polarity::Positive,
+                            consumer: continuation,
+                        });
+                        self.tasks.push(Task::Value(value));
+                    }
+                    return Ok(());
+                }
+                crate::identity::readable(core, motive).map_err(|unread| match unread {
                     crate::identity::Unread::Head(head) => FocusRefusal::ElementTransport(id, head),
                     crate::identity::Unread::Dangling => FocusRefusal::TranslationInvariant,
                 })?;
-                self.apply_combinator(Combinator::Transport(motive), (path, value), continuation);
+                if held_path.is_none() && held_value.is_none() {
+                    self.apply_combinator(
+                        Combinator::Transport(motive),
+                        (path, value),
+                        continuation,
+                    );
+                    return Ok(());
+                }
+                self.tasks.push(Task::Combinator {
+                    combinator: Combinator::TransportFrom {
+                        motive,
+                        path: held_path.is_some(),
+                        value: held_value.is_some(),
+                    },
+                    continuation,
+                });
+                self.operand(value, held_value)?;
+                self.operand(path, held_path)?;
             },
             Computation::TelescopeTransport { .. } => {
                 return Err(FocusRefusal::ElementTransport(id, MotiveHead::Telescope));
@@ -2409,6 +2458,50 @@ impl<'run> Focusing<'run>
         });
         for &part in parts.iter().rev() {
             self.tasks.push(Task::Value(part));
+        }
+        Ok(())
+    }
+
+    /// Schedule one operand of a transport: the returned value `⟨c⟩` as the
+    /// suspension `thunk(𝓒⟦c⟧)`, any other value translated.
+    ///
+    /// # Specification
+    /// - requires: `held` is `Some(c)` exactly when `operand` is `⟨c⟩`.
+    /// - ensures: on success the thunk and `c`'s translation to a fresh return
+    ///   point are scheduled for a held computation, and the value's
+    ///   translation otherwise.
+    /// - provides: the operands of [`Combinator::TransportFrom`].
+    /// - fails: a refused mint of the return point.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a transport along or of `back(p)` or `p then q` runs
+    ///   that transport first, as the kernel does; translating the returned
+    ///   value in place is refused, since the IL has no producer for it.
+    /// - witness: `tests::run::derived_paths_run_as_their_composed_maps`
+    #[spec(
+        captures: work = self.tasks.len(),
+        ensures: |ret| ret.is_err() || work.checked_add(if held.is_some() { 2 } else { 1 }) == Some(self.tasks.len()),
+    )]
+    fn operand(
+        &mut self,
+        operand: ValueId,
+        held: Option<ComputationId>,
+    ) -> Result<(), FocusRefusal>
+    {
+        if let Some(computation) = held {
+            let return_point = self.innermost_covariable()?;
+            self.tasks.push(Task::Thunk);
+            self.tasks.push(Task::Computation {
+                computation,
+                continuation: return_point,
+            });
+        }
+        else {
+            self.tasks.push(Task::Value(operand));
         }
         Ok(())
     }

@@ -21,3 +21,12 @@ def funBeta(f : +U (Path(Circle, Base, Base) -> -F Path(Circle, Base, Base))) ->
 ) {
   return here(thunk { fn (n) { wind(f(spin(n))) } })
 }
+
+/// Adding a loop, carried along `loopsAreIntegers`, adds one: the integer
+/// spins back to its word, gains a loop and winds to its successor, by a run.
+@[ runs("S(S(S(Z)))") ]
+def funRun : +U (-F Int) ;
+def funRun = thunk {
+  run g <- transport(\X. +U (X -> -F X), loopsAreIntegers, thunk { fn (l) { loopOn(l) } }) ;
+  g(S(S(Z)))
+} ;

@@ -50,6 +50,8 @@
 //! | `equiv(f, g)`, a native equivalence of `f` and `g` | `(𝓥⟦f⟧, 𝓥⟦g⟧)` |
 //! | the native product of `p` and `q` | `(thunk(force(both₀) 𝓥⟦p⟧ 𝓥⟦q⟧), thunk(force(both₁) 𝓥⟦p⟧ 𝓥⟦q⟧))` |
 //! | `transport(p, v)` along a native path | `force(forward) 𝓥⟦p⟧ 𝓥⟦v⟧` |
+//! | `tr(P, here(a), v)` | `return 𝓥⟦v⟧`, or `𝓒⟦c⟧` for `v = ⟨c⟩`, whatever `P` is |
+//! | `tr(P, p, v)`, `p` or `v` a returned value | `force(transport_from_P) 𝓞⟦p⟧ 𝓞⟦v⟧` |
 //! | `tr(P, p, v)` | `force(transport_P) 𝓥⟦p⟧ 𝓥⟦v⟧` |
 //!
 //! `inverse` is `thunk(λe. λy. i ← e.1; l ← i.0; g ← l.0; force g y)`: the
@@ -58,15 +60,34 @@
 //! inside `e` and nothing forces them. `both_d` is `thunk(λp. λq. λx. a ← x.0;
 //! b ← x.1; f ← p.d; g ← q.d; a' ← force f a; b' ← force g b; return (a',
 //! b'))`, the componentwise map in the direction `d`, and `forward` is
-//! `thunk(λp. λv. f ← p.0; force f v)`. `transport_P` is `thunk(λp. λv. M_P)`,
-//! built over the motive's syntax by the kernel's transport rows in their
-//! order: a motive that never reads its binder returns `v`; at the decode of
-//! the binder `M` is `f ← p.0; force f v`, as `forward`'s; a product moves
-//! each component by its own action, a sum its payload under its summand, and
-//! a list each element by a native fold. Any other motive has no row the
-//! normaliser or the kernel computes, and focusing refuses its transport by
-//! the head of the first part no row reads ([`MotiveHead`]); a telescope
-//! transport is refused the same way.
+//! `thunk(λp. λv. f ← p.0; force f v)`. Transport along reflexivity keeps the
+//! value before the motive is read, as the kernel's first transport row
+//! does. A returned value `⟨c⟩` — `back(p)` and `p then q` are the transports
+//! that compute them — has no producer of its own, so as a transport's
+//! operand it is passed as `𝓞⟦⟨c⟩⟧ = thunk(𝓒⟦c⟧)` and run first, any other
+//! operand as `𝓞⟦v⟧ = 𝓥⟦v⟧`: `transport_from_P` is `thunk(λp. λv. p' ←
+//! force p; v' ← force v; force(transport_P) p' v')`, forcing only the
+//! operands passed suspended, as the kernel reads `E[c]` as `c to x. E[x]`.
+//!
+//! `transport_P` is `thunk(λp. λv. M_P)`, built over the motive's syntax by
+//! the kernel's transport rows in their order: a motive that never reads its
+//! binder returns `v`; at the decode of the binder `M` is `f ← p.0; force f
+//! v`, as `forward`'s; a product moves each component by its own action, a
+//! sum its payload under its summand, a list each element by a native fold,
+//! and a function `U(A → F B)` into a returner that performs no effect
+//! becomes `return thunk(λa. s ← (g ← p.1; f ← p.0; return (g, f)); x ←
+//! force(M_A) s a; y ← force v x; force(M_B) p y)`: the argument moves back
+//! by its own action at the reversed pair, the function applies, and the
+//! result moves forward. A path between types whose moving endpoints are the
+//! binder, `y. Path(Type, y, c)`, `y. Path(Type, a, y)` or `y. Path(Type, y,
+//! y)`, composes the moved path's maps with `p`'s on the ends that move:
+//! the new forward map runs `p.1` first when the left end moves, then the
+//! moved path's forward map, then `p.0` when the right end moves, and the
+//! new backward map runs `p.1` first when the right end moves, then the
+//! moved path's backward map, then `p.0` when the left end moves. Any other
+//! motive has no row the normaliser or the kernel computes, and focusing
+//! refuses its transport by the head of the first part no row reads
+//! ([`MotiveHead`]); a telescope transport is refused the same way.
 //!
 //! **Choice.** A path as the pair of its maps and transport as the motive's
 //! action on it, rather than a path former of the IL's own with transport its
@@ -105,6 +126,8 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_core_term::Binders;
+use gandr_core_term::CompType;
+use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
@@ -148,6 +171,20 @@ pub enum Combinator
     /// `thunk(λp. λv. M_P)`: the action of the transport motive `P`, a value
     /// type under one binder in the arena being focused.
     Transport(ValueTypeId),
+    /// `thunk(λp. λv. p' ← force p; v' ← force v; force(M_P) p' v')`: the
+    /// transport motive `P`'s action where the path, the moved value or both
+    /// are returned values, each passed suspended and run first; an operand
+    /// that is not one is passed as it is and not forced.
+    TransportFrom
+    {
+        /// The motive, a value type under one binder in the arena being
+        /// focused.
+        motive: ValueTypeId,
+        /// Whether the path is passed suspended.
+        path: bool,
+        /// Whether the moved value is passed suspended.
+        value: bool,
+    },
 }
 
 impl Combinator
@@ -169,7 +206,7 @@ impl Combinator
     #[spec(ensures: |ret| usize::from(ret) == match self {
         Self::Identity => 0_usize,
         Self::Inverse => 1_usize,
-        Self::Compose | Self::Wrap | Self::Pair | Self::Ride(_) | Self::Both(_) | Self::Forward | Self::Transport(_) => 2_usize,
+        Self::Compose | Self::Wrap | Self::Pair | Self::Ride(_) | Self::Both(_) | Self::Forward | Self::Transport(_) | Self::TransportFrom { .. } => 2_usize,
     })]
     #[must_use]
     pub(crate) fn applied(self) -> ProducerArity
@@ -183,7 +220,8 @@ impl Combinator
             | Self::Ride(_)
             | Self::Both(_)
             | Self::Forward
-            | Self::Transport(_) => 2_usize,
+            | Self::Transport(_)
+            | Self::TransportFrom { .. } => 2_usize,
         })
     }
 }
@@ -337,6 +375,32 @@ enum Row<'core>
     /// The flow singleton `y. Flow(D, l, y)`: the ridden flow composes with
     /// the image.
     Singleton,
+    /// A function `U(A → F B)` into a returner that performs no effect: the
+    /// argument moves back by its own action at the reversed pair, the
+    /// function applies, and the result moves forward.
+    Function
+    {
+        /// The argument's type `A`.
+        argument: ValueTypeId,
+        /// The result's type `B`.
+        result: ValueTypeId,
+    },
+    /// A path between types whose moving endpoints are the binder and whose
+    /// other parts read no binder: the moved path's maps compose with the
+    /// image's on the ends that move.
+    Ends(Moving),
+}
+
+/// Which endpoints of a path between types the moving binder is.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Moving
+{
+    /// The left endpoint alone, as in `y. Path(Type, y, c)`.
+    Left,
+    /// The right endpoint alone, as in `y. Path(Type, a, y)`.
+    Right,
+    /// Both endpoints, as in `y. Path(Type, y, y)`.
+    Both,
 }
 
 /// Whether a motive part reads its binder.
@@ -465,6 +529,20 @@ fn row(
         ValueType::Flow { target, .. } if family == Family::Flow && moving(target) => {
             Row::Singleton
         },
+        ValueType::Thunk(function) if family == Family::Path => {
+            match function_row(core, function) {
+                Some((argument, result)) => Row::Function { argument, result },
+                None => return Err(Unread::Head(head(read))),
+            }
+        },
+        ValueType::Path {
+            carrier,
+            left,
+            right,
+        } if family == Family::Path => match ends(core, node, (carrier, left, right))? {
+            Some(row) => row,
+            None => return Err(Unread::Head(head(read))),
+        },
         ValueType::Data { .. }
         | ValueType::Record(_)
         | ValueType::PathUniverse(..)
@@ -490,6 +568,116 @@ fn row(
             Family::Path => return Err(Unread::Head(head(read))),
         },
     })
+}
+
+/// The argument and result types of the function motive part `U(function)`
+/// when `function` is an arrow into a returner that performs no effect.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some((A, B))` exactly for `A → F B` whose returner's effect row
+///   is empty; `None` for a dependent arrow, any other codomain or an effectful
+///   returner, whose call a transport cannot hand on as the value it returns.
+/// - provides: the function row's guard, as the normaliser's `function_parts`
+///   reads the same type.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a function carried along `ua` runs as the kernel's
+///   function row computes it; refusing the arrow, or admitting an effectful
+///   one, changes which transports focus.
+/// - witness: `tests::run::a_function_runs_along_a_path_by_its_maps`
+#[spec(ensures: |ret| ret.is_none_or(|(argument, _)| matches!(core.comp_type(function), Some(&CompType::Arrow { domain, .. }) if domain == argument)))]
+fn function_row(
+    core: &CoreArena,
+    function: CompTypeId,
+) -> Option<(ValueTypeId, ValueTypeId)>
+{
+    let &CompType::Arrow { domain, codomain } = core.comp_type(function)?
+    else {
+        return None;
+    };
+    let &CompType::Returner {
+        result,
+        ref effects,
+    } = core.comp_type(codomain)?
+    else {
+        return None;
+    };
+    effects
+        .signatures()
+        .next()
+        .is_none()
+        .then_some((domain, result))
+}
+
+/// The row of the path motive part `node`, `Path(carrier, left, right)`,
+/// when it is a path between types whose moving endpoints are the binder.
+///
+/// # Specification
+/// - requires: `node` is the part `Path(carrier, left, right)` of `core`.
+/// - ensures: [`Row::Ends`] naming the endpoints that are the moving binder
+///   when the carrier is a universe, at least one endpoint moves and the part
+///   with each moving endpoint replaced by a closed value reads no binder;
+///   `None` for an element carrier, whose paths are not pairs of maps, and for
+///   an endpoint built from the binder.
+/// - provides: the rows `back` and `then` transport along, the families `y.
+///   Path(U, y, c)` and `y. Path(U, a, y)`.
+/// - fails: [`Unread::Dangling`] for a part that does not import.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `back(p)` and `p then q` along `ua` run to the maps the
+///   kernel's rows compose; moving the wrong end, or composing in the wrong
+///   order, changes the run's value.
+/// - witness: `tests::run::derived_paths_run_as_their_composed_maps`
+#[spec(ensures: |ret| matches!(ret, Ok(Some(Row::Ends(_)) | None) | Err(Unread::Dangling)))]
+fn ends(
+    core: &CoreArena,
+    node: ValueTypeId,
+    (carrier, left, right): (ValueTypeId, ValueId, ValueId),
+) -> Result<Option<Row<'static>>, Unread>
+{
+    if !matches!(core.value_type(carrier), Some(&ValueType::Universe { .. })) {
+        return Ok(None);
+    }
+    let is_binder = |code: ValueId| matches!(core.value(code), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if index == DeBruijnIndex::from(0_u32));
+    let moving = match (is_binder(left), is_binder(right)) {
+        (true, true) => Moving::Both,
+        (true, false) => Moving::Left,
+        (false, true) => Moving::Right,
+        (false, false) => return Ok(None),
+    };
+    let left_moves = matches!(moving, Moving::Left | Moving::Both);
+    let right_moves = matches!(moving, Moving::Right | Moving::Both);
+    let mut scratch = CoreArena::new();
+    let imported = gandr_core_term::TypeImporter::new(core, &mut scratch)
+        .value_type(node)
+        .map_err(|gandr_core_term::ImportFault| Unread::Dangling)?;
+    let Some(&ValueType::Path {
+        carrier,
+        left,
+        right,
+    }) = scratch.value_type(imported)
+    else {
+        return Err(Unread::Dangling);
+    };
+    let closed_end = scratch.value_unit();
+    let fixed = scratch.value_type_path(
+        carrier,
+        if left_moves { closed_end } else { left },
+        if right_moves { closed_end } else { right },
+    );
+    Ok(
+        match gandr_core_term::strengthen_value_type(&mut scratch, fixed, Binders::ONE) {
+            Maybe::Present(_) => Some(Row::Ends(moving)),
+            Maybe::Absent(_) => None,
+        },
+    )
 }
 
 /// Whether every part of the transport motive `motive` has a row.
@@ -524,7 +712,8 @@ pub fn readable(
         match row(core, node, Family::Path)? {
             Row::Product(parts) | Row::Sum(parts) => pending.extend(parts.iter().rev()),
             Row::List(element) => pending.push(element),
-            Row::Unchanged | Row::Decode | Row::Singleton => {},
+            Row::Function { argument, result } => pending.extend([result, argument]),
+            Row::Unchanged | Row::Decode | Row::Singleton | Row::Ends(_) => {},
         }
     }
     Ok(())
@@ -703,6 +892,36 @@ pub fn build(
             Ok(closed(scratch, body, Binders::from(2_u32)))
         },
         Combinator::Transport(motive) => action(core, motive, Family::Path, scratch),
+        Combinator::TransportFrom {
+            motive,
+            path,
+            value,
+        } => {
+            let transport = action(core, motive, Family::Path, scratch)?;
+            // Under λp. λv: v = 0, p = 1. The path is forced first, then the
+            // value, each binding its result; the action reads both where
+            // the binds leave them.
+            let (path_at, value_at) = match (path, value) {
+                (true, true) | (false, false) => (1_u32, 0_u32),
+                (true, false) => (0, 1),
+                (false, true) => (2, 0),
+            };
+            let image = variable(scratch, DeBruijnIndex::from(path_at));
+            let moved = variable(scratch, DeBruijnIndex::from(value_at));
+            let mut body = applied(scratch, transport, (image, moved));
+            if value {
+                // Under the forced path, if any, the value is one further out.
+                let held = variable(scratch, DeBruijnIndex::from(u32::from(path)));
+                let forced = scratch.computation_force(held);
+                body = scratch.computation_bind(forced, body);
+            }
+            if path {
+                let held = variable(scratch, DeBruijnIndex::from(1_u32));
+                let forced = scratch.computation_force(held);
+                body = scratch.computation_bind(forced, body);
+            }
+            Ok(closed(scratch, body, Binders::from(2_u32)))
+        },
     }
 }
 
@@ -836,7 +1055,10 @@ fn action(
                 pending.extend(parts.iter().map(|&part| (part, false)));
             },
             Row::List(element) => pending.push((element, false)),
-            Row::Unchanged | Row::Decode | Row::Singleton => {},
+            Row::Function { argument, result } => {
+                pending.extend([(result, false), (argument, false)]);
+            },
+            Row::Unchanged | Row::Decode | Row::Singleton | Row::Ends(_) => {},
         }
     }
     let mut built: BTreeMap<ValueTypeId, ValueId> = BTreeMap::new();
@@ -1007,5 +1229,134 @@ fn action_body(
             let ridden = variable(scratch, moved);
             Ok(scratch.computation_return(ridden))
         },
+        Row::Function { argument, result } => Ok(function_action(
+            scratch,
+            (part_action(argument)?, part_action(result)?),
+        )),
+        Row::Ends(moving) => Ok(ends_action(scratch, moving)),
     }
+}
+
+/// `return thunk(λa. s ← (g ← t.1; f ← t.0; return (g, f)); x ← force(M_A)
+/// s a; y ← force v x; force(M_B) t y)` under the image `t` (index 1) and
+/// the moved function `v` (index 0): the function row, with `M_A` the
+/// argument's action and `M_B` the result's.
+///
+/// # Specification
+/// - requires: `argument` and `result` are closed actions in `scratch`.
+/// - ensures: the argument moves back by its own action at the image's maps
+///   swapped, the function applies to it, and its result moves forward.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a function carried along `ua` runs to the kernel's `λa.
+///   tr(B, p, ⟨force f (back a)⟩)`; moving the argument forward, or the result
+///   back, would not.
+/// - witness: `tests::run::a_function_runs_along_a_path_by_its_maps`
+#[spec(ensures: |ret| scratch.computation(ret).is_some())]
+fn function_action(
+    scratch: &mut CoreArena,
+    (argument, result): (ValueId, ValueId),
+) -> ComputationId
+{
+    // Under λa: a = 0, v = 1, t = 2.
+    let image = variable(scratch, DeBruijnIndex::from(2_u32));
+    let backward = scratch.computation_tuple_projection(image, Direction::Backward.component());
+    // Under g: g = 0, a = 1, v = 2, t = 3.
+    let image = variable(scratch, DeBruijnIndex::from(3_u32));
+    let forward = scratch.computation_tuple_projection(image, Direction::Forward.component());
+    // Under f: f = 0, g = 1.
+    let first = variable(scratch, DeBruijnIndex::from(1_u32));
+    let second = variable(scratch, DeBruijnIndex::from(0_u32));
+    let swapped = scratch.value_tuple(&[first, second]);
+    let returned = scratch.computation_return(swapped);
+    let swapped = scratch.computation_bind(forward, returned);
+    let swapped = scratch.computation_bind(backward, swapped);
+    // Under s: s = 0, a = 1, v = 2, t = 3.
+    let pair = variable(scratch, DeBruijnIndex::from(0_u32));
+    let point = variable(scratch, DeBruijnIndex::from(1_u32));
+    let moved_back = applied(scratch, argument, (pair, point));
+    // Under x: x = 0, s = 1, a = 2, v = 3, t = 4.
+    let function = variable(scratch, DeBruijnIndex::from(3_u32));
+    let point = variable(scratch, DeBruijnIndex::from(0_u32));
+    let called = applied_once(scratch, function, point);
+    // Under y: y = 0, x = 1, s = 2, a = 3, v = 4, t = 5.
+    let image = variable(scratch, DeBruijnIndex::from(5_u32));
+    let produced = variable(scratch, DeBruijnIndex::from(0_u32));
+    let moved_forward = applied(scratch, result, (image, produced));
+    let tail = scratch.computation_bind(called, moved_forward);
+    let tail = scratch.computation_bind(moved_back, tail);
+    let body = scratch.computation_bind(swapped, tail);
+    let lambda = scratch.computation_lambda(body);
+    let suspended = scratch.value_thunk(lambda);
+    scratch.computation_return(suspended)
+}
+
+/// The path-end row under the image `t` (index 1) and the moved path `v`
+/// (index 0): `tf ← t.0; tb ← t.1; rf ← v.0; rb ← v.1; return (to, from)`,
+/// where `to` runs `tb` first when the left end moves, then `rf`, then `tf`
+/// when the right end moves, and `from` runs `tb` first when the right end
+/// moves, then `rb`, then `tf` when the left end moves.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the moved path's maps composed with the image's on the ends that
+///   move, each composite a suspended [`Combinator::Compose`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `back(p)` runs to `p`'s maps swapped and `p then q` to
+///   `q`'s after `p`'s, as the kernel's rows compose them; composing in the
+///   other order would not.
+/// - witness: `tests::run::derived_paths_run_as_their_composed_maps`
+#[spec(ensures: |ret| scratch.computation(ret).is_some())]
+fn ends_action(
+    scratch: &mut CoreArena,
+    moving: Moving,
+) -> ComputationId
+{
+    let left = matches!(moving, Moving::Left | Moving::Both);
+    let right = matches!(moving, Moving::Right | Moving::Both);
+    let image = variable(scratch, DeBruijnIndex::from(1_u32));
+    let image_forward = scratch.computation_tuple_projection(image, Direction::Forward.component());
+    // Under tf: tf = 0, v = 1, t = 2.
+    let image = variable(scratch, DeBruijnIndex::from(2_u32));
+    let image_backward =
+        scratch.computation_tuple_projection(image, Direction::Backward.component());
+    // Under tb: tb = 0, tf = 1, v = 2.
+    let path = variable(scratch, DeBruijnIndex::from(2_u32));
+    let path_forward = scratch.computation_tuple_projection(path, Direction::Forward.component());
+    // Under rf: rf = 0, tb = 1, tf = 2, v = 3.
+    let path = variable(scratch, DeBruijnIndex::from(3_u32));
+    let path_backward = scratch.computation_tuple_projection(path, Direction::Backward.component());
+    // Under rb: rb = 0, rf = 1, tb = 2, tf = 3.
+    let composer = compose(scratch);
+    let [moved_back, moved_on, image_back, image_on] =
+        [0_u32, 1, 2, 3].map(|index| variable(scratch, DeBruijnIndex::from(index)));
+    let mut then = |first: ValueId, second: ValueId| {
+        let composite = applied(scratch, composer, (first, second));
+        scratch.value_thunk(composite)
+    };
+    let mut to = moved_on;
+    if left {
+        to = then(image_back, to);
+    }
+    if right {
+        to = then(to, image_on);
+    }
+    let mut from = moved_back;
+    if right {
+        from = then(image_back, from);
+    }
+    if left {
+        from = then(from, image_on);
+    }
+    let maps = scratch.value_tuple(&[to, from]);
+    let body = scratch.computation_return(maps);
+    let body = scratch.computation_bind(path_backward, body);
+    let body = scratch.computation_bind(path_forward, body);
+    let body = scratch.computation_bind(image_backward, body);
+    scratch.computation_bind(image_forward, body)
 }

@@ -2187,10 +2187,11 @@ def wide : Type ; def wide = String ;"#,
     fn a_body_that_did_not_focus_is_carried_until_reached()
     {
         let mut laws = program(
-            r"def law : +U (-F (+U (Path(Integer, 1, 1) -> -F Integer))) ;
-def law = thunk { transport(\y. +U (Path(Integer, y, y) -> -F Integer), here(1), thunk { fn (p) { return 1 } }) } ;
-def reached : +U (-F (+U (Path(Integer, 1, 1) -> -F Integer))) ; def reached = thunk { become force law } ;
-def kept : +U (-F (+U (-F (+U (Path(Integer, 1, 1) -> -F Integer))))) ; def kept = thunk { return reached } ;",
+            r"def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
+  transport(\y. Path(Integer, y, y), p then p, here(1))
+}
+def reached : +U (-F Path(Integer, 1, 1)) ; def reached = thunk { law(here(1)) } ;
+def kept : +U (-F (+U (-F Path(Integer, 1, 1)))) ; def kept = thunk { return reached } ;",
         );
         for name in ["law", "reached"] {
             let evaluation = run(&mut laws, SurfaceName::from(name));
@@ -2199,7 +2200,7 @@ def kept : +U (-F (+U (-F (+U (Path(Integer, 1, 1) -> -F Integer))))) ; def kept
                     evaluation,
                     Evaluation::Unrunnable(Unrunnable::Unfocused {
                         declaration,
-                        refusal: FocusRefusal::ElementTransport(_, gandr_core_sequent::MotiveHead::Thunk),
+                        refusal: FocusRefusal::ElementTransport(_, gandr_core_sequent::MotiveHead::Path),
                     }) if declaration == SurfaceName::from("law")
                 ),
                 "`{name}` reaches the unfocused body: {evaluation}"
@@ -2207,7 +2208,7 @@ def kept : +U (-F (+U (-F (+U (Path(Integer, 1, 1) -> -F Integer))))) ; def kept
         }
         assert_eq!(
             run(&mut laws, SurfaceName::from("kept")).to_string(),
-            "thunk { force law }",
+            "thunk { law((thunk { fn (a) { a } }, thunk { fn (a) { a } })) }",
             "a run that carries the unfocused body without reaching it returns"
         );
     }

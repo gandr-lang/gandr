@@ -2693,9 +2693,91 @@ fn native_paths_run_as_their_maps()
     );
 }
 
+/// A function transported along `ua(e)` runs its argument back by the
+/// record's left inverse, then itself, then its result forward by the
+/// record's map.
+#[test]
+fn a_function_runs_along_a_path_by_its_maps()
+{
+    let mut core = CoreArena::new();
+    let five = integer(&mut core, Digits("5"));
+    let unit = core.value_unit();
+    let identity = decoded(&mut core);
+    let returner = core.comp_type_returner(identity);
+    let arrow = core.comp_type_arrow(identity, returner);
+    let motive = core.value_type_thunk(arrow);
+    let righting = translator(&mut core, injected_right);
+    let path = univalence(&mut core);
+    let moved = core.computation_path_transport(motive, path, righting);
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = core.computation_force(bound);
+    let called = core.computation_application(forced, five);
+    let ran = core.computation_bind(moved, called);
+    let argument = core.value_injection(Side::Left.into(), five);
+    let result = core.value_injection(Side::Right.into(), argument);
+    let image = core.value_tuple(&[result, unit]);
+    assert_eq!(
+        evaluated(&mut core, ran),
+        returned(&mut core, image),
+        "the argument moves back, the function runs, the result moves forward"
+    );
+}
+
+/// `back(p)` runs as `p`'s maps swapped and `p then q` as `p`'s forward map
+/// then `q`'s, each derived path running the transport that computes it
+/// first.
+#[test]
+fn derived_paths_run_as_their_composed_maps()
+{
+    let mut core = CoreArena::new();
+    let five = integer(&mut core, Digits("5"));
+    let unit = core.value_unit();
+    let identity = decoded(&mut core);
+    let universe = core.value_type_universe(
+        gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+        gandr_kernel_strata::Level::zero(),
+    );
+    let integer_type = core.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let code = core.value_quote(integer_type);
+    let path = univalence(&mut core);
+    let reversed = gandr_core_term::identity::back(&mut core, universe, code, path);
+    let reversed = core.value_returned(reversed);
+
+    let moved = core.computation_path_transport(identity, reversed, five);
+    let image = core.value_injection(Side::Left.into(), five);
+    assert_eq!(
+        evaluated(&mut core, moved),
+        returned(&mut core, image),
+        "`back` runs the left inverse"
+    );
+
+    let there_and_back = gandr_core_term::identity::then(&mut core, universe, code, path, reversed);
+    let there_and_back = core.value_returned(there_and_back);
+    let moved = core.computation_path_transport(identity, there_and_back, five);
+    let pair = core.value_tuple(&[five, unit]);
+    let image = core.value_injection(Side::Left.into(), pair);
+    assert_eq!(
+        evaluated(&mut core, moved),
+        returned(&mut core, image),
+        "a composite runs its first path's map, then its second's"
+    );
+
+    let back_and_there = gandr_core_term::identity::then(&mut core, universe, code, reversed, path);
+    let back_and_there = core.value_returned(back_and_there);
+    let moved = core.computation_path_transport(identity, back_and_there, five);
+    let left = core.value_injection(Side::Left.into(), five);
+    let image = core.value_tuple(&[left, unit]);
+    assert_eq!(
+        evaluated(&mut core, moved),
+        returned(&mut core, image),
+        "the reversed path's map runs first when it is the first path"
+    );
+}
+
 /// A transport whose motive has a part no row reads does not focus: the
 /// refusal names the transport and that part's head, and the arena returns
-/// to its mark.
+/// to its mark. A dependent function, a path over an element carrier and a
+/// telescope have no row.
 #[test]
 fn a_transport_no_row_reads_is_refused_by_its_head()
 {
@@ -2705,7 +2787,7 @@ fn a_transport_no_row_reads_is_refused_by_its_head()
     let identity = decoded(&mut core);
     let path = univalence(&mut core);
     let returner = core.comp_type_returner(identity);
-    let arrow = core.comp_type_arrow(identity, returner);
+    let arrow = core.comp_type_pi(identity, returner);
     let function = core.value_type_thunk(arrow);
     let paired_function = core.value_type_product(&[integer_type, function]);
     let family = core.value_type_path(identity, five, five);

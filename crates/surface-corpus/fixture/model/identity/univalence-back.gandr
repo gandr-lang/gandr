@@ -5,6 +5,8 @@
 // Path(Type, y, a)`, and transport along it applies the record's left
 // inverse `g`.
 
+// The circle, the presented integers, the winding number and spinning.
+import "./circle-base.gandr" ;
 // Transport forward and back along a path between types.
 import "./univalence.gandr" ;
 
@@ -22,3 +24,17 @@ def backBeta(
 ) -> -F Path(a, bwdAlong(a, b, ua(#{t, #{#{g, s}, #{h, r}}}), y), g(y)) {
   return here(g(y))
 }
+
+/// Transport back along a path from the loops at the point to the integers.
+@[ checks ]
+def loopsBack(
+  p : Path(Type, Path(Circle, Base, Base), Int),
+  y : Int
+) -> -F Path(Circle, Base, Base) {
+  transport(\X. X, back(p), y)
+}
+
+/// Two carried back along the loops' path is the word of two loops, by a run.
+@[ runs("loop ∷ loop ∷ here(Base)") ]
+def backRun : +U (-F Path(Circle, Base, Base)) ;
+def backRun = thunk { loopsBack(loopsAreIntegers, S(S(Z))) } ;
