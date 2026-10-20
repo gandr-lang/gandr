@@ -1109,8 +1109,8 @@ impl InitializeResult
     ///   selection ranges; hover; signature help, asked for as a call's `(` or
     ///   a `,` is typed and again at a `)`; definition and type definition;
     ///   formatting over the whole document and over a range; code lenses,
-    ///   resolved in the answer, and code actions; the server named `gandr` at
-    ///   this crate's version.
+    ///   resolved in the answer, and code actions; document links, resolved in
+    ///   the answer; the server named `gandr` at this crate's version.
     /// - provides: the one capabilities answer, written by `initialize` and by
     ///   the driver's `gandr lsp --capabilities` alike.
     /// - fails: never.
@@ -1144,6 +1144,7 @@ impl InitializeResult
             && ret.capabilities.document_highlight_provider.0
             && ret.capabilities.references_provider.0
             && ret.capabilities.rename_provider.prepare_provider
+            && !ret.capabilities.document_link_provider.resolve_provider
             && !ret.capabilities.code_lens_provider.resolve_provider
             && !ret.capabilities.completion_provider.resolve_provider)]
     #[inline]
@@ -1190,6 +1191,9 @@ impl InitializeResult
                 references_provider: Provider::ANSWERED,
                 rename_provider: RenameOptions {
                     prepare_provider: true,
+                },
+                document_link_provider: DocumentLinkOptions {
+                    resolve_provider: false,
                 },
             },
             server_info: ServerInfo {
@@ -1252,6 +1256,9 @@ pub struct ServerCapabilities
     /// Renaming is answered, a rename prepared first: the name at a position,
     /// its declaring name and its uses in every source importing it.
     pub rename_provider: RenameOptions,
+    /// Document links are answered, each resolved in the answer: every path
+    /// import's address, linked to the file it names.
+    pub document_link_provider: DocumentLinkOptions,
 }
 
 /// The rename provider, as advertised.
@@ -1262,6 +1269,16 @@ pub struct RenameOptions
 {
     /// A rename is prepared before it is asked for.
     pub prepare_provider: bool,
+}
+
+/// The document-link provider, as advertised.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct DocumentLinkOptions
+{
+    /// Whether a link's target is resolved by a second request: never.
+    pub resolve_provider: bool,
 }
 
 /// Whether a request is answered, advertised as a provider with no options.
@@ -1384,6 +1401,9 @@ pub enum Answer
     /// What a rename request answers: the edits renaming the name everywhere
     /// it is written.
     Renamed(WorkspaceEdit),
+    /// What a document-link request answers for an open document: each path
+    /// import's address, in source order.
+    Imports(Vec<DocumentLink>),
     /// `null`: what `shutdown` answers, a request about a document that is not
     /// open, and a hover over nothing the server knows.
     Nothing,
@@ -1403,6 +1423,16 @@ pub struct LocationLink
     pub target_range: Range,
     /// The target's name, inside the whole target.
     pub target_selection_range: Range,
+}
+
+/// A range of a document that names another file: a path import's address.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DocumentLink
+{
+    /// The address, between its quotes.
+    pub range: Range,
+    /// The file it names.
+    pub target: DocumentUri,
 }
 
 /// The result of a semantic-tokens request.

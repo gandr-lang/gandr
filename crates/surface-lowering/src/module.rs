@@ -2495,6 +2495,8 @@ pub struct WrittenImport
     pub alias: Maybe<Placed, unaliased::Absent>,
     /// The bytes the import covers.
     pub span: ByteSpan,
+    /// The bytes between the address's quotes, as written, escapes included.
+    pub addressed: ByteSpan,
     /// What the address names.
     pub address: Address,
 }
@@ -2516,7 +2518,7 @@ quenchant_shape::reason_enum! {
 /// # Specification
 /// - requires: `pieces` is the reading of the import `import`.
 /// - ensures: the import the tiles `import " … " (as name)? ;` spell, in that
-///   order with nothing after them.
+///   order with nothing after them, its address read between the quotes.
 /// - provides: the reading the collection and [`written_imports`] share.
 /// - fails: [`LoweringRefusal::MalformedForm`] naming `form` for a repair or a
 ///   tile out of place.
@@ -2532,7 +2534,10 @@ quenchant_shape::reason_enum! {
 /// - witness: `tests::namespace::an_unqualified_import_binds_no_alias`
 #[spec(
     ensures: |ret| match ret {
-        | Ok(ref entry) => entry.span == import.span,
+        | Ok(ref entry) => entry.span == import.span && {
+            let (outer, inner) = (import.span, entry.addressed);
+            outer.start() <= inner.start() && inner.end() <= outer.end()
+        },
         | Err(LoweringRefusal::MalformedForm { form: found, .. }) => found == form,
         | Err(_) => false,
     },
@@ -2553,11 +2558,13 @@ fn read_import<'source>(
         fault: FormFault::MisplacedTile,
     };
     let mut cursor = Cursor::new(&pieces.pieces, import.span);
-    for opening in [TileName::IMPORT, TileName::QUOTE] {
-        if let Maybe::Absent(_) = cursor.tile(opening) {
-            return Err(out_of_place(&cursor));
-        }
+    if let Maybe::Absent(_) = cursor.tile(TileName::IMPORT) {
+        return Err(out_of_place(&cursor));
     }
+    let Maybe::Present(opened) = cursor.tile(TileName::QUOTE)
+    else {
+        return Err(out_of_place(&cursor));
+    };
     let mut written = String::new();
     loop {
         let piece = match cursor.tile(TileName::STRING_FRAGMENT) {
@@ -2571,9 +2578,12 @@ fn read_import<'source>(
             written.push_str(text.as_ref());
         }
     }
-    if let Maybe::Absent(_) = cursor.tile(TileName::QUOTE) {
+    let Maybe::Present(closed) = cursor.tile(TileName::QUOTE)
+    else {
         return Err(out_of_place(&cursor));
-    }
+    };
+    let addressed = ByteSpan::new(opened.span.end(), closed.span.start())
+        .map_err(|_inverted| out_of_place(&cursor))?;
     let alias = match cursor.tile(TileName::AS) {
         Maybe::Present(_) => match cursor.tile(TileName::IDENTIFIER) {
             Maybe::Present(alias) => Maybe::Present(alias),
@@ -2594,6 +2604,7 @@ fn read_import<'source>(
         uri,
         alias,
         span: import.span,
+        addressed,
         address,
     })
 }

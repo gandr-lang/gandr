@@ -61,12 +61,13 @@ use super::client::Method;
 use super::client::Quiet;
 use super::client::Record;
 
-/// The requests over the whole document whose answers depend on its text
-/// alone.
-const WHOLE: [Method; 3] = [
+/// The requests over the whole document whose answers depend on its text and
+/// its URI alone.
+const WHOLE: [Method; 4] = [
     Method("textDocument/semanticTokens/full"),
     Method("textDocument/documentSymbol"),
     Method("textDocument/foldingRange"),
+    Method("textDocument/documentLink"),
 ];
 
 /// The built-in grammar, which the server parses with, built once for the
