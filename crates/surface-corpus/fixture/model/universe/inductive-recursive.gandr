@@ -19,7 +19,7 @@ import "../data/data-base.gandr" ;
 rec {
   /// The codes: the naturals, and the dependent functions from a coded
   /// domain to a family of codes over that domain's decode.
-  @[ checks ]
+  @[ checks, form(explicit) ]
   data UPi : Type {
     NatC : UPi;
     PiC : (a : UPi, b : +U (elPi(a) -> -F UPi)) --> UPi;

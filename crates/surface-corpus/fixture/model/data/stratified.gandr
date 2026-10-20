@@ -15,12 +15,12 @@ import "./data-base.gandr" ;
 @[ checks ]
 data Chain : Type {
   Start : Chain;
-  Link : (prev : Chain, test : +U (Chain -> -F Two)) --> Chain;
+  Link : (prev : Chain, test : Chain => Two) --> Chain;
 }
 
 /// A test answering `R` of a link and `L` of the start.
 @[ checks ]
-def linked : +U (Chain -> -F Two) ;
+def linked : Chain => Two ;
 def linked = thunk { fn (c) { case c -> -F Two { Start => L, Link(p, t) => R } } } ;
 
 /// Two links over the start, each holding `linked`.
@@ -49,10 +49,10 @@ def rec chainLength(c : Chain) -> -F Nat {
 
 /// The outer link's test of the inner link.
 @[ runs("R") ]
-def judged : +U (-F Two) ;
+def judged : () => Two ;
 def judged = thunk { judge(twice) } ;
 
 /// The chain's two links.
 @[ runs("Succ(Succ(Zero))") ]
-def measured : +U (-F Nat) ;
+def measured : () => Nat ;
 def measured = thunk { chainLength(twice) } ;

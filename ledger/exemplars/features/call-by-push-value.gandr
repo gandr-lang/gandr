@@ -10,5 +10,5 @@ def next() -> -F Integer {
 
 /// The computation suspended as a value; a run forces it.
 @[ runs("43") ]
-def stepped : +U (-F Integer) ;
+def stepped : () => Integer ;
 def stepped = thunk { become next() } ;

@@ -13,7 +13,7 @@ import "./data-base.gandr" ;
 @[ checks ]
 data Tree : Type {
   Leaf : Tree;
-  Node : (f : +U (Two -> -F Tree)) --> Tree;
+  Node : (f : Two => Tree) --> Tree;
 }
 
 /// The number of leaves: each subtree is reached through `f` and counted one
@@ -34,7 +34,7 @@ def rec size(t : Tree) -> -F Nat {
 
 /// Every branch a leaf.
 @[ checks ]
-def leaves : +U (Two -> -F Tree) ;
+def leaves : Two => Tree ;
 def leaves = thunk { fn (x) { Leaf } } ;
 
 /// A node over two leaves.
@@ -49,10 +49,10 @@ def lopsided = Node(thunk { fn (x) { case x -> -F Tree { L => cherry, R => Leaf 
 
 /// The cherry's two leaves, counted through its function.
 @[ runs("Succ(Succ(Zero))") ]
-def cherry_leaves : +U (-F Nat) ;
+def cherry_leaves : () => Nat ;
 def cherry_leaves = thunk { size(cherry) } ;
 
 /// Three leaves, the left two reached through two functions.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def deeper : +U (-F Nat) ;
+def deeper : () => Nat ;
 def deeper = thunk { size(lopsided) } ;

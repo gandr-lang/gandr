@@ -9,7 +9,7 @@
 // Shared with `../../model/universe/inductive-recursive.gandr`.
 
 /// The two branches of a binary node.
-@[ checks ]
+@[ checks, form(explicit) ]
 data Two : Type {
   L : Two;
   R : Two;

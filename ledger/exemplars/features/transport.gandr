@@ -5,5 +5,5 @@ def along_here = here(2) ;
 
 /// The same transport, run.
 @[ runs("2") ]
-def along_here_run : +U (-F Integer) ;
+def along_here_run : () => Integer ;
 def along_here_run = thunk { transport(\X. X, here(Integer), 2) } ;

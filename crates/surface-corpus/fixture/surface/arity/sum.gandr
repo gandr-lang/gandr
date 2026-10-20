@@ -1,4 +1,4 @@
-@[ checks ]
+@[ checks, form(explicit) ]
 def one : +{Integer} ;
 def one = +{.0 = 1} ;
 
@@ -58,7 +58,7 @@ def inner = thunk { become nested(#{+{.1 = 8}, 9}) } ;
 /// is the braced `#{+{A, B}, C}`: a match reads its summands off either
 /// spelling (#791).
 @[ checks ]
-def chained(t : (Integer + Integer) * Integer) -> -F Integer {
+def chained(t : #{+{Integer, Integer}, Integer}) -> -F Integer {
   case t {
     #{+{.1 = x}, y} => return x,
     #{_, y} => return y

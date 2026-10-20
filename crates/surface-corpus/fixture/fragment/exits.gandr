@@ -1,4 +1,4 @@
-@[ checks ]
+@[ checks, form(explicit) ]
 data Nat : Type {
   Zero : Nat;
   Succ : (n : Nat) --> Nat;

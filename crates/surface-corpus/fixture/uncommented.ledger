@@ -11,10 +11,10 @@ classifier/relative-monad-sort-errors.gandr:a_thunked_negative_type_in_an_eager_
 classifier/static-lambda-argument.gandr:<file>
 classifier/static-lambda-argument.gandr:apply:88942bd63f773048
 classifier/static-lambda-argument.gandr:apply:c97e2b6a6d97d581
-classifier/static-lambda-argument.gandr:at_a_dynamic_parameter:5fa177b06be2a68a
+classifier/static-lambda-argument.gandr:at_a_dynamic_parameter:38eb15336acc9b89
 classifier/static-lambda-argument.gandr:at_a_dynamic_parameter:cdea837fbabf83a1
-classifier/static-lambda-argument.gandr:at_a_static_parameter:3f7747cef8772af0
-classifier/static-lambda-argument.gandr:at_a_static_parameter:f915af3f17549902
+classifier/static-lambda-argument.gandr:at_a_static_parameter:b4888a1087edcab1
+classifier/static-lambda-argument.gandr:at_a_static_parameter:f40739d5dc733620
 classifier/static-lambda-argument.gandr:use:c2548a4b93e03a07
 classifier/universe-refusals.gandr:<file>
 classifier/universe-refusals.gandr:chosen:a1a11d401f3d8319

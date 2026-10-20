@@ -5,7 +5,7 @@
 // cannot live in it. Shared with `../../model/universe/v-infinity.gandr`.
 
 /// Sets: a type of members, and the member at each of its elements.
-@[ checks ]
+@[ checks, form(explicit) ]
 data Vinf : Type[+, 1] {
   Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf;
 }

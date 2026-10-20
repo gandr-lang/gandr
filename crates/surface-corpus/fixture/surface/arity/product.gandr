@@ -1,4 +1,4 @@
-@[ checks ]
+@[ checks, form(explicit) ]
 def none : #{} ;
 def none = #{} ;
 

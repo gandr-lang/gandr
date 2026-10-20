@@ -13,13 +13,13 @@
 
 /// A family applied to an operation's result, met at one argument: `q(g)` is
 /// at `tm(extend(g))`, which is `use`'s second domain at `extend(g)` (#720).
-@[ checks ]
+@[ checks, form(explicit) ]
 def useAtExtension(
   con : Type,
   tm : +U (con -> -F Type),
-  extend : (g : con) => con,
-  q : (g : con) => tm(extend(g)),
-  use : (g : con, t : tm(g)) => Unit,
+  extend : +U ((g : con) -> -F con),
+  q : +U ((g : con) -> -F tm(extend(g))),
+  use : +U ((g : con) -> (t : tm(g)) -> -F Unit),
   g : con
 ) -> -F Unit {
   become use(extend(g), q(g))
@@ -31,8 +31,8 @@ def useAtExtension(
 def useAtVariable(
   con : Type,
   tm : +U (con -> -F Type),
-  q : (g : con) => tm(g),
-  use : (g : con, t : tm(g)) => Unit,
+  q : +U ((g : con) -> -F tm(g)),
+  use : +U ((g : con) -> (t : tm(g)) -> -F Unit),
   g : con
 ) -> -F Unit {
   become use(g, q(g))
@@ -46,10 +46,10 @@ def fieldAt(
   m : #{
     con : Type,
     tm : +U (con -> -F Type),
-    extend : (g : con) => con,
-    q : (g : con) => tm(extend(g)),
-    use : (g : con, t : tm(g)) => Unit,
-    law : (g : con) => Path(Unit, use(extend(g), q(g)), unit)
+    extend : +U ((g : con) -> -F con),
+    q : +U ((g : con) -> -F tm(extend(g))),
+    use : +U ((g : con) -> (t : tm(g)) -> -F Unit),
+    law : +U ((g : con) -> -F Path(Unit, use(extend(g), q(g)), unit))
   }
 ) -> -F Unit {
   return unit
@@ -60,5 +60,5 @@ def fieldAt(
 /// the family the record holds before it reads `unit` against it (#721); the
 /// family drops its argument, so the field prints as `Unit => Unit` (#736).
 @[ checks ]
-def familyRecord : #{con : Type, tm : +U (con -> -F Type), f : (g : con) => tm(g)} ;
+def familyRecord : #{con : Type, tm : +U (con -> -F Type), f : +U ((g : con) -> -F tm(g))} ;
 def familyRecord = #{Unit, #{thunk { fn (g) { return Unit } }, thunk { fn (g) { return unit } }}} ;

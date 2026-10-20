@@ -222,6 +222,24 @@ fn formatted(
         .map_err(|error| format!("does not format: {error}"))
 }
 
+/// The printer's form the source `text` declares at its head, which the
+/// formatter writes it in whatever form it is asked for.
+///
+/// # Specification
+/// trivial.
+fn pinned(
+    grammar: &Pbg,
+    text: SourceText<'_>,
+) -> Option<Form>
+{
+    let parsed = parse(grammar, text).ok()?;
+    match gandr_surface_format::declared_form(grammar, &parsed)? {
+        gandr_surface_format::Form::Explicit => Some(Form::Explicit),
+        gandr_surface_format::Form::Sugared => Some(Form::Sugared),
+        gandr_surface_format::Form::Source => None,
+    }
+}
+
 /// What the printer spells for one declaration in one form.
 #[derive(Clone, Debug)]
 enum Spelled
@@ -405,7 +423,15 @@ fn misses(
     for (declaration, pair) in printed(&table, &signatures) {
         match pair {
             (Spelled::Faithful(sugared), Spelled::Faithful(explicit)) => {
-                drop(printed_whole.insert(declaration, (sugared, explicit)));
+                // An inverse's two spellings lower apart at a looped point
+                // (#1003), so the formatter keeps each as written: held out,
+                // as the body parity holds it.
+                let inverse = tokens(SourceFragment::from(sugared.as_str()))
+                    .iter()
+                    .any(|token| token == "back");
+                if !inverse {
+                    drop(printed_whole.insert(declaration, (sugared, explicit)));
+                }
             },
             (Spelled::Unfaithful(text), _) | (_, Spelled::Unfaithful(text)) => misses.push(format!(
                 "{name}: `{declaration}`: the printer does not spell its type faithfully: {text}"
@@ -414,6 +440,7 @@ fn misses(
         }
     }
     let printed = printed_whole;
+    let pinned = pinned(grammar, written.text);
     let forms = [
         (
             Form::Explicit,
@@ -437,6 +464,7 @@ fn misses(
         ),
     ];
     for (from, into, expected) in forms {
+        let expected = pinned.unwrap_or(expected);
         let pick = |pair: &(String, String), form: Form| match form {
             Form::Sugared => pair.0.clone(),
             Form::Explicit => pair.1.clone(),
@@ -1107,6 +1135,7 @@ fn bodies(
     if held.is_empty() {
         return found;
     }
+    let pinned = pinned(grammar, written.text);
     let forms = [
         (
             Form::Explicit,
@@ -1130,6 +1159,7 @@ fn bodies(
         ),
     ];
     for (from, into, expected) in forms {
+        let expected = pinned.unwrap_or(expected);
         let variant = substituted(written.text, &held, from);
         let out = match formatted(
             grammar,

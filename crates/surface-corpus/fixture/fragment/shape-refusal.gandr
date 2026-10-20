@@ -1,3 +1,3 @@
-@[ refuses("ShapeMismatch") ]
+@[ refuses("ShapeMismatch"), form(explicit) ]
 def returned : +U (Integer -> -F Integer) ;
 def returned = thunk { return 3 } ;

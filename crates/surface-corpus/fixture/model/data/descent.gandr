@@ -53,15 +53,15 @@ def four = Succ(three) ;
 
 /// Two and three by the accumulator: five.
 @[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
-def five_accumulated : +U (-F Nat) ;
+def five_accumulated : () => Nat ;
 def five_accumulated = thunk { plusFirst(two, three) } ;
 
 /// Half of four.
 @[ runs("Succ(Succ(Zero))") ]
-def halved : +U (-F Nat) ;
+def halved : () => Nat ;
 def halved = thunk { half(four) } ;
 
 /// The fourth Fibonacci number, three.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def fibbed : +U (-F Nat) ;
+def fibbed : () => Nat ;
 def fibbed = thunk { fib(four) } ;

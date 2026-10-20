@@ -107,52 +107,52 @@ def bump_elided = thunk { fn (n) { Succ(n) } } ;
 
 /// The length of `small`.
 @[ runs("Succ(Succ(Zero))") ]
-def counted : +U (-F Nat) ;
+def counted : () => Nat ;
 def counted = thunk { become length_nat(small) } ;
 
 /// The length of `small`, the `return`s elided.
 @[ runs("Succ(Succ(Zero))") ]
-def counted_elided : +U (-F Nat) ;
+def counted_elided : () => Nat ;
 def counted_elided = thunk { length_nat_elided(small) } ;
 
 /// `small` with three appended at its head.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Succ(Zero)), Cons(Zero, Nil)))") ]
-def joined : +U (-F List(Nat)) ;
+def joined : () => List(Nat) ;
 def joined = thunk { become append_nat(small, (Cons(three, (Nil : List(Nat))) : List(Nat))) } ;
 
 /// The same append, the `return`s elided.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Succ(Zero)), Cons(Zero, Nil)))") ]
-def joined_elided : +U (-F List(Nat)) ;
+def joined_elided : () => List(Nat) ;
 def joined_elided = thunk {
   append_nat_elided(small, (Cons(three, (Nil : List(Nat))) : List(Nat)))
 } ;
 
 /// Each element of `small` bumped.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
-def bumped : +U (-F List(Nat)) ;
+def bumped : () => List(Nat) ;
 def bumped = thunk { become map_nat(bump, small) } ;
 
 /// The same map, the `return`s elided.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
-def bumped_elided : +U (-F List(Nat)) ;
+def bumped_elided : () => List(Nat) ;
 def bumped_elided = thunk { map_nat_elided(bump_elided, small) } ;
 
 /// The same map, the calls nested.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
-def bumped_nested : +U (-F List(Nat)) ;
+def bumped_nested : () => List(Nat) ;
 def bumped_nested = thunk { map_nat_nested(bump, small) } ;
 
 /// The same map, the calls run in the fields.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
-def bumped_run : +U (-F List(Nat)) ;
+def bumped_run : () => List(Nat) ;
 def bumped_run = thunk { map_nat_run(bump, small) } ;
 
 /// The length of `small` at its element type, returned.
 @[ checks ]
-def lengthened : +U (-F Nat) ;
+def lengthened : () => Nat ;
 def lengthened = thunk { become length(Nat, small) } ;
 
 /// The same length, the `return`s elided.
 @[ checks ]
-def lengthened_elided : +U (-F Nat) ;
+def lengthened_elided : () => Nat ;
 def lengthened_elided = thunk { length_elided(Nat, small) } ;

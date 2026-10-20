@@ -631,6 +631,33 @@ pub fn format(
     format_beside(grammar, parsed, options, Beside::Alone)
 }
 
+/// The form the source `parsed` was parsed from declares at its head, which
+/// [`format`] writes it in whatever its options ask.
+///
+/// # Specification
+/// - requires: `parsed` was parsed under `grammar`.
+/// - ensures: the form the first `form(explicit)` or `form(sugared)` entry of
+///   an attribute block before the source's first declaration names, after its
+///   imports and inside a leading `rec` group; none when there is none.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the declaration is read from the source's leaves, which
+///   a predicate over the answer would read again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus's explicit subset is held to its declared form
+///   by the printer parity sweeps.
+/// - witness: `tests::format::an_explicit_source_keeps_its_explicit_spelling`
+#[inline]
+#[must_use]
+pub fn declared_form(
+    grammar: &Pbg,
+    parsed: &ParseResult<'_>,
+) -> Option<Form>
+{
+    declared(&leaf::flatten(grammar, parsed.tree(), parsed.obligations()).leaves)
+}
+
 /// Format the source `parsed` was parsed from, its rewrites checked by a
 /// lowering `beside` the sources it imports.
 ///
@@ -1349,12 +1376,15 @@ fn material<'leaves, 'source>(
 /// as an entry of an attribute block written before the source's first
 /// declaration, after its imports — the one place a block before a
 /// declaration stands, since a block before an import refuses the module.
+/// A source that opens with a `rec { … }` group declares it on the group's
+/// first declaration, since a block before `rec` refuses the module too.
 ///
 /// # Specification
 /// - requires: `leaves` are a source's, in offset order.
 /// - ensures: the form named by the first `form` entry of the attribute blocks
-///   before the first token, outside an import, that no block holds; none when
-///   there is none, or it names neither form.
+///   before the first token, outside an import, that no block holds, where the
+///   `rec {` that opens a leading group holds none; none when there is none, or
+///   it names neither form.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the declaration is read from the leaves' text, which a
@@ -1362,8 +1392,9 @@ fn material<'leaves, 'source>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a source declaring the explicit form keeps it under
-///   either option, after an import as at its first line; a source declaring
-///   either form is written in it whatever the option asks.
+///   either option, after an import as at its first line and on a leading `rec`
+///   group's first declaration; a source declaring either form is written in it
+///   whatever the option asks.
 /// - witness: `tests::format::an_explicit_source_keeps_its_explicit_spelling`
 /// - witness: `tests::rewrite::a_declared_form_wins_over_the_option`
 fn declared(leaves: &[Leaf<'_>]) -> Option<Form>
@@ -1375,11 +1406,20 @@ fn declared(leaves: &[Leaf<'_>]) -> Option<Form>
         .collect();
     let mut depth = 0_usize;
     let mut importing = false;
+    let mut grouped = None;
     for (at, &token) in tokens.iter().enumerate() {
         match token {
             ";" if importing => importing = false,
             _ if importing => {},
-            "import" if depth == 0 => importing = true,
+            "import" if depth == 0 && grouped.is_none() => importing = true,
+            "rec"
+                if depth == 0
+                    && grouped.is_none()
+                    && tokens.get(at.saturating_add(1)) == Some(&"{") =>
+            {
+                grouped = Some(at.saturating_add(1));
+            },
+            "{" if depth == 0 && grouped == Some(at) => {},
             "@[" => depth = depth.saturating_add(1),
             "[" if depth > 0 => depth = depth.saturating_add(1),
             "]" if depth > 0 => depth = depth.saturating_sub(1),

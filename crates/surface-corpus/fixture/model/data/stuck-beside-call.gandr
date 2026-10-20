@@ -28,7 +28,7 @@ def rec walk(t : Nat, c : Nat) -> -F Nat {
 /// Two walked from zero: a successor per step over the accumulator `succ`
 /// raised once per step.
 @[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
-def walkedTwo : +U (-F Nat) ;
+def walkedTwo : () => Nat ;
 def walkedTwo = thunk { walk(two, Zero) } ;
 
 /// One step at a variable.
