@@ -754,15 +754,17 @@ pub fn serialize_desc<G>(desc: &TheoryDesc<G>) -> SerializedDescText
     };
     let mut members: Vec<String> = Vec::new();
     if let Maybe::Present(ref shape) = desc.shape {
+        let mut points: Vec<String> = Vec::new();
         let faces: Vec<String> = shape
             .faces
             .iter()
             .map(|face| {
-                let points: Vec<String> = face
-                    .points()
-                    .iter()
-                    .map(|point| format!("{}", usize::from(*point)))
-                    .collect();
+                points.clear();
+                points.extend(
+                    face.points()
+                        .iter()
+                        .map(|point| format!("{}", usize::from(*point))),
+                );
                 format!("{} = {{{}}}; ", face.name(), points.join(", "))
             })
             .collect();
@@ -773,18 +775,16 @@ pub fn serialize_desc<G>(desc: &TheoryDesc<G>) -> SerializedDescText
             faces.concat()
         ));
     }
+    let mut indices: Vec<String> = Vec::new();
     for sort in &desc.sorts {
-        let indices: Vec<String> = sort
-            .indices
-            .iter()
-            .map(|index| {
-                format!(
-                    "{} : {}",
-                    index.name,
-                    render_sort(&index.sort, &index.arguments)
-                )
-            })
-            .collect();
+        indices.clear();
+        indices.extend(sort.indices.iter().map(|index| {
+            format!(
+                "{} : {}",
+                index.name,
+                render_sort(&index.sort, &index.arguments)
+            )
+        }));
         let telescope = if indices.is_empty() {
             String::new()
         }

@@ -5,14 +5,6 @@
 //! rather than beside the code because they need `std`: the property runner,
 //! shared closures, and the resolver query.
 
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        allocation_in_repeated_body,
-        reason = "3 cost-shape sites; #814 lists them"
-    )
-)]
-
 extern crate alloc;
 
 #[cfg(test)]

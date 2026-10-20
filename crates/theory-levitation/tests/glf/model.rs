@@ -379,6 +379,7 @@ fn generated(
 {
     let mut work = vec![Generate::Term(sort.clone(), context.clone(), 5)];
     let mut terms: Vec<(BindingTerm, FreeTerm)> = Vec::new();
+    let mut candidates: Vec<Candidate<'_>> = Vec::new();
     while let Some(step) = work.pop() {
         match step {
             Generate::Close(name, count) => {
@@ -392,13 +393,15 @@ fn generated(
                 ));
             },
             Generate::Term(wanted, scope, depth) => {
-                let mut candidates: Vec<Candidate<'_>> = scope
-                    .iter()
-                    .rev()
-                    .enumerate()
-                    .filter(|&(_, found)| *found == wanted)
-                    .map(|(index, _)| Candidate::Variable(VariableIndex::from(index)))
-                    .collect();
+                candidates.clear();
+                candidates.extend(
+                    scope
+                        .iter()
+                        .rev()
+                        .enumerate()
+                        .filter(|&(_, found)| *found == wanted)
+                        .map(|(index, _)| Candidate::Variable(VariableIndex::from(index))),
+                );
                 candidates.extend(
                     source
                         .opers
@@ -533,6 +536,7 @@ fn identification()
 fn both_views()
 {
     let mut choices = Choices(0x424f_5448_5649_4557);
+    let mut arguments: Vec<BindingJudgement> = Vec::new();
     for source in signatures() {
         let semantics = SimplySorted::new(&source).expect("simply sorted");
         for case in cases(&source, &mut choices) {
@@ -553,16 +557,12 @@ fn both_views()
             // as the operation applied to each argument's own readback, in
             // the context its binder telescope extends.
             let operation = choices.pick(&source.opers);
-            let arguments: Vec<BindingJudgement> = operation
-                .arity
-                .inputs
-                .iter()
-                .map(|port| {
-                    let mut context = case.binding.context.clone();
-                    context.extend(port.bindings.iter().map(|binder| binder.sort.clone()));
-                    generated(&source, context, port.sort.clone(), &mut choices).binding
-                })
-                .collect();
+            arguments.clear();
+            arguments.extend(operation.arity.inputs.iter().map(|port| {
+                let mut context = case.binding.context.clone();
+                context.extend(port.bindings.iter().map(|binder| binder.sort.clone()));
+                generated(&source, context, port.sort.clone(), &mut choices).binding
+            }));
             let applied = BindingJudgement {
                 context: case.binding.context.clone(),
                 sort: operation.arity.outputs[0].sort.clone(),

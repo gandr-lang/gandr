@@ -591,10 +591,12 @@ pub fn positions(term: &FreeTerm) -> Vec<Vec<TermPositionIndex>>
 {
     let mut out = Vec::new();
     let mut stack: Vec<(Vec<TermPositionIndex>, TermNode<'_>)> = vec![(Vec::new(), term.to_node())];
+    let mut arguments: Vec<TermNode<'_>> = Vec::new();
     while let Some((position, node)) = stack.pop() {
         if let TermView::Ctor { args, .. } | TermView::Op { args, .. } = node.view() {
-            let args: Vec<TermNode<'_>> = args.collect();
-            for (index, arg) in args.iter().copied().enumerate().rev() {
+            arguments.clear();
+            arguments.extend(args);
+            for (index, arg) in arguments.iter().copied().enumerate().rev() {
                 let mut child = position.clone();
                 child.push(TermPositionIndex::from(index));
                 stack.push((child, arg));

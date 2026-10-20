@@ -1187,7 +1187,11 @@ fn read_numerals(spelled: &Name) -> Result<Vec<ShapePoint>, TheoryFault>
     for numeral in spelled.as_ref().split(',') {
         let number: usize = numeral.parse().map_err(|_unread| TheoryFault::Numeral)?;
         let point = ShapePoint::from(number);
-        if format!("{number}") != numeral || read.last().is_some_and(|last| *last >= point) {
+        // A parsed numeral is its one spelling unless it carries a sign or a
+        // leading zero.
+        let spelled_once =
+            !numeral.starts_with('+') && (numeral == "0" || !numeral.starts_with('0'));
+        if !spelled_once || read.last().is_some_and(|last| *last >= point) {
             return Err(TheoryFault::Numeral);
         }
         read.push(point);
