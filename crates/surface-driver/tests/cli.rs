@@ -1382,10 +1382,11 @@ fn a_view_follows_what_an_editor_holds_open()
     .spawn()
     .expect("the view starts");
     let mut from_view = BufReader::new(view.stdout.take().expect("standard output is piped"));
+    let mut row = String::new();
     let mut report = || {
         let mut rows = Vec::new();
         loop {
-            let mut row = String::new();
+            row.clear();
             assert_ne!(
                 from_view.read_line(&mut row).expect("the view prints"),
                 0_usize,
@@ -1686,10 +1687,9 @@ fn an_ill_typed_script_is_refused_by_the_checker()
         complaint.starts_with("error[TypeMismatch]: "),
         "the checker's refusal is reported: {complaint}"
     );
+    let prefix = format!("gandr: {}: ", path.display());
     assert!(
-        complaint
-            .lines()
-            .any(|line| line.starts_with(&format!("gandr: {}: ", path.display()))),
+        complaint.lines().any(|line| line.starts_with(&prefix)),
         "{complaint}"
     );
     assert!(
