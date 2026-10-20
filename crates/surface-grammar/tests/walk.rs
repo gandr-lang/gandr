@@ -456,6 +456,7 @@ fn a_data_member_colon_after_a_constructor_name_reads_one_way() -> Result<(), Bo
     // second `:` reading follows the constructor name.
     let pbg = built_in()?;
     let mut members = 0_usize;
+    let mut colons: Vec<MoldId> = Vec::new();
     for (id, def) in pbg.iter_molds() {
         if def.label != "constructor"
             || !pbg
@@ -464,12 +465,13 @@ fn a_data_member_colon_after_a_constructor_name_reads_one_way() -> Result<(), Bo
         {
             continue;
         }
-        let colons: Vec<MoldId> = pbg
-            .mold_successors(id)
-            .iter()
-            .filter(|&&(_, right)| pbg.mold(right).is_ok_and(|next| next.label == ":"))
-            .map(|&(_, right)| right)
-            .collect();
+        colons.clear();
+        colons.extend(
+            pbg.mold_successors(id)
+                .iter()
+                .filter(|&&(_, right)| pbg.mold(right).is_ok_and(|next| next.label == ":"))
+                .map(|&(_, right)| right),
+        );
         assert!(
             colons.len() == 1,
             "constructor mold {id:?} has the `:` successors {colons:?}"
@@ -589,16 +591,13 @@ fn fresh_menus_keep_exactly_the_form_openers() -> Result<(), Box<dyn Error>>
 {
     let pbg = built_in()?;
     let mut dropped = 0_usize;
+    let mut expected: Vec<MoldId> = Vec::new();
     for (label, _count) in pbg.candidate_counts() {
         let candidates = pbg.candidates(label);
-        let expected: Vec<MoldId> = candidates
-            .iter()
-            .copied()
-            .filter(|&mold| {
-                !bool::from(pbg.mold_has_predecessor(mold))
-                    || bool::from(pbg.mold_is_form_first(mold))
-            })
-            .collect();
+        expected.clear();
+        expected.extend(candidates.iter().copied().filter(|&mold| {
+            !bool::from(pbg.mold_has_predecessor(mold)) || bool::from(pbg.mold_is_form_first(mold))
+        }));
         assert_eq!(
             expected.as_slice(),
             pbg.fresh_candidates(label),
@@ -783,6 +782,7 @@ fn tile_kinds_observations_and_sets_agree_with_the_table() -> Result<(), Box<dyn
     let mut readings: BTreeMap<_, Observation> = BTreeMap::new();
     let mut classes: BTreeMap<Observation, MoldId> = BTreeMap::new();
     let mut merged_rules = false;
+    let mut held = Vec::new();
     for (mold, def) in pbg.iter_molds() {
         let (left, right) = pbg.bounds(mold)?;
         let has_pred = bool::from(pbg.mold_has_predecessor(mold));
@@ -843,7 +843,7 @@ fn tile_kinds_observations_and_sets_agree_with_the_table() -> Result<(), Box<dyn
             },
         }
         let word = MoldWordIndex::of(mold);
-        let mut held = Vec::new();
+        held.clear();
         for sort in sorts {
             for set in [TileSet::Fills(sort), TileSet::Absorbs(sort)] {
                 let view = pbg.tile_set(set);

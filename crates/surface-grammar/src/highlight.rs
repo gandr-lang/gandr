@@ -105,7 +105,6 @@
 //!   hand-written comparison, which reports no diff.
 //! - Reversal: a golden that needs redaction or per-snapshot metadata.
 
-use alloc::vec;
 use alloc::vec::Vec;
 use core::error::Error;
 use core::fmt::Display;
@@ -726,9 +725,11 @@ fn occurrences(pbg: &Pbg) -> Result<Vec<Occurrence<'_>>, PbgError>
 {
     let mut out = Vec::with_capacity(pbg.mold_count().0);
     let mut open: Vec<MoldId> = Vec::new();
+    let mut frames = Vec::new();
     for rule in pbg.rules() {
         open.clear();
-        let mut frames = vec![Frame::Enter(rule.regex().view())];
+        frames.clear();
+        frames.push(Frame::Enter(rule.regex().view()));
         while let Some(frame) = frames.pop() {
             match frame {
                 Frame::Restore(brackets) => open = brackets,
@@ -1022,10 +1023,11 @@ fn layout_of(text: SourceFragment<'_>) -> Layout
 #[cfg(test)]
 mod tests
 {
+    use alloc::string::String;
+    use alloc::vec;
     use alloc::vec::Vec;
     extern crate std;
 
-    use alloc::string::ToString as _;
     use std::io::Write as _;
 
     use gandr_theory_graphs::Assoc;
@@ -1583,8 +1585,11 @@ mod tests
             ),
             (HighlightError::InvertedSpan(cause), &["19", "7"]),
         ];
+        let mut message = String::new();
         for &(error, values) in cases {
-            let message = error.to_string();
+            message.clear();
+            core::fmt::Write::write_fmt(&mut message, format_args!("{error}"))
+                .expect("a string accepts every write");
             for value in values {
                 assert!(message.contains(value));
             }
