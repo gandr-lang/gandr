@@ -1,3 +1,0 @@
-def outer = #{ tag = "t", inner = #{ x = 1, y = 2 } };
-
-#{ outer | inner = #{ outer.inner | y = 9 } }

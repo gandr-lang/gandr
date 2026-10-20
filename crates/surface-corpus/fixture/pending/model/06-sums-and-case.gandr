@@ -1,8 +1,0 @@
-def pick() -> -F Integer {
-  case (Inl(42) : Integer + String) {
-    Inl(x) => return (x + 1),
-    Inr(s) => return 0
-  }
-}
-
-pick()

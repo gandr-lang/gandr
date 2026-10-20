@@ -1,9 +1,0 @@
-def closed : package [ T ] +U[0] (-F #{ seed: T });
-def closed = pack [ Integer ] thunk[0] { return #{ seed = 7 } };
-
-def open_it(p: package [ T ] +U[0] (-F #{ seed: T })) -> -F Integer {
-  unpack m : package [ T ] +U[0] (-F #{ seed: T }) = p;
-  return 1
-}
-
-open_it(closed)

@@ -1,0 +1,31 @@
+// A module matches its signature by name, not by order: members may come in
+// any order, a type member is given by its definition, and a member the
+// signature leaves out stays inside.
+
+/// Metrics whose signature states a type member and three values.
+module Metrics : #{ type Ratio = Integer, base: Integer, double: Integer, scale: Ratio } {
+  /// A member the signature leaves out.
+  @[ checks ]
+  def scratch = 2;
+  /// The scratch value tripled. An operator in a value runs before the
+  /// computation around it, and a definition's value has none.
+  @[ refuses("UnenclosedRun") ]
+  def double = scratch * 3;
+  /// The base.
+  @[ checks ]
+  def base = 7;
+  /// The scale, at the signature's type member.
+  @[ checks ]
+  def scale = 1;
+}
+
+/// The three exported values summed. An operator is a computation, and a
+/// definition with no stated type reads its value where nothing infers that
+/// computation's type.
+@[ refuses("NotSynthesisable") ]
+def visible = Metrics.base + Metrics.double + Metrics.scale;
+
+/// The run target returns the sum in a record; the lowering reads no final
+/// expression as a run target yet (#1105).
+@[ refuses("OutOfFragment") ]
+#{visible = visible}

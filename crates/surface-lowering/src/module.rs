@@ -291,6 +291,7 @@ use crate::form::Run;
 use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::read_pieces;
+use crate::form::repair_at;
 use crate::form::shape_of;
 use crate::import::ImportBinding;
 use crate::import::ImportDeclaration;
@@ -1014,9 +1015,9 @@ pub enum Operand
     /// An operation of the data declaration that wrote this half, its body
     /// compiled from its rules by the plan the collection keeps for its slot.
     Operation,
-    /// A top-level `oper`, which lowers to no core term, or a refusal held
-    /// beside a `theory` block: the half that carries a member refusal and the
-    /// expectation stating it.
+    /// A top-level `oper`, which lowers to no core term, a refusal held beside
+    /// a `theory` block, or a root child that is no declaration: the half that
+    /// carries the refusal and the expectation stating it.
     Signature,
     /// The `theory` block that defines its name as a value of `Theory`: the
     /// presentation it reads, minted from its value.
@@ -2334,16 +2335,16 @@ impl Collected<'_>
 /// - requires: `tree` was molded under `pbg`.
 /// - ensures: [`pieces_under`] every root of `tree`.
 /// - provides: what [`source_pieces`] splits by source.
-/// - fails: [`LoweringRefusal::MalformedForm`] when a root holds a repair;
-///   [`LoweringRefusal::UnknownMold`] for a mold the grammar does not hold.
+/// - fails: [`LoweringRefusal::UnknownMold`] for a mold the grammar does not
+///   hold.
 /// - panics: none.
 ///
 /// # Errors
 /// As the specification's fails clause.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a root holding a repair refuses the module whole.
-/// - witness: `module::tests::a_declaration_whose_name_is_not_a_name_refuses_the_module`
+/// - hypothesis: L3 — as [`pieces_under`].
+/// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
 #[spec(ensures: |ret| ret.is_err() || tree.node(tree.root()).is_some() || ret.as_ref().is_ok_and(Vec::is_empty))]
 pub fn root_pieces<'source>(
     pbg: &Pbg,
@@ -2358,11 +2359,12 @@ pub fn root_pieces<'source>(
 ///
 /// # Specification
 /// - requires: `tree` was molded under `pbg`, and `roots` are roots of it.
-/// - ensures: every root's children, layout dropped, root after root.
+/// - ensures: every root's children, layout dropped, root after root; a repair
+///   the parser inserted among a root's children is a piece in its place, for
+///   the collection to refuse on its own.
 /// - provides: the top-level forms of a document laid after a closure whose
 ///   roots were read before.
-/// - fails: [`LoweringRefusal::MalformedForm`] at the first root holding a
-///   repair; [`LoweringRefusal::UnknownMold`] for a mold the grammar does not
+/// - fails: [`LoweringRefusal::UnknownMold`] for a mold the grammar does not
 ///   hold.
 /// - panics: none.
 ///
@@ -2370,8 +2372,9 @@ pub fn root_pieces<'source>(
 /// As the specification's fails clause.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`root_pieces`].
-/// - witness: `module::tests::a_declaration_whose_name_is_not_a_name_refuses_the_module`
+/// - hypothesis: L3 — a byte no label molds between two declarations is a piece
+///   between theirs.
+/// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
 /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
 #[spec(ensures: |ret| ret.is_err() || !roots.is_empty() || ret.as_ref().is_ok_and(Vec::is_empty))]
 pub fn pieces_under<'source>(
@@ -2384,8 +2387,18 @@ pub fn pieces_under<'source>(
     let mut root = Pieces::new();
     for &at in roots {
         read_pieces(pbg, tree, at, &mut root)?;
-        if let Maybe::Present(repaired) = root.repair {
-            return Err(repaired.refusal(FormName::ROOT));
+        if let Maybe::Present(_) = root.repair {
+            for child in tree.children(at) {
+                if let Some(held) = tree.node(child)
+                    && matches!(
+                        held.label(),
+                        NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. }
+                    )
+                {
+                    root.pieces.push(Piece::Operand(Placed::of(child, held)));
+                }
+            }
+            root.pieces.sort_by_key(|piece| piece.placed().span.start());
         }
         pieces.append(&mut root.pieces);
     }
@@ -2484,7 +2497,8 @@ pub fn source_pieces(
 /// - witness: `module::tests::a_stray_module_child_refuses_the_module`
 /// - witness: `module::tests::a_declaration_missing_its_body_is_refused`
 /// - witness: `module::tests::a_declaration_whose_name_is_not_a_name_refuses_the_module`
-/// - witness: `module::tests::a_trailing_attribute_block_refuses_the_module`
+/// - witness: `module::tests::a_trailing_attribute_block_refuses_itself`
+/// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
 /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
 /// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
 /// - witness: `tests::namespace::an_unqualified_import_binds_no_alias`
@@ -2512,10 +2526,18 @@ pub fn collect_source<'source>(
         pieces: Pieces::new(),
         ordinals: BTreeMap::new(),
     };
+    let declared_before = (
+        collector.collected.slots.len(),
+        collector.collected.structures.len(),
+        collector.collected.data.len(),
+    );
+    let mut strays: Vec<Stray<'source>> = Vec::new();
     let mut decorations: Vec<Placed> = Vec::new();
+    let mut after_stray = false;
     for piece in pieces {
         collector.fuel.spend()?;
         let child = piece.placed();
+        let follows_stray = core::mem::replace(&mut after_stray, false);
         let former = collector.root_former(child)?;
         if former == Former::AttributeBlock {
             decorations.push(child);
@@ -2534,13 +2556,18 @@ pub fn collect_source<'source>(
             continue;
         }
         if former == Former::Declaration {
-            collector.declaration(child, &decorations)?;
+            if let Some(refusal) = strayed(collector.declaration(child, &decorations))? {
+                strays.push(Stray::of(child, refusal, core::mem::take(&mut decorations)));
+                after_stray = true;
+            }
             decorations.clear();
             continue;
         }
         if former == Former::Mutual {
-            if let Some(&stray) = decorations.first() {
-                collector.module_child(stray)?;
+            if let Some(&block) = decorations.first()
+                && let Some(refusal) = strayed(collector.module_child(block))?
+            {
+                strays.push(Stray::of(block, refusal, Vec::new()));
             }
             collector.mutual(child)?;
             decorations.clear();
@@ -2579,17 +2606,127 @@ pub fn collect_source<'source>(
             decorations.clear();
             continue;
         }
-        if let Some(&stray) = decorations.first() {
-            collector.module_child(stray)?;
+        // The `;` that ends a stray statement belongs to it.
+        if follows_stray
+            && collector
+                .tree
+                .fragment(child.node)
+                .is_some_and(|text| <&str>::from(text).trim() == ";")
+            && let Some(last) = strays.last_mut()
+        {
+            last.terminator = Some(child);
+            continue;
         }
-        collector.module_child(child)?;
+        // The blocks before a child that stands on its own decorate it; before
+        // a module, an import or a member they decorate nothing.
+        if let Some(refusal) = strayed(collector.module_child(child))? {
+            strays.push(Stray::of(child, refusal, core::mem::take(&mut decorations)));
+            after_stray = true;
+        }
+        else if let Some(&block) = decorations.first()
+            && let Some(refusal) = strayed(collector.module_child(block))?
+        {
+            strays.push(Stray::of(block, refusal, Vec::new()));
+        }
+        decorations.clear();
     }
-    if let Some(&stray) = decorations.first() {
-        collector.module_child(stray)?;
+    if let Some(&block) = decorations.first()
+        && let Some(refusal) = strayed(collector.module_child(block))?
+    {
+        strays.push(Stray::of(block, refusal, Vec::new()));
+    }
+    // A source that declares nothing is no list of declarations: its first
+    // stray refuses it whole.
+    let declared = collector.collected.slots.len() > declared_before.0
+        || collector.collected.structures.len() > declared_before.1
+        || collector.collected.data.len() > declared_before.2;
+    let mut strays = strays.into_iter();
+    if !declared && let Some(first) = strays.next() {
+        return Err(first.refusal);
+    }
+    for stray in strays {
+        collector.refuse_stray(stray);
     }
     collector.stray_expectations();
 
     Ok(())
+}
+
+/// A root child that is no declaration, the refusal it raised, the attribute
+/// blocks written before it and the `;` that ends it, when one does.
+#[derive(Debug)]
+struct Stray<'source>
+{
+    /// The child no declaration owns.
+    child: Placed,
+    /// What collecting the child raised.
+    refusal: LoweringRefusal<'source>,
+    /// The attribute blocks standing on their own before the child.
+    decorations: Vec<Placed>,
+    /// The `;` written right after the child, which ends it as a statement.
+    terminator: Option<Placed>,
+}
+
+impl<'source> Stray<'source>
+{
+    /// The stray `child`, refused by `refusal` and decorated by
+    /// `decorations`, with no terminator yet.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn of(
+        child: Placed,
+        refusal: LoweringRefusal<'source>,
+        decorations: Vec<Placed>,
+    ) -> Self
+    {
+        Self {
+            child,
+            refusal,
+            decorations,
+            terminator: None,
+        }
+    }
+}
+
+/// What collecting one root child came to: nothing to refuse, a refusal of
+/// that child alone, or a refusal of the whole source.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a success is none; a form of the wrong sort or a malformed form
+///   is that child's own refusal; every other refusal — a mold the grammar does
+///   not hold, an exhausted allowance, an import out of reach — refuses the
+///   source.
+/// - provides: the line between a stray root child and a fault of the source.
+/// - fails: the refusals that are no child's own.
+/// - panics: none.
+///
+/// # Errors
+/// Every refusal other than [`LoweringRefusal::OutOfFragment`] and
+/// [`LoweringRefusal::MalformedForm`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a stray between two declarations is its own refusal, and
+///   a stray in a source declaring nothing refuses the source.
+/// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
+#[spec(ensures: |ret| match ret {
+    | Ok(Some(ref refusal)) => matches!(*refusal,
+        LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::MalformedForm { .. }),
+    | Ok(None) | Err(_) => true,
+})]
+fn strayed<'source>(
+    collected: Result<(), LoweringRefusal<'source>>
+) -> Result<Option<LoweringRefusal<'source>>, LoweringRefusal<'source>>
+{
+    match collected {
+        Ok(()) => Ok(None),
+        Err(
+            refusal @ (LoweringRefusal::OutOfFragment { .. }
+            | LoweringRefusal::MalformedForm { .. }),
+        ) => Ok(Some(refusal)),
+        Err(refusal) => Err(refusal),
+    }
 }
 
 /// Whether an import's address names a scheme or a path.
@@ -2835,11 +2972,14 @@ impl<'source> Collector<'_, 'source>
     /// - requires: `child` is a written child of the root.
     /// - ensures: a declaration form is collected into its slot, a module into
     ///   its structures and member slots, and an import into the import list;
-    ///   every other form refuses the module as a form of the wrong sort.
+    ///   every other form refuses as a form of the wrong sort, and a repair the
+    ///   parser inserted as that repair.
     /// - provides: the module-shape half of [`collect_source`].
     /// - fails: [`LoweringRefusal::OutOfFragment`] for a child that is neither
-    ///   a declaration, a module nor an import, and every module-level fault
-    ///   [`Self::declaration`], [`Self::module`] and [`Self::import`] raise.
+    ///   a declaration, a module nor an import;
+    ///   [`LoweringRefusal::MalformedForm`] for a repair; and every
+    ///   module-level fault [`Self::declaration`], [`Self::module`] and
+    ///   [`Self::import`] raise.
     /// - panics: none.
     ///
     /// # Errors
@@ -2851,6 +2991,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
     /// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
     /// - witness: `module::tests::a_stray_module_child_refuses_the_module`
+    /// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -2895,7 +3036,85 @@ impl<'source> Collector<'_, 'source>
                 sort: FragmentSort::Declaration,
                 boundary: FragmentBoundary::WrongSort,
             }),
-            Shape::Root | Shape::Repair(_) | Shape::Layout => Ok(()),
+            Shape::Repair(_) => match repair_at(self.pbg, self.tree, child) {
+                Maybe::Present(found) => Err(found.refusal(FormName::ROOT)),
+                Maybe::Absent(_) => Ok(()),
+            },
+            Shape::Root | Shape::Layout => Ok(()),
+        }
+    }
+
+    /// File `stray`, a root child that is no declaration, as the one held
+    /// slot carrying its refusal, decorated by the attribute blocks written
+    /// before it.
+    ///
+    /// # Specification
+    /// - requires: `stray.refusal` is what collecting `stray.child` raised;
+    ///   `stray.decorations` are attribute blocks standing on their own before
+    ///   it, and `stray.terminator` the `;` written right after it.
+    /// - ensures: one held slot, entered in no name table, named by the child's
+    ///   first word, refused at the child; it owns the child, its decorations
+    ///   and its terminator, and carries the decorations' attributes, so an
+    ///   expectation written before a stray states its refusal. An unreadable
+    ///   decoration refuses the slot instead where it stands first.
+    /// - provides: a refusal for a root child no declaration owns, beside the
+    ///   declarations the source keeps.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a statement keyword, an expression, a lone brace and
+    ///   a byte no label molds, each between two declarations, refuse
+    ///   themselves alone and leave both declarations completed; an expectation
+    ///   before one states its refusal, and the `;` ending one is no second
+    ///   stray.
+    /// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
+    #[spec(
+        captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
+        ensures: self.collected.slots.len() == before.0.saturating_add(1)
+            && self.collected.by_name.len() == before.1,
+    )]
+    fn refuse_stray(
+        &mut self,
+        stray: Stray<'source>,
+    )
+    {
+        let Stray {
+            child,
+            refusal,
+            decorations,
+            terminator,
+        } = stray;
+        let mut attributes = Vec::new();
+        let mut attributed = Ok(());
+        for &block in &decorations {
+            if attributed.is_ok() {
+                attributed = self.decoration(block, child.node, &mut attributes);
+            }
+        }
+        let name = self
+            .tree
+            .fragment(child.node)
+            .map_or("", <&str>::from)
+            .split_whitespace()
+            .next()
+            .unwrap_or_default();
+        let top = self.collected.top(child.span.start());
+        let held = self.refuse_held(top, SurfaceName::from(name), child, child, refusal);
+        self.collected.own(child.node, held);
+        for block in decorations.into_iter().chain(terminator) {
+            self.collected.own(block.node, held);
+        }
+        if let Some(slot) = self.collected.slots.get_mut(held.0) {
+            slot.signature = Maybe::Present(Half {
+                declaration: child,
+                named: child,
+                operand: Operand::Signature,
+            });
+            slot.attributes.append(&mut attributes);
+            if let Err(unread) = attributed {
+                slot.refuse(child.node, unread);
+            }
         }
     }
 
@@ -9171,7 +9390,8 @@ mod tests
                 sort: FragmentSort::Declaration,
                 boundary: FragmentBoundary::WrongSort,
             },
-            "a module child that is not a declaration refuses the module"
+            "a source of nothing but a child that is not a declaration declares nothing, and is \
+             refused whole"
         );
     }
 
@@ -9235,35 +9455,120 @@ mod tests
         );
     }
 
+    /// An attribute block decorates the declaration after it, so a trailing
+    /// one decorates nothing: it refuses itself, and the declaration before
+    /// it is collected as written. A source declaring nothing — a block and
+    /// the repaired theory it decorates — is refused whole, at its first
+    /// stray.
     #[test]
-    fn a_trailing_attribute_block_refuses_the_module()
+    fn a_trailing_attribute_block_refuses_itself()
     {
         let pbg = grammar();
         let tree = parsed(&pbg, SourceText::from("def x = 3 ; @[ checks ]"));
+        let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
+        let read: Vec<_> = collected
+            .slots
+            .iter()
+            .map(|slot| {
+                (
+                    slot.name,
+                    slot.role,
+                    slot.refusal.map(|(_at, refusal)| refusal),
+                )
+            })
+            .collect();
 
         assert_eq!(
-            collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap_err(),
-            LoweringRefusal::OutOfFragment {
-                span: span(ByteOffset::from(12_usize), ByteOffset::from(23_usize)),
-                form: FormName::from(NamedKind("attribute_block")),
-                sort: FragmentSort::Declaration,
-                boundary: FragmentBoundary::WrongSort,
-            },
-            "an attribute block decorates the declaration after it, so a trailing one decorates \
-             nothing"
+            read,
+            [
+                (
+                    SurfaceName::from("x"),
+                    Role::Declared,
+                    Maybe::Absent(slot_refusal::Absent::Unrefused)
+                ),
+                (
+                    SurfaceName::from("@["),
+                    Role::Held,
+                    Maybe::Present(LoweringRefusal::OutOfFragment {
+                        span: span(ByteOffset::from(12_usize), ByteOffset::from(23_usize)),
+                        form: FormName::from(NamedKind("attribute_block")),
+                        sort: FragmentSort::Declaration,
+                        boundary: FragmentBoundary::WrongSort,
+                    })
+                ),
+            ],
+            "the declaration is kept and the block refused alone"
         );
 
         let tree = repaired(&pbg, SourceText::from("@[ checks ] theory Sta"));
         assert_eq!(
             collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap_err(),
             LoweringRefusal::OutOfFragment {
-                span: span(ByteOffset::from(0_usize), ByteOffset::from(11_usize)),
-                form: FormName::from(NamedKind("attribute_block")),
+                span: span(ByteOffset::from(12_usize), ByteOffset::from(22_usize)),
+                form: FormName::from(NamedKind("theory_declaration")),
                 sort: FragmentSort::Declaration,
                 boundary: FragmentBoundary::WrongSort,
             },
-            "and so does one before a theory the parser repaired, which declares nothing"
+            "a theory the parser repaired declares nothing, and the source holding only it and \
+             the block before it is refused whole, at the theory"
         );
+    }
+
+    /// A statement outside any block, an expression and a byte no label
+    /// molds, standing among declarations, each refuse themselves alone as a
+    /// held slot no name table enters; the declarations around them are
+    /// collected as written (#1058).
+    #[test]
+    fn a_stray_root_child_refuses_itself_alone_1058()
+    {
+        let pbg = grammar();
+        let text = "def a = 1 ;\n\u{a7}\nleta x = 1 ;\ndef b = a ;\n1 + 2 ;\n";
+        let tree = repaired(&pbg, SourceText::from(text));
+        let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
+        let read: Vec<_> = collected
+            .slots
+            .iter()
+            .map(|slot| {
+                (
+                    slot.name,
+                    slot.role,
+                    slot.refusal.map(|(_at, refusal)| refusal.classify()),
+                )
+            })
+            .collect();
+
+        assert_eq!(
+            read,
+            [
+                (
+                    SurfaceName::from("a"),
+                    Role::Declared,
+                    Maybe::Absent(slot_refusal::Absent::Unrefused)
+                ),
+                (
+                    SurfaceName::from("b"),
+                    Role::Declared,
+                    Maybe::Absent(slot_refusal::Absent::Unrefused)
+                ),
+                (
+                    SurfaceName::from("\u{a7}"),
+                    Role::Held,
+                    Maybe::Present(FailureClass::MalformedSource)
+                ),
+                (
+                    SurfaceName::from("leta"),
+                    Role::Held,
+                    Maybe::Present(FailureClass::Unrepresentable)
+                ),
+                (
+                    SurfaceName::from("1"),
+                    Role::Held,
+                    Maybe::Present(FailureClass::Unrepresentable)
+                ),
+            ],
+            "both declarations are kept, and each stray refused on its own"
+        );
+        assert_eq!(collected.by_name.len(), 2, "a stray enters no name table");
     }
 
     #[test]

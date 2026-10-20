@@ -1,0 +1,12 @@
+// An update three records deep rebuilds each record on the path, and its cost
+// grows with the depth, not with the records' width. The update is written as
+// the run target, which the lowering reads no final expression as yet
+// (#1105), and the lowering admits no record update (#1110).
+
+/// Three records, nested.
+@[ checks ]
+def d = #{ a = #{ b = #{ c = 1 } } };
+
+/// `d.a.b.c` updated, each level rebuilt (#1105, #1110).
+@[ refuses("OutOfFragment") ]
+#{ d | a = #{ d.a | b = #{ d.a.b | c = 9 } } }

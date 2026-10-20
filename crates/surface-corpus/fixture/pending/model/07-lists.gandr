@@ -1,3 +1,0 @@
-def xs = ([1, 2, 3] : List(Integer));
-
-[0] ++ xs

@@ -1,0 +1,38 @@
+// One builtin of each namespace over its simplest values: negation, division
+// and remainder, a list's length and element, and string append and length.
+// Each is reached by projection from its namespace, which the lowering admits
+// for no builtin yet (#1106), but where the definition's value is first a
+// computation with no stated type.
+
+/// Negation of a comparison. A comparison is a computation, and a definition
+/// with no stated type reads its value where nothing infers that type.
+@[ refuses("NotSynthesisable") ]
+def not_small = bool.not(1 < 2);
+
+/// Integer division, its argument a computation as above.
+@[ refuses("NotSynthesisable") ]
+def quotient = int.div(7, 2);
+
+/// The remainder of a negative number, its argument a computation as above.
+@[ refuses("NotSynthesisable") ]
+def remainder = int.mod(-7, 2);
+
+/// A list's length.
+@[ refuses("OutOfFragment") ]
+def size = list.length([1, 2, 3]);
+
+/// A list's element at position one.
+@[ refuses("OutOfFragment") ]
+def second = list.get([10, 20, 30], 1);
+
+/// Two strings, appended.
+@[ refuses("OutOfFragment") ]
+def phrase = string.append("types are ", "machines");
+
+/// The appended string's length.
+@[ refuses("OutOfFragment") ]
+def letters = string.length(phrase);
+
+/// The run target appends an exclamation (#1105).
+@[ refuses("OutOfFragment") ]
+string.append(phrase, "!")

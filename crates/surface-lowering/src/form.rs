@@ -1809,12 +1809,10 @@ pub fn read_pieces<'source>(
         let placed = Placed::of(child, held);
         let piece = match held.label() {
             NodeLabel::Space | NodeLabel::Doc => continue,
-            NodeLabel::Grout { shape, .. } => {
-                note_repair(read, placed, grouted(pbg, tree, child, shape));
-                continue;
-            },
-            NodeLabel::GhostClose { class, .. } => {
-                note_repair(read, placed, Repair::GhostClose(class));
+            NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => {
+                if let Maybe::Present(found) = repair_at(pbg, tree, placed) {
+                    note_repair(read, placed, found.repair);
+                }
                 continue;
             },
             NodeLabel::Tile(mold) => own_tile(pbg, held, own, mold, placed)?,
@@ -2229,6 +2227,58 @@ fn note_repair(
             nested: Maybe::Absent(nested::Absent::Own),
         });
     }
+}
+
+/// The repair the parser inserted at `child`, read as [`read_pieces`] reads
+/// one among a form's children.
+///
+/// # Specification
+/// - requires: `child` names a node of `tree`, molded under `pbg`.
+/// - ensures: for a grout node, the repair its grout reads as; for a minted
+///   close, the close of its class; either at the node's own span, standing in
+///   no nested form. Absent for every other node.
+/// - provides: the reading of a repair [`read_pieces`] notes among a form's
+///   children, and the refusal of one standing on its own among the root's.
+/// - fails: never; a node the tree does not hold is absent.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a byte no label molds, standing between two declarations,
+///   reads as a missing term at its own bytes; a declaration reads as no
+///   repair.
+/// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present(found) => found.span == child.span
+        && found.nested == Maybe::Absent(nested::Absent::Own)
+        && tree.node(child.node).is_some_and(|node| matches!(node.label(),
+            NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. })),
+    | Maybe::Absent(_) => tree.node(child.node).is_none_or(|node| !matches!(node.label(),
+        NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. })),
+})]
+#[inline]
+pub fn repair_at(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    child: Placed,
+) -> Maybe<Repaired, repair::Absent>
+{
+    let repair = match tree.node(child.node).map(Node::label) {
+        Some(NodeLabel::Grout { shape, .. }) => grouted(pbg, tree, child.node, shape),
+        Some(NodeLabel::GhostClose { class, .. }) => Repair::GhostClose(class),
+        Some(
+            NodeLabel::Tile(_)
+            | NodeLabel::Meld(_)
+            | NodeLabel::Wald
+            | NodeLabel::Space
+            | NodeLabel::Doc,
+        )
+        | None => return Maybe::Absent(repair::Absent::Unrepaired),
+    };
+    Maybe::Present(Repaired {
+        span: child.span,
+        repair,
+        nested: Maybe::Absent(nested::Absent::Own),
+    })
 }
 
 /// The label `mold`'s tile carries under `pbg`.

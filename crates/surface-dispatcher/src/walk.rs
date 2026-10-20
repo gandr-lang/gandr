@@ -2356,12 +2356,9 @@ pub mod tests
         let scratch = Scratch::new(Path::new("refused-whole"));
         let sources = [
             ("base", "@[ checks ]\ndef one : Integer ;\ndef one = 1 ;\n"),
-            // An attribute block before `rec` refuses the source as a whole.
-            (
-                "bad",
-                "import \"./base.gandr\" ;\n\n@[ checks ]\nrec {\n  @[ checks ]\n  def two : \
-                 Integer ;\n  def two = one ;\n}\n",
-            ),
+            // A source that declares nothing, one root expression after its
+            // import, is refused as a whole.
+            ("bad", "import \"./base.gandr\" ;\n\npure one\n"),
             (
                 "sibling",
                 "import \"./base.gandr\" ;\n\n@[ checks ]\ndef three : Integer ;\ndef three = \

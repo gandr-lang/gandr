@@ -1,0 +1,20 @@
+// Two data types with one shape stay distinct under a type former: a list of
+// `Celsius` is no list of `Fahrenheit`. The mismatch is written as the run
+// target, which the lowering reads no final expression as yet (#1105), so
+// that refusal stands in front of the mismatch.
+
+/// A temperature in Celsius.
+@[ checks ]
+data Celsius : Type {
+  Cel : (x : Integer) --> Celsius;
+}
+
+/// A temperature in Fahrenheit, the same shape.
+@[ checks ]
+data Fahrenheit : Type {
+  Fah : (x : Integer) --> Fahrenheit;
+}
+
+/// A list of one Celsius value, annotated as Fahrenheit (#1105).
+@[ refuses("OutOfFragment") ]
+([Cel(20)] : List(Fahrenheit))

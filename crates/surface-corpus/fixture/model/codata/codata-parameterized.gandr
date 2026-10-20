@@ -1,0 +1,23 @@
+// A codata value built from a parameter: each observation's answer may use
+// it. This source is written in an earlier surface: its kind is `Type` and its
+// copattern stands without `&{ … }`. `streams.gandr` writes both as the
+// language now spells them.
+
+/// A number observed doubled. A codata declaration's kind is a computation
+/// universe, and `Type` is none.
+@[ refuses("CodataKindNotUniverse") ]
+codata Scaled : Type {
+  doubled : Integer;
+}
+
+/// Doubles its argument; a bare copattern after a parameter list is out of
+/// place in a `def rec`.
+@[ refuses("MalformedForm") ]
+def rec scaled(n: Integer) -> Scaled {
+  .doubled => n + n
+}
+
+/// The run target observes the doubled value; the lowering reads no final
+/// expression as a run target yet (#1105).
+@[ refuses("OutOfFragment") ]
+scaled(21).doubled

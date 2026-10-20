@@ -1,0 +1,26 @@
+// A pattern hole holds the one constructor no written arm covers, `Green`,
+// so which arm runs for it is undecided and the checker refuses the match
+// (#391).
+
+/// Three colours, one arm each.
+@[ checks ]
+data Color : Type {
+  Red : Color;
+  Green : Color;
+  Blue : Color;
+}
+
+/// `Green` falls to the hole (#391).
+@[ refuses("UndecidedCoverage") ]
+def classify(c : Color) -> -F Integer {
+  case c {
+    Red => return 0,
+    ? => return 1,
+    Blue => return 2
+  }
+}
+
+/// The run target classifies `Green`; the lowering reads no final expression
+/// as a run target yet (#1105).
+@[ refuses("OutOfFragment") ]
+classify(Green)

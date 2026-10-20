@@ -1,0 +1,11 @@
+// A definition names a value, and a source's final expression is its run
+// target: the program's result, here the value the definition names.
+
+/// A string, named.
+@[ checks ]
+def greeting = "the value zone";
+
+/// The run target returns the named value; the lowering reads no final
+/// expression as a run target yet (#1105).
+@[ refuses("OutOfFragment") ]
+pure greeting

@@ -1,0 +1,12 @@
+// A record update may give a field a value of another type: the new record's
+// type states the new one.
+
+/// A cell with an integer count.
+@[ checks ]
+def cell = #{ count = 3, label = "start" };
+
+/// The run target gives `count` a string; the lowering reads no final
+/// expression as a run target yet (#1105), and admits no record update
+/// (#1110).
+@[ refuses("OutOfFragment") ]
+#{ cell | count = "three" }

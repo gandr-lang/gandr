@@ -1,0 +1,43 @@
+// A pattern hole stands for an arm not yet written, at the top of a match or
+// inside a constructor's payload. A hole leaves which arm runs undecided, so
+// the checker refuses the match by name until coverage reads holes (#391).
+// `pathological/holes/` refuses each shape on its own.
+
+/// Three colours.
+@[ checks ]
+data Shade : Type {
+  Crimson : Shade;
+  Olive : Shade;
+  Navy : Shade;
+}
+
+/// A hole between two arms (#391).
+@[ refuses("UndecidedCoverage") ]
+def rank(c : Shade) -> -F Integer {
+  case c {
+    Crimson => return 0,
+    ? => return 1,
+    Navy => return 2
+  }
+}
+
+/// An integer, or none.
+@[ checks ]
+data Option : Type {
+  NoValue : Option;
+  Value : (x : Integer) --> Option;
+}
+
+/// A hole inside a payload (#391).
+@[ refuses("UndecidedCoverage") ]
+def weigh(m : Option) -> -F Integer {
+  case m {
+    Value(?) => return 100,
+    NoValue => return 200
+  }
+}
+
+/// The run target weighs nothing; the lowering reads no final expression as
+/// a run target yet (#1105).
+@[ refuses("OutOfFragment") ]
+weigh(NoValue)

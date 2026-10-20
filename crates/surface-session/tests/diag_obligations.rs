@@ -42,8 +42,8 @@ const MALFORMED_THEN_VALID: &str = "def bad = 1 ~ 2 ;\ndef good = 2 ;\n";
 const SEVERITY_AND_SOURCE_ORDER_DISAGREE: &str = "def k = thunk { pure 1 ;\ndef b = 1 ~ 2 ;\n";
 
 /// A recovering source the lowering refuses as a whole: an unterminated shell
-/// block after a declaration.
-const REFUSED_WHOLE: &str = "def answer = 42 ;\n#!{echo hello |";
+/// block, and no declaration.
+const REFUSED_WHOLE: &str = "#!{echo hello |";
 
 /// A source that parses clean.
 const CLEAN: &str = "def good = 2 ;\n";

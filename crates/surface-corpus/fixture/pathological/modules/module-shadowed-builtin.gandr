@@ -1,0 +1,11 @@
+// A definition named like a builtin namespace shadows it: `list.each` then
+// reads the record's field, not the builtin.
+
+/// A record named `list`, with a field `each`.
+@[ checks ]
+def list = #{each = 7};
+
+/// The run target reads the field; the lowering reads no final expression as
+/// a run target yet (#1105), and admits no field projection (#1106).
+@[ refuses("OutOfFragment") ]
+list.each

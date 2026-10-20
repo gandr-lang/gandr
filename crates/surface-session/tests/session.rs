@@ -484,7 +484,7 @@ fn failed_submission_retains_latest_synthesis()
     let before: Vec<SynthesisEvent> = before.collect();
     let before_snapshot = session.snapshot().items().to_vec();
     let before_lowerings = usize::from(session.lowerings());
-    let refused = submit(&mut session, "def retained = 40 ;\npure retained");
+    let refused = submit(&mut session, "pure 40");
     assert!(
         matches!(refused.composed(), Composed::Refused(_)),
         "a top-level expression refuses the revision as a whole"
@@ -794,11 +794,7 @@ def broken = 1 ;"#,
         rejected.evaluate(broken),
         Maybe::Absent(evaluation::Absent::Unaccepted)
     ));
-    let mut whole = submit(
-        &mut held,
-        r#"def answer = 42 ;
-pure answer"#,
-    );
+    let mut whole = submit(&mut held, r#"pure 42"#);
     assert!(matches!(
         whole.evaluate(ConstantIndex::from(0_usize)),
         Maybe::Absent(evaluation::Absent::Unaccepted)

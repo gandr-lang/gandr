@@ -1,0 +1,21 @@
+// A package's hidden type cannot leak: a consumer that returns the seed at
+// the hidden type `T` as an `Integer` is refused. The lowering admits no
+// package type, `pack` or `unpack` yet (#1108), so that refusal stands in
+// front of the leak.
+
+/// Opens a package and returns its seed as an integer (#1108).
+@[ refuses("OutOfFragment") ]
+def leak(p: package [ T ] +U[ω] (-F #{ seed: T })) -> -F Integer {
+  unpack m : package [ T ] +U[ω] (-F #{ seed: T }) = p;
+  run r <- force m;
+  become r.seed
+}
+
+/// A counter over integers, packed (#1108).
+@[ refuses("OutOfFragment") ]
+def counter : package [ T ] +U[ω] (-F #{ seed: T });
+def counter = pack [ Integer ] thunk { return #{ seed = 7 } };
+
+/// The run target leaks the counter's seed (#1105).
+@[ refuses("OutOfFragment") ]
+leak(counter)

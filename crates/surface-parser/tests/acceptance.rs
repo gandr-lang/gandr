@@ -1029,10 +1029,23 @@ fn a_theory_block_may_be_named_with_a_primitive_type_spelling() -> Result<(), Bo
 /// The corpus sources whose point is a parse error, each with the obligations
 /// it owes and the source text each stands over: a pathological fixture that
 /// pins a recovery is held to exactly that recovery.
-const PARSE_ERRORS: &[(&str, &[(Oblig, &str)])] = &[(
-    "fixture/pathological/modules/theory-sort-classified-by-a-keyword.gandr",
-    &[(Oblig::UnmoldedTok, "type")],
-)];
+const PARSE_ERRORS: &[(&str, &[(Oblig, &str)])] = &[
+    (
+        "fixture/pathological/modules/theory-sort-classified-by-a-keyword.gandr",
+        &[(Oblig::UnmoldedTok, "type")],
+    ),
+    // The strays a root holds among its declarations, each refused alone
+    // (#1058).
+    ("fixture/pathological/modules/stray-root-child.gandr", &[
+        (Oblig::UnmoldedTok, "mu"),
+        (Oblig::UnmoldedTok, "\u{a7}"),
+        (Oblig::MissingTile, "leta"),
+        (Oblig::MissingTile, ";"),
+        (Oblig::MissingTile, "def"),
+        (Oblig::MissingTile, "="),
+        (Oblig::MissingTile, ";"),
+    ]),
+];
 
 /// The zero-obligation gate over the language's corpus: the candidate
 /// pre-filter and the grammar mold **every** corpus source to a

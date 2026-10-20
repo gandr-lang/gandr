@@ -846,7 +846,7 @@ fn a_submission_carries_the_edits_from_the_last_accepted_revision()
         "the next revision carries the literal edit from the first"
     );
 
-    let refused = submit(&mut session, "def a = 1 ;\npure a");
+    let refused = submit(&mut session, "pure 1");
     assert_eq!(
         refused.edits(),
         Maybe::Absent(resumed::Absent::RefusedWhole),

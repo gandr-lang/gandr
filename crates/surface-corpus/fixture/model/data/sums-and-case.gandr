@@ -1,0 +1,16 @@
+// A binary sum is eliminated by a case over its two injections.
+
+/// Injects 42 on the left and takes the left arm. The injections are spelled
+/// `Inl` and `Inr` here, names this surface does not define.
+@[ refuses("UnresolvedName") ]
+def pick() -> -F Integer {
+  case (Inl(42) : Integer + String) {
+    Inl(x) => return (x + 1),
+    Inr(s) => return 0
+  }
+}
+
+/// The run target calls `pick`; the lowering reads no final expression as a
+/// run target yet (#1105).
+@[ refuses("OutOfFragment") ]
+pick()

@@ -1,3 +1,0 @@
-def steps = ([1, 2, 3, 4] : List(Integer));
-
-list.reduce(thunk { fn(acc, n) { return list.push(acc, n) } }, [], steps)

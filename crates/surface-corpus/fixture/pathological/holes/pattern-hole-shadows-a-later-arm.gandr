@@ -1,0 +1,25 @@
+// A pattern hole before an arm may shadow it: whether `Blue` reaches its own
+// arm or the hole is undecided, and the checker refuses the match (#391).
+
+/// Three colours, one arm each.
+@[ checks ]
+data Color : Type {
+  Red : Color;
+  Green : Color;
+  Blue : Color;
+}
+
+/// The hole stands before `Blue`'s arm (#391).
+@[ refuses("UndecidedCoverage") ]
+def classify(c : Color) -> -F Integer {
+  case c {
+    Red => return 0,
+    ? => return 1,
+    Blue => return 2
+  }
+}
+
+/// The run target classifies `Blue`; the lowering reads no final expression
+/// as a run target yet (#1105).
+@[ refuses("OutOfFragment") ]
+classify(Blue)

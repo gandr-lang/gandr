@@ -1,0 +1,31 @@
+// The list combinators of the `list` namespace: map, filter, fold, the two
+// quantifiers, flatten, sort and deduplicate. Each is reached by projection
+// from its namespace, which the lowering admits for no builtin yet (#1106).
+
+/// Each element doubled.
+@[ refuses("OutOfFragment") ]
+def doubled = list.each(thunk { fn(x) { return x * 2 } }, [1, 2, 3]);
+
+/// The doubled elements over two.
+@[ refuses("OutOfFragment") ]
+def big = list.where(thunk { fn(x) { return x > 2 } }, doubled);
+
+/// The large elements summed.
+@[ refuses("OutOfFragment") ]
+def total = list.reduce(thunk { fn(acc, x) { return acc + x } }, 0, big);
+
+/// Whether some large element is over five.
+@[ refuses("OutOfFragment") ]
+def any_big = list.any(thunk { fn(x) { return x > 5 } }, big);
+
+/// Whether every doubled element is over one.
+@[ refuses("OutOfFragment") ]
+def all_even = list.all(thunk { fn(x) { return x > 1 } }, doubled);
+
+/// Two lists, one after the other.
+@[ refuses("OutOfFragment") ]
+def flattened = list.flatten([[3, 1], [2, 2]]);
+
+/// The run target sorts the distinct elements (#1105).
+@[ refuses("OutOfFragment") ]
+list.sort(list.uniq(flattened))

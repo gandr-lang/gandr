@@ -1,0 +1,10 @@
+// A record updated at one field: a new record, the other fields kept.
+
+/// A point of two fields.
+@[ checks ]
+def point = #{ x = 1, y = 2 };
+
+/// The run target updates `x`; the lowering reads no final expression as a
+/// run target yet (#1105), and admits no record update (#1110).
+@[ refuses("OutOfFragment") ]
+#{ point | x = 9 }
