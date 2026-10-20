@@ -424,10 +424,12 @@ impl<'source> Lowerer<'_, 'source>
             };
             // The core definition carries the rule certificate the
             // coincidence check's outcome states, so the kernel decides the
-            // rules by replay.
+            // rules by replay. A block with no rule has an empty certificate,
+            // so its value is the presentation's own.
             let certified = cells_at
                 .get(&block.node)
                 .and_then(|&index| self.collected.cells.declarations.get(index))
+                .filter(|cells| !cells.oriented.is_empty())
                 .and_then(|cells| {
                     let parts = presentation.value.decode().ok()?;
                     let certificate = crate::certify::rule_certificate(&entry.description, cells);
