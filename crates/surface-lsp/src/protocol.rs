@@ -2453,6 +2453,9 @@ pub struct DocumentLink
     pub range: Range,
     /// The file it names.
     pub target: DocumentUri,
+    /// The path of that file, as the dispatcher reads it, shown where the
+    /// link is hovered.
+    pub tooltip: String,
 }
 
 /// The result of a semantic-tokens request.

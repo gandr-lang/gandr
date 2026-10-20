@@ -8207,17 +8207,18 @@ mod tests
             importer,
             r#"import \"lib/base.gandr\" as b;\nimport \"std:prelude\";\ndef answer = 1 ;\n"#,
         );
-        let target = DocumentUri::of_path(&named_path(Path::new("/tmp/links/lib/base.gandr")))
-            .expect("an absolute path names a file URI");
+        let file = named_path(Path::new("/tmp/links/lib/base.gandr"));
+        let target = DocumentUri::of_path(&file).expect("an absolute path names a file URI");
+        let tooltip = file.to_string_lossy();
         assert_eq!(
             links(&mut server, importer),
             wire(Json(&format!(
                 r#"[{{"jsonrpc":"2.0","id":9,"result":[{{
                     "range":{{"start":{{"line":0,"character":8}},"end":{{"line":0,"character":22}}}},
-                    "target":"{target}"}}]}}]"#
+                    "target":"{target}","tooltip":"{tooltip}"}}]}}]"#
             ))),
-            "the path import's address links to the file beside the importer; the scheme import \
-             links nowhere"
+            "the path import's address links to the file beside the importer, its path the \
+             tooltip; the scheme import links nowhere"
         );
         let malformed = "file:///tmp/links/malformed.gandr";
         open(
