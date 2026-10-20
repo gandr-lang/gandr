@@ -101,8 +101,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Stable diagnostic codes | [`diagnostic`](src/diagnostic.rs) |
 | The frame | [`wire`](src/wire.rs) |
 
-The deferred behavioural floor is tracked in [#207](https://github.com/gandr-lang/gandr/issues/207).
-
 ## License
 
 Apache-2.0 WITH LLVM-exception, the workspace licence; the text is at the repository root.

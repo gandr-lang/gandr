@@ -64,8 +64,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Repairs are cards | [`remote`](src/remote.rs) |
 | A checked declaration prints what it runs to | [`encode`](src/encode.rs) |
 
-The deferred behavioural floor is tracked in [#205](https://github.com/gandr-lang/gandr/issues/205).
-
 ## License
 
 Apache-2.0 WITH LLVM-exception, the workspace licence; the text is at the repository root.

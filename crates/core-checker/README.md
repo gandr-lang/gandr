@@ -135,8 +135,6 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Measurement dependencies and the admission observer | [`examples/staging_templates.rs`](examples/staging_templates.rs) |
 | References | [`src/lib.rs`](src/lib.rs) |
 
-The behavioural floor — each conformance row this crate holds, its witness, and the rows still deferred — is tracked in [#199](https://github.com/gandr-lang/gandr/issues/199).
-
 ## License
 
 Apache-2.0 WITH LLVM-exception. The licence text is at the repository root.

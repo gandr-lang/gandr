@@ -126,8 +126,7 @@
 //! share term-valued slots; the checker keeps every slot invariant.
 //! **Reversal.** Certified definitional index conversion requires its own
 //! evidence reader. The checker and kernel boundary is stated by
-//! `gandr-core-checker`, and its parity floor is tracked in
-//! [#199](https://github.com/gandr-lang/gandr/issues/199).
+//! `gandr-core-checker`.
 //!
 //! A field may name its own declaration's family: the syntax is an ordinary
 //! `ValueType::Data` at the declaration's own position, and whether that
