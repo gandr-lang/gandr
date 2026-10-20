@@ -1532,11 +1532,11 @@ fn runtime_control_is_refused_by_former()
         (core.computation_reset(returned), ControlFormer::Reset),
         (core.computation_shift(returned), ControlFormer::Shift),
         (
-            core.computation_with(returned, returned),
+            core.computation_with(&[returned, returned]),
             ControlFormer::With,
         ),
         (
-            core.computation_project(gandr_kernel_term::Side::Left, returned),
+            core.computation_project(gandr_kernel_term::Component::from(0_usize), returned),
             ControlFormer::Project,
         ),
     ];

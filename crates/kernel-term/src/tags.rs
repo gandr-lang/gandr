@@ -212,23 +212,24 @@
 //!
 //! # The lazy product
 //!
-//! The computation product `C & D` persists as its own former, binary as the
-//! core holds it; a lazy record of `n` entries is its right-nested chain.
+//! The computation product `C₀ & … & Cₙ₋₁` persists as its own former,
+//! n-ary as the product is: the terminal computation type is the empty one.
 //! [`crate::types`] states why it is not the record of thunks.
 //!
 //! | byte | node | family | children, in order | inline payload |
 //! | ---- | ---- | ------ | ------------------ | -------------- |
-//! | `0x65` | [`NODE_CT_WITH`] | computation type | the left component type; the right component type | none |
-//! | `0x66` | [`NODE_C_WITH`] | computation | the left component; the right component | none |
-//! | `0x67` | [`NODE_C_PROJECT`] | computation | the observed pairing | the side, [`SIDE_LEFT`] or [`SIDE_RIGHT`] |
+//! | `0x65` | [`NODE_CT_WITH`] | computation type | the component types | the component count |
+//! | `0x66` | [`NODE_C_WITH`] | computation | the components | the component count |
+//! | `0x67` | [`NODE_C_PROJECT`] | computation | the observed pairing | the component position |
 //!
-//! The side byte precedes the child, as a tuple projection's component does;
-//! any other side byte is refused as an unknown tag at the side site, as the
-//! fixpoint's evidence byte is. All three children are computation-family
-//! nodes, so a value or value-type child is refused as a polarity fault.
-//! The three bytes hold [`FORMAT_VERSION`]: a reader that predates them
-//! refuses each by name as an unassigned byte, so no artifact means anything
-//! else by them.
+//! The count and the position are varints that precede the children, as a
+//! tuple's count and a tuple projection's component do. Every child is a
+//! computation-family node, so a value or value-type child is refused as a
+//! polarity fault.
+//!
+//! Version 7 makes the three bytes n-ary: a reader at 6 read them binary,
+//! with a side byte on the projection, and refuses the artifact by its
+//! version before it meets them.
 //!
 //! # The dependent pair
 //!
@@ -399,7 +400,10 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 /// representation and closes the atom where the producer closed it. Version
 /// five gives [`NODE_V_HERE`] an inline payload before its point: the dialogue
 /// relating the point to each endpoint, which the kernel replays where the
-/// point and an endpoint differ.
+/// point and an endpoint differ. Version six admits [`NODE_V_UNIVALENCE`].
+/// Version seven makes the lazy product n-ary: [`NODE_CT_WITH`] and
+/// [`NODE_C_WITH`] carry an inline component count, and [`NODE_C_PROJECT`]
+/// an inline component position where it carried a side byte.
 ///
 /// A refusal names the version it met rather than guessing at it, which is
 /// what makes an older reader meeting a newer artifact stop with an accurate
@@ -422,7 +426,7 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 /// - witness: `tests::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
 /// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
-pub const FORMAT_VERSION: FormatVersion = FormatVersion(6);
+pub const FORMAT_VERSION: FormatVersion = FormatVersion(7);
 
 /// Admission mark: admitted through the checked choke point.
 pub const ADMISSION_CHECKED: WireTag = WireTag(0);
@@ -880,19 +884,17 @@ pub const NODE_V_LIST_CONS: WireTag = WireTag(0x5B);
 pub const NODE_C_LIST_FOLD: WireTag = WireTag(0x5C);
 /// Node tag: a case on a native list, over list, nil and cons branches.
 pub const NODE_C_LIST_CASE: WireTag = WireTag(0x6F);
-/// Node tag: the lazy product `C & D`, over its left and right component
-/// computation types.
+/// Node tag: the lazy product `C₀ & … & Cₙ₋₁`, with an inline component
+/// count, over its component computation types; the terminal computation
+/// type is the lazy product of none.
 pub const NODE_CT_WITH: WireTag = WireTag(0x65);
-/// Node tag: the lazy pairing of two computations, introducing the lazy
-/// product of their types; neither component runs until it is observed.
+/// Node tag: the lazy pairing of computations, with an inline component
+/// count, introducing the lazy product of their types; no component runs
+/// until it is observed.
 pub const NODE_C_WITH: WireTag = WireTag(0x66);
-/// Node tag: the projection of one side of a lazy pairing, with the side
-/// byte inline before its one computation child.
+/// Node tag: the projection of a lazy pairing's component, with the
+/// component position inline before its one computation child.
 pub const NODE_C_PROJECT: WireTag = WireTag(0x67);
-/// Projection side: the left component of a lazy pairing.
-pub const SIDE_LEFT: WireTag = WireTag(0);
-/// Projection side: the right component of a lazy pairing.
-pub const SIDE_RIGHT: WireTag = WireTag(1);
 /// Node tag: directed transport over a two-entry telescope, over its motive,
 /// flow, start point, flow over it and input value.
 pub const NODE_C_TELESCOPE_RIDE: WireTag = WireTag(0x68);
@@ -1322,8 +1324,8 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 77] = [
     unbounded(NODE_C_RECORD_PROJECTION, ChildArity::Fixed(1)),
     unbounded(NODE_C_FIXPOINT, ChildArity::Fixed(1)),
     unbounded(NODE_C_TUPLE_PROJECTION, ChildArity::Fixed(1)),
-    unbounded(NODE_CT_WITH, ChildArity::Fixed(2)),
-    unbounded(NODE_C_WITH, ChildArity::Fixed(2)),
+    unbounded(NODE_CT_WITH, ChildArity::Counted(0)),
+    unbounded(NODE_C_WITH, ChildArity::Counted(0)),
     unbounded(NODE_C_PROJECT, ChildArity::Fixed(1)),
     unbounded(NODE_C_TELESCOPE_RIDE, ChildArity::Fixed(5)),
     unbounded(NODE_V_FLOW_PRODUCT, ChildArity::Fixed(2)),
@@ -1433,7 +1435,7 @@ mod tests
                         Some(&crate::Computation::RelatedApplication { .. }) => row.tag == super::NODE_C_RELATED_APPLICATION,
                         Some(&crate::Computation::ListFold { .. }) => row.tag == super::NODE_C_LIST_FOLD,
                         Some(&crate::Computation::ListCase { .. }) => row.tag == super::NODE_C_LIST_CASE,
-                        Some(&crate::Computation::With(_, _)) => row.tag == super::NODE_C_WITH,
+                        Some(&crate::Computation::With(_)) => row.tag == super::NODE_C_WITH,
                         Some(&crate::Computation::Project(_, _)) => row.tag == super::NODE_C_PROJECT,
                         None => false,
                     },
@@ -1465,7 +1467,7 @@ mod tests
                         Some(&crate::CompType::Arrow { .. }) => row.tag == super::NODE_CT_ARROW,
                         Some(&crate::CompType::Pi { .. }) => row.tag == super::NODE_CT_PI,
                         Some(&crate::CompType::Element { .. }) => row.tag == super::NODE_CT_ELEMENT,
-                        Some(&crate::CompType::With(_, _)) => row.tag == super::NODE_CT_WITH,
+                        Some(&crate::CompType::With(_)) => row.tag == super::NODE_CT_WITH,
                         Some(&crate::CompType::Codata { .. }) => row.tag == super::NODE_CT_CODATA,
                         None => false,
                     },
@@ -1596,9 +1598,9 @@ mod tests
         let nil = arena.value_list_nil();
         let cons = arena.value_list_cons(unit, nil);
         let fold = arena.computation_list_fold(unit_type, unit_type, cons, ret, ret);
-        let lazy_type = arena.comp_type_with(returner, arrow);
-        let lazy_pair = arena.computation_with(ret, lambda);
-        let lazy_projection = arena.computation_project(crate::Side::Right, lazy_pair);
+        let lazy_type = arena.comp_type_with(&[returner, arrow]);
+        let lazy_pair = arena.computation_with(&[ret, lambda]);
+        let lazy_projection = arena.computation_project(crate::Component::from(1_usize), lazy_pair);
         let telescope_ride =
             arena.computation_telescope_ride(telescope, stay, unit, returned, literal);
         let flow_product = arena.value_flow_product(stay, forward_flow);
@@ -1770,10 +1772,12 @@ mod tests
                 AnyNode::Computation(id) => match arena.computation(id) {
                     Some(&crate::Computation::DataCase { ref branches, .. }) => branches.len(),
                     Some(&crate::Computation::Case { ref branches, .. }) => branches.len(),
+                    Some(&crate::Computation::With(ref components)) => components.len(),
                     _ => 0,
                 },
                 AnyNode::CompType(id) => match arena.comp_type(id) {
                     Some(&crate::CompType::Codata { ref arguments, .. }) => arguments.len(),
+                    Some(&crate::CompType::With(ref components)) => components.len(),
                     _ => 0,
                 },
             };
@@ -1908,6 +1912,8 @@ mod tests
             super::NODE_VT_PRODUCT,
             super::NODE_VT_SUM,
             super::NODE_V_TUPLE,
+            super::NODE_CT_WITH,
+            super::NODE_C_WITH,
         ] {
             let row = NODE_TAG_TABLE
                 .iter()

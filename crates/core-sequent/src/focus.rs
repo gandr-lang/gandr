@@ -173,7 +173,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_kernel_strata::Level;
-use gandr_kernel_term::Side;
+use gandr_kernel_term::Component;
 use gandr_kernel_term::Summand;
 use gandr_theory_cell_complexes::Polarity;
 
@@ -217,7 +217,7 @@ pub enum FocusOrigin
     Reset,
     /// A delimited continuation capture.
     Shift,
-    /// A lazy pair of computations.
+    /// A lazy product of computations.
     With,
     /// `return v`: the cut of the value against the continuation.
     Return,
@@ -1012,7 +1012,7 @@ impl<'run> Focusing<'run>
                 Computation::Handle { ref clauses, .. } | Computation::Scope { ref clauses, .. } => self.commands.len() >= clauses.len().saturating_add(2),
                 Computation::Resume(..) => !self.producers.is_empty() && !self.commands.is_empty(),
                 Computation::Reset(_) | Computation::Shift(_) => !self.commands.is_empty(),
-                Computation::With(..) => self.commands.len() >= 2,
+                Computation::With(ref components) => self.commands.len() >= components.len(),
                 Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => true,
             }),
             | &Task::Primitive { arguments, .. } => self.producers.len() >= arguments.len(),
@@ -1543,21 +1543,22 @@ impl<'run> Focusing<'run>
                 },
                 FocusOrigin::Memory,
             ),
-            Computation::With(..) => {
-                let right = self.pop_command()?;
-                let left = self.pop_command()?;
-                let producer = self.arena.mint_producer(ProducerNode::Cocase {
-                    arms: alloc::boxed::Box::from([
-                        CopatternArm {
-                            destructor: DestructorTag::Project(Side::Left),
-                            body: left,
-                        },
-                        CopatternArm {
-                            destructor: DestructorTag::Project(Side::Right),
-                            body: right,
-                        },
-                    ]),
-                })?;
+            Computation::With(ref components) => {
+                let start = self
+                    .commands
+                    .len()
+                    .checked_sub(components.len())
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let arms = self
+                    .commands
+                    .drain(start ..)
+                    .enumerate()
+                    .map(|(position, body)| CopatternArm {
+                        destructor: DestructorTag::Project(Component::from(position)),
+                        body,
+                    })
+                    .collect();
+                let producer = self.arena.mint_producer(ProducerNode::Cocase { arms })?;
                 return self.cut(
                     FocusOrigin::With,
                     Polarity::Negative,
@@ -2074,24 +2075,25 @@ impl<'run> Focusing<'run>
                     self.tasks.push(Task::Value(value));
                 }
             },
-            Computation::With(left, right) => {
+            Computation::With(ref components) => {
                 let return_point = self.innermost_covariable()?;
                 self.tasks.push(Task::Control {
                     source: id,
                     continuation,
                 });
-                self.tasks.push(Task::Computation {
-                    computation: right,
-                    continuation: return_point,
-                });
-                self.tasks.push(Task::Computation {
-                    computation: left,
-                    continuation: return_point,
-                });
+                self.tasks.extend(
+                    components
+                        .iter()
+                        .rev()
+                        .map(|&computation| Task::Computation {
+                            computation,
+                            continuation: return_point,
+                        }),
+                );
             },
-            Computation::Project(side, subject) => {
+            Computation::Project(component, subject) => {
                 let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
-                    tag: DestructorTag::Project(side),
+                    tag: DestructorTag::Project(component),
                     producers: alloc::boxed::Box::from([]),
                     consumers: alloc::boxed::Box::from([continuation]),
                 })?;

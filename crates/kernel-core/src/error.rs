@@ -637,7 +637,8 @@ pub enum KernelError
     {
         label: gandr_kernel_term::FieldLabel,
     },
-    /// A tuple projection names a component past the product's last.
+    /// A tuple projection names a component past the product's last, or a
+    /// lazy projection one past the lazy product's last.
     AbsentTupleComponent
     {
         component: gandr_kernel_term::Component,
@@ -946,7 +947,7 @@ impl core::fmt::Display for KernelError
             Self::StagePresented => f.write_str("a presented type named a stage"),
             Self::AbsentRecordField { .. } => f.write_str("a required record field was absent"),
             Self::AbsentTupleComponent { .. } => {
-                f.write_str("a tuple projection named a component the product does not have")
+                f.write_str("a projection named a component the product does not have")
             },
             Self::Session(ref error) => error.fmt(f),
             Self::Path(ref error) => error.fmt(f),

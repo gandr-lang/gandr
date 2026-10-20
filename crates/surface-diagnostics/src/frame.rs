@@ -146,7 +146,7 @@ pub fn sentence(role: FrameRole) -> Sentence
         FrameRole::Ascription => "checking this computation against the type it is ascribed",
         FrameRole::PerformPayload => "checking the payload of this operation",
         FrameRole::Resume => "reading the stack this resumption resumes",
-        FrameRole::Project => "reading the lazy pair this projection selects from",
+        FrameRole::Project => "reading the lazy product this projection selects from",
         FrameRole::Reset => "checking the body of this reset",
         FrameRole::HandlerForm => "forming the interface this handler handles",
         FrameRole::HandlerSubject => "synthesising the type of this handler's subject",

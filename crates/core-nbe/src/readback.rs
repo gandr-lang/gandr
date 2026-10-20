@@ -776,8 +776,9 @@ enum Task
     ThunkType,
     /// Assemble a stack type from its input and output computation types.
     StackType,
-    /// Assemble a lazy computation pair from its component types.
-    WithType,
+    /// Assemble a lazy product from as many computation types on the stack as
+    /// the source has components.
+    WithType(CompTypeId),
     /// Assemble a type lift over the level the domain holds.
     LiftType
     {
@@ -2163,11 +2164,12 @@ fn run(
             && machine.value_types.len() == entry_value_types.saturating_add(1)
             && entry_comp_types.checked_sub(2) == Some(machine.comp_types.len())
             && machine.value_types.last().is_some_and(|&id| matches!(core.value_type(id), Some(ValueType::Stack { .. }))),
-        | Task::WithType => machine.tasks.len() == entry_tasks
+        | Task::WithType(source) => core.comp_type(source).is_some_and(|held| matches!(*held, CompType::With(ref parts)
+            if machine.tasks.len() == entry_tasks
             && machine.values.len() == entry_values && machine.comps.len() == entry_comps
             && machine.value_types.len() == entry_value_types
-            && entry_comp_types.checked_sub(1) == Some(machine.comp_types.len())
-            && machine.comp_types.last().is_some_and(|&id| matches!(core.comp_type(id), Some(CompType::With(..)))),
+            && entry_comp_types.checked_sub(parts.len()).and_then(|left| left.checked_add(1)) == Some(machine.comp_types.len())
+            && machine.comp_types.last().is_some_and(|&id| matches!(core.comp_type(id), Some(&CompType::With(..)))))),
         | Task::ThunkType => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
             && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
@@ -2267,10 +2269,23 @@ fn step(
                 .push(core.value_type_stack(input, output));
             Ok(())
         },
-        Task::WithType => {
-            let second = machine.pop_comp_type()?;
-            let first = machine.pop_comp_type()?;
-            machine.comp_types.push(core.comp_type_with(first, second));
+        Task::WithType(source) => {
+            let Some(&CompType::With(ref parts)) = core.comp_type(source)
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let start = machine
+                .comp_types
+                .len()
+                .checked_sub(parts.len())
+                .ok_or(ReadbackFault::MachineInvariant)?;
+            let read = machine
+                .comp_types
+                .get(start ..)
+                .ok_or(ReadbackFault::MachineInvariant)?;
+            let assembled = core.comp_type_with(read);
+            machine.comp_types.truncate(start);
+            machine.comp_types.push(assembled);
             Ok(())
         },
         Task::ListType => {
@@ -3343,7 +3358,9 @@ fn step_quoted_value_type(
 #[spec(
     captures: [entry_tasks = machine.tasks.len(), entry_frames = machine.frames.len(), entry_fuel = machine.fuel],
     ensures: |ret| machine.fuel == entry_fuel && (ret.is_err() || machine.tasks.get(entry_tasks ..).is_some_and(|new_tasks| match core.comp_type(quoted) {
-        | Some(&CompType::With(left, right)) => matches!(new_tasks, [Task::WithType, Task::QuotedCompType { quoted: second, frame: second_frame, binders: second_binders }, Task::QuotedCompType { quoted: first, frame: first_frame, binders: first_binders }] if *first == left && *second == right && *first_frame == frame && *second_frame == frame && *first_binders == binders && *second_binders == binders),
+        | Some(&CompType::With(ref parts)) => new_tasks.first() == Some(&Task::WithType(quoted))
+            && new_tasks.len() == parts.len().saturating_add(1)
+            && new_tasks.iter().skip(1).zip(parts.iter().rev()).all(|(task, part)| *task == Task::QuotedCompType { quoted: *part, frame, binders }),
         | Some(&CompType::Codata { ref arguments, .. }) => new_tasks.first() == Some(&Task::CodataType(quoted))
             && new_tasks.len() == arguments.len().saturating_add(1)
             && new_tasks.iter().skip(1).zip(arguments.iter().rev()).all(|(task, argument)| *task == Task::QuotedCode { code: *argument, frame, binders }),
@@ -3378,20 +3395,15 @@ fn step_quoted_comp_type(
         .ok_or(ReadbackFault::MachineInvariant)?;
     match node {
         CompType::Unknown => machine.comp_types.push(quoted),
-        CompType::With(first, second) => {
-            machine.tasks.extend([
-                Task::WithType,
-                Task::QuotedCompType {
-                    quoted: second,
+        CompType::With(parts) => {
+            machine.tasks.push(Task::WithType(quoted));
+            machine
+                .tasks
+                .extend(parts.iter().rev().map(|&part| Task::QuotedCompType {
+                    quoted: part,
                     frame,
                     binders,
-                },
-                Task::QuotedCompType {
-                    quoted: first,
-                    frame,
-                    binders,
-                },
-            ]);
+                }));
         },
         CompType::Codata { arguments, .. } => {
             machine.tasks.push(Task::CodataType(quoted));

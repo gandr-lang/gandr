@@ -375,8 +375,11 @@ pub fn unfolded(
                     } => {
                         pending.extend([CoreNode::Value(stack), CoreNode::Computation(body)]);
                     },
-                    Computation::With(first, second) => pending
-                        .extend([CoreNode::Computation(first), CoreNode::Computation(second)]),
+                    Computation::With(ref components) => pending.extend(
+                        components
+                            .iter()
+                            .map(|&component| CoreNode::Computation(component)),
+                    ),
                     Computation::Ascribe { body, ty } => {
                         pending.extend([CoreNode::Computation(body), CoreNode::CompType(ty)]);
                     },
@@ -547,8 +550,12 @@ pub fn unfolded(
                     .comp_type(id)
                     .expect("an erased computation type resolves")
                 {
-                    CompType::With(first, second) => {
-                        pending.extend([CoreNode::CompType(first), CoreNode::CompType(second)]);
+                    CompType::With(ref components) => {
+                        pending.extend(
+                            components
+                                .iter()
+                                .map(|&component| CoreNode::CompType(component)),
+                        );
                     },
                     CompType::Returner {
                         result,

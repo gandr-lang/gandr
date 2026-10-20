@@ -373,8 +373,6 @@ pub use crate::tags::SEAM_FEEDBACK;
 pub use crate::tags::SEAM_SEQUENCE;
 pub use crate::tags::SHARING_BLOCK_FIRST;
 pub use crate::tags::SHARING_BLOCK_LAST;
-pub use crate::tags::SIDE_LEFT;
-pub use crate::tags::SIDE_RIGHT;
 pub use crate::tags::SIGN_NEGATIVE;
 pub use crate::tags::SIGN_NON_NEGATIVE;
 pub use crate::tags::TokenCount;

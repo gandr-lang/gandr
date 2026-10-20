@@ -32,6 +32,7 @@ use gandr_core_sequent::focus_computation;
 use gandr_core_sequent::focus_value;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Zone;
+use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Side;
 use gandr_runtime_emitter::Fuel;
@@ -103,7 +104,7 @@ fn a_patcher_host_runs_native()
 
 /// The named programs — a return, a bind, a case, a constructor, their
 /// composition, answers that suspend a function or a thunk, primitive calls,
-/// a resumed reified stack and a projected lazy pair — halt alike on both
+/// a resumed reified stack and a projected lazy product — halt alike on both
 /// tiers with the answer each states.
 #[test]
 fn the_named_programs_agree_on_both_executors()
@@ -370,26 +371,28 @@ fn bound_then(
         .expect("a live body")
 }
 
-/// A lazy pair bound to a variable answers each projection with its own arm,
-/// and a head it has no arm for — `force`, `apply` — sticks naming the pair:
-/// the object is entered with the observation, which picks the arm.
+/// A lazy product bound to a variable answers each projection with its own
+/// arm, and a head it has no arm for — `force`, `apply` — sticks naming the
+/// product: the object is entered with the observation, which picks the arm.
 #[test]
 fn an_object_answers_its_arms_and_sticks_on_the_rest()
 {
     let mut commands = CommandArena::new();
     let top = commands.mint_consumer(ConsumerNode::Top).expect("a leaf");
-    let arms = [(Side::Left, Integer(1)), (Side::Right, Integer(2))].map(|(side, value)| {
-        let answer = literal(&mut commands, value);
-        let back = innermost_covariable(&mut commands);
-        CopatternArm {
-            destructor: DestructorTag::Project(side),
-            body: cut(&mut commands, Polarity::Positive, answer, back),
-        }
-    });
-    let pair = commands
-        .mint_producer(ProducerNode::Cocase {
-            arms: Box::from(arms),
+    let arms = [Integer(1), Integer(2), Integer(3)]
+        .into_iter()
+        .enumerate()
+        .map(|(component, value)| {
+            let answer = literal(&mut commands, value);
+            let back = innermost_covariable(&mut commands);
+            CopatternArm {
+                destructor: DestructorTag::Project(Component::from(component)),
+                body: cut(&mut commands, Polarity::Positive, answer, back),
+            }
         })
+        .collect::<Box<[_]>>();
+    let pair = commands
+        .mint_producer(ProducerNode::Cocase { arms })
         .expect("live arms");
     let unit = commands
         .mint_producer(ProducerNode::Constructor {
@@ -408,8 +411,9 @@ fn an_object_answers_its_arms_and_sticks_on_the_rest()
             .expect("live children")
     };
     let observations = [
-        (DestructorTag::Project(Side::Left), &[][..]),
-        (DestructorTag::Project(Side::Right), &[][..]),
+        (DestructorTag::Project(Component::from(0_usize)), &[][..]),
+        (DestructorTag::Project(Component::from(1_usize)), &[][..]),
+        (DestructorTag::Project(Component::from(2_usize)), &[][..]),
         (DestructorTag::Force, &[][..]),
         (DestructorTag::Apply, &[unit][..]),
     ]
@@ -422,12 +426,10 @@ fn an_object_answers_its_arms_and_sticks_on_the_rest()
     for (tag, root) in observations {
         let verdict = agree(Label(&format!("{tag:?}")), &commands, &definitions, root);
         match tag {
-            DestructorTag::Project(Side::Left) => {
-                assert_eq!(Verdict::Halted(Some(String::from("⟨1 |+ ★⟩"))), verdict);
-            },
-            DestructorTag::Project(Side::Right) => {
-                assert_eq!(Verdict::Halted(Some(String::from("⟨2 |+ ★⟩"))), verdict);
-            },
+            DestructorTag::Project(component) => assert_eq!(
+                Verdict::Halted(Some(format!("⟨{} |+ ★⟩", usize::from(component) + 1))),
+                verdict
+            ),
             DestructorTag::Force | DestructorTag::Apply => assert!(
                 matches!(verdict, Verdict::Stuck(Stuck::Unobservable { head, .. }) if head == tag),
                 "{tag:?} sticks at the pair: {verdict:?}"

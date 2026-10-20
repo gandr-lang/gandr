@@ -1209,7 +1209,7 @@ fn a_relocated_type_converts_as_its_settled_reading()
         let arrow = arena.comp_type_arrow(free, returns);
         let vacuous = arena.comp_type_pi(free, returns_beneath);
         let dependent = arena.comp_type_pi(free, returns_bound);
-        let lazy = arena.comp_type_with(returns, arrow);
+        let lazy = arena.comp_type_with(&[returns, arrow]);
         let record = arena.value_type_record(BTreeMap::from([(
             FieldLabel::from(String::from("a")),
             free,

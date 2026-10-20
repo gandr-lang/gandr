@@ -35,7 +35,6 @@ use crate::module::LoweredModule;
 use crate::namespace::Recognition;
 use crate::origin::Label;
 use crate::origin::Labelled;
-use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
 
 /// One core node of any family, as [`shown`] walks it.
@@ -139,10 +138,13 @@ fn shown(
                     Root::ValueType(domain),
                     Root::CompType(codomain),
                 ]),
-                Some(&CompType::With(first, second)) => (String::from("&"), vec![
-                    Root::CompType(first),
-                    Root::CompType(second),
-                ]),
+                Some(&CompType::With(ref components)) => (
+                    format!("&{}", components.len()),
+                    components
+                        .iter()
+                        .map(|&component| Root::CompType(component))
+                        .collect(),
+                ),
                 other => (format!("{other:?}"), Vec::new()),
             },
             Root::Value(at) => match arena.value(at) {
@@ -192,10 +194,13 @@ fn shown(
                 Some(&Computation::Lambda(body)) => {
                     (String::from("lambda"), vec![Root::Computation(body)])
                 },
-                Some(&Computation::With(first, second)) => (String::from("with"), vec![
-                    Root::Computation(first),
-                    Root::Computation(second),
-                ]),
+                Some(&Computation::With(ref components)) => (
+                    format!("with{}", components.len()),
+                    components
+                        .iter()
+                        .map(|&component| Root::Computation(component))
+                        .collect(),
+                ),
                 Some(&Computation::TupleProjection(tuple, component)) => {
                     (format!("component{}", usize::from(component)), vec![
                         Root::Value(tuple),
@@ -205,8 +210,10 @@ fn shown(
                     format!("field.{}", label.as_ref()),
                     vec![Root::Value(record)],
                 ),
-                Some(&Computation::Project(side, body)) => {
-                    (format!("project-{side:?}"), vec![Root::Computation(body)])
+                Some(&Computation::Project(component, body)) => {
+                    (format!("project{}", usize::from(component)), vec![
+                        Root::Computation(body),
+                    ])
                 },
                 other => (format!("{other:?}"), Vec::new()),
             },
@@ -897,18 +904,20 @@ fn a_session_entry_reads_the_select_and_the_offer()
 }
 
 #[test]
-fn a_lazy_record_lowers_to_nested_with()
+fn a_lazy_record_lowers_to_one_lazy_product()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
         "def two : +U &{get : -F Integer, put : -F String} ; def binary : +U (-F Integer & -F \
-         String) ; def three : +U &{a : -F Integer, b : -F String, c : -F Unit} ;",
+         String) ; def three : +U &{a : -F Integer, b : -F String, c : -F Unit} ; def chain : +U \
+         (-F Integer & -F String & -F Unit) ; def nested : +U (-F Integer & (-F String & -F \
+         Unit)) ; def none : +U &{} ; def single : +U &{get : -F Integer} ;",
         &mut arena,
     );
 
     assert_eq!(
         declared(&arena, &module, "two"),
-        ["U", "&", "F", "Integer", "F", "String"],
+        ["U", "&2", "F", "Integer", "F", "String"],
         "a lazy record of two is the lazy product"
     );
     assert_eq!(
@@ -918,28 +927,29 @@ fn a_lazy_record_lowers_to_nested_with()
     );
     assert_eq!(
         declared(&arena, &module, "three"),
-        ["U", "&", "F", "Integer", "&", "F", "String", "F", "*0"],
-        "a lazy record of three nests to the right"
+        ["U", "&3", "F", "Integer", "F", "String", "F", "*0"],
+        "a lazy record of three is one lazy product of three"
     );
-    for (source, written, entries) in [
-        ("def none : +U &{} ;", "&{}", 0_usize),
-        (
-            "def single : +U &{get : -F Integer} ;",
-            "&{get : -F Integer}",
-            1_usize,
-        ),
-    ] {
-        assert_eq!(
-            refused(source),
-            LoweringRefusal::OutOfFragment {
-                span: at(source, written, 0_usize),
-                form: FormName::from(NamedKind("lazy_record_type")),
-                sort: FragmentSort::CompType,
-                boundary: FragmentBoundary::Arity(OperandCount::from(entries)),
-            },
-            "the lazy record of {entries} entries waits on an n-ary former"
-        );
-    }
+    assert_eq!(
+        declared(&arena, &module, "chain"),
+        declared(&arena, &module, "three"),
+        "and so is the chain `C & D & E`"
+    );
+    assert_eq!(
+        declared(&arena, &module, "nested"),
+        ["U", "&2", "F", "Integer", "&2", "F", "String", "F", "*0"],
+        "a parenthesized operand stays a component of its own"
+    );
+    assert_eq!(
+        declared(&arena, &module, "none"),
+        ["U", "&0"],
+        "`&{{}}` is the empty lazy product"
+    );
+    assert_eq!(
+        declared(&arena, &module, "single"),
+        ["U", "&1", "F", "Integer"],
+        "`&{{C}}` is the lazy product of one, not `C`"
+    );
 }
 
 #[test]
@@ -956,15 +966,15 @@ fn a_copattern_block_orders_its_clauses_by_its_answer()
         let tokens = body(&arena, &module, name);
         tokens
             .iter()
-            .position(|token| token == "with")
+            .position(|token| token.starts_with("with"))
             .map(|start| tokens.get(start ..).unwrap_or_default().to_vec())
             .unwrap_or_default()
     };
 
     assert_eq!(
         with("stated").first().map(String::as_str),
-        Some("with"),
-        "a copattern block is the lazy pairing"
+        Some("with2"),
+        "a copattern block is the lazy product"
     );
     assert_eq!(
         with("stated").get(1_usize ..= 2_usize),
@@ -988,15 +998,31 @@ fn a_copattern_block_orders_its_clauses_by_its_answer()
     let source = "def single(n : Integer) -> &{get : -F Integer, put : -F Integer} { &{.get => \
                   return n} }\n";
     assert!(
-        matches!(
-            refused(source),
-            LoweringRefusal::OutOfFragment {
-                boundary: FragmentBoundary::Arity(count),
-                ..
-            } if count == OperandCount::from(1_usize)
-        ),
-        "a block of one clause waits on an n-ary former"
+        matches!(refused(source), LoweringRefusal::MalformedForm {
+            fault: FormFault::MissingOperand,
+            ..
+        }),
+        "an entry the block leaves out is a missing clause: {:?}",
+        refused(source)
     );
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def one(n : Integer) -> &{get : -F Integer} { &{.get => return n} }\ndef none(n : \
+         Integer) -> &{} { &{} }\n",
+        &mut arena,
+    );
+    let lazy = |name: &str| -> Vec<String> {
+        body(&arena, &module, name)
+            .into_iter()
+            .skip_while(|token| !token.starts_with("with"))
+            .collect()
+    };
+    assert_eq!(
+        lazy("one"),
+        ["with1", "return", "#0"],
+        "a block of one clause is the lazy product of one"
+    );
+    assert_eq!(lazy("none"), ["with0"], "`&{{}}` is the empty lazy product");
     let maybe = "data Maybe(a : Type) : Type { None : Maybe(a); Some : (x : a) --> Maybe(a); }\n";
     let mut arena = CoreArena::new();
     let source = alloc::format!(
@@ -1042,7 +1068,7 @@ fn a_copattern_block_orders_its_clauses_by_its_codata_answer()
         let tokens = body(&arena, &module, name);
         tokens
             .iter()
-            .position(|token| token == "with")
+            .position(|token| token.starts_with("with"))
             .map(|start| tokens.get(start ..).unwrap_or_default().to_vec())
             .unwrap_or_default()
     };
@@ -1051,12 +1077,12 @@ fn a_copattern_block_orders_its_clauses_by_its_codata_answer()
         with("ordered").get(.. 3_usize),
         Some(
             &[
-                String::from("with"),
+                String::from("with2"),
                 String::from("return"),
                 String::from("#0")
             ][..]
         ),
-        "a block answering a codata family is the lazy pairing of its observations, `.fst` first"
+        "a block answering a codata family is the lazy product of its observations, `.fst` first"
     );
     assert_eq!(
         with("swapped"),
@@ -1102,14 +1128,15 @@ fn an_observation_reads_through_one_thunk_only()
 }
 
 #[test]
-fn an_observation_projects_along_the_nesting()
+fn an_observation_projects_its_entry()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
         "def first(m : +U &{a : -F Integer, b : -F Integer, c : -F Integer}) -> -F Integer { \
          become m.a }\ndef middle(m : +U &{a : -F Integer, b : -F Integer, c : -F Integer}) -> \
          -F Integer { become m.b }\ndef last(m : +U &{a : -F Integer, b : -F Integer, c : -F \
-         Integer}) -> -F Integer { become m.c }\n",
+         Integer}) -> -F Integer { become m.c }\ndef only(m : +U &{a : -F Integer}) -> -F \
+         Integer { become m.a }\n",
         &mut arena,
     );
     let observed = |name: &str| -> Vec<String> {
@@ -1121,18 +1148,23 @@ fn an_observation_projects_along_the_nesting()
 
     assert_eq!(
         observed("first"),
-        ["project-Left", "force"],
-        "the first entry is the left of the outer pair"
+        ["project0", "force"],
+        "the first entry is the first component"
     );
     assert_eq!(
         observed("middle"),
-        ["project-Left", "project-Right", "force"],
-        "a middle entry is the left of the right"
+        ["project1", "force"],
+        "a middle entry is its own component, one projection deep"
     );
     assert_eq!(
         observed("last"),
-        ["project-Right", "project-Right", "force"],
-        "and the last entry is right all the way"
+        ["project2", "force"],
+        "and so is the last"
+    );
+    assert_eq!(
+        observed("only"),
+        ["project0", "force"],
+        "the only entry of a lazy record of one is its first component"
     );
     let source =
         "def gone(m : +U &{a : -F Integer, b : -F Integer}) -> -F Integer { become m.z }\n";

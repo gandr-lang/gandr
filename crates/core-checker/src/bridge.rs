@@ -3609,29 +3609,13 @@ enum Frame
         /// The bound computation's image.
         bound: gandr_kernel_term::ComputationId,
     },
-    /// A lazy pairing, awaiting its first component.
-    WithFirst
-    {
-        /// The pairing.
-        at: ComputationId,
-        /// The second component, erased next.
-        second: ComputationId,
-    },
-    /// A lazy pairing, awaiting its second component.
-    WithSecond
-    {
-        /// The pairing.
-        at: ComputationId,
-        /// The first component's image.
-        first: gandr_kernel_term::ComputationId,
-    },
-    /// A projection of a lazy pairing, awaiting the projected computation.
+    /// A projection of a lazy product, awaiting the projected computation.
     Project
     {
         /// The projection.
         at: ComputationId,
-        /// The side it observes.
-        side: gandr_kernel_term::Side,
+        /// The component it observes.
+        component: gandr_kernel_term::Component,
     },
     /// A thunk type, awaiting its computation type.
     ThunkType
@@ -3679,22 +3663,6 @@ enum Frame
         at: CompTypeId,
         /// The domain's image.
         domain: gandr_kernel_term::ValueTypeId,
-    },
-    /// A lazy product, awaiting its first computation type.
-    WithTypeFirst
-    {
-        /// The lazy product.
-        at: CompTypeId,
-        /// The second computation type, erased next.
-        second: CompTypeId,
-    },
-    /// A lazy product, awaiting its second computation type.
-    WithTypeSecond
-    {
-        /// The lazy product.
-        at: CompTypeId,
-        /// The first computation type's image.
-        first: gandr_kernel_term::CompTypeId,
     },
     /// A dependent arrow, awaiting its domain's value type.
     PiDomain
@@ -5437,7 +5405,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - requires: nothing.
     /// - ensures: ordinary computations open one continuation; a native case
     ///   queues its motive and every branch after the scrutinee; a sum case
-    ///   queues every branch after the scrutinee.
+    ///   queues every branch after the scrutinee; a lazy product queues every
+    ///   component after the first, and the empty one assembles at once.
     /// - fails: [`Refusal::Cyclic`] for an open computation or
     ///   [`Refusal::DanglingNode`] for an absent source.
     /// - panics: none.
@@ -5452,12 +5421,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `tests::native_formers::empty_data_elimination_preserves_the_ambient_scope`
     /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
     #[spec(
-        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::Ascribe { .. } => Some(2_usize), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => Some(1_usize) })],
+        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::With(ref components) => Some(components.len()), Computation::Ascribe { .. } => Some(2_usize), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => Some(1_usize) })],
         ensures: |ret| match held {
             | Some(Image::Erased(image)) => ret == Ok(Step::Ascend(AnyNode::Computation(image))) && self.frames.len() == before,
             | Some(Image::Open) => ret == Err(Refusal::Cyclic { node: CoreNode::Term(TermNode::Computation(at)) }) && self.frames.len() == before,
             | None => ret.is_err() || (matches!(ret, Ok(Step::Descend(_))) && self.frames.len().checked_sub(before) == continuations
-                && self.reached().computations.get(&at) == Some(&Image::Open)),
+                && self.reached().computations.get(&at) == Some(&Image::Open))
+                || (continuations == Some(0) && matches!(ret, Ok(Step::Ascend(AnyNode::Computation(_)))) && self.frames.len() == before),
         },
     )]
     fn descend_computation(
@@ -5483,7 +5453,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             Computation::DataCase { .. }
             | Computation::RecordProjection(..)
             | Computation::TupleProjection(..)
-            | Computation::Ascribe { .. } => {
+            | Computation::Ascribe { .. }
+            | Computation::With(_)
+            | Computation::Case { .. } => {
                 return self.prepare_native(target, node);
             },
             Computation::Perform { .. } => return Err(unadmitted(UnadmittedFormer::Perform)),
@@ -5509,13 +5481,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(motive))));
             },
-            Computation::With(first, second) => (
-                Frame::WithFirst { at, second },
-                TermNode::Computation(first),
+            Computation::Project(component, product) => (
+                Frame::Project { at, component },
+                TermNode::Computation(product),
             ),
-            Computation::Project(side, pair) => {
-                (Frame::Project { at, side }, TermNode::Computation(pair))
-            },
             Computation::ListFold { element, .. } => {
                 self.memo().computations.insert(at, Image::Open);
                 self.frames.push(Frame::ListElement { at });
@@ -5584,7 +5553,6 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             Computation::Bind(bound, body) => {
                 (Frame::BindBound { at, body }, TermNode::Computation(bound))
             },
-            Computation::Case { .. } => return self.prepare_native(target, node),
             Computation::Split {
                 scrutinee,
                 motive: SplitMotive::Scrutinee(motive),
@@ -5863,11 +5831,6 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             None => {},
         }
         let (frame, child) = match comp_type_view(self.arena, at)? {
-            CompTypeView::With(first, second) => {
-                self.memo().comp_types.insert(at, Image::Open);
-                self.frames.push(Frame::WithTypeFirst { at, second });
-                return Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(first))));
-            },
             CompTypeView::Returner { result, effects } => {
                 if effects.purity() != gandr_core_term::effect::Purity::Pure {
                     return Err(Refusal::OutOfFragment {
@@ -5881,7 +5844,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 (Frame::ArrowDomain { at, codomain }, domain)
             },
             CompTypeView::Pi { domain, codomain } => (Frame::PiDomain { at, codomain }, domain),
-            CompTypeView::Codata { .. } => {
+            CompTypeView::With(_) | CompTypeView::Codata { .. } => {
                 return self.prepare_native(target, CoreNode::Type(TypeNode::Computation(at)));
             },
             CompTypeView::Element { .. } | CompTypeView::Unknown => {
@@ -6744,15 +6707,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             (Frame::BindBody { at, bound }, AnyNode::Computation(body)) => {
                 Ok(self.erased_computation(at, target.computation_bind(bound, body)))
             },
-            (Frame::WithFirst { at, second }, AnyNode::Computation(first)) => {
-                self.frames.push(Frame::WithSecond { at, first });
-                Ok(Step::Descend(CoreNode::Term(TermNode::Computation(second))))
-            },
-            (Frame::WithSecond { at, first }, AnyNode::Computation(second)) => {
-                Ok(self.erased_computation(at, target.computation_with(first, second)))
-            },
-            (Frame::Project { at, side }, AnyNode::Computation(pair)) => {
-                Ok(self.erased_computation(at, target.computation_project(side, pair)))
+            (Frame::Project { at, component }, AnyNode::Computation(product)) => {
+                Ok(self.erased_computation(at, target.computation_project(component, product)))
             },
             (Frame::ThunkType { at }, AnyNode::CompType(body)) => {
                 Ok(self.erased_value_type(at, target.value_type_thunk(body)))
@@ -6791,13 +6747,6 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             },
             (Frame::ArrowCodomain { at, domain }, AnyNode::CompType(codomain)) => {
                 Ok(self.erased_comp_type(at, target.comp_type_arrow(domain, codomain)))
-            },
-            (Frame::WithTypeFirst { at, second }, AnyNode::CompType(first)) => {
-                self.frames.push(Frame::WithTypeSecond { at, first });
-                Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(second))))
-            },
-            (Frame::WithTypeSecond { at, first }, AnyNode::CompType(second)) => {
-                Ok(self.erased_comp_type(at, target.comp_type_with(first, second)))
             },
             (Frame::PiDomain { at, codomain }, AnyNode::ValueType(domain)) => {
                 self.frames.push(Frame::PiCodomain { at, domain });
@@ -6886,8 +6835,6 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::Fixpoint { .. }
                 | Frame::BindBound { .. }
                 | Frame::BindBody { .. }
-                | Frame::WithFirst { .. }
-                | Frame::WithSecond { .. }
                 | Frame::Project { .. }
                 | Frame::UnmarkedComputation { .. }
                 | Frame::SplitReduct { .. }
@@ -6898,8 +6845,6 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::ThunkType { .. }
                 | Frame::QuoteComputation { .. }
                 | Frame::ArrowCodomain { .. }
-                | Frame::WithTypeFirst { .. }
-                | Frame::WithTypeSecond { .. }
                 | Frame::PiCodomain { .. }
                 | Frame::SigmaSplitMotive { .. }
                 | Frame::TelescopeMotive { .. }

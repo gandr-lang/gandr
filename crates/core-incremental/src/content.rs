@@ -87,7 +87,7 @@
 //! signature content refuses term-bearing path
 //! classifiers just as it refuses quotes and decodes.
 //!
-//! Checkpoint sets use `GCKPT\0\0\x0c`; programs use `GPROG\0\0\x08`. Their
+//! Checkpoint sets use `GCKPT\0\0\x0d`; programs use `GPROG\0\0\x09`. Their
 //! identities bind the checker, native declaration categories, effect and
 //! control content, support queries and refusal vocabulary. Identities of
 //! another version are rejected rather than reusing answers from a different
@@ -279,7 +279,6 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Literal;
-use gandr_kernel_term::Side;
 use gandr_kernel_term::Summand;
 use quenchant_shape::shape::Maybe;
 
@@ -460,8 +459,8 @@ pub enum ContentNode
         /// Computation produced after all frames.
         output: NodeIndex,
     },
-    /// A lazy pair classifier.
-    WithType(NodeIndex, NodeIndex),
+    /// A lazy product classifier over its components, in order.
+    WithType(Vec<NodeIndex>),
     /// An operation request with its inline interface.
     Perform
     {
@@ -544,8 +543,8 @@ pub enum ContentNode
     Reset(NodeIndex),
     /// Capture a stack, bound in the body.
     Shift(NodeIndex),
-    /// Two suspended computations.
-    With(NodeIndex, NodeIndex),
+    /// Suspended computations, in order.
+    With(Vec<NodeIndex>),
     /// A computation ascribed a computation type.
     Ascribe
     {
@@ -554,8 +553,8 @@ pub enum ContentNode
         /// The type it is checked against.
         ty: NodeIndex,
     },
-    /// Select a lazy-pair component.
-    Project(Side, NodeIndex),
+    /// Select a lazy-product component.
+    Project(gandr_core_term::Component, NodeIndex),
     /// A closed table-typed native thunk.
     PrimitiveValue(gandr_core_term::primitive::Primitive),
     /// A saturated runtime-native operation.
@@ -1439,7 +1438,7 @@ impl ContentNode
                 gandr_core_term::control::StackFrame::Project(_) => None,
             })),
             | Self::Stack { input, output } => actual == Some(&[(input, C), (output, C)][..]),
-            | Self::WithType(first, second) => actual == Some(&[(first, C), (second, C)][..]),
+            | Self::WithType(ref components) => ret.iter().eq(components.iter().map(|&component| (component, C))),
             | Self::Perform { payload, ref signature, .. } => ret.iter().eq(core::iter::once((payload, V)).chain(signature.types().map(|ty| (ty, A)))),
             | Self::Handle { subject, on_return, ref signature, ref clauses } | Self::Scope { subject, on_return, ref signature, ref clauses } => ret.iter().eq([(subject, M), (on_return, M)].into_iter().chain(signature.types().map(|ty| (ty, A))).chain(clauses.iter().map(|clause| (clause.body, M)))),
             | Self::Exercise { capability, payload, ref signature, .. } => ret.iter().eq([(capability, V), (payload, V)].into_iter().chain(signature.types().map(|ty| (ty, A)))),
@@ -1447,7 +1446,7 @@ impl ContentNode
             | Self::Resume(stack, body) | Self::Split(stack, _, body) => actual == Some(&[(stack, V), (body, M)][..]),
             | Self::DependentSplit { scrutinee, motive, body, .. } => actual == Some(&[(scrutinee, V), (motive, C), (body, M)][..]),
             | Self::Reset(body) | Self::Shift(body) | Self::Project(_, body) => actual == Some(&[(body, M)][..]),
-            | Self::With(first, second) => actual == Some(&[(first, M), (second, M)][..]),
+            | Self::With(ref components) => ret.iter().eq(components.iter().map(|&component| (component, M))),
             | Self::Ascribe { body, ty } => actual == Some(&[(body, M), (ty, C)][..]),
             | Self::Primitive(_, arguments) => actual.is_some_and(|children| children.iter().copied().eq(arguments.iter().copied().map(|argument| (argument, V)))),
             | Self::Session(ref action) => ret.iter().eq(action.value_types().map(|ty| (ty, A)).chain(action.values().map(|value| (value, V))).chain(action.computations().map(|body| (body, M)))),
@@ -1560,7 +1559,7 @@ impl ContentNode
                 ..Children::default()
             },
             Self::Stack { input, output } => Children::of(&[(input, C), (output, C)]),
-            Self::WithType(first, second) => Children::of(&[(first, C), (second, C)]),
+            Self::WithType(ref components) => Children::default().followed_by(components, C),
             Self::Perform {
                 payload,
                 ref signature,
@@ -1617,7 +1616,7 @@ impl ContentNode
                 .binding(ChildSlot(1), one)
                 .binding(ChildSlot(2), split(arity)),
             Self::Shift(body) => Children::of(&[(body, M)]).binding(ChildSlot(0), one),
-            Self::With(first, second) => Children::of(&[(first, M), (second, M)]),
+            Self::With(ref components) => Children::default().followed_by(components, M),
             Self::Ascribe { body, ty } => Children::of(&[(body, M), (ty, C)]),
             Self::Session(ref action) => match *action {
                 SessionAction::Send { payload, .. } => Children::of(&[(payload, V)]),
@@ -4049,9 +4048,11 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             Computation::Shift(body) => {
                 ContentNode::Shift(self.discover(ArenaNode::Computation(body)))
             },
-            Computation::With(first, second) => ContentNode::With(
-                self.discover(ArenaNode::Computation(first)),
-                self.discover(ArenaNode::Computation(second)),
+            Computation::With(ref components) => ContentNode::With(
+                components
+                    .iter()
+                    .map(|&component| self.discover(ArenaNode::Computation(component)))
+                    .collect(),
             ),
             Computation::Ascribe { body, ty } => {
                 let body = self.discover(ArenaNode::Computation(body));
@@ -4060,8 +4061,8 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     ty: self.discover(ArenaNode::CompType(ty)),
                 }
             },
-            Computation::Project(side, body) => {
-                ContentNode::Project(side, self.discover(ArenaNode::Computation(body)))
+            Computation::Project(component, body) => {
+                ContentNode::Project(component, self.discover(ArenaNode::Computation(body)))
             },
 
             Computation::ListFold {
@@ -4335,9 +4336,11 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ) -> ContentNode
     {
         match *comp_type {
-            CompType::With(first, second) => ContentNode::WithType(
-                self.discover(ArenaNode::CompType(first)),
-                self.discover(ArenaNode::CompType(second)),
+            CompType::With(ref components) => ContentNode::WithType(
+                components
+                    .iter()
+                    .map(|&component| self.discover(ArenaNode::CompType(component)))
+                    .collect(),
             ),
             CompType::Returner {
                 result,
@@ -4480,7 +4483,12 @@ where
             input: image(input),
             output: image(output),
         },
-        ContentNode::WithType(first, second) => ContentNode::WithType(image(first), image(second)),
+        ContentNode::WithType(ref components) => ContentNode::WithType(
+            components
+                .iter()
+                .map(|&component| image(component))
+                .collect(),
+        ),
         ContentNode::Session(ref action) => ContentNode::Session(
             action
                 .try_map(
@@ -4605,12 +4613,17 @@ where
         },
         ContentNode::Reset(body) => ContentNode::Reset(image(body)),
         ContentNode::Shift(body) => ContentNode::Shift(image(body)),
-        ContentNode::With(first, second) => ContentNode::With(image(first), image(second)),
+        ContentNode::With(ref components) => ContentNode::With(
+            components
+                .iter()
+                .map(|&component| image(component))
+                .collect(),
+        ),
         ContentNode::Ascribe { body, ty } => ContentNode::Ascribe {
             body: image(body),
             ty: image(ty),
         },
-        ContentNode::Project(side, body) => ContentNode::Project(side, image(body)),
+        ContentNode::Project(component, body) => ContentNode::Project(component, image(body)),
         ContentNode::PrimitiveValue(primitive) => ContentNode::PrimitiveValue(primitive),
         ContentNode::Primitive(primitive, mut arguments) => {
             for argument in arguments.iter_mut() {
@@ -5235,14 +5248,16 @@ fn mint_node(
             },
             _ => ill_sorted,
         },
-        ContentNode::WithType(first, second) => match (
-            minted_comp_type(states, first),
-            minted_comp_type(states, second),
-        ) {
-            (Maybe::Present(first), Maybe::Present(second)) => {
-                Maybe::Present(Minted::CompType(arena.comp_type_with(first, second)))
-            },
-            _ => ill_sorted,
+        ContentNode::WithType(ref components) => {
+            let mut minted = Vec::with_capacity(components.len());
+            for &component in components {
+                let Maybe::Present(component) = minted_comp_type(states, component)
+                else {
+                    return ill_sorted;
+                };
+                minted.push(component);
+            }
+            Maybe::Present(Minted::CompType(arena.comp_type_with(&minted)))
         },
         ContentNode::Base(base) => Maybe::Present(Minted::ValueType(arena.value_type_base(base))),
         ContentNode::Universe { sort, ref level } => Maybe::Present(Minted::ValueType(

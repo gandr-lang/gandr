@@ -1046,11 +1046,11 @@ fn n_ary_tuples_and_injections_spell_between_their_braces()
 /// The sugared form writes the value-function alias for a thunked chain
 /// of non-dependent arrows ending in a pure returner, at no, one and more
 /// domains, and the thunk over any other computation type; the infix
-/// product and sum at two components or more, every operand tighter than
-/// the chain, so an inner chain keeps its parentheses; the lazy product
-/// nested to the right; and the tuple at two components or more. A
-/// one-component product, sum and tuple keep their braces, and the
-/// explicit form writes every one as the core holds it.
+/// product, sum and lazy product at two components or more, every operand
+/// tighter than the chain, so an inner chain keeps its parentheses; and the
+/// tuple at two components or more. A product, sum, lazy product and tuple
+/// of fewer components keep their braces, and the explicit form writes every
+/// one as the core holds it.
 #[test]
 fn the_sugared_form_writes_every_sugar_its_shape_admits()
 {
@@ -1088,9 +1088,12 @@ fn the_sugared_form_writes_every_sugar_its_shape_admits()
     let pair_of_sum = core.value_type_product(&[either, unit]);
     let nested_sum = core.value_type_sum(&[either, unit]);
     let boolean = core.value_type_sum(&[unit, unit]);
-    let lazy = core.comp_type_with(returns_integer, returns_string);
-    let right = core.comp_type_with(returns_integer, lazy);
-    let left = core.comp_type_with(lazy, returns_unit);
+    let lazy = core.comp_type_with(&[returns_integer, returns_string]);
+    let right = core.comp_type_with(&[returns_integer, lazy]);
+    let left = core.comp_type_with(&[lazy, returns_unit]);
+    let lazy_triple = core.comp_type_with(&[returns_integer, returns_string, returns_unit]);
+    let lazy_single = core.comp_type_with(&[returns_integer]);
+    let lazy_empty = core.comp_type_with(&[]);
     let paired_domain = core.comp_type_arrow(pair, returns_unit);
     let returns_pair = core.comp_type_returner(pair);
     let returns_either = core.comp_type_returner(either);
@@ -1162,7 +1165,7 @@ fn the_sugared_form_writes_every_sugar_its_shape_admits()
         (lazy, "-F Integer & -F String", "&{-F Integer, -F String}"),
         (
             right,
-            "-F Integer & -F Integer & -F String",
+            "-F Integer & (-F Integer & -F String)",
             "&{-F Integer, &{-F Integer, -F String}}",
         ),
         (
@@ -1170,6 +1173,13 @@ fn the_sugared_form_writes_every_sugar_its_shape_admits()
             "(-F Integer & -F String) & -F Unit",
             "&{&{-F Integer, -F String}, -F Unit}",
         ),
+        (
+            lazy_triple,
+            "-F Integer & -F String & -F Unit",
+            "&{-F Integer, -F String, -F Unit}",
+        ),
+        (lazy_single, "&{-F Integer}", "&{-F Integer}"),
+        (lazy_empty, "&{}", "&{}"),
         (
             paired_domain,
             "Integer * String -> -F Unit",
@@ -1338,7 +1348,7 @@ fn records_spell_their_fields_in_label_order()
 
 /// Every value-type and computation-type former of the core spells as the
 /// grammar parses it: the two bridges with their operand parenthesized
-/// unless atomic, a product, a sum or a lazy pair between its braces with
+/// unless atomic, a product, a sum or a lazy product between its braces with
 /// any former bare among its entries, the arrow's domain bare up to a
 /// bridge, a decode as the code it reads, an abstract type by its name, a
 /// family bare when nullary and applied to its arguments otherwise, and a
@@ -1392,8 +1402,8 @@ fn every_type_former_spells_as_the_grammar_writes_it()
     let returns_named = core.comp_type_returner(named);
     let quoted_returner = core.value_quote_computation(returns_integer);
     let decoded_returner = core.comp_type_element(quoted_returner, Level::zero());
-    let lazy = core.comp_type_with(returns_integer, returns_unit);
-    let lazy_chain = core.comp_type_with(function, lazy);
+    let lazy = core.comp_type_with(&[returns_integer, returns_unit]);
+    let lazy_chain = core.comp_type_with(&[function, lazy]);
     let suspended_lazy = core.value_type_thunk(lazy);
     let tree = core.value_type_data(ConstantIndex::from(3_usize), Vec::new());
     let integer_code = core.value_quote(integer);
@@ -2988,11 +2998,14 @@ fn an_elaborated_body_prints_with_its_exits_elided()
     let motive = core.value_type_run(motive_point);
     let ride = core.computation_ride(motive, bound, bound);
     let riding = core.computation_lambda(ride);
-    // A lazy pair is the positional copattern block the lowering reads
-    // back as that pair, nested to the right (#630).
+    // A lazy product is the positional copattern block the lowering reads
+    // back as that product, one clause per component.
     let pure_two = core.computation_return(two);
-    let paired = core.computation_with(pure_one, pure_two);
-    let chained = core.computation_with(pure_one, paired);
+    let paired = core.computation_with(&[pure_one, pure_two]);
+    let chained = core.computation_with(&[pure_one, paired]);
+    let tripled = core.computation_with(&[pure_one, pure_two, pure_one]);
+    let single = core.computation_with(&[pure_one]);
+    let empty = core.computation_with(&[]);
     let names = [Name::from("kept"), Name::from("Nat")];
     let mut constructors = Constructors::default();
     constructors.family(Name::from("Nat"), [
@@ -3044,6 +3057,13 @@ fn an_elaborated_body_prints_with_its_exits_elided()
             "&{.0 => pure 1, .1 => &{.0 => pure 1, .1 => pure 2}}",
             Fidelity::Faithful,
         ),
+        (
+            body(tripled),
+            "&{.0 => pure 1, .1 => pure 2, .2 => pure 1}",
+            Fidelity::Faithful,
+        ),
+        (body(single), "&{.0 => pure 1}", Fidelity::Faithful),
+        (body(empty), "&{}", Fidelity::Faithful),
     ] {
         assert_eq!(
             spelled(&source, root),
@@ -3085,6 +3105,9 @@ fn an_elaborated_body_prints_with_its_exits_elided()
         riding,
         paired,
         chained,
+        tripled,
+        single,
+        empty,
         sequenced,
     ] {
         let root = CoreNode::Computation(id);

@@ -1,6 +1,6 @@
 //! Native nominal and structural formers at the kernel boundary: data, codata,
-//! records, and the n-ary tuples, cases, products and sums, whose children
-//! cross in order before the former is assembled.
+//! records, and the n-ary tuples, cases, products, sums and lazy products,
+//! whose children cross in order before the former is assembled.
 
 use anodized::spec;
 use gandr_core_term::ValueType;
@@ -141,6 +141,9 @@ impl Erasure<'_, '_>
                             .extend(branches.iter().rev().copied().map(computation));
                         self.frames.push(value(*scrutinee));
                     },
+                    Computation::With(ref components) => self
+                        .frames
+                        .extend(components.iter().rev().copied().map(computation)),
                     // The body crosses first, then the type it is ascribed.
                     Computation::Ascribe { body, ty } => {
                         self.frames
@@ -170,7 +173,6 @@ impl Erasure<'_, '_>
                     | Computation::Resume(..)
                     | Computation::Reset(_)
                     | Computation::Shift(_)
-                    | Computation::With(..)
                     | Computation::Project(..)
                     | Computation::Session(_)
                     | Computation::Memory(_)
@@ -216,10 +218,14 @@ impl Erasure<'_, '_>
                     gandr_core_term::CompType::Codata { ref arguments, .. } => self
                         .frames
                         .extend(arguments.iter().rev().copied().map(value)),
+                    gandr_core_term::CompType::With(ref components) => {
+                        self.frames.extend(components.iter().rev().map(|&at| {
+                            Frame::NativeNext(CoreNode::Type(TypeNode::Computation(at)))
+                        }));
+                    },
                     gandr_core_term::CompType::Returner { .. }
                     | gandr_core_term::CompType::Arrow { .. }
                     | gandr_core_term::CompType::Pi { .. }
-                    | gandr_core_term::CompType::With(..)
                     | gandr_core_term::CompType::Element { .. }
                     | gandr_core_term::CompType::Unknown => return Err(Refusal::MachineInvariant),
                 }
@@ -381,6 +387,14 @@ impl Erasure<'_, '_>
                         )?;
                         target.computation_case(scrutinee, &branches)
                     },
+                    Computation::With(ref components) => {
+                        let components = components
+                            .iter()
+                            .copied()
+                            .map(computation)
+                            .collect::<Result<alloc::vec::Vec<_>, _>>()?;
+                        target.computation_with(&components)
+                    },
                     Computation::Ascribe { body, ty } => {
                         ascription(target, computation(body)?, comp_type(ty)?)
                     },
@@ -407,7 +421,6 @@ impl Erasure<'_, '_>
                     | Computation::Resume(..)
                     | Computation::Reset(_)
                     | Computation::Shift(_)
-                    | Computation::With(..)
                     | Computation::Project(..)
                     | Computation::Session(_)
                     | Computation::Memory(_)
@@ -517,10 +530,17 @@ impl Erasure<'_, '_>
                             .collect::<Result<_, _>>()?;
                         target.comp_type_codata(position, arguments)
                     },
+                    gandr_core_term::CompType::With(ref components) => {
+                        let components = components
+                            .iter()
+                            .copied()
+                            .map(comp_type)
+                            .collect::<Result<alloc::vec::Vec<_>, _>>()?;
+                        target.comp_type_with(&components)
+                    },
                     gandr_core_term::CompType::Returner { .. }
                     | gandr_core_term::CompType::Arrow { .. }
                     | gandr_core_term::CompType::Pi { .. }
-                    | gandr_core_term::CompType::With(..)
                     | gandr_core_term::CompType::Element { .. }
                     | gandr_core_term::CompType::Unknown => return Err(Refusal::MachineInvariant),
                 };

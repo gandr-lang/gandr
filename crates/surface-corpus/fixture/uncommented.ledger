@@ -318,8 +318,6 @@ pathological/sessions/session-identity-unadmitted.gandr:retired:d239b2061f6a56bd
 pathological/sessions/session-identity-unadmitted.gandr:served:994988b35b888712
 pathological/sessions/session-identity-unadmitted.gandr:served:f08a4306c847e131
 pathological/type-associativity.gandr:<file>
-pathological/type-associativity.gandr:lazy_chain:c40ab044b604ce27
-pathological/type-associativity.gandr:lazy_chain:dd3b263a654e8b64
 pathological/type-associativity.gandr:product_chain:0bd351acd8a29cab
 pathological/type-associativity.gandr:product_chain:f40a038ba9ecb578
 pathological/type-associativity.gandr:sum_chain:8e17dd22ba4bc706
@@ -683,8 +681,6 @@ surface/arity/lazy-record.gandr:lazy:d2eb54039267d7a6
 surface/arity/lazy-record.gandr:menu:b4dbf77e9826c44c
 surface/arity/lazy-record.gandr:observe:233d80efb7685ee8
 surface/arity/lazy-record.gandr:offered:f6a9748554b9a5e5
-surface/arity/lazy-record.gandr:single:33976df208d4ddb5
-surface/arity/lazy-record.gandr:terminal:aea941962c91a914
 surface/arity/lazy-record.gandr:unthunked:36058709caf283e0
 surface/arity/product.gandr:<file>
 surface/arity/product.gandr:bumped:ccecb32d2ec65450

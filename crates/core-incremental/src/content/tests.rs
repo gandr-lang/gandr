@@ -155,7 +155,7 @@ fn control_graphs_preserve_scopes_and_signature_edges()
     use gandr_core_term::effect::EffectOp;
     use gandr_core_term::effect::EffectRow;
     use gandr_core_term::effect::EffectSig;
-    use gandr_kernel_term::Side;
+    use gandr_kernel_term::Component;
     let build = |noise: usize, reply, bound: u32, operation: &str| {
         let mut arena = CoreArena::new();
         for _ in 0 .. noise {
@@ -175,15 +175,15 @@ fn control_graphs_preserve_scopes_and_signature_edges()
         let input = arena
             .comp_type_returner_with_effects(unit_type, EffectRow::singleton(signature.clone()));
         let output = arena.comp_type_returner(reply_type);
-        let output = arena.comp_type_with(input, output);
+        let output = arena.comp_type_with(&[input, output]);
         let ty = arena.value_type_stack(input, output);
         let returned = arena.computation_return(variable);
         let performed = arena.computation_perform(signature.clone(), operation.into(), unit);
         let resumed = arena.computation_resume(variable, performed);
         let shifted = arena.computation_shift(resumed);
         let reset = arena.computation_reset(shifted);
-        let pair = arena.computation_with(reset, returned);
-        let projected = arena.computation_project(Side::Right, pair);
+        let pair = arena.computation_with(&[reset, returned]);
+        let projected = arena.computation_project(Component::from(1_usize), pair);
         let handled = arena.computation_handle(
             signature,
             projected,
@@ -196,7 +196,7 @@ fn control_graphs_preserve_scopes_and_signature_edges()
         let literal = arena.value_reify(alloc::sync::Arc::from([
             StackFrame::Apply(unit),
             StackFrame::Bind(handled),
-            StackFrame::Project(Side::Left),
+            StackFrame::Project(Component::from(0_usize)),
         ]));
         (
             single(arena, Maybe::Present(ty), Maybe::Present(literal)),
@@ -556,7 +556,7 @@ fn renumbering_carries_every_frame_and_clause_body_to_its_image()
     use gandr_core_term::effect::EffectOp;
     use gandr_core_term::effect::EffectSig;
     use gandr_core_term::effect::OperationName;
-    use gandr_kernel_term::Side;
+    use gandr_kernel_term::Component;
 
     let index = NodeIndex::from;
     let mut shifted = |child: NodeIndex| NodeIndex::from(usize::from(child).saturating_add(10));
@@ -564,7 +564,7 @@ fn renumbering_carries_every_frame_and_clause_body_to_its_image()
         ContentNode::Reify(Arc::from([
             StackFrame::Apply(index(apply)),
             StackFrame::Bind(index(bind)),
-            StackFrame::Project(Side::Left),
+            StackFrame::Project(Component::from(0_usize)),
         ]))
     };
     assert_eq!(

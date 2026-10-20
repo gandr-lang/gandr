@@ -283,7 +283,8 @@ fn kind(
 /// kind: inside an attribute or documentation, inside a declaration the
 /// lowering refused, as the head of a former's call, as a count of the
 /// stratum a head's annotation writes, as the module a path qualifies, as
-/// a run literal's move, as an inner link of a product or a sum chain, as
+/// a run literal's move, as an inner link of a product, a sum or a lazy
+/// product chain, as
 /// the value a discarded bind drops, or as an arrow of a data family's kind.
 ///
 /// # Specification
@@ -310,10 +311,11 @@ enum Placed
     /// A move of a run literal, its head, or the label it names: read by
     /// its shape, never resolved, so the run answers.
     Move,
-    /// An unparenthesised product inside another, `B * C` in `A * B * C`,
-    /// or a sum inside another, `B + C` in `A + B + C`: the chain is one
-    /// product or one sum of every operand, however it associates, and
-    /// the outermost link answers.
+    /// An unparenthesised product inside another, `B * C` in `A * B * C`, a
+    /// sum inside another, `B + C` in `A + B + C`, or a lazy product inside
+    /// another, `D & E` in `C & D & E`: the chain is one product, one sum or
+    /// one lazy product of every operand, however it associates, and the
+    /// outermost link answers.
     Chained,
     /// The value a `run _ <- c` discards, where `c` gives it with `pure`:
     /// `r` in `run _ <- case p { Succ(r) => pure r, … }`. The lowering
@@ -484,7 +486,7 @@ fn gated(
             Run::Labelled => !melded && def.label == "identifier",
         };
         let chained = melded
-            && (def.label == "*" || def.label == "+")
+            && (def.label == "*" || def.label == "+" || def.label == "&")
             && def.sort == Sort::Type
             && parent.is_some_and(|(held, ..)| held == mold);
         let dropped = discarding

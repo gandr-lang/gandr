@@ -49,6 +49,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
 use gandr_core_term::memory::MemoryForm;
+use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::IntegerLiteral;
@@ -630,10 +631,10 @@ fn handler_resumption_under_projection_uses_the_ambient_continuation_once()
     let continuation = core.value_variable(Zone::Intuitionistic, 0_u32.into());
     let signature = effect(&mut core, "E".into(), "op".into());
     let performed = core.computation_perform(signature.clone(), "op".into(), five);
-    let on_return = core.computation_with(five_ret, seven_ret);
+    let on_return = core.computation_with(&[five_ret, seven_ret]);
     let clause = core.computation_resume(continuation, five_ret);
     let handled = handler(&mut core, signature, performed, on_return, clause);
-    let projected = core.computation_project(Side::Right, handled);
+    let projected = core.computation_project(Component::from(1_usize), handled);
     assert_control(&mut core, projected, ControlExpectation::Value(seven));
 }
 
@@ -1162,11 +1163,11 @@ fn literal_stacks_close_flat_frame_scopes_and_resume_in_order()
     let pair_return = core.computation_return(pair);
     let lambda = core.computation_lambda(pair_return);
     let ignored = core.computation_return(seven);
-    let bind_body = core.computation_with(ignored, lambda);
+    let bind_body = core.computation_with(&[ignored, lambda]);
     let frames = [
         StackFrame::Apply(seven),
         StackFrame::Bind(bind_body),
-        StackFrame::Project(Side::Right),
+        StackFrame::Project(Component::from(1_usize)),
         StackFrame::Apply(zero),
     ];
     let stack = core.value_reify(alloc::sync::Arc::from(frames));
@@ -1176,7 +1177,7 @@ fn literal_stacks_close_flat_frame_scopes_and_resume_in_order()
     let expected_stack = core.value_reify(alloc::sync::Arc::from([
         StackFrame::Apply(seven),
         StackFrame::Bind(bind_body),
-        StackFrame::Project(Side::Right),
+        StackFrame::Project(Component::from(1_usize)),
         StackFrame::Apply(eleven),
     ]));
     assert_control(&mut core, closed, ControlExpectation::Value(expected_stack));

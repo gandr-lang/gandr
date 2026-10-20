@@ -25,7 +25,7 @@ use gandr_core_sequent::HeapValueId;
 use gandr_core_sequent::Outcome;
 use gandr_core_sequent::Store;
 use gandr_core_sequent::Stuck;
-use gandr_kernel_term::Side;
+use gandr_kernel_term::Component;
 use gandr_runtime_stencils::Fuel;
 use gandr_runtime_stencils::Observed;
 use gandr_runtime_stencils::Runtime;
@@ -854,8 +854,9 @@ fn run(
                     let head = match Observed::try_from(runtime.observed()) {
                         Ok(Observed::Apply) => DestructorTag::Apply,
                         Ok(Observed::Force) => DestructorTag::Force,
-                        Ok(Observed::ProjectLeft) => DestructorTag::Project(Side::Left),
-                        Ok(Observed::ProjectRight) => DestructorTag::Project(Side::Right),
+                        Ok(Observed::Project(component)) => {
+                            DestructorTag::Project(Component::from(usize::from(component)))
+                        },
                         Err(_unnamed) => return Err(Declined::Stuck),
                     };
                     Stuck::Unobservable {

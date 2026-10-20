@@ -5,11 +5,11 @@
 //! each scoped under the parameters. Its application `Codata(d, ā)` is a
 //! computation type. It converts nominally — one declaration at convertible
 //! arguments — and is read through its observations only where a rule needs
-//! its shape: a lambda, a return or a lazy pair checked against it, and an
-//! application, a projection or a bind of a computation that synthesizes it.
-//! [`read`] instantiates every observation at `ā` and joins them
-//! right-nested with `With`, a single observation standing as itself. There is
-//! no η: a codata type never converts with its observation product.
+//! its shape: a computation checked against it, and a computation that
+//! synthesizes it where a rule eliminates it, a projection above all.
+//! [`read`] instantiates every observation at `ā` and forms their lazy
+//! product, a single observation a lazy product of one. There is no η: a
+//! codata type never converts with its observation product.
 //!
 //! While its observations form, the declaration names itself only at an
 //! observation's result — the end of the observation's arrow spine — and only
@@ -491,10 +491,10 @@ fn carried(
 ///
 /// # Specification
 /// - requires: `shape` is formed.
-/// - ensures: for a codata application, every observation of its declaration
-///   instantiated at the arguments, joined right-nested with `With` in
-///   declaration order — one observation standing as itself — at its weak head;
-///   any other type at its weak head.
+/// - ensures: for a codata application, the lazy product of every observation
+///   of its declaration instantiated at the arguments, in declaration order —
+///   one observation a product of one — at its weak head; any other type at its
+///   weak head.
 /// - provides: the one place a rule reads a codata type's shape.
 /// - fails: as [`signature`] and [`argument`]; the unfolding's refusal.
 /// - panics: none.
@@ -504,9 +504,10 @@ fn carried(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a stream of units reads as `F Unit & Stream Unit`, a
-///   one-observation codata as that observation, and a returner unchanged.
+///   one-observation codata as the lazy product of that observation, and a
+///   returner unchanged.
 /// - witness: `tests::codata::a_stream_is_admitted_observed_and_adopted`
-/// - witness: `tests::codata::a_single_observation_reads_as_itself`
+/// - witness: `tests::codata::a_single_observation_reads_as_a_lazy_product_of_one`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| context.arena().comp_type(*read).is_some()))]
 #[inline]
 pub fn read(
@@ -523,36 +524,19 @@ pub fn read(
     }
     let signature = signature(context, head)?;
     let count = signature.parameters().len();
-    // The observations are read last to first, so each one joins the product
-    // of those after it.
-    let mut read = Maybe::Absent(reading::Absent::Unread);
-    for &observation in signature.observations().iter().rev() {
+    let mut observations = alloc::vec::Vec::with_capacity(signature.observations().len());
+    for &observation in signature.observations() {
         let mut instantiated = observation;
         for index in (0 .. count).rev() {
             let carried = carried(context, head, ParameterAt(index))?;
             instantiated =
                 gandr_core_term::instantiate_comp_type(context.arena_mut(), instantiated, carried);
         }
-        read = Maybe::Present(match read {
-            Maybe::Present(rest) => context.arena_mut().comp_type_with(instantiated, rest),
-            Maybe::Absent(_) => instantiated,
-        });
+        observations.push(instantiated);
     }
-    let Maybe::Present(read) = read
-    else {
+    if observations.is_empty() {
         return Err(refused(head, CodataFault::WithoutObservations));
-    };
-    context.whnf_comp_type(read)
-}
-
-quenchant_shape::reason_enum! {
-    /// Why a codata application has no reading yet.
-    mod reading {
-        /// The reason it has none.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// No observation has been read.
-            Unread,
-        }
     }
+    let read = context.arena_mut().comp_type_with(&observations);
+    context.whnf_comp_type(read)
 }

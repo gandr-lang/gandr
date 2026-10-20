@@ -47,7 +47,7 @@
 //! advanced to the arm's branch, and requires every arm to leave the zone as
 //! the first arm did: the same slots consumed, and every slot still available
 //! at an equivalent session type. Every other branching former — a case, a
-//! lazy pair, a fold, a handler — refuses an endpoint its branches name, as
+//! lazy product, a fold, a handler — refuses an endpoint its branches name, as
 //! do a thunk and a fixpoint, whose bodies run any number of times, and a
 //! first-class stack. **Reversal.** Checking a case's branches as an offer's
 //! arms needs only the offer's frame at each branching rule.
@@ -164,7 +164,7 @@ pub enum Capture
     Thunk,
     /// A fixpoint's body, run once per call.
     Recursion,
-    /// A branch of a case, a lazy pair, or a fold.
+    /// A branch of a case, a lazy product, or a fold.
     Branch,
     /// A first-class stack.
     Stack,

@@ -1556,7 +1556,6 @@ fn build(
     use gandr_kernel_term::LayerPosition;
     use gandr_kernel_term::PathEvidence;
     use gandr_kernel_term::Seam;
-    use gandr_kernel_term::Side;
     use gandr_kernel_term::Stage;
     use gandr_kernel_term::StageId;
     use gandr_kernel_term::Summand;
@@ -1794,12 +1793,12 @@ fn build(
             )
         },
         Former::With => {
-            let (left, right) = (c.computation(arena), c.computation(arena));
-            AnyNode::Computation(arena.computation_with(left, right))
+            let components = [c.computation(arena), c.computation(arena)];
+            AnyNode::Computation(arena.computation_with(&components))
         },
         Former::Project => {
             let pair = c.computation(arena);
-            AnyNode::Computation(arena.computation_project(Side::Left, pair))
+            AnyNode::Computation(arena.computation_project(Component::from(0_usize), pair))
         },
         Former::Fixpoint => {
             let body = c.computation(arena);
@@ -1897,8 +1896,8 @@ fn build(
             AnyNode::CompType(arena.comp_type_element(code, Level::zero()))
         },
         Former::WithType => {
-            let (left, right) = (c.comp_type(arena), c.comp_type(arena));
-            AnyNode::CompType(arena.comp_type_with(left, right))
+            let components = [c.comp_type(arena), c.comp_type(arena)];
+            AnyNode::CompType(arena.comp_type_with(&components))
         },
     }
 }

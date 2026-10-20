@@ -997,7 +997,11 @@ fn a_former_compares_its_children_only_where_its_shape_agrees()
     let by_component = |arena: &mut TermArena, component: usize| {
         arena.computation_tuple_projection(unit, Component::from(component))
     };
-    let project = |arena: &mut TermArena, side: Side| arena.computation_project(side, returned);
+    let project = |arena: &mut TermArena, component: usize| {
+        arena.computation_project(Component::from(component), returned)
+    };
+    let with =
+        |arena: &mut TermArena, count: usize| arena.computation_with(&alloc::vec![returned; count]);
     let computations = [
         (
             data_case(&mut arena, 1),
@@ -1020,9 +1024,14 @@ fn a_former_compares_its_children_only_where_its_shape_agrees()
             "projected components",
         ),
         (
-            project(&mut arena, Side::Left),
-            project(&mut arena, Side::Right),
-            "projected sides",
+            project(&mut arena, 0),
+            project(&mut arena, 2),
+            "projected components of a lazy product",
+        ),
+        (
+            with(&mut arena, 1),
+            with(&mut arena, 2),
+            "lazy product lengths",
         ),
     ];
     for (left, right, what) in computations {

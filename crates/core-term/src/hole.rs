@@ -381,16 +381,18 @@ pub fn matched_thunk(
     }
 }
 
-/// The components a product or a sum matched: the former's own, in order, or,
-/// for the unknown type, one unknown type every component stands at, however
-/// many the introduction or the elimination has.
+/// The components a product, a sum or a lazy product matched.
+///
+/// A known former gives its own, in order. The unknown type gives one unknown
+/// type every component stands at, however many the introduction or the
+/// elimination has.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Components
+pub enum Components<T = ValueTypeId>
 {
     /// A known former's components, in order.
-    Known(alloc::boxed::Box<[ValueTypeId]>),
+    Known(alloc::boxed::Box<[T]>),
     /// The unknown type: every component is this freshly minted unknown type.
-    Unknown(ValueTypeId),
+    Unknown(T),
 }
 
 /// Match a value type against the eager product: `A ▸ A₁ × … × Aₙ`.
@@ -669,37 +671,41 @@ pub fn matched_stack(
     }
 }
 
-/// Match a computation type against the lazy pair: `C ▸ C₁ & C₂`.
+/// Match a computation type against the lazy product: `C ▸ C₁ & … & Cₙ`.
 ///
 /// # Specification
 /// - requires: `subject` is read at its weak head.
-/// - ensures: both components of a lazy pair, left first; two freshly minted
-///   unknown computation types when `subject` is unknown.
-/// - provides: what a projection selects.
+/// - ensures: the components of a lazy product of any arity, in order, the
+///   empty one the terminal type's; one freshly minted unknown computation type
+///   when `subject` is unknown.
+/// - provides: what a lazy tuple checks its components against and what a
+///   projection selects.
 /// - fails: [`matching::Absent::Mismatched`] for another known former,
 ///   [`matching::Absent::Dangling`] for an id naming no node.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`matched_thunk`], over the lazy pair.
+/// - hypothesis: L3 — as [`matched_product`], over the lazy product.
 /// - witness: `hole::tests::the_unknown_type_matches_every_former_with_unknown_components`
 /// - witness: `hole::tests::a_known_type_matches_only_its_own_former`
 #[spec(ensures: |ret| match ret {
-    | Maybe::Present((first, second)) => arena.comp_type(first).is_some() && arena.comp_type(second).is_some(),
+    | Maybe::Present(Components::Known(ref parts)) => matches!(arena.comp_type(subject), Some(&CompType::With(ref held)) if held == parts),
+    | Maybe::Present(Components::Unknown(unknown)) => arena.comp_type(unknown) == Some(&CompType::Unknown),
     | Maybe::Absent(_) => true,
 })]
 #[inline]
 pub fn matched_with(
     arena: &mut CoreArena,
     subject: CompTypeId,
-) -> Maybe<(CompTypeId, CompTypeId), matching::Absent>
+) -> Maybe<Components<CompTypeId>, matching::Absent>
 {
     if comp_type_knowledge(arena, subject) == Knowledge::Unknown {
-        let unknown = arena.comp_type_unknown();
-        return Maybe::Present((unknown, unknown));
+        return Maybe::Present(Components::Unknown(arena.comp_type_unknown()));
     }
     match arena.comp_type(subject) {
-        Some(&CompType::With(first, second)) => Maybe::Present((first, second)),
+        Some(&CompType::With(ref components)) => {
+            Maybe::Present(Components::Known(components.clone()))
+        },
         Some(_) => mismatched(),
         None => dangling(),
     }

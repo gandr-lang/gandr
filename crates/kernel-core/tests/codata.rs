@@ -7,13 +7,13 @@ use gandr_kernel_core::CheckedId;
 use gandr_kernel_core::Environment;
 use gandr_kernel_core::KernelError;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::LevelSignature;
-use gandr_kernel_term::Side;
 use gandr_kernel_term::ValueId;
 
 /// Admit `Nat`: `zero`, and `succ` over the family itself.
@@ -150,7 +150,7 @@ fn ones(
     let head = arena.computation_return(one);
     let own = arena.value_variable(DeBruijnIndex::from(0));
     let tail = arena.computation_force(own);
-    let pairing = arena.computation_with(head, tail);
+    let pairing = arena.computation_with(&[head, tail]);
     let fixpoint = arena.computation_fixpoint(pairing, FixpointEvidence::Partial);
     let value = arena.value_thunk(fixpoint);
     let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
@@ -177,8 +177,8 @@ fn a_stream_is_admitted_and_observed()
     let declared = arena.value_type_thunk(returns);
     let named = arena.value_constant(ones);
     let forced = arena.computation_force(named);
-    let rest = arena.computation_project(Side::Right, forced);
-    let second = arena.computation_project(Side::Left, rest);
+    let rest = arena.computation_project(Component::from(1_usize), forced);
+    let second = arena.computation_project(Component::from(0_usize), rest);
     let value = arena.value_thunk(second);
     let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
     let observed = environment.add_decl(declaration);
@@ -186,7 +186,7 @@ fn a_stream_is_admitted_and_observed()
 }
 
 #[test]
-fn a_single_observation_reads_as_itself()
+fn a_single_observation_reads_as_a_lazy_product_of_one()
 {
     let mut environment = Environment::new();
     let nat = nat(&mut environment).position();
@@ -204,23 +204,37 @@ fn a_single_observation_reads_as_itself()
         .expect("one observation admits")
         .position();
     assert_eq!(machine, position);
-    // `successor : U Machine = thunk (λx. return (succ x))`.
+    // `bare : U Machine = thunk (λx. return (succ x))`: the observation alone
+    // is not the codata, which reads as the lazy product of its one entry.
+    let body = |arena: &mut gandr_kernel_term::TermArena| {
+        let nat_type = arena.value_type_data(nat, vec![]);
+        let own = arena.comp_type_codata(machine, vec![]);
+        let declared = arena.value_type_thunk(own);
+        let argument = arena.value_variable(DeBruijnIndex::from(0));
+        let successor = arena.value_constructor(nat_type, ConstructorTag::from(1), vec![argument]);
+        let returned = arena.computation_return(successor);
+        (declared, arena.computation_lambda(returned))
+    };
     let mut staging = environment.stage();
-    let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
-    let own = arena.comp_type_codata(machine, vec![]);
-    let declared = arena.value_type_thunk(own);
-    let argument = arena.value_variable(DeBruijnIndex::from(0));
-    let successor = arena.value_constructor(nat_type, ConstructorTag::from(1), vec![argument]);
-    let returned = arena.computation_return(successor);
-    let lambda = arena.computation_lambda(returned);
-    let value = arena.value_thunk(lambda);
+    let (declared, lambda) = body(staging.arena());
+    let bare = staging.arena().value_thunk(lambda);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, bare);
+    let refused = environment.add_decl(declaration);
+    assert!(
+        refused.is_err(),
+        "the bare observation is not the codata: {refused:?}"
+    );
+    // `successor : U Machine = thunk &{.0 => λx. return (succ x)}`.
+    let mut staging = environment.stage();
+    let (declared, lambda) = body(staging.arena());
+    let product = staging.arena().computation_with(&[lambda]);
+    let value = staging.arena().value_thunk(product);
     let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
     let successor = environment
         .add_decl(declaration)
-        .expect("a lambda checks against the one observation")
+        .expect("a lazy product of one checks against the one observation")
         .position();
-    // `two : U (F Nat) = thunk ((force successor) 1)`.
+    // `two : U (F Nat) = thunk ((force successor).0 1)`.
     let mut staging = environment.stage();
     let arena = staging.arena();
     let nat_type = arena.value_type_data(nat, vec![]);
@@ -228,8 +242,9 @@ fn a_single_observation_reads_as_itself()
     let declared = arena.value_type_thunk(returns);
     let named = arena.value_constant(successor);
     let forced = arena.computation_force(named);
+    let step = arena.computation_project(Component::from(0_usize), forced);
     let one = one(arena, nat);
-    let applied = arena.computation_application(forced, one);
+    let applied = arena.computation_application(step, one);
     let value = arena.value_thunk(applied);
     let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
     let applied = environment.add_decl(declaration);
@@ -241,7 +256,7 @@ fn a_bind_observes_a_returner_codata()
 {
     let mut environment = Environment::new();
     let nat = nat(&mut environment).position();
-    // `Later = ν. { now : F Nat }` and `later : U Later = thunk (return 1)`.
+    // `Later = ν. { now : F Nat }` and `later : U Later = thunk &{.0 => return 1}`.
     let mut staging = environment.stage();
     let arena = staging.arena();
     let nat_type = arena.value_type_data(nat, vec![]);
@@ -258,14 +273,15 @@ fn a_bind_observes_a_returner_codata()
     let declared = arena.value_type_thunk(own);
     let one = one(arena, nat);
     let returned = arena.computation_return(one);
-    let value = arena.value_thunk(returned);
+    let product = arena.computation_with(&[returned]);
+    let value = arena.value_thunk(product);
     let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
     let later = environment
         .add_decl(declaration)
-        .expect("a return checks against the one observation")
+        .expect("a product of one return checks against the one observation")
         .position();
-    // `now : U (F Nat) = thunk (x ← force later; return x)`: the bind reads
-    // the bound's codata type through its observation.
+    // `now : U (F Nat) = thunk (x ← (force later).0; return x)`: the bind reads
+    // the projected observation's returner.
     let mut staging = environment.stage();
     let arena = staging.arena();
     let nat_type = arena.value_type_data(nat, vec![]);
@@ -273,6 +289,7 @@ fn a_bind_observes_a_returner_codata()
     let declared = arena.value_type_thunk(returns);
     let named = arena.value_constant(later);
     let forced = arena.computation_force(named);
+    let forced = arena.computation_project(Component::from(0_usize), forced);
     let bound = arena.value_variable(DeBruijnIndex::from(0));
     let rest = arena.computation_return(bound);
     let observed = arena.computation_bind(forced, rest);
@@ -301,7 +318,7 @@ fn the_observation_product_is_not_the_codata_type()
     let nat_code = arena.value_quote(nat_type);
     let head = arena.comp_type_returner(nat_type);
     let tail = arena.comp_type_codata(stream, vec![nat_code]);
-    let product = arena.comp_type_with(head, tail);
+    let product = arena.comp_type_with(&[head, tail]);
     let declared = arena.value_type_thunk(product);
     let value = arena.value_constant(ones);
     let declaration = staging.def(LevelSignature::monomorphic(), declared, value);

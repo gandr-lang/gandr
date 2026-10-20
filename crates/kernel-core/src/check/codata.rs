@@ -7,9 +7,9 @@
 //! arguments — and is read through its observations only where a rule needs
 //! its shape: an introduction checked against it and an elimination of a
 //! computation that synthesizes it. The read instantiates every observation at
-//! `ā` and joins them right-nested with `With`, a single observation standing
-//! as itself. There is no η: a codata type never converts with its
-//! observation product.
+//! `ā` and forms the lazy product of them, a single observation a lazy product
+//! of one. There is no η: a codata type never converts with its observation
+//! product.
 //!
 //! Inside its own admission the declaration names itself only at an
 //! observation's result — the end of the observation's arrow spine — and only
@@ -313,8 +313,7 @@ fn argument_at(
 /// # Specification
 /// - requires: `codata` is a codata application in `arena`.
 /// - ensures: every observation of the named declaration instantiated at the
-///   application's arguments, joined right-nested with `With` in declaration
-///   order; one observation answers itself.
+///   application's arguments, the lazy product of them in declaration order.
 /// - provides: the shape an introduction checks against and an elimination
 ///   reads.
 /// - fails: an unreadable or non-codata node, an unresolvable head, an argument
@@ -328,9 +327,9 @@ fn argument_at(
 /// # Adequacy
 /// - hypothesis: L3 — a stream of naturals reads as `F Nat & Stream Nat`, its
 ///   head observation instantiated at the argument; a one-observation codata
-///   reads as that observation.
+///   reads as the lazy product of that observation alone.
 /// - witness: `tests::codata::a_stream_is_admitted_and_observed`
-/// - witness: `tests::codata::a_single_observation_reads_as_itself`
+/// - witness: `tests::codata::a_single_observation_reads_as_a_lazy_product_of_one`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| arena.comp_type(*read).is_some()))]
 pub(super) fn observed(
     arena: &mut TermArena,
@@ -352,10 +351,8 @@ pub(super) fn observed(
         return Err(KernelError::DataArgumentArity);
     }
     let (table, memo) = session.rewrite_parts();
-    // The observations are read last to first, so each one joins the product
-    // of those after it.
-    let mut read = None;
-    for &observation in signature.observations.iter().rev() {
+    let mut read = alloc::vec::Vec::with_capacity(signature.observations.len());
+    for &observation in signature.observations {
         let mut instantiated = observation;
         for index in (0 .. count).rev() {
             let argument = argument_at(arena, codata, ParameterPrefix(index))?;
@@ -367,11 +364,12 @@ pub(super) fn observed(
             instantiated =
                 rewrite::substitute_comp_type(arena, table, memo, instantiated, argument);
         }
-        read = Some(read.map_or(instantiated, |rest| {
-            arena.comp_type_with(instantiated, rest)
-        }));
+        read.push(instantiated);
     }
-    read.ok_or(KernelError::CodataWithoutObservations)
+    if read.is_empty() {
+        return Err(KernelError::CodataWithoutObservations);
+    }
+    Ok(arena.comp_type_with(&read))
 }
 
 /// `shape` read through its observations when it is a codata application,

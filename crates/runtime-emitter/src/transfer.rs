@@ -45,9 +45,9 @@ use gandr_core_sequent::ProducerNode;
 use gandr_core_sequent::Store;
 use gandr_core_sequent::StoreFault;
 use gandr_core_term::control::StackFrame;
+use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Literal;
-use gandr_kernel_term::Side;
 use gandr_kernel_term::Summand;
 use gandr_runtime_stencils::Header;
 use gandr_runtime_stencils::Kind;
@@ -124,8 +124,8 @@ enum Resumed<'lowered>
 {
     /// The application stub: the frame's word is the argument.
     Apply,
-    /// A projection stub, taking this side.
-    Project(Side),
+    /// The projection stub: the frame's word is the component.
+    Project,
     /// A reified bind frame: the frame's word is its window copy.
     Bind(&'lowered Bound),
 }
@@ -163,11 +163,7 @@ impl<'lowered> Sites<'lowered>
             .map(|bound| (codes.label(bound.label), Resumed::Bind(bound)))
             .collect();
         frames.insert(codes.stub(Stub::Apply), Resumed::Apply);
-        frames.insert(codes.stub(Stub::ProjectLeft), Resumed::Project(Side::Left));
-        frames.insert(
-            codes.stub(Stub::ProjectRight),
-            Resumed::Project(Side::Right),
-        );
+        frames.insert(codes.stub(Stub::Project), Resumed::Project);
         Self {
             by_code: lowered
                 .sites
@@ -320,7 +316,7 @@ fn children(
             for (code, word) in stack_frames(object, Field(arity)) {
                 match resumed(sites, code, object)? {
                     Resumed::Apply => held.push(word),
-                    Resumed::Project(_) => {},
+                    Resumed::Project => {},
                     Resumed::Bind(bound) => held.extend(
                         bound
                             .captures
@@ -501,7 +497,7 @@ fn allocate(
             for (code, word) in stack_frames(object, Field(arity)).rev() {
                 frames.push(match resumed(sites, code, object)? {
                     Resumed::Apply => StackFrame::Apply(lookup(word)?),
-                    Resumed::Project(side) => StackFrame::Project(side),
+                    Resumed::Project => StackFrame::Project(Component::from(usize::from(word))),
                     Resumed::Bind(bound) => StackFrame::Bind(ClosedCommand {
                         body: bound.body,
                         environment: closed_environment(

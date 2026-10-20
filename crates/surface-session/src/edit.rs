@@ -3422,9 +3422,11 @@ where
         },
         Some(&Computation::Reset(body)) => ContentNode::Reset(child(Root::Computation(body))),
         Some(&Computation::Shift(body)) => ContentNode::Shift(child(Root::Computation(body))),
-        Some(&Computation::With(first, second)) => ContentNode::With(
-            child(Root::Computation(first)),
-            child(Root::Computation(second)),
+        Some(&Computation::With(ref components)) => ContentNode::With(
+            components
+                .iter()
+                .map(|&component| child(Root::Computation(component)))
+                .collect(),
         ),
         Some(&Computation::Ascribe { body, ty }) => {
             let body = child(Root::Computation(body));
@@ -3433,8 +3435,8 @@ where
                 ty: child(Root::CompType(ty)),
             }
         },
-        Some(&Computation::Project(side, body)) => {
-            ContentNode::Project(side, child(Root::Computation(body)))
+        Some(&Computation::Project(component, body)) => {
+            ContentNode::Project(component, child(Root::Computation(body)))
         },
         Some(&Computation::ListFold {
             element,
@@ -3830,9 +3832,12 @@ where
     Child: FnMut(Root) -> NodeIndex,
 {
     match program.arena().comp_type(id) {
-        Some(&CompType::With(first, second)) => {
-            ContentNode::WithType(child(Root::CompType(first)), child(Root::CompType(second)))
-        },
+        Some(&CompType::With(ref components)) => ContentNode::WithType(
+            components
+                .iter()
+                .map(|&component| child(Root::CompType(component)))
+                .collect(),
+        ),
         Some(&CompType::Returner {
             result,
             ref effects,
@@ -4336,7 +4341,6 @@ def body = 1 ;
         use gandr_core_term::effect::capability::Region;
         use gandr_core_term::effect::capability::RegionDepth;
         use gandr_kernel_strata::Level;
-        use gandr_kernel_term::Side;
 
         use super::Agreement;
         use super::Agreement::Differs;
@@ -4601,15 +4605,15 @@ def body = 1 ;
                 Same,
             ),
             (
-                "a stack projecting one side",
-                reify(&[StackFrame::Project(Side::Left)]),
-                reify(&[StackFrame::Project(Side::Left)]),
+                "a stack projecting one component",
+                reify(&[StackFrame::Project(Component::from(0_usize))]),
+                reify(&[StackFrame::Project(Component::from(0_usize))]),
                 Same,
             ),
             (
-                "a stack projecting the other side",
-                reify(&[StackFrame::Project(Side::Left)]),
-                reify(&[StackFrame::Project(Side::Right)]),
+                "a stack projecting another component",
+                reify(&[StackFrame::Project(Component::from(0_usize))]),
+                reify(&[StackFrame::Project(Component::from(1_usize))]),
                 Differs,
             ),
             (
@@ -4759,6 +4763,7 @@ def body = 1 ;
         use gandr_core_incremental::Occurrence;
         use gandr_core_incremental::Program;
         use gandr_core_incremental::Reference;
+        use gandr_core_term::Component;
         use gandr_core_term::CoreArena;
         use gandr_core_term::Zone;
         use gandr_core_term::control::EffectClause;
@@ -4766,7 +4771,6 @@ def body = 1 ;
         use gandr_core_term::effect::EffectOp;
         use gandr_core_term::effect::EffectSig;
         use gandr_kernel_term::BaseType;
-        use gandr_kernel_term::Side;
         use gandr_surface_lowering::OriginTable;
         let snapshot =
             |interface: &str, operation: &str, reply, bound: u32, side, reverse: bool| {
@@ -4796,7 +4800,7 @@ def body = 1 ;
                 let resumed = arena.computation_resume(variable, performed);
                 let shifted = arena.computation_shift(resumed);
                 let reset = arena.computation_reset(shifted);
-                let pair = arena.computation_with(reset, returned);
+                let pair = arena.computation_with(&[reset, returned]);
                 let projected = arena.computation_project(side, pair);
                 let handled = arena.computation_handle(
                     signature,
@@ -4826,14 +4830,22 @@ def body = 1 ;
                     bodies: Vec::new(),
                 }
             };
-        let old = snapshot("E", "op", BaseType::Integer, 0, Side::Left, false);
+        let first = Component::from(0_usize);
+        let old = snapshot("E", "op", BaseType::Integer, 0, first, false);
         for new in [
-            snapshot("Other", "op", BaseType::Integer, 0, Side::Left, false),
-            snapshot("E", "other", BaseType::Integer, 0, Side::Left, false),
-            snapshot("E", "op", BaseType::String, 0, Side::Left, false),
-            snapshot("E", "op", BaseType::Integer, 1, Side::Left, false),
-            snapshot("E", "op", BaseType::Integer, 0, Side::Right, false),
-            snapshot("E", "op", BaseType::Integer, 0, Side::Left, true),
+            snapshot("Other", "op", BaseType::Integer, 0, first, false),
+            snapshot("E", "other", BaseType::Integer, 0, first, false),
+            snapshot("E", "op", BaseType::String, 0, first, false),
+            snapshot("E", "op", BaseType::Integer, 1, first, false),
+            snapshot(
+                "E",
+                "op",
+                BaseType::Integer,
+                0,
+                Component::from(1_usize),
+                false,
+            ),
+            snapshot("E", "op", BaseType::Integer, 0, first, true),
         ] {
             assert_ne!(
                 old.items(),

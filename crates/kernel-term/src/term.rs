@@ -187,16 +187,14 @@ impl From<ConstantIndex> for usize
     }
 }
 
-/// One side of a binary former: the injection into a summand of `A + B`, or
-/// the projection of a component of the lazy product `C & D`.
+/// One side of a binary former: a summand of `A + B`, such as a boolean's, or
+/// an endpoint of a path.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Side
 {
-    /// The left side: the left summand of `A + B`, the left component of
-    /// `C & D`.
+    /// The left side: the left summand of `A + B`, a path's source.
     Left,
-    /// The right side: the right summand of `A + B`, the right component of
-    /// `C & D`.
+    /// The right side: the right summand of `A + B`, a path's target.
     Right,
 }
 
@@ -687,12 +685,14 @@ pub enum Computation
         /// their identity, innermost last.
         body: ComputationId,
     },
-    /// A lazy pairing `⟨M, N⟩` of two computations, introducing the lazy
-    /// product `C & D` of their types. Neither component runs until a
-    /// projection observes it.
-    With(ComputationId, ComputationId),
-    /// The projection of one side of a lazy pairing, running that component.
-    Project(Side, ComputationId),
+    /// A lazy pairing `⟨M₀, …, Mₙ₋₁⟩` of computations, introducing the lazy
+    /// product `C₀ & … & Cₙ₋₁` of their types; the empty pairing introduces
+    /// the terminal computation type. No component runs until a projection
+    /// observes it.
+    With(alloc::boxed::Box<[ComputationId]>),
+    /// The projection of a lazy pairing's component at a position, running
+    /// that component.
+    Project(Component, ComputationId),
     /// A fixpoint `fix x. M`, checking at any computation type `B` with its
     /// body scoped under one value binder, the fixpoint's own thunk `U B`.
     /// It unfolds only at a constructor argument or under an observation of

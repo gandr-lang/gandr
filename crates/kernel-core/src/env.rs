@@ -2745,9 +2745,12 @@ fn reach(
                 Some(&Computation::Return(value) | &Computation::Force(value)) => {
                     pending.push(AnyNode::Value(value));
                 },
-                Some(&(Computation::Bind(bound, body) | Computation::With(bound, body))) => {
+                Some(&Computation::Bind(bound, body)) => {
                     pending.push(AnyNode::Computation(bound));
                     pending.push(AnyNode::Computation(body));
+                },
+                Some(&Computation::With(ref components)) => {
+                    pending.extend(components.iter().copied().map(AnyNode::Computation));
                 },
                 Some(&Computation::Project(_, pair)) => pending.push(AnyNode::Computation(pair)),
                 Some(&Computation::Case {
@@ -2857,9 +2860,8 @@ fn reach(
                         pending.push(AnyNode::Value(code));
                     }
                 },
-                Some(&CompType::With(left, right)) => {
-                    pending.push(AnyNode::CompType(left));
-                    pending.push(AnyNode::CompType(right));
+                Some(&CompType::With(ref components)) => {
+                    pending.extend(components.iter().copied().map(AnyNode::CompType));
                 },
                 Some(&CompType::Codata {
                     declaration,

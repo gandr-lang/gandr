@@ -2317,10 +2317,11 @@ pub fn loose_reach(
                         (CoreNode::Term(TermNode::Value(stack)), depth),
                         (CoreNode::Term(TermNode::Computation(body)), depth),
                     ]),
-                    Computation::With(first, second) => work.extend([
-                        (CoreNode::Term(TermNode::Computation(first)), depth),
-                        (CoreNode::Term(TermNode::Computation(second)), depth),
-                    ]),
+                    Computation::With(ref components) => {
+                        work.extend(components.iter().map(|&component| {
+                            (CoreNode::Term(TermNode::Computation(component)), depth)
+                        }));
+                    },
                     Computation::Ascribe { body, ty } => work.extend([
                         (CoreNode::Term(TermNode::Computation(body)), depth),
                         (CoreNode::Type(TypeNode::Computation(ty)), depth),
@@ -2567,10 +2568,11 @@ pub fn loose_reach(
             },
             CoreNode::Type(TypeNode::Computation(at)) => {
                 match *core.comp_type(at).ok_or_else(|| dangling(node))? {
-                    CompType::With(first, second) => work.extend([
-                        (CoreNode::Type(TypeNode::Computation(first)), depth),
-                        (CoreNode::Type(TypeNode::Computation(second)), depth),
-                    ]),
+                    CompType::With(ref components) => {
+                        work.extend(components.iter().map(|&component| {
+                            (CoreNode::Type(TypeNode::Computation(component)), depth)
+                        }));
+                    },
                     CompType::Returner {
                         result,
                         ref effects,

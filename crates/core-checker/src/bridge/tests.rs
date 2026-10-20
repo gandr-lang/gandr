@@ -85,6 +85,7 @@ use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::DeclarationContent;
@@ -1883,24 +1884,24 @@ fn a_lazy_product_crosses_as_its_kernel_nodes()
     let integer = arena.value_type_base(BaseType::Integer);
     let returns_unit = arena.comp_type_returner(unit_type);
     let returns_integer = arena.comp_type_returner(integer);
-    let pair_type = arena.comp_type_with(returns_unit, returns_integer);
-    let suspended_pair = arena.value_type_thunk(pair_type);
+    let product_type = arena.comp_type_with(&[returns_unit, returns_integer, returns_unit]);
+    let suspended_product = arena.value_type_thunk(product_type);
     let unit = arena.value_unit();
     let zero = arena.value_literal(integer_literal());
     let first = arena.computation_return(unit);
     let second = arena.computation_return(zero);
-    let pair = arena.computation_with(first, second);
-    let pair_body = arena.value_thunk(pair);
-    let pair_constant = arena.value_constant(ConstantIndex::from(0_usize));
-    let forced = arena.computation_force(pair_constant);
-    let projected = arena.computation_project(Side::Right, forced);
+    let product = arena.computation_with(&[first, second, first]);
+    let product_body = arena.value_thunk(product);
+    let product_constant = arena.value_constant(ConstantIndex::from(0_usize));
+    let forced = arena.computation_force(product_constant);
+    let projected = arena.computation_project(Component::from(2_usize), forced);
     let projected_body = arena.value_thunk(projected);
-    let projected_type = arena.value_type_thunk(returns_integer);
+    let projected_type = arena.value_type_thunk(returns_unit);
     let (_, readmission) = judge_and_readmit(&mut arena, &[
         declaration(
             At(0),
-            Maybe::Present(suspended_pair),
-            Maybe::Present(pair_body),
+            Maybe::Present(suspended_product),
+            Maybe::Present(product_body),
         ),
         declaration(
             At(1),
@@ -1911,8 +1912,8 @@ fn a_lazy_product_crosses_as_its_kernel_nodes()
     for entry in readmission.readmitted() {
         assert!(
             matches!(*entry.outcome(), Outcome::Defined { .. }),
-            "the kernel re-derives the pairing at its unequal sides and the right \
-                 projection at the right side's type: {:?}",
+            "the kernel re-derives the product at its unequal components and the last \
+                 projection at the last component's type: {:?}",
             entry.outcome()
         );
     }

@@ -933,6 +933,10 @@ where
         && ret.iter().all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
     | Former::Data { arity, .. } | Former::Codata { arity, .. } => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::Stated && slot.binds == Binds::NONE),
+    | Former::With(arity) => ret.len() == usize::from(arity)
+        && ret.iter().all(|slot| slot.admits == Admits::CompType && slot.binds == Binds::NONE),
+    | Former::Lazy(arity) => ret.len() == usize::from(arity)
+        && ret.iter().all(|slot| slot.admits == Admits::Computation(Tail::Continues) && slot.binds == Binds::NONE),
     | Former::Constructor { arity, classifier, .. } => {
         let annotated = classifier.is_some() && bodies == Bodies::Spelled && admits != Admits::Stated;
         ret.len() == usize::from(arity).saturating_add(usize::from(annotated))
@@ -1007,9 +1011,8 @@ where
         slots
     };
     match *former {
-        Former::Stack(first, second) | Former::With(first, second) => {
-            Vec::from([comp_type(first), comp_type(second)])
-        },
+        Former::Stack(first, second) => Vec::from([comp_type(first), comp_type(second)]),
+        Former::With(arity) => components(arity, Admits::CompType, Binds::NONE, None),
         Former::Product(arity) | Former::Sum(arity) => {
             components(arity, Admits::ValueType, Binds::NONE, None)
         },
@@ -1255,7 +1258,12 @@ where
             value: opened,
             body,
         } => Vec::from([value(opened), Slot::of(body, admits, Binds::ONE)]),
-        Former::Lazy(first, second) => Vec::from([continues(first), continues(second)]),
+        Former::Lazy(arity) => components(
+            arity,
+            Admits::Computation(Tail::Continues),
+            Binds::NONE,
+            None,
+        ),
         Former::Ascription { body, ty } => {
             Vec::from([Slot::of(body, admits, Binds::NONE), comp_type(ty)])
         },
@@ -1626,7 +1634,7 @@ enum Brace
     Hash,
     /// `+{…}`: a sum or an injection.
     Plus,
-    /// `&{…}`: a lazy pair.
+    /// `&{…}`: a lazy product.
     Ampersand,
 }
 
@@ -1640,8 +1648,8 @@ impl Brace
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — products, sums and lazy pairs in the grammar fixtures
-    ///   distinguish a swapped delimiter.
+    /// - hypothesis: L3 — products, sums and lazy products in the grammar
+    ///   fixtures distinguish a swapped delimiter.
     /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
     #[spec(ensures: |ret| matches!((self, ret.0.as_bytes()),
         (Self::Hash, b"#{") | (Self::Plus, b"+{") | (Self::Ampersand, b"&{")
@@ -1764,7 +1772,7 @@ enum Infix
     Product,
     /// The sum `A + B + …`, a chain of one sum.
     Sum,
-    /// The lazy product `C & D`, binary and nested to the right.
+    /// The lazy product `C & D & …`, a chain of one lazy product.
     Lazy,
 }
 
@@ -1796,26 +1804,17 @@ impl Infix
         }
     }
 
-    /// The loosest operand the operand at `position` of `arity` stands bare
-    /// as: a product's and a sum's every operand tighter than the chain, since
-    /// the lowering reads an unparenthesized inner chain as more components
-    /// of the outer one; the lazy product's left operand tighter than it and
-    /// its right one at most as loose, as `&` nests to the right.
+    /// The loosest operand of the chain stands bare as: every operand tighter
+    /// than the chain, since the lowering reads an unparenthesized inner chain
+    /// as more components of the outer one.
     ///
     /// # Specification
     /// trivial.
-    fn operand(
-        self,
-        position: crate::former::Component,
-        arity: crate::former::Arity,
-    ) -> Binding
+    const fn operand(self) -> Binding
     {
         match self {
             Self::Product => Binding::Prefix,
             Self::Sum => Binding::Product,
-            Self::Lazy if usize::from(position).saturating_add(1_usize) == usize::from(arity) => {
-                Binding::Lazy
-            },
             Self::Lazy => Binding::Sum,
         }
     }
@@ -4592,18 +4591,20 @@ impl Walk<'_, '_>
             | Former::Stack(..) => {
                 Some(writes(Production("type_application"), Join::Bracket(Bracket::Stack)))
             },
-            | Former::With(..) if self.form == Form::Sugared => Some(writes(
-                Production("lazy_product_type"),
-                Join::Infix {
-                    infix: Infix::Lazy,
-                    arity: Arity(2_usize),
-                },
-            )),
-            | Former::With(..) => Some(writes(
+            | Former::With(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
+                Some(writes(
+                    Production("lazy_product_type"),
+                    Join::Infix {
+                        infix: Infix::Lazy,
+                        arity: Arity(usize::from(arity)),
+                    },
+                ))
+            },
+            | Former::With(arity) => Some(writes(
                 Production("lazy_record_type"),
                 Join::Braced {
                     brace: Brace::Ampersand,
-                    arity: Arity(2_usize),
+                    arity: Arity(usize::from(arity)),
                     entries: Entries::Positional,
                 },
             )),
@@ -5660,7 +5661,7 @@ impl Walk<'_, '_>
     ///   `offer(e) { l => c }`, `close(e)` and `fork (a : S) { t } as a ; u`,
     ///   each endpoint named by its binder. The forms the grammar does not
     ///   write — native transport, a fixpoint `rec f { c }`, a fold, `resume(k,
-    ///   c)`, `reset { c }`, `shift k { c }`, a lazy pair `&{c, d}` and its
+    ///   c)`, `reset { c }`, `shift k { c }`, a lazy product `&{c, …}` and its
     ///   observation `c.0` — make the presentation approximate.
     /// - provides: the spelling of every former without a join of its own.
     /// - fails: never.
@@ -6141,18 +6142,19 @@ impl Walk<'_, '_>
                     writes(Production("call_expression"), Binding::Atom),
                 )
             },
-            // A lazy pair is the positional copattern block, which the lowering
-            // reads back as the pair nested to the right (#630).
-            Former::Lazy(..) => {
-                let _ = parts
-                    .text("&{.0 => ")
-                    .piece(Binding::Arrow)
-                    .text(",")
-                    .part(Part::Space)
-                    .text(".1 => ")
-                    .piece(Binding::Arrow)
-                    .part(Part::Tight)
-                    .text("}");
+            // A lazy product is the positional copattern block, which the
+            // lowering reads back as the lazy product of its clauses.
+            Former::Lazy(arity) => {
+                let _ = parts.text("&{");
+                for index in 0_usize .. usize::from(arity) {
+                    if index > 0_usize {
+                        let _ = parts.text(",").part(Part::Space);
+                    }
+                    let _ = parts
+                        .text(alloc::format!(".{index} => "))
+                        .piece(Binding::Arrow);
+                }
+                let _ = parts.part(Part::Tight).text("}");
                 writes(Production("lazy_record_expression"), Binding::Atom)
             },
             // A flow composite is written infix, as the surface writes it and
@@ -6533,12 +6535,8 @@ impl Walk<'_, '_>
             },
             Join::Infix { infix, arity } => {
                 let mut joined = None;
-                for (position, operand) in self.take(arity)?.into_iter().enumerate() {
-                    let place = infix.operand(
-                        crate::former::Component::from(position),
-                        crate::former::Arity::from(arity.0),
-                    );
-                    let operand = self.bare_up_to(operand, place)?;
+                for operand in self.take(arity)? {
+                    let operand = self.bare_up_to(operand, infix.operand())?;
                     joined = Some(match joined {
                         None => operand,
                         Some(head) => {

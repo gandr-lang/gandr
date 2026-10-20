@@ -1342,7 +1342,11 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                             CompType::Codata { declaration: ref b, arguments: ref right } if a == b && left.len() == right.len() => { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(left.iter().zip(right).map(|(a,b)| (Node::Code(*a,here),Node::Code(*b,there))))); Ok((Alike::Same,left.len(),0)) },
                             CompType::Returner { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
                         },
-                        CompType::With(..) | CompType::Arrow { .. } | CompType::Pi { .. } => if core::mem::discriminant(left) == core::mem::discriminant(right) || matches!((left, right), (&CompType::Pi { .. }, &CompType::Arrow { .. }) | (&CompType::Arrow { .. }, &CompType::Pi { .. })) { Ok((Alike::Same, 2, 0)) } else { Ok((Alike::Different, 0, 0)) },
+                        CompType::With(ref a) => match *right {
+                            CompType::With(ref b) if a.len() == b.len() => { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(a.iter().zip(b.iter()).rev().map(|(a, b)| (Node::CompType(*a, here), Node::CompType(*b, there))))); Ok((Alike::Same, a.len(), 0)) },
+                            CompType::Returner { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
+                        },
+                        CompType::Arrow { .. } | CompType::Pi { .. } => if core::mem::discriminant(left) == core::mem::discriminant(right) || matches!((left, right), (&CompType::Pi { .. }, &CompType::Arrow { .. }) | (&CompType::Arrow { .. }, &CompType::Pi { .. })) { Ok((Alike::Same, 2, 0)) } else { Ok((Alike::Different, 0, 0)) },
                         CompType::Element { code, ref target } => match *right {
                             CompType::Element { code: other_code, target: ref other_target } if target == other_target => {
                                 if let Ok((Node::CompType(_, here), Node::CompType(_, there))) = roots {
@@ -1730,11 +1734,15 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                     return Err(ConversionFault::MachineInvariant);
                 };
                 match (left, right) {
-                    (&CompType::With(a, b), &CompType::With(c, d)) => {
-                        pending.extend([
-                            (Node::CompType(b, here), Node::CompType(d, there)),
-                            (Node::CompType(a, here), Node::CompType(c, there)),
-                        ]);
+                    (&CompType::With(ref left), &CompType::With(ref right)) => {
+                        if left.len() != right.len() {
+                            return Ok(Alike::Different);
+                        }
+                        pending.extend(
+                            left.iter().zip(right.iter()).rev().map(|(a, b)| {
+                                (Node::CompType(*a, here), Node::CompType(*b, there))
+                            }),
+                        );
                         Ok(Alike::Same)
                     },
                     (
@@ -2453,8 +2461,11 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         .comp_type(id)
                         .ok_or(ConversionFault::MachineInvariant)?
                     {
-                        CompType::With(first, second) => types
-                            .extend([Node::CompType(first, place), Node::CompType(second, place)]),
+                        CompType::With(ref components) => types.extend(
+                            components
+                                .iter()
+                                .map(|&component| Node::CompType(component, place)),
+                        ),
                         CompType::Codata { ref arguments, .. } => {
                             for argument in arguments {
                                 atoms.push(self.atom(Node::Code(*argument, place))?);

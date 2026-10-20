@@ -2755,9 +2755,12 @@ fn decode_entry(
             (DecodedNode::CompType(id), Family::CompType)
         },
         tags::NODE_CT_WITH => {
-            let left = read_comp_type(reader, table, this, &mut children)?;
-            let right = read_comp_type(reader, table, this, &mut children)?;
-            let id = table.arena.comp_type_with(left, right);
+            let count = usize::from(reader.read_usize()?);
+            let mut components = Vec::new();
+            for _ in 0 .. count {
+                components.push(read_comp_type(reader, table, this, &mut children)?);
+            }
+            let id = table.arena.comp_type_with(&components);
             (DecodedNode::CompType(id), Family::CompType)
         },
         tags::NODE_CT_CODATA => {
@@ -2875,15 +2878,18 @@ fn decode_entry(
             (DecodedNode::Computation(id), Family::Computation)
         },
         tags::NODE_C_WITH => {
-            let left = read_computation(reader, table, this, &mut children)?;
-            let right = read_computation(reader, table, this, &mut children)?;
-            let id = table.arena.computation_with(left, right);
+            let count = usize::from(reader.read_usize()?);
+            let mut components = Vec::new();
+            for _ in 0 .. count {
+                components.push(read_computation(reader, table, this, &mut children)?);
+            }
+            let id = table.arena.computation_with(&components);
             (DecodedNode::Computation(id), Family::Computation)
         },
         tags::NODE_C_PROJECT => {
-            let side = decode_side(reader)?;
+            let component = crate::Component::from(usize::from(reader.read_usize()?));
             let pair = read_computation(reader, table, this, &mut children)?;
-            let id = table.arena.computation_project(side, pair);
+            let id = table.arena.computation_project(component, pair);
             (DecodedNode::Computation(id), Family::Computation)
         },
         other => {
@@ -3969,41 +3975,6 @@ fn decode_evidence(reader: &mut ByteReader<'_>) -> Result<crate::FixpointEvidenc
     }
 }
 
-/// Decode a lazy projection's side.
-///
-/// # Specification
-/// - requires: the cursor is positioned at a projection's side byte.
-/// - ensures: on `Ok`, returns the side the tag named and advances past it.
-/// - provides: the side alphabet's one interpretation site.
-/// - fails: [`DecodeError::Truncated`] at the end of the image;
-///   [`DecodeError::UnknownTag`] at the projection-side site on any other byte.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 partitions every byte of each closed tag alphabet into its
-///   exact value or named refusal, with empty-input truncation and
-///   consumed-offset checks.
-/// - witness: `decode::tests::tag_alphabets_partition_every_byte`
-#[spec(
-    captures: start = reader.position,
-    ensures: |ret| { let byte = reader.image.byte_at(start).map(u8::from);
-        reader.position.0 == start.0.saturating_add(usize::from(byte.is_some()))
-            && match byte { Some(0) => ret.as_ref() == Ok(&crate::Side::Left), Some(1) => ret.as_ref() == Ok(&crate::Side::Right), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::ProjectionSide, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
-)]
-#[inline]
-fn decode_side(reader: &mut ByteReader<'_>) -> Result<crate::Side, DecodeError>
-{
-    let tag = reader.next_tag()?;
-    match tag {
-        tags::SIDE_LEFT => Ok(crate::Side::Left),
-        tags::SIDE_RIGHT => Ok(crate::Side::Right),
-        other => Err(DecodeError::UnknownTag {
-            site: TagSite::ProjectionSide,
-            tag: other,
-        }),
-    }
-}
-
 /// Decode a composition's seam byte.
 ///
 /// # Specification
@@ -4292,12 +4263,12 @@ mod tests
             })
         );
         assert_eq!(foreign.position.0, 4);
-        for version in [0_u16, 1, 2, 3, 4, 5, 6, 0x0600, u16::MAX] {
+        for version in [0_u16, 1, 2, 3, 4, 5, 6, 7, 0x0700, u16::MAX] {
             let mut image = magic.to_vec();
             image.extend_from_slice(&version.to_le_bytes());
             let mut reader = ByteReader::new(ArtifactImage::from(image.as_slice()));
             reader.expect_magic().expect("valid header");
-            let expected = if version == 6 {
+            let expected = if version == 7 {
                 Ok(())
             }
             else {
@@ -4452,14 +4423,6 @@ mod tests
             assert_eq!(super::decode_evidence(&mut reader), evidence);
             assert_eq!(reader.position.0, consumed);
             let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
-            let side = match byte {
-                0 => Ok(crate::Side::Left),
-                1 => Ok(crate::Side::Right),
-                _ => Err(unknown(super::TagSite::ProjectionSide)),
-            };
-            assert_eq!(super::decode_side(&mut reader), side);
-            assert_eq!(reader.position.0, 1);
-            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
             let seam = match byte {
                 0 => Ok(crate::Seam::Sequence),
                 1 => Ok(crate::Seam::Feedback),
@@ -4517,10 +4480,6 @@ mod tests
         );
         assert_eq!(
             super::decode_evidence(&mut ByteReader::new(image)),
-            Err(DecodeError::Truncated)
-        );
-        assert_eq!(
-            super::decode_side(&mut ByteReader::new(image)),
             Err(DecodeError::Truncated)
         );
         assert_eq!(
@@ -5044,7 +5003,7 @@ mod tests
     {
         let literal_artifact = |base: u8, literal: &[u8]| {
             let mut bytes = vec![
-                b'G', b'K', b'X', b'1', 6, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
+                b'G', b'K', b'X', b'1', 7, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
             ];
             bytes.extend_from_slice(literal);
             bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
@@ -5177,7 +5136,7 @@ mod tests
             })
         );
         let level_artifact = |level: &[u8]| {
-            let mut bytes = vec![b'G', b'K', b'X', b'1', 6, 0, 0, 1, 0, 1, 0, 3, 0, 1, 2];
+            let mut bytes = vec![b'G', b'K', b'X', b'1', 7, 0, 0, 1, 0, 1, 0, 3, 0, 1, 2];
             bytes.extend_from_slice(level);
             bytes.push(0);
             bytes
@@ -5451,9 +5410,12 @@ mod tests
                 },
                 &[5],
             ),
-            (&[0x65, 6, 2], crate::types::CompType::With(ct1, ct0), &[
-                6, 2,
-            ]),
+            (
+                &[0x65, 2, 6, 2],
+                crate::types::CompType::With([ct1, ct0].into()),
+                &[6, 2],
+            ),
+            (&[0x65, 0], crate::types::CompType::With([].into()), &[]),
         ];
         for &(bytes, ref expected, children) in comp_types {
             let before = table.arena.watermark();
@@ -5658,17 +5620,20 @@ mod tests
                 },
                 &[5, 7, 3],
             ),
-            (&[0x66, 7, 3], crate::term::Computation::With(c1, c0), &[
-                7, 3,
-            ]),
+            (
+                &[0x66, 3, 7, 3, 7],
+                crate::term::Computation::With([c1, c0, c1].into()),
+                &[7, 3, 7],
+            ),
+            (&[0x66, 0], crate::term::Computation::With([].into()), &[]),
             (
                 &[0x67, 0, 7],
-                crate::term::Computation::Project(crate::Side::Left, c1),
+                crate::term::Computation::Project(crate::Component::from(0_usize), c1),
                 &[7],
             ),
             (
-                &[0x67, 1, 3],
-                crate::term::Computation::Project(crate::Side::Right, c0),
+                &[0x67, 2, 3],
+                crate::term::Computation::Project(crate::Component::from(2_usize), c0),
                 &[3],
             ),
         ];
@@ -6327,27 +6292,20 @@ mod tests
     #[test]
     fn lazy_product_nodes_round_trip_and_refuse_their_malformed_sites()
     {
-        use crate::error::TagSite;
-
-        // A side outside the two-letter alphabet, and a child of the wrong
-        // family in every child slot, each refuse at its own site, minting
-        // nothing.
+        // A child of the wrong family in every child slot refuses at its own
+        // site, minting nothing.
         let mut table = four_family_table();
         let refusals: &[(&[u8], DecodeError)] = &[
-            (&[0x67, 2, 7], DecodeError::UnknownTag {
-                site: TagSite::ProjectionSide,
-                tag: super::WireTag::from(2_u8),
-            }),
-            (&[0x65, 6, 3], DecodeError::Malformed {
+            (&[0x65, 2, 6, 3], DecodeError::Malformed {
                 site: MalformedSite::Polarity,
             }),
-            (&[0x65, 2, 4], DecodeError::Malformed {
+            (&[0x65, 2, 2, 4], DecodeError::Malformed {
                 site: MalformedSite::Polarity,
             }),
-            (&[0x66, 5, 3], DecodeError::Malformed {
+            (&[0x66, 2, 5, 3], DecodeError::Malformed {
                 site: MalformedSite::Polarity,
             }),
-            (&[0x66, 7, 6], DecodeError::Malformed {
+            (&[0x66, 2, 7, 6], DecodeError::Malformed {
                 site: MalformedSite::Polarity,
             }),
             (&[0x67, 1, 5], DecodeError::Malformed {
@@ -6367,21 +6325,24 @@ mod tests
             assert_eq!(table.nodes.len(), count);
         }
 
-        // A whole artifact holding the lazy product type, a pairing and both
-        // projections re-encodes byte for byte.
+        // A whole artifact holding a three-component lazy product type, a
+        // pairing and a projection at every position re-encodes byte for
+        // byte.
         let mut arena = crate::TermArena::new();
         let unit_type = arena.value_type_unit();
         let integer = arena.value_type_base(super::BaseType::Integer);
         let unit = arena.value_unit();
         let returns_unit = arena.comp_type_returner(unit_type);
         let returns_integer = arena.comp_type_returner(integer);
-        let lazy = arena.comp_type_with(returns_unit, returns_integer);
+        let lazy = arena.comp_type_with(&[returns_unit, returns_integer, returns_unit]);
         let left = arena.computation_return(unit);
         let right = arena.computation_return(unit);
-        let pair = arena.computation_with(left, right);
-        let first = arena.computation_project(crate::Side::Left, pair);
-        let second = arena.computation_project(crate::Side::Right, pair);
-        let sequenced = arena.computation_bind(first, second);
+        let pair = arena.computation_with(&[left, right, left]);
+        let first = arena.computation_project(crate::Component::from(0_usize), pair);
+        let second = arena.computation_project(crate::Component::from(1_usize), pair);
+        let third = arena.computation_project(crate::Component::from(2_usize), pair);
+        let tail = arena.computation_bind(second, third);
+        let sequenced = arena.computation_bind(first, tail);
         let body = arena.value_thunk(sequenced);
         let declared = arena.value_type_thunk(lazy);
         let declaration = crate::DeclarationBuilder::new(&mut arena).def(

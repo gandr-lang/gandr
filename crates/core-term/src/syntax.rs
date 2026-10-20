@@ -81,8 +81,9 @@
 //! `Stack(C, D)` classifies a first-class continuation from computation `C` to
 //! `D`; `Reify` records its flat frames in execution order. Apply frames carry
 //! values, Bind frames carry independent one-binder computation bodies, and
-//! Project frames select a lazy pair. `With(C, D)` classifies a lazy
-//! computation pair, distinct from an eager value product.
+//! Project frames select a component of a lazy product. `With([C₀, …, Cₙ₋₁])`
+//! classifies a lazy computation tuple, distinct from an eager value product;
+//! the empty one is the terminal computation type.
 //!
 //! `Perform` and `Handle` carry inline interfaces. A handler return branch
 //! binds the returned value; each operation clause binds payload then
@@ -100,7 +101,7 @@
 //! Witnesses: `control::tests::stack_literals_preserve_binder_scope`,
 //! `control::tests::stack_types_rebuild_both_computation_children`,
 //! `control::tests::effect_interfaces_and_clauses_rewrite_in_their_own_scopes`,
-//! `control::tests::lazy_pairs_keep_their_components_and_projection_side`,
+//! `control::tests::lazy_tuples_keep_their_components_and_projection_position`,
 //! `tests::focus_properties::hand_built_control_cases_cover_every_former` and
 //! `check::tests::control_scopes_are_local_to_each_body`.
 //!
@@ -301,7 +302,6 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Literal;
-use gandr_kernel_term::Side;
 use gandr_kernel_term::Summand;
 use quenchant_shape::shape::Maybe;
 
@@ -923,10 +923,10 @@ pub enum Computation
     Reset(ComputationId),
     /// Capture to the nearest reset, binding one intuitionistic stack value.
     Shift(ComputationId),
-    /// A lazy negative pair; only the observed component executes.
-    With(ComputationId, ComputationId),
-    /// Observe one component of a negative product.
-    Project(Side, ComputationId),
+    /// A lazy negative tuple; only the observed component executes.
+    With(alloc::boxed::Box<[ComputationId]>),
+    /// Observe the component of a negative product at a position.
+    Project(Component, ComputationId),
     /// A session action: send, receive, select, offer or close on a linear
     /// endpoint, or fork a new pair of endpoints.
     Session(crate::session::SessionAction),
@@ -1180,8 +1180,9 @@ pub enum CompType
     /// The unknown computation type: what a hole or a mark in computation
     /// position synthesises.
     Unknown,
-    /// A lazy negative product; an observation selects one component.
-    With(CompTypeId, CompTypeId),
+    /// A lazy negative product; an observation selects one component. The
+    /// empty one is the terminal computation type.
+    With(alloc::boxed::Box<[CompTypeId]>),
     /// A nominal codata type `νX. &{dᵢ : Bᵢ}` applied to its declaration's
     /// parameter telescope.
     ///
@@ -2846,9 +2847,13 @@ fn equal_syntax(
                     (&Computation::Reset(a), &Computation::Reset(b))
                     | (&Computation::Shift(a), &Computation::Shift(b))
                     | (&Computation::Lambda(a), &Computation::Lambda(b)) => pending.push(C(a, b)),
-                    (&Computation::With(a, b), &Computation::With(c, d))
-                    | (&Computation::Bind(a, b), &Computation::Bind(c, d)) => {
+                    (&Computation::Bind(a, b), &Computation::Bind(c, d)) => {
                         pending.extend([C(a, c), C(b, d)]);
+                    },
+                    (&Computation::With(ref left), &Computation::With(ref right))
+                        if left.len() == right.len() =>
+                    {
+                        pending.extend(left.iter().zip(right.iter()).map(|(a, b)| C(*a, *b)));
                     },
                     (
                         &Computation::Ascribe { body: a, ty: b },
@@ -3314,8 +3319,10 @@ fn equal_syntax(
                     return CertificateEquality::Different;
                 };
                 match (a, b) {
-                    (&CompType::With(a, b), &CompType::With(c, d)) => {
-                        pending.extend([CT(a, c), CT(b, d)]);
+                    (&CompType::With(ref left), &CompType::With(ref right))
+                        if left.len() == right.len() =>
+                    {
+                        pending.extend(left.iter().zip(right.iter()).map(|(a, b)| CT(*a, *b)));
                     },
                     (
                         &CompType::Returner {
@@ -4472,14 +4479,14 @@ mod tests
         let frames = [
             StackFrame::Apply(unit),
             StackFrame::Bind(returned),
-            StackFrame::Project(Side::Left),
+            StackFrame::Project(Component::from(0_usize)),
         ];
         let [twin, same] = [(); 2].map(|()| arena.value_reify(Arc::from(frames)));
         let shorter = arena.value_reify(Arc::from([StackFrame::Apply(unit)]));
         let other_side = arena.value_reify(Arc::from([
             StackFrame::Apply(unit),
             StackFrame::Bind(returned),
-            StackFrame::Project(Side::Right),
+            StackFrame::Project(Component::from(1_usize)),
         ]));
         cases.push((twin, same, alloc::vec![shorter, other_side], "a stack"));
         let [twin, same, other] = [

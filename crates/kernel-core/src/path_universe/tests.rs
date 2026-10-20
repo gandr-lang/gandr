@@ -97,7 +97,8 @@ Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::Stay { .. } | Val
         AnyNode::Computation(id) => arena.computation(id).map_or(0, |matched_native_node| match *matched_native_node {
 Computation::DataCase {ref branches,..} => branches.len().saturating_add(2),
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
-Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) | Computation::With(..) => 2,
+Computation::With(ref components) => components.len(),
+Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
 Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::SigmaSplit { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Ride { .. } | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::Project(..) | Computation::Fixpoint { .. } => 1,
 }),
         AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |matched_native_node| match *matched_native_node {
@@ -109,7 +110,8 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | Value
 ValueType::Session { .. } | ValueType::FlowUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Bridge { .. } | ValueType::Base(_) | ValueType::Sigma { .. } | ValueType::Universe { .. } | ValueType::Abstract(_) => 0,
 }),
         AnyNode::CompType(id) => match arena.comp_type(id) {
-            Some(&CompType::Arrow { .. } | &CompType::Pi { .. } | &CompType::With(..)) => 2,
+            Some(&CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
+            Some(&CompType::With(ref components)) => components.len(),
             Some(_) => 1, None => 0,
         },
     })]
@@ -204,7 +206,8 @@ fn children(
             Computation::Lambda(a) | Computation::Project(_, a) => vec![M(a)],
             Computation::Application(a, b) => vec![M(a), V(b)],
             Computation::Return(a) | Computation::Force(a) => vec![V(a)],
-            Computation::Bind(a, b) | Computation::With(a, b) => vec![M(a), M(b)],
+            Computation::Bind(a, b) => vec![M(a), M(b)],
+            Computation::With(ref components) => components.iter().copied().map(M).collect(),
             Computation::Case {
                 scrutinee,
                 ref branches,
@@ -251,7 +254,7 @@ fn children(
                 codomain: b,
             } => vec![A(a), C(b)],
             &CompType::Element { code: a, .. } => vec![V(a)],
-            &CompType::With(a, b) => vec![C(a), C(b)],
+            &CompType::With(ref components) => components.iter().copied().map(C).collect(),
             &CompType::Codata { ref arguments, .. } => arguments.iter().copied().map(V).collect(),
         },
     }
@@ -425,8 +428,10 @@ fn translate(
         (AnyNode::Computation(left), false),
     ];
     pending.extend(bodies.iter().map(|&body| (AnyNode::Value(body), false)));
-    // One buffer per operand kind, refilled for each tuple, case and product.
-    let (mut operands, mut branch_ids, mut part_ids) = (Vec::new(), Vec::new(), Vec::new());
+    // One buffer per operand kind, refilled for each tuple, case, product and
+    // lazy product.
+    let (mut operands, mut branch_ids, mut part_ids, mut comp_part_ids) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     while let Some((node, expanded)) = pending.pop() {
         if !expanded {
             if !seen.insert(node) {
@@ -569,11 +574,14 @@ fn translate(
                     Computation::Bind(first, second) => {
                         core.computation_bind(computations[&first], computations[&second])
                     },
-                    Computation::With(first, second) => {
-                        core.computation_with(computations[&first], computations[&second])
+                    Computation::With(ref components) => {
+                        branch_ids.clear();
+                        branch_ids
+                            .extend(components.iter().map(|component| computations[component]));
+                        core.computation_with(&branch_ids)
                     },
-                    Computation::Project(side, pair) => {
-                        core.computation_project(side, computations[&pair])
+                    Computation::Project(component, pair) => {
+                        core.computation_project(component, computations[&pair])
                     },
                     Computation::Case {
                         scrutinee,
@@ -658,8 +666,11 @@ fn translate(
                     CompType::Element { code, ref target } => {
                         core.comp_type_element(values[&code], target.clone())
                     },
-                    CompType::With(first, second) => {
-                        core.comp_type_with(comp_types[&first], comp_types[&second])
+                    CompType::With(ref components) => {
+                        comp_part_ids.clear();
+                        comp_part_ids
+                            .extend(components.iter().map(|component| comp_types[component]));
+                        core.comp_type_with(&comp_part_ids)
                     },
                     CompType::Codata { .. } => panic!("the fixtures name no codata type"),
                 };

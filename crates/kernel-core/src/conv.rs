@@ -1295,12 +1295,15 @@ fn converge(
                         }
                         stack.push(ConversionGoal::Value(one_code, other_code));
                     },
-                    (
-                        &CompType::With(one_left, one_right),
-                        &CompType::With(other_left, other_right),
-                    ) => {
-                        stack.push(ConversionGoal::CompType(one_left, other_left));
-                        stack.push(ConversionGoal::CompType(one_right, other_right));
+                    (&CompType::With(ref one), &CompType::With(ref other)) => {
+                        if one.len() != other.len() {
+                            return Convertibility::Distinct;
+                        }
+                        stack.extend(
+                            one.iter()
+                                .zip(other.iter())
+                                .map(|(&one, &other)| ConversionGoal::CompType(one, other)),
+                        );
                     },
                     // Codata converts nominally, as data does: one declaration
                     // at convertible arguments. Observations are never
@@ -1830,19 +1833,25 @@ fn converge(
                     (
                         &Computation::Bind(one_bound, one_body),
                         &Computation::Bind(other_bound, other_body),
-                    )
-                    | (
-                        &Computation::With(one_bound, one_body),
-                        &Computation::With(other_bound, other_body),
                     ) => {
                         stack.push(ConversionGoal::Computation(one_bound, other_bound));
                         stack.push(ConversionGoal::Computation(one_body, other_body));
                     },
+                    (&Computation::With(ref one), &Computation::With(ref other)) => {
+                        if one.len() != other.len() {
+                            return Convertibility::Distinct;
+                        }
+                        stack.extend(
+                            one.iter()
+                                .zip(other.iter())
+                                .map(|(&one, &other)| ConversionGoal::Computation(one, other)),
+                        );
+                    },
                     (
-                        &Computation::Project(one_side, one),
-                        &Computation::Project(other_side, other),
+                        &Computation::Project(one_component, one),
+                        &Computation::Project(other_component, other),
                     ) => {
-                        if one_side != other_side {
+                        if one_component != other_component {
                             return Convertibility::Distinct;
                         }
                         stack.push(ConversionGoal::Computation(one, other));

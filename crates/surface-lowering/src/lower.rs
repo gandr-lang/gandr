@@ -2189,7 +2189,7 @@ enum Plan
     /// The sum of the value types in the lowerer's operand store, in order.
     Sum(Stretch),
     /// The lazy record of the computation types in the lowerer's operand
-    /// store, in order: the binary lazy product nested to the right.
+    /// store, in order: one lazy product of them all.
     With(Stretch),
     /// A case of no arms over a scrutinee stated at no data type and no path
     /// type: the eliminator of the empty sum.
@@ -2201,10 +2201,10 @@ enum Plan
     /// The injection of its value into the summand at this index.
     Injection(Summand, NodeIndex),
     /// The copattern block over the computations in the lowerer's operand
-    /// store, in order: the binary lazy pair nested to the right.
+    /// store, in order: one lazy product of them all.
     Copattern(Stretch),
     /// One entry of the lazy record the thunk at the node holds: the thunk
-    /// forced, then observed along the nesting.
+    /// forced, then projected at the entry's position.
     Observe(NodeIndex, arity::Observed),
     /// One entry of the record or the dependent record the name at the node
     /// holds, with the type over labels it is stated with and the label
@@ -5381,7 +5381,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::ArrowType => self.arrow(site, cursor),
             Former::ProductType => self.chain(site, cursor, Former::ProductType),
             Former::SumType => self.chain(site, cursor, Former::SumType),
-            Former::LazyProductType => self.lazy_product(site, cursor),
+            Former::LazyProductType => self.chain(site, cursor, Former::LazyProductType),
             Former::TelescopeType => self.telescope_type(site, cursor),
             Former::LabelledSumType => self.labelled_sum_type(site, cursor),
             Former::LazyRecordType => self.lazy_record_type(site, cursor),
@@ -8198,7 +8198,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::modules::a_deep_module_path_is_governed_at_the_depth_that_binds_it`
     /// - witness: `tests::modules::a_module_namespace_is_not_a_projectable_record`
     /// - witness: `tests::modules::a_hidden_or_absent_user_module_component_is_declined_as_a_hole`
-    /// - witness: `lower::arity::tests::an_observation_projects_along_the_nesting`
+    /// - witness: `lower::arity::tests::an_observation_projects_its_entry`
     /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(
@@ -10073,24 +10073,28 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify an eager product type, `A * B`, or a sum type, `A + B`, and
-    /// the chain it heads; `former` names which.
+    /// Classify an eager product type, `A * B`, a sum type, `A + B`, or a lazy
+    /// product type, `C & D`, and the chain it heads; `former` names which.
     ///
     /// # Specification
-    /// - requires: `site` is a product or a sum in type position, or in value
-    ///   position where a type is quoted, and `former` is its former.
-    /// - ensures: the chain stands as a value type; an operand that is itself
-    ///   an unparenthesized form of `former` contributes its own operands
-    ///   instead, so a chain `A * B * C` is one product of three components and
-    ///   `A + B + C` one sum of three summands however each associates, while
-    ///   `(A * B) * C` keeps the parenthesized product as one component. Every
-    ///   component is read as a value type under the chain's frame, in written
-    ///   order, and the product or the sum is planned over them; the inner
-    ///   links of the chain are not read.
-    /// - provides: the eager product and the sum of the fragment, each the same
-    ///   core type as the braced `#{A, B}` and `+{A, B}`.
-    /// - fails: yields the wrong-sort refusal where no value type is read, and
-    ///   the refusal of any link of the chain out of shape.
+    /// - requires: `site` is a product, a sum or a lazy product in type
+    ///   position, or a product or a sum in value position where a type is
+    ///   quoted, and `former` is its former.
+    /// - ensures: the chain stands as a value type, or as a computation type
+    ///   for the lazy product; an operand that is itself an unparenthesized
+    ///   form of `former` contributes its own operands instead, so a chain `A *
+    ///   B * C` is one product of three components, `A + B + C` one sum of
+    ///   three summands and `C & D & E` one lazy product of three components
+    ///   however each associates, while `(A * B) * C` keeps the parenthesized
+    ///   product as one component. Every component is read as a value type, or
+    ///   a computation type for the lazy product, under the chain's frame, in
+    ///   written order, and the former is planned over them; the inner links of
+    ///   the chain are not read.
+    /// - provides: the eager product, the sum and the lazy product of the
+    ///   fragment, each the same core type as the braced `#{A, B}`, `+{A, B}`
+    ///   and `&{C, D}`.
+    /// - fails: yields the wrong-sort refusal where no type of the former's
+    ///   sort is read, and the refusal of any link of the chain out of shape.
     /// - panics: none.
     ///
     /// # Errors
@@ -10102,17 +10106,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a product and a sum of atoms, a chain of three of
-    ///   each, a parenthesized inner product, a product inside a sum and a
-    ///   product where a computation type is read, each asserted as the exact
-    ///   core node read back out of the arena or the exact refusal.
+    ///   each and of the lazy product, a parenthesized inner product, a product
+    ///   inside a sum and a product where a computation type is read, each
+    ///   asserted as the exact core node read back out of the arena or the
+    ///   exact refusal.
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
     /// - witness: `lower::tests::the_bridge_tokens_are_compound_and_sum_is_unaffected`
+    /// - witness: `lower::arity::tests::a_lazy_record_lowers_to_one_lazy_product`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Product(components) | Plan::Sum(components))) if components.end.saturating_sub(components.start) >= 2_usize
+                    Some(&(Plan::Product(components) | Plan::Sum(components) | Plan::With(components))) if components.end.saturating_sub(components.start) >= 2_usize
                 )
         },
     )]
@@ -10123,7 +10129,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
         former: Former,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = self.require(site, Produced::ValueType)?;
+        let lazy = former == Former::LazyProductType;
+        let frame = self.require(
+            site,
+            if lazy {
+                Produced::CompType
+            }
+            else {
+                Produced::ValueType
+            },
+        )?;
         let start = self.operands.len();
         let [first, second] = halves(site, &mut cursor, former)?;
         let mut pending = Vec::from([second, first]);
@@ -10149,10 +10164,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
         for position in components.start .. components.end {
             if let Some(&component) = self.operands.get(position) {
-                self.read(component, Reading::ValueType(frame));
+                self.read(
+                    component,
+                    if lazy {
+                        Reading::CompType(frame)
+                    }
+                    else {
+                        Reading::ValueType(frame)
+                    },
+                );
             }
         }
-        let plan = if former == Former::SumType {
+        let plan = if lazy {
+            Plan::With(components)
+        }
+        else if former == Former::SumType {
             Plan::Sum(components)
         }
         else {
@@ -15694,14 +15720,15 @@ fn exhausted<'source>(
     }
 }
 
-/// The two operands of the product `site`, `A * B`, or of the sum `site`,
-/// `A + B`, in written order; `former` names which.
+/// The two operands of the product `site`, `A * B`, the sum `site`, `A + B`,
+/// or the lazy product `site`, `C & D`, in written order; `former` names which.
 ///
 /// # Specification
 /// - requires: `cursor` holds the pieces of a form of `former` at `site`.
-/// - ensures: one operand, the `*` tile of a product or the `+` tile of a sum,
-///   and one operand, nothing after them.
-/// - provides: the shape check every link of a product or a sum chain shares.
+/// - ensures: one operand, the `*` tile of a product, the `+` tile of a sum or
+///   the `&` tile of a lazy product, and one operand, nothing after them.
+/// - provides: the shape check every link of a product, a sum or a lazy product
+///   chain shares.
 /// - fails: either hole's own refusal, and a misplaced-tile or extra-operand
 ///   refusal for a link out of shape.
 /// - panics: none.
@@ -15723,6 +15750,9 @@ fn halves<'source>(
 {
     let tile = if former == Former::SumType {
         TileName::PLUS
+    }
+    else if former == Former::LazyProductType {
+        TileName::AMPERSAND
     }
     else {
         TileName::STAR

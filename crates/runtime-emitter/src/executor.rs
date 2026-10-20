@@ -52,8 +52,7 @@ const STUBS: [StencilId; Stub::ALL.len().wrapping_add(1)] = [
     Stub::Argument.stencil(),
     Stub::Reset.stencil(),
     Stub::Answer.stencil(),
-    Stub::ProjectLeft.stencil(),
-    Stub::ProjectRight.stencil(),
+    Stub::Project.stencil(),
     StencilId::Halt,
 ];
 

@@ -903,9 +903,12 @@ pub fn covariant(
                 CompType::Element { code, .. } => {
                     work.push((Position::Value(code), polarity, depth));
                 },
-                CompType::With(first, second) => {
-                    work.push((Position::CompType(first), polarity, depth));
-                    work.push((Position::CompType(second), polarity, depth));
+                CompType::With(ref components) => {
+                    work.extend(
+                        components
+                            .iter()
+                            .map(|&component| (Position::CompType(component), polarity, depth)),
+                    );
                 },
                 CompType::Codata { .. } | CompType::Unknown => return Err(refused),
             },

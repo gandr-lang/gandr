@@ -24,7 +24,6 @@ use gandr_core_term::memory::MemoryForm;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Literal;
-use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
 use gandr_theory_cell_complexes::Polarity;
 
@@ -521,11 +520,11 @@ fn producer(
                     gandr_core_term::control::StackFrame::Bind(body) => {
                         pieces.extend([text!("bind(x; α) ⇒ "), Piece::Command(body, depth)]);
                     },
-                    gandr_core_term::control::StackFrame::Project(Side::Left) => {
-                        pieces.push(text!("project-left"));
-                    },
-                    gandr_core_term::control::StackFrame::Project(Side::Right) => {
-                        pieces.push(text!("project-right"));
+                    gandr_core_term::control::StackFrame::Project(component) => {
+                        pieces.push(Piece::Owned(alloc::format!(
+                            "project[{}]",
+                            usize::from(component)
+                        )));
                     },
                 }
             }
@@ -589,12 +588,13 @@ fn producer(
                 if position > 0 {
                     pieces.push(text!(" | "));
                 }
-                pieces.push(Piece::Text(Token(match arm.destructor {
-                    DestructorTag::Apply => "apply(x; α) ⇒ ",
-                    DestructorTag::Force => "force(α) ⇒ ",
-                    DestructorTag::Project(Side::Left) => "project-left(α) ⇒ ",
-                    DestructorTag::Project(Side::Right) => "project-right(α) ⇒ ",
-                })));
+                pieces.push(match arm.destructor {
+                    DestructorTag::Apply => text!("apply(x; α) ⇒ "),
+                    DestructorTag::Force => text!("force(α) ⇒ "),
+                    DestructorTag::Project(component) => {
+                        Piece::Owned(alloc::format!("project[{}](α) ⇒ ", usize::from(component)))
+                    },
+                });
                 pieces.push(Piece::Command(arm.body, depth));
             }
             pieces.push(text!("}"));
@@ -636,7 +636,11 @@ fn producer(
         | ConsumerNode::ListFold { on_nil, on_cons, continuation, .. } => ret.iter().filter_map(|piece| match *piece { Piece::Command(body, _) => Some(body), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq([on_nil, on_cons]) && ret.iter().any(|piece| matches!(*piece, Piece::Consumer(found, _) if found == continuation)),
         | ConsumerNode::MuTilde { body } => matches!(ret.as_slice(), &[Piece::Text(Token("μ̃x. ")), Piece::Command(found, _)] if body == found),
         | ConsumerNode::Destructor { tag, .. } => matches!(ret.first(), Some(&Piece::Text(Token(name)))
-            if name == match tag { DestructorTag::Apply => "apply", DestructorTag::Force => "force", DestructorTag::Project(Side::Left) => "project-left", DestructorTag::Project(Side::Right) => "project-right" }),
+            if name == match tag { DestructorTag::Apply => "apply", DestructorTag::Force => "force", DestructorTag::Project(_) => "project" })
+            && match tag {
+                | DestructorTag::Project(component) => matches!(ret.get(1), Some(&Piece::Owned(ref index)) if *index == alloc::format!("[{}]", usize::from(component))),
+                | DestructorTag::Apply | DestructorTag::Force => true,
+            },
         | ConsumerNode::Case { ref arms } => matches!(ret.first(), Some(&Piece::Text(Token("case {"))))
             && matches!(ret.last(), Some(&Piece::Text(Token("}"))))
             && ret.iter().filter_map(|piece| match *piece { Piece::Command(body, _) => Some(body), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(arms.iter().map(|arm| arm.body)),
@@ -686,10 +690,16 @@ fn consumer(
             let name = match tag {
                 DestructorTag::Apply => Token("apply"),
                 DestructorTag::Force => Token("force"),
-                DestructorTag::Project(Side::Left) => Token("project-left"),
-                DestructorTag::Project(Side::Right) => Token("project-right"),
+                DestructorTag::Project(_) => Token("project"),
             };
-            applied(name, producers, consumers, depth)
+            let mut pieces = applied(name, producers, consumers, depth);
+            if let DestructorTag::Project(component) = tag {
+                pieces.insert(
+                    1,
+                    Piece::Owned(alloc::format!("[{}]", usize::from(component))),
+                );
+            }
+            pieces
         },
         ConsumerNode::DataCase { ref branches, then } => applied(
             Token("datacase"),

@@ -863,7 +863,7 @@ fn handlers_discharge_only_their_own_interface()
 fn control_rules_preserve_rows_scopes_and_shapes()
 {
     use gandr_core_term::control::StackFrame;
-    use gandr_kernel_term::Side;
+    use gandr_kernel_term::Component;
     let mut arena = CoreArena::new();
     let unit_type = arena.value_type_unit();
     let integer_type = arena.value_type_base(BaseType::Integer);
@@ -873,7 +873,7 @@ fn control_rules_preserve_rows_scopes_and_shapes()
     let returned_string = arena.comp_type_returner(string_type);
     let ambient_type = arena.value_type_unit();
     let arrow = arena.comp_type_arrow(ambient_type, returned_integer);
-    let pair = arena.comp_type_with(returned_unit, arrow);
+    let pair = arena.comp_type_with(&[returned_unit, arrow]);
     let suspended_pair = arena.value_type_thunk(pair);
     let outer = arena.value_constant(ConstantIndex::from(0_usize));
     let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
@@ -881,7 +881,7 @@ fn control_rules_preserve_rows_scopes_and_shapes()
     let stack = arena.value_reify(
         [
             StackFrame::Bind(forced),
-            StackFrame::Project(Side::Right),
+            StackFrame::Project(Component::from(1_usize)),
             StackFrame::Apply(argument),
         ]
         .into(),
@@ -892,7 +892,15 @@ fn control_rules_preserve_rows_scopes_and_shapes()
         effect_row("Ask".into(), unit_type, integer_type),
     );
     let bad_classifier = arena.value_type_stack(effectful, returned_integer);
-    let bad_stack = arena.value_reify([StackFrame::Project(Side::Left)].into());
+    let bad_stack = arena.value_reify([StackFrame::Project(Component::from(0_usize))].into());
+    let past_stack = arena.value_reify(
+        [
+            StackFrame::Bind(forced),
+            StackFrame::Project(Component::from(2_usize)),
+            StackFrame::Apply(argument),
+        ]
+        .into(),
+    );
     let code_type = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
     let bound_code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let element = arena.value_type_element(bound_code, Level::zero());
@@ -913,9 +921,10 @@ fn control_rules_preserve_rows_scopes_and_shapes()
     let reset = arena.computation_reset(shift);
     let wrong_shift = arena.computation_shift(return_string);
     let wrong_reset = arena.computation_reset(wrong_shift);
-    let negative_pair = arena.computation_with(reset, return_string);
-    let negative_pair_type = arena.comp_type_with(returned_integer, returned_string);
+    let negative_pair = arena.computation_with(&[reset, return_string]);
+    let negative_pair_type = arena.comp_type_with(&[returned_integer, returned_string]);
     let nested = arena.computation_reset(negative_pair);
+    let past = arena.computation_project(Component::from(2_usize), forced);
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     seed(&mut context, &[suspended_pair]);
     context.binders().open(Zone::Intuitionistic, ambient_type);
@@ -937,6 +946,18 @@ fn control_rules_preserve_rows_scopes_and_shapes()
             ..
         })
     ));
+    assert!(matches!(
+        check_value(&mut context, past_stack, classifier),
+        Err(CheckRefusal::ShapeMismatch {
+            wanted: ExpectedShape::With,
+            ..
+        })
+    ));
+    assert_eq!(
+        synthesise_comp(&mut context, past),
+        Err(CheckRefusal::AbsentTupleComponent(past)),
+        "a projection past the lazy product's last component is refused by position"
+    );
     let dependent_classifier = form_value_type(&mut context, dependent_classifier).unwrap();
     check_value(&mut context, dependent_stack, dependent_classifier)
         .expect("stack application instantiates its Pi output");
@@ -2736,11 +2757,13 @@ fn an_introduction_against_the_unknown_type_checks_its_parts()
     let stack = arena.value_reify(
         [
             gandr_core_term::control::StackFrame::Apply(zero),
-            gandr_core_term::control::StackFrame::Project(Side::Left),
+            gandr_core_term::control::StackFrame::Project(gandr_kernel_term::Component::from(
+                0_usize,
+            )),
         ]
         .into(),
     );
-    let lazy = arena.computation_with(returned, returned);
+    let lazy = arena.computation_with(&[returned, returned]);
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     let unknown_value = form_value_type(&mut context, unknown_value).unwrap();
     let unknown_comp = form_comp_type(&mut context, unknown_comp).unwrap();
@@ -2788,7 +2811,7 @@ fn an_introduction_against_the_unknown_type_checks_its_parts()
         ),
         (
             lazy,
-            "a lazy pair against the unknown type checks both components",
+            "a lazy product against the unknown type checks its components",
         ),
     ] {
         assert!(

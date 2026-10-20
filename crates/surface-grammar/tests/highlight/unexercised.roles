@@ -1480,6 +1480,7 @@
 2271 Other lazy_record_type , L[<type>] R[}]
 2276 TypeBuiltin primitive_type Any L[] R[]
 2278 TypeBuiltin primitive_type Never L[] R[]
+2279 TypeBuiltin primitive_type Boolean L[] R[]
 2281 TypeBuiltin primitive_type u32 L[] R[]
 2285 TypeBuiltin primitive_type f32 L[] R[]
 2287 TypeBuiltin primitive_type Char L[] R[]

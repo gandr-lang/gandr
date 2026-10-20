@@ -26,6 +26,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::control::StackFrame;
 use gandr_core_term::primitive::Arguments;
 use gandr_core_term::primitive::PRELUDE;
+use gandr_kernel_term::Component;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
@@ -101,7 +102,7 @@ fn innermost(core: &mut CoreArena) -> ValueId
 /// a closure's site, captures and environment are compared too; three
 /// primitive calls, answering an integer, an integer past 64 bits and a
 /// boolean; a reified stack resumed, its application frame and its bind
-/// frame, which reads a variable bound outside the stack; and a lazy pair
+/// frame, which reads a variable bound outside the stack; and a lazy product
 /// projected where it is built and after it was suspended, so an object
 /// answers the projection it is entered with.
 ///
@@ -261,13 +262,15 @@ pub fn named() -> Vec<Named>
     let mut core = CoreArena::new();
     let one = integer(&mut core, Integer(1));
     let two = integer(&mut core, Integer(2));
+    let three = integer(&mut core, Integer(3));
     let first = core.computation_return(one);
     let second = core.computation_return(two);
-    let lazy = core.computation_with(first, second);
-    let root = core.computation_project(Side::Right, lazy);
+    let third = core.computation_return(three);
+    let lazy = core.computation_with(&[first, second, third]);
+    let root = core.computation_project(Component::from(2_usize), lazy);
     push(
-        "project right (with { return 1 } { return 2 })",
-        "⟨2 |+ ★⟩",
+        "project 2 (with { return 1 } { return 2 } { return 3 })",
+        "⟨3 |+ ★⟩",
         core,
         root,
     );
@@ -275,18 +278,20 @@ pub fn named() -> Vec<Named>
     let mut core = CoreArena::new();
     let one = integer(&mut core, Integer(1));
     let two = integer(&mut core, Integer(2));
+    let three = integer(&mut core, Integer(3));
     let first = core.computation_return(one);
     let second = core.computation_return(two);
-    let lazy = core.computation_with(first, second);
+    let third = core.computation_return(three);
+    let lazy = core.computation_with(&[first, second, third]);
     let suspended = core.value_thunk(lazy);
     let bound = core.computation_return(suspended);
     let variable = innermost(&mut core);
     let forced = core.computation_force(variable);
-    let projected = core.computation_project(Side::Left, forced);
+    let projected = core.computation_project(Component::from(1_usize), forced);
     let root = core.computation_bind(bound, projected);
     push(
-        "t <- return thunk { with { return 1 } { return 2 } }; project left (force t)",
-        "⟨1 |+ ★⟩",
+        "t <- return thunk { with { return 1 } { return 2 } { return 3 } }; project 1 (force t)",
+        "⟨2 |+ ★⟩",
         core,
         root,
     );

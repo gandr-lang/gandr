@@ -163,7 +163,7 @@ pub enum CheckingForm
     Reset(ComputationId),
     /// A shift needs the type of the captured continuation.
     Shift(ComputationId),
-    /// A lazy pair needs the two expected computation types.
+    /// A lazy product needs its expected computation types.
     With(ComputationId),
     /// A sum injection needs its other summand from the expected type.
     Injection(ValueId),

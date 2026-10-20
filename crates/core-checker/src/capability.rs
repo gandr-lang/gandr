@@ -518,8 +518,8 @@ pub fn reaches(
                 CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => {
                     pending.extend([TypeNode::Value(domain), TypeNode::Computation(codomain)]);
                 },
-                CompType::With(left, right) => {
-                    pending.extend([TypeNode::Computation(left), TypeNode::Computation(right)]);
+                CompType::With(ref components) => {
+                    pending.extend(components.iter().copied().map(TypeNode::Computation));
                 },
                 CompType::Codata { ref arguments, .. } => {
                     pending.extend(arguments.iter().filter_map(|&argument| {

@@ -6,6 +6,8 @@ def product_chain = (1, unit, 2, "text");
 def sum_chain : Integer + Unit + Integer + String;
 def sum_chain = +{.2 = 2};
 
-@[ refuses("OutOfFragment") ]
-def lazy_chain : -F Integer & -F Unit & -F Boolean & -F String;
-def lazy_chain = pure 1;
+/// A lazy chain is one lazy product of four, as the eager chains above are one
+/// product and one sum.
+@[ checks ]
+def lazy_chain : +U (-F Integer & -F Unit & -F Integer & -F String);
+def lazy_chain = thunk { &{.0 => pure 1, .1 => pure unit, .2 => pure 2, .3 => pure "text"} };

@@ -108,10 +108,10 @@ use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::OperationName;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::primitive::Primitive;
+use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
-use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
 use gandr_runtime_stencils::Arity;
 use gandr_runtime_stencils::Family;
@@ -608,8 +608,8 @@ pub enum Reified
 {
     /// An application frame: its argument is the call's next argument.
     Apply,
-    /// A projection frame, taking the left component or the right.
-    Project(Side),
+    /// A projection frame, taking the component.
+    Project(Component),
     /// A bind frame resuming at the label, in a copy of the window.
     Bind(Label),
 }
@@ -762,6 +762,29 @@ fn header_operands(header: Header) -> (Operand, Operand)
         Operand::Immediate(Immediate::from(low)),
         Operand::Immediate(Immediate::from(u32::from(header.family()))),
     )
+}
+
+/// The immediate operand naming `component` of a lazy product.
+///
+/// # Specification
+/// - ensures: the component's index, unchanged.
+/// - fails: [`Form::HeaderWidth`] for an index past an immediate's 32 bits.
+/// - executable: none — the conversion is the body's one computation; a
+///   predicate would restate it.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L2 — projections of the second and the third component of a
+///   lazy product of three answer their own arms on both tiers, where a wrong
+///   index would answer another.
+/// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+fn component_immediate(component: Component) -> Result<Immediate, Form>
+{
+    u32::try_from(usize::from(component))
+        .map(Immediate::from)
+        .map_err(|_overflow| Form::HeaderWidth)
 }
 
 /// One lowering's state.
@@ -1035,12 +1058,10 @@ impl Lowering<'_>
             let (observed, entry) = match arm.destructor {
                 DestructorTag::Apply => (Observed::Apply, Entry::Apply(arm.body)),
                 DestructorTag::Force => (Observed::Force, Entry::Force(arm.body)),
-                DestructorTag::Project(Side::Left) => {
-                    (Observed::ProjectLeft, Entry::Force(arm.body))
-                },
-                DestructorTag::Project(Side::Right) => {
-                    (Observed::ProjectRight, Entry::Force(arm.body))
-                },
+                DestructorTag::Project(component) => (
+                    Observed::Project(Word::from(usize::from(component))),
+                    Entry::Force(arm.body),
+                ),
             };
             let word = u32::try_from(usize::from(Word::from(observed)))
                 .map_err(|_overflow| Form::HeaderWidth)?;
@@ -2155,13 +2176,12 @@ impl Lowering<'_>
                         ));
                         self.tasks.push(Task::Load(then, held));
                     },
-                    (DestructorTag::Project(side), &[]) => {
-                        let stencil = match side {
-                            Side::Left => StencilId::ProjectLeft,
-                            Side::Right => StencilId::ProjectRight,
-                        };
-                        self.tasks
-                            .push(Task::Emit(stencil, Operand::Unused, Operand::Unused));
+                    (DestructorTag::Project(component), &[]) => {
+                        self.tasks.push(Task::Emit(
+                            StencilId::Project,
+                            Operand::Immediate(component_immediate(component)?),
+                            Operand::Unused,
+                        ));
                         self.tasks.push(Task::Emit(
                             StencilId::Var,
                             function.operand(),
@@ -2257,15 +2277,11 @@ impl Lowering<'_>
                         ));
                         self.tasks.push(Task::Load(then, scope));
                     },
-                    (DestructorTag::Project(side), &[]) => {
-                        let stub = match side {
-                            Side::Left => Stub::ProjectLeft,
-                            Side::Right => Stub::ProjectRight,
-                        };
+                    (DestructorTag::Project(component), &[]) => {
                         self.tasks.push(Task::Emit(
-                            StencilId::PushForce,
-                            Operand::Stub(stub),
-                            Operand::Unused,
+                            StencilId::PushProject,
+                            Operand::Stub(Stub::Project),
+                            Operand::Immediate(component_immediate(component)?),
                         ));
                         self.tasks.push(Task::Load(then, scope));
                     },
@@ -2355,8 +2371,8 @@ pub fn lower(
 ///
 /// # Adequacy
 /// - hypothesis: L2 — the named programs halt on both tiers with equal answers:
-///   returns, binds, cases, constructors, functions, thunks, lazy pairs and an
-///   application. The stencils' suite runs the generated programs and the
+///   returns, binds, cases, constructors, functions, thunks, lazy products and
+///   an application. The stencils' suite runs the generated programs and the
 ///   corpus through this lowering too, each refused form counted by name.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`

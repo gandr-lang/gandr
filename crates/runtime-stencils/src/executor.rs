@@ -132,11 +132,10 @@ stencils! {
     ApplyFrame => stencil_apply_frame,
     /// `stencil_argument_frame`: the fold cell frames' shared stub.
     ArgumentFrame => stencil_argument_frame,
-    /// `stencil_project_left`: also the left projection frames' shared stub.
-    ProjectLeft => stencil_project_left,
-    /// `stencil_project_right`: also the right projection frames' shared
-    /// stub.
-    ProjectRight => stencil_project_right,
+    /// `stencil_project`.
+    Project => stencil_project,
+    /// `stencil_project_frame`: the projection frames' shared stub.
+    ProjectFrame => stencil_project_frame,
     /// `stencil_arm`.
     Arm => stencil_arm,
     /// `stencil_unobserved`.
@@ -157,6 +156,8 @@ stencils! {
     PushApply => stencil_push_apply,
     /// `stencil_push_force`.
     PushForce => stencil_push_force,
+    /// `stencil_push_project`.
+    PushProject => stencil_push_project,
     /// `stencil_push_fields`.
     PushFields => stencil_push_fields,
     /// `stencil_shrink`.

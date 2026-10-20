@@ -495,13 +495,13 @@ fn streams(observed: Observed) -> Program
     let returned = arena.computation_return(unit);
     let own = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let forced = arena.computation_force(own);
-    let pair = arena.computation_with(returned, forced);
+    let pair = arena.computation_with(&[returned, forced]);
     let fixpoint = arena.computation_fixpoint(pair, gandr_kernel_term::FixpointEvidence::Partial);
     let ones = arena.value_thunk(fixpoint);
     let ones_constant = arena.value_constant(ConstantIndex::from(1_usize));
     let forced = arena.computation_force(ones_constant);
-    let rest = arena.computation_project(gandr_kernel_term::Side::Right, forced);
-    let second = arena.computation_project(gandr_kernel_term::Side::Left, rest);
+    let rest = arena.computation_project(gandr_kernel_term::Component::from(1_usize), forced);
+    let second = arena.computation_project(gandr_kernel_term::Component::from(0_usize), rest);
     let second = arena.value_thunk(second);
     let returner = arena.comp_type_returner(unit_type);
     let returner = arena.value_type_thunk(returner);

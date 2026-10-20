@@ -8,7 +8,6 @@
 use alloc::sync::Arc;
 
 use anodized::spec;
-use gandr_kernel_term::Side;
 
 use crate::CompType;
 use crate::CompTypeId;
@@ -31,8 +30,8 @@ pub enum StackFrame<V = ValueId, C = ComputationId>
     /// Bind a returned value over a computation, then continue with the next
     /// frame.
     Bind(C),
-    /// Select a component of a negative product.
-    Project(Side),
+    /// Select the component of a negative product at a position.
+    Project(crate::Component),
 }
 
 /// One operation clause, with payload and resumption bound in that order.
@@ -301,64 +300,62 @@ impl CoreArena
     /// Pair computations lazily: an observation runs exactly one component.
     ///
     /// # Specification
-    /// - requires: both components resolve.
-    /// - ensures: preserves the ordered components without running either.
+    /// - requires: every component resolves.
+    /// - ensures: preserves the ordered components without running any.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a flipped pair and a substitution that reaches only
-    ///   the first component distinguish component order.
-    /// - witness: `control::tests::lazy_pairs_keep_their_components_and_projection_side`
-    #[spec(requires: self.computation(first).is_some() && self.computation(second).is_some(), ensures: |ret| self.computation(ret) == Some(&Computation::With(first, second)))]
+    /// - hypothesis: L3 — a reordered tuple and a substitution that reaches
+    ///   only the first component distinguish component order.
+    /// - witness: `control::tests::lazy_tuples_keep_their_components_and_projection_position`
+    #[spec(requires: components.iter().all(|component| self.computation(*component).is_some()), ensures: |ret| matches!(self.computation(ret), Some(&Computation::With(ref stored)) if **stored == *components))]
     #[inline]
     pub fn computation_with(
         &mut self,
-        first: ComputationId,
-        second: ComputationId,
+        components: &[ComputationId],
     ) -> ComputationId
     {
-        self.alloc_computation(Computation::With(first, second))
+        self.alloc_computation(Computation::With(components.into()))
     }
 
-    /// Observe one component of a negative pair.
+    /// Observe the component of a negative product at a position.
     ///
     /// # Specification
     /// - requires: the subject resolves.
-    /// - ensures: retains the chosen side.
+    /// - ensures: retains the chosen component.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — opposite sides and a flipped pair distinguish the
-    ///   chosen side.
-    /// - witness: `control::tests::lazy_pairs_keep_their_components_and_projection_side`
-    #[spec(requires: self.computation(subject).is_some(), ensures: |ret| self.computation(ret) == Some(&Computation::Project(side, subject)))]
+    /// - hypothesis: L3 — distinct positions and a reordered tuple distinguish
+    ///   the chosen component.
+    /// - witness: `control::tests::lazy_tuples_keep_their_components_and_projection_position`
+    #[spec(requires: self.computation(subject).is_some(), ensures: |ret| self.computation(ret) == Some(&Computation::Project(component, subject)))]
     #[inline]
     pub fn computation_project(
         &mut self,
-        side: Side,
+        component: crate::Component,
         subject: ComputationId,
     ) -> ComputationId
     {
-        self.alloc_computation(Computation::Project(side, subject))
+        self.alloc_computation(Computation::Project(component, subject))
     }
 
     /// Form a negative product whose components share the ambient scope.
     ///
     /// # Specification
-    /// - requires: both component types resolve.
+    /// - requires: every component type resolves.
     /// - ensures: preserves the ordered computation types.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a stack projection must consume a negative product,
     ///   not a returner of a positive pair.
     /// - witness: `control::tests::stack_literals_preserve_binder_scope`
-    #[spec(requires: self.comp_type(first).is_some() && self.comp_type(second).is_some(), ensures: |ret| self.comp_type(ret) == Some(&CompType::With(first, second)))]
+    #[spec(requires: components.iter().all(|component| self.comp_type(*component).is_some()), ensures: |ret| matches!(self.comp_type(ret), Some(&CompType::With(ref stored)) if **stored == *components))]
     #[inline]
     pub fn comp_type_with(
         &mut self,
-        first: CompTypeId,
-        second: CompTypeId,
+        components: &[CompTypeId],
     ) -> CompTypeId
     {
-        self.alloc_comp_type(CompType::With(first, second))
+        self.alloc_comp_type(CompType::With(components.into()))
     }
 }
 

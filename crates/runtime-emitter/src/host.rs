@@ -890,12 +890,9 @@ impl<'run, 'host> Calls<'run, 'host>
                         window: None,
                     }
                 },
-                Reified::Project(side) => Frame {
-                    code: self.codes.stub(match side {
-                        Side::Left => Stub::ProjectLeft,
-                        Side::Right => Stub::ProjectRight,
-                    }),
-                    word: Word::ZERO,
+                Reified::Project(component) => Frame {
+                    code: self.codes.stub(Stub::Project),
+                    word: Word::from(usize::from(component)),
                     window: None,
                 },
                 Reified::Bind(label) => {

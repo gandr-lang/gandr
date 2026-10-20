@@ -202,8 +202,6 @@ pub enum TagSite
     FixpointEvidence,
     /// A higher-field layer kind, outside the guard and redirect alphabet.
     HigherLayer,
-    /// A lazy projection's side, outside the left and right alphabet.
-    ProjectionSide,
     /// A composition's seam, outside the sequence and feedback alphabet.
     Seam,
     /// A presented rule's node, outside the constructor and variable alphabet.
@@ -250,7 +248,6 @@ impl fmt::Display for TagSite
             Self::ConstraintRelation => "a constraint relation",
             Self::FixpointEvidence => "a fixpoint evidence claim",
             Self::HigherLayer => "a higher-field layer kind",
-            Self::ProjectionSide => "a lazy projection side",
             Self::Seam => "a composition seam",
             Self::RuleNode => "a presented rule's node",
         })

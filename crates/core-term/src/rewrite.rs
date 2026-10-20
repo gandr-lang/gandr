@@ -1496,7 +1496,8 @@ Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
-Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Transport(..) | Computation::Split { motive: SplitMotive::Ambient, .. } => 2,
+Computation::Resume(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Transport(..) | Computation::Split { motive: SplitMotive::Ambient, .. } => 2,
+Computation::With(ref components) => components.len(),
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
 Computation::Session(ref action) => action.values().count().saturating_add(action.computations().count()).saturating_add(action.value_types().count()),
@@ -1519,7 +1520,8 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
             | None | Some(&CompType::Unknown) => 0_usize,
             | Some(&CompType::Returner { ref effects, .. }) => 1_usize.saturating_add(effects.types().count()),
             | Some(&CompType::Element { .. }) => 1,
-            Some(&CompType::With(..) | &CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
+            Some(&CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
+            Some(&CompType::With(ref components)) => components.len(),
             Some(&CompType::Codata { ref arguments, .. }) => arguments.len(),
         },
     }],
@@ -1745,9 +1747,13 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     }
                     self.tasks.push(open(Node::Value(scrutinee), depth));
                 },
-                Some(&Computation::With(first, second)) => {
-                    self.tasks.push(open(Node::Computation(second), depth));
-                    self.tasks.push(open(Node::Computation(first), depth));
+                Some(&Computation::With(ref components)) => {
+                    self.tasks.extend(
+                        components
+                            .iter()
+                            .rev()
+                            .map(|&component| open(Node::Computation(component), depth)),
+                    );
                 },
                 Some(&Computation::Ascribe { body, ty }) => {
                     self.tasks.push(open(Node::CompType(ty), depth));
@@ -2026,10 +2032,12 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 }
             },
             Node::CompType(id) => match self.arena.comp_type(id) {
-                Some(&CompType::With(first, second)) => {
-                    self.tasks.push(open(Node::CompType(second), depth));
-                    self.tasks.push(open(Node::CompType(first), depth));
-                },
+                Some(&CompType::With(ref components)) => self.tasks.extend(
+                    components
+                        .iter()
+                        .rev()
+                        .map(|&component| open(Node::CompType(component), depth)),
+                ),
                 None | Some(&CompType::Unknown) => {},
                 Some(&CompType::Codata { ref arguments, .. }) => self.tasks.extend(
                     arguments
@@ -2734,7 +2742,8 @@ Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
-Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Transport(..) | Computation::Split { motive: SplitMotive::Ambient, .. } => 2,
+Computation::Resume(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Transport(..) | Computation::Split { motive: SplitMotive::Ambient, .. } => 2,
+Computation::With(ref components) => components.len(),
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
 Computation::Session(ref action) => action.values().count().saturating_add(action.computations().count()).saturating_add(action.value_types().count()),
@@ -2912,15 +2921,20 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
                     }
                 }
             },
-            Computation::With(first, second) => {
-                let rewritten_second = Self::computation(&mut self.results, second);
-                let rewritten_first = Self::computation(&mut self.results, first);
-                if (rewritten_first, rewritten_second) == (first, second) {
-                    id
+            Computation::With(ref components) => {
+                let mut changed: Option<Vec<ComputationId>> = None;
+                for (index, original) in components.iter().enumerate().rev() {
+                    let rewritten = Self::computation(&mut self.results, *original);
+                    if rewritten != *original {
+                        let changed = changed.get_or_insert_with(|| components.to_vec());
+                        if let Some(slot) = changed.get_mut(index) {
+                            *slot = rewritten;
+                        }
+                    }
                 }
-                else {
-                    self.arena
-                        .computation_with(rewritten_first, rewritten_second)
+                match changed {
+                    Some(components) => self.arena.computation_with(&components),
+                    None => id,
                 }
             },
             Computation::Ascribe { body, ty } => {
@@ -2951,13 +2965,13 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
                     self.arena.computation_shift(rewritten)
                 }
             },
-            Computation::Project(side, body) => {
+            Computation::Project(component, body) => {
                 let rewritten = Self::computation(&mut self.results, body);
                 if rewritten == body {
                     id
                 }
                 else {
-                    self.arena.computation_project(side, rewritten)
+                    self.arena.computation_project(component, rewritten)
                 }
             },
             Computation::ListFold {
@@ -3603,7 +3617,8 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
             | None | Some(&CompType::Unknown) => 0_usize,
             | Some(&CompType::Returner { ref effects, .. }) => 1_usize.saturating_add(effects.types().count()),
             | Some(&CompType::Element { .. }) => 1,
-            Some(&CompType::With(..) | &CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
+            Some(&CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
+            Some(&CompType::With(ref components)) => components.len(),
             Some(&CompType::Codata { ref arguments, .. }) => arguments.len(),
         }],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
@@ -3620,14 +3635,20 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
             return id;
         };
         match *node {
-            CompType::With(first, second) => {
-                let rewritten_second = Self::comp_type(&mut self.results, second);
-                let rewritten_first = Self::comp_type(&mut self.results, first);
-                if (rewritten_first, rewritten_second) == (first, second) {
-                    id
+            CompType::With(ref components) => {
+                let mut changed: Option<Vec<CompTypeId>> = None;
+                for (index, original) in components.iter().enumerate().rev() {
+                    let rewritten = Self::comp_type(&mut self.results, *original);
+                    if rewritten != *original {
+                        let changed = changed.get_or_insert_with(|| components.to_vec());
+                        if let Some(slot) = changed.get_mut(index) {
+                            *slot = rewritten;
+                        }
+                    }
                 }
-                else {
-                    self.arena.comp_type_with(rewritten_first, rewritten_second)
+                match changed {
+                    Some(components) => self.arena.comp_type_with(&components),
+                    None => id,
                 }
             },
             CompType::Returner {
@@ -5166,12 +5187,17 @@ fn survey_computation(
         | Computation::Project(_, body)
         | Computation::Mark { body, .. }
         | Computation::Ascribe { body, .. } => next.push(Position::Computation(body, own)),
-        Computation::Bind(first, second) | Computation::With(first, second) => {
+        Computation::Bind(first, second) => {
             next.extend([
                 Position::Computation(first, own),
                 Position::Computation(second, own),
             ]);
         },
+        Computation::With(ref components) => next.extend(
+            components
+                .iter()
+                .map(|&component| Position::Computation(component, own)),
+        ),
         Computation::Case {
             scrutinee,
             ref branches,

@@ -36,7 +36,6 @@ use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::MarkedDeclaration;
 use gandr_kernel_term::Presentation;
 use gandr_kernel_term::RuleNode;
-use gandr_kernel_term::Side;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
@@ -1367,20 +1366,21 @@ fn tuple_projection_reads_each_component()
     assert_eq!(encode(decoded.arena(), decoded.declarations()), bytes);
 }
 
-/// A lazy pairing checks against its lazy product; each projection of the
-/// admitted pairing synthesizes its own side and replays, through the
-/// pairing's unfolding, to that side's returner; a projection of a pairing
-/// replays with no decision; a pairing at a returner, a projection of a
-/// returner and a projection read at the other side's type refuse by name;
-/// the declarations survive canonical decode.
+/// A lazy product of three checks against its lazy product; each projection
+/// of the admitted product synthesizes its own component and replays,
+/// through the product's unfolding, to that component's returner; a
+/// projection of a product replays with no decision; a projection past the
+/// last component refuses by its position; a product at a returner, a
+/// projection of a returner and a projection read at another component's
+/// type refuse by name; the declarations survive canonical decode.
 #[test]
 fn lazy_product_pairs_projects_and_survives_decode()
 {
-    /// The pairing `⟨return unit, return 0⟩`, its two components, and the
-    /// two sides' returner types, minted in one staging arena.
+    /// The product `⟨return unit, return 0, return unit⟩`, its three
+    /// components, and their returner types, minted in one staging arena.
     fn fixture(
         arena: &mut gandr_kernel_term::TermArena
-    ) -> (ComputationId, [(ComputationId, CompTypeId); 2])
+    ) -> (ComputationId, [(ComputationId, CompTypeId); 3])
     {
         let unit_type = arena.value_type_unit();
         let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
@@ -1392,12 +1392,14 @@ fn lazy_product_pairs_projects_and_survives_decode()
             ),
         ));
         let left = arena.computation_return(unit);
-        let right = arena.computation_return(zero);
+        let middle = arena.computation_return(zero);
+        let right = arena.computation_return(unit);
         let unit_returner = arena.comp_type_returner(unit_type);
         let integer_returner = arena.comp_type_returner(integer);
-        (arena.computation_with(left, right), [
+        (arena.computation_with(&[left, middle, right]), [
             (left, unit_returner),
-            (right, integer_returner),
+            (middle, integer_returner),
+            (right, unit_returner),
         ])
     }
 
@@ -1405,8 +1407,8 @@ fn lazy_product_pairs_projects_and_survives_decode()
     let mut declarations = Vec::new();
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let (pairing, [(_, left_type), (_, right_type)]) = fixture(arena);
-    let lazy = arena.comp_type_with(left_type, right_type);
+    let (pairing, components) = fixture(arena);
+    let lazy = arena.comp_type_with(&components.map(|(_, classifier)| classifier));
     let declared = arena.value_type_thunk(lazy);
     let record_body = arena.value_thunk(pairing);
     let declaration = staging.def(LevelSignature::monomorphic(), declared, record_body);
@@ -1420,17 +1422,14 @@ fn lazy_product_pairs_projects_and_survives_decode()
         .position();
     let unfoldings = Unfoldings::new(vec![Unfoldable::Body(record_body)]);
 
-    for side in [Side::Left, Side::Right] {
+    for at in 0_usize .. 3_usize {
         let mut staging = environment.stage();
         let arena = staging.arena();
         let (_, components) = fixture(arena);
-        let (component, classifier) = match side {
-            Side::Left => components[0],
-            Side::Right => components[1],
-        };
+        let (component, classifier) = components[at];
         let named = arena.value_constant(record);
         let forced = arena.computation_force(named);
-        let projection = arena.computation_project(side, forced);
+        let projection = arena.computation_project(Component::from(at), forced);
         let declared = arena.value_type_thunk(classifier);
         let body = arena.value_thunk(projection);
         let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
@@ -1440,7 +1439,7 @@ fn lazy_product_pairs_projects_and_survives_decode()
         ));
         environment
             .add_decl(declaration)
-            .expect("a projection synthesizes its side of the lazy product");
+            .expect("a projection synthesizes its component of the lazy product");
         let mut arena = environment.arena().clone();
         let unfold = [
             ConversionDecision::Unfold {
@@ -1465,8 +1464,8 @@ fn lazy_product_pairs_projects_and_survives_decode()
 
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let (pairing, [(left, left_type), _]) = fixture(arena);
-    let reduction = arena.computation_project(Side::Left, pairing);
+    let (pairing, [(left, left_type), ..]) = fixture(arena);
+    let reduction = arena.computation_project(Component::from(0_usize), pairing);
     let declared = arena.value_type_thunk(left_type);
     let body = arena.value_thunk(reduction);
     let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
@@ -1492,8 +1491,8 @@ fn lazy_product_pairs_projects_and_survives_decode()
 
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let (pairing, [(_, left_type), _]) = fixture(arena);
-    let wrong_side = arena.computation_project(Side::Right, pairing);
+    let (pairing, [(_, left_type), ..]) = fixture(arena);
+    let wrong_side = arena.computation_project(Component::from(1_usize), pairing);
     let declared = arena.value_type_thunk(left_type);
     let body = arena.value_thunk(wrong_side);
     let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
@@ -1502,13 +1501,26 @@ fn lazy_product_pairs_projects_and_survives_decode()
             environment.add_decl(declaration),
             Err(KernelError::ComputationTypeMismatch(_))
         ),
-        "the right side is an integer returner, not the unit's"
+        "the middle component is an integer returner, not the unit's"
     );
 
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let (_, [(left, left_type), _]) = fixture(arena);
-    let not_a_pairing = arena.computation_project(Side::Left, left);
+    let (pairing, [(_, left_type), ..]) = fixture(arena);
+    let past = arena.computation_project(Component::from(3_usize), pairing);
+    let declared = arena.value_type_thunk(left_type);
+    let body = arena.value_thunk(past);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+    let refused = environment.add_decl(declaration);
+    assert!(
+        matches!(refused, Err(KernelError::AbsentTupleComponent { component }) if usize::from(component) == 3_usize),
+        "a projection past the lazy product's last component is refused by position: {refused:?}"
+    );
+
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let (_, [(left, left_type), ..]) = fixture(arena);
+    let not_a_pairing = arena.computation_project(Component::from(0_usize), left);
     let declared = arena.value_type_thunk(left_type);
     let body = arena.value_thunk(not_a_pairing);
     let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
@@ -1522,7 +1534,7 @@ fn lazy_product_pairs_projects_and_survives_decode()
 
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let (pairing, [(_, left_type), _]) = fixture(arena);
+    let (pairing, [(_, left_type), ..]) = fixture(arena);
     let declared = arena.value_type_thunk(left_type);
     let body = arena.value_thunk(pairing);
     let declaration = staging.def(LevelSignature::monomorphic(), declared, body);

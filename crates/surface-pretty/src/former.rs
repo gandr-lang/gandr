@@ -332,8 +332,10 @@ pub enum Former<'source, Node>
     Reify,
     /// A stack's ordered input and output computation types.
     Stack(Node, Node),
-    /// A lazy pair's two computation types: `&{C, D}`.
-    With(Node, Node),
+    /// The lazy product of this many computation types, which the source
+    /// answers by [`Source::component`]: `&{}` at arity zero, `&{C, …}` from
+    /// one.
+    With(Arity),
     /// The empty native list.
     ListNil,
     /// A native cell with its head and tail.
@@ -792,8 +794,9 @@ pub enum Former<'source, Node>
     /// A capture to the nearest boundary, its body under the stack's binder:
     /// `shift k { c }`.
     Shift(Node),
-    /// A lazy pair of computations, `&{c, d}`.
-    Lazy(Node, Node),
+    /// The lazy product of this many computations, which the source answers by
+    /// [`Source::component`]: `&{.0 => c, …}`, `&{}` at arity zero.
+    Lazy(Arity),
     /// A computation checked against the computation type it is ascribed.
     /// The surface writes one only as the bound computation of a typed bind,
     /// `run x : A <- c ; rest`, ascribed `-F A`; the printer spells that bind
@@ -805,7 +808,7 @@ pub enum Former<'source, Node>
         /// The computation type it is checked against.
         ty: Node,
     },
-    /// An observation of one component of a lazy pair, `c.0` or `c.1`.
+    /// An observation of one component of a lazy product, `c.0`, `c.1`, ….
     Project(Component, Node),
     /// A send on a linear endpoint, `send(e, v)`.
     Send
@@ -1085,8 +1088,9 @@ pub trait Source
     /// - requires: nothing; any handle and any position are admissible.
     /// - ensures: the handle of the component at `index` when [`read`] answers
     ///   a [`Former::Product`], a [`Former::Sum`], a [`Former::Tuple`], a
-    ///   [`Former::Record`], a [`Former::RecordType`], a [`Former::Session`], a
-    ///   [`Former::Data`], a [`Former::Codata`], a [`Former::Constructor`], a
+    ///   [`Former::With`], a [`Former::Lazy`], a [`Former::Record`], a
+    ///   [`Former::RecordType`], a [`Former::Session`], a [`Former::Data`], a
+    ///   [`Former::Codata`], a [`Former::Constructor`], a
     ///   [`Former::Primitive`], a [`Former::Case`], a [`Former::DataCase`], a
     ///   [`Former::Handle`], a [`Former::Scope`] or a [`Former::Offer`] for
     ///   `node` and `index` is below its arity: a record's fields in label

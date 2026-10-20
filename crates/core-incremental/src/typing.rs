@@ -102,7 +102,7 @@ pub enum Form
     Reset(Site),
     /// A continuation capture.
     Shift(Site),
-    /// A lazy pair.
+    /// A lazy product.
     With(Site),
     /// A native List introduction.
     List(Site),

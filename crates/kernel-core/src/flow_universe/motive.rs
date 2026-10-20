@@ -88,7 +88,7 @@ enum Reach
 /// - requires: `motive` formed in its context extended by the moving binder,
 ///   which `binder` names at the motive's top.
 /// - ensures: the binder occurs only at covariant positions. Products, sums,
-///   records, lists, lifts, thunks, returners, lazy pairs and a dependent
+///   records, lists, lifts, thunks, returners, lazy products and a dependent
 ///   arrow's codomain preserve the sign; an arrow's or a dependent arrow's
 ///   domain and a flow's source reverse it; an `El` of a quoted type reads
 ///   through the quote. The binder standing as an `El` code or a flow endpoint
@@ -218,9 +218,13 @@ fn walk(
                     pending.push(Visit::Comp(codomain, sign, DeBruijnIndex::from(under)));
                     pending.push(Visit::Type(domain, sign.reverse(), at));
                 },
-                CompType::With(left, right) => {
-                    pending.push(Visit::Comp(right, sign, at));
-                    pending.push(Visit::Comp(left, sign, at));
+                CompType::With(ref components) => {
+                    pending.extend(
+                        components
+                            .iter()
+                            .rev()
+                            .map(|&component| Visit::Comp(component, sign, at)),
+                    );
                 },
                 CompType::Element { code, .. } => {
                     pending.push(Visit::Code(code, sign, at, AnyNode::CompType(id)));
