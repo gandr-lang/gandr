@@ -212,9 +212,9 @@ fn the_fixture_round_trips_through_the_block_store()
     assert_eq!(reopened.root(), root, "one root");
 
     for table in schema.objects() {
-        let parts: Vec<PartKey> = store.parts(table).expect("a table").collect();
-        let again: Vec<PartKey> = reopened.parts(table).expect("a table").collect();
-        assert_eq!(again, parts, "every table's parts");
+        let parts = store.parts(table).expect("a table");
+        let again = reopened.parts(table).expect("a table");
+        assert!(parts.eq(again), "every table's parts: {table:?}");
     }
     for column in schema.arrows() {
         let spec = schema.arrow_at(column).expect("an arrow");

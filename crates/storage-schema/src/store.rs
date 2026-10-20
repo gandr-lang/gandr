@@ -1172,4 +1172,49 @@ impl ValueColumn
             }
         }
     }
+
+    /// Lists a part in the inverse under the value at its slot.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn index_insert_slot(
+        &mut self,
+        slot: Slot,
+        part: PartKey,
+    )
+    {
+        if let Some(value) = self.values.get(usize::from(slot))
+            && let ValueIndex::Kept(ref mut index) = self.index
+        {
+            if let Some(list) = index.get_mut(value) {
+                insert_sorted(list, part);
+            }
+            else {
+                let _absent = index.insert(value.clone(), alloc::vec![part]);
+            }
+        }
+    }
+
+    /// Takes a part out of the inverse's list under the value at its slot.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn index_remove_slot(
+        &mut self,
+        slot: Slot,
+        part: PartKey,
+    )
+    {
+        if let Some(value) = self.values.get(usize::from(slot))
+            && let ValueIndex::Kept(ref mut index) = self.index
+            && let Some(list) = index.get_mut(value)
+        {
+            remove_sorted(list, part);
+            if list.is_empty() {
+                let _emptied = index.remove(value);
+            }
+        }
+    }
 }
