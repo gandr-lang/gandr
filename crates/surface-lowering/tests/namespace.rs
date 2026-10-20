@@ -11,6 +11,7 @@
 use alloc::sync::Arc;
 
 use anodized::spec;
+use gandr_core_term::Carried;
 use gandr_core_term::CoreArena;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
@@ -26,6 +27,7 @@ use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::ModuleImports;
+use gandr_surface_lowering::Onto;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::Unit;
@@ -1857,6 +1859,192 @@ fn a_document_resumed_after_its_closure_lowers_as_the_whole_1033()
         closure.resume(&refused, &refused_unit, &mut CoreArena::new()),
         expected
     );
+}
+
+/// #776: a closure's own module is the leading declarations its importer
+/// lowers to, ids included. Onto the closure's own arena the document lowers
+/// exactly as the whole unit does; onto that arena with more nodes minted after
+/// it — what a checker judging the closure leaves — the closure's declarations
+/// and rows stand unchanged, and the document declares what the whole unit
+/// declares, minting as many nodes, after the added ones. A tree that does not
+/// extend the closure's is left to the whole lowering, the arena untouched.
+#[test]
+fn a_document_lowered_onto_its_closure_s_arena_follows_its_nodes_776()
+{
+    /// Each declaration's name and the kind of its outcome.
+    ///
+    /// # Specification
+    /// trivial.
+    fn shape<'source>(
+        module: &LoweredModule<'source>
+    ) -> Vec<(String, core::mem::Discriminant<DeclarationOutcome<'source>>)>
+    {
+        module
+            .declarations()
+            .iter()
+            .map(|declaration| {
+                (
+                    String::from(declaration.name().as_ref()),
+                    core::mem::discriminant(&declaration.outcome()),
+                )
+            })
+            .collect()
+    }
+    let pbg = grammar();
+    let base = SourceText::from(
+        "data Point : Type { One : Point; }\ndef one : Point ;\ndef one = One ;\ndef pending = ? \
+         ;",
+    );
+    let importer = SourceText::from(
+        "import \"./base.gandr\" ;\ndef again : Point ;\ndef again = one ;\ndef later = ?named ;",
+    );
+    let imports = [ImportTarget::Source(SourceIndex::from(0_usize))];
+    let (text, unit) = laid(&[(base, &[]), (importer, &imports)]);
+    let start = unit
+        .sources()
+        .get(1_usize)
+        .map(|source| usize::from(source.start()))
+        .expect("the importer is the second source");
+    let closure = ClosureLowering::new(
+        Arc::new(grammar()),
+        String::from(text.get(.. start).expect("the closure's text")),
+        Unit::new(unit.sources().get(.. 1_usize).expect("the base").to_vec())
+            .expect("the base alone is a unit"),
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+        |pbg, closure| parse(pbg, closure).map(ParseResult::into_tree),
+    )
+    .expect("the closure parses");
+    let joined = parse(
+        &pbg,
+        SourceText::from(text.get(start ..).expect("the importer's text")),
+    )
+    .expect("the document parses")
+    .after(closure.tree(), SourceText::from(text.as_str()))
+    .expect("the document lays after its closure")
+    .into_tree();
+    let mut whole_arena = CoreArena::new();
+    let whole = lower_unit(
+        &pbg,
+        &joined,
+        &unit,
+        &mut whole_arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+    )
+    .expect("the unit lowers");
+    let (alone, alone_arena) = closure.alone().expect("the closure lowers to its end");
+    let leading = alone.declarations().len();
+    assert_eq!(
+        Some(alone.declarations()),
+        whole.declarations().get(.. leading),
+        "the closure's own declarations lead the importer's"
+    );
+    let mut onto = alone_arena.clone();
+    let Ok(Onto::Resumed(resumed)) = closure.resume_onto(&joined, &unit, &mut onto, &[], &[])
+    else {
+        panic!("the document resumes onto its closure's arena");
+    };
+    assert_eq!(
+        resumed, whole,
+        "onto the closure's own arena, the whole module"
+    );
+    assert_eq!(onto, whole_arena, "and the whole arena");
+    let source = alone
+        .declarations()
+        .iter()
+        .find_map(|declaration| {
+            if let DeclarationOutcome::Completed { body, .. } = declaration.outcome() {
+                Some(body)
+            }
+            else {
+                None
+            }
+        })
+        .expect("`one` is completed");
+    let Maybe::Present(written) = alone.origins().value(source)
+    else {
+        panic!("`one`'s body is located");
+    };
+    let mut checked = alone_arena.clone();
+    let elaborated = checked.value_unit();
+    let _type = checked.value_type_unit();
+    let added = checked.watermark();
+    assert_ne!(added, alone_arena.watermark(), "nodes follow the closure's");
+    let Ok(Onto::Resumed(after)) = closure.resume_onto(
+        &joined,
+        &unit,
+        &mut checked,
+        &[Carried::Value(source, elaborated)],
+        &[],
+    )
+    else {
+        panic!("the document resumes onto the checked arena");
+    };
+    assert_eq!(
+        after.origins().value(elaborated),
+        Maybe::Present(written),
+        "a node minted after the closure's is located where its source is written"
+    );
+    let bodies = |module: &LoweredModule<'_>| {
+        module
+            .declarations()
+            .get(leading ..)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|declaration| match declaration.outcome() {
+                DeclarationOutcome::Completed { body, .. }
+                | DeclarationOutcome::Bodied { body } => Some(module.origins().value(body)),
+                DeclarationOutcome::Uncompleted { .. }
+                | DeclarationOutcome::Data(_)
+                | DeclarationOutcome::Codata(_)
+                | DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::World
+                | DeclarationOutcome::Refused(_) => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        bodies(&after),
+        bodies(&whole),
+        "and the document's bodies where the whole lowering locates them"
+    );
+    assert_eq!(
+        after.declarations().get(.. leading),
+        Some(alone.declarations()),
+        "the closure's declarations stand"
+    );
+    assert_eq!(
+        shape(&after),
+        shape(&whole),
+        "the whole unit's declarations"
+    );
+    let mark = alone_arena.watermark();
+    assert_eq!(
+        (
+            checked.values_since(added).len(),
+            checked.computations_since(added).len(),
+            checked.value_types_since(added).len(),
+            checked.comp_types_since(added).len(),
+        ),
+        (
+            whole_arena.values_since(mark).len(),
+            whole_arena.computations_since(mark).len(),
+            whole_arena.value_types_since(mark).len(),
+            whole_arena.comp_types_since(mark).len(),
+        ),
+        "the document mints as many nodes, after the added ones"
+    );
+    let tree = parsed(&pbg, SourceText::from(text.as_str()));
+    let mut untouched = alone_arena.clone();
+    assert!(
+        matches!(
+            closure.resume_onto(&tree, &unit, &mut untouched, &[], &[]),
+            Ok(Onto::Whole)
+        ),
+        "a tree that does not extend the closure's is left to the whole lowering"
+    );
+    assert_eq!(untouched, alone_arena, "its arena untouched");
 }
 
 #[test]

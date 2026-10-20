@@ -37,6 +37,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `Funext`, `FunextStep`, `Evaluation`, `Reading`, `Stalled`, `evaluated::Absent`, `ModuleReport::funexts`, `Equivalence`, `ModuleReport::equivalences`, `Reflexivity`, `converted::Absent`, `ModuleReport::reflexivities`, `EndpointRelation` and `ModuleReport::relations`: function extensionality, `equiv(f, g)`, reflexivity and the path endpoints a type conversion relates decided by computation, each with the traces the kernel replays; `ua::derive` and `ModuleReport::natives`: `ua_n` at every certified stratum, and the native paths it and `pathProduct` cross as.
 - `check_declaration_supported`, `Supported`, `Support`, `Consulted` and `CheckingContext::adopt`: query-specific value/data answers and adoption into the new prefix.
 - `CheckingContext`, `CheckBudget` and `signature_table::Absent`: context, admission tables and judgment allowance.
+- `ModuleRun`, `Checkpoint`, `CheckingContext::checkpoint` and `CheckingContext::resume`: a module judged in stretches, each continuing the last one's state.
 - `Absence`, `ObligationEntry`, `ObligationLedger` and `ObligationCount`: the absence-only ledger.
 - `CheckRefusal`, `Mismatch`, `CheckingForm`, `ExpectedShape`, `UnadmittedFormer`, `TermNode`, `TypeNode` and `CoreNode`: named refusals and responsible nodes.
 - `StaticArity`, `ArgumentPosition` and family refusals preserve the failing argument or arity.

@@ -480,6 +480,121 @@ enum First
     Kept,
 }
 
+/// A checking context's state between two judgements, its arena released.
+///
+/// A later run continues from it over the arena the state was reached in, or
+/// over a copy of it that more nodes were minted into after.
+///
+/// # Specification
+/// - requires: taken between two judgements, no supported judgement logging and
+///   no term-producing run recording ([`CheckingContext::checkpoint`]).
+/// - ensures: [`CheckingContext::resume`] over such an arena judges what the
+///   context it was taken from would have judged next.
+/// - executable: none — a data type; the witness judges a module in two runs
+///   with a checkpoint between and compares the report with one run's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a module whose mutual block ends where the checkpoint is
+///   taken, resumed over a copy of the arena, reports what one run over the
+///   whole module reports and mints the same arena.
+/// - witness: `tests::recursive_data::a_run_resumed_from_a_checkpoint_judges_as_one_run_776`
+#[derive(Clone, Debug)]
+pub struct Checkpoint
+{
+    /// [`CheckingContext::binders`].
+    binders: Context,
+    /// [`CheckingContext::signatures`].
+    signatures: Vec<(ConstantIndex, FormedValueType)>,
+    /// [`CheckingContext::data_signatures`].
+    data_signatures: BTreeMap<ConstantIndex, alloc::sync::Arc<gandr_core_term::DataSignature>>,
+    /// [`CheckingContext::codata_signatures`].
+    codata_signatures: BTreeMap<ConstantIndex, alloc::sync::Arc<gandr_core_term::CodataSignature>>,
+    /// [`CheckingContext::accessibility`].
+    accessibility: BTreeMap<ConstantIndex, crate::occurrence::Accessibility>,
+    /// [`CheckingContext::admitted`].
+    admitted: Maybe<ConstantIndex, admission::Absent>,
+    /// [`CheckingContext::atoms`].
+    atoms: Atoms,
+    /// [`CheckingContext::definitions`].
+    definitions: CodeDefinitions,
+    /// [`CheckingContext::lifts`].
+    lifts: BTreeMap<ValueId, Lift>,
+    /// [`CheckingContext::funexts`].
+    funexts: BTreeMap<ValueId, crate::funext::Funext>,
+    /// [`CheckingContext::equivalences`].
+    equivalences: BTreeMap<ValueId, crate::equiv::Equivalence>,
+    /// [`CheckingContext::flows`].
+    flows: BTreeMap<ValueId, crate::flow::Statement>,
+    /// [`CheckingContext::directed`].
+    directed: BTreeMap<ValueId, crate::forward::Directed>,
+    /// [`CheckingContext::reflexivities`].
+    reflexivities: BTreeMap<ValueId, crate::code::Reflexivity>,
+    /// [`CheckingContext::nesting`].
+    nesting: BTreeMap<ValueId, crate::nested::Nesting>,
+    /// [`CheckingContext::relating`].
+    relating: BTreeMap<(ValueId, ValueId), crate::code::EndpointRelation>,
+    /// [`CheckingContext::relations`].
+    relations: BTreeMap<ConstantIndex, Vec<crate::code::EndpointRelation>>,
+    /// [`CheckingContext::laws`].
+    laws: BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
+    /// [`CheckingContext::operation_rules`].
+    operation_rules: BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
+    /// [`CheckingContext::natives`].
+    natives: BTreeMap<ValueId, ValueId>,
+    /// [`CheckingContext::sealed`].
+    sealed: BTreeMap<ConstantIndex, Sealed>,
+    /// [`CheckingContext::seals`].
+    seals: SealTable,
+    /// [`CheckingContext::budget`].
+    budget: CheckBudget,
+    /// The holes judged owed: the deferrals' set every later comparison
+    /// reads.
+    owed: BTreeSet<ConstantIndex>,
+    /// The declarations judged suspended: the deferrals' other lasting set.
+    suspended: BTreeSet<ConstantIndex>,
+    /// [`CheckingContext::forming`].
+    forming: Vec<(
+        ConstantIndex,
+        alloc::sync::Arc<gandr_core_term::DataSignature>,
+    )>,
+    /// [`CheckingContext::codata_forming`].
+    codata_forming: Vec<(
+        ConstantIndex,
+        alloc::sync::Arc<gandr_core_term::CodataSignature>,
+    )>,
+    /// [`CheckingContext::mutual`].
+    mutual: Maybe<crate::occurrence::Block, mutual::Absent>,
+    /// [`CheckingContext::defining`].
+    defining: Vec<(ConstantIndex, ValueId)>,
+    /// [`CheckingContext::kin`].
+    kin: Vec<crate::occurrence::Block>,
+    /// [`CheckingContext::hindsight`].
+    hindsight: Vec<(ConstantIndex, FormedValueType)>,
+    /// [`CheckingContext::foreseen`].
+    foreseen: Vec<ConstantIndex>,
+    /// [`CheckingContext::grants`].
+    grants: crate::capability::Grants,
+    /// [`CheckingContext::typings`].
+    typings: Option<crate::judgement::Kept>,
+    /// [`CheckingContext::formations`].
+    formations: Wanted,
+    /// [`CheckingContext::stages`].
+    stages: gandr_kernel_core::stage_order::StageOrder,
+    /// [`CheckingContext::own`].
+    own: (
+        Maybe<ComputationId, own::Absent>,
+        Maybe<(BinderDepth, ValueTypeId), own::Absent>,
+    ),
+    /// [`CheckingContext::result_stage`].
+    result_stage: crate::recursion::ResultStage,
+    /// [`CheckingContext::following`].
+    following: BTreeMap<ConstantIndex, gandr_kernel_term::StagedPosition>,
+    /// [`CheckingContext::worlds`].
+    worlds: crate::worlds::Worlds,
+    /// [`CheckingContext::pattern_holes`].
+    pattern_holes: BTreeSet<HoleId>,
+}
+
 impl<'arena> CheckingContext<'arena>
 {
     /// A context over `arena` with no declaration admitted, judging under
@@ -576,6 +691,229 @@ impl<'arena> CheckingContext<'arena>
             following: BTreeMap::new(),
             worlds: crate::worlds::Worlds::default(),
             pattern_holes: BTreeSet::new(),
+        }
+    }
+
+    /// The context's state, its arena released: what [`Self::resume`]
+    /// continues from.
+    ///
+    /// # Specification
+    /// - requires: no judgement is under way, no supported judgement is logging
+    ///   and no term-producing run is recording: between two declarations of a
+    ///   module run.
+    /// - ensures: every table the context holds, copied; the owed and suspended
+    ///   sets among its deferrals.
+    /// - panics: none.
+    /// - executable: none — the copy is the statement; the witness resumes it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Checkpoint`].
+    /// - witness: `tests::recursive_data::a_run_resumed_from_a_checkpoint_judges_as_one_run_776`
+    #[inline]
+    #[must_use]
+    pub fn checkpoint(&self) -> Checkpoint
+    {
+        let Self {
+            arena: _,
+            ref binders,
+            ref signatures,
+            ref data_signatures,
+            ref codata_signatures,
+            ref accessibility,
+            admitted,
+            atoms,
+            ref definitions,
+            ref lifts,
+            ref funexts,
+            ref equivalences,
+            ref flows,
+            ref directed,
+            ref reflexivities,
+            ref nesting,
+            ref relating,
+            ref relations,
+            ref laws,
+            ref operation_rules,
+            ref natives,
+            ref sealed,
+            ref seals,
+            budget,
+            support: _,
+            ref deferrals,
+            ref forming,
+            ref codata_forming,
+            mutual,
+            ref defining,
+            ref kin,
+            ref hindsight,
+            ref foreseen,
+            ref grants,
+            ref typings,
+            ref formations,
+            ref stages,
+            own,
+            result_stage,
+            ref following,
+            ref worlds,
+            ref pattern_holes,
+        } = *self;
+        Checkpoint {
+            binders: binders.clone(),
+            signatures: signatures.clone(),
+            data_signatures: data_signatures.clone(),
+            codata_signatures: codata_signatures.clone(),
+            accessibility: accessibility.clone(),
+            admitted,
+            atoms,
+            definitions: definitions.clone(),
+            lifts: lifts.clone(),
+            funexts: funexts.clone(),
+            equivalences: equivalences.clone(),
+            flows: flows.clone(),
+            directed: directed.clone(),
+            reflexivities: reflexivities.clone(),
+            nesting: nesting.clone(),
+            relating: relating.clone(),
+            relations: relations.clone(),
+            laws: laws.clone(),
+            operation_rules: operation_rules.clone(),
+            natives: natives.clone(),
+            sealed: sealed.clone(),
+            seals: seals.clone(),
+            budget,
+            owed: deferrals.owed.clone(),
+            suspended: deferrals.suspended.clone(),
+            forming: forming.clone(),
+            codata_forming: codata_forming.clone(),
+            mutual,
+            defining: defining.clone(),
+            kin: kin.clone(),
+            hindsight: hindsight.clone(),
+            foreseen: foreseen.clone(),
+            grants: grants.clone(),
+            typings: typings.clone(),
+            formations: formations.clone(),
+            stages: stages.clone(),
+            own,
+            result_stage,
+            following: following.clone(),
+            worlds: worlds.clone(),
+            pattern_holes: pattern_holes.clone(),
+        }
+    }
+
+    /// The context `checkpoint` was taken from, over `arena`.
+    ///
+    /// # Specification
+    /// - requires: `arena` is the arena the checkpoint was taken over, or a
+    ///   copy of it that more nodes were minted into after.
+    /// - ensures: the context holds every table `checkpoint` holds, its
+    ///   supported judgement idle and its term-producing run off, so it judges
+    ///   what the context the checkpoint was taken from would have judged next.
+    /// - panics: none.
+    /// - executable: none — the clauses compare two contexts over one arena;
+    ///   the witness compares the reports two runs make.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Checkpoint`].
+    /// - witness: `tests::recursive_data::a_run_resumed_from_a_checkpoint_judges_as_one_run_776`
+    #[inline]
+    #[must_use]
+    pub fn resume(
+        arena: &'arena mut CoreArena,
+        checkpoint: Checkpoint,
+    ) -> Self
+    {
+        let Checkpoint {
+            binders,
+            signatures,
+            data_signatures,
+            codata_signatures,
+            accessibility,
+            admitted,
+            atoms,
+            definitions,
+            lifts,
+            funexts,
+            equivalences,
+            flows,
+            directed,
+            reflexivities,
+            nesting,
+            relating,
+            relations,
+            laws,
+            operation_rules,
+            natives,
+            sealed,
+            seals,
+            budget,
+            owed,
+            suspended,
+            forming,
+            codata_forming,
+            mutual,
+            defining,
+            kin,
+            hindsight,
+            foreseen,
+            grants,
+            typings,
+            formations,
+            stages,
+            own,
+            result_stage,
+            following,
+            worlds,
+            pattern_holes,
+        } = checkpoint;
+        Self {
+            arena,
+            binders,
+            signatures,
+            data_signatures,
+            codata_signatures,
+            accessibility,
+            admitted,
+            atoms,
+            definitions,
+            lifts,
+            funexts,
+            equivalences,
+            flows,
+            directed,
+            reflexivities,
+            nesting,
+            relating,
+            relations,
+            laws,
+            operation_rules,
+            natives,
+            sealed,
+            seals,
+            budget,
+            support: SupportLog::Off,
+            deferrals: crate::elaboration::Deferrals {
+                owed,
+                suspended,
+                ..crate::elaboration::Deferrals::default()
+            },
+            forming,
+            codata_forming,
+            mutual,
+            defining,
+            kin,
+            hindsight,
+            foreseen,
+            grants,
+            typings,
+            formations,
+            stages,
+            own,
+            result_stage,
+            following,
+            worlds,
+            pattern_holes,
         }
     }
 

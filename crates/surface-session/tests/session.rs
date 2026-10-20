@@ -1112,22 +1112,28 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
 /// #1033: an importer judged twice lowers its closure once and its own source
 /// each time; a second session judges it over the closure the first lowered,
 /// to the same composition; every judgement reports what the dispatcher
-/// reports of the whole laid-out text lowered whole; and the session's held
-/// parse of each revision is the tree its judgement read.
+/// composes of the laid-out text, its closure lowered and judged fresh and the
+/// document judged after it; and the session's held parse of each revision is
+/// the tree its judgement read.
 #[test]
 fn an_importer_lowers_its_closure_once_1033()
 {
+    use alloc::sync::Arc;
+
     use gandr_core_checker::HostGrant;
     use gandr_core_incremental::MemoryCheckpointStore;
     use gandr_storage_records::InMemoryBlockStore;
     use gandr_surface_corpus::CorpusRoot;
+    use gandr_surface_dispatcher::JudgedClosure;
     use gandr_surface_dispatcher::Laid;
     use gandr_surface_dispatcher::Lowered;
     use gandr_surface_dispatcher::LoweringCount;
-    use gandr_surface_dispatcher::judge_member;
+    use gandr_surface_dispatcher::judge_member_after;
     use gandr_surface_dispatcher::lay_out;
-    use gandr_surface_dispatcher::lower_unit_source;
+    use gandr_surface_dispatcher::lower_closure;
+    use gandr_surface_dispatcher::lower_onto_closure;
     use gandr_surface_lowering::OriginTable;
+    use gandr_surface_lowering::Unit;
     use gandr_surface_session::ClosureSlot;
     use gandr_surface_session::Session;
     use gandr_surface_syntax::SourceText;
@@ -1165,31 +1171,65 @@ fn an_importer_lowers_its_closure_once_1033()
         )
     }
 
-    /// What the dispatcher composes of `laid`'s whole text lowered whole, its
-    /// origin table cleared.
-    fn whole(laid: &Laid) -> Composed<'_>
+    /// `composed` is what the dispatcher composes of `laid`'s text, its
+    /// closure lowered and judged fresh and the document lowered and judged
+    /// after it, the origin table cleared.
+    fn assert_fresh(
+        laid: &Laid,
+        composed: &Composed<'_>,
+    )
     {
         let text = SourceText::from(laid.text.as_str());
-        let Lowered::Module { module, arena } = lower_unit_source(
-            &crate::common::GRAMMAR,
-            text,
-            &laid.unit,
-            &mut LoweringCount::default(),
+        let base = usize::from(laid.base);
+        let sources = laid.unit.sources();
+        let closure = Arc::new(
+            lower_closure(
+                Arc::new(crate::common::grammar()),
+                String::from(laid.text.get(.. base).unwrap_or_default()),
+                Unit::new(
+                    sources
+                        .get(.. sources.len().saturating_sub(1))
+                        .unwrap_or_default()
+                        .to_vec(),
+                )
+                .expect("the closure's sources make a unit"),
+                &mut LoweringCount::default(),
+            )
+            .expect("the closure is held"),
+        );
+        let judged = JudgedClosure::new(
+            Arc::clone(&closure),
+            &HostGrant::UNBOUNDED,
+            CorpusRoot::Strict,
         )
-        .expect("the revision lowers")
-        .into_lowered()
+        .expect("the closure lowers to its end");
+        let parsed = gandr_surface_parser::parse(
+            closure.grammar(),
+            SourceText::from(laid.text.get(base ..).unwrap_or_default()),
+        )
+        .expect("the document parses")
+        .after(closure.tree(), text)
+        .expect("the document lays after its closure");
+        let (lowering, checking) =
+            lower_onto_closure(&judged, parsed, &laid.unit, &mut LoweringCount::default())
+                .expect("the document lowers");
+        let Lowered::Module { module, arena } = lowering.into_lowered()
         else {
             panic!("the revision is not refused whole");
         };
-        let (settled, _admission) = judge_member(
+        let (settled, _admission) = judge_member_after(
             CorpusRoot::Strict,
             (module, text),
             arena,
-            &HostGrant::UNBOUNDED,
+            (&HostGrant::UNBOUNDED, checking),
             laid.base,
         )
         .into_parts();
-        unrooted(settled.expect("the revision settles"))
+        assert_eq!(
+            composed,
+            &unrooted(settled.expect("the revision settles")),
+            "the judgement reports what a fresh judgement of the closure composes"
+        );
     }
 
     /// `composed` with its origin table cleared: the one table that differs
@@ -1270,22 +1310,14 @@ fn an_importer_lowers_its_closure_once_1033()
         LoweringCount::from(2_usize),
         "the first judgement lowers the closure and the document"
     );
-    assert_eq!(
-        composed,
-        whole(&first),
-        "and reports the whole text's composition"
-    );
+    assert_fresh(&first, &composed);
     let (lowered, again) = judged(&mut cold, &second, &again_slot);
     assert_eq!(
         lowered,
         LoweringCount::from(1_usize),
         "an edit to the document's own text lowers the document alone"
     );
-    assert_eq!(
-        again,
-        whole(&second),
-        "and reports the whole text's composition"
-    );
+    assert_fresh(&second, &again);
     let mut warm = session(SourceRoot::Strict);
     let (lowered, warmed) = judged(&mut warm, &first, &warm_slot);
     assert_eq!(

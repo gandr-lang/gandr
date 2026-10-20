@@ -419,6 +419,7 @@ pub use crate::lower::InferredExit;
 pub use crate::lower::InferredRun;
 pub use crate::lower::LoweringBudget;
 pub use crate::lower::NestedSite;
+pub use crate::lower::Onto;
 pub use crate::lower::RunOperand;
 pub use crate::lower::RunSpelling;
 pub use crate::lower::lower_module;

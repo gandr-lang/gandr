@@ -317,6 +317,7 @@ use gandr_storage_records::TreeParams;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Produced;
 use gandr_surface_dispatcher::Admission;
+use gandr_surface_dispatcher::Checking;
 use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Evaluation;
@@ -330,12 +331,13 @@ use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::judge_member;
+use gandr_surface_dispatcher::judge_member_after;
 use gandr_surface_dispatcher::lower_closure;
+use gandr_surface_dispatcher::lower_onto_closure;
 use gandr_surface_dispatcher::lower_parsed;
 use gandr_surface_dispatcher::lower_parsed_unit;
 use gandr_surface_dispatcher::lower_resumed_unit;
 use gandr_surface_grammar::Pbg;
-use gandr_surface_lowering::ClosureLowering;
 use gandr_surface_lowering::DeclarationCount;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::DocumentationText;
@@ -366,6 +368,7 @@ use crate::forms::FormCensus;
 use crate::forms::FormStore;
 use crate::item_source::program;
 use crate::lowerings;
+use crate::lowerings::Closure;
 use crate::lowerings::Held;
 
 quenchant_shape::reason_enum! {
@@ -2136,10 +2139,14 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   [`judge_reading`](Self::judge_reading) at offset zero of
     ///   [`Unit::single`]. When the closure's text is one a document can be
     ///   laid after, the tree is the document's parse laid after the closure's
-    ///   ([`ParseResult::after`]), the module the closure's lowering resumed
-    ///   over it ([`lower_resumed_unit`]), the closure's lowering held in
-    ///   `slot` and in the process's store, and the form census the document's
-    ///   own.
+    ///   ([`ParseResult::after`]), the closure's lowering is held in `slot` and
+    ///   in the process's store, and the form census is the document's own;
+    ///   when the closure's lowering reached its end, its declarations are
+    ///   judged once per process, the document is lowered after that
+    ///   judgement's arena ([`lower_onto_closure`]) and judged on a copy of its
+    ///   state ([`judge_member_after`]), and otherwise the module is the
+    ///   closure's lowering resumed over the tree ([`lower_resumed_unit`]),
+    ///   judged whole.
     /// - provides: an editor's judgement of a document that imports a sibling,
     ///   whose diagnostics are those `gandr check` gives the file.
     /// - fails: as [`judge`](Self::judge).
@@ -2213,7 +2220,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             },
             Held::Whole => None,
         });
-        let (lowering, forms) = if let Some(closure) = closure {
+        let (lowering, checking, forms) = if let Some(closure) = closure {
             let document = SourceText::from(
                 <&str>::from(revision)
                     .get(usize::from(base) ..)
@@ -2224,12 +2231,16 @@ impl<Store, Blocks> Session<Store, Blocks>
                 .parse(&self.grammar, document, self.threads)
                 .map_err(parse_fault)?;
             let parsed = parsed
-                .after(closure.tree(), revision)
+                .after(closure.lowering().tree(), revision)
                 .map_err(|fault| parse_fault(MeldError::Build(fault)))?;
             read(parsed.tree());
-            let lowering = lower_resumed_unit(closure, parsed, unit, &mut self.lowerings)
-                .map_err(SessionFault::Compose)?;
-            (lowering, forms)
+            let (lowering, checking) = match closure.judged(self.root.corpus_root()) {
+                Some(judged) => lower_onto_closure(judged, parsed, unit, &mut self.lowerings),
+                None => lower_resumed_unit(closure.lowering(), parsed, unit, &mut self.lowerings)
+                    .map(|lowering| (lowering, Checking::Whole)),
+            }
+            .map_err(SessionFault::Compose)?;
+            (lowering, checking, forms)
         }
         else {
             let (parsed, forms) = self
@@ -2239,7 +2250,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             read(parsed.tree());
             let lowering = lower_parsed_unit(&self.grammar, parsed, unit, &mut self.lowerings)
                 .map_err(SessionFault::Compose)?;
-            (lowering, forms)
+            (lowering, Checking::Whole, forms)
         };
         let mut obligations = lowering.obligations().to_vec();
         obligations.retain(|obligation| obligation.span.start() >= base);
@@ -2278,11 +2289,11 @@ impl<Store, Blocks> Session<Store, Blocks>
             .filter(|declaration| !matches!(declaration.outcome(), DeclarationOutcome::Refused(_)))
             .take_while(|declaration| declaration.span().start() < base)
             .count();
-        let (settled, admission) = judge_member(
+        let (settled, admission) = judge_member_after(
             self.root.corpus_root(),
             (module, revision),
             arena,
-            &HostGrant::UNBOUNDED,
+            (&HostGrant::UNBOUNDED, checking),
             base,
         )
         .into_parts();
@@ -2704,7 +2715,9 @@ impl<Store, Blocks> Session<Store, Blocks>
                 )
                 .ok()
             })
-            .map_or(Held::Whole, |lowered| Held::Lowered(Arc::new(lowered)));
+            .map_or(Held::Whole, |lowered| {
+                Held::Lowered(Arc::new(Closure::new(lowered)))
+            });
         lowerings::keep(
             String::from(<&str>::from(text)),
             sources.to_vec(),
@@ -3009,14 +3022,16 @@ impl Laying<'_>
 }
 
 /// Where a judgement of a document laid after its import closure keeps the
-/// closure's lowering its submission borrows: one per submission, held as
-/// long as the submission is.
+/// closure its submission borrows.
+///
+/// The slot holds the closure's lowering and its declarations' judgement: one
+/// per submission, held as long as the submission is.
 ///
 /// # Specification
 /// trivial.
 #[derive(Debug, Default)]
 #[repr(transparent)]
-pub struct ClosureSlot(OnceLock<Arc<ClosureLowering>>);
+pub struct ClosureSlot(OnceLock<Arc<Closure>>);
 
 impl ClosureSlot
 {
@@ -3101,12 +3116,12 @@ fn parse_held_laid<'text>(
         Some(Held::Lowered(closure)) => {
             let document = SourceText::from(
                 <&str>::from(revision)
-                    .get(<&str>::from(closure.text()).len() ..)
+                    .get(<&str>::from(closure.lowering().text()).len() ..)
                     .unwrap_or_default(),
             );
             let (parsed, census) = forms.parse_held(grammar, document, threads)?;
             let joined = parsed
-                .after(closure.tree(), revision)
+                .after(closure.lowering().tree(), revision)
                 .map_err(MeldError::Build)?;
             Ok((joined, census))
         },

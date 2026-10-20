@@ -39,12 +39,13 @@ serde.workspace = true
 serde_json.workspace = true
 
 # The suite builds diagnostics from real compositions: the dispatcher's walk
-# over the built-in grammar. The univalence refusals carry the sites' degree,
-# shape and element indices. The malformed-form sweep draws its sample
-# through the sweep crate.
+# over the built-in grammar, and a document parsed after its import closure.
+# The univalence refusals carry the sites' degree, shape and element indices.
+# The malformed-form sweep draws its sample through the sweep crate.
 [dev-dependencies]
 gandr-surface-dispatcher.workspace = true
 gandr-surface-grammar.workspace = true
+gandr-surface-parser.workspace = true
 gandr-theory-sites.workspace = true
 gandr-workflow-sweep.workspace = true
 

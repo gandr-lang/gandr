@@ -1084,9 +1084,55 @@ pub fn settle<'source>(
     runner: &mut dyn Runner,
 ) -> Result<SettleReport<'source>, SettleFault>
 {
-    let mut judged = verdicts.judged().iter();
+    settle_after(root, arena, module, verdicts, runner, &[])
+}
+
+/// [`settle`], the reports of `module`'s leading declarations given as
+/// `earlier`: only the declarations after them are settled, and their reports
+/// lead the report.
+///
+/// # Specification
+/// - requires: as [`settle`]; `earlier` is the report [`settle`] answered under
+///   `root` for a module whose declarations lead `module`'s, its verdicts
+///   leading `verdicts` and its arena one `arena` extends.
+/// - ensures: what [`settle`] answers of `module`, `earlier` leading its
+///   reports, the runner called only for the declarations after `earlier`'s.
+/// - provides: a document's settlement at the cost of its own declarations.
+/// - fails: as [`settle`], over the declarations after `earlier`'s.
+/// - panics: none for a conforming runner.
+///
+/// # Errors
+/// As [`settle`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a module settled after its leading declarations' report
+///   answers what settling it whole answers.
+/// - witness: `settle::tests::a_module_settled_after_its_leading_report_settles_as_a_whole_one_776`
+#[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|report|
+    report.declarations().get(.. earlier.len()) == Some(earlier)))]
+#[inline]
+pub fn settle_after<'source>(
+    root: CorpusRoot,
+    arena: &CoreArena,
+    module: &LoweredModule<'source>,
+    verdicts: &ModuleReport,
+    runner: &mut dyn Runner,
+    earlier: &[DeclarationReport<'source>],
+) -> Result<SettleReport<'source>, SettleFault>
+{
+    let (leading, later) = module
+        .declarations()
+        .split_at_checked(earlier.len())
+        .unwrap_or_else(|| (module.declarations(), &[]));
+    // A lowering refusal consumes no verdict.
+    let consumed = leading
+        .iter()
+        .filter(|lowered| !matches!(lowered.outcome(), DeclarationOutcome::Refused(_)))
+        .count();
+    let mut judged = verdicts.judged().iter().skip(consumed);
     let mut declarations = Vec::with_capacity(module.declarations().len());
-    for lowered in module.declarations() {
+    declarations.extend_from_slice(earlier);
+    for lowered in later {
         let expectations =
             expectation::read(root, attributes(module.attributes(), lowered), arena)?;
         let (produced, owed) = match lowered.outcome() {
@@ -1429,6 +1475,7 @@ mod tests
     use super::Settlement;
     use super::Surviving;
     use super::settle;
+    use super::settle_after;
     use crate::expectation::ExpectationFault;
     use crate::expectation::ExpectationSchema;
     use crate::expectation::Membership;
@@ -2083,6 +2130,53 @@ data NatUnits : Type {{
             Settlement::Settled,
             "every name settles"
         );
+    }
+
+    /// #776: a module settled after its leading declarations' report — a
+    /// lowering refusal among them, which consumes no verdict — settles to the
+    /// report settling it whole gives, every split alike, running only the
+    /// declarations after the leading ones.
+    #[test]
+    fn a_module_settled_after_its_leading_report_settles_as_a_whole_one_776()
+    {
+        let module = checked(SourceText::from(
+            r#"@[ runs("ran at 0") ] def a = 3 ; @[ refuses("UnresolvedName") ] def b = z ; @[ owes(1) ] def c : Integer ; @[ runs("ran at 3") ] def d = a ; def e = 5 ;"#,
+        ));
+        let whole = settle(
+            CorpusRoot::Fixture,
+            &module.arena,
+            &module.module,
+            &module.verdicts,
+            &mut ran_at,
+        )
+        .expect("the verdicts are the module's own");
+        assert_eq!(whole.declarations().len(), 5_usize, "five names");
+        for leading in 0_usize ..= 5_usize {
+            let earlier = whole.declarations().get(.. leading).unwrap_or_default();
+            let mut asked = Vec::new();
+            let mut runner = |constant: ConstantIndex| {
+                asked.push(usize::from(constant));
+                ran_at(constant)
+            };
+            let after = settle_after(
+                CorpusRoot::Fixture,
+                &module.arena,
+                &module.module,
+                &module.verdicts,
+                &mut runner,
+                earlier,
+            )
+            .expect("the verdicts are the module's own");
+            assert_eq!(
+                after, whole,
+                "after {leading} leading names, the whole report"
+            );
+            let expected: Vec<usize> = [0_usize, 3_usize]
+                .into_iter()
+                .filter(|&ran| ran >= leading)
+                .collect();
+            assert_eq!(asked, expected, "only the later names run");
+        }
     }
 
     #[test]
