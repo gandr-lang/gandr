@@ -573,7 +573,7 @@ fn a_session_round_trips_over_in_memory_streams()
                     0_u32, 0_u32, 3_u32, 0_u32, 0_u32, 0_u32, 4_u32, 6_u32, 2_u32, 1_u32,
                     0_u32, 9_u32, 2_u32, 9_u32, 0_u32, 1_u32, 0_u32, 3_u32, 0_u32, 0_u32,
                     0_u32, 4_u32, 6_u32, 2_u32, 1_u32, 0_u32, 9_u32, 7_u32, 3_u32, 0_u32,
-                ]},
+                ], "resultId": "12df1aff76d770be36dce32796be278ca8d548c6b9ebe603221cc8cde05347d2"},
             }),
             json!({"jsonrpc": "2.0", "id": "end", "result": null}),
         ],
@@ -1132,10 +1132,10 @@ fn a_definition_in_a_sibling_answers_the_sibling_s_path_795()
     assert_eq!(
         answer["result"],
         json!([{"uri": uri(&base), "range": {
-            "start": {"line": 0_i32, "character": 4_i32},
-            "end": {"line": 0_i32, "character": 7_i32},
+            "start": {"line": 2_i32, "character": 4_i32},
+            "end": {"line": 2_i32, "character": 7_i32},
         }}]),
-        "`one` is the sibling's, at its name in the sibling's first line"
+        "`one` is the sibling's, at its definition's name in the sibling's text (#1034)"
     );
 }
 

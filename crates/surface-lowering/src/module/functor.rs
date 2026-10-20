@@ -674,6 +674,7 @@ impl<'source> Collector<'_, 'source>
             named: component.named,
             signature: typed.map(|operand| Half {
                 declaration: component.named,
+                named: component.named,
                 operand: Operand::Written(operand),
             }),
             definition: Maybe::Absent(declaration_half::Absent::Unwritten),

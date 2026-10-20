@@ -527,6 +527,7 @@ impl<'source> Collector<'_, 'source>
             if let Some(entry) = self.collected.slots.get_mut(slot.0) {
                 entry.signature = Maybe::Present(Half {
                     declaration,
+                    named,
                     operand: Operand::Signature,
                 });
                 entry.attributes.append(&mut attributes);
@@ -559,7 +560,7 @@ impl<'source> Collector<'_, 'source>
                 Err(refusal) => Tail::Refused(refusal),
             }
         };
-        self.file(slot, declaration, tail, attributes);
+        self.file(slot, declaration, named, tail, attributes);
         match (tail, cells) {
             (Tail::Data(_), Ok(())) => self.mint_words(declaration),
             (Tail::Data(_), Err(refusal)) => {
@@ -739,16 +740,18 @@ impl<'source> Collector<'_, 'source>
         for (point, cells) in points {
             let index = self.collected.words.len();
             let words = SlotIndex(self.collected.slots.len());
+            let named = cells.first().map_or(declaration, |cell| cell.named);
             self.collected.slots.push(DeclarationSlot {
                 name,
                 container: top,
                 role: Role::Words,
                 constant: ConstantIndex::from(words.0),
                 introduced_by: declaration,
-                named: cells.first().map_or(declaration, |cell| cell.named),
+                named,
                 signature: Maybe::Absent(declaration_half::Absent::Unwritten),
                 definition: Maybe::Present(Half {
                     declaration,
+                    named,
                     operand: Operand::Words(index),
                 }),
                 attributes: Vec::new(),
@@ -769,6 +772,7 @@ impl<'source> Collector<'_, 'source>
                     signature: Maybe::Absent(declaration_half::Absent::Unwritten),
                     definition: Maybe::Present(Half {
                         declaration: cell.at,
+                        named: cell.named,
                         operand: Operand::Loop {
                             words: index,
                             generator,
@@ -1400,6 +1404,7 @@ impl<'source> Collector<'_, 'source>
                 signature: Maybe::Absent(declaration_half::Absent::Unwritten),
                 definition: Maybe::Present(Half {
                     declaration,
+                    named,
                     operand: Operand::Operation,
                 }),
                 attributes: Vec::new(),

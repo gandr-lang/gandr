@@ -2291,6 +2291,7 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Present(Half {
                     declaration,
                     operand: Operand::Function,
+                    ..
                 }) => Some(declaration.node),
                 Maybe::Present(_) | Maybe::Absent(_) => None,
             })?;

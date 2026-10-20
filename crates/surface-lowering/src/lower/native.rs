@@ -8948,6 +8948,7 @@ impl<'source> Lowerer<'_, 'source>
         let Some(&Maybe::Present(Half {
             operand: Operand::Function,
             declaration,
+            ..
         })) = self
             .collected
             .slots
