@@ -28,6 +28,7 @@ use crate::markup::Markup;
 use crate::position::Line;
 use crate::position::Position;
 use crate::position::Range;
+use crate::syntax::TREE_SCHEME;
 use crate::tokens::ResultId;
 use crate::tokens::TOKEN_MODIFIERS;
 use crate::tokens::TOKEN_TYPES;
@@ -177,6 +178,45 @@ impl DocumentUri
             "{FILE_SCHEME}{}",
             percent_encoding::utf8_percent_encode(spelled, PATH_ESCAPED)
         )))
+    }
+
+    /// The `file` URI of the document whose syntax tree this URI names: the
+    /// tree scheme, a colon and the rest of the `file` URI after its own
+    /// `file:`, with or without the empty authority.
+    ///
+    /// # Specification
+    /// - requires: nothing; any URI is admissible input.
+    /// - ensures: for [`TREE_SCHEME`], a colon and a rest starting with `//`, `file:`
+    ///   followed by the rest; for a rest starting with a single `/`, `file://`
+    ///   followed by the rest; none for a URI of another scheme or a rest
+    ///   naming no path.
+    /// - provides: the document a `workspace/textDocumentContent` request
+    ///   prints the tree of, however the client spells the authority.
+    /// - fails: never; a URI naming no document answers none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tree URI with and without its empty authority, an
+    ///   escaped path, a host, a `file` URI, another scheme and a tree URI with
+    ///   no path, each asserted at its exact document or none.
+    /// - witness: `protocol::tests::a_tree_uri_names_the_document_it_views`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|source| source.0.starts_with(FILE_SCHEME)
+        && source.0.get(FILE_SCHEME.len() ..) == self.0.get(TREE_SCHEME.len().saturating_add(1) ..)
+            .map(|rest| rest.strip_prefix("//").unwrap_or(rest))))]
+    #[inline]
+    #[must_use]
+    pub fn viewed(&self) -> Option<Self>
+    {
+        let rest = self.0.strip_prefix(TREE_SCHEME)?.strip_prefix(':')?;
+        if rest.starts_with("//") {
+            Some(Self(format!("file:{rest}")))
+        }
+        else if rest.starts_with('/') {
+            Some(Self(format!("{FILE_SCHEME}{rest}")))
+        }
+        else {
+            None
+        }
     }
 }
 
@@ -650,6 +690,25 @@ impl InitializeParams
                 .unwrap_or(false),
         )
     }
+
+    /// Whether this client shows the text of a virtual document the server
+    /// serves, and so requests it again when asked: when it declares
+    /// `workspace.textDocumentContent`, whose refresh the protocol gives no
+    /// capability of its own.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn views_content(&self) -> ViewsContent
+    {
+        ViewsContent(
+            self.capabilities
+                .as_ref()
+                .and_then(|capabilities| capabilities.workspace)
+                .is_some_and(|workspace| workspace.text_document_content.is_some()),
+        )
+    }
 }
 
 /// The paths of `folders`, each a `file` URI's path, in order.
@@ -676,6 +735,11 @@ pub struct ShowsDocuments(pub bool);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ListsFolders(pub bool);
+
+/// Whether a client shows the text of a virtual document the server serves.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ViewsContent(pub bool);
 
 /// Whether a client answers a pull of its settings.
 #[repr(transparent)]
@@ -881,6 +945,21 @@ pub struct WorkspaceCapabilities
     /// workspace folders.
     #[serde(default)]
     pub workspace_folders: Option<bool>,
+    /// `workspace.textDocumentContent`: present when it shows the text of a
+    /// virtual document the server serves.
+    #[serde(default)]
+    pub text_document_content: Option<ContentCapabilities>,
+}
+
+/// What a client offers of showing a virtual document's text.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct ContentCapabilities
+{
+    /// `dynamicRegistration`: whether it takes the schemes by registration.
+    #[serde(default)]
+    pub dynamic_registration: Option<bool>,
 }
 
 /// What the client offers of requesting a feature's answers again.
@@ -1674,6 +1753,8 @@ impl InitializeResult
             && matches!(ret.capabilities.workspace.file_operations.will_rename.filters,
                 [ref file, ref folder] if matches!(file.pattern.glob.as_bytes(), b"**/*.gandr")
                     && matches!(folder.pattern.matches.as_bytes(), b"folder"))
+            && matches!(ret.capabilities.workspace.text_document_content.schemes,
+                [scheme] if matches!(scheme.as_bytes(), b"gandr-tree"))
             && ret.capabilities.linked_editing_range_provider.0
             && ret.capabilities.code_lens_provider.resolve_provider
             && ret.capabilities.completion_provider.resolve_provider)]
@@ -1747,6 +1828,9 @@ impl InitializeResult
                         did_rename: OperationFilters::SOURCES,
                         did_delete: OperationFilters::SOURCES,
                         will_rename: OperationFilters::SOURCES,
+                    },
+                    text_document_content: ContentOptions {
+                        schemes: [TREE_SCHEME],
                     },
                 },
             },
@@ -1925,6 +2009,25 @@ pub struct ShowDocumentParams
     pub selection: Range,
 }
 
+/// The parameters of `workspace/textDocumentContent` and of its refresh: the
+/// virtual document whose text is asked for, or asked for again.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct ContentParams
+{
+    /// The virtual document.
+    pub uri: DocumentUri,
+}
+
+/// What `workspace/textDocumentContent` answers: the virtual document's text.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct ContentResult
+{
+    /// The text.
+    pub text: String,
+}
+
 /// An item a second request resolves as it came: what the first answered
 /// whole.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1987,6 +2090,17 @@ pub struct WorkspaceOptions
     pub workspace_folders: FoldersOptions,
     /// The file operations the server hears of.
     pub file_operations: FileOperationsOptions,
+    /// The schemes of the virtual documents whose text the server serves.
+    pub text_document_content: ContentOptions,
+}
+
+/// The virtual documents whose text the server serves, as advertised.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct ContentOptions
+{
+    /// The schemes: the syntax tree view's.
+    pub schemes: [&'static str; 1],
 }
 
 /// Workspace folders, as advertised.
@@ -2219,6 +2333,9 @@ pub enum Answer
     /// What a linked-editing request answers: the ranges an edit of one
     /// applies to.
     Mirrored(LinkedEditingRanges),
+    /// What a text-document-content request answers for a virtual document
+    /// that views an open one: its printed syntax tree.
+    Content(ContentResult),
     /// `null`: what `shutdown` answers, a request about a document that is not
     /// open, and a hover over nothing the server knows.
     Nothing,
@@ -2940,6 +3057,30 @@ mod tests
                 DocumentUri::from(uri).path(),
                 PathBuf::from(path),
                 "{uri} names {path:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_tree_uri_names_the_document_it_views()
+    {
+        let cases = [
+            ("gandr-tree:///tmp/a.gandr", Some("file:///tmp/a.gandr")),
+            ("gandr-tree:/tmp/a.gandr", Some("file:///tmp/a.gandr")),
+            (
+                "gandr-tree:/tmp/a%20b.gandr",
+                Some("file:///tmp/a%20b.gandr"),
+            ),
+            ("gandr-tree://host/a.gandr", Some("file://host/a.gandr")),
+            ("file:///tmp/a.gandr", None),
+            ("gandr-trees:/tmp/a.gandr", None),
+            ("gandr-tree:a.gandr", None),
+        ];
+        for (uri, viewed) in cases {
+            assert_eq!(
+                DocumentUri::from(uri).viewed(),
+                viewed.map(DocumentUri::from),
+                "{uri} views {viewed:?}"
             );
         }
     }

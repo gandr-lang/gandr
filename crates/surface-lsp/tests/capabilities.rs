@@ -61,6 +61,7 @@ fn advertised_capabilities_name_the_token_legend()
                         "didDelete": sources,
                         "willRename": sources,
                     },
+                    "textDocumentContent": {"schemes": ["gandr-tree"]},
                 },
             },
             "serverInfo": {"name": "gandr", "version": env!("CARGO_PKG_VERSION")},

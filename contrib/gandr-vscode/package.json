@@ -322,6 +322,12 @@
         "command": "gandr.toggleForm",
         "title": "Toggle sugared/explicit types",
         "category": "gandr"
+      },
+      {
+        "command": "gandr.showSyntaxTree",
+        "title": "Show syntax tree",
+        "category": "gandr",
+        "enablement": "editorLangId == gandr"
       }
     ],
     "grammars": [

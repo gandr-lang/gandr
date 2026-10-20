@@ -112,6 +112,15 @@
 //! serves it. Only a served feature is advertised: a capability with nothing
 //! behind it would invite requests the server can only refuse.
 //!
+//! A served feature is served as completely as the specification allows: every
+//! field of its result that the engine holds the data for is filled, and every
+//! capability a client declares for it is honoured. A type the checker
+//! already keeps belongs in a completion's label details and a symbol's detail,
+//! and a repair the parser recorded belongs in a code action. A field is left
+//! empty only when gandr cannot yet fill it, and the feature's row in the
+//! table below then says what it waits on. A new feature fills its fields whole
+//! in the change that serves it, never as a later pass.
+//!
 //! | Feature | Methods | State |
 //! | ------- | ------- | ----- |
 //! | lifecycle | `initialize`, `initialized`, `shutdown`, `exit` | served |
@@ -144,6 +153,7 @@
 //! | on-type formatting | `textDocument/onTypeFormatting` | served: typing the `;` that closes a top-level form lays that form out, and any other character, or a `;` inside a form, edits nothing |
 //! | code actions, code lenses | `textDocument/codeAction`, `codeAction/resolve`, `codeLens`, `codeLens/resolve`, `workspace/codeLens/refresh` | served for model proposals: a quick fix applying each checked fill, a lens counting a range's checked fills, each whole in its answer and resolved as it came, the lens over a range's one fill running `gandr.applyFill` for a client that applies edits; once a fill is kept, the editor holding the document is asked for its lenses again when its client says it refreshes them |
 //! | commands, edits | `workspace/executeCommand`, `workspace/applyEdit` | served: `gandr.applyFill`, the one command, asks the client to apply the checked fill its arguments name while the document keeps it, and is refused as content modified once an edit withdrew it; an edit the client does not apply is logged with its reason |
+//! | virtual documents | `workspace/textDocumentContent`, `workspace/textDocumentContent/refresh` | served for the scheme `gandr-tree`: `gandr-tree:` followed by the rest of an open document's `file` URI, with or without its empty authority, answers that document's molded tree, its layout and its obligations, printed as the `syntax` module states, once per held text; a client that declares `workspace.textDocumentContent` is asked for the tree again after each change to the document, under each URI it asked by, until it closes the document |
 //! | document links | `textDocument/documentLink`, `documentLink/resolve` | served: each path import's address, between its quotes, linked to the file the dispatcher reads for it, read off the document's held reading, as the `reading` module states, and resolved as it came; a scheme import links nowhere |
 //! | document colours | `textDocument/documentColor`, `colorPresentation` | declined: gandr has no colour literals |
 //! | inline values | `textDocument/inlineValue` | declined: they serve a debugger, and gandr has no debug adapter |
@@ -156,7 +166,7 @@
 //! | configuration | `workspace/didChangeConfiguration` | served: the `gandr` section's `diagnostics.verbosity`, as the `recheck` module states, `diagnostics.quiet`, as the `quiet` module states, `presentation.form`, which every later hover reads, and `presentation.spelling`, which every later hover reads and which republishes the diagnostics |
 //! | pulled configuration | `workspace/configuration` | served: a client that declares it is asked for its `gandr` section once initialised and after each push carrying none, its answer applied as a push is |
 //! | window messages | `window/showMessage`, `showMessageRequest`, `showDocument`, `logMessage` | served: a grammar that did not build is shown as an error once initialised, and a `gandr` section, pushed or pulled, that does not read is logged as a warning naming why, none of it applied; a fill another face keeps for a document an editor holds is offered to a client that shows documents, once until the next edit withdraws it, and choosing to see it shows the document with the fill's range selected; the timing line goes to the server's log and, when traced, to `$/logTrace` |
-//! | gandr's extensions | `gandr/goals`, `gandr/syntaxTree`, `gandr/serverStatus`, the render-bus attach through the language server's stream | blocked: each as the assessment in § Extensions beyond the specification names; the bus itself is served on the hub's socket (the `bus` module) |
+//! | gandr's extensions | `gandr/goals`, `gandr/serverStatus`, the render-bus attach through the language server's stream | blocked: each as the assessment in § Extensions beyond the specification names; the bus itself is served on the hub's socket (the `bus` module); the syntax tree view is the `gandr-tree` virtual document |
 //!
 //! # What editors add beyond the protocol
 //!
@@ -188,7 +198,7 @@
 //! | a goal at a position: `$/lean/plainGoal`, `$/lean/plainTermGoal`; `proof/goals` | Lean 4; coq-lsp | **adopt** as `gandr/goals`: the goals the cursor's hole owes, each its expected type and its context, laid out by the printer as plain text, beside the same goals as `gandr-surface-render-remote`'s `GoalCard`s | the interaction model is holes and goals, which reach an editor only as information diagnostics; blocked with completion on goals whose types the checker spells |
 //! | the infoview: `$/lean/rpc/connect`, `$/lean/rpc/call`, user widgets | Lean 4 | **decline** the RPC session; the side view reads the render bus instead | a remote-procedure session per file worker, with references a client must release and keep alive, duplicates what the render bus frames already carry: versioned goal and diagnostic cards one renderer or many read |
 //! | file checking progress: `$/lean/fileProgress`; coq-lsp's progress and viewport | Lean 4; coq-lsp | **decline** | both check on demand or in order and report how far they got; every synchronisation here judges the whole document and publishes at once, and the timing line already says what it cost |
-//! | syntax tree view: `rust-analyzer/viewSyntaxTree` | rust-analyzer | **adopt** as `gandr/syntaxTree`: the molded tree of a document, its molds, tiles, layout and repairs, as text | the tree exists for every request already, and grammar and parser work reads it; a debugging aid, advertised as one |
+//! | syntax tree view: `rust-analyzer/viewSyntaxTree` | rust-analyzer | **adopt** as the `gandr-tree` virtual document, served through the specification's `workspace/textDocumentContent`: the molded tree of a document, its molds, tiles, layout and repairs, as text | the tree exists for every request already, and grammar and parser work reads it; the specification's request reaches every 3.18 client where a custom method reaches only an extension that knows it |
 //! | snippet text edits | rust-analyzer | **adopt** with code actions: a repair the parser recorded becomes a fix whose holes are tab stops | inline completion already writes snippets, and code actions are served for model proposals; waits on the parser's repairs becoming fixes |
 //! | runnables: `experimental/runnables` | rust-analyzer | **decline** the method; a code lens over each declaration that evaluates, running it as `gandr run` does, once commands exist | the specification's lenses and commands carry it, so Helix and Zed see it too |
 //! | hover actions | rust-analyzer | **decline** | its actions are go-to and find-references links, which every client offers from its own commands over the definitions and references the server answers |
@@ -376,6 +386,7 @@ mod rpc;
 mod search;
 mod server;
 mod signature;
+mod syntax;
 mod tokens;
 mod transport;
 mod uses;
