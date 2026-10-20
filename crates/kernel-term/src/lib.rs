@@ -145,28 +145,6 @@
     )
 )]
 #![no_std]
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        linear_search_in_loop,
-        reverse_after_build,
-        reason = "2 cost-shape sites (1 linear_search_in_loop, 1 reverse_after_build); #814 lists them"
-    )
-)]
-#![cfg_attr(
-    all(not(test), dylint_lib = "quenchant_dylints"),
-    expect(
-        allocation_in_repeated_body,
-        reason = "3 cost-shape sites; #814 lists them"
-    )
-)]
-#![cfg_attr(
-    all(test, dylint_lib = "quenchant_dylints"),
-    expect(
-        allocation_in_repeated_body,
-        reason = "8 cost-shape sites (5 in test modules); #814 lists them"
-    )
-)]
 
 extern crate alloc;
 

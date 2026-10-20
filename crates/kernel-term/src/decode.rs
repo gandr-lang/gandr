@@ -4065,9 +4065,11 @@ mod tests
                 boundary.saturating_add(1),
             ]);
         }
+        let mut bytes: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
         for value in values {
             let digits = reference(value);
-            let mut bytes = vec![0xaa_u8];
+            bytes.clear();
+            bytes.push(0xaa);
             bytes.extend_from_slice(&digits);
             bytes.push(0x55);
             let end = 1_usize.saturating_add(digits.len());
