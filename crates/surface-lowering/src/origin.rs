@@ -603,8 +603,9 @@ fn record<Id>(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a linear lookup is an independent oracle for the binary
-///   search on its stated sorted domain. Fixtures cover hits, empty input and
+/// - hypothesis: L3 — on the stated sorted domain the entry at `id`'s lower
+///   bound is the only one that can hold `id`, so it decides a hit and a miss
+///   alike at the lookup's own cost. Fixtures cover hits, empty input and
 ///   missing ids before, within and after a nonempty family.
 /// - witness: `origin::tests::each_family_answers_its_own_recorded_origins`
 /// - witness: `origin::tests::an_unrecorded_id_has_no_origin`
@@ -612,12 +613,11 @@ fn record<Id>(
 /// - witness: `origin::tests::keys_do_not_certify_their_minting_context`
 #[spec(
     ensures: |ret| {
-        ret == entries
-            .iter()
-            .find(|&&(held, _)| held == id)
-            .map_or(Maybe::Absent(origin::Absent::Unrecorded), |&(_, origin)| {
-                Maybe::Present(origin)
-            })
+        let bound = entries.get(entries.partition_point(|&(held, _)| held < id));
+        match ret {
+            Maybe::Present(origin) => bound.is_some_and(|&(held, found)| held == id && found == origin),
+            Maybe::Absent(_) => bound.is_none_or(|&(held, _)| held != id),
+        }
     },
 )]
 fn find<Id>(

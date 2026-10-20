@@ -40,6 +40,7 @@
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::borrow::Borrow;
 use core::fmt;
 use std::path::Path;
 use std::path::PathBuf;
@@ -51,6 +52,7 @@ use quenchant_shape::shape::Maybe;
 use crate::boundary::ItemOrdinal;
 use crate::boundary::RecordCount;
 use crate::checkpoint::Checkpoints;
+use crate::checkpoint::ItemCheckpoint;
 use crate::codec::Bytes;
 use crate::codec::CheckpointBytes;
 use crate::codec::CodecError;
@@ -1155,8 +1157,32 @@ gandr_core_checker::DeclarationContent::Codata(_) => false,
 #[inline]
 pub fn address_of(program: &Program) -> Result<CheckpointAddress, CheckpointStoreError>
 {
+    address_from(&contents_of(program))
+}
+
+/// The content address of the program whose items' contents are `contents`,
+/// in order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the BLAKE3 digest of the canonical program bytes of `contents`.
+/// - fails: [`CheckpointStoreError::UnsupportedPersistence`] as [`address_of`].
+/// - panics: none.
+/// - executable: none — the digest is the clause; [`address_of`]'s witnesses
+///   hash through this.
+///
+/// # Errors
+/// As [`address_of`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`address_of`].
+/// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
+fn address_from<Content>(contents: &[Content]) -> Result<CheckpointAddress, CheckpointStoreError>
+where
+    Content: Borrow<ItemContent>,
+{
     let mut hasher = blake3::Hasher::new();
-    write_program(&mut hasher, &contents_of(program))?;
+    write_program(&mut hasher, contents)?;
     Ok(CheckpointAddress(*hasher.finalize().as_bytes()))
 }
 
@@ -1242,11 +1268,11 @@ pub fn decode_checkpoints(bytes: &CheckpointBytes) -> Result<Checkpoints, Checkp
 ///
 /// # Specification
 /// - requires: `checkpoints` are `program`'s.
-/// - ensures: on success the set is stored at the program's address and the
+/// - ensures: on success the set is stored at the program's address, read off
+///   the checkpoints' contents, which are the program's items', and the
 ///   observer is told; on failure the observer is told nothing.
 /// - fails: the address's or the store's error.
 /// - panics: propagates a panic from a supplied store or observer.
-///
 ///
 /// # Adequacy
 /// - hypothesis: L3 — real memory and file stores notify after successful
@@ -1296,7 +1322,12 @@ where
     Store: CheckpointStore,
     Observer: CheckpointObserver,
 {
-    let address = address_of(program)?;
+    let contents: Vec<&ItemContent> = checkpoints
+        .items()
+        .iter()
+        .map(ItemCheckpoint::content)
+        .collect();
+    let address = address_from(&contents)?;
     store.store(address, backend, checkpoints)?;
     observer.stored(address);
     Ok(address)

@@ -1114,7 +1114,9 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
 /// to the same composition; every judgement reports what the dispatcher
 /// composes of the laid-out text, its closure lowered and judged fresh and the
 /// document judged after it; and the session's held parse of each revision is
-/// the tree its judgement read.
+/// the tree its judgement read. #776: the second session's first submission
+/// adopts the closure's items the first session judged, judging the
+/// document's own, to the first session's typings.
 #[test]
 fn an_importer_lowers_its_closure_once_1033()
 {
@@ -1122,6 +1124,7 @@ fn an_importer_lowers_its_closure_once_1033()
 
     use gandr_core_checker::HostGrant;
     use gandr_core_incremental::MemoryCheckpointStore;
+    use gandr_core_incremental::ResumeCensus;
     use gandr_storage_records::InMemoryBlockStore;
     use gandr_surface_corpus::CorpusRoot;
     use gandr_surface_dispatcher::JudgedClosure;
@@ -1138,15 +1141,15 @@ fn an_importer_lowers_its_closure_once_1033()
     use gandr_surface_session::Session;
     use gandr_surface_syntax::SourceText;
 
-    /// The sources a judgement of `laid` lowered, and its composition with
-    /// the origin table, which indexes the syntax tree it was read off,
-    /// cleared; the session's held parse of `laid` is the tree the judgement
-    /// read.
+    /// The sources a judgement of `laid` lowered, its composition with the
+    /// origin table, which indexes the syntax tree it was read off, cleared,
+    /// and its resume's census; the session's held parse of `laid` is the
+    /// tree the judgement read.
     fn judged<'text>(
         session: &mut Session<MemoryCheckpointStore, InMemoryBlockStore>,
         laid: &'text Laid,
         slot: &'text ClosureSlot,
-    ) -> (LoweringCount, Composed<'text>)
+    ) -> (LoweringCount, Composed<'text>, ResumeCensus)
     {
         let text = SourceText::from(laid.text.as_str());
         let before = usize::from(session.lowerings());
@@ -1168,6 +1171,7 @@ fn an_importer_lowers_its_closure_once_1033()
         (
             LoweringCount::from(lowered),
             unrooted(submission.composed().clone()),
+            census(&submission),
         )
     }
 
@@ -1304,14 +1308,20 @@ fn an_importer_lowers_its_closure_once_1033()
     let (cold_slot, again_slot, warm_slot) =
         (ClosureSlot::new(), ClosureSlot::new(), ClosureSlot::new());
     let mut cold = session(SourceRoot::Strict);
-    let (lowered, composed) = judged(&mut cold, &first, &cold_slot);
+    let (lowered, composed, cold_census) = judged(&mut cold, &first, &cold_slot);
     assert_eq!(
         lowered,
         LoweringCount::from(2_usize),
         "the first judgement lowers the closure and the document"
     );
+    assert_eq!(
+        (cold_census.adopted, cold_census.judged),
+        (ItemCount::from(0_usize), ItemCount::from(3_usize)),
+        "and judges every item, the closure's two and the document's one"
+    );
+    let cold_typings = resumed(&cold);
     assert_fresh(&first, &composed);
-    let (lowered, again) = judged(&mut cold, &second, &again_slot);
+    let (lowered, again, _again_census) = judged(&mut cold, &second, &again_slot);
     assert_eq!(
         lowered,
         LoweringCount::from(1_usize),
@@ -1319,12 +1329,22 @@ fn an_importer_lowers_its_closure_once_1033()
     );
     assert_fresh(&second, &again);
     let mut warm = session(SourceRoot::Strict);
-    let (lowered, warmed) = judged(&mut warm, &first, &warm_slot);
+    let (lowered, warmed, warm_census) = judged(&mut warm, &first, &warm_slot);
     assert_eq!(
         lowered,
         LoweringCount::from(1_usize),
         "a second session lowers the document over the closure the first lowered"
     );
     assert_eq!(warmed, composed, "to the composition the cold store gave");
+    assert_eq!(
+        (warm_census.adopted, warm_census.judged),
+        (ItemCount::from(2_usize), ItemCount::from(1_usize)),
+        "its first submission adopts the closure's items and judges the document's"
+    );
+    assert_eq!(
+        resumed(&warm),
+        cold_typings,
+        "to the typings the cold session's judged"
+    );
     let _removed = std::fs::remove_dir_all(&directory);
 }

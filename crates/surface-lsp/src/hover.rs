@@ -57,19 +57,15 @@
 //!
 //! [`hovering`] parses the copy's text through its session's form store
 //! without changing it. A document that imports a sibling is parsed as its
-//! judgement parses it ([`Session::parse_held_unit`]): its own text alone,
+//! judgement parses it ([`Session::type_held_unit`]): its own text alone,
 //! through the forms the recheck before it molded, laid after the tree of the
 //! closure whose lowering the process holds, so the closure is neither molded
 //! nor looked up again; the closure is laid out by the dispatcher's
 //! [`lay_out_shadowed`], which reads each sibling an editor holds as its copy
-//! and every other once per process. The lowering and the typed run still
-//! read the whole laid-out text, the closure with the document.
-//!
-//! The alternative was a whole parse of the laid-out text per revision: on
-//! the λ-calculus closure of #776, half the table's time went to it. The
-//! choice reverses with the one-tree component's: once each imported source
-//! is composed once, the table reads the closure's typings where they are
-//! kept and types the document's own declarations alone.
+//! and every other once per process. The document is then lowered after the
+//! closure's judged arena and its own declarations typed on the checker's
+//! state after the closure's, so a table costs the document's size, not its
+//! closure's.
 //!
 //! # A hover answers the node under the cursor, never an ancestor
 //!
@@ -312,13 +308,14 @@ impl Hovering
 ///
 /// # Specification
 /// - requires: nothing; `session` may have judged any revision.
-/// - ensures: [`TypeTable::of_parsed_unit`] over the import closure the
-///   dispatcher's [`lay_out_shadowed`] lays `text` out in under `shadows` when
-///   it imports a sibling by path, parsed as `session`'s judgement parses it
-///   ([`Session::parse_held_unit`]), beside the closure's paths, else
-///   [`TypeTable::of_parsed`] over `text` parsed through `session`'s form store
-///   ([`Session::parse_held`]), beside no path; the store is left as it was,
-///   and the table is empty when the text did not parse.
+/// - ensures: the type table [`Session::type_held_unit`] answers over the
+///   import closure the dispatcher's [`lay_out_shadowed`] lays `text` out in
+///   under `shadows` when it imports a sibling by path — typed after the
+///   closure's judgement when the process holds it — beside the closure's
+///   paths, else [`TypeTable::of_parsed`] over `text` parsed through
+///   `session`'s form store ([`Session::parse_held`]), beside no path; the
+///   store is left as it was, and the table is empty when the text did not
+///   parse.
 /// - provides: what a document copy keeps for its hovers, its definitions, its
 ///   completions and its signature help: the names read off the table once
 ///   ([`Names::of`]) and the heads read off the same parse
@@ -352,18 +349,15 @@ pub fn hovering<Store, Blocks>(
         )
     };
     let (typed, paths) = match lay_out_shadowed(grammar, path, classify(path), text, shadows) {
-        Maybe::Present(laid) => (
-            session
-                .parse_held_unit(SourceText::from(laid.text.as_str()), &laid.unit, laid.base)
-                .ok()
-                .and_then(|parsed| {
-                    let signatures = heads(parsed.tree(), &laid.unit);
-                    TypeTable::of_parsed_unit(grammar, parsed, &laid.unit, laid.base)
-                        .ok()
-                        .map(|table| (table, signatures))
-                }),
-            laid.paths,
-        ),
+        Maybe::Present(laid) => {
+            let mut signatures = Signatures::default();
+            let table = session.type_held_unit(
+                SourceText::from(laid.text.as_str()),
+                (&laid.unit, laid.base),
+                |tree| signatures = heads(tree, &laid.unit),
+            );
+            (table.map(|table| (table, signatures)), laid.paths)
+        },
         Maybe::Absent(_) => (
             session.parse_held(text).ok().and_then(|parsed| {
                 let signatures = heads(parsed.tree(), &Unit::single());

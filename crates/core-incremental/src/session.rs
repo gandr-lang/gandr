@@ -6,11 +6,13 @@ use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use quenchant_shape::shape::Maybe;
 
+use crate::checkpoint::Checkpoints;
 use crate::checkpoint::Resume;
 use crate::checkpoint::ResumeCensus;
 use crate::checkpoint::ResumeError;
 use crate::checkpoint::check_program;
 use crate::checkpoint::resume;
+use crate::checkpoint::resume_from;
 use crate::persistence::BackendArtifact;
 use crate::persistence::CheckpointObserver;
 use crate::persistence::CheckpointStore;
@@ -226,6 +228,88 @@ impl<Store> IncrementalSession<Store>
             Maybe::Absent(_) => check_program(program, self.budget),
         }
         .map_err(SessionError::Resume)?;
+        self.persisted(program, next, observer)
+    }
+
+    /// [`submit`](Self::submit), a session with nothing submitted resuming
+    /// from `seed`, the checkpoints of a program the revision may extend,
+    /// rather than judging the revision whole.
+    ///
+    /// # Specification
+    /// - requires: nothing — `seed` may be any checkpoint set.
+    /// - ensures: as [`submit`](Self::submit), the pass of a session holding no
+    ///   resume being [`resume_from`] over `seed`: an item of the revision
+    ///   whose content and support a checkpoint of `seed` records is adopted,
+    ///   and every other judged.
+    /// - fails: as [`submit`](Self::submit).
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`submit`](Self::submit).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a session seeded with the checkpoints of a program
+    ///   the revision extends adopts that program's items and judges the
+    ///   revision's own, answering what a whole judgement answers.
+    /// - witness: `session::tests::a_seeded_session_adopts_the_seed_s_items_and_judges_the_rest_776`
+    #[spec(ensures: |ret| match ret {
+        | Ok(census) => {
+            matches!(self.last, Maybe::Present(ref latest) if latest.census() == census && latest.checkpoints().items().len() == program.items().len())
+        },
+        | Err(SessionError::Resume(_)) => {
+            matches!(self.last, Maybe::Absent(submitted::Absent::Fresh))
+        },
+        | Err(SessionError::Store(_)) => {
+            matches!(self.last, Maybe::Present(ref latest) if latest.checkpoints().items().len() == program.items().len())
+        },
+    })]
+    #[inline]
+    pub fn submit_seeded<Observer>(
+        &mut self,
+        program: &mut Program,
+        seed: &Checkpoints,
+        observer: &mut Observer,
+    ) -> Result<ResumeCensus, SessionError>
+    where
+        Store: CheckpointStore,
+        Observer: CheckpointObserver,
+    {
+        let previous = core::mem::replace(&mut self.last, Maybe::Absent(submitted::Absent::Fresh));
+        let next = match previous {
+            Maybe::Present(base) => resume(base, program),
+            Maybe::Absent(_) => resume_from(seed, program),
+        }
+        .map_err(SessionError::Resume)?;
+        self.persisted(program, next, observer)
+    }
+
+    /// Persist `next`'s checkpoints of `program` and hold `next`, whether or
+    /// not persisting succeeds.
+    ///
+    /// # Specification
+    /// - requires: `next` is the pass over `program`.
+    /// - ensures: the session holds `next`; on success its census is returned.
+    /// - fails: [`SessionError::Store`] when persisting fails.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`submit`](Self::submit).
+    /// - witness: `session::tests::a_store_failure_retains_the_new_resume_for_the_next_submission`
+    #[spec(ensures: |ret| matches!(self.last, Maybe::Present(ref latest)
+        if ret.as_ref().is_err() || ret.as_ref().is_ok_and(|census| latest.census() == *census)))]
+    fn persisted<Observer>(
+        &mut self,
+        program: &Program,
+        next: Resume,
+        observer: &mut Observer,
+    ) -> Result<ResumeCensus, SessionError>
+    where
+        Store: CheckpointStore,
+        Observer: CheckpointObserver,
+    {
         let census = next.census();
         let persisted = persist(
             &mut self.store,

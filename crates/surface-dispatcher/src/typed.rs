@@ -169,13 +169,16 @@ use gandr_surface_syntax::NodeKey;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::compose::Checking;
 use crate::compose::ComposeFault;
 use crate::compose::Composed;
+use crate::compose::JudgedClosure;
 use crate::compose::Lowered;
 use crate::compose::Lowering;
 use crate::compose::LoweringCount;
 use crate::compose::adapt;
 use crate::compose::judge_lowering;
+use crate::compose::lower_onto_closure;
 use crate::compose::lower_parsed_unit;
 use crate::compose::lower_unit_source;
 use crate::evaluate::Evaluation;
@@ -874,9 +877,79 @@ impl TypeTable
     {
         let source = parsed.tree().source();
         let lowering = lower_parsed_unit(grammar, parsed, unit, &mut LoweringCount::default())?;
+        Ok(Self::typed(source, lowering, Checking::Whole, unit, base))
+    }
+
+    /// [`of_parsed_unit`](Self::of_parsed_unit) over the tree `parsed`
+    /// committed for a document laid after `judged`'s closure: the document
+    /// lowered after the closure's judged arena and its own declarations
+    /// typed on the checker's state after the closure's.
+    ///
+    /// # Specification
+    /// - requires: as [`of_parsed_unit`](Self::of_parsed_unit), `parsed` laid
+    ///   after `judged`'s closure's tree.
+    /// - ensures: the module [`lower_onto_closure`] lowers, typed as
+    ///   [`of_parsed_unit`](Self::of_parsed_unit) types its source, the typed
+    ///   run resumed on the checker's state after the closure's declarations
+    ///   and run over the document's own when they lead the module, and over
+    ///   every declaration otherwise.
+    /// - provides: the hover table of a document that imports a sibling, typed
+    ///   in the document's size rather than its closure's.
+    /// - fails: as [`of_parsed_unit`](Self::of_parsed_unit).
+    /// - panics: none.
+    /// - executable: none — the clause names a typing no argument carries; the
+    ///   witness types every node of a document both ways and compares.
+    ///
+    /// # Errors
+    /// As [`of_parsed_unit`](Self::of_parsed_unit).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a document typed after its judged closure answers
+    ///   every position as one typed whole does.
+    /// - witness: `typed::tests::a_document_typed_after_its_closure_types_as_one_typed_whole_776`
+    #[inline]
+    pub fn of_parsed_after<'held>(
+        judged: &'held JudgedClosure,
+        parsed: ParseResult<'held>,
+        unit: &Unit,
+        base: ByteOffset,
+    ) -> Result<Self, ComposeFault<'held>>
+    {
+        let source = parsed.tree().source();
+        let (lowering, checking) =
+            lower_onto_closure(judged, parsed, unit, &mut LoweringCount::default())?;
+        Ok(Self::typed(source, lowering, checking, unit, base))
+    }
+
+    /// The table of `lowering`, the source `unit` lays out with its last
+    /// source starting at `base`, its declarations typed as `checking` says.
+    ///
+    /// # Specification
+    /// - requires: `lowering` lowers `source` over `unit`.
+    /// - ensures: as [`of_unit`](Self::of_unit) over `lowering`; after a
+    ///   closure whose declarations lead the module, the typed run resumed on
+    ///   the checker's state after them and run over the rest.
+    /// - fails: never; a source refused whole types nothing.
+    /// - panics: none.
+    /// - executable: none — as [`of_unit`](Self::of_unit), which types through
+    ///   this.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`of_unit`](Self::of_unit) and
+    ///   [`of_parsed_after`](Self::of_parsed_after).
+    /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
+    /// - witness: `typed::tests::a_document_typed_after_its_closure_types_as_one_typed_whole_776`
+    fn typed(
+        source: SourceText<'_>,
+        lowering: Lowering<'_>,
+        checking: Checking<'_>,
+        unit: &Unit,
+        base: ByteOffset,
+    ) -> Self
+    {
         let Lowered::Module { module, mut arena } = lowering.into_lowered()
         else {
-            return Ok(Self::default());
+            return Self::default();
         };
         let declarations = adapt(&module);
         let origins = module.origins();
@@ -886,7 +959,8 @@ impl TypeTable
         // forms it outside a formation goal — at the level it reads closed. A
         // transport's written motive is a written type: the family it denotes.
         // So is a decode, the type a code written where a type is read
-        // denotes. The run keeps the formations of these types alone.
+        // denotes. The run keeps the formations of these types alone, and
+        // only a type written in the last source answers.
         let value_types = origins
             .value_types()
             .iter()
@@ -908,18 +982,32 @@ impl TypeTable
             .chain(comp_types)
             .chain(motives)
             .filter(|&(_, origin, _)| {
-                matches!(
-                    origin.provenance(),
-                    Provenance::Written | Provenance::Inserted(Insertion::Decode)
-                )
+                origin.span().start() >= base
+                    && matches!(
+                        origin.provenance(),
+                        Provenance::Written | Provenance::Inserted(Insertion::Decode)
+                    )
             })
             .collect();
         let mut wanted: Vec<TypeNode> = written.iter().map(|&(node, ..)| node).collect();
         wanted.sort_unstable();
         wanted.dedup();
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let after = match checking {
+            Checking::After(closure) => closure.led(&declarations),
+            Checking::Whole => None,
+        };
+        let (mut context, own_declarations) = match after {
+            Some((checkpoint, closure)) => (
+                CheckingContext::resume(&mut arena, checkpoint.clone()),
+                declarations.get(closure.len() ..).unwrap_or_default(),
+            ),
+            None => (
+                CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+                declarations.as_slice(),
+            ),
+        };
         context.keep_formations(Formations::Firsts(wanted));
-        let typed = type_module(&mut context, &declarations);
+        let typed = type_module(&mut context, own_declarations);
         let signatures = context.data_signatures().clone();
         let definitions = context.definitions().clone();
         // Each wanted type is formed at most once, so the formations sorted by
@@ -1495,7 +1583,7 @@ impl TypeTable
             })
             .collect();
         let referents = Referents::of(&module, &arena, unit, base, &constructed, &hidden);
-        Ok(Self {
+        Self {
             entries,
             declared,
             arena,
@@ -1510,7 +1598,7 @@ impl TypeTable
             opened,
             referents,
             in_scope: module.into_in_scope(),
-        })
+        }
     }
 
     /// Each oriented rule's span and the direction the order chose.
@@ -5332,6 +5420,113 @@ mod tests
         assert!(
             !record.is_empty() && record.iter().all(|&trip| *trip == RoundTrip::Equal),
             "the record whose dependency reads away reads back as its type: {trips:?}"
+        );
+    }
+
+    /// #776: a document typed after its judged closure — lowered after the
+    /// closure's arena, its own declarations typed on the checker's state
+    /// after the closure's — answers at every byte, for every declaration,
+    /// every declared name and every printed type read back, as the document
+    /// typed whole over its unit does. The rose trees import two siblings and
+    /// write families, recursion through an imported `map`, cases and a mutual
+    /// block.
+    #[test]
+    fn a_document_typed_after_its_closure_types_as_one_typed_whole_776()
+    {
+        use alloc::sync::Arc;
+
+        use gandr_surface_corpus::CorpusRoot;
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_parser::parse;
+
+        use crate::HostGrant;
+        use crate::JudgedClosure;
+        use crate::LoweringCount;
+        use crate::SourceRoot;
+        use crate::lay_out;
+        use crate::lower_closure;
+
+        let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
+        let path = std::fs::canonicalize(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../surface-corpus/fixture/model/data/rose.gandr"),
+        )
+        .expect("the rose trees are in the corpus");
+        let own = std::fs::read_to_string(&path).expect("the rose trees read");
+        let Maybe::Present(laid) = lay_out(
+            &grammar,
+            &path,
+            SourceRoot::Fixture,
+            SourceText::from(own.as_str()),
+        )
+        else {
+            panic!("the rose trees are laid out after their siblings");
+        };
+        let sources = laid.unit.sources();
+        let closure = Arc::new(
+            lower_closure(
+                Arc::clone(&grammar),
+                String::from(laid.text.get(.. usize::from(laid.base)).unwrap_or_default()),
+                Unit::new(
+                    sources
+                        .get(.. sources.len().saturating_sub(1))
+                        .unwrap_or_default()
+                        .to_vec(),
+                )
+                .expect("the siblings make a unit"),
+                &mut LoweringCount::default(),
+            )
+            .expect("the siblings are held"),
+        );
+        let judged = JudgedClosure::new(
+            Arc::clone(&closure),
+            &HostGrant::UNBOUNDED,
+            CorpusRoot::Fixture,
+        )
+        .expect("the siblings lower to their end");
+        let text = SourceText::from(laid.text.as_str());
+        let parsed = parse(&grammar, SourceText::from(own.as_str()))
+            .expect("the rose trees parse")
+            .after(closure.tree(), text)
+            .expect("the rose trees lay after their siblings");
+        let after = TypeTable::of_parsed_after(&judged, parsed, &laid.unit, laid.base)
+            .expect("the rose trees type after their siblings");
+        let whole = TypeTable::of_unit(&grammar, text, &laid.unit, laid.base)
+            .expect("the rose trees type whole");
+        let page = PageWidth::from(80_u32);
+        let differing: Vec<usize> = (0 .. own.len())
+            .filter(|&offset| {
+                let at = ByteOffset::from(offset);
+                after.at(at, page, Form::Explicit.into())
+                    != whole.at(at, page, Form::Explicit.into())
+            })
+            .collect();
+        assert!(
+            after.spans().nth(100).is_some() && differing.is_empty(),
+            "every byte answers alike, over more than a hundred entries: differing at {differing:?}"
+        );
+        assert!(
+            after
+                .declarations(page, Form::Explicit.into())
+                .eq(whole.declarations(page, Form::Explicit.into())),
+            "every declaration answers alike"
+        );
+        assert_eq!(
+            after.declared_names(),
+            whole.declared_names(),
+            "every declared name is offered alike"
+        );
+        let read = |table: &TypeTable| -> Vec<(String, RoundTrip)> {
+            table
+                .read_back(&grammar, page, Form::Sugared.into())
+                .into_iter()
+                .map(|back| (back.spelled, back.trip))
+                .collect()
+        };
+        assert_eq!(
+            read(&after),
+            read(&whole),
+            "every printed type reads back alike"
         );
     }
 }

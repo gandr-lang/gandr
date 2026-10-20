@@ -41,6 +41,7 @@
 use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::borrow::Borrow;
 use core::fmt;
 
 use anodized::spec;
@@ -7806,20 +7807,22 @@ pub fn decode_checkpoints(bytes: Bytes<'_>) -> Result<Checkpoints, CodecError>
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
 #[spec(
     ensures: |ret| match ret {
-        | Ok(()) => contents.iter().all(|content| content.locus() == crate::content::Locus::Unlocated)
+        | Ok(()) => contents.iter().map(Borrow::borrow).all(|content: &ItemContent| content.locus() == crate::content::Locus::Unlocated)
             && contents
                 .iter()
+                .map(Borrow::borrow)
                 .flat_map(ItemContent::nodes)
                 .all(|node| !matches!(*node.former(), ContentNode::Unresolved(_))),
         | Err(CodecError::Unsupported(UnsupportedPersistence::Located)) => {
-            contents.iter().any(|content| content.locus() == crate::content::Locus::Located)
+            contents.iter().map(Borrow::borrow).any(|content: &ItemContent| content.locus() == crate::content::Locus::Located)
         },
         | Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => {
-            contents.iter().any(|content| matches!(*content.declaration(), crate::content::DeclarationRoots::Codata))
+            contents.iter().map(Borrow::borrow).any(|content: &ItemContent| matches!(*content.declaration(), crate::content::DeclarationRoots::Codata))
         },
         | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
             contents
                 .iter()
+                .map(Borrow::borrow)
                 .flat_map(ItemContent::nodes)
                 .find_map(|node| match *node.former() {
                     | ContentNode::Unresolved(found) => Some(found),
@@ -7831,18 +7834,19 @@ pub fn decode_checkpoints(bytes: Bytes<'_>) -> Result<Checkpoints, CodecError>
         | _ => false,
     },
 )]
-pub fn write_program<Out>(
+pub fn write_program<Out, Content>(
     sink: &mut Out,
-    contents: &[ItemContent],
+    contents: &[Content],
 ) -> Result<(), CodecError>
 where
     Out: Sink,
+    Content: Borrow<ItemContent>,
 {
     let mut writer = Writer { sink };
     writer.sink.put(Bytes(PROGRAM_MAGIC));
     writer.count(Count(contents.len()))?;
     for content in contents {
-        write_item_content_with(&mut writer, content)?;
+        write_item_content_with(&mut writer, content.borrow())?;
     }
     Ok(())
 }
