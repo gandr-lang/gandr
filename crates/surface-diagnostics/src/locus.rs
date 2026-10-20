@@ -1402,6 +1402,9 @@ impl fmt::Display for Checked
                 },
                 | AccessDefect::Spent => f.write_str("the view is used after its resume or abort"),
                 | AccessDefect::NotAView => f.write_str("the resume or abort names a linear slot that is no view"),
+                | AccessDefect::ReadOnly => {
+                    f.write_str("the resume or abort names a shared view, which is read-only and ends with its body")
+                },
                 | AccessDefect::UnwindEffect => f.write_str(
                     "the access's unwind performs an effect: an unwind runs under the empty row",
                 ),

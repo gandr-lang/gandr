@@ -40,6 +40,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
 use gandr_core_term::world::WorldForm;
@@ -1274,9 +1275,16 @@ Err(_) => false,
                         MemoryForm::Hold { value: held, body } => {
                             two(value(held), computation(body), Lowering::NONE)
                         },
-                        MemoryForm::Access { body, unwind, .. } => {
-                            two(computation(body), computation(unwind), Lowering::NONE)
-                        },
+                        MemoryForm::Access {
+                            mode: AccessMode::Exclusive { unwind },
+                            body,
+                            ..
+                        } => two(computation(body), computation(unwind), Lowering::NONE),
+                        MemoryForm::Access {
+                            mode: AccessMode::Shared,
+                            body,
+                            ..
+                        } => one(computation(body), Lowering::NONE),
                         MemoryForm::Resume { value: written, .. } => {
                             one(value(written), Lowering::NONE)
                         },

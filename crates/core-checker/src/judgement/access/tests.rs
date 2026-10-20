@@ -6,6 +6,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::effect::EffectOp;
 use gandr_core_term::effect::EffectRow;
 use gandr_core_term::effect::EffectSig;
+use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
@@ -81,7 +82,28 @@ fn access(
     unwind: ComputationId,
 ) -> ComputationId
 {
-    arena.computation_memory(MemoryForm::Access { held, body, unwind })
+    arena.computation_memory(MemoryForm::Access {
+        mode: AccessMode::Exclusive { unwind },
+        held,
+        body,
+    })
+}
+
+/// `access shared lN as v { body }`.
+///
+/// # Specification
+/// trivial.
+fn shared(
+    arena: &mut CoreArena,
+    held: DeBruijnIndex,
+    body: ComputationId,
+) -> ComputationId
+{
+    arena.computation_memory(MemoryForm::Access {
+        mode: AccessMode::Shared,
+        held,
+        body,
+    })
 }
 
 /// `resume(lN, value)`.
@@ -456,4 +478,75 @@ fn a_held_value_lent_or_misnamed_is_refused()
         [Ok(()), Ok(())],
         "the same hold at the pure returner checks"
     );
+}
+
+#[test]
+fn a_shared_view_reads_beside_its_held_value_and_ends_with_its_body()
+{
+    let mut arena = CoreArena::new();
+    let units = units(&mut arena);
+    let integers = integers(&mut arena);
+    let zero = arena.value_literal(integer_literal());
+    let unwind = done(&mut arena);
+    // hold c = 0; access shared c as v { access shared c as w { (c,).0; (v,).0;
+    // (w,).0 } }
+    let (_held, held_read) = copied(&mut arena, DeBruijnIndex::from(2_u32));
+    let (_outer, outer_read) = copied(&mut arena, l1());
+    let (_inner, inner_read) = copied(&mut arena, l0());
+    let views = arena.computation_bind(outer_read, inner_read);
+    let reads = arena.computation_bind(held_read, views);
+    let inner = shared(&mut arena, l1(), reads);
+    let outer = shared(&mut arena, l0(), inner);
+    let nested = hold(&mut arena, outer);
+    assert_eq!(
+        both(&mut arena, nested, integers),
+        [Ok(()), Ok(())],
+        "two shared views of one held value nest, and the value stays readable"
+    );
+    // hold c = 0; access shared c as v { (v,).0 }; access c as w { resume(w, 0) }
+    // unwind {}; (c,).0
+    let (_viewed, viewed) = copied(&mut arena, l0());
+    let first = shared(&mut arena, l0(), viewed);
+    let resumed = resume(&mut arena, l0(), zero);
+    let second = access(&mut arena, l0(), resumed, unwind);
+    let (_held, read) = copied(&mut arena, l0());
+    let rest = arena.computation_bind(second, read);
+    let scope = arena.computation_bind(first, rest);
+    let in_turn = hold(&mut arena, scope);
+    assert_eq!(
+        both(&mut arena, in_turn, integers),
+        [Ok(()), Ok(())],
+        "a shared access ends with its body, so an exclusive one follows it"
+    );
+    // hold c = 0; access shared c as v { access c as w { resume(w, 0) } unwind {} }
+    let exclusive = access(&mut arena, l1(), resumed, unwind);
+    let frozen = shared(&mut arena, l0(), exclusive);
+    let frozen = hold(&mut arena, frozen);
+    assert_eq!(
+        both(&mut arena, frozen, units),
+        [Err(at(exclusive, AccessDefect::Lent)); 2],
+        "a value lent shared is frozen for the shared access's extent"
+    );
+    // access c as v { access shared c as w { (w,).0 }; resume(v, 0) } unwind {}
+    let (_inner, inner_read) = copied(&mut arena, l0());
+    let inside = shared(&mut arena, l1(), inner_read);
+    let written = resume(&mut arena, l0(), zero);
+    let body = arena.computation_bind(inside, written);
+    let beside = in_view(&mut arena, body);
+    assert_eq!(
+        both(&mut arena, beside, units),
+        [Err(at(inside, AccessDefect::Lent)); 2],
+        "nothing is lent beside an exclusive access"
+    );
+    // hold c = 0; access shared c as v { resume(v, 0) }, and the same with abort(v)
+    let aborted = abort(&mut arena, l0());
+    for eliminator in [resumed, aborted] {
+        let read_only = shared(&mut arena, l0(), eliminator);
+        let read_only = hold(&mut arena, read_only);
+        assert_eq!(
+            both(&mut arena, read_only, units),
+            [Err(at(eliminator, AccessDefect::ReadOnly)); 2],
+            "a shared view is read-only and ends with its body"
+        );
+    }
 }

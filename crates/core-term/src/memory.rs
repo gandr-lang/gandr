@@ -1,5 +1,5 @@
-//! Temporary access: a value held exclusively, the access that lends it to a
-//! view, and the view's two eliminators.
+//! Temporary access: a held value, the access that lends it to a view in a
+//! mode, and the view's two eliminators.
 //!
 //! # The forms
 //!
@@ -7,25 +7,28 @@
 //! |---|---|---|
 //! |hold|`hold x = v; t`|`x`, a linear slot holding `v`, over `t`|
 //! |access|`access x as w { t } unwind { u }`|the view `w`, a linear slot, over `t`|
+//! |shared access|`access shared x as w { t }`|the view `w`, a linear slot, over `t`|
 //! |resume|`resume(w, v)`|nothing; writes `v` back through `w`|
 //! |abort|`abort(w)`|nothing; ends `w` with nothing written|
 //!
 //! [`MemoryForm::Hold`] opens a slot of the linear zone `Σ` holding a value;
 //! a read of the slot copies the value it holds now. [`MemoryForm::Access`]
-//! lends a held slot to a view for the access's body: the held slot is
-//! unreadable while lent, the view reads the value it was lent, and the body
-//! ends the view exactly once, by [`MemoryForm::Resume`] (the new value is
-//! written back into the held slot when the access ends) or by
-//! [`MemoryForm::Abort`] (the access's `unwind` runs when the access ends and
-//! the held slot keeps the value it had). The rules, the refusals and the
-//! decisions behind them are `gandr-core-checker`'s `access` module.
+//! lends a held slot to a view for the access's body, in the
+//! [`AccessMode`] it names. Lent exclusively, the held slot is unreadable
+//! for the body, the view reads the value it was lent, and the body ends the
+//! view exactly once, by [`MemoryForm::Resume`] (the new value is written
+//! back into the held slot when the access ends) or by [`MemoryForm::Abort`]
+//! (the mode's `unwind` runs when the access ends and the held slot keeps the
+//! value it had). Lent shared, the held slot stays readable and is frozen for
+//! the body, the view reads the same value, and the view ends with the body:
+//! a shared mode has no unwind, and neither eliminator ends a shared view.
+//! The rules and the refusals are `gandr-core-checker`'s `access` module.
 //!
-//! **Choice.** One computation former whose cases are the four forms, every
-//! resident named by its linear de Bruijn index, so an access of something
+//! One computation former has the four forms as its cases, and every
+//! resident is named by its linear de Bruijn index, so an access of something
 //! that is not held, or an eliminator of something that is not a view,
-//! cannot be written as a value. **Alternative.** A computation former per
-//! form, which adds an arm per form to every walk, as the session actions
-//! decided before it.
+//! cannot be written as a value. The unwind is a child of the exclusive mode
+//! alone, so a shared access with an unwind cannot be written either.
 //!
 //! # Binders
 //!
@@ -57,6 +60,54 @@ quenchant_shape::reason_enum! {
     }
 }
 
+/// The mode an access lends its held slot in, with the one child a mode
+/// carries: the unwind of an exclusive access. `AccessMode<()>` is the mode
+/// alone.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AccessMode<C = ComputationId>
+{
+    /// The view is the one way to the held value for the body: the held slot
+    /// is unreadable while lent, the body ends the view by `resume` or
+    /// `abort`, and `unwind`, where the access stands, runs when an abort
+    /// ends it.
+    Exclusive
+    {
+        /// The unwind, where the access stands.
+        unwind: C,
+    },
+    /// The view reads the held value, which stays readable and frozen for the
+    /// body; the view ends with the body, nothing written back.
+    Shared,
+}
+
+impl<C> AccessMode<C>
+{
+    /// The mode with its child erased.
+    ///
+    /// # Specification
+    /// - ensures: [`AccessMode::Exclusive`] for an exclusive mode, whatever its
+    ///   unwind, and [`AccessMode::Shared`] for a shared one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an exclusive access and a shared one name their own
+    ///   modes.
+    /// - witness: `memory::tests::forms_name_their_resident_and_children`
+    #[spec(ensures: |ret| matches!((self, ret), (&Self::Exclusive { .. }, AccessMode::Exclusive { .. }) | (&Self::Shared, AccessMode::Shared)))]
+    #[inline]
+    #[must_use]
+    pub const fn mode(&self) -> AccessMode<()>
+    {
+        match *self {
+            Self::Exclusive { .. } => AccessMode::Exclusive { unwind: () },
+            Self::Shared => AccessMode::Shared,
+        }
+    }
+}
+
 /// The case of a memory form.
 ///
 /// # Specification
@@ -66,7 +117,7 @@ pub enum MemoryKind
 {
     /// `hold x = v; t`.
     Hold,
-    /// `access x as w { t } unwind { u }`.
+    /// `access x as w { t } unwind { u }` or `access shared x as w { t }`.
     Access,
     /// `resume(w, v)`.
     Resume,
@@ -87,17 +138,17 @@ pub enum MemoryForm<V = ValueId, C = ComputationId>
         /// The scope of the held slot, under its linear binder.
         body: C,
     },
-    /// `access x as w { t } unwind { u }`: `body` runs with the view `w` of
-    /// the held slot `held`, under the view's linear binder; `unwind` runs
-    /// when an abort ends the view.
+    /// `access x as w { t } unwind { u }` or `access shared x as w { t }`:
+    /// `body` runs with the view `w` of the held slot `held`, under the
+    /// view's linear binder, lent in `mode`.
     Access
     {
+        /// The mode the slot is lent in, with an exclusive access's unwind.
+        mode: AccessMode<C>,
         /// The held slot lent, a linear index.
         held: DeBruijnIndex,
         /// The body, under the view's linear binder.
         body: C,
-        /// The unwind, where the access stands.
-        unwind: C,
     },
     /// `resume(w, v)`: end the view `view`, writing `value` back, returning
     /// the unit.
@@ -188,37 +239,46 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
 
     /// The computation children in canonical order, each beside the linear
     /// binders the form opens over it: a hold's body and an access's body
-    /// under one, an access's unwind under none.
+    /// under one, an exclusive access's unwind under none.
     ///
     /// # Specification
     /// - ensures: a hold yields its body under one binder; an access its body
-    ///   under one, then its unwind under none; an eliminator nothing.
+    ///   under one, then, when exclusive, its unwind under none; an eliminator
+    ///   nothing.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an access yields its body before its unwind, each
-    ///   with its own binder count.
+    /// - hypothesis: L3 — an exclusive access yields its body before its
+    ///   unwind, each with its own binder count, and a shared one its body
+    ///   alone.
     /// - witness: `memory::tests::forms_name_their_resident_and_children`
     #[spec(ensures: |ret| ret.clone().count() == match *self {
-        | Self::Hold { .. } => 1_usize,
-        | Self::Access { .. } => 2_usize,
+        | Self::Hold { .. } | Self::Access { mode: AccessMode::Shared, .. } => 1_usize,
+        | Self::Access { mode: AccessMode::Exclusive { .. }, .. } => 2_usize,
         | Self::Resume { .. } | Self::Abort { .. } => 0_usize,
     })]
     #[inline]
     pub fn scoped(&self) -> Scoped<C>
     {
         let (first, second) = match *self {
-            Self::Hold { body, .. } => (Some((body, Binders::ONE)), None),
-            Self::Access { body, unwind, .. } => {
-                (Some((body, Binders::ONE)), Some((unwind, Binders::NONE)))
-            },
+            Self::Hold { body, .. }
+            | Self::Access {
+                mode: AccessMode::Shared,
+                body,
+                ..
+            } => (Some((body, Binders::ONE)), None),
+            Self::Access {
+                mode: AccessMode::Exclusive { unwind },
+                body,
+                ..
+            } => (Some((body, Binders::ONE)), Some((unwind, Binders::NONE))),
             Self::Resume { .. } | Self::Abort { .. } => (None, None),
         };
         first.into_iter().chain(second)
     }
 
     /// The computation children in canonical order: a hold's body, an
-    /// access's body then its unwind.
+    /// access's body then an exclusive access's unwind.
     ///
     /// # Specification
     /// trivial.
@@ -228,8 +288,9 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
         self.scoped().map(|(child, _)| child)
     }
 
-    /// The form with every child erased: its case and the slot it names,
-    /// which is what two forms must share to be the same former.
+    /// The form with every child erased: its case, the slot it names and an
+    /// access's mode, which is what two forms must share to be the same
+    /// former.
     ///
     /// # Specification
     /// - ensures: the form with every child replaced by the unit, kept at its
@@ -238,7 +299,8 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two resumes of one view differ in no shape, two
-    ///   resumes of different views do.
+    ///   resumes of different views do, and an exclusive access and a shared
+    ///   one of one slot do.
     /// - witness: `memory::tests::forms_name_their_resident_and_children`
     #[spec(ensures: |ret| ret.kind() == self.kind() && ret.resident() == self.resident())]
     #[inline]
@@ -261,11 +323,11 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the case and the slot it names are kept; each child is
-    ///   replaced by its image at its own position; [`ChildOrder::Forward`]
-    ///   visits a hold's value before its body, an access's body before its
-    ///   unwind and a resume's value, and [`ChildOrder::Reverse`] exactly the
-    ///   reverse.
+    /// - ensures: the case, the slot it names and an access's mode are kept;
+    ///   each child is replaced by its image at its own position;
+    ///   [`ChildOrder::Forward`] visits a hold's value before its body, an
+    ///   access's body before an exclusive access's unwind and a resume's
+    ///   value, and [`ChildOrder::Reverse`] exactly the reverse.
     /// - fails: propagates the first error a map returns.
     /// - panics: none.
     ///
@@ -277,7 +339,8 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
     ///   value, across families, and keeps each image at its own position.
     /// - witness: `memory::tests::forms_name_their_resident_and_children`
     #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|mapped| match (self, mapped) {
-        | (&Self::Access { held: a, .. }, &MemoryForm::Access { held: b, .. })
+        | (&Self::Access { held: a, mode: ref before, .. }, &MemoryForm::Access { held: b, mode: ref after, .. }) =>
+            a == b && before.mode() == after.mode(),
         | (&Self::Resume { view: a, .. }, &MemoryForm::Resume { view: b, .. })
         | (&Self::Abort { view: a }, &MemoryForm::Abort { view: b }) => a == b,
         | (&Self::Hold { .. }, &MemoryForm::Hold { .. }) => true,
@@ -312,21 +375,30 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
                     }
                 },
             },
-            Self::Access { held, body, unwind } => match order {
-                ChildOrder::Forward => {
-                    let body = computation(state, body)?;
+            Self::Access { mode, held, body } => match (mode, order) {
+                (AccessMode::Shared, ChildOrder::Forward | ChildOrder::Reverse) => {
                     MemoryForm::Access {
-                        held,
-                        body,
-                        unwind: computation(state, unwind)?,
-                    }
-                },
-                ChildOrder::Reverse => {
-                    let unwind = computation(state, unwind)?;
-                    MemoryForm::Access {
+                        mode: AccessMode::Shared,
                         held,
                         body: computation(state, body)?,
-                        unwind,
+                    }
+                },
+                (AccessMode::Exclusive { unwind }, ChildOrder::Forward) => {
+                    let body = computation(state, body)?;
+                    MemoryForm::Access {
+                        mode: AccessMode::Exclusive {
+                            unwind: computation(state, unwind)?,
+                        },
+                        held,
+                        body,
+                    }
+                },
+                (AccessMode::Exclusive { unwind }, ChildOrder::Reverse) => {
+                    let unwind = computation(state, unwind)?;
+                    MemoryForm::Access {
+                        mode: AccessMode::Exclusive { unwind },
+                        held,
+                        body: computation(state, body)?,
                     }
                 },
             },
@@ -352,8 +424,8 @@ impl CoreArena
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a minted access reads back with its slot, body and
-    ///   unwind.
+    /// - hypothesis: L3 — a minted access reads back with its mode, slot, body
+    ///   and unwind.
     /// - witness: `memory::tests::forms_name_their_resident_and_children`
     #[spec(requires: form.values().all(|value| self.value(value).is_some())
             && form.computations().all(|computation| self.computation(computation).is_some()),

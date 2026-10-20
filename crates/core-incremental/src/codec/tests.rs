@@ -109,6 +109,7 @@ fn every_node_former_round_trips_under_its_own_frame()
     use gandr_core_term::ComponentCount;
     use gandr_core_term::FieldLabel;
     use gandr_core_term::control::StackFrame;
+    use gandr_core_term::memory::AccessMode;
     use gandr_core_term::memory::MemoryForm;
     use gandr_core_term::session::RecordedMove;
     use gandr_core_term::session::SessionRelation;
@@ -317,9 +318,14 @@ fn every_node_former_round_trips_under_its_own_frame()
         [
             MemoryForm::Hold { value: a, body: b },
             MemoryForm::Access {
+                mode: AccessMode::Exclusive { unwind: b },
                 held: slot,
                 body: a,
-                unwind: b,
+            },
+            MemoryForm::Access {
+                mode: AccessMode::Shared,
+                held: slot,
+                body: a,
             },
             MemoryForm::Resume {
                 view: slot,
@@ -2505,6 +2511,7 @@ fn every_refusal() -> Vec<Refusal>
             AccessDefect::Unended,
             AccessDefect::Spent,
             AccessDefect::NotAView,
+            AccessDefect::ReadOnly,
             AccessDefect::UnwindEffect,
         ]
         .map(|defect| Refusal::Access { at, defect }),

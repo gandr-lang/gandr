@@ -48,6 +48,7 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
+use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
@@ -875,9 +876,9 @@ fn a_counter_observes_write_back_on_resume_and_none_on_abort()
     let aborting = core.computation_bind(successor, aborted);
     let access = |core: &mut CoreArena, body, unwind| {
         core.computation_memory(MemoryForm::Access {
+            mode: AccessMode::Exclusive { unwind },
             held: view,
             body,
-            unwind,
         })
     };
     let first = access(&mut core, resuming, ret_unit);

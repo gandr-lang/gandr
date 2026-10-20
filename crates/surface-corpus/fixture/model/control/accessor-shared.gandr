@@ -1,0 +1,45 @@
+// Shared access. `access shared c as w { … }` lends a held value to a
+// read-only view: the body reads `w` and `c` alike, nothing is written back,
+// and the view ends with its body, so it takes no `resume`, `abort` or
+// `unwind`. The value is frozen for the body: shared views nest, and an
+// exclusive access waits until they end. The loan follows Rust's shared
+// borrow (_The Rust Reference_, § Borrow operators).
+
+/// A shared view beside its held value: both read the one value.
+@[ runs("6") ]
+def read_beside() -> -F Integer {
+  hold c = 3;
+  access shared c as w { pure w + c }
+}
+
+/// Two shared views of one held value, nested: each reads the value the other
+/// reads.
+@[ runs("9") ]
+def shared_nested() -> -F Integer {
+  hold c = 3;
+  access shared c as v { access shared c as w { pure v + w + c } }
+}
+
+/// Twice a value, a call whose type synthesises where a statement binds it.
+@[ checks ]
+def twice(n : Integer) -> -F Integer {
+  pure n + n
+}
+
+/// A shared access ends with its body, so an exclusive access follows it and
+/// writes back what the shared view read.
+@[ runs("8") ]
+def in_turn() -> -F Integer {
+  hold c = 4;
+  run n <- access shared c as w { twice(w) };
+  access c as v { resume(v, n) };
+  pure c
+}
+
+/// `exclusive` spells the mode an access takes when it names none.
+@[ runs("2") ]
+def spelled() -> -F Integer {
+  hold c = 1;
+  access exclusive c as v { resume(v, v + 1) } unwind { pure unit };
+  pure c
+}

@@ -46,6 +46,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::control::StackFrame;
 use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::equal_type_syntax;
+use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::shift_comp_type_under;
 use gandr_core_term::shift_computation_under;
@@ -129,15 +130,15 @@ fn hand_built_control_cases_cover_every_former()
     let resumed_view = core.computation_memory(MemoryForm::Resume { view, value: unit });
     let ended = core.computation_bind(resumed_view, returned);
     let accessed = core.computation_memory(MemoryForm::Access {
+        mode: AccessMode::Exclusive { unwind: returned },
         held: view,
         body: ended,
-        unwind: returned,
     });
     let aborted_view = core.computation_memory(MemoryForm::Abort { view });
     let aborting = core.computation_memory(MemoryForm::Access {
+        mode: AccessMode::Exclusive { unwind: identity },
         held: view,
         body: aborted_view,
-        unwind: identity,
     });
     let both = core.computation_bind(accessed, aborting);
     let held = core.computation_memory(MemoryForm::Hold {

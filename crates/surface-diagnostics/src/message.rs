@@ -878,6 +878,10 @@ fn checked(
             AccessDefect::NotAView => {
                 f.write_str("`resume` and `abort` need the view an `access` opened")
             },
+            AccessDefect::ReadOnly => f.write_str(
+                "`resume` and `abort` end an exclusive view; a shared view is read-only and \
+                 ends with its body",
+            ),
             AccessDefect::UnwindEffect => {
                 f.write_str("an `unwind` runs under the empty row and cannot perform an effect")
             },
@@ -1553,6 +1557,10 @@ mod tests
             CheckRefusal::Access {
                 at: node,
                 defect: AccessDefect::NotAView,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::ReadOnly,
             },
             CheckRefusal::Access {
                 at: node,

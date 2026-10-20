@@ -1270,6 +1270,7 @@ fn covers_preserve_every_binding_former()
     use gandr_core_term::Zone;
     use gandr_core_term::control::EffectClause;
     use gandr_core_term::effect::OperationName;
+    use gandr_core_term::memory::AccessMode;
     use gandr_core_term::memory::MemoryForm;
     use gandr_core_term::session::SessionAction;
     use gandr_kernel_term::DeBruijnIndex;
@@ -1438,9 +1439,20 @@ fn covers_preserve_every_binding_former()
         (
             "access",
             ContentNode::Memory(MemoryForm::Access {
+                mode: AccessMode::Exclusive {
+                    unwind: index(2_usize),
+                },
                 held: at(0_u32),
                 body: index(1_usize),
-                unwind: index(2_usize),
+            }),
+            both,
+        ),
+        (
+            "shared access",
+            ContentNode::Memory(MemoryForm::Access {
+                mode: AccessMode::Shared,
+                held: at(0_u32),
+                body: index(1_usize),
             }),
             both,
         ),
