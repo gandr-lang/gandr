@@ -102,3 +102,14 @@ def tagged_around = #{here(3), here((MkIx : Ix(3)))} ;
 @[ checks ]
 def moved : +U (-F Integer) ;
 def moved = thunk { transport(\s. Integer, both, 5) } ;
+
+/// A later entry's type may apply the earlier one: the type printed for the
+/// pair, `Path(Integer, e.0(0), 0)` at its second entry, reads back to it
+/// (#935).
+@[ checks ]
+def calledFiber(e : #{
+  cell : Integer => Integer,
+  fix : Path(Integer, cell(0), 0)
+}) -> -F Path(#{cell : Integer => Integer, fix : Path(Integer, cell(0), 0)}, #{e.cell, e.fix}, e) {
+  return here(e)
+}

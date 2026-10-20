@@ -1196,8 +1196,10 @@ enum Reading<'signatures>
     /// behaviour, a decoded static redex as its reduct, as every checker reads
     /// them, a staged type as its base, which is all of it the surface
     /// writes, a call kept unelaborated as the value it returns, which is
-    /// all a printed `f(x)` says, and a call of a function literal as the
-    /// value its body returns, which no surface call spells.
+    /// all a printed `f(x)` says, a call of a function literal as the
+    /// value its body returns, which no surface call spells, and a forced
+    /// returned value as the computation returning it, which a printed call
+    /// on a selection writes alike.
     Printed(&'signatures BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>),
 }
 
@@ -1392,6 +1394,35 @@ fn unstaged(
         Some(&ValueType::Staged { base, .. }) => base,
         Some(_) | None => id,
     }
+}
+
+/// The computation `id` forces when it forces the value a computation
+/// returns, `id` itself otherwise: `force (returned c)` is the head the
+/// checker writes where a type applies a component of a dependent pair, and
+/// `c` the one a call on the selection lowers to; both print as the selection
+/// called.
+///
+/// # Specification
+/// - requires: nothing; an unreadable id is returned as it is.
+/// - ensures: `c` for `force (returned c)`; `id` for any other.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_forced_returned_head_reads_as_its_computation_935`
+#[spec(ensures: |ret| ret == id || matches!(arena.computation(id), Some(&Computation::Force(forced)) if matches!(arena.value(forced), Some(&Value::Returned(c)) if c == ret)))]
+fn forced_returned(
+    arena: &crate::CoreArena,
+    id: ComputationId,
+) -> ComputationId
+{
+    if let Some(&Computation::Force(forced)) = arena.computation(id)
+        && let Some(&Value::Returned(returned)) = arena.value(forced)
+    {
+        return returned;
+    }
+    id
 }
 
 /// The static steps one [`equal_type_reading`] has left: a code the steps do
@@ -2301,7 +2332,10 @@ fn equal_syntax(
                     called_reduct(&mut arena, &mut steps, b),
                 )
             },
-            (Reading::Printed(_), C(..)) | (Reading::Syntax, _) => goal,
+            (Reading::Printed(_), C(a, b)) => {
+                C(forced_returned(&arena, a), forced_returned(&arena, b))
+            },
+            (Reading::Syntax, _) => goal,
         };
         if !visited.insert(goal) {
             continue;
@@ -3744,6 +3778,57 @@ mod tests
             decoded_comp_reading(&mut arena, returner),
             returner,
             "a returner reads as itself"
+        );
+    }
+
+    /// #935: a type calling a dependent pair's first component, as the
+    /// checker writes it (`force (returned p.0)` called), reads as the call
+    /// on the selection the surface lowers it to; a call on another head
+    /// stays different.
+    #[test]
+    fn a_forced_returned_head_reads_as_its_computation_935()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let nat = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let pair = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let point = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let selected = |arena: &mut crate::CoreArena| {
+            arena.computation_tuple_projection(pair, gandr_kernel_term::Component::from(0_usize))
+        };
+        // `Path(Nat, head(x), x)`.
+        let called = |arena: &mut crate::CoreArena, head: ComputationId| {
+            let call = arena.computation_application(head, point);
+            let value = arena.value_returned(call);
+            arena.value_type_path(nat, value, point)
+        };
+        let projected = selected(&mut arena);
+        let returned = arena.value_returned(projected);
+        let forced = arena.computation_force(returned);
+        let checked = called(&mut arena, forced);
+        let selection = selected(&mut arena);
+        let lowered = called(&mut arena, selection);
+        let other = arena.computation_force(point);
+        let elsewhere = called(&mut arena, other);
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, checked, lowered),
+            CertificateEquality::Equal,
+            "the checker's head reads as the lowered selection"
+        );
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, lowered, checked),
+            CertificateEquality::Equal,
+            "in either order"
+        );
+        assert_eq!(
+            equal_type_syntax(&arena, checked, lowered),
+            CertificateEquality::Different,
+            "the two heads differ in syntax"
+        );
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, checked, elsewhere),
+            CertificateEquality::Different,
+            "a call on another head does not read as the selection's"
         );
     }
 
