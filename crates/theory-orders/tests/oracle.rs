@@ -2,7 +2,7 @@
 //! API.
 //!
 //! A generated sequence of insertions and removals is replayed against a
-//! naive `Vec` model. After every operation the structure's iteration
+//! naive `VecDeque` model. After every operation the structure's iteration
 //! order, length, and handle sequence must match the model, and at the end
 //! O(1) comparison must agree with list order for every pair. The model
 //! is an external oracle: it shares no code with the structure, so a
@@ -13,6 +13,8 @@
 //! crate's in-module unit tests, which reach the test-only narrow
 //! constructor. This target complements them with a full-universe relabel
 //! stress test and the broad randomized cross-check.
+
+use alloc::collections::VecDeque;
 
 use anodized::spec;
 use gandr_theory_orders::OrderError;
@@ -253,25 +255,25 @@ fn assert_pairwise_comparison(order: &OrderMaintenance<OracleValue>)
 fn replay(ops: &[Op]) -> Result<(), OracleFailure>
 {
     let mut order: OrderMaintenance<OracleValue> = OrderMaintenance::new()?;
-    let mut model: Vec<OracleValue> = Vec::new();
-    let mut handles: Vec<Pos> = Vec::new();
+    let mut model: VecDeque<OracleValue> = VecDeque::new();
+    let mut handles: VecDeque<Pos> = VecDeque::new();
     for op in ops {
         match *op {
             Op::PushBack(value) => {
                 let pos = order.push_back(value)?;
-                model.push(value);
-                handles.push(pos);
+                model.push_back(value);
+                handles.push_back(pos);
             },
             Op::PushFront(value) => {
                 let pos = order.push_front(value)?;
-                model.insert(0, value);
-                handles.insert(0, pos);
+                model.push_front(value);
+                handles.push_front(pos);
             },
             Op::InsertAfter(rank, value) => {
                 if model.is_empty() {
                     continue;
                 }
-                let index = reduce(rank, &model)?;
+                let index = reduce(rank, model.make_contiguous())?;
                 let anchor = handles
                     .get(index.0)
                     .copied()
@@ -285,7 +287,7 @@ fn replay(ops: &[Op]) -> Result<(), OracleFailure>
                 if model.is_empty() {
                     continue;
                 }
-                let index = reduce(rank, &model)?;
+                let index = reduce(rank, model.make_contiguous())?;
                 let anchor = handles
                     .get(index.0)
                     .copied()
@@ -298,7 +300,7 @@ fn replay(ops: &[Op]) -> Result<(), OracleFailure>
                 if model.is_empty() {
                     continue;
                 }
-                let index = reduce(rank, &model)?;
+                let index = reduce(rank, model.make_contiguous())?;
                 let target = handles
                     .get(index.0)
                     .copied()
@@ -316,15 +318,15 @@ fn replay(ops: &[Op]) -> Result<(), OracleFailure>
                 handles.remove(index.0);
             },
         }
-        assert_eq!(values(&order), model, "iteration order matches the model");
+        assert_eq!(model, values(&order), "iteration order matches the model");
         assert_eq!(
             usize::from(order.len()),
             model.len(),
             "length matches the model"
         );
         assert_eq!(
-            handles_of(&order),
             handles,
+            handles_of(&order),
             "the handle sequence matches the model"
         );
     }
