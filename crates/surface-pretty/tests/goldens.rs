@@ -2827,6 +2827,76 @@ fn a_composite_a_transport_moves_stays_explicit_815()
     assert_eq!(rendered.as_ref(), "sect(loop then loop)");
 }
 
+/// A returned inverse and a returned action on a path spell as written in
+/// the sugared form, `back(p)` and `cong(f, p)`, as the lowering derives
+/// their transports; the explicit form writes the transports. A map the
+/// action reads off its motive one binder deeper is spelled as the source
+/// names it, a parameter among them; a transport whose fixed endpoint is no
+/// image of the map keeps its spelling (#778).
+#[test]
+fn an_inverse_and_an_action_on_a_path_are_written_as_derived_778()
+{
+    let mut core = CoreArena::new();
+    let circle = core.value_type_abstract(ConstantIndex::from(0_usize));
+    let base = core.value_constant(ConstantIndex::from(1_usize));
+    let around = core.value_constant(ConstantIndex::from(2_usize));
+    let spin = core.value_constant(ConstantIndex::from(3_usize));
+    let inverse = gandr_core_term::identity::back(&mut core, circle, base, around);
+    let inverse = core.value_returned(inverse);
+    let forced = core.computation_force(spin);
+    let applied = core.computation_application(forced, base);
+    let start = core.value_returned(applied);
+    let action = gandr_core_term::identity::cong(&mut core, circle, spin, start, around);
+    let action = core.value_returned(action);
+    let parameter = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = core.computation_force(parameter);
+    let applied = core.computation_application(forced, base);
+    let start = core.value_returned(applied);
+    let mapped = gandr_core_term::identity::cong(&mut core, circle, parameter, start, around);
+    let mapped = core.value_returned(mapped);
+    // A transport whose fixed endpoint is no image of the map is no action:
+    // `cong(spin, loop)` would derive `Path(Circle, spin(base), spin(a))`.
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = core.computation_force(spin);
+    let applied = core.computation_application(forced, bound);
+    let image = core.value_returned(applied);
+    let motive = core.value_type_path(circle, base, image);
+    let reflexivity = core.value_here(base);
+    let unmapped = core.computation_path_transport(motive, around, reflexivity);
+    let unmapped = core.value_returned(unmapped);
+    let names = [
+        Name::from("Circle"),
+        Name::from("base"),
+        Name::from("loop"),
+        Name::from("spin"),
+    ];
+    let context = [Some(Name::from("f"))];
+    let source = CoreSource::new(&core, &names).within(&context);
+    for (root, form, expected) in [
+        (inverse, Form::Sugared, "back(loop)"),
+        (
+            inverse,
+            Form::Explicit,
+            "transport(\\a. Path(Circle, a, base), loop, here(base))",
+        ),
+        (action, Form::Sugared, "cong(spin, loop)"),
+        (
+            action,
+            Form::Explicit,
+            "transport(\\a. Path(Circle, spin(base), spin(a)), loop, here(spin(base)))",
+        ),
+        (mapped, Form::Sugared, "cong(f, loop)"),
+        (
+            unmapped,
+            Form::Sugared,
+            "transport(\\a. Path(Circle, base, spin(a)), loop, here(base))",
+        ),
+    ] {
+        let rendered = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
+        assert_eq!(rendered.as_ref(), expected, "{form:?}");
+    }
+}
+
 /// An elaborated body spells as the grammar writes it, its exits elided:
 /// a returner at the end of a block bare, a call by its head, a thunk in
 /// a body spelled; a case binds its summand's payload, a split its

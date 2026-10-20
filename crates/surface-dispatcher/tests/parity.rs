@@ -495,11 +495,15 @@ enum Held
     Notation,
     /// A printing whose sugared and explicit spellings, each substituted
     /// for the declaration, lower to different core, where the sugared
-    /// spelling writes no path composite (#808).
+    /// spelling writes no derived path operation (#808).
     Apart,
     /// The same, where the sugared spelling writes a path composite `then`
-    /// (#985).
+    /// or a map's action `cong`, whose explicit spelling holds a transport
+    /// or a call in value position (#985).
     ApartComposite,
+    /// The same, where the sugared spelling writes an inverse `back`, whose
+    /// explicit spelling moves `here(a)` at a looped point (#1003).
+    ApartInverse,
 }
 
 impl fmt::Display for Held
@@ -516,7 +520,10 @@ impl fmt::Display for Held
         f.write_str(match *self {
             Self::Notation => "#941, written in the printer's own notation",
             Self::Apart => "#808, the two spellings lower apart",
-            Self::ApartComposite => "#985, the two spellings of a composite lower apart",
+            Self::ApartComposite => {
+                "#985, the two spellings of a composite or an action lower apart"
+            },
+            Self::ApartInverse => "#1003, the two spellings of an inverse lower apart",
         })
     }
 }
@@ -1070,22 +1077,25 @@ fn bodies(
         .into_iter()
         .partition(|declaration| !parted.contains(&declaration.name));
     for declaration in parted {
-        let composite = [&declaration.ty.sugared, &declaration.body.sugared]
-            .into_iter()
-            .any(|text| {
-                tokens(SourceFragment::from(text.as_str()))
-                    .iter()
-                    .any(|token| token == "then")
-            });
-        holding.push((
-            if composite {
-                Held::ApartComposite
-            }
-            else {
-                Held::Apart
-            },
-            declaration.name.as_str(),
-        ));
+        let writes = |operation: &str| {
+            [&declaration.ty.sugared, &declaration.body.sugared]
+                .into_iter()
+                .any(|text| {
+                    tokens(SourceFragment::from(text.as_str()))
+                        .iter()
+                        .any(|token| token == operation)
+                })
+        };
+        let held = if writes("then") || writes("cong") {
+            Held::ApartComposite
+        }
+        else if writes("back") {
+            Held::ApartInverse
+        }
+        else {
+            Held::Apart
+        };
+        holding.push((held, declaration.name.as_str()));
     }
     for (held, declaration) in holding {
         found

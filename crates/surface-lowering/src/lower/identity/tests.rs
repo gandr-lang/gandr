@@ -1058,6 +1058,40 @@ fn cong_reads_a_map_stated_as_a_value_function_791()
     }
 }
 
+/// #778: before the fix, a synthesised `cong` read a declaration's codomain
+/// only off a function definition's written result, so a map declared by its
+/// signature, `def f : A => B ;` or `def f : +U (A -> -F B) ;`, as the printer
+/// writes every function, refused the operation as unannotated.
+#[test]
+fn cong_reads_a_map_its_signature_states_778()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\n",
+            "def sugared : Circle => Circle ;\n",
+            "def sugared = thunk { fn (a) { a } } ;\n",
+            "def explicit : +U (Circle -> -F Circle) ;\n",
+            "def explicit = thunk { fn (a) { return a } } ;\n",
+            "def overSugared : Path(Path(Circle, Base, Base), cong(sugared, loop), loop) ;\n",
+            "def overSugared = here(loop) ;\n",
+            "def overExplicit : Path(Path(Circle, Base, Base), cong(explicit, loop), loop) ;\n",
+            "def overExplicit = here(loop) ;\n",
+        )),
+        &mut arena,
+    );
+    for name in ["overSugared", "overExplicit"] {
+        assert!(
+            matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` reads its map's codomain: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+}
+
 #[test]
 fn a_motive_telescope_rebuilds_exactly_when_an_entry_is_an_arrow()
 {
