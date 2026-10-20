@@ -97,6 +97,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression constructor", Standing::Owed(0)),
     ("Expression continue", Standing::Owed(0)),
     ("Expression fn", Standing::Owed(0)),
+    ("Expression for", Standing::Owed(0)),
     ("Expression force", Standing::Owed(0)),
     ("Expression handle", Standing::Owed(0)),
     ("Expression hold", Standing::Owed(0)),

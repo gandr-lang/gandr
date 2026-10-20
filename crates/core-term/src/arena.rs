@@ -335,6 +335,7 @@ impl CoreArena
                 | Computation::Hole(_)
                 | Computation::Mark { .. }
                 | Computation::ListFold { .. }
+                | Computation::ListCase { .. }
                 | Computation::Perform { .. }
                 | Computation::Handle { .. }
                 | Computation::Exercise { .. }
@@ -2657,6 +2658,25 @@ impl CoreArena
         self.alloc_computation(Computation::ListFold {
             element,
             result,
+            list,
+            on_nil,
+            on_cons,
+        })
+    }
+
+    /// Mint a case on a native list; the cell branch binds head then tail.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_list_case(
+        &mut self,
+        list: ValueId,
+        on_nil: ComputationId,
+        on_cons: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::ListCase {
             list,
             on_nil,
             on_cons,

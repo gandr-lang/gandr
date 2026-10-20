@@ -375,6 +375,11 @@ impl Image
                 Some(C(on_nil)),
                 Some(C(on_cons)),
             ],
+            Self::Computation(Computation::ListCase {
+                ref mut list,
+                ref mut on_nil,
+                ref mut on_cons,
+            }) => [Some(V(list)), Some(C(on_nil)), Some(C(on_cons)), None, None],
             Self::ValueType(
                 ValueType::StaticPi {
                     domain: ref mut first,
@@ -757,6 +762,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | Computation::Hole(_)
                                 | Computation::Mark { .. }
                                 | Computation::ListFold { .. }
+                                | Computation::ListCase { .. }
                                 | Computation::Resume(..)
                                 | Computation::Reset(_)
                                 | Computation::Shift(_)

@@ -2229,10 +2229,15 @@ enum Plan
     /// A conditional loop's fixpoint over the case of its condition: its body
     /// when the condition holds, leaving the loop with unit when it does not.
     While(NodeIndex, Block),
+    /// A list loop's structural fixpoint over the case of the remaining list,
+    /// applied to the list: its body on a cell, leaving the loop with unit on
+    /// the empty list.
+    For(NodeIndex, Block),
     /// A bare `break`: the returner of unit, leaving the nearest loop.
     Break,
-    /// A `continue`: the force of the nearest loop's fixpoint, at this index.
-    Reenter(DeBruijnIndex),
+    /// A `continue`: the force of the nearest loop's fixpoint, applied to its
+    /// remaining tail in a `for`.
+    Reenter(loops::Reentry),
     /// An application of its head to its arguments, left to right, in the
     /// lowerer's operand store.
     Application(NodeIndex, Stretch),
@@ -2839,9 +2844,9 @@ struct Lowerer<'run, 'source>
     /// The `break`s read, whose minted returner the commuting continues with
     /// what follows their loop.
     breaking: BTreeSet<NodeIndex>,
-    /// The loop ends written without an exit, each run again: the index its
-    /// loop's fixpoint has under the binder of the result it discards.
-    reentered: BTreeMap<NodeIndex, DeBruijnIndex>,
+    /// The loop ends written without an exit, each run again: where its loop
+    /// runs again from under the binder of the result it discards.
+    reentered: BTreeMap<NodeIndex, loops::Reentry>,
     /// The conditions of `while` loops, read where a computation is: a value
     /// written there is returned, so the loop binds what it tests.
     tested: BTreeSet<NodeIndex>,
@@ -5029,7 +5034,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::Become => self.tail_call(site, cursor),
             Former::Loop => self.looped(site, cursor),
             Former::While => self.repeated(site, cursor),
-            Former::For => Err(LoweringRefusal::ForNeedsListCase { span: site.at.span }),
+            Former::For => self.stepped(site, cursor),
             Former::Break => self.broken(site, cursor),
             Former::Continue => self.continued(site, cursor),
             Former::Force => self.keyed(site, cursor, TileName::FORCE),
@@ -10928,7 +10933,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::FlowProduct(..)
                 | Plan::Recorded(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -11154,16 +11159,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Block(block) => self.mint_block(block, sink).map(Lowered::Computation),
             Plan::Loop(body) => self.mint_loop(body, sink, origin),
             Plan::While(condition, body) => self.mint_while(condition, body, sink, origin),
+            Plan::For(list, body) => self.mint_for(list, body, sink, origin),
             Plan::Break => {
                 let unit = sink.arena.value_unit();
                 sink.origins.record_value(unit, origin);
                 let id = sink.arena.computation_return(unit);
                 Maybe::Present(sink.computation(id, origin))
             },
-            Plan::Reenter(index) => {
-                let own = sink.arena.value_variable(Zone::Intuitionistic, index);
-                sink.origins.record_value(own, origin);
-                let id = sink.arena.computation_force(own);
+            Plan::Reenter(reentry) => {
+                let id = loops::again(reentry, sink, origin);
                 Maybe::Present(sink.computation(id, origin))
             },
             Plan::Derived(derived) => self.mint_derived(derived, sink, origin),
@@ -12175,6 +12179,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Block(_)
             | Plan::Loop(_)
             | Plan::While(..)
+            | Plan::For(..)
             | Plan::Break
             | Plan::Reenter(_)
             | Plan::Derived(_)

@@ -398,6 +398,15 @@ impl CoreArena
                 self.computation_into(&mut union, on_nil, at);
                 self.computation_into(&mut union, on_cons, under(Binders::ONE.deeper()));
             },
+            Computation::ListCase {
+                list,
+                on_nil,
+                on_cons,
+            } => {
+                self.value_into(&mut union, list, at);
+                self.computation_into(&mut union, on_nil, at);
+                self.computation_into(&mut union, on_cons, under(Binders::ONE.deeper()));
+            },
             Computation::Perform {
                 ref signature,
                 payload,

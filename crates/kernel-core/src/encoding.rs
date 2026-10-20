@@ -1536,6 +1536,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Computation::SigmaSplit { scrutinee, motive, body } => [AnyNode::Value(scrutinee), AnyNode::CompType(motive), AnyNode::Computation(body)].iter().all(|child| self.placed.contains_key(child)),
             Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => self.placed.contains_key(&AnyNode::Value(record)),
             Computation::ListFold { element, result, list, on_nil, on_cons } => [AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)].iter().all(|child| self.placed.contains_key(child)),
+            Computation::ListCase { list, on_nil, on_cons } => [AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)].iter().all(|child| self.placed.contains_key(child)),
             Computation::Transport(path, value) => self.placed.contains_key(&AnyNode::Value(path)) && self.placed.contains_key(&AnyNode::Value(value)),
             Computation::PathTransport { motive, path, value } | Computation::Ride { motive, flow: path, value } => self.placed.contains_key(&AnyNode::ValueType(motive)) && self.placed.contains_key(&AnyNode::Value(path)) && self.placed.contains_key(&AnyNode::Value(value)),
             Computation::TelescopeTransport { motive, path, start, over, value } | Computation::TelescopeRide { motive, flow: path, start, over, value } => [AnyNode::CompType(motive), AnyNode::Value(path), AnyNode::Value(start), AnyNode::Value(over), AnyNode::Value(value)].iter().all(|child| self.placed.contains_key(child)),
@@ -1563,6 +1564,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Computation::TelescopeRide { .. } => gandr_kernel_term::NODE_C_TELESCOPE_RIDE,
             Computation::RelatedApplication { .. } => gandr_kernel_term::NODE_C_RELATED_APPLICATION,
             Computation::ListFold { .. } => gandr_kernel_term::NODE_C_LIST_FOLD,
+            Computation::ListCase { .. } => gandr_kernel_term::NODE_C_LIST_CASE,
             Computation::Lambda(..) => gandr_kernel_term::NODE_C_LAMBDA,
             Computation::Fixpoint { .. } => gandr_kernel_term::NODE_C_FIXPOINT,
             Computation::Application(..) => gandr_kernel_term::NODE_C_APPLICATION,
@@ -1629,6 +1631,20 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 for child in [
                     AnyNode::ValueType(element),
                     AnyNode::ValueType(result),
+                    AnyNode::Value(list),
+                    AnyNode::Computation(on_nil),
+                    AnyNode::Computation(on_cons),
+                ] {
+                    record.put_content(self.content_of(child));
+                }
+            },
+            Computation::ListCase {
+                list,
+                on_nil,
+                on_cons,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_C_LIST_CASE);
+                for child in [
                     AnyNode::Value(list),
                     AnyNode::Computation(on_nil),
                     AnyNode::Computation(on_cons),
@@ -2152,6 +2168,7 @@ None => opened.eq((core::iter::empty()).map(Some)),
 },
         AnyNode::Computation(id) => match arena.computation(id) {
             Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => opened.eq([AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)].into_iter().map(Some)),
+            Some(&Computation::ListCase { list, on_nil, on_cons }) => opened.eq([AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)].into_iter().map(Some)),
             Some(&Computation::DataCase {scrutinee,motive,ref branches}) => opened.eq(([AnyNode::Value(scrutinee), AnyNode::CompType(motive)].into_iter().chain(branches.iter().copied().map(AnyNode::Computation))).map(Some)),
             Some(&Computation::SigmaSplit {scrutinee,motive,body}) => opened.eq(([AnyNode::Value(scrutinee), AnyNode::CompType(motive), AnyNode::Computation(body)].into_iter()).map(Some)),
             Some(&(Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_))) => opened.eq((core::iter::once(AnyNode::Value(record))).map(Some)),
@@ -2370,6 +2387,19 @@ fn push_children(
                 for child in [
                     AnyNode::ValueType(element),
                     AnyNode::ValueType(result),
+                    AnyNode::Value(list),
+                    AnyNode::Computation(on_nil),
+                    AnyNode::Computation(on_cons),
+                ] {
+                    tasks.push(EncodeTask::Open(child));
+                }
+            },
+            Some(&Computation::ListCase {
+                list,
+                on_nil,
+                on_cons,
+            }) => {
+                for child in [
                     AnyNode::Value(list),
                     AnyNode::Computation(on_nil),
                     AnyNode::Computation(on_cons),

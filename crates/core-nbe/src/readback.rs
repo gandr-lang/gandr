@@ -660,6 +660,8 @@ enum Task
     ListCons,
     /// Assemble a native fold from its annotations, list and branches.
     ListFold,
+    /// Assemble a native list case from its annotation, list and branches.
+    ListCase,
     /// Assemble a sum injection.
     Inject
     {
@@ -2126,6 +2128,12 @@ fn run(
             && entry_value_types.checked_sub(2) == Some(machine.value_types.len())
             && entry_comp_types == machine.comp_types.len()
             && machine.comps.last().is_some_and(|&id| matches!(core.computation(id), Some(gandr_core_term::Computation::ListFold { .. }))),
+        | Task::ListCase => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(1) == Some(machine.values.len())
+            && entry_comps.checked_sub(1) == Some(machine.comps.len())
+            && entry_value_types == machine.value_types.len()
+            && entry_comp_types == machine.comp_types.len()
+            && machine.comps.last().is_some_and(|&id| matches!(core.computation(id), Some(gandr_core_term::Computation::ListCase { .. }))),
         | Task::Quote => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.values.len())
             && machine.values.last().is_some_and(|id| core.value(*id).is_some())
@@ -2588,6 +2596,15 @@ fn step(
             machine
                 .comps
                 .push(core.computation_list_fold(element, result, list, on_nil, on_cons));
+            Ok(())
+        },
+        Task::ListCase => {
+            let on_cons = machine.pop_comp()?;
+            let on_nil = machine.pop_comp()?;
+            let list = machine.pop_value()?;
+            machine
+                .comps
+                .push(core.computation_list_case(list, on_nil, on_cons));
             Ok(())
         },
         Task::Inject { summand } => {
@@ -4120,6 +4137,7 @@ fn step_neutral(
                         | Elimination::Force
                         | Elimination::Bind(_)
                         | Elimination::ListFold { .. }
+                        | Elimination::ListCase { .. }
                         | Elimination::Case { .. }
                         | Elimination::DataCase(_)
                         | Elimination::Split(_)
@@ -4484,6 +4502,29 @@ fn step_spine(
             machine.tasks.push(Task::QuotedValueType {
                 quoted: element,
                 frame,
+                binders,
+            });
+            Ok(())
+        },
+        Elimination::ListCase { on_nil, on_cons } => {
+            expect_polarity(spine.polarity, Polarity::Value, neutral)?;
+            let empty = enter(core, domain, machine, on_nil, Entry::Bare)?;
+            let (cell, deeper) = open_many(
+                core,
+                domain,
+                machine,
+                on_cons,
+                binders,
+                gandr_core_term::ComponentCount::from(2_usize),
+            )?;
+            machine.tasks.push(onward);
+            machine.tasks.push(Task::ListCase);
+            machine.tasks.push(Task::Comp {
+                comp: cell,
+                binders: deeper,
+            });
+            machine.tasks.push(Task::Comp {
+                comp: empty,
                 binders,
             });
             Ok(())

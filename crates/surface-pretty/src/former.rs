@@ -698,6 +698,17 @@ pub enum Former<'source, Node>
         /// The cell branch.
         cons: Node,
     },
+    /// A case on a native list: `case xs { nil => n, cons(h, t) => c }`,
+    /// the cell branch under the head's and the tail's binders.
+    ListCase
+    {
+        /// The list read.
+        list: Node,
+        /// The empty branch.
+        nil: Node,
+        /// The cell branch.
+        cons: Node,
+    },
     /// An operation performed on its payload, `op(v)`.
     Perform
     {
@@ -932,6 +943,8 @@ pub enum Notation
     Resume,
     /// A list fold, written `fold l { nil => …, cons(x, r) => … }`.
     ListFold,
+    /// A list case, written `case l { nil => …, cons(x, t) => … }`.
+    ListCase,
     /// A path between universes, written as a type application.
     PathUniverse,
     /// A reflexivity path, written as a call.

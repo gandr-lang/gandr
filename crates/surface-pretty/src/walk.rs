@@ -424,7 +424,7 @@ enum Kind
         | Former::Application(..) | Former::Lambda(_) | Former::Primitive { .. } | Former::Transport(..)
         | Former::PathTransport { .. } | Former::Ride { .. } | Former::TelescopeTransport { .. } | Former::Fixpoint(_) | Former::Case { .. }
         | Former::Split { .. } | Former::DataCase { .. } | Former::RecordProjection(..) | Former::TupleProjection(..)
-        | Former::ListFold { .. } | Former::Perform { .. } | Former::Handle { .. } | Former::Exercise { .. }
+        | Former::ListFold { .. } | Former::ListCase { .. } | Former::Perform { .. } | Former::Handle { .. } | Former::Exercise { .. }
         | Former::Scope { .. } | Former::Resume(..) | Former::Reset(_) | Former::Shift(_) | Former::Lazy(..) | Former::Ascription { .. }
         | Former::Project(..) | Former::Send { .. } | Former::Receive(_) | Former::Select { .. } | Former::Offer { .. }
         | Former::Close(_) | Former::Fork { .. } | Former::Hold { .. } | Former::Access { .. } | Former::ResumeView { .. }
@@ -512,6 +512,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::RecordProjection(..)
         | Former::TupleProjection(..)
         | Former::ListFold { .. }
+        | Former::ListCase { .. }
         | Former::Perform { .. }
         | Former::Handle { .. }
         | Former::Exercise { .. }
@@ -1215,7 +1216,7 @@ where
             }));
             slots
         },
-        Former::ListFold { list, nil, cons } => Vec::from([
+        Former::ListFold { list, nil, cons } | Former::ListCase { list, nil, cons } => Vec::from([
             value(list),
             Slot::of(nil, admits, Binds::NONE),
             Slot::of(cons, admits, Binds::intuitionistic(OpenBinders(2_usize))),
@@ -3680,6 +3681,7 @@ impl Walk<'_, '_>
                 | Former::RecordProjection(..)
                 | Former::TupleProjection(..)
                 | Former::ListFold { .. }
+                | Former::ListCase { .. }
                 | Former::Perform { .. }
                 | Former::Handle { .. }
                 | Former::Exercise { .. }
@@ -4358,6 +4360,7 @@ impl Walk<'_, '_>
             | Former::RecordProjection(..)
             | Former::TupleProjection(..)
             | Former::ListFold { .. }
+            | Former::ListCase { .. }
             | Former::Perform { .. }
             | Former::Handle { .. }
             | Former::Exercise { .. }
@@ -5876,6 +5879,24 @@ impl Walk<'_, '_>
                 self.note(Unspelled::Notation(Notation::ListFold));
                 let _ = parts
                     .text("fold ")
+                    .piece(Binding::Prefix)
+                    .text(" {")
+                    .part(Part::Open)
+                    .text("nil => ")
+                    .piece(Binding::Arrow)
+                    .text(",")
+                    .part(Part::Line)
+                    .text("cons(")
+                    .binders(Arity(2_usize))
+                    .text(") => ")
+                    .piece(Binding::Arrow)
+                    .part(Part::Close);
+                Binding::Prefix
+            },
+            Former::ListCase { .. } => {
+                self.note(Unspelled::Notation(Notation::ListCase));
+                let _ = parts
+                    .text("case ")
                     .piece(Binding::Prefix)
                     .text(" {")
                     .part(Part::Open)

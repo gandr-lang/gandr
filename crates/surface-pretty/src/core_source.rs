@@ -1474,6 +1474,15 @@ impl<'arena> CoreSource<'arena>
                 nil: computation(on_nil),
                 cons: computation(on_cons),
             },
+            Computation::ListCase {
+                list,
+                on_nil,
+                on_cons,
+            } => Former::ListCase {
+                list: value(list),
+                nil: computation(on_nil),
+                cons: computation(on_cons),
+            },
             Computation::Perform {
                 ref operation,
                 payload,
@@ -1832,6 +1841,7 @@ impl Source for CoreSource<'_>
                 | Computation::Hole(_)
                 | Computation::Mark { .. }
                 | Computation::ListFold { .. }
+                | Computation::ListCase { .. }
                 | Computation::Ascribe { .. }
                 | Computation::Perform { .. }
                 | Computation::Exercise { .. }
@@ -1990,6 +2000,7 @@ impl Source for CoreSource<'_>
                 | Computation::Hole(_)
                 | Computation::Mark { .. }
                 | Computation::ListFold { .. }
+                | Computation::ListCase { .. }
                 | Computation::Perform { .. }
                 | Computation::Exercise { .. }
                 | Computation::Resume(..)

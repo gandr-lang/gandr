@@ -124,7 +124,41 @@ def held(n : Nat) -> -F Nat {
   }
 }
 
-@[ refuses("ForNeedsListCase") ]
-def for_each(n : Nat) -> -F Unit {
-  for x in n { tick(x); }
+/// A `for` steps through a native list: `continue` runs the loop again on the
+/// list's tail, `return` leaves the function from inside it, and what follows
+/// the loop reads the binders around it (#283).
+@[ checks ]
+def find_succ(xs : List(Nat), otherwise : Nat) -> -F Nat {
+  for x in xs {
+    case x {
+      Zero => continue,
+      Succ(p) => return p,
+    }
+  } ;
+  return otherwise
+}
+
+/// The search returns from the second cell (#283).
+@[ runs("Succ(Zero)") ]
+def find_one : +U (-F Nat) ;
+def find_one = thunk { become find_succ(cons(Zero, cons(Succ(Succ(Zero)), nil)), Zero) } ;
+
+/// The search reaches the empty list, which leaves the loop with unit, and
+/// returns what it was given (#283).
+@[ runs("Succ(Zero)") ]
+def find_none : +U (-F Nat) ;
+def find_none = thunk { become find_succ(cons(Zero, nil), Succ(Zero)) } ;
+
+/// A `for` ending a body runs it on every cell and returns unit (#283).
+@[ checks ]
+def for_each(xs : List(Nat)) -> -F Unit {
+  for x in xs { tick(x); }
+}
+
+/// A `for` leaves with unit on the empty list, so a `break` with a value of
+/// another type does not check (#283).
+@[ refuses("TypeMismatch") ]
+def for_value(xs : List(Nat)) -> -F Nat {
+  run m <- for x in xs { break(x) } ;
+  return m
 }

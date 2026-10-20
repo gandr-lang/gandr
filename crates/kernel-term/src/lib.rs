@@ -283,6 +283,7 @@ pub use crate::tags::NODE_C_DATA_CASE;
 pub use crate::tags::NODE_C_FIXPOINT;
 pub use crate::tags::NODE_C_FORCE;
 pub use crate::tags::NODE_C_LAMBDA;
+pub use crate::tags::NODE_C_LIST_CASE;
 pub use crate::tags::NODE_C_LIST_FOLD;
 pub use crate::tags::NODE_C_PATH_TRANSPORT;
 pub use crate::tags::NODE_C_PROJECT;

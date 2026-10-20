@@ -1291,6 +1291,14 @@ enum Task
         /// Cell branch binding head then folded result.
         on_cons: CompClosureId,
     },
+    /// Case on the list on the value stack using captured pure branches.
+    ListCase
+    {
+        /// Empty branch in its ambient environment.
+        on_nil: CompClosureId,
+        /// Cell branch binding head then tail.
+        on_cons: CompClosureId,
+    },
     /// Assemble a sum injection.
     Inject
     {
@@ -2777,7 +2785,7 @@ impl<'run> Evaluation<'run>
     /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
     #[spec(
-        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::TelescopeTransport { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint { .. })),
+        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::TelescopeTransport { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint { .. })),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32 && {
                 let mut tasks = ret.machine.tasks.iter().rev();
@@ -2808,6 +2816,10 @@ impl<'run> Evaluation<'run>
                     Elimination::ListFold { element, result, on_nil, on_cons } => {
                         answer = Answer::Computation;
                         matches!(tasks.next(), Some(Task::ListFold { element: e, result: r, on_nil: n, on_cons: c }) if (*e,*r,*n,*c) == (element,result,on_nil,on_cons))
+                    },
+                    Elimination::ListCase { on_nil, on_cons } => {
+                        answer = Answer::Computation;
+                        matches!(tasks.next(), Some(Task::ListCase { on_nil: n, on_cons: c }) if (*n,*c) == (on_nil,on_cons))
                     },
                     Elimination::Case(branches) => {
                         answer = Answer::Computation;
@@ -2865,7 +2877,7 @@ impl<'run> Evaluation<'run>
     /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
     /// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on_361`
     #[spec(
-        requires: matches!(inner.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint { .. }))
+        requires: matches!(inner.first(), Some(Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint { .. }))
             && !enclosing.is_empty(),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32
@@ -3195,7 +3207,7 @@ fn run(
         && (ret.is_err() || match task {
             Task::Constructor { .. } | Task::Record(_) => machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks && machine.values.last().is_some_and(|id| domain.value(*id).is_some()),
             Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::Split { .. } | Task::SplitClosure(_) | Task::Projection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
-            | Task::BindClosure(_) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure { .. } | Task::ListFold { .. }
+            | Task::BindClosure(_) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure { .. } | Task::ListFold { .. } | Task::ListCase { .. }
             | Task::PathTransport(_) | Task::Ride(_) | Task::TelescopeTransport(_) => machine.tasks.len() >= entry_tasks,
             Task::Flow { .. } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && machine.values.len() <= entry_values
@@ -3899,6 +3911,56 @@ fn step(
             }
             Ok(())
         },
+        Task::ListCase { on_nil, on_cons } => {
+            let list = machine.pop_value()?;
+            let node = *domain
+                .value(list)
+                .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+            match node {
+                DomainValue::ListNil { .. } => {
+                    let closure = domain
+                        .comp_closure(on_nil)
+                        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+                    let body = closure.body();
+                    let env = machine.hold_env(closure.environment().clone());
+                    machine.tasks.push(Task::Body { body, env });
+                },
+                DomainValue::ListCons { first, second, .. } => {
+                    let closure = domain
+                        .comp_closure(on_cons)
+                        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+                    let body = closure.body();
+                    let mut captured = closure.environment().clone();
+                    captured.extend(Zone::Intuitionistic, first);
+                    captured.extend(Zone::Intuitionistic, second);
+                    let env = machine.hold_env(captured);
+                    machine.tasks.push(Task::Body { body, env });
+                },
+                DomainValue::Neutral { neutral, .. } => {
+                    let grown =
+                        extend_spine(domain, neutral, Elimination::ListCase { on_nil, on_cons })?;
+                    machine
+                        .comps
+                        .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+                },
+                DomainValue::Constructor { .. }
+                | DomainValue::Record { .. }
+                | DomainValue::PathCertificate { .. }
+                | DomainValue::PathProduct { .. }
+                | DomainValue::Here { .. }
+                | DomainValue::Univalence { .. }
+                | DomainValue::HeldTransport { .. }
+                | DomainValue::Flow { .. }
+                | DomainValue::Literal { .. }
+                | DomainValue::Tuple { .. }
+                | DomainValue::Injection { .. }
+                | DomainValue::Thunk { .. }
+                | DomainValue::Lift { .. }
+                | DomainValue::Code { .. }
+                | DomainValue::StaticLambda { .. } => return Err(EvalFault::FoldedNonList),
+            }
+            Ok(())
+        },
         Task::Tuple { term } => {
             let Some(source) = core.value(term).and_then(Value::components)
             else {
@@ -4457,6 +4519,18 @@ fn step_comp(
                 on_nil,
                 on_cons,
             });
+            machine.tasks.push(Task::Value { term: list, env });
+            Ok(())
+        },
+        Computation::ListCase {
+            list,
+            on_nil,
+            on_cons,
+        } => {
+            let captured = machine.capture(env)?;
+            let on_nil = domain.comp_closure_node(on_nil, captured.clone());
+            let on_cons = domain.comp_closure_node(on_cons, captured);
+            machine.tasks.push(Task::ListCase { on_nil, on_cons });
             machine.tasks.push(Task::Value { term: list, env });
             Ok(())
         },
@@ -6968,6 +7042,10 @@ fn push_eliminations(
                     on_cons,
                 });
             },
+            Elimination::ListCase { on_nil, on_cons } => {
+                answer = Answer::Computation;
+                machine.tasks.push(Task::ListCase { on_nil, on_cons });
+            },
             Elimination::Transport(value) => {
                 answer = Answer::Computation;
                 machine.tasks.push(Task::Transport);
@@ -7389,6 +7467,7 @@ fn read_through(
                 | Elimination::Force
                 | Elimination::Case(_)
                 | Elimination::ListFold { .. }
+                | Elimination::ListCase { .. }
                 | Elimination::StaticApply(_)
                 | Elimination::Fixpoint { .. } => None,
             })

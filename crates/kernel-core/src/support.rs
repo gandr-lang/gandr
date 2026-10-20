@@ -1362,6 +1362,17 @@ impl<R: Reach> Reaches<R>
                                 ReachTask::OpenComp(on_cons),
                             ]);
                         },
+                        Computation::ListCase {
+                            list,
+                            on_nil,
+                            on_cons,
+                        } => {
+                            tasks.extend([
+                                ReachTask::OpenValue(list),
+                                ReachTask::OpenComp(on_nil),
+                                ReachTask::OpenComp(on_cons),
+                            ]);
+                        },
                         Computation::Transport(path, value) => {
                             tasks.push(ReachTask::OpenValue(path));
                             tasks.push(ReachTask::OpenValue(value));
@@ -2011,6 +2022,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
         Some(&(Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _))) => self.cached_value(record),
         None => R::widest(),
         Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => self.cached_value_type(element).join(self.cached_value_type(result)).join(self.cached_value(list)).join(self.cached_comp(on_nil)).join(self.cached_comp(on_cons).under_binder().under_binder()),
+        Some(&Computation::ListCase { list, on_nil, on_cons }) => self.cached_value(list).join(self.cached_comp(on_nil)).join(self.cached_comp(on_cons).under_binder().under_binder()),
         Some(&Computation::Transport(path, value)) => self.cached_value(path).join(self.cached_value(value)),
         Some(&(Computation::PathTransport { motive, path, value } | Computation::Ride { motive, flow: path, value })) => self.cached_value_type(motive).under_binder().join(self.cached_value(path)).join(self.cached_value(value)),
         Some(&(Computation::TelescopeTransport { motive, path, start, over, value } | Computation::TelescopeRide { motive, flow: path, start, over, value })) => self.cached_comp_type(motive).join(self.cached_value(path)).join(self.cached_value(start)).join(self.cached_value(over)).join(self.cached_value(value)),
@@ -2064,6 +2076,14 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 .cached_value_type(element)
                 .join(self.cached_value_type(result))
                 .join(self.cached_value(list))
+                .join(self.cached_comp(on_nil))
+                .join(self.cached_comp(on_cons).under_binder().under_binder()),
+            Computation::ListCase {
+                list,
+                on_nil,
+                on_cons,
+            } => self
+                .cached_value(list)
                 .join(self.cached_comp(on_nil))
                 .join(self.cached_comp(on_cons).under_binder().under_binder()),
             Computation::Transport(path, value) => {

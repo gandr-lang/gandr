@@ -214,6 +214,14 @@ pub enum FrameRole
     SplitBody,
     /// A later branch of a case waits for the one under way.
     CaseBranch,
+    /// A list case waits on its list's type.
+    ListCaseScrutinee,
+    /// A list case's empty branch is being checked.
+    ListCaseNil,
+    /// A list case's cell branch is being checked under its head and tail.
+    ListCaseCons,
+    /// An applied fixpoint waits on its argument's type.
+    FixpointArgument,
     /// A force waits on its value's type.
     Force,
     /// An application waits on its head's type.
@@ -408,6 +416,10 @@ impl fmt::Display for FrameRole
             Self::SplitScrutinee => "SplitScrutinee",
             Self::SplitBody => "SplitBody",
             Self::CaseBranch => "CaseBranch",
+            Self::ListCaseScrutinee => "ListCaseScrutinee",
+            Self::ListCaseNil => "ListCaseNil",
+            Self::ListCaseCons => "ListCaseCons",
+            Self::FixpointArgument => "FixpointArgument",
             Self::Force => "Force",
             Self::ApplicationHead => "ApplicationHead",
             Self::ApplicationArgument => "ApplicationArgument",

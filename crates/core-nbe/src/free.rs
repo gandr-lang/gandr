@@ -1154,6 +1154,17 @@ Err(_) => false,
                         Some((computation(on_nil), Lowering::NONE)),
                         Some((computation(on_cons), Lowering(2_u32))),
                     ],
+                    Computation::ListCase {
+                        list,
+                        on_nil,
+                        on_cons,
+                    } => [
+                        Some((value(list), Lowering::NONE)),
+                        Some((computation(on_nil), Lowering::NONE)),
+                        Some((computation(on_cons), Lowering(2_u32))),
+                        None,
+                        None,
+                    ],
                     Computation::Primitive { arguments, .. } => match arguments {
                         gandr_core_term::primitive::Arguments::Unary(argument) => {
                             one(value(argument), Lowering::NONE)

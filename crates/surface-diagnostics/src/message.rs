@@ -446,10 +446,6 @@ fn lowered(
             "{exit} would leave a handler's subject while its handler is still running; \
              `return` leaves past the handler, or end the subject with its result"
         ),
-        LoweringRefusal::ForNeedsListCase { .. } => f.write_str(
-            "`for` loops are not supported yet: a list has no case to step through it with; \
-             loop over it by recursion instead",
-        ),
         LoweringRefusal::WithoutK { .. } => f.write_str(
             "a path cannot be matched against `here`; use it by transport, through `back`, \
              `then` or `cong`",
@@ -1173,7 +1169,6 @@ mod tests
                 span,
                 exit: CrossedExit::Continue,
             },
-            LoweringRefusal::ForNeedsListCase { span },
             LoweringRefusal::WithoutK { span },
             LoweringRefusal::DirectedCell { span },
             LoweringRefusal::CellNotALoop { span },

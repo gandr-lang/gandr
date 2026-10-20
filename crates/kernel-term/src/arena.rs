@@ -934,6 +934,7 @@ impl TermArena
             Computation::Project(_, pair) => self.computation(pair).is_some(),
             Computation::Case { scrutinee, ref branches } => self.value(scrutinee).is_some() && branches.iter().all(|branch| self.computation(*branch).is_some()),
             Computation::ListFold { element, result, list, on_nil, on_cons } => self.value_type(element).is_some() && self.value_type(result).is_some() && self.value(list).is_some() && self.computation(on_nil).is_some() && self.computation(on_cons).is_some(),
+            Computation::ListCase { list, on_nil, on_cons } => self.value(list).is_some() && self.computation(on_nil).is_some() && self.computation(on_cons).is_some(),
         }, captures: entry = (self.watermark(), core::mem::discriminant(&computation)),
         ensures: |ret| self.values.len() == entry.0.values
                 && self.computations.len() == entry.0.computations.saturating_add(1)
@@ -3062,6 +3063,7 @@ Value::QuoteComputation(quoted) => ret.as_slice() == [AnyNode::CompType(quoted)]
             Some(&(Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _))) => ret.as_slice() == [AnyNode::Value(record)],
             None => ret.is_empty(),
             Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => ret.as_slice() == [AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)],
+            Some(&Computation::ListCase { list, on_nil, on_cons }) => ret.as_slice() == [AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)],
             Some(&Computation::Transport(path, value)) => ret.as_slice() == [AnyNode::Value(path), AnyNode::Value(value)],
             Some(&(Computation::PathTransport { motive, path, value } | Computation::Ride { motive, flow: path, value })) => ret.as_slice() == [AnyNode::ValueType(motive), AnyNode::Value(path), AnyNode::Value(value)],
             Some(&(Computation::TelescopeTransport { motive, path, start, over, value } | Computation::TelescopeRide { motive, flow: path, start, over, value })) => ret.as_slice() == [AnyNode::CompType(motive), AnyNode::Value(path), AnyNode::Value(start), AnyNode::Value(over), AnyNode::Value(value)],
@@ -3261,6 +3263,17 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.extend([
                         AnyNode::ValueType(element),
                         AnyNode::ValueType(result),
+                        AnyNode::Value(list),
+                        AnyNode::Computation(on_nil),
+                        AnyNode::Computation(on_cons),
+                    ]);
+                },
+                Some(&Computation::ListCase {
+                    list,
+                    on_nil,
+                    on_cons,
+                }) => {
+                    children.extend([
                         AnyNode::Value(list),
                         AnyNode::Computation(on_nil),
                         AnyNode::Computation(on_cons),
@@ -3512,6 +3525,34 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
         self.alloc_computation(Computation::ListFold {
             element,
             result,
+            list,
+            on_nil,
+            on_cons,
+        })
+    }
+
+    /// Mint a case on a native list; the cell branch binds head then tail.
+    ///
+    /// # Specification
+    /// - requires: the list and the branches resolve in this arena.
+    /// - ensures: preserves the branches without changing their scope.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — native List wire arity distinguishes the three
+    ///   ordered children.
+    /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
+    #[spec(requires: self.value(list).is_some() && self.computation(on_nil).is_some() && self.computation(on_cons).is_some(),
+        ensures: |ret| self.computation(ret) == Some(&Computation::ListCase { list, on_nil, on_cons }))]
+    #[inline]
+    pub fn computation_list_case(
+        &mut self,
+        list: ValueId,
+        on_nil: ComputationId,
+        on_cons: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::ListCase {
             list,
             on_nil,
             on_cons,

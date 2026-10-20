@@ -332,6 +332,7 @@ fn children(
             | Computation::Hole(_)
             | Computation::Mark { .. }
             | Computation::ListFold { .. }
+            | Computation::ListCase { .. }
             | Computation::Perform { .. }
             | Computation::Handle { .. }
             | Computation::Exercise { .. }
@@ -625,6 +626,7 @@ fn rebuild(
                 | Computation::Hole(_)
                 | Computation::Mark { .. }
                 | Computation::ListFold { .. }
+                | Computation::ListCase { .. }
                 | Computation::Perform { .. }
                 | Computation::Handle { .. }
                 | Computation::Exercise { .. }

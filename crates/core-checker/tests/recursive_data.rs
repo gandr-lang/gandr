@@ -8,7 +8,6 @@ use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingContext;
-use gandr_core_checker::CheckingForm;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::ExpectedShape;
 use gandr_core_checker::ModuleReport;
@@ -1427,8 +1426,8 @@ fn a_fixpoint_checks_at_every_computation_type()
         let fixpoint = arena.computation_fixpoint(forced, evidence);
         let declared = arena.value_type_thunk(returner);
         let value = arena.value_thunk(fixpoint);
-        // At an application's head a fixpoint stands where a type must be
-        // synthesised: `(fix rec. λx. return x) ()`.
+        // At an application's head a fixpoint checks against the arrow from
+        // its argument's synthesised type: `(fix rec. λx. return x) ()`.
         let unit = arena.value_unit();
         let bound = var(&mut arena, DeBruijnIndex::from(0));
         let returned = arena.computation_return(bound);
@@ -1443,18 +1442,18 @@ fn a_fixpoint_checks_at_every_computation_type()
         let (report, crossed) = run(&mut arena, &declarations);
         (
             (report.judged()[0].verdict(), fixpoint),
-            (report.judged()[1].verdict(), headed),
+            report.judged()[1].verdict(),
             crossed.readmitted()[0].outcome().clone(),
+            crossed.readmitted()[1].outcome().clone(),
         )
     };
-    let ((checked, _), (synthesised, headed), crossed) = looping(FixpointEvidence::Partial);
+    let ((checked, _), applied, crossed, crossed_applied) = looping(FixpointEvidence::Partial);
     assert!(matches!(checked, Verdict::Checked { .. }), "{checked:?}");
     assert!(matches!(crossed, Outcome::Defined { .. }), "{crossed:?}");
-    assert_eq!(
-        synthesised,
-        Verdict::Refused(CheckRefusal::NotSynthesisable {
-            form: CheckingForm::Fixpoint(headed),
-        })
+    assert!(matches!(applied, Verdict::Checked { .. }), "{applied:?}");
+    assert!(
+        matches!(crossed_applied, Outcome::Defined { .. }),
+        "the kernel replays the applied fixpoint's rule: {crossed_applied:?}"
     );
     // A structural claim at `F 1` has no arrow whose domain a stage could
     // refine.

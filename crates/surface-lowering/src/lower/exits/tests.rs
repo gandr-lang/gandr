@@ -118,7 +118,7 @@ pub(in crate::lower) fn assert_surveyed(
 }
 
 /// Every computation reachable from `root` through binds, lambdas, matches,
-/// splits and fixpoints.
+/// list cases, splits, fixpoints and the heads of applications.
 ///
 /// # Specification
 /// trivial.
@@ -133,10 +133,19 @@ pub(in crate::lower) fn reachable(
         seen.push(next);
         match arena.computation(next) {
             Some(&Computation::Bind(first, second)) => pending.extend([first, second]),
-            Some(&Computation::Lambda(under) | &Computation::Split { body: under, .. }) => {
+            Some(
+                &Computation::Lambda(under)
+                | &Computation::Split { body: under, .. }
+                | &Computation::Fixpoint { body: under, .. }
+                | &Computation::Application(under, _),
+            ) => {
                 pending.push(under);
             },
-            Some(&Computation::Fixpoint { body: under, .. }) => pending.push(under),
+            Some(&Computation::ListCase {
+                on_nil, on_cons, ..
+            }) => {
+                pending.extend([on_nil, on_cons]);
+            },
             Some(&Computation::DataCase { ref branches, .. }) => {
                 pending.extend(branches.iter().copied());
             },

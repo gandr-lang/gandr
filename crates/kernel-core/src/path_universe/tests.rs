@@ -94,7 +94,7 @@ Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::Stay { .. } | Val
 Computation::DataCase {ref branches,..} => branches.len().saturating_add(2),
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) | Computation::With(..) => 2,
-Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::SigmaSplit { .. } | Computation::ListFold { .. } | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Ride { .. } | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::Project(..) | Computation::Fixpoint { .. } => 1,
+Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::SigmaSplit { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Ride { .. } | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::Project(..) | Computation::Fixpoint { .. } => 1,
 }),
         AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |matched_native_node| match *matched_native_node {
 ValueType::Data {ref arguments,..} => arguments.len(),
@@ -182,7 +182,7 @@ fn children(
             Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => {
                 vec![V(record)]
             },
-            Computation::ListFold { .. } => {
+            Computation::ListFold { .. } | Computation::ListCase { .. } => {
                 panic!("list elimination is outside the path fixture fragment")
             },
             Computation::PathTransport { .. }
@@ -538,7 +538,7 @@ fn translate(
                     Computation::TupleProjection(tuple, component) => {
                         core.computation_tuple_projection(values[&tuple], component)
                     },
-                    Computation::ListFold { .. } => {
+                    Computation::ListFold { .. } | Computation::ListCase { .. } => {
                         panic!("list elimination is outside the path fixture fragment")
                     },
                     Computation::PathTransport { .. }

@@ -2243,6 +2243,7 @@ fn binding_sites_distinguish_free_bound_and_linear_indices()
                         | crate::Computation::Mark { .. }
                         | crate::Computation::Ascribe { .. }
                         | crate::Computation::ListFold { .. }
+                        | crate::Computation::ListCase { .. }
                         | crate::Computation::Perform { .. }
                         | crate::Computation::Handle { .. }
                         | crate::Computation::Exercise { .. }

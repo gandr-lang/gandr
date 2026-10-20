@@ -1492,7 +1492,7 @@ Computation::Perform { ref signature, .. } => 1_usize.saturating_add(signature.t
 Computation::Exercise { ref signature, .. } => 2_usize.saturating_add(signature.types().count()),
 Computation::Handle { ref signature, ref clauses, .. } | Computation::Scope { ref signature, ref clauses, .. } => 2_usize.saturating_add(signature.types().count()).saturating_add(clauses.len()),
 Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 5,
-Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::Split { motive: SplitMotive::Scrutinee(_), .. } => 3,
+Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::Split { motive: SplitMotive::Scrutinee(_), .. } => 3,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
@@ -1773,6 +1773,16 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     self.tasks.push(open(Node::Value(list), depth));
                     self.tasks.push(open(Node::ValueType(result), depth));
                     self.tasks.push(open(Node::ValueType(element), depth));
+                },
+                Some(&Computation::ListCase {
+                    list,
+                    on_nil,
+                    on_cons,
+                }) => {
+                    self.tasks
+                        .push(open(Node::Computation(on_cons), depth.deeper().deeper()));
+                    self.tasks.push(open(Node::Computation(on_nil), depth));
+                    self.tasks.push(open(Node::Value(list), depth));
                 },
                 Some(&Computation::Primitive { ref arguments, .. }) => self.tasks.extend(
                     arguments
@@ -2720,7 +2730,7 @@ Computation::Perform { ref signature, .. } => 1_usize.saturating_add(signature.t
 Computation::Exercise { ref signature, .. } => 2_usize.saturating_add(signature.types().count()),
 Computation::Handle { ref signature, ref clauses, .. } | Computation::Scope { ref signature, ref clauses, .. } => 2_usize.saturating_add(signature.types().count()).saturating_add(clauses.len()),
 Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 5,
-Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::Split { motive: SplitMotive::Scrutinee(_), .. } => 3,
+Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::Split { motive: SplitMotive::Scrutinee(_), .. } => 3,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
@@ -2975,6 +2985,22 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
                         new_nil,
                         new_cons,
                     )
+                }
+            },
+            Computation::ListCase {
+                list,
+                on_nil,
+                on_cons,
+            } => {
+                let new_cons = Self::computation(&mut self.results, on_cons);
+                let new_nil = Self::computation(&mut self.results, on_nil);
+                let new_list = Self::value(&mut self.results, list);
+                if (new_list, new_nil, new_cons) == (list, on_nil, on_cons) {
+                    id
+                }
+                else {
+                    self.arena
+                        .computation_list_case(new_list, new_nil, new_cons)
                 }
             },
             Computation::Primitive {
@@ -5176,6 +5202,12 @@ fn survey_computation(
             Position::Computation(body, own),
         ]),
         Computation::ListFold {
+            list,
+            on_nil,
+            on_cons,
+            ..
+        }
+        | Computation::ListCase {
             list,
             on_nil,
             on_cons,

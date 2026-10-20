@@ -369,6 +369,14 @@ pub enum Elimination
         /// Cell branch with head then folded result bound.
         on_cons: CompClosureId,
     },
+    /// A native List case whose list was neutral.
+    ListCase
+    {
+        /// Empty branch with no binders.
+        on_nil: CompClosureId,
+        /// Cell branch with head then tail bound.
+        on_cons: CompClosureId,
+    },
     /// `f a`: a static application whose operator was stuck, applied to a
     /// domain value argument.
     StaticApply(DomainValueId),

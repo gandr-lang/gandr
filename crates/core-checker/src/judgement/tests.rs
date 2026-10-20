@@ -3698,7 +3698,7 @@ proptest! {
                 | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) => {
                     prop_assert!(false, "the free recipe mints no bind, ascription or native eliminator");
                 },
-                | Computation::ListFold { .. } | Computation::Case { .. } | Computation::Split { .. }
+                | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Case { .. } | Computation::Split { .. }
                 | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..)
                 | Computation::Exercise { .. } | Computation::Scope { .. }
                 | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..)

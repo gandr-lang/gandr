@@ -169,7 +169,7 @@ pub enum CheckingForm
     Injection(ValueId),
     /// A native List introduction needs its element classifier.
     List(ValueId),
-    /// A sum case is checked against a common result type.
+    /// A sum case or a list case is checked against a common result type.
     Case(ComputationId),
     /// A split is checked against its body's type, which may read the
     /// components it binds.

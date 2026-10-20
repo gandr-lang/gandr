@@ -597,6 +597,18 @@ pub enum Computation
         /// Cell branch, under the head and recursive result.
         on_cons: ComputationId,
     },
+    /// Case on a native list. The cons branch binds the head, then the tail
+    /// (index zero); each branch is an ordinary computation. The list's type
+    /// is read off the list itself, as a sum case reads its scrutinee's.
+    ListCase
+    {
+        /// Native list to inspect.
+        list: ValueId,
+        /// Empty-list branch, in the ambient context.
+        on_nil: ComputationId,
+        /// Cell branch, under the head and the tail.
+        on_cons: ComputationId,
+    },
     /// Transport a value along a universe path.
     Transport(ValueId, ValueId),
     /// Dependent transport along an element path: given `path : Path(A, a,

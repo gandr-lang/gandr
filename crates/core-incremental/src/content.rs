@@ -789,6 +789,16 @@ pub enum ContentNode
         /// The cell branch beneath two binders.
         on_cons: NodeIndex,
     },
+    /// A native List case: the list and its two branches.
+    ListCase
+    {
+        /// The list value.
+        list: NodeIndex,
+        /// The empty branch.
+        on_nil: NodeIndex,
+        /// The cell branch beneath two binders: the head, then the tail.
+        on_cons: NodeIndex,
+    },
     /// A session action: payload, arms, fork protocol and halves as edges,
     /// endpoints and labels as written.
     Session(gandr_core_term::session::SessionAction<NodeIndex, NodeIndex, NodeIndex>),
@@ -1249,6 +1259,7 @@ impl ContentNode
         | Self::Bind(..)
         | Self::Force(_)
         | Self::ListFold { .. }
+        | Self::ListCase { .. }
         | Self::Case { .. }
         | Self::ComputationHole(_)
         | Self::ComputationMark { .. }
@@ -1356,6 +1367,7 @@ impl ContentNode
             | Self::Bind(..)
             | Self::Force(_)
             | Self::ListFold { .. }
+            | Self::ListCase { .. }
             | Self::Case { .. }
             | Self::ComputationHole(_)
             | Self::ComputationMark { .. }
@@ -1455,6 +1467,7 @@ impl ContentNode
             | Self::UnknownComputationType => ret.count == 0,
             | Self::Tuple(ref components) => ret.iter().eq(components.iter().map(|&component| (component, V))),
             | Self::ListFold { element, result, list, on_nil, on_cons } => actual == Some(&[(element, A), (result, A), (list, V), (on_nil, M), (on_cons, M)][..]),
+            | Self::ListCase { list, on_nil, on_cons } => actual == Some(&[(list, V), (on_nil, M), (on_cons, M)][..]),
             | Self::Univalence(a, b)
             | Self::ListCons(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Funext(a, b) | Self::Equiv(a, b) | Self::Ua { forward: a, backward: b, .. } | Self::Transport(a, b) | Self::SessionRelated { source: a, target: b, .. } | Self::Then(a, b) | Self::FlowProduct(a, b) | Self::FunctionFlow(a, b) => {
                 actual == Some(&[(a, V), (b, V)][..])
@@ -1752,6 +1765,11 @@ impl ContentNode
                 (on_cons, M),
             ])
             .binding(ChildSlot(4), two),
+            Self::ListCase {
+                list,
+                on_nil,
+                on_cons,
+            } => Children::of(&[(list, V), (on_nil, M), (on_cons, M)]).binding(ChildSlot(2), two),
             Self::Case {
                 scrutinee,
                 ref branches,
@@ -1808,7 +1826,7 @@ impl ContentNode
     #[spec(ensures: |ret| match *self {
         Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } => matches!(ret, Maybe::Present(_)),
         Self::Univalence(..) |
-        Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
+        Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::ListCase { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
     })]
     pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
     {
@@ -1877,6 +1895,7 @@ impl ContentNode
             | Self::ListNil
             | Self::ListCons(..)
             | Self::ListFold { .. }
+            | Self::ListCase { .. }
             | Self::Literal(_)
             | Self::Injection(..)
             | Self::Thunk(_)
@@ -3959,6 +3978,15 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 on_nil: self.discover(ArenaNode::Computation(on_nil)),
                 on_cons: self.discover(ArenaNode::Computation(on_cons)),
             },
+            Computation::ListCase {
+                list,
+                on_nil,
+                on_cons,
+            } => ContentNode::ListCase {
+                list: self.discover(ArenaNode::Value(list)),
+                on_nil: self.discover(ArenaNode::Computation(on_nil)),
+                on_cons: self.discover(ArenaNode::Computation(on_cons)),
+            },
             Computation::Primitive {
                 primitive,
                 arguments,
@@ -4653,6 +4681,15 @@ where
             on_nil: image(on_nil),
             on_cons: image(on_cons),
         },
+        ContentNode::ListCase {
+            list,
+            on_nil,
+            on_cons,
+        } => ContentNode::ListCase {
+            list: image(list),
+            on_nil: image(on_nil),
+            on_cons: image(on_cons),
+        },
         ContentNode::Tuple(ref components) => ContentNode::Tuple(
             components
                 .iter()
@@ -5299,6 +5336,7 @@ fn mint_node(
         | ContentNode::ListNil
         | ContentNode::ListCons(..)
         | ContentNode::ListFold { .. }
+        | ContentNode::ListCase { .. }
         | ContentNode::Literal(_)
         | ContentNode::Tuple(_)
         | ContentNode::Injection(..)

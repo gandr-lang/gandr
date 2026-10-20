@@ -245,6 +245,7 @@ pub fn fused(
             | Elimination::Force
             | Elimination::Case(_)
             | Elimination::ListFold { .. }
+            | Elimination::ListCase { .. }
             | Elimination::StaticApply(_)
             | Elimination::Fixpoint { .. } => None,
         })

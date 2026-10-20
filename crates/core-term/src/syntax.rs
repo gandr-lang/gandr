@@ -851,6 +851,20 @@ pub enum Computation
         /// Cell branch beneath two intuitionistic binders.
         on_cons: ComputationId,
     },
+    /// A case on a native list: the cell branch binds the head then the tail.
+    /// Each branch is an ordinary computation, so a walk through a list may
+    /// stop at any cell. The list's type is read off the list itself, as a
+    /// sum case reads its scrutinee's.
+    ListCase
+    {
+        /// Native list to inspect.
+        list: ValueId,
+        /// Empty branch in the ambient context.
+        on_nil: ComputationId,
+        /// Cell branch beneath two intuitionistic binders: the head at index
+        /// one, the tail at index zero.
+        on_cons: ComputationId,
+    },
     /// Perform an operation from an inline-carried interface.
     Perform
     {
@@ -2831,6 +2845,22 @@ fn equal_syntax(
                     ) => pending.extend([
                         VT(left_element, right_element),
                         VT(left_result, right_result),
+                        V(left_list, right_list),
+                        C(left_nil, right_nil),
+                        C(left_cons, right_cons),
+                    ]),
+                    (
+                        &Computation::ListCase {
+                            list: left_list,
+                            on_nil: left_nil,
+                            on_cons: left_cons,
+                        },
+                        &Computation::ListCase {
+                            list: right_list,
+                            on_nil: right_nil,
+                            on_cons: right_cons,
+                        },
+                    ) => pending.extend([
                         V(left_list, right_list),
                         C(left_nil, right_nil),
                         C(left_cons, right_cons),

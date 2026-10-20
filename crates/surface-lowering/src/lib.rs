@@ -205,10 +205,10 @@
 //! machine unfolds a loop's fixpoint against the continuation that forces it,
 //! so a loop runs in constant continuation however many passes it takes. No
 //! state is carried from pass to pass: each reads the frame the loop was
-//! entered with. `for` is refused as [`LoweringRefusal::ForNeedsListCase`]:
-//! the native list has a fold and no case, and a fold cannot stop where the
-//! body breaks. The `lower::loops` module docs state each reading with its
-//! alternatives and reversal.
+//! entered with. `for x in xs` is the structural fixpoint over the case of
+//! the remaining list, applied to `xs`: the empty list leaves the loop, and a
+//! pass runs again on the tail. The `lower::loops` module docs state each
+//! reading.
 //!
 //! # The fourth bridge is the checker's
 //!

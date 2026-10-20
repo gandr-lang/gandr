@@ -635,7 +635,7 @@ pub fn projection_key(
     Elimination::Split(closure) => ret == split_source(core,domain,closure).map(|(arity,_)| EliminationShape::Split(arity)),
     Elimination::Case(branches) => ret == domain.branches(branches).map(|held| EliminationShape::Case(held.len())).map_err(ConversionFault::Domain),
     Elimination::Fixpoint { leading, .. } => ret == domain.fields(leading).map(|held| EliminationShape::Fixpoint(held.len())).map_err(ConversionFault::Domain),
-    Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::TelescopeTransport { .. } | Elimination::Apply(_) | Elimination::Force | Elimination::Bind(_) | Elimination::ListFold { .. } | Elimination::StaticApply(_) => ret == Ok(EliminationShape::Ordinary(core::mem::discriminant(&elimination))),
+    Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::TelescopeTransport { .. } | Elimination::Apply(_) | Elimination::Force | Elimination::Bind(_) | Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::StaticApply(_) => ret == Ok(EliminationShape::Ordinary(core::mem::discriminant(&elimination))),
 })]
 fn elimination_shape<'core>(
     core: &'core CoreArena,
@@ -669,6 +669,7 @@ fn elimination_shape<'core>(
         | Elimination::Force
         | Elimination::Bind(_)
         | Elimination::ListFold { .. }
+        | Elimination::ListCase { .. }
         | Elimination::StaticApply(_) => Ok(EliminationShape::Ordinary(core::mem::discriminant(
             &elimination,
         ))),
@@ -943,7 +944,7 @@ pub enum Spines
                 EliminationShape::Case(branches) => branches,
                 EliminationShape::Split(_) => 1_usize,
                 EliminationShape::Fixpoint(leading) => leading.saturating_add(1_usize),
-                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::ListFold { .. } | Elimination::PathTransport { .. } | Elimination::Ride { .. } => 2_usize,Elimination::TelescopeTransport { .. } => 4_usize,Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Apply(_) | Elimination::Bind(_) | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint { .. } => 1_usize },
+                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::PathTransport { .. } | Elimination::Ride { .. } => 2_usize,Elimination::TelescopeTransport { .. } => 4_usize,Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Apply(_) | Elimination::Bind(_) | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint{ .. } => 1_usize },
             };
             Ok((true,count.saturating_add(added)))
         });
@@ -1118,6 +1119,18 @@ fn eliminations_subgoals(
                     on_cons: rc,
                     ..
                 },
+            )
+            | (
+                Elimination::ListCase {
+                    on_nil: ln,
+                    on_cons: lc,
+                    ..
+                },
+                Elimination::ListCase {
+                    on_nil: rn,
+                    on_cons: rc,
+                    ..
+                },
             ) => {
                 subgoals.push(Subgoal::Entered(ln, rn));
                 subgoals.push(Subgoal::OpenedUnder(
@@ -1151,6 +1164,7 @@ fn eliminations_subgoals(
                 | Elimination::Bind(_)
                 | Elimination::Case(_)
                 | Elimination::ListFold { .. }
+                | Elimination::ListCase { .. }
                 | Elimination::StaticApply(_)
                 | Elimination::Fixpoint { .. },
                 _,
@@ -1962,6 +1976,7 @@ fn held_elimination(
                 | Elimination::Case(_)
                 | Elimination::Split(_)
                 | Elimination::ListFold { .. }
+                | Elimination::ListCase { .. }
                 | Elimination::Projection(_)
                 | Elimination::Force
         )

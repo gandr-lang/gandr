@@ -864,6 +864,9 @@ enum Task
     /// Pop the scrutinee's producer and the body's command, and mint the cut
     /// of the scrutinee against the match of one tuple pattern of this arity.
     Split(ProducerArity),
+    /// Pop the scrutinee's producer and the two branches' commands, and mint
+    /// the cut of the scrutinee against the match of the list's nil and cell.
+    ListCase,
     /// Pop the branches' thunks and the scrutinee's producer, and mint the
     /// cut of the scrutinee against the nominal match.
     DataCase
@@ -1007,14 +1010,14 @@ impl<'run> Focusing<'run>
                 Computation::Resume(..) => !self.producers.is_empty() && !self.commands.is_empty(),
                 Computation::Reset(_) | Computation::Shift(_) => !self.commands.is_empty(),
                 Computation::With(..) => self.commands.len() >= 2,
-                Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => true,
+                Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => true,
             }),
             | &Task::Primitive { arguments, .. } => self.producers.len() >= arguments.len(),
             | &Task::ListCons => self.producers.len() >= 2,
             | &Task::Combinator { combinator, .. } => self.producers.len() >= usize::from(combinator.applied()),
             | &Task::Injection(_) | &Task::Lift(_) | &Task::Cut { .. } | &Task::Apply { .. } => !self.producers.is_empty(),
             | &Task::Thunk | &Task::Fixpoint(_) | &Task::Lambda { .. } | &Task::Bind { .. } | &Task::Name { .. } => !self.commands.is_empty(),
-            | &Task::ListFold { .. } => !self.producers.is_empty() && self.commands.len() >= 2,
+            | &Task::ListFold { .. } | &Task::ListCase => !self.producers.is_empty() && self.commands.len() >= 2,
             | &Task::Case { branches } => !self.producers.is_empty() && self.commands.len() >= usize::from(branches),
             | &Task::Split(_) => !self.producers.is_empty() && !self.commands.is_empty(),
             | &Task::Tuple(arity) | &Task::Native { arity, .. } => self.producers.len() >= usize::from(arity),
@@ -1244,6 +1247,23 @@ impl<'run> Focusing<'run>
                 let matcher = self.arena.mint_consumer(ConsumerNode::Case { arms })?;
                 self.cut(FocusOrigin::Case, Polarity::Positive, scrutinee, matcher)
             },
+            Task::ListCase => {
+                let on_cons = self.pop_command()?;
+                let on_nil = self.pop_command()?;
+                let scrutinee = self.pop_producer()?;
+                let arms = alloc::boxed::Box::from([
+                    PatternArm {
+                        constructor: ConstructorTag::ListNil,
+                        body: on_nil,
+                    },
+                    PatternArm {
+                        constructor: ConstructorTag::ListCons,
+                        body: on_cons,
+                    },
+                ]);
+                let matcher = self.arena.mint_consumer(ConsumerNode::Case { arms })?;
+                self.cut(FocusOrigin::Case, Polarity::Positive, scrutinee, matcher)
+            },
             Task::DataCase {
                 branches,
                 continuation,
@@ -1446,6 +1466,7 @@ impl<'run> Focusing<'run>
                     | Computation::Hole(_)
                     | Computation::Mark { .. }
                     | Computation::ListFold { .. }
+                    | Computation::ListCase { .. }
                     | Computation::Perform { .. }
                     | Computation::Handle { .. }
                     | Computation::Exercise { .. }
@@ -1561,6 +1582,7 @@ impl<'run> Focusing<'run>
             | Computation::Hole(_)
             | Computation::Mark { .. }
             | Computation::ListFold { .. }
+            | Computation::ListCase { .. }
             | Computation::Project(..)
             | Computation::Session(_)
             | Computation::World(_) => return Err(FocusRefusal::TranslationInvariant),
@@ -1909,6 +1931,25 @@ impl<'run> Focusing<'run>
                 self.tasks.push(Task::Value(scrutinee));
                 self.tasks.push(Task::Computation {
                     computation: body,
+                    continuation: inner,
+                });
+            },
+            // A list case is a match on the list's two constructors, the cell
+            // binding the head then the tail as the core binds them.
+            Computation::ListCase {
+                list,
+                on_nil,
+                on_cons,
+            } => {
+                let inner = self.share_or_name(FocusOrigin::Case, continuation)?;
+                self.tasks.push(Task::ListCase);
+                self.tasks.push(Task::Value(list));
+                self.tasks.push(Task::Computation {
+                    computation: on_cons,
+                    continuation: inner,
+                });
+                self.tasks.push(Task::Computation {
+                    computation: on_nil,
                     continuation: inner,
                 });
             },

@@ -2962,6 +2962,30 @@ enum Frame
         /// Lowered empty branch.
         on_nil: gandr_kernel_term::ComputationId,
     },
+    /// Await a list case's list.
+    ListCaseList
+    {
+        /// Source list case.
+        at: ComputationId,
+    },
+    /// Await a list case's empty branch.
+    ListCaseNil
+    {
+        /// Source list case.
+        at: ComputationId,
+        /// Lowered list.
+        list: gandr_kernel_term::ValueId,
+    },
+    /// Await a list case's cell branch.
+    ListCaseCons
+    {
+        /// Source list case.
+        at: ComputationId,
+        /// Lowered list.
+        list: gandr_kernel_term::ValueId,
+        /// Lowered empty branch.
+        on_nil: gandr_kernel_term::ComputationId,
+    },
     /// Await the element type of a finite list.
     ListType
     {
@@ -5310,7 +5334,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `tests::native_formers::empty_data_elimination_preserves_the_ambient_scope`
     /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
     #[spec(
-        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::Ascribe { .. } => Some(2_usize), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => Some(1_usize) })],
+        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::Ascribe { .. } => Some(2_usize), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => Some(1_usize) })],
         ensures: |ret| match held {
             | Some(Image::Erased(image)) => ret == Ok(Step::Ascend(AnyNode::Computation(image))) && self.frames.len() == before,
             | Some(Image::Open) => ret == Err(Refusal::Cyclic { node: CoreNode::Term(TermNode::Computation(at)) }) && self.frames.len() == before,
@@ -5378,6 +5402,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 self.memo().computations.insert(at, Image::Open);
                 self.frames.push(Frame::ListElement { at });
                 return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(element))));
+            },
+            Computation::ListCase { list, .. } => {
+                (Frame::ListCaseList { at }, TermNode::Value(list))
             },
             Computation::Primitive {
                 primitive,
@@ -6151,6 +6178,27 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 at,
                 target.computation_list_fold(element, result, list, on_nil, on_cons),
             )),
+            (Frame::ListCaseList { at }, AnyNode::Value(list)) => {
+                let Some(&Computation::ListCase { on_nil, .. }) = self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::ListCaseNil { at, list });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Computation(on_nil))))
+            },
+            (Frame::ListCaseNil { at, list }, AnyNode::Computation(on_nil)) => {
+                let Some(&Computation::ListCase { on_cons, .. }) = self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::ListCaseCons { at, list, on_nil });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Computation(
+                    on_cons,
+                ))))
+            },
+            (Frame::ListCaseCons { at, list, on_nil }, AnyNode::Computation(on_cons)) => Ok(
+                self.erased_computation(at, target.computation_list_case(list, on_nil, on_cons))
+            ),
             (Frame::PathRefl { at }, AnyNode::Value(code)) => {
                 Ok(self.erased_value(at, target.value_path_refl(code)))
             },
@@ -6711,6 +6759,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             (
                 Frame::ListNil { .. }
                 | Frame::ListCons { .. }
+                | Frame::ListCaseNil { .. }
+                | Frame::ListCaseCons { .. }
                 | Frame::Thunk { .. }
                 | Frame::Returned { .. }
                 | Frame::ApplicationHead { .. }
@@ -6766,6 +6816,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::ListHead { .. }
                 | Frame::ListTail { .. }
                 | Frame::ListInput { .. }
+                | Frame::ListCaseList { .. }
                 | Frame::Force { .. }
                 | Frame::ApplicationArgument { .. }
                 | Frame::NativeFirst { .. }

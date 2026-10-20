@@ -1060,6 +1060,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Computation::Force(_)) => tags::NODE_C_FORCE,
             Some(&Computation::Case { .. }) => tags::NODE_C_CASE,
             Some(&Computation::ListFold { .. }) => tags::NODE_C_LIST_FOLD,
+            Some(&Computation::ListCase { .. }) => tags::NODE_C_LIST_CASE,
             Some(&Computation::With(..)) => tags::NODE_C_WITH,
             Some(&Computation::Project(..)) => tags::NODE_C_PROJECT,
         },
@@ -1327,6 +1328,7 @@ fn encode_entry(
                 out.put_uvarint(WireU64::from(WireUsize::from(branches.len())));
             },
             Some(&Computation::ListFold { .. }) => out.put_tag(tags::NODE_C_LIST_FOLD),
+            Some(&Computation::ListCase { .. }) => out.put_tag(tags::NODE_C_LIST_CASE),
             Some(&Computation::With(..)) => out.put_tag(tags::NODE_C_WITH),
             Some(&Computation::Project(side, _)) => {
                 out.put_tag(tags::NODE_C_PROJECT);

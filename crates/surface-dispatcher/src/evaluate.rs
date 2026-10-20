@@ -1815,12 +1815,19 @@ fn references(
                     pending.extend([Node::Computation(first), Node::Computation(second)]);
                 },
 
-                Some(&Computation::ListFold {
-                    list,
-                    on_nil,
-                    on_cons,
-                    ..
-                }) => pending.extend([
+                Some(
+                    &(Computation::ListFold {
+                        list,
+                        on_nil,
+                        on_cons,
+                        ..
+                    }
+                    | Computation::ListCase {
+                        list,
+                        on_nil,
+                        on_cons,
+                    }),
+                ) => pending.extend([
                     Node::Value(list),
                     Node::Computation(on_nil),
                     Node::Computation(on_cons),
