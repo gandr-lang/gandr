@@ -5,11 +5,6 @@
 //! and adversary suites read the toy alphabet from the test-only tools crate;
 //! the differential suite needs `std` for the property runner.
 
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(linear_search_in_loop, reason = "1 cost-shape site; #814 lists it")
-)]
-
 #[cfg(test)]
 mod adversarial_alphabet;
 #[cfg(test)]
