@@ -2395,8 +2395,9 @@ fn lower_pass(
         };
         entry = Some(lowering.open(body));
     }
+    let mut table = Vec::with_capacity(lowering.heads.len().saturating_add(1));
     for (at, label) in core::mem::take(&mut lowering.selections) {
-        let mut table = Vec::with_capacity(lowering.heads.len().saturating_add(1));
+        table.clear();
         table.push(Word::from(lowering.heads.len()));
         for head in &lowering.heads {
             let position = match *head {

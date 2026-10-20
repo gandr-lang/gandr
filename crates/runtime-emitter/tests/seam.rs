@@ -6,7 +6,6 @@ use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::sync::Arc;
-use alloc::vec::Vec;
 
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandNode;
@@ -308,8 +307,7 @@ fn assert_host(
         .expect("the program focuses");
     assert_eq!(Ok(FreeSet::default()), check_command(&arena, root));
     let definitions = Definitions::new();
-    let entries: Vec<Option<Tier>> = tiers().iter().copied().map(Some).chain([None]).collect();
-    for entry in entries {
+    for entry in tiers().iter().copied().map(Some).chain([None]) {
         let mut store = Store::new();
         let mut host = ScriptedHost {
             core: &mut *core,

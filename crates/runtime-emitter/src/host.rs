@@ -938,7 +938,8 @@ impl<'run, 'host> Calls<'run, 'host>
         if top > runtime.frame_limit() {
             return Err(Refusal::Frames);
         }
-        let mut copies: Vec<(Word, Word)> = Vec::new();
+        let mut copies: BTreeMap<Word, Word> = BTreeMap::new();
+        let mut words = Vec::new();
         for index in 0 .. count {
             let at = object.wrapping_add(STACK_PREFIX.saturating_add(index.saturating_mul(2)));
             // SAFETY: the stack holds its frames after its prefix.
@@ -948,12 +949,13 @@ impl<'run, 'host> Calls<'run, 'host>
             let resumed = match self.window(code)? {
                 None => word,
                 Some(slots) => {
-                    if let Some(&(_, fresh)) = copies.iter().find(|&&(held, _)| held == word) {
+                    if let Some(&fresh) = copies.get(&word) {
                         fresh
                     }
                     else {
                         let stored = word.to_pointer::<Word>();
-                        let mut words = Vec::with_capacity(slots.0);
+                        words.clear();
+                        words.reserve(slots.0);
                         for slot in 0 .. slots.0 {
                             // SAFETY: the stored window holds its slots.
                             let held = unsafe { *stored.wrapping_add(slot) };
@@ -968,7 +970,7 @@ impl<'run, 'host> Calls<'run, 'host>
                             });
                         }
                         let fresh = allocate(runtime, &words)?;
-                        copies.push((word, fresh));
+                        let _first = copies.insert(word, fresh);
                         fresh
                     }
                 },
@@ -1266,13 +1268,15 @@ fn stack(
 ) -> Result<Word, Refusal>
 {
     let object = runtime.heap_top();
-    let mut copies: Vec<(Word, Slots, usize)> = Vec::new();
+    let mut copies: Vec<(Word, Slots)> = Vec::new();
+    let mut offsets: BTreeMap<Word, usize> = BTreeMap::new();
     let mut length = STACK_PREFIX.saturating_add(frames.len().saturating_mul(2));
     for frame in frames {
         if let Some(slots) = frame.window
-            && !copies.iter().any(|&(held, ..)| held == frame.word)
+            && !offsets.contains_key(&frame.word)
         {
-            copies.push((frame.word, slots, length));
+            let _first = offsets.insert(frame.word, length);
+            copies.push((frame.word, slots));
             length = length.saturating_add(slots.0);
         }
     }
@@ -1283,16 +1287,15 @@ fn stack(
     words.push(top);
     for frame in frames {
         words.push(frame.code);
-        words.push(
-            copies
-                .iter()
-                .find(|&&(held, ..)| frame.window.is_some() && held == frame.word)
-                .map_or(frame.word, |&(_, _, offset)| {
-                    Word::from_pointer(object.wrapping_add(offset))
-                }),
-        );
+        let copied = frame
+            .window
+            .and_then(|_| offsets.get(&frame.word))
+            .map_or(frame.word, |&offset| {
+                Word::from_pointer(object.wrapping_add(offset))
+            });
+        words.push(copied);
     }
-    for &(word, slots, _) in &copies {
+    for &(word, slots) in &copies {
         let window = word.to_pointer::<Word>();
         for slot in 0 .. slots.0 {
             // SAFETY: the window holds the slots its frame's block reads.
