@@ -2750,7 +2750,7 @@ impl Serialize for DocumentSymbols
 
 /// What a symbol declares, as the protocol numbers it.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
 pub struct SymbolKind(u8);
 
@@ -2778,6 +2778,8 @@ impl SymbolKind
     pub const FIELD: Self = Self(8);
     /// A theory's sort, shape or extension: a type the theory is over.
     pub const TYPE_PARAMETER: Self = Self(26);
+    /// A world: a place a term is judged at.
+    pub const CONSTANT: Self = Self(14);
 }
 
 /// A run of lines a client can fold.
@@ -3079,6 +3081,7 @@ pub struct Location
 
 /// A declared name of the workspace, where its name is written.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SymbolInformation
 {
     /// The name.
@@ -3087,6 +3090,10 @@ pub struct SymbolInformation
     pub kind: SymbolKind,
     /// The range of its name in the document writing it.
     pub location: Location,
+    /// The name of the declaration holding it: a module, a theory, a family
+    /// or a codata declaration; none at the top of its source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub container_name: Option<String>,
 }
 
 /// The parameters of `workspace/symbol`: the characters the names asked for

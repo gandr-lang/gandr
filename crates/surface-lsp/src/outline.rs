@@ -102,15 +102,16 @@ pub enum Declarer
 /// - ensures: one symbol per form of the [`Sort::Item`] or
 ///   [`Sort::ModuleMember`] sort that has a name: its first direct tile the
 ///   highlighter classifies as [`HlRole::FunctionDef`], [`HlRole::VariableDef`]
-///   or [`HlRole::Type`]. The symbol's range is the form's, widened to the
-///   attribute blocks standing directly before it, its selection range the
-///   name's, and its kind a function, a value, or by the form's first keyword a
-///   module, a data declaration, a codata declaration or a signature. A
-///   signature, data declaration or codata declaration holds one symbol per
-///   member written between its own braces, as [`members`] reads them. Symbols
-///   are in source order, each after the declaration holding it, which it names
-///   by position; a top-level one names none. Each is beside the form that
-///   declares it, or the form whose member it is.
+///   or [`HlRole::Type`], or as [`HlRole::Label`] after the keyword `world`.
+///   The symbol's range is the form's, widened to the attribute blocks standing
+///   directly before it, its selection range the name's, and its kind a
+///   function, a value, or by the form's first keyword a world, a module, a
+///   data declaration, a codata declaration or a signature. A signature, data
+///   declaration or codata declaration holds one symbol per member written
+///   between its own braces, as [`members`] reads them. Symbols are in source
+///   order, each after the declaration holding it, which it names by position;
+///   a top-level one names none. Each is beside the form that declares it, or
+///   the form whose member it is.
 /// - provides: the declarations the document symbols and a hover read.
 /// - fails: never.
 /// - panics: none.
@@ -226,7 +227,11 @@ fn declared(
         };
         match roles.role_of(tile) {
             Ok(HlRole::Keyword) if keyword.is_none() => keyword = tree.fragment(child),
-            Ok(role @ (HlRole::FunctionDef | HlRole::VariableDef | HlRole::Type)) => {
+            // A world's name is classified as a label, as its uses are.
+            Ok(HlRole::Label) if keyword.map(<&str>::from) != Some("world") => {},
+            Ok(
+                role @ (HlRole::FunctionDef | HlRole::VariableDef | HlRole::Type | HlRole::Label),
+            ) => {
                 let name = tree.fragment(child)?;
                 return Some(DocumentSymbol {
                     name: String::from(<&str>::from(name)),
@@ -258,6 +263,7 @@ fn kind_of(
     match (role, keyword.map(<&str>::from)) {
         (HlRole::FunctionDef, _) => SymbolKind::FUNCTION,
         (HlRole::VariableDef, _) => SymbolKind::VARIABLE,
+        (_, Some("world")) => SymbolKind::CONSTANT,
         (_, Some("module")) => SymbolKind::MODULE,
         (_, Some("theory")) => SymbolKind::INTERFACE,
         (_, Some("codata")) => SymbolKind::STRUCT,
@@ -816,7 +822,8 @@ mod tests
         let source = "/// Doubles nothing.\n@[ checks ]\ndef twice(x: Integer) -> -F Integer {\n  return x\n}\n\
                       def answer = 42 ;\n\
                       @[ checks ]\ndata Color : Type { Red : Color; }\n\
-                      module Outer {\n  def inner = 1 ;\n  module Nested {\n    def deep = 2 ;\n  }\n}\n";
+                      module Outer {\n  def inner = 1 ;\n  module Nested {\n    def deep = 2 ;\n  }\n}\n\
+                      world seat ;\n";
         let answered = Reading::of(SourceText::from(source)).symbols();
         assert_eq!(outline(&answered), [
             "twice 12 1:0-4:1 at 2:4-2:9",
@@ -827,6 +834,7 @@ mod tests
             "  inner 12 9:2-9:17 at 9:6-9:11",
             "  Nested 2 10:2-12:3 at 10:9-10:15",
             "    deep 12 11:4-11:18 at 11:8-11:12",
+            "seat 14 14:0-14:12 at 14:6-14:10",
         ]);
         // The wire tree: each held symbol under its holder's `children`.
         let wire = serde_json::to_value(&answered).expect("the symbols encode");
@@ -846,7 +854,7 @@ mod tests
         let nested = outer
             .and_then(|outer| outer.get("children"))
             .and_then(|children| children.get(1_usize));
-        assert_eq!(names(&wire), ["twice", "answer", "Color", "Outer"]);
+        assert_eq!(names(&wire), ["twice", "answer", "Color", "Outer", "seat"]);
         assert_eq!(
             outer.and_then(|outer| outer.get("children")).map(names),
             Some(vec!["inner".to_owned(), "Nested".to_owned()])
