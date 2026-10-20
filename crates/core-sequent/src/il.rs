@@ -85,26 +85,14 @@
 //! Every node keeps its scope beside it, in its family's row: two slots, one
 //! per space, each the code itself when it is one word and a handle into the
 //! arena's word arena ([`gandr_core_term::support::WordArena`]) otherwise, so
-//! a scope is 16 bytes with no heap block on every term of ordinary depth. A
-//! node stores no edges: the edge from a node to a child — the child's support
-//! as a selection from the node's support extended by the bound names — is a
-//! function of the two supports and the crossing, so it is derived where a
-//! reader needs it; storing it cost a table of thinnings per node that the
-//! check alone read, and the check reads the same fact as the union equation
-//! every scope satisfies.
-//!
-//! - Choice: a scope in every row, as the core arena keeps a support in every
-//!   row. The check rebuilds and compares the scope of every node it reaches,
-//!   so a derived scope is paid for by a census of the node's parts at each
-//!   read. Measured on the differential's generated terms, deriving them saved
-//!   about a tenth of the IL's bytes and no check instructions.
-//! - Alternatives: a scope stored only where a union makes one, a leaf's and a
-//!   pass-through's derived where read, with the stored rows in a table of
-//!   their own beside the nodes; `McBride`'s relevant cover with stored edges,
-//!   which returns if a reader comes to need an edge per child at a cost a
-//!   derivation cannot meet.
-//! - Reversal: an IL reader that reads the scopes of few of the nodes it holds,
-//!   or IL bytes measured as the cost that binds.
+//! a scope is 16 bytes with no heap block on every term of ordinary depth.
+//! Minting alone writes a scope: it gathers a node's in the pass that resolves
+//! the node's children and stores it once the node is admitted, so the scope a
+//! row carries is its own by construction and the check reads the root's
+//! rather than rebuilding any. A node stores no edges: the edge from a node to
+//! a child — the child's support as a selection from the node's support
+//! extended by the bound names — is a function of the two supports and the
+//! crossing, so it is derived where a reader needs it.
 //!
 //! The IL counts three zones. Producer variables live in the core's two, the
 //! intuitionistic `Γ` and the linear `Σ`, under the core's crossings: a
@@ -159,10 +147,8 @@ use core::fmt;
 use anodized::spec;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::Zone;
-use gandr_core_term::support::Agreement;
 use gandr_core_term::support::Crossing;
 use gandr_core_term::support::Indices;
-use gandr_core_term::support::Thinning;
 use gandr_core_term::support::ThinningRef;
 use gandr_core_term::support::Union;
 use gandr_core_term::support::WordArena;
@@ -992,39 +978,9 @@ impl<'arena> NodeScope<'arena>
     }
 }
 
-/// A node's scope, owned: what [`Scoping::finish`] builds.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
-pub struct BuiltScope
-{
-    /// The producer support.
-    producers: Thinning,
-    /// The covariable support.
-    covariables: Thinning,
-}
-
-impl BuiltScope
-{
-    /// The scope, read in place.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn view(&self) -> NodeScope<'_>
-    {
-        NodeScope {
-            producers: self.producers.view(),
-            covariables: self.covariables.view(),
-        }
-    }
-}
-
-/// A node's scope under construction, shared by minting and the check: what
-/// the node names and its children's carried scopes past the binders it opens
-/// over each, fed in any order.
+/// A node's scope under construction at its mint: what the node names, its
+/// annotations' supports and its children's carried scopes past the binders
+/// it opens over each, fed in any order.
 ///
 /// # Specification
 /// trivial.
@@ -1128,61 +1084,6 @@ impl Scoping
             .stored_child(producers, words, opens.producers);
         self.covariables
             .stored_child(covariables, words, opens.covariables);
-    }
-
-    /// The scope built.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn finish(self) -> BuiltScope
-    {
-        BuiltScope {
-            producers: self.producers.finish(),
-            covariables: self.covariables.finish(),
-        }
-    }
-
-    /// Whether the scope built, finished, is the one `slots` keep in
-    /// `words`, without finishing it.
-    ///
-    /// # Specification
-    /// - ensures: [`Agreement::Same`] exactly when `self.finish().view()` is
-    ///   the scope [`CommandArena::scope_at`] reads off `slots`, the scope
-    ///   built unchanged.
-    /// - panics: none.
-    /// - executable: none — this runs once per carrier on the check path; the
-    ///   witness refuses every forged scope.
-    /// - intension: two comparisons of two words while both unions are inline.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Union::equals_stored`], once per space.
-    /// - witness: `check::tests::a_forged_scope_is_refused_by_name`
-    #[inline]
-    #[must_use]
-    pub(crate) fn holds(
-        &self,
-        slots: Slots,
-        words: &WordArena,
-    ) -> Agreement
-    {
-        let [producers, covariables] = slots;
-        match self.producers.equals_stored(producers, words) {
-            Agreement::Same => self.covariables.equals_stored(covariables, words),
-            Agreement::Different => Agreement::Different,
-        }
-    }
-
-    /// Empty the scope built for the next node.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub fn clear(&mut self)
-    {
-        self.producers.clear();
-        self.covariables.clear();
     }
 }
 
@@ -1598,7 +1499,21 @@ impl CommandArena
             | Ok(id) => usize::try_from(u32::from(id)) == Ok(usize::from(entry.producers))
                 && usize::from(entry.producers).checked_add(1) == Some(self.producers.len())
                 && self.consumer_count() == entry.consumers
-                && self.command_count() == entry.commands,
+                && self.command_count() == entry.commands
+                && self.producer(id).is_some_and(|node| match *node {
+                    | ProducerNode::Reify(ref frames) => frames.iter().all(|frame| match *frame {
+                        | gandr_core_term::control::StackFrame::Apply(value) => self.producer(value).is_some(),
+                        | gandr_core_term::control::StackFrame::Bind(body) => self.command(body).is_some(),
+                        | gandr_core_term::control::StackFrame::Project(_) => true,
+                    }),
+                    | ProducerNode::Primitive { arguments, .. } => arguments.iter().all(|child| self.producer(*child).is_some()),
+                    | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) | ProducerNode::Code(_) => true,
+                    | ProducerNode::Constructor { ref producers, ref consumers, .. } =>
+                        producers.iter().all(|child| self.producer(*child).is_some())
+                            && consumers.iter().all(|child| self.consumer(*child).is_some()),
+                    | ProducerNode::Thunk { body } | ProducerNode::Mu { body } | ProducerNode::Fixpoint { body, .. } => self.command(body).is_some(),
+                    | ProducerNode::Cocase { ref arms } => arms.iter().all(|arm| self.command(arm.body).is_some()),
+                }),
             | Err(_) => self.watermark() == entry,
         },
     )]
@@ -1607,10 +1522,10 @@ impl CommandArena
         node: ProducerNode,
     ) -> Result<ProducerId, MintRefusal>
     {
-        self.producer_children_resolve(&node)?;
+        let scoping = self.producer_scoping(&node)?;
         let id = ProducerId::next_in(&self.producers)
             .ok_or(MintRefusal::FamilyFull(NodeFamily::Producer))?;
-        let scope = self.producer_scope(&node)?;
+        let scope = scoping.store(&mut self.words);
         self.producers.push(Row { node, scope });
         Ok(id)
     }
@@ -1648,7 +1563,24 @@ impl CommandArena
             | Ok(id) => usize::try_from(u32::from(id)) == Ok(usize::from(entry.consumers))
                 && usize::from(entry.consumers).checked_add(1) == Some(self.consumers.len())
                 && self.producer_count() == entry.producers
-                && self.command_count() == entry.commands,
+                && self.command_count() == entry.commands
+                && self.consumer(id).is_some_and(|node| match *node {
+                    | ConsumerNode::Covariable(_) | ConsumerNode::Top => true,
+                    | ConsumerNode::MuTilde { body } => self.command(body).is_some(),
+                    | ConsumerNode::Destructor { ref producers, ref consumers, .. } =>
+                        producers.iter().all(|child| self.producer(*child).is_some())
+                            && consumers.iter().all(|child| self.consumer(*child).is_some()),
+                    | ConsumerNode::Case { ref arms } => arms.iter().all(|arm| self.command(arm.body).is_some()),
+                    | ConsumerNode::DataCase { ref branches, then } =>
+                        branches.iter().all(|child| self.producer(*child).is_some()) && self.consumer(then).is_some(),
+                    | ConsumerNode::Select { then, .. } => self.consumer(then).is_some(),
+                    | ConsumerNode::ListFold { element, result, on_nil, on_cons, continuation } =>
+                        self.annotations.value_type(element).is_some()
+                            && self.annotations.value_type(result).is_some()
+                            && self.command(on_nil).is_some()
+                            && self.command(on_cons).is_some()
+                            && self.consumer(continuation).is_some(),
+                }),
             | Err(_) => self.watermark() == entry,
         },
     )]
@@ -1657,10 +1589,10 @@ impl CommandArena
         node: ConsumerNode,
     ) -> Result<ConsumerId, MintRefusal>
     {
-        self.consumer_children_resolve(&node)?;
+        let scoping = self.consumer_scoping(&node)?;
         let id = ConsumerId::next_in(&self.consumers)
             .ok_or(MintRefusal::FamilyFull(NodeFamily::Consumer))?;
-        let scope = self.consumer_scope(&node)?;
+        let scope = scoping.store(&mut self.words);
         self.consumers.push(Row { node, scope });
         Ok(id)
     }
@@ -1698,7 +1630,11 @@ impl CommandArena
             | Ok(id) => usize::try_from(u32::from(id)) == Ok(usize::from(entry.commands))
                 && usize::from(entry.commands).checked_add(1) == Some(self.commands.len())
                 && self.producer_count() == entry.producers
-                && self.consumer_count() == entry.consumers,
+                && self.consumer_count() == entry.consumers
+                && self.command(id).is_some_and(|node| {
+                    command_signature(node).is_none_or(|signature| signature.types().all(|ty| self.annotations.value_type(ty).is_some()))
+                        && command_children(node, |child, _| self.slots(child).map(|_| ()).ok_or(())).is_ok()
+                }),
             | Err(_) => self.watermark() == entry,
         },
     )]
@@ -1707,73 +1643,10 @@ impl CommandArena
         node: CommandNode,
     ) -> Result<CommandId, MintRefusal>
     {
-        match node {
-            CommandNode::Cut {
-                producer, consumer, ..
-            } => {
-                self.producer_resolves(producer)?;
-                self.consumer_resolves(consumer)?;
-            },
-            CommandNode::Perform {
-                ref signature,
-                route,
-                payload,
-                continuation,
-                ..
-            } => {
-                self.signature_resolves(signature)?;
-                if let Route::Capability(capability) = route {
-                    self.producer_resolves(capability)?;
-                }
-                self.producer_resolves(payload)?;
-                self.consumer_resolves(continuation)?;
-            },
-            CommandNode::Handle {
-                ref signature,
-                subject,
-                on_return,
-                ref clauses,
-                continuation,
-                ..
-            } => {
-                self.signature_resolves(signature)?;
-                self.command_resolves(subject)?;
-                self.command_resolves(on_return)?;
-                for clause in clauses.iter() {
-                    self.command_resolves(clause.body)?;
-                }
-                self.consumer_resolves(continuation)?;
-            },
-            CommandNode::Resume {
-                stack,
-                body,
-                continuation,
-            } => {
-                self.producer_resolves(stack)?;
-                self.command_resolves(body)?;
-                self.consumer_resolves(continuation)?;
-            },
-            CommandNode::Reset { body, continuation }
-            | CommandNode::Shift { body, continuation } => {
-                self.command_resolves(body)?;
-                self.consumer_resolves(continuation)?;
-            },
-            CommandNode::Memory {
-                ref form,
-                continuation,
-            } => {
-                for value in form.values() {
-                    self.producer_resolves(value)?;
-                }
-                for body in form.computations() {
-                    self.command_resolves(body)?;
-                }
-                self.consumer_resolves(continuation)?;
-            },
-        }
+        let scoping = self.command_scoping(&node)?;
         let id = CommandId::next_in(&self.commands)
             .ok_or(MintRefusal::FamilyFull(NodeFamily::Command))?;
-        let scope = self.command_scope(&node)?;
+        let scope = scoping.store(&mut self.words);
         self.commands.push(Row { node, scope });
         Ok(id)
     }
@@ -1816,69 +1689,6 @@ impl CommandArena
             producer,
             consumer,
         })
-    }
-
-    /// A producer beside the slots its scope is kept in, or `None` when its
-    /// address dangles: the read the check takes per node.
-    ///
-    /// # Specification
-    /// - ensures: `Some` exactly when [`Self::producer`] is, holding the node
-    ///   it reads and the slots of the scope minting kept for it.
-    /// - panics: none.
-    /// - executable: none — a projection of the node read and the table read.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::node_scope`].
-    /// - witness: `check::tests::a_forged_scope_is_refused_by_name`
-    #[inline]
-    pub(crate) fn producer_scoped(
-        &self,
-        id: ProducerId,
-    ) -> Option<(&ProducerNode, carried::Slots)>
-    {
-        id.read_in(&self.producers)
-            .map(|row| (&row.node, row.scope))
-    }
-
-    /// A consumer beside how its table holds its scope, or `None` when its
-    /// address dangles.
-    ///
-    /// # Specification
-    /// - ensures: as [`Self::producer_scoped`], for [`Self::consumer`].
-    /// - panics: none.
-    /// - executable: none — as [`Self::producer_scoped`].
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::node_scope`].
-    /// - witness: `check::tests::a_forged_scope_is_refused_by_name`
-    #[inline]
-    pub(crate) fn consumer_scoped(
-        &self,
-        id: ConsumerId,
-    ) -> Option<(&ConsumerNode, carried::Slots)>
-    {
-        id.read_in(&self.consumers)
-            .map(|row| (&row.node, row.scope))
-    }
-
-    /// A command beside how its table holds its scope, or `None` when its
-    /// address dangles.
-    ///
-    /// # Specification
-    /// - ensures: as [`Self::producer_scoped`], for [`Self::command`].
-    /// - panics: none.
-    /// - executable: none — as [`Self::producer_scoped`].
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::node_scope`].
-    /// - witness: `check::tests::a_forged_scope_is_refused_by_name`
-    #[inline]
-    pub(crate) fn command_scoped(
-        &self,
-        id: CommandId,
-    ) -> Option<(&CommandNode, carried::Slots)>
-    {
-        id.read_in(&self.commands).map(|row| (&row.node, row.scope))
     }
 
     /// The intuitionistic bindings `suspension` captures where it is
@@ -1930,310 +1740,6 @@ impl CommandArena
             selected: scope.producers().outside(Zone::Intuitionistic, crossed),
             past,
         })
-    }
-
-    /// Refuse a producer address the arena does not hold.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: `Ok(())` exactly when `id` resolves.
-    /// - provides: the per-child check minting reads.
-    /// - fails: [`MintRefusal::DanglingProducer`] naming `id`.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the exact last live and first missing producer
-    ///   addresses distinguish wrong-family lookup and endpoint acceptance. The
-    ///   refusal must retain the missing address.
-    /// - witness: `il::tests::every_node_form_checks_its_child_families`
-    /// - witness: `il::tests::the_first_dangling_child_wins`
-    #[spec(ensures: |ret| match ret {
-        | Ok(()) => self.producer(id).is_some(),
-        | Err(error) => error == MintRefusal::DanglingProducer(id) && self.producer(id).is_none(),
-    })]
-    fn producer_resolves(
-        &self,
-        id: ProducerId,
-    ) -> Result<(), MintRefusal>
-    {
-        self.producer(id)
-            .map(|_| ())
-            .ok_or(MintRefusal::DanglingProducer(id))
-    }
-
-    /// Refuse a consumer address the arena does not hold.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: `Ok(())` exactly when `id` resolves.
-    /// - provides: the per-child check minting reads.
-    /// - fails: [`MintRefusal::DanglingConsumer`] naming `id`.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the exact last live and first missing consumer
-    ///   addresses distinguish wrong-family lookup and endpoint acceptance. The
-    ///   refusal must retain the missing address.
-    /// - witness: `il::tests::every_node_form_checks_its_child_families`
-    /// - witness: `il::tests::the_first_dangling_child_wins`
-    #[spec(ensures: |ret| match ret {
-        | Ok(()) => self.consumer(id).is_some(),
-        | Err(error) => error == MintRefusal::DanglingConsumer(id) && self.consumer(id).is_none(),
-    })]
-    fn consumer_resolves(
-        &self,
-        id: ConsumerId,
-    ) -> Result<(), MintRefusal>
-    {
-        self.consumer(id)
-            .map(|_| ())
-            .ok_or(MintRefusal::DanglingConsumer(id))
-    }
-
-    /// Refuse a command address the arena does not hold.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: `Ok(())` exactly when `id` resolves.
-    /// - provides: the per-child check minting reads.
-    /// - fails: [`MintRefusal::DanglingCommand`] naming `id`.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the exact last live and first missing command
-    ///   addresses distinguish wrong-family lookup and endpoint acceptance. The
-    ///   refusal must retain the missing address.
-    /// - witness: `il::tests::every_node_form_checks_its_child_families`
-    /// - witness: `il::tests::the_first_dangling_child_wins`
-    #[spec(ensures: |ret| match ret {
-        | Ok(()) => self.command(id).is_some(),
-        | Err(error) => error == MintRefusal::DanglingCommand(id) && self.command(id).is_none(),
-    })]
-    fn command_resolves(
-        &self,
-        id: CommandId,
-    ) -> Result<(), MintRefusal>
-    {
-        self.command(id)
-            .map(|_| ())
-            .ok_or(MintRefusal::DanglingCommand(id))
-    }
-
-    /// Refuse a producer node naming a child the arena does not hold.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: `Ok(())` exactly when every child of `node` resolves.
-    /// - provides: the reference integrity minting a producer rests on.
-    /// - fails: the first dangling child, in field order.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — each producer form is supplied live children and one
-    ///   dangling child per referenced family. Exact errors and multiple
-    ///   missing children expose omitted arms and changed failure precedence.
-    /// - witness: `il::tests::every_node_form_checks_its_child_families`
-    /// - witness: `il::tests::the_first_dangling_child_wins`
-    #[spec(ensures: |ref ret| ret.is_ok() == match *node {
-        | ProducerNode::Reify(ref frames) => frames.iter().all(|frame| match *frame { gandr_core_term::control::StackFrame::Apply(value) => self.producer(value).is_some(), gandr_core_term::control::StackFrame::Bind(body) => self.command(body).is_some(), gandr_core_term::control::StackFrame::Project(_) => true }),
-        | ProducerNode::Primitive { arguments, .. } => arguments.iter().all(|id| self.producer(*id).is_some()),
-        | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) | ProducerNode::Code(_) => true,
-        | ProducerNode::Constructor { ref producers, ref consumers, .. } =>
-            producers.iter().all(|id| self.producer(*id).is_some())
-                && consumers.iter().all(|id| self.consumer(*id).is_some()),
-        | ProducerNode::Thunk { body } | ProducerNode::Mu { body } | ProducerNode::Fixpoint { body, .. } => self.command(body).is_some(),
-        | ProducerNode::Cocase { ref arms } => arms.iter().all(|arm| self.command(arm.body).is_some()),
-    })]
-    fn producer_children_resolve(
-        &self,
-        node: &ProducerNode,
-    ) -> Result<(), MintRefusal>
-    {
-        match *node {
-            ProducerNode::Reify(ref frames) => {
-                for frame in frames.iter() {
-                    match *frame {
-                        gandr_core_term::control::StackFrame::Apply(value) => {
-                            self.producer_resolves(value)?;
-                        },
-                        gandr_core_term::control::StackFrame::Bind(body) => {
-                            self.command_resolves(body)?;
-                        },
-                        gandr_core_term::control::StackFrame::Project(_) => {},
-                    }
-                }
-                Ok(())
-            },
-            ProducerNode::Primitive { arguments, .. } => self.children_resolve(&arguments, &[]),
-            ProducerNode::Variable { .. }
-            | ProducerNode::Constant(_)
-            | ProducerNode::Literal(_)
-            | ProducerNode::Code(_) => Ok(()),
-            ProducerNode::Constructor {
-                ref producers,
-                ref consumers,
-                ..
-            } => self.children_resolve(producers, consumers),
-            ProducerNode::Thunk { body }
-            | ProducerNode::Mu { body }
-            | ProducerNode::Fixpoint { body, .. } => self.command_resolves(body),
-            ProducerNode::Cocase { ref arms } => {
-                for arm in arms {
-                    self.command_resolves(arm.body)?;
-                }
-                Ok(())
-            },
-        }
-    }
-
-    /// Check the interface's annotation edges before accepting a command.
-    ///
-    /// # Specification
-    /// - ensures: success exactly when every payload and reply type resolves.
-    /// - fails: the first dangling annotation in canonical operation order.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — imported host interfaces retain distinct payload and
-    ///   reply types.
-    /// - witness: `tests::run::hand_built_effect_cases_agree`
-    /// - witness: `il::tests::minting_refuses_a_dangling_child`
-    #[spec(ensures: |ret| ret.is_ok() == signature.types().all(|ty| self.annotations.value_type(ty).is_some()))]
-    fn signature_resolves(
-        &self,
-        signature: &gandr_core_term::effect::EffectSig,
-    ) -> Result<(), MintRefusal>
-    {
-        for ty in signature.types() {
-            if self.annotations.value_type(ty).is_none() {
-                return Err(MintRefusal::DanglingAnnotation(ty));
-            }
-        }
-        Ok(())
-    }
-
-    /// Refuse a consumer node naming a child the arena does not hold.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: `Ok(())` exactly when every child of `node` resolves.
-    /// - provides: the reference integrity minting a consumer rests on.
-    /// - fails: the first dangling child, in field order.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — each consumer form is supplied live children and one
-    ///   dangling child per referenced family. Exact errors and multiple
-    ///   missing children expose omitted arms and changed failure precedence.
-    /// - witness: `il::tests::every_node_form_checks_its_child_families`
-    /// - witness: `il::tests::the_first_dangling_child_wins`
-    #[spec(ensures: |ref ret| ret.is_ok() == match *node {
-        | ConsumerNode::Covariable(_) | ConsumerNode::Top => true,
-        | ConsumerNode::MuTilde { body } => self.command(body).is_some(),
-        | ConsumerNode::Destructor { ref producers, ref consumers, .. } =>
-            producers.iter().all(|id| self.producer(*id).is_some())
-                && consumers.iter().all(|id| self.consumer(*id).is_some()),
-        | ConsumerNode::Case { ref arms } => arms.iter().all(|arm| self.command(arm.body).is_some()),
-        | ConsumerNode::DataCase { ref branches, then } =>
-            branches.iter().all(|id| self.producer(*id).is_some()) && self.consumer(then).is_some(),
-        | ConsumerNode::Select { then, .. } => self.consumer(then).is_some(),
-        | ConsumerNode::ListFold { element, result, on_nil, on_cons, continuation } => self.annotations.value_type(element).is_some() && self.annotations.value_type(result).is_some() && self.command(on_nil).is_some() && self.command(on_cons).is_some() && self.consumer(continuation).is_some(),
-    })]
-    fn consumer_children_resolve(
-        &self,
-        node: &ConsumerNode,
-    ) -> Result<(), MintRefusal>
-    {
-        match *node {
-            ConsumerNode::Covariable(_) | ConsumerNode::Top => Ok(()),
-            ConsumerNode::ListFold {
-                element,
-                result,
-                on_nil,
-                on_cons,
-                continuation,
-            } => {
-                for annotation in [element, result] {
-                    if self.annotations.value_type(annotation).is_none() {
-                        return Err(MintRefusal::DanglingAnnotation(annotation));
-                    }
-                }
-                self.command_resolves(on_nil)?;
-                self.command_resolves(on_cons)?;
-                self.consumer_resolves(continuation)
-            },
-            ConsumerNode::MuTilde { body } => self.command_resolves(body),
-            ConsumerNode::Select { then, .. } => self.consumer_resolves(then),
-            ConsumerNode::Destructor {
-                ref producers,
-                ref consumers,
-                ..
-            } => self.children_resolve(producers, consumers),
-            ConsumerNode::DataCase { ref branches, then } => {
-                self.children_resolve(branches, core::slice::from_ref(&then))
-            },
-            ConsumerNode::Case { ref arms } => {
-                for arm in arms {
-                    self.command_resolves(arm.body)?;
-                }
-                Ok(())
-            },
-        }
-    }
-
-    /// Refuse a child list naming an address the arena does not hold.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: `Ok(())` exactly when every listed address resolves.
-    /// - provides: the shared check of a constructor's and a destructor's
-    ///   children.
-    /// - fails: the first dangling child, producers before consumers.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — empty lists, each dangling family and several bad
-    ///   addresses distinguish omitted validation, wrong payloads and failure
-    ///   precedence. The observer is the exact first refusal.
-    /// - witness: `il::tests::every_node_form_checks_its_child_families`
-    /// - witness: `il::tests::the_first_dangling_child_wins`
-    #[spec(ensures: |ref ret| *ret == producers.iter()
-        .find(|id| self.producer(**id).is_none())
-        .map(|id| MintRefusal::DanglingProducer(*id))
-        .or_else(|| consumers.iter().find(|id| self.consumer(**id).is_none())
-            .map(|id| MintRefusal::DanglingConsumer(*id)))
-        .map_or(Ok(()), Err)
-    )]
-    fn children_resolve(
-        &self,
-        producers: &[ProducerId],
-        consumers: &[ConsumerId],
-    ) -> Result<(), MintRefusal>
-    {
-        for &producer in producers {
-            self.producer_resolves(producer)?;
-        }
-        for &consumer in consumers {
-            self.consumer_resolves(consumer)?;
-        }
-        Ok(())
     }
 }
 
@@ -2660,15 +2166,13 @@ pub fn consumer_annotations(
     .flatten()
 }
 
-/// The annotations a command carries: an operation's or a handler's
-/// interface types.
+/// The interface a command carries, whose types are its annotations: an
+/// operation's or a handler's.
 ///
 /// # Specification
 /// trivial.
 #[inline]
-pub fn command_annotations(
-    node: &CommandNode
-) -> impl Iterator<Item = gandr_core_term::ValueTypeId> + '_
+pub const fn command_signature(node: &CommandNode) -> Option<&gandr_core_term::effect::EffectSig>
 {
     match *node {
         CommandNode::Perform { ref signature, .. } | CommandNode::Handle { ref signature, .. } => {
@@ -2680,8 +2184,6 @@ pub fn command_annotations(
         | CommandNode::Cut { .. }
         | CommandNode::Memory { .. } => None,
     }
-    .into_iter()
-    .flat_map(gandr_core_term::effect::EffectSig::types)
 }
 
 mod carried;

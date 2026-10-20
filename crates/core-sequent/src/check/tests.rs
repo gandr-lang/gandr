@@ -1,6 +1,5 @@
 use alloc::boxed::Box;
 
-use gandr_core_term::support::Thinning;
 use gandr_kernel_term::Side;
 
 use super::*;
@@ -853,7 +852,6 @@ fn child_refusals_follow_declared_precedence()
         let walk = Walk {
             arena: &arena,
             stack: alloc::vec![NodeAddress::Command(body)],
-            scoping: Scoping::new(),
         };
         assert_eq!(
             Err(expected),
@@ -864,7 +862,6 @@ fn child_refusals_follow_declared_precedence()
     let mut walk = Walk {
         arena: &arena,
         stack: Vec::new(),
-        scoping: Scoping::new(),
     };
     assert_eq!(
         Err(CheckRefusal::DanglingConsumer(missing_consumer)),
@@ -873,106 +870,5 @@ fn child_refusals_follow_declared_precedence()
     assert_eq!(
         Err(CheckRefusal::DanglingProducer(missing_producer)),
         walk.producer(missing_producer)
-    );
-}
-
-/// A scope a node carries is held to its node: the cut `⟨x0 |+ α0⟩` refuses
-/// a forged root scope by its space and its fault — a support missing the
-/// child's index or selecting one nothing names — and a leaf forged
-/// consistently with its parent is refused at the leaf, which names a
-/// variable its forged support does not select.
-#[test]
-fn a_forged_scope_is_refused_by_name()
-{
-    let mut arena = CommandArena::new();
-    let variable = arena
-        .mint_producer(ProducerNode::Variable {
-            zone: Zone::Intuitionistic,
-            index: DeBruijnIndex::from(0_u32),
-        })
-        .expect("leaf");
-    let covariable = arena
-        .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
-        .expect("leaf");
-    let root = arena
-        .mint_cut(Polarity::Positive, variable, covariable)
-        .expect("children resolve");
-    let free = check_command(&arena, root).expect("the minted scopes are the node's own");
-    assert_eq!(
-        (
-            &BTreeSet::from([(Zone::Intuitionistic, DeBruijnIndex::from(0_u32))]),
-            &BTreeSet::from([CovariableIndex::from(0_u32)])
-        ),
-        (free.producers(), free.covariables())
-    );
-
-    let none = Thinning::empty();
-    let zero = Thinning::leaf(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let one = Thinning::leaf(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
-    let wide = Thinning::from_ascending(
-        &[DeBruijnIndex::from(0_u32), DeBruijnIndex::from(1_u32)],
-        &[],
-    )
-    .expect("ascending");
-    let honest = (zero.clone(), zero.clone());
-    let forged_root = |(producers, covariables): (Thinning, Thinning)| {
-        let mut arena = arena.clone();
-        arena.forge_scope(NodeAddress::Command(root), &producers, &covariables);
-        check_command(&arena, root)
-    };
-    let refusal = |space, fault| {
-        Err(CheckRefusal::ForgedScope {
-            node: NodeAddress::Command(root),
-            space,
-            fault,
-        })
-    };
-    assert_eq!(Ok(free), forged_root(honest));
-    for (space, fault, forged, reading) in [
-        (
-            BindingSpace::Producers,
-            ScopeFault::Unselected,
-            (one.clone(), zero.clone()),
-            "a support selecting x1 for the child's x0",
-        ),
-        (
-            BindingSpace::Producers,
-            ScopeFault::Unselected,
-            (none.clone(), zero.clone()),
-            "a support missing the child's x0",
-        ),
-        (
-            BindingSpace::Producers,
-            ScopeFault::Unused,
-            (wide.clone(), zero.clone()),
-            "a support selecting an x1 nothing names",
-        ),
-        (
-            BindingSpace::Covariables,
-            ScopeFault::Unselected,
-            (zero.clone(), one),
-            "a support selecting α1 for the child's α0",
-        ),
-        (
-            BindingSpace::Covariables,
-            ScopeFault::Unused,
-            (zero.clone(), wide),
-            "a support selecting an α1 nothing names",
-        ),
-    ] {
-        assert_eq!(refusal(space, fault), forged_root(forged), "{reading}");
-    }
-
-    let mut forged = arena.clone();
-    forged.forge_scope(NodeAddress::Producer(variable), &none, &none);
-    forged.forge_scope(NodeAddress::Command(root), &none, &zero);
-    assert_eq!(
-        Err(CheckRefusal::ForgedScope {
-            node: NodeAddress::Producer(variable),
-            space: BindingSpace::Producers,
-            fault: ScopeFault::Unselected,
-        }),
-        check_command(&forged, root),
-        "x0 names a variable its forged support does not select"
     );
 }

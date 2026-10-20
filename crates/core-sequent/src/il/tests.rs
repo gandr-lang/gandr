@@ -1,5 +1,6 @@
 use alloc::string::String;
 
+use gandr_core_term::support::Thinning;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Side;

@@ -510,19 +510,6 @@ impl ExactSizeIterator for Indices<'_>
 {
 }
 
-/// Whether a union, finished, is a given thinning.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Agreement
-{
-    /// The union finishes to exactly the thinning.
-    Same,
-    /// One of the two selects an index the other does not.
-    Different,
-}
-
 /// A node's support under construction.
 ///
 /// It takes the variables the node names itself and its children's supports
@@ -698,70 +685,6 @@ impl Union
                 tail: None,
             },
             Some(lists) => Self::finish_listed(*lists),
-        }
-    }
-
-    /// Whether the union, finished, is `thinning`, without finishing it.
-    ///
-    /// # Specification
-    /// - ensures: [`Agreement::Same`] exactly when `self.finish().view() ==
-    ///   thinning`, the union unchanged.
-    /// - panics: none.
-    /// - executable: none — this runs once per node on the check path; the
-    ///   instrumented body is a closure the test profile does not inline, and
-    ///   the witness compares the answer with the finished union.
-    /// - intension: one comparison of two words while the union is inline.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — an inline union against its own thinning, one with an
-    ///   index more, and a gathered union against its own thinning separate the
-    ///   inline answer from the gathered one.
-    /// - witness: `support::tests::a_union_equals_exactly_its_finished_thinning`
-    #[inline]
-    #[must_use]
-    pub fn equals(
-        &self,
-        thinning: ThinningRef<'_>,
-    ) -> Agreement
-    {
-        match self.listed {
-            None if thinning.seq.tail.is_empty() && thinning.seq.head == self.inline => {
-                Agreement::Same
-            },
-            None => Agreement::Different,
-            Some(ref lists) => Self::equals_listed(lists, thinning),
-        }
-    }
-
-    /// Whether gathered lists, finished, are `thinning`: the comparison
-    /// [`Self::equals`] keeps off its inline path.
-    ///
-    /// # Specification
-    /// trivial.
-    #[cold]
-    fn equals_listed(
-        lists: &[Vec<DeBruijnIndex>; 2],
-        thinning: ThinningRef<'_>,
-    ) -> Agreement
-    {
-        if Self::finish_listed(lists.clone()).view() == thinning {
-            Agreement::Same
-        }
-        else {
-            Agreement::Different
-        }
-    }
-
-    /// Empty the union for reuse.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub fn clear(&mut self)
-    {
-        self.inline = Word(0);
-        if self.listed.is_some() {
-            self.listed = None;
         }
     }
 

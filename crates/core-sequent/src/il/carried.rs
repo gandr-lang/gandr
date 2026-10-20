@@ -4,9 +4,8 @@
 //! annotations it carries and its children's scopes past the binders it opens
 //! over each, and kept in its family's scope table at the node's own offset:
 //! one slot per binding space, the code itself when it is one word and a
-//! handle into the arena's word arena otherwise. A read is an index; the check
-//! rebuilds every node's scope from its parts and compares it with the one
-//! kept.
+//! handle into the arena's word arena otherwise. A read is an index, and
+//! minting is the only writer.
 
 use gandr_core_term::support::Slot;
 use gandr_core_term::support::ThinningRef;
@@ -22,9 +21,9 @@ use super::NodeScope;
 use super::Opens;
 use super::ProducerNode;
 use super::Scoping;
-use super::command_annotations;
 use super::command_children;
 use super::command_named;
+use super::command_signature;
 use super::consumer_annotations;
 use super::consumer_children;
 use super::consumer_named;
@@ -41,7 +40,8 @@ impl Scoping
     ///
     /// # Specification
     /// trivial.
-    fn store(
+    #[inline]
+    pub(super) fn store(
         self,
         words: &mut WordArena,
     ) -> Slots
@@ -114,6 +114,7 @@ impl CommandArena
     /// - hypothesis: L3 — a fold whose element type names a variable no term of
     ///   the fold names separates a counted annotation from an ignored one.
     /// - witness: `il::tests::an_annotation_counts_in_its_nodes_support`
+    #[inline]
     fn gather_annotations(
         &self,
         scoping: &mut Scoping,
@@ -134,28 +135,37 @@ impl CommandArena
     /// child's scope past the binders it opens.
     ///
     /// # Specification
-    /// - ensures: on success, as the summary states.
-    /// - fails: as [`Self::gather_child`].
+    /// - ensures: `Ok` exactly when every child of `node` resolves, holding the
+    ///   summary's scope.
+    /// - fails: as [`Self::gather_child`], the first dangling child in edge
+    ///   order.
     /// - panics: none.
-    /// - executable: none — as [`Self::gather_child`].
+    /// - executable: none — the mint that calls it states that every child of
+    ///   the node it minted resolves; a predicate here would move the scoping
+    ///   through one more closure per node.
     ///
     /// # Errors
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::gather_child`].
+    /// - hypothesis: L3 — as [`Self::gather_child`]; each producer form is
+    ///   supplied live children and one dangling child per referenced family,
+    ///   and several dangling children expose a changed failure precedence.
     /// - witness: `il::tests::an_unused_binder_thins_to_zero`
-    pub(super) fn producer_scope(
-        &mut self,
+    /// - witness: `il::tests::every_node_form_checks_its_child_families`
+    /// - witness: `il::tests::the_first_dangling_child_wins`
+    #[inline]
+    pub(super) fn producer_scoping(
+        &self,
         node: &ProducerNode,
-    ) -> Result<Slots, MintRefusal>
+    ) -> Result<Scoping, MintRefusal>
     {
         let mut scoping = Scoping::new();
         scoping.name(producer_named(node), core::iter::empty());
         producer_children(node, |child, opens| {
             self.gather_child(&mut scoping, child, opens)
         })?;
-        Ok(scoping.store(&mut self.words))
+        Ok(scoping)
     }
 
     /// The scope minting keeps for a consumer: the covariable it names, its
@@ -163,21 +173,29 @@ impl CommandArena
     /// opens.
     ///
     /// # Specification
-    /// - ensures: on success, as the summary states.
-    /// - fails: as [`Self::gather_annotations`] and [`Self::gather_child`].
+    /// - ensures: `Ok` exactly when every child and annotation of `node`
+    ///   resolves, holding the summary's scope.
+    /// - fails: as [`Self::gather_annotations`] and [`Self::gather_child`], the
+    ///   annotations first, then the first dangling child in edge order.
     /// - panics: none.
-    /// - executable: none — as [`Self::gather_annotations`].
+    /// - executable: none — as [`Self::producer_scoping`].
     ///
     /// # Errors
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::gather_annotations`].
+    /// - hypothesis: L3 — as [`Self::gather_annotations`]; each consumer form
+    ///   is supplied live children and one dangling child per referenced
+    ///   family, and several dangling children expose a changed failure
+    ///   precedence.
     /// - witness: `il::tests::an_annotation_counts_in_its_nodes_support`
-    pub(super) fn consumer_scope(
-        &mut self,
+    /// - witness: `il::tests::every_node_form_checks_its_child_families`
+    /// - witness: `il::tests::the_first_dangling_child_wins`
+    #[inline]
+    pub(super) fn consumer_scoping(
+        &self,
         node: &ConsumerNode,
-    ) -> Result<Slots, MintRefusal>
+    ) -> Result<Scoping, MintRefusal>
     {
         let mut scoping = Scoping::new();
         scoping.name(core::iter::empty(), consumer_named(node));
@@ -185,7 +203,7 @@ impl CommandArena
         consumer_children(node, |child, opens| {
             self.gather_child(&mut scoping, child, opens)
         })?;
-        Ok(scoping.store(&mut self.words))
+        Ok(scoping)
     }
 
     /// The scope minting keeps for a command: the linear slot it names, its
@@ -193,29 +211,37 @@ impl CommandArena
     /// opens.
     ///
     /// # Specification
-    /// - ensures: on success, as the summary states.
-    /// - fails: as [`Self::gather_annotations`] and [`Self::gather_child`].
+    /// - ensures: on success, as the summary states, and every payload and
+    ///   reply type of the interface the command carries resolves.
+    /// - fails: as [`Self::gather_annotations`] and [`Self::gather_child`], the
+    ///   interface first, in canonical operation order.
     /// - panics: none.
-    /// - executable: none — as [`Self::gather_annotations`].
+    /// - executable: none — as [`Self::producer_scoping`].
     ///
     /// # Errors
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::gather_annotations`].
+    /// - hypothesis: L3 — as [`Self::gather_annotations`]; imported host
+    ///   interfaces keep distinct payload and reply types.
     /// - witness: `il::tests::an_annotation_counts_in_its_nodes_support`
-    pub(super) fn command_scope(
-        &mut self,
+    /// - witness: `il::tests::minting_refuses_a_dangling_child`
+    /// - witness: `tests::run::hand_built_effect_cases_agree`
+    #[inline]
+    pub(super) fn command_scoping(
+        &self,
         node: &CommandNode,
-    ) -> Result<Slots, MintRefusal>
+    ) -> Result<Scoping, MintRefusal>
     {
         let mut scoping = Scoping::new();
         scoping.name(command_named(node), core::iter::empty());
-        self.gather_annotations(&mut scoping, command_annotations(node))?;
+        if let Some(signature) = command_signature(node) {
+            self.gather_annotations(&mut scoping, signature.types())?;
+        }
         command_children(node, |child, opens| {
             self.gather_child(&mut scoping, child, opens)
         })?;
-        Ok(scoping.store(&mut self.words))
+        Ok(scoping)
     }
 
     /// The slots holding `node`'s scope, or `None` when its address dangles.
@@ -233,16 +259,6 @@ impl CommandArena
             NodeAddress::Consumer(id) => id.read_in(&self.consumers).map(|row| row.scope),
             NodeAddress::Command(id) => id.read_in(&self.commands).map(|row| row.scope),
         }
-    }
-
-    /// The words wider scopes keep, which a slot's handle names.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub(crate) const fn words(&self) -> &WordArena
-    {
-        &self.words
     }
 
     /// The scope `slots` keep, read in place.
@@ -277,9 +293,9 @@ impl CommandArena
     /// - provides: the read side of the scopes, for the crate's own readers.
     /// - fails: `None` on a dangling address.
     /// - panics: none.
-    /// - executable: none — the per-child read of minting and the check; the
-    ///   node reads whose own predicates state presence are projections of the
-    ///   same families.
+    /// - executable: none — read once at a check's root and once per capture;
+    ///   the node reads whose own predicates state presence are projections of
+    ///   the same families.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a scope read at a minted node of each family and a
@@ -292,37 +308,5 @@ impl CommandArena
     ) -> Option<NodeScope<'_>>
     {
         self.slots(node).map(|slots| self.scope_at(slots))
-    }
-
-    /// Replace the scope a node keeps, for a test that forges one; minting
-    /// is the only other writer.
-    ///
-    /// # Specification
-    /// trivial.
-    #[cfg(test)]
-    pub(crate) fn forge_scope(
-        &mut self,
-        node: NodeAddress,
-        producers: &gandr_core_term::support::Thinning,
-        covariables: &gandr_core_term::support::Thinning,
-    )
-    {
-        let slots = [self.words.store(producers), self.words.store(covariables)];
-        let at = |id: u32| usize::try_from(id).ok();
-        let row = match node {
-            NodeAddress::Producer(id) => at(u32::from(id))
-                .and_then(|row| self.producers.get_mut(row))
-                .map(|row| &mut row.scope),
-            NodeAddress::Consumer(id) => at(u32::from(id))
-                .and_then(|row| self.consumers.get_mut(row))
-                .map(|row| &mut row.scope),
-            NodeAddress::Command(id) => at(u32::from(id))
-                .and_then(|row| self.commands.get_mut(row))
-                .map(|row| &mut row.scope),
-        };
-        match row {
-            Some(scope) => *scope = slots,
-            None => panic!("a test forges the scope of a node the arena holds: {node:?}"),
-        }
     }
 }
