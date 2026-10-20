@@ -1783,7 +1783,7 @@ impl fmt::Display for Former
             | UnadmittedFormer::HigherFlow => "a flow at a universe above level zero",
             | UnadmittedFormer::Memory => "a memory form at the pure kernel boundary",
             | UnadmittedFormer::Stage => {
-                "a recursion's stage outside the judgement that minted it, which only a signature quantified over stages carries (#392)"
+                "a stage that refines no data type, names no binder of its signature, or was minted by a judgement outside the kernel"
             },
         })
     }

@@ -69,7 +69,7 @@ use crate::model::Sym;
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 50 && rules.iter().take(36).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(36).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "forall_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 51 && rules.iter().take(37).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(37).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "forall_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let mut rules = Vec::new();
@@ -98,7 +98,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 36 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "forall_type") && added.last().is_some_and(|rule| rule.name().0 == "number.type"))))]
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 37 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "forall_type") && added.last().is_some_and(|rule| rule.name().0 == "number.type"))))]
 fn add_type_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -465,6 +465,21 @@ fn add_type_rules(
             Regex::sort(ty),
             tile(TileLabel(".")),
             tile(TileLabel("type_identifier")),
+        ]),
+    ));
+    // A type at a stage, `Nat[i]`, or below one, `Nat[<i]`: the stage a
+    // declaration's implicit `@[i : Size]` binds. Postfix in the path band,
+    // so `Nat[<i] => Nat` and `-F Nat[i]` need no parentheses.
+    rules.push(rule(
+        RuleName("staged_type"),
+        ty,
+        type_path,
+        Regex::seq([
+            Regex::sort(ty),
+            tile(TileLabel("[")),
+            Regex::optional(tile(TileLabel("<"))),
+            tile(TileLabel("identifier")),
+            tile(TileLabel("]")),
         ]),
     ));
     // A parenthesized type holds one type or, as the domain of the n-ary `=>`,

@@ -584,7 +584,7 @@ pub(super) fn open_case(
 
 /// One node of a type a staging rebuild reads.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Part
+pub(super) enum Part
 {
     /// A value type.
     Value(ValueTypeId),
@@ -608,7 +608,7 @@ enum Visit
 ///
 /// # Specification
 /// trivial.
-fn placed<Each>(
+pub(super) fn placed<Each>(
     arena: &TermArena,
     part: Part,
     mut each: Each,
@@ -718,7 +718,7 @@ const fn computation_part(part: Part) -> Result<CompTypeId, KernelError>
 /// - witness: `tests::recursive_data::currys_consumer_is_refused_at_its_call`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |rebuilt| matches!((part, *rebuilt),
     (Part::Value(_), Part::Value(_)) | (Part::Computation(_), Part::Computation(_)))))]
-fn rebuild(
+pub(super) fn rebuild(
     arena: &mut TermArena,
     part: Part,
     children: &[Part],

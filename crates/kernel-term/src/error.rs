@@ -116,8 +116,6 @@ pub enum ReservedSlot
     /// This is the one refusal in the family that is not about emptiness: the
     /// table is live, and it is refuted rather than believed.
     MintedAtomTable,
-    /// The erasure annotation slot was non-empty.
-    ErasureAnnotation,
     /// The modes-and-grades annotation slot was non-empty.
     ModeGradeAnnotation,
     /// The directedness-and-variance annotation slot was non-empty.
@@ -156,7 +154,6 @@ impl fmt::Display for ReservedSlot
     {
         f.write_str(match *self {
             Self::MintedAtomTable => "the minted-atom table",
-            Self::ErasureAnnotation => "the erasure annotation slot",
             Self::ModeGradeAnnotation => "the modes-and-grades annotation slot",
             Self::DirectednessVariance => "the directedness-and-variance annotation slot",
         })
@@ -277,6 +274,9 @@ pub enum MalformedSite
 {
     /// Session graph or finite-relation framing is malformed.
     Session,
+    /// A stage signature's bound named no earlier binder, a mark named a
+    /// binder the signature does not bind, or a mark's depth passed `u32`.
+    StageSignature,
     /// A path dialogue word is outside the portable decision alphabet.
     PathEvidence,
     /// An endpoint child of an element `Path` was not a value.
@@ -375,6 +375,7 @@ impl fmt::Display for MalformedSite
     {
         f.write_str(match *self {
             Self::Session => "session inline data was malformed",
+            Self::StageSignature => "a stage signature named a binder out of order",
             Self::PathEvidence => "a path dialogue word was invalid",
             Self::PathEndpoint => "a path endpoint was not a value",
             Self::TransportMotive => "a transport motive was not a value type",
@@ -575,7 +576,6 @@ mod tests
         let mut names = Vec::new();
         for slot in [
             ReservedSlot::MintedAtomTable,
-            ReservedSlot::ErasureAnnotation,
             ReservedSlot::ModeGradeAnnotation,
             ReservedSlot::DirectednessVariance,
         ] {

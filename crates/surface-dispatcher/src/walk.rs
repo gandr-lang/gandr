@@ -1875,9 +1875,7 @@ pub mod tests
         );
         scratch.file(
             Path::new("corpus/fixture/pending/form.gandr"),
-            SourceText::from(
-                "def f @[a : Type] (x: a) -> -F a { return x }\ndef broken = missing ;",
-            ),
+            SourceText::from("def f @[a : Type] = 1 ;\ndef broken = missing ;"),
         );
         scratch.file(
             Path::new("corpus/fixture/pending/coded.gandr"),

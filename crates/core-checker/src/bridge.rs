@@ -1760,6 +1760,7 @@ where
         relations: report.relations(),
         laws: report.laws(),
         operation_rules: report.operation_rules(),
+        stage_signatures: report.stage_signatures(),
         natives: report.natives(),
         definitions: report.definitions(),
     };
@@ -1866,8 +1867,19 @@ where
             }
             continue;
         }
+        // A definition quantified over stages crosses at its plain type, the
+        // stage signature beside it naming the occurrences its stages refine.
         let definition = match judged.verdict() {
-            Verdict::Checked { declared, body, .. } => Some((declared.id(), body)),
+            Verdict::Checked { declared, body, .. } => Some((
+                source.stage_signatures.get(&constant).map_or_else(
+                    || declared.id(),
+                    |signature| {
+                        crate::quantified::split(arena, declared.id(), signature.bounds())
+                            .map_or_else(|_refused| declared.id(), |(plain, _)| plain)
+                    },
+                ),
+                body,
+            )),
             Verdict::Synthesised { body, synthesised } => Some((synthesised.produced().id(), body)),
             Verdict::Data | Verdict::Owed(_) | Verdict::Suspended(_) | Verdict::Refused(_) => None,
         };
@@ -1938,6 +1950,10 @@ where
                         .operation_rules
                         .get(&constant)
                         .map_or(&[], gandr_kernel_term::OperationRules::rules),
+                    stages: source
+                        .stage_signatures
+                        .get(&constant)
+                        .unwrap_or(&UNQUANTIFIED),
                 },
                 &vouch,
             ),
@@ -2063,6 +2079,10 @@ fn block_offers<'report>(
                         .operation_rules
                         .get(&constant)
                         .map_or(&[], gandr_kernel_term::OperationRules::rules),
+                    stages: source
+                        .stage_signatures
+                        .get(&constant)
+                        .unwrap_or(&UNQUANTIFIED),
                 }
             },
             (Verdict::Synthesised { body, synthesised }, _)
@@ -2081,6 +2101,10 @@ fn block_offers<'report>(
                         .operation_rules
                         .get(&constant)
                         .map_or(&[], gandr_kernel_term::OperationRules::rules),
+                    stages: source
+                        .stage_signatures
+                        .get(&constant)
+                        .unwrap_or(&UNQUANTIFIED),
                 }
             },
             (
@@ -2197,6 +2221,9 @@ struct Source<'source>
     /// The rules of the operation each ruled declaration lowered from, by
     /// position.
     operation_rules: &'source BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
+    /// The stage signature of each definition quantified over stages, by
+    /// position.
+    stage_signatures: &'source BTreeMap<ConstantIndex, gandr_kernel_term::StageSignature>,
     /// The native path each univalence statement the judgement decided
     /// derives, and each path product it judged elaborates to, by node.
     natives: &'source BTreeMap<ValueId, ValueId>,
@@ -2204,6 +2231,10 @@ struct Source<'source>
     /// to the universe it was declared at.
     definitions: &'source BTreeMap<ConstantIndex, ValueId>,
 }
+
+/// The stage signature of a definition quantified over no stage.
+static UNQUANTIFIED: gandr_kernel_term::StageSignature =
+    gandr_kernel_term::StageSignature::UNQUANTIFIED;
 
 /// What an accepted declaration offers the kernel.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2228,6 +2259,9 @@ enum Offer<'signature>
         laws: &'signature [ConstantIndex],
         /// The rules of the operation it lowered from, over module positions.
         operation_rules: &'signature [gandr_kernel_term::OperationRule],
+        /// The stages it is quantified over and the occurrences of its plain
+        /// declared type each binder's stage refines.
+        stages: &'signature gandr_kernel_term::StageSignature,
     },
     /// An axiom: the type an owed hole owes.
     Axiom
@@ -2497,6 +2531,12 @@ where
             gandr_kernel_term::OperationRules::default()
         },
     };
+    let stages = match offer {
+        Offer::Definition { stages, .. } => stages.clone(),
+        Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_) | Offer::Axiom { .. } => {
+            gandr_kernel_term::StageSignature::default()
+        },
+    };
     let declaration = match erased {
         Erased::Data {
             parameters,
@@ -2550,7 +2590,8 @@ where
             .def(LevelSignature::monomorphic(), declared, body)
             .relating(related)
             .lawful(laws)
-            .ruled(operation_rules),
+            .ruled(operation_rules)
+            .staged(stages),
         Erased::Axiom { declared } => staging.axiom(LevelSignature::monomorphic(), declared),
         Erased::Codata {
             parameters,

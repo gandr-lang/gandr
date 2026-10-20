@@ -175,6 +175,7 @@ unproduced = [
   { rule = "shell_block", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
   { rule = "shell_word", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
   { rule = "single_quoted_string", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "staged_type", reason = "a stage is a quantified signature's: the checker records the definition's type plain with its stage signature beside it, and the printer reads a staged type as the type it refines (`unstaged`)" },
   { rule = "subshell", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
   { rule = "theory_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "tuple_pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },

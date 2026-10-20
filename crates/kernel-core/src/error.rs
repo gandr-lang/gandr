@@ -637,6 +637,10 @@ pub enum KernelError
     /// structural fixpoint and a case under it; a declaration never writes
     /// one.
     StagePresented,
+    /// A stage signature's mark does not reach a data type the stage order
+    /// places, names a binder the signature does not bind, or a bound names
+    /// no earlier binder.
+    StageUnplaced,
     /// A required record field is absent.
     AbsentRecordField
     {
@@ -953,6 +957,9 @@ impl core::fmt::Display for KernelError
                 f.write_str("a value did not stand below the stage its recursion wants")
             },
             Self::StagePresented => f.write_str("a presented type named a stage"),
+            Self::StageUnplaced => {
+                f.write_str("a stage signature marked an occurrence that is no data type")
+            },
             Self::AbsentRecordField { .. } => f.write_str("a required record field was absent"),
             Self::AbsentTupleComponent { .. } => {
                 f.write_str("a projection named a component the product does not have")

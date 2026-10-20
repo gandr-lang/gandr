@@ -579,8 +579,9 @@ struct RawDeclaration
     root_declared: TableIndex,
     /// The body root's global index, for a definition.
     root_body: Option<TableIndex>,
-    /// The erasure annotation slot, which must be zero to be accepted.
-    erasure: WireValue,
+    /// The modes-and-grades annotation slot, which must be zero to be
+    /// accepted.
+    modes: WireValue,
 }
 
 impl RawDeclaration
@@ -617,7 +618,7 @@ impl RawDeclaration
                     && ret.name.is_empty()
                     && ret.root_declared == root_declared
                     && ret.root_body == Some(root_body)
-                    && ret.erasure.0 == 0
+                    && ret.modes.0 == 0
                     && ret.entries.len() == entry.0
                     && ret.entries.iter().fold(0_usize,
                 |total, bytes| total.saturating_add(bytes.0.len())) == entry.1,
@@ -635,7 +636,7 @@ impl RawDeclaration
             entries,
             root_declared,
             root_body: Some(root_body),
-            erasure: WireValue(0),
+            modes: WireValue(0),
         }
     }
 
@@ -670,7 +671,7 @@ impl RawDeclaration
                     && ret.name.is_empty()
                     && ret.root_declared == root_declared
                     && ret.root_body.is_none()
-                    && ret.erasure.0 == 0
+                    && ret.modes.0 == 0
                     && ret.entries.len() == entry.0
                     && ret.entries.iter().fold(0_usize,
                 |total, bytes| total.saturating_add(bytes.0.len())) == entry.1,
@@ -687,7 +688,7 @@ impl RawDeclaration
             entries,
             root_declared,
             root_body: None,
-            erasure: WireValue(0),
+            modes: WireValue(0),
         }
     }
 
@@ -761,20 +762,22 @@ impl RawDeclaration
                     && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) };
                 if valid_root { self.root_body.map_or(Some(body_start),
                 |body| { let body_word = u64::from(body.0);
-                let erasure_start = body_start.saturating_add(usize::try_from(64_u32.saturating_sub((body_word).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
-                let empty_start = erasure_start.saturating_add(usize::try_from(64_u32.saturating_sub((self.erasure.0).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
-                let end = empty_start.saturating_add(3);
+                let stages_start = body_start.saturating_add(usize::try_from(64_u32.saturating_sub((body_word).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
+                let modes_start = stages_start.saturating_add(1);
+                let empty_start = modes_start.saturating_add(usize::try_from(64_u32.saturating_sub((self.modes.0).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
+                let end = empty_start.saturating_add(2);
                 (({ let scalar = body_word;
                 let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
                 ret.0.as_slice().get((body_start) .. (body_start).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
                 u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
                     && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
-                    && ({ let scalar = self.erasure.0;
+                    && ret.0.as_slice().get(stages_start .. modes_start) == Some([0_u8].as_slice())
+                    && ({ let scalar = self.modes.0;
                 let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
-                ret.0.as_slice().get((erasure_start) .. (erasure_start).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+                ret.0.as_slice().get((modes_start) .. (modes_start).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
                 u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
                     && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
-                    && ret.0.as_slice().get(empty_start .. end) == Some([0_u8, 0, 0].as_slice())).then_some(end) }) }
+                    && ret.0.as_slice().get(empty_start .. end) == Some([0_u8, 0].as_slice())).then_some(end) }) }
                 else { None } }) == Some(ret.0.len()),
         )]
     fn bytes(&self) -> Bytes
@@ -802,8 +805,8 @@ impl RawDeclaration
         out.varint(WireValue(u64::from(self.root_declared.0)));
         if let Some(root_body) = self.root_body {
             out.varint(WireValue(u64::from(root_body.0)));
-            out.varint(self.erasure);
-            out.varint(WireValue(0)); // modes and grades
+            out.varint(WireValue(0)); // the stage signature
+            out.varint(self.modes);
             out.varint(WireValue(0)); // sealing provenance
             out.varint(WireValue(0)); // directedness and variance
         }
@@ -892,20 +895,22 @@ impl RawDeclaration
                 && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) };
             if valid_root { declaration.root_body.map_or(Some(body_start),
             |body| { let body_word = u64::from(body.0);
-            let erasure_start = body_start.saturating_add(usize::try_from(64_u32.saturating_sub((body_word).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
-            let empty_start = erasure_start.saturating_add(usize::try_from(64_u32.saturating_sub((declaration.erasure.0).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
-            let end = empty_start.saturating_add(3);
+            let stages_start = body_start.saturating_add(usize::try_from(64_u32.saturating_sub((body_word).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
+            let modes_start = stages_start.saturating_add(1);
+            let empty_start = modes_start.saturating_add(usize::try_from(64_u32.saturating_sub((declaration.modes.0).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
+            let end = empty_start.saturating_add(2);
             (({ let scalar = body_word;
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
             ret.0.as_slice().get((body_start) .. (body_start).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
             u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
                 && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
-                && ({ let scalar = declaration.erasure.0;
+                && ret.0.as_slice().get(stages_start .. modes_start) == Some([0_u8].as_slice())
+                && ({ let scalar = declaration.modes.0;
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
-            ret.0.as_slice().get((erasure_start) .. (erasure_start).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            ret.0.as_slice().get((modes_start) .. (modes_start).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
             u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
                 && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
-                && ret.0.as_slice().get(empty_start .. end) == Some([0_u8, 0, 0].as_slice())).then_some(end) }) }
+                && ret.0.as_slice().get(empty_start .. end) == Some([0_u8, 0].as_slice())).then_some(end) }) }
             else { None } }) }
             else { None } }) == Some(ret.0.len()),
     )]
@@ -2993,19 +2998,19 @@ fn a_segment_holding_a_separator_is_refused()
 #[test]
 fn an_occupied_reserved_slot_is_refused_by_name()
 {
-    let mut erased = RawDeclaration::definition(
+    let mut graded = RawDeclaration::definition(
         vec![entry_unit_type(), entry_unit()],
         TableIndex(0),
         TableIndex(1),
     );
-    erased.erasure = WireValue(1);
-    let bytes = raw_artifact(current_version(), &[], &[erased]);
+    graded.modes = WireValue(1);
+    let bytes = raw_artifact(current_version(), &[], &[graded]);
     assert_eq!(
         Err(DecodeError::ReservedSlotOccupied {
-            slot: ReservedSlot::ErasureAnnotation,
+            slot: ReservedSlot::ModeGradeAnnotation,
         }),
         decode(ArtifactImage::from(bytes.as_ref())),
-        "an occupied erasure slot is refused at the slot that carried it"
+        "an occupied mode-grade slot is refused at the slot that carried it"
     );
 }
 

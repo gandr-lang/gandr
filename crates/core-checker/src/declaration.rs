@@ -282,6 +282,10 @@ pub struct Declaration
     /// reads none of them: the kernel decides them where the declaration
     /// crosses.
     operation_rules: gandr_kernel_term::OperationRules,
+    /// The stage binders a value declaration is quantified over, each with
+    /// its bound; none for every other declaration. Its declared type names
+    /// each binder's stage by the binder's ordinal.
+    stages: Vec<gandr_kernel_term::StageBound>,
     /// The entry a value declaration states, or why none.
     entry: Maybe<Entry, entry::Absent>,
 }
@@ -323,6 +327,7 @@ impl Declaration
             origin,
             laws: Vec::new(),
             operation_rules: gandr_kernel_term::OperationRules::default(),
+            stages: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -370,6 +375,7 @@ impl Declaration
             content: DeclarationContent::Data(signature),
             laws: Vec::new(),
             operation_rules: gandr_kernel_term::OperationRules::default(),
+            stages: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -392,6 +398,7 @@ impl Declaration
             content: DeclarationContent::Codata(signature),
             laws: Vec::new(),
             operation_rules: gandr_kernel_term::OperationRules::default(),
+            stages: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -414,6 +421,7 @@ impl Declaration
             content: DeclarationContent::Abstract(sealed),
             laws: Vec::new(),
             operation_rules: gandr_kernel_term::OperationRules::default(),
+            stages: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -435,6 +443,7 @@ impl Declaration
             content: DeclarationContent::World,
             laws: Vec::new(),
             operation_rules: gandr_kernel_term::OperationRules::default(),
+            stages: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -472,6 +481,18 @@ impl Declaration
     pub const fn operation_rules(&self) -> &gandr_kernel_term::OperationRules
     {
         &self.operation_rules
+    }
+
+    /// The stage binders the declaration is quantified over, each with its
+    /// bound, in binder order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn stages(&self) -> &[gandr_kernel_term::StageBound]
+    {
+        &self.stages
     }
 
     /// The entry the declaration states, or why none.
@@ -559,6 +580,44 @@ impl Declaration
                 operation_rules: rules,
                 ..self
             },
+            DeclarationContent::Data(_)
+            | DeclarationContent::Codata(_)
+            | DeclarationContent::Abstract(_)
+            | DeclarationContent::World => self,
+        }
+    }
+
+    /// This value declaration quantified over `stages`, the stage binders
+    /// its declared type names by ordinal, everything else unchanged; any
+    /// other declaration unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — the judgement refuses a bound naming no earlier
+    ///   binder and a stage naming no binder.
+    /// - ensures: a value declaration carries exactly `stages`; any other
+    ///   declaration is returned unchanged.
+    /// - provides: how a producer attaches the binders a `@[i : Size]`
+    ///   signature states.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a helper typed at a stage takes a recursion's claim,
+    ///   and a call at no stage reads its result plain.
+    /// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
+    #[spec(
+        captures: entry = (self.constant, self.origin, matches!(self.content, DeclarationContent::Value { .. }), self.stages.len(), stages.len()),
+        ensures: |ret| ret.constant == entry.0 && ret.origin == entry.1
+            && ret.stages.len() == if entry.2 { entry.4 } else { entry.3 },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn staged(
+        self,
+        stages: Vec<gandr_kernel_term::StageBound>,
+    ) -> Self
+    {
+        match self.content {
+            DeclarationContent::Value { .. } => Self { stages, ..self },
             DeclarationContent::Data(_)
             | DeclarationContent::Codata(_)
             | DeclarationContent::Abstract(_)

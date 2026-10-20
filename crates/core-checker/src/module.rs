@@ -510,6 +510,9 @@ pub struct ModuleReport
     /// The rules of the operation each ruled declaration lowered from, by
     /// position.
     operation_rules: BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
+    /// The stage signature of each definition quantified over stages, by
+    /// position.
+    stage_signatures: BTreeMap<ConstantIndex, gandr_kernel_term::StageSignature>,
     /// The native path each univalence statement the run decided derives, and
     /// each path product it judged elaborates to, by node.
     natives: BTreeMap<ValueId, ValueId>,
@@ -732,6 +735,21 @@ impl ModuleReport
         &self.operation_rules
     }
 
+    /// The stage signature of each definition quantified over stages, by
+    /// position: what the definition crosses to the kernel carrying beside
+    /// its plain declared type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn stage_signatures(
+        &self
+    ) -> &BTreeMap<ConstantIndex, gandr_kernel_term::StageSignature>
+    {
+        &self.stage_signatures
+    }
+
     /// The native path each univalence statement the run decided derives, and
     /// each path product it judged elaborates to, by node: what the statement
     /// or the product crosses to the kernel as.
@@ -870,7 +888,9 @@ enum Run
 ///   and is held suspended; a refusal wins over any residual. An owed hole is
 ///   held owed. A formed signature enters the signature table after the body is
 ///   judged, whatever the body's verdict; a synthesised type enters it after
-///   synthesis; a refused body alone enters nothing. An abstract type's
+///   synthesis; a refused body alone enters nothing. A definition quantified
+///   over stages checks at a stage minted per binder and enters the table at
+///   its plain type, its stage signature kept beside it. An abstract type's
 ///   retention is checked where the context retains it, by
 ///   `CheckingContext::seal_abstract`.
 /// - provides: the one obligation a declaration can owe, carried in its
@@ -902,15 +922,15 @@ enum Run
             | crate::DeclarationContent::Value { .. } => false,
         },
         | Verdict::Checked { declared, body, .. } => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Present(ty), body: Maybe::Present(value) } if *ty == declared.id() && *value <= body)
-            && context.signature(declaration.constant()) == Maybe::Present(declared),
+            && (context.signature(declaration.constant()) == Maybe::Present(declared) || !declaration.stages().is_empty()),
         | Verdict::Synthesised { synthesised, body } => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Absent(_), body: Maybe::Present(value) } if *value <= body)
             && context.signature(declaration.constant()) == Maybe::Present(synthesised.produced()),
         | Verdict::Owed(entry) => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Present(ty), body: Maybe::Absent(_) } if *ty == entry.absence().declared().id())
             && entry.absence().constant() == declaration.constant()
             && entry.absence().origin() == declaration.origin()
-            && context.signature(declaration.constant()) == Maybe::Present(entry.absence().declared()),
+            && (context.signature(declaration.constant()) == Maybe::Present(entry.absence().declared()) || !declaration.stages().is_empty()),
         | Verdict::Suspended(supplied) => matches!(declaration.content(), crate::DeclarationContent::Value { .. })
-            && context.signature(declaration.constant()) == Maybe::Present(supplied)
+            && (context.signature(declaration.constant()) == Maybe::Present(supplied) || !declaration.stages().is_empty())
             && matches!(context.definitions().body(declaration.constant()), Maybe::Absent(_)),
         | Verdict::Refused(_) => true,
     },
@@ -1112,8 +1132,25 @@ fn decide(
     };
     let home = entry.home();
     let _host = context.binders().relocate(home);
+    // A definition quantified over stages forms its signature with each binder
+    // at the stage it mints, the stage the binder's ordinal names; the plain
+    // type it enters the table at, and the marks its stages leave, are read
+    // first, so a stage the kernel could not place refuses the signature.
+    let mut quantified = None;
     let direction = match signature {
-        Maybe::Present(declared) => form_value_type(context, declared)
+        Maybe::Present(declared) => crate::quantified::bounded(declaration.stages(), declared)
+            .and_then(|()| {
+                if !declaration.stages().is_empty() {
+                    let (erased, marks) = crate::quantified::split(
+                        context.arena_mut(),
+                        declared,
+                        declaration.stages(),
+                    )?;
+                    quantified = Some((form_value_type(context, erased)?, marks));
+                }
+                crate::quantified::mint(context.stages_mut(), declaration.stages());
+                form_value_type(context, declared)
+            })
             .and_then(|formed| crate::session::unrestricted(context, formed.id()).map(|()| formed))
             .map(Direction::Check),
         Maybe::Absent(signature::Absent::Unsigned) => Ok(Direction::Synthesise),
@@ -1151,6 +1188,7 @@ fn decide(
                             // pairs it relates and what it leaves undecided.
                             let _first = context.take_relating();
                             context.forget_stages();
+                            crate::quantified::mint(context.stages_mut(), declaration.stages());
                             context.deferrals_mut().open(Collecting::On);
                             context.own_body(elaborated);
                             judge(context, elaborated, direction)
@@ -1167,7 +1205,12 @@ fn decide(
             };
             relating = context.take_relating();
             residue = context.deferrals_mut().take();
-            following = follows(context, &judged, (residue.pending(), direction));
+            following = follows(
+                context,
+                &judged,
+                (residue.pending(), direction),
+                declaration.stages(),
+            );
             if let Some(signed) = signed.take() {
                 context.own_body(body);
                 typings =
@@ -1217,6 +1260,18 @@ fn decide(
             Deferred::No,
             settled @ (Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_)),
         ) => settled,
+    };
+    // A definition quantified over stages enters the table at its plain type:
+    // each call instantiates the stages its signature marks.
+    let direction = match (direction, quantified) {
+        (Direction::Check(_), Some((plain, marks))) => {
+            context.keep_stage_signature(
+                constant,
+                gandr_kernel_term::StageSignature::new(declaration.stages().to_vec(), marks),
+            );
+            Direction::Check(plain)
+        },
+        (direction @ (Direction::Check(_) | Direction::Synthesise), _) => direction,
     };
     match (direction, verdict) {
         (Direction::Check(declared), Verdict::Checked { body, .. }) => {
@@ -1286,7 +1341,8 @@ fn decide(
 ///   nothing pending, whose type returns the type it recurses on, the
 ///   parameter's position when the body checks with that result at the
 ///   parameter's stage; [`crate::recursion::Unstaged::Plain`] otherwise. The
-///   context reads results as declared again on return.
+///   second judgement mints the stage binders `bounds` states first, as the
+///   first did. The context reads results as declared again on return.
 /// - fails: never; a second judgement's refusal is
 ///   [`crate::recursion::Unstaged::Plain`].
 /// - panics: none.
@@ -1300,6 +1356,7 @@ fn follows(
     context: &mut CheckingContext<'_>,
     judged: &Result<Verdict, Failure>,
     (pending, direction): (Deferred, Direction<FormedValueType>),
+    bounds: &[gandr_kernel_term::StageBound],
 ) -> Maybe<gandr_kernel_term::StagedPosition, crate::recursion::Unstaged>
 {
     let plain = Maybe::Absent(crate::recursion::Unstaged::Plain);
@@ -1340,6 +1397,7 @@ fn follows(
         return plain;
     }
     context.forget_stages();
+    crate::quantified::mint(context.stages_mut(), bounds);
     context.deferrals_mut().open(Collecting::On);
     context.own_body(body);
     context.read_result(crate::recursion::ResultStage::Asked(root));
@@ -1793,6 +1851,7 @@ impl ModuleRun
             relations: context.relations().clone(),
             laws: context.laws().clone(),
             operation_rules: context.operation_rules().clone(),
+            stage_signatures: context.stage_signatures().clone(),
             natives: context.natives().clone(),
             definitions: context.definitions().definitions().collect(),
             data_signatures: context.data_signatures().clone(),
@@ -1953,6 +2012,12 @@ pub fn absorb(
             .operation_rules()
             .iter()
             .map(|(&at, rules)| (at, rules.clone())),
+    );
+    report.stage_signatures.extend(
+        context
+            .stage_signatures()
+            .iter()
+            .map(|(&at, signature)| (at, signature.clone())),
     );
     report
         .natives

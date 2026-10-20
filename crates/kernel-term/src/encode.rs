@@ -950,12 +950,13 @@ fn encode_declaration(
     }
     if let Some(root_body) = root_body {
         out.put_uvarint(WireU64::from(u64::from(u32::from(root_body))));
-        // The four per-definition annotation slots. Erasure, modes and grades,
-        // and directedness and variance stay reserved and empty; the third is
-        // the sealing-provenance slot, and it carries the atoms this
-        // declaration's projection rebound. A choke point re-derives them from
-        // the declared type rather than believing them.
-        out.put_uvarint(WireU64::from(0_u64));
+        // The four per-definition annotation slots. The first, erasure, carries
+        // the stages the signature quantifies over; modes and grades, and
+        // directedness and variance stay reserved and empty; the third is the
+        // sealing-provenance slot, and it carries the atoms this declaration's
+        // projection rebound. A choke point re-derives them from the declared
+        // type rather than believing them.
+        encode_stage_signature(out, declaration.stages());
         out.put_uvarint(WireU64::from(0_u64));
         encode_sealing_provenance(out, declaration.provenance());
         out.put_uvarint(WireU64::from(0_u64));
@@ -1020,6 +1021,59 @@ fn encode_declaration(
         for cell in cells.cells() {
             encode_rule_side(out, cell.source());
             encode_rule_side(out, cell.target());
+        }
+    }
+}
+
+/// Write a definition's stage signature into its erasure slot: the binder
+/// count, zero for a signature binding none; then each binder's bound, zero
+/// for none and one past the earlier binder's ordinal otherwise; then the
+/// mark count and each mark's binder, reach — zero at the binder, the depth
+/// below it — path length and steps.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a signature binding no stage writes the one byte an empty slot
+///   writes, so a definition quantified over none crosses as it did before the
+///   slot was live.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a signature with a bound binder and two marks writes its
+///   literal bytes and decodes to itself; an empty one writes zero.
+/// - witness: `encode::tests::a_stage_signature_fills_the_erasure_slot`
+#[spec(
+    captures: entry = out.as_image().as_ref().len(),
+    ensures: !stages.bounds().is_empty() || out.as_image().as_ref().get(entry ..) == Some(&[0_u8][..]),
+)]
+fn encode_stage_signature(
+    out: &mut EncodedArtifact,
+    stages: &crate::stage_signature::StageSignature,
+)
+{
+    out.put_uvarint(WireU64::from(WireUsize::from(stages.bounds().len())));
+    if stages.bounds().is_empty() {
+        return;
+    }
+    for &bound in stages.bounds() {
+        out.put_uvarint(WireU64::from(WireUsize::from(match bound {
+            crate::stage_signature::StageBound::Unbounded => 0_usize,
+            crate::stage_signature::StageBound::Below(binder) => {
+                usize::from(binder).saturating_add(1)
+            },
+        })));
+    }
+    out.put_uvarint(WireU64::from(WireUsize::from(stages.marks().len())));
+    for mark in stages.marks() {
+        out.put_uvarint(WireU64::from(WireUsize::from(usize::from(mark.binder()))));
+        out.put_uvarint(WireU64::from(match mark.reach() {
+            crate::stage_signature::StageReach::At => 0_u64,
+            crate::stage_signature::StageReach::Below(depth) => u64::from(u32::from(depth)),
+        }));
+        out.put_uvarint(WireU64::from(WireUsize::from(mark.path().len())));
+        for &step in mark.path() {
+            out.put_uvarint(WireU64::from(WireUsize::from(usize::from(step))));
         }
     }
 }
@@ -2916,6 +2970,81 @@ mod tests
                 site: crate::error::MalformedSite::TrailingBytes,
             })
         );
+    }
+
+    #[test]
+    fn a_stage_signature_fills_the_erasure_slot()
+    {
+        use crate::stage_signature::PlacedChild;
+        use crate::stage_signature::StageBinder;
+        use crate::stage_signature::StageBound;
+        use crate::stage_signature::StageMark;
+        use crate::stage_signature::StageReach;
+        use crate::stage_signature::StageSignature;
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let unit_type = builder.arena().value_type_unit();
+        let unit = builder.arena().value_unit();
+        let stages = StageSignature::new(
+            alloc::vec![
+                StageBound::Unbounded,
+                StageBound::Below(StageBinder::from(0_usize))
+            ],
+            alloc::vec![
+                StageMark::new(
+                    alloc::vec![PlacedChild::from(0_usize), PlacedChild::from(1_usize)],
+                    StageBinder::from(0_usize),
+                    StageReach::Below(crate::term::StageDepth::ONE),
+                ),
+                StageMark::new(
+                    alloc::vec![PlacedChild::from(1_usize)],
+                    StageBinder::from(1_usize),
+                    StageReach::At,
+                ),
+            ],
+        );
+        let definition = builder
+            .def(LevelSignature::monomorphic(), unit_type, unit)
+            .staged(stages.clone());
+        let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, definition)];
+        // The plain definition's fields up to its body root; then the erasure
+        // slot: two binders, the second below the first, and two marks, each
+        // its binder, its depth and its path; then the three other slots.
+        let expected = [
+            b'G', b'K', b'X', b'1', 7, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 2, 0, 1,
+            2, 0, 1, 2, 0, 1, 1, 0, 1, 1, 0, 0, 0,
+        ];
+        let bytes = super::encode(&arena, &declarations);
+        assert_eq!(bytes.as_image().as_ref(), expected);
+        let decoded = crate::decode::decode(ArtifactImage::from(expected.as_slice()))
+            .expect("the literal artifact is structurally admissible");
+        let declaration = decoded.declarations().first().expect("one definition");
+        assert_eq!(declaration.declaration().stages(), &stages);
+        // A signature binding nothing writes the empty slot.
+        let plain =
+            DeclarationBuilder::new(&mut arena).def(LevelSignature::monomorphic(), unit_type, unit);
+        let plain = super::encode(&arena, &[MarkedDeclaration::new(
+            AdmissionMark::Checked,
+            plain,
+        )]);
+        assert_eq!(
+            plain.as_image().as_ref().get(20 ..),
+            Some(&[0_u8, 0, 0, 0][..])
+        );
+        // A bound naming no earlier binder, and a mark naming a binder the
+        // signature does not bind, are refused at the slot.
+        let malformed = Err(crate::error::DecodeError::Malformed {
+            site: crate::error::MalformedSite::StageSignature,
+        });
+        for slot in [&[1_u8, 1][..], &[1_u8, 0, 1, 1, 0, 0][..]] {
+            let mut forged = expected.get(.. 20).unwrap_or_default().to_vec();
+            forged.extend_from_slice(slot);
+            forged.extend_from_slice(&[0, 0, 0]);
+            assert_eq!(
+                crate::decode::decode(ArtifactImage::from(forged.as_slice())).map(|_| ()),
+                malformed
+            );
+        }
     }
 
     #[test]

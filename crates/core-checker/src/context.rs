@@ -359,6 +359,10 @@ pub struct CheckingContext<'arena>
     /// The rules of the operation each ruled declaration lowered from, by
     /// position; the judgement carries them to the kernel unread.
     operation_rules: BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
+    /// The stage signature of each definition quantified over stages, by
+    /// position: its binders' bounds and the occurrences its plain declared
+    /// type holds each binder's stage at.
+    stage_signatures: BTreeMap<ConstantIndex, gandr_kernel_term::StageSignature>,
     /// The native universe path each univalence statement the judgement
     /// decided derives, and each path product it judged elaborates to, by
     /// node.
@@ -539,6 +543,8 @@ pub struct Checkpoint
     laws: BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
     /// [`CheckingContext::operation_rules`].
     operation_rules: BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
+    /// [`CheckingContext::stage_signatures`].
+    stage_signatures: BTreeMap<ConstantIndex, gandr_kernel_term::StageSignature>,
     /// [`CheckingContext::natives`].
     natives: BTreeMap<ValueId, ValueId>,
     /// [`CheckingContext::sealed`].
@@ -667,6 +673,7 @@ impl<'arena> CheckingContext<'arena>
             relations: BTreeMap::new(),
             laws: BTreeMap::new(),
             operation_rules: BTreeMap::new(),
+            stage_signatures: BTreeMap::new(),
             sealed: BTreeMap::new(),
             seals: SealTable::new(),
             budget,
@@ -734,6 +741,7 @@ impl<'arena> CheckingContext<'arena>
             ref relations,
             ref laws,
             ref operation_rules,
+            ref stage_signatures,
             ref natives,
             ref sealed,
             ref seals,
@@ -777,6 +785,7 @@ impl<'arena> CheckingContext<'arena>
             relations: relations.clone(),
             laws: laws.clone(),
             operation_rules: operation_rules.clone(),
+            stage_signatures: stage_signatures.clone(),
             natives: natives.clone(),
             sealed: sealed.clone(),
             seals: seals.clone(),
@@ -844,6 +853,7 @@ impl<'arena> CheckingContext<'arena>
             relations,
             laws,
             operation_rules,
+            stage_signatures,
             natives,
             sealed,
             seals,
@@ -888,6 +898,7 @@ impl<'arena> CheckingContext<'arena>
             relations,
             laws,
             operation_rules,
+            stage_signatures,
             natives,
             sealed,
             seals,
@@ -2839,6 +2850,45 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ) -> &BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>
     {
         &self.operation_rules
+    }
+
+    /// Keep `signature` as the stage signature of the definition at
+    /// `constant`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `constant` has `signature` when it binds a stage; otherwise
+    ///   nothing changes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call reads the signature to instantiate the
+    ///   definition's stages, and it crosses to the kernel with it.
+    /// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
+    #[spec(captures: entry = signature.bounds().is_empty(), ensures: entry || self.stage_signatures.contains_key(&constant))]
+    pub(crate) fn keep_stage_signature(
+        &mut self,
+        constant: ConstantIndex,
+        signature: gandr_kernel_term::StageSignature,
+    )
+    {
+        if !signature.bounds().is_empty() {
+            self.stage_signatures.insert(constant, signature);
+        }
+    }
+
+    /// The stage signature of each definition quantified over stages, by
+    /// position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn stage_signatures(
+        &self
+    ) -> &BTreeMap<ConstantIndex, gandr_kernel_term::StageSignature>
+    {
+        &self.stage_signatures
     }
 
     /// The native universe path each univalence statement the judgement

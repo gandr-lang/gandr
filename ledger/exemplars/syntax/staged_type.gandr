@@ -1,0 +1,2 @@
+/// `staged_type`: a type at a stage its signature binds.
+def kept @[i : Size] (n : Nat[i]) -> -F Nat[i] { return n }

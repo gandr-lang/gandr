@@ -446,6 +446,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::RelationType
                 | Former::CapabilityType
                 | Former::AtType
+                | Former::StagedType
                 | Former::Scope
                 | Former::Declaration
                 | Former::AttributeBlock
@@ -553,6 +554,7 @@ impl<'source> Lowerer<'_, 'source>
                         | Former::RelationType
                         | Former::CapabilityType
                         | Former::AtType
+                        | Former::StagedType
                         | Former::Scope
                         | Former::Declaration
                         | Former::AttributeBlock
@@ -615,6 +617,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::RelationType
                 | Former::CapabilityType
                 | Former::AtType
+                | Former::StagedType
                 | Former::Scope
                 | Former::Declaration
                 | Former::AttributeBlock

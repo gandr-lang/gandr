@@ -1557,6 +1557,7 @@ fn checkpoint_encoding_reports_the_first_unresolved_plane()
                 body: Maybe::Present(NodeIndex::from(0_usize)),
                 laws: Vec::new(),
                 rules: Vec::new(),
+                stages: Vec::new(),
             },
             &nodes,
         );
@@ -1795,6 +1796,7 @@ fn encoding_bounds_levels_in_every_node_family_and_plane()
                 body: Maybe::Present(NodeIndex::from(0_usize)),
                 laws: Vec::new(),
                 rules: Vec::new(),
+                stages: Vec::new(),
             },
             &nodes,
         );
@@ -1905,6 +1907,7 @@ fn encoding_bounds_levels_in_every_auxiliary_type_table()
                 body: Maybe::Present(NodeIndex::from(0_usize)),
                 laws: Vec::new(),
                 rules: Vec::new(),
+                stages: Vec::new(),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -1944,6 +1947,7 @@ fn a_lawful_value_root_round_trips_and_its_law_order_is_content()
                 body: Maybe::Present(NodeIndex::from(0_usize)),
                 laws,
                 rules: Vec::new(),
+                stages: Vec::new(),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -2021,6 +2025,7 @@ fn a_ruled_value_root_round_trips_and_its_rules_are_content()
                 body: Maybe::Present(NodeIndex::from(0_usize)),
                 laws: Vec::new(),
                 rules,
+                stages: Vec::new(),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -2055,6 +2060,65 @@ fn a_ruled_value_root_round_trips_and_its_rules_are_content()
         bytes.as_ref(),
         unruled.as_ref(),
         "and so does dropping the rules"
+    );
+}
+
+#[test]
+fn a_quantified_value_root_round_trips_and_its_bounds_are_content()
+{
+    use gandr_kernel_term::StageBinder;
+    use gandr_kernel_term::StageBound;
+    let checkpoints = |stages: Vec<StageBound>| {
+        let content = crate::fixture::item_content(
+            Reference::Unoccupied,
+            &crate::content::DeclarationRoots::Value {
+                signature: Maybe::Absent(signature::Absent::Unsigned),
+                body: Maybe::Present(NodeIndex::from(0_usize)),
+                laws: Vec::new(),
+                rules: Vec::new(),
+                stages,
+            },
+            &[ContentNode::Tuple(Vec::new())],
+        );
+        let item = ItemCheckpoint::new(
+            content,
+            Footprint::from_parts(
+                BTreeSet::new(),
+                BTreeSet::new(),
+                Opacity::Transparent,
+                HoleMark::Filled,
+            ),
+            vec![Answered::new(Reference::Unoccupied, Answer::Untyped)],
+            Typing::Owed,
+        );
+        Checkpoints::new(CheckBudget::DEFAULT, vec![item])
+    };
+    // `@[i : Size, j < i]`, then `@[i : Size, j : Size]`.
+    let bounded = checkpoints(vec![
+        StageBound::Unbounded,
+        StageBound::Below(StageBinder::from(0_usize)),
+    ]);
+    let bytes = encode_checkpoints(&bounded).expect("a quantified root encodes");
+    assert_eq!(
+        decode_checkpoints(Bytes(bytes.as_ref())),
+        Ok(bounded),
+        "and decodes to itself, each binder with its bound"
+    );
+    let unbounded = encode_checkpoints(&checkpoints(vec![
+        StageBound::Unbounded,
+        StageBound::Unbounded,
+    ]))
+    .expect("an unbounded root encodes");
+    assert_ne!(
+        bytes.as_ref(),
+        unbounded.as_ref(),
+        "changing a bound changes the content"
+    );
+    let plain = encode_checkpoints(&checkpoints(Vec::new())).expect("a plain root encodes");
+    assert_ne!(
+        bytes.as_ref(),
+        plain.as_ref(),
+        "and so does dropping the binders"
     );
 }
 

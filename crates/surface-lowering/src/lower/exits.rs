@@ -527,6 +527,7 @@ impl<'source> Lowerer<'_, 'source>
             | Former::RelationType
             | Former::CapabilityType
             | Former::AtType
+            | Former::StagedType
             | Former::AttributeBlock
             | Former::Import
             | Former::Data

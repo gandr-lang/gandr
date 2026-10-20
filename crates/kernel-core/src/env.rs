@@ -308,6 +308,42 @@ impl StagedDeclaration
         }
     }
 
+    /// This staged definition quantified over `stages`, its content start
+    /// and content unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — admission refuses a mark the declared type does
+    ///   not place.
+    /// - ensures: the declaration as [`Declaration::staged`] leaves it, at the
+    ///   same content start: a definition carries exactly `stages`, any other
+    ///   declaration is unchanged.
+    /// - provides: how a producer attaches a stage signature before offering
+    ///   the definition.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a helper typed at a stage takes a recursion's claim
+    ///   in the kernel as in the checker.
+    /// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
+    #[spec(
+        captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. }), self.declaration.stages().bounds().len(), stages.bounds().len()),
+        ensures: |ret| ret.content_start == entry.0
+            && ret.declaration.stages().bounds().len() == if entry.1 { entry.3 } else { entry.2 },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn staged(
+        self,
+        stages: gandr_kernel_term::StageSignature,
+    ) -> Self
+    {
+        Self {
+            declaration: self.declaration.staged(stages),
+            ..self
+        }
+    }
+
     /// This staged data declaration carrying `presentation` as the rules
     /// rewriting its constructor terms, its content start and content
     /// unchanged.

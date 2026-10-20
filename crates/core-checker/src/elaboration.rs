@@ -764,7 +764,8 @@ impl<'arena> Session<'arena>
             entry.source.origin(),
         )
         .lawful(entry.source.laws().to_vec())
-        .ruled(entry.source.operation_rules().clone());
+        .ruled(entry.source.operation_rules().clone())
+        .staged(entry.source.stages().to_vec());
         if let Maybe::Present(stated) = entry.source.entry() {
             filled = filled.entered(stated.clone());
         }

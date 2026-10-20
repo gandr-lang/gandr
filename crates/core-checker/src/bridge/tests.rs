@@ -286,6 +286,7 @@ fn erase(
         relations: &BTreeMap::new(),
         laws: &BTreeMap::new(),
         operation_rules: &BTreeMap::new(),
+        stage_signatures: &BTreeMap::new(),
         natives: &BTreeMap::new(),
         definitions: &definitions,
     };
@@ -3518,6 +3519,7 @@ fn the_machine_faults_are_refused_exactly()
         relations: &BTreeMap::new(),
         laws: &BTreeMap::new(),
         operation_rules: &BTreeMap::new(),
+        stage_signatures: &BTreeMap::new(),
         natives: &BTreeMap::new(),
         definitions: &definitions,
     };
@@ -4233,6 +4235,7 @@ fn a_static_lambda_crosses_only_as_a_closed_operator()
         relations: &BTreeMap::new(),
         laws: &BTreeMap::new(),
         operation_rules: &BTreeMap::new(),
+        stage_signatures: &BTreeMap::new(),
         natives: &BTreeMap::new(),
         definitions: &definitions,
     };

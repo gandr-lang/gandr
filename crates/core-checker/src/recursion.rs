@@ -43,6 +43,9 @@ use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::shift_value_type;
+use gandr_core_term::staged::Part;
+use gandr_core_term::staged::placed;
+use gandr_core_term::staged::rebuild;
 use gandr_kernel_core::stage_order::Fit;
 use gandr_kernel_core::stage_order::below;
 use gandr_kernel_term::DeBruijnIndex;
@@ -574,16 +577,6 @@ pub fn open_case(
     Ok((base, Maybe::Present(child)))
 }
 
-/// One node of a type a staging rebuild reads.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Part
-{
-    /// A value type.
-    Value(ValueTypeId),
-    /// A computation type.
-    Computation(CompTypeId),
-}
-
 /// What a staging rebuild does with a node next.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Visit
@@ -592,197 +585,6 @@ enum Visit
     Open(Part),
     /// Rebuild the node from its children's results.
     Close(Part),
-}
-
-/// Hand each child of `part` the stage order places to `each`, in order: the
-/// former's own children where it is placeable, the types an argument of a
-/// data type quotes, and none for any other former.
-///
-/// # Specification
-/// trivial.
-fn placed<Each>(
-    arena: &CoreArena,
-    part: Part,
-    mut each: Each,
-) where
-    Each: FnMut(Part),
-{
-    match part {
-        Part::Value(id) => match arena.value_type(id) {
-            Some(&ValueType::Data { ref arguments, .. }) => {
-                for &argument in arguments {
-                    if let Some(&Value::Quote(quoted)) = arena.value(argument) {
-                        each(Part::Value(quoted));
-                    }
-                }
-            },
-            Some(&ValueType::Thunk(body)) => each(Part::Computation(body)),
-            Some(&ValueType::Record(ref fields)) => {
-                for &field in fields.values() {
-                    each(Part::Value(field));
-                }
-            },
-            Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
-                for &component in parts {
-                    each(Part::Value(component));
-                }
-            },
-            Some(&ValueType::Sigma { first, second }) => {
-                each(Part::Value(first));
-                each(Part::Value(second));
-            },
-            Some(&ValueType::List(element)) => each(Part::Value(element)),
-            Some(_) | None => {},
-        },
-        Part::Computation(id) => match arena.comp_type(id) {
-            Some(&(CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain })) => {
-                each(Part::Value(domain));
-                each(Part::Computation(codomain));
-            },
-            Some(&CompType::Returner { result, .. }) => each(Part::Value(result)),
-            Some(&CompType::With(ref components)) => {
-                for &component in components {
-                    each(Part::Computation(component));
-                }
-            },
-            Some(_) | None => {},
-        },
-    }
-}
-
-/// The value type a rebuilt child is.
-///
-/// # Specification
-/// trivial.
-const fn value_part(part: Part) -> Result<ValueTypeId, CheckRefusal>
-{
-    match part {
-        Part::Value(id) => Ok(id),
-        Part::Computation(_) => Err(CheckRefusal::MachineInvariant),
-    }
-}
-
-/// The computation type a rebuilt child is.
-///
-/// # Specification
-/// trivial.
-const fn computation_part(part: Part) -> Result<CompTypeId, CheckRefusal>
-{
-    match part {
-        Part::Computation(id) => Ok(id),
-        Part::Value(_) => Err(CheckRefusal::MachineInvariant),
-    }
-}
-
-/// `part` rebuilt over `children`, the results of its placed children in
-/// order.
-///
-/// # Specification
-/// - requires: `children` holds one result per child [`placed`] hands out for
-///   `part`, of the same kind, in order.
-/// - ensures: the same former over `children`.
-/// - fails: [`CheckRefusal::MachineInvariant`] for a child of the wrong kind or
-///   count.
-/// - panics: none.
-///
-/// # Errors
-/// As `- fails:`.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a function field over its own family is rebuilt at the
-///   case's stage, so a call through it on the chain before the link is
-///   admitted and one on the link itself is refused.
-/// - witness: `tests::recursive_data::a_negative_occurrence_below_the_stage_declares`
-/// - witness: `tests::recursive_data::currys_consumer_is_refused_at_its_call`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |rebuilt| matches!((part, *rebuilt),
-    (Part::Value(_), Part::Value(_)) | (Part::Computation(_), Part::Computation(_)))))]
-fn rebuild(
-    arena: &mut CoreArena,
-    part: Part,
-    children: &[Part],
-) -> Result<Part, CheckRefusal>
-{
-    let child = |position: usize| {
-        children
-            .get(position)
-            .copied()
-            .ok_or(CheckRefusal::MachineInvariant)
-    };
-    match part {
-        Part::Value(id) => match arena.value_type(id).cloned() {
-            Some(ValueType::Data {
-                declaration,
-                mut arguments,
-            }) => {
-                let mut next = 0_usize;
-                for argument in &mut arguments {
-                    if let Some(&Value::Quote(_)) = arena.value(*argument) {
-                        let quoted = value_part(child(next)?)?;
-                        next = next.saturating_add(1);
-                        *argument = arena.value_quote(quoted);
-                    }
-                }
-                Ok(Part::Value(arena.value_type_data(declaration, arguments)))
-            },
-            Some(ValueType::Thunk(_)) => {
-                let body = computation_part(child(0)?)?;
-                Ok(Part::Value(arena.value_type_thunk(body)))
-            },
-            Some(ValueType::Record(mut fields)) => {
-                for (position, field) in fields.values_mut().enumerate() {
-                    *field = value_part(child(position)?)?;
-                }
-                Ok(Part::Value(arena.value_type_record(fields)))
-            },
-            Some(ValueType::Product(_)) => {
-                let parts = children
-                    .iter()
-                    .map(|&component| value_part(component))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(Part::Value(arena.value_type_product(&parts)))
-            },
-            Some(ValueType::Sum(_)) => {
-                let parts = children
-                    .iter()
-                    .map(|&component| value_part(component))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(Part::Value(arena.value_type_sum(&parts)))
-            },
-            Some(ValueType::Sigma { .. }) => {
-                let (first, second) = (value_part(child(0)?)?, value_part(child(1)?)?);
-                Ok(Part::Value(arena.value_type_sigma(first, second)))
-            },
-            Some(ValueType::List(_)) => {
-                let element = value_part(child(0)?)?;
-                Ok(Part::Value(arena.value_type_list(element)))
-            },
-            Some(_) | None => Err(CheckRefusal::MachineInvariant),
-        },
-        Part::Computation(id) => match arena.comp_type(id).cloned() {
-            Some(CompType::Arrow { .. }) => {
-                let (domain, codomain) = (value_part(child(0)?)?, computation_part(child(1)?)?);
-                Ok(Part::Computation(arena.comp_type_arrow(domain, codomain)))
-            },
-            Some(CompType::Pi { .. }) => {
-                let (domain, codomain) = (value_part(child(0)?)?, computation_part(child(1)?)?);
-                Ok(Part::Computation(arena.comp_type_pi(domain, codomain)))
-            },
-            Some(CompType::Returner { effects, .. }) => {
-                let result = value_part(child(0)?)?;
-                Ok(Part::Computation(
-                    arena.comp_type_returner_with_effects(result, effects),
-                ))
-            },
-            Some(CompType::With(_)) => {
-                let parts = children
-                    .iter()
-                    .map(|&component| computation_part(component))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(Part::Computation(arena.comp_type_with(&parts)))
-            },
-            Some(_) | None => Err(CheckRefusal::MachineInvariant),
-        },
-    }
 }
 
 /// A field type with every occurrence of a family of `block` the stage order
@@ -872,7 +674,7 @@ pub fn stage_field(
                     part
                 }
                 else {
-                    rebuild(arena, part, children)?
+                    rebuild(arena, part, children).ok_or(CheckRefusal::MachineInvariant)?
                 };
                 results.truncate(first);
                 results.push(rebuilt);

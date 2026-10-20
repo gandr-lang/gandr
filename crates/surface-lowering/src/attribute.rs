@@ -885,6 +885,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::RelationType
         | Former::CapabilityType
         | Former::AtType
+        | Former::StagedType
         | Former::Scope
         | Former::Declaration
         | Former::AttributeBlock

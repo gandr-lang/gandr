@@ -428,8 +428,9 @@ fn lowered(
             "the module `{name}` must start with an uppercase letter at the top level"
         ),
         LoweringRefusal::ImplicitTelescope { .. } => f.write_str(
-            "implicit parameters `@[…]` are not elaborated yet; write each one as an explicit \
-             parameter, `(a : Type, …)`, and pass it at every call",
+            "implicit parameters `@[…]` are elaborated only for stages, `@[i : Size, i < n]`; \
+             write each other one as an explicit parameter, `(a : Type, …)`, and pass it at \
+             every call",
         ),
         LoweringRefusal::NonExhaustiveMatch { .. } => {
             f.write_str("this match does not cover every value it can be given")

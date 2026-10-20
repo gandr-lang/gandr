@@ -3451,15 +3451,18 @@ fn implicit_telescope() -> Regex
     ])
 }
 
-/// Build one typed declaration-level implicit binder.
+/// Build one declaration-level implicit binder: a typed name, or the bound
+/// `i < n` a stage binder carries.
 ///
 /// Lowercase binders use the ordinary name classes; uppercase binders such as
 /// `A` are lexically offered as type identifiers by the labeler and remain
-/// valid binder names at this parse-only stage.
+/// valid binder names at this parse-only stage. A bound names two binders of
+/// the same telescope.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a binder-name menu followed by a mandatory colon and type hole.
+/// - ensures: a binder-name menu followed by a mandatory colon and type hole,
+///   or two names on either side of `<`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3469,17 +3472,24 @@ fn implicit_telescope() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref alternatives) if alternatives.len() == 2 && alternatives.first().is_some_and(|typed| matches!(typed.shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type)))) && alternatives.get(1).is_some_and(|bound| matches!(bound.shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "<"))))))]
 fn implicit_param() -> Regex
 {
-    seq([
-        alt([
-            t(TileLabel("identifier")),
-            t(TileLabel("type_variable")),
-            t(TileLabel("type_identifier")),
+    alt([
+        seq([
+            alt([
+                t(TileLabel("identifier")),
+                t(TileLabel("type_variable")),
+                t(TileLabel("type_identifier")),
+            ]),
+            t(TileLabel(":")),
+            h(Sort::Type),
         ]),
-        t(TileLabel(":")),
-        h(Sort::Type),
+        seq([
+            t(TileLabel("identifier")),
+            t(TileLabel("<")),
+            t(TileLabel("identifier")),
+        ]),
     ])
 }
 

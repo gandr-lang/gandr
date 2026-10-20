@@ -1,10 +1,11 @@
 // What a recursion handed through a higher-order function refuses. The
-// recursion's own parameter handed to `apply` instantiates its type parameter
-// at that parameter's stage, which the claim does not take (#393). A helper
-// whose signature names no type parameter hands its argument on at no stage,
-// and a helper with no recursion opens no stage for its result to follow: a
-// signature quantified over stages lifts both, the sized rung's explicit
-// bound (#392). Shared with `../../model/data/sized-higher-order.gandr`.
+// recursion's own parameter handed to `apply` or `applyAt` instantiates its
+// parameter or stage at that parameter's stage, which the claim does not take
+// (#393, #392). A helper whose signature names no type parameter and no stage
+// hands its argument on at no stage, and a helper with no recursion and no
+// stage opens none for its result to follow: the model's quantified
+// signatures lift both, `applyAt` the first and `predAt` the second. Shared
+// with `../../model/data/sized-higher-order.gandr`.
 
 // The naturals the recursions take apart.
 import "../../model/data/data-base.gandr" ;
@@ -23,6 +24,31 @@ def rec applied_again(n : Nat) -> -F Nat {
   }
 }
 
+/// The parameter itself handed to `applyAt`: the call instantiates `i` at
+/// the parameter's own stage, and `applied_at_again[<]` takes nothing there
+/// (#392).
+@[ refuses("StageNotBelow") ]
+def rec applied_at_again(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(p) => Succ(applyAt(applied_at_again[<], n))
+  }
+}
+
+/// A stage on an integer: the signature's marks place only data types, so the
+/// checkers refuse the stage where the kernel could not read it (#392).
+@[ refuses("OutOfFragment") ]
+def integerAt @[i : Size] (n : Integer[i]) -> -F Integer {
+  return n
+}
+
+/// A stage in a path's carrier: a path places no stage, so the lowering
+/// refuses it where it is written (#392).
+@[ refuses("OutOfFragment") ]
+def carriedAt @[i : Size] (a : Nat, q : Path(Nat[i], a, a)) -> -F Nat {
+  return a
+}
+
 /// A function applied to a number, its signature naming no type parameter.
 @[ checks ]
 def applyNat(f : Nat => Nat, x : Nat) -> -F Nat {
@@ -30,13 +56,13 @@ def applyNat(f : Nat => Nat, x : Nat) -> -F Nat {
 }
 
 /// The predecessor handed through `applyNat`: its signature takes any number,
-/// so `helped[<]`, which takes only numbers below the stage, does not stand
-/// for its function until a signature can quantify over stages (#392).
+/// so `plainly_helped[<]`, which takes only numbers below the stage, does not
+/// stand for its function; the model's `helped` goes through `applyAt`.
 @[ refuses("StageNotBelow") ]
-def rec helped(n : Nat) -> -F Nat {
+def rec plainly_helped(n : Nat) -> -F Nat {
   case n {
     Zero => Zero,
-    Succ(p) => Succ(applyNat(helped[<], p))
+    Succ(p) => Succ(applyNat(plainly_helped[<], p))
   }
 }
 
@@ -52,7 +78,8 @@ def pred(n : Nat) -> -F Nat {
 /// Half a number, recursing on its predecessor's predecessor read through
 /// `pred`: `pred` opens no stage, so its result stands at none and
 /// `halved_through_pred[<]` does not take it; a recursive definition's result
-/// can follow its argument (`../../model/data/following.gandr`).
+/// can follow its argument (`../../model/data/following.gandr`), and a
+/// quantified signature states it (`predAt` and `halvedAt` in the model).
 @[ refuses("StageNotBelow") ]
 def rec halved_through_pred(n : Nat) -> -F Nat {
   case n {

@@ -840,6 +840,9 @@ pub struct Declaration
     /// The rules of the operation a definition lowered from, which the kernel
     /// decides converge; none for every other declaration.
     operation_rules: crate::operation_rules::OperationRules,
+    /// The stages a definition's signature quantifies over and where its
+    /// declared type reads each; empty for every other declaration.
+    stages: crate::stage_signature::StageSignature,
 }
 
 impl Declaration
@@ -946,6 +949,18 @@ impl Declaration
     pub const fn operation_rules(&self) -> &crate::operation_rules::OperationRules
     {
         &self.operation_rules
+    }
+
+    /// The stages the definition's signature quantifies over and where its
+    /// declared type reads each.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn stages(&self) -> &crate::stage_signature::StageSignature
+    {
+        &self.stages
     }
 
     /// This declaration under `name`, its levels, content and provenance
@@ -1121,6 +1136,45 @@ impl Declaration
                 operation_rules: rules,
                 ..self
             },
+            DeclarationContent::Data { .. }
+            | DeclarationContent::Codata { .. }
+            | DeclarationContent::Axiom { .. }
+            | DeclarationContent::AbstractType { .. } => self,
+        }
+    }
+
+    /// This definition carrying `stages` as the stages its signature
+    /// quantifies over, everything else unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — the kernel re-stages the declared type from the
+    ///   marks at admission and refuses a mark that reaches no data type.
+    /// - ensures: a definition comes back carrying exactly `stages`; any other
+    ///   declaration comes back unchanged. Content, levels, provenance, name,
+    ///   related pairs, laws and rules are untouched either way.
+    /// - provides: the one way a producer attaches a stage signature, after
+    ///   whichever finisher built the definition.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition keeps the signature through the wire,
+    ///   and the kernel's admission re-stages its declared type from it.
+    /// - witness: `encode::tests::a_stage_signature_fills_the_erasure_slot`
+    #[spec(
+        captures: entry = (matches!(self.content, DeclarationContent::Def { .. }), self.stages.bounds().len(), stages.bounds().len(), self.laws.len(), self.name.0.len()),
+        ensures: |ret| ret.stages.bounds().len() == if entry.0 { entry.2 } else { entry.1 }
+            && ret.laws.len() == entry.3 && ret.name.0.len() == entry.4,
+    )]
+    #[inline]
+    #[must_use]
+    pub fn staged(
+        self,
+        stages: crate::stage_signature::StageSignature,
+    ) -> Self
+    {
+        match self.content {
+            DeclarationContent::Def { .. } => Self { stages, ..self },
             DeclarationContent::Data { .. }
             | DeclarationContent::Codata { .. }
             | DeclarationContent::Axiom { .. }
@@ -1631,6 +1685,7 @@ impl<'arena> DeclarationBuilder<'arena>
             presentation: crate::presented::Presentation::default(),
             laws: Vec::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
+            stages: crate::stage_signature::StageSignature::default(),
         }
     }
 
@@ -1687,6 +1742,7 @@ impl<'arena> DeclarationBuilder<'arena>
             presentation: crate::presented::Presentation::default(),
             laws: Vec::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
+            stages: crate::stage_signature::StageSignature::default(),
         }
     }
 
@@ -1740,6 +1796,7 @@ impl<'arena> DeclarationBuilder<'arena>
             presentation: crate::presented::Presentation::default(),
             laws: Vec::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
+            stages: crate::stage_signature::StageSignature::default(),
         }
     }
 
@@ -1801,6 +1858,7 @@ impl<'arena> DeclarationBuilder<'arena>
             presentation: crate::presented::Presentation::default(),
             laws: Vec::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
+            stages: crate::stage_signature::StageSignature::default(),
         }
     }
 }
@@ -1898,6 +1956,7 @@ impl DeclarationBuilder<'_>
             presentation: crate::presented::Presentation::default(),
             laws: Vec::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
+            stages: crate::stage_signature::StageSignature::default(),
         }
     }
 
@@ -1930,6 +1989,7 @@ impl DeclarationBuilder<'_>
             presentation: crate::presented::Presentation::default(),
             laws: Vec::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
+            stages: crate::stage_signature::StageSignature::default(),
         }
     }
 }

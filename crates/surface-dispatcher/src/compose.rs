@@ -2786,6 +2786,7 @@ fn pattern_holes(module: &LoweredModule<'_>) -> Vec<HoleId>
         actual.constant() == lowered.constant()
             && usize::from(actual.origin()) == usize::from(lowered.origin())
             && actual.laws() == module.laws(lowered)
+            && actual.stages() == module.stages(lowered)
             && match lowered.outcome() {
                 DeclarationOutcome::Completed { declared_type, body } =>
                     actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(declared_type),body:Maybe::Present(body)},
@@ -2866,7 +2867,8 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
             OriginToken::from(usize::from(lowered.origin())),
         )
         .lawful(module.laws(lowered).to_vec())
-        .ruled(module.operation_rules(lowered));
+        .ruled(module.operation_rules(lowered))
+        .staged(module.stages(lowered).to_vec());
         declarations.push(match Entry::declared(module.worlds(lowered)) {
             Maybe::Present(entry) => declaration.entered(entry),
             Maybe::Absent(_) => declaration,
@@ -3862,7 +3864,7 @@ def wrong = "text" ;"#,
             &grammar,
             CorpusRoot::Fixture,
             SourceText::from(
-                r#"@[ refuses("ImplicitTelescope") ] def f @[a : Type] (x: a) -> -F a { return x }
+                r#"@[ refuses("ImplicitTelescope") ] def f @[a : Type] = 1 ;
 @[ refuses("UnresolvedName") ] def g = missing ;
 def h = 1 ;"#,
             ),
@@ -4300,10 +4302,10 @@ def h = 1 ;"#,
     {
         let grammar = grammar();
         let source = SourceText::from(
-            "def first @[a : Type] (x: a) -> -F a { return x }\n\
+            "def first @[a : Type] = 1 ;\n\
              def broken = missing ;\n\
              def value = 3 ;\n\
-             def last @[a : Type] (x: a) -> -F a { return x }",
+             def last @[a : Type] = 1 ;",
         );
         let mut lowerings = LoweringCount::default();
         let Lowered::Module { module, .. } = lower_source(&grammar, source, &mut lowerings)
