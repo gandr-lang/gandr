@@ -8825,7 +8825,7 @@ mod tests
             serde_json::json!({"ranges": sites.iter().map(|&(line, start, end)| Range {
                 start: at(Line::from(line), Character::from(start)),
                 end: at(Line::from(line), Character::from(end)),
-            }).collect::<Vec<_>>()})
+            }).collect::<Vec<_>>(), "wordPattern": gandr_surface_parser::WORD_PATTERN})
         };
         let uri = "file:///tmp/referred.gandr";
         let n = ranges(&[(4, 13, 14), (6, 12, 13), (7, 28, 29)]);

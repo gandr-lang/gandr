@@ -132,6 +132,7 @@ pub use crate::closing::tile_spelling;
 pub use crate::label::Labeling;
 pub use crate::label::Lexeme;
 pub use crate::label::Token;
+pub use crate::label::WORD_PATTERN;
 pub use crate::label::label;
 pub use crate::meld::BoundarySlot;
 pub use crate::meld::Checkpoint;

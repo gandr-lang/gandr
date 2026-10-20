@@ -1030,6 +1030,7 @@ dependencies = [
  "gandr-workflow-sweep",
  "proptest",
  "quenchant-anodized",
+ "regex-lite",
 ]
 
 [[package]]

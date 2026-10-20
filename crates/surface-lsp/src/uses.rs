@@ -175,7 +175,8 @@ pub fn highlights(
 ///   name is one the document's unit declares or is written in another source,
 ///   or when a use of it is spelled otherwise than its binder; otherwise
 ///   [`Answer::Mirrored`] holding the binder's range, then each use's,
-///   ascending, every range spelling the binder's text.
+///   ascending, every range spelling the binder's text, and the parser's
+///   [`gandr_surface_parser::WORD_PATTERN`] as the words an edit may leave.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -221,7 +222,10 @@ pub fn mirrored(
         };
         ranges.push(range);
     }
-    Answer::Mirrored(LinkedEditingRanges { ranges })
+    Answer::Mirrored(LinkedEditingRanges {
+        ranges,
+        word_pattern: gandr_surface_parser::WORD_PATTERN,
+    })
 }
 
 /// Where a name is written: its source's canonical path, its span in that
