@@ -457,6 +457,98 @@ awk -v ignore="$ignore" '
 upload "$series-timing" "$scratch/$series-timing-policy.toml"
 {% endraw %}'''
 
+# A landing's hotpath verdicts, read on main's push from the merged pull
+# request's `hotpath / <benchmark>` checks (the number from the merge
+# commit's `(#n)` suffix, the checks on the pull request's head). Each red
+# check files one issue, `Hotpath regression: <benchmark> at #<n>`, unless an
+# open one has that title; each red check and each report that improves past
+# its policy's band is a row of the open `Hotpath: the landed deltas`
+# tracking issue, whose body the task edits in place. A merge commit without a
+# pull request number reads nothing. GH_REPO names the repository.
+["ci:hotpath-landed"]
+description = "File the merged pull request's red hotpath checks and add them to the ledger"
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+repo=${GH_REPO:?}
+ledger_title='Hotpath: the landed deltas'
+subject=$(git log -1 --format=%s HEAD)
+if [[ ! $subject =~ \(#([0-9]+)\)$ ]]; then
+  echo "HEAD merges no pull request: no hotpath verdict to read"
+  exit 0
+fi
+pr=${BASH_REMATCH[1]}
+commit=$(git rev-parse --short=8 HEAD)
+head=$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid)
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+gh api --paginate "repos/$repo/commits/$head/check-runs" \
+  --jq '.check_runs[] | select(.name | startswith("hotpath / ")) | {name, conclusion, url: .html_url, summary: (.output.summary // "")}' \
+  | jq -s . > "$scratch/runs.json"
+if [[ $(jq length "$scratch/runs.json") == 0 ]]; then
+  echo "#$pr carries no hotpath check"
+  exit 0
+fi
+: > "$scratch/rows"
+while IFS= read -r run; do
+  benchmark=$(jq -r '.name | ltrimstr("hotpath / ")' <<< "$run")
+  conclusion=$(jq -r '.conclusion // "pending"' <<< "$run")
+  url=$(jq -r .url <<< "$run")
+  # The summary's heading reads `` `<benchmark>` · <verdict> ``.
+  verdict=$(jq -r '.summary | split("\n") | map(select(startswith("### "))) | (first // "") | sub("^### [^·]*· *"; "")' <<< "$run")
+  if [[ $conclusion == failure ]]; then
+    case $benchmark in
+      gandr*) area=surface ;;
+      store*) area=storage ;;
+      *) area=workflow ;;
+    esac
+    title="Hotpath regression: $benchmark at #$pr"
+    issue=$(gh issue list --repo "$repo" --state open --search "\"$title\" in:title" --json number,title \
+      | jq -r --arg title "$title" '[.[] | select(.title == $title)] | first | .number // empty')
+    if [[ -z $issue ]]; then
+      {
+        printf 'The `hotpath / %s` check failed on the head of #%s, which landed as %s. The pull request is the suspect.\n\n' "$benchmark" "$pr" "$commit"
+        printf 'Check: %s\n\n' "$url"
+        jq -r .summary <<< "$run"
+        printf '\nClosed by a fix or a stated acceptance.\n'
+      } > "$scratch/issue.md"
+      issue=$(gh issue create --repo "$repo" --title "$title" --label kind:performance --label "area:$area" \
+        --body-file "$scratch/issue.md" | sed 's|.*/||')
+    fi
+    row_issue="#$issue"
+  elif grep -qi improv <<< "$verdict"; then
+    row_issue='—'
+  else
+    continue
+  fi
+  printf '| %s | #%s | %s | %s | %s |\n' "$commit" "$pr" "$benchmark" "${verdict:-$conclusion}" "$row_issue" >> "$scratch/rows"
+done < <(jq -c '.[]' "$scratch/runs.json")
+if [[ ! -s $scratch/rows ]]; then
+  echo "#$pr: no hotpath regression or improvement past the band"
+  exit 0
+fi
+ledger=$(gh issue list --repo "$repo" --state open --label kind:tracking --search "\"$ledger_title\" in:title" --json number,title \
+  | jq -r --arg title "$ledger_title" '[.[] | select(.title == $title)] | first | .number // empty')
+if [[ -z $ledger ]]; then
+  {
+    printf 'Every landing whose `hotpath / <benchmark>` check is red, or whose report improves past its policy'"'"'s band, is one row here. `mise run ci:hotpath-landed` adds the row on main'"'"'s push and files the red ones; a filed issue is closed by a fix or a stated acceptance.\n\n'
+    printf '| Commit | PR | Benchmark | Verdict | Issue |\n| --- | --- | --- | --- | --- |\n'
+  } > "$scratch/ledger.md"
+  ledger=$(gh issue create --repo "$repo" --title "$ledger_title" --label kind:tracking --label area:workflow \
+    --body-file "$scratch/ledger.md" | sed 's|.*/||')
+fi
+gh issue view "$ledger" --repo "$repo" --json body --jq .body > "$scratch/ledger.md"
+while IFS= read -r row; do
+  key=$(cut -d'|' -f3-4 <<< "$row")
+  if grep -qF -- "$key" "$scratch/ledger.md"; then continue; fi
+  printf '%s\n' "$row" >> "$scratch/ledger.md"
+done < "$scratch/rows"
+gh issue edit "$ledger" --repo "$repo" --body-file "$scratch/ledger.md" > /dev/null
+echo "#$pr: ledger #$ledger"
+cat "$scratch/rows"
+{% endraw %}'''
+
 # Head checks and merge-group checks are separate runs. Watch the queue entry
 # as well as the pull request; green head checks alone do not prove landing.
 # The entry runs every workflow with a merge_group trigger; each is reported.

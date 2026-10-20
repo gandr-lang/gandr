@@ -1121,6 +1121,33 @@ jobs:
         run: mise run ci:hotpath store gandr-storage-schema store
       - *lane-timing
 
+  # A landing's red hotpath checks become issues (`mise run ci:hotpath-landed`):
+  # main's push reads the merged pull request's `hotpath / <benchmark>`
+  # checks, files one issue per red one and adds a row to the landed-deltas
+  # tracking issue. Nothing needs this job.
+  hotpath-landed:
+    name: file the landing's hotpath regressions
+    needs: ci-image-ref
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.repository.fork == false }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: read
+      checks: read
+      issues: write
+      pull-requests: read
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - name: file the red checks
+        run: mise run ci:hotpath-landed
+
   # Formatting and workflow security lint share the treefmt pass.
   format-gate:
     name: check formatting and lint gates (treefmt)
