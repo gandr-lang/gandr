@@ -1697,19 +1697,23 @@ fn a_dependent_motive_instantiates_by_substitution()
         Err(KernelError::ComputationTypeMismatch(_))
     ));
 
-    // A path whose classifier is not an identity refuses by shape.
-    let refl = arena.value_path_refl(code);
-    let misused = arena.computation_path_transport(motive, refl, pair);
+    // A path whose classifier is no identity, the unit's, refuses by shape.
+    let unit = arena.value_unit();
+    let misused = arena.computation_path_transport(motive, unit, pair);
     let misused = arena.value_thunk(misused);
     let returns = arena.comp_type_returner(boolean.ty);
     let suspended = arena.value_type_thunk(returns);
-    assert!(matches!(
-        check_closed_value(&mut arena, misused, suspended),
-        Err(KernelError::ValueShapeMismatch {
-            expected: ExpectedValueShape::Path,
-            ..
-        })
-    ));
+    let refused = check_closed_value(&mut arena, misused, suspended);
+    assert!(
+        matches!(
+            refused,
+            Err(KernelError::ValueShapeMismatch {
+                expected: ExpectedValueShape::Path,
+                ..
+            })
+        ),
+        "the unit followed as a path: {refused:?}"
+    );
 }
 
 #[test]

@@ -41,6 +41,19 @@ def flipped_beta = here(cons(+{.1 = unit}, cons(+{.0 = unit}, nil))) ;
 def flipped_list : () => List(Bool) ;
 def flipped_list = thunk { become moved_list(both) } ;
 
+/// #1064: a list transported along negation written in place, as along the
+/// named `negation`. The kernel read the inline equivalence's type,
+/// `Path_U(Bool, Bool)`, as no path and refused the transport by shape.
+@[ checks ]
+def moved_inline(xs : List(Bool)) -> -F List(Bool) {
+  become transport(\X. List(X), equiv(not, not), xs)
+}
+
+/// #1064: `both` transported along negation written in place, by a run.
+@[ runs("cons(+{.1 = unit}, cons(+{.0 = unit}, nil))") ]
+def flipped_inline : () => List(Bool) ;
+def flipped_inline = thunk { become moved_inline(both) } ;
+
 /// Negation and the identity are no equivalence: their round trips differ.
 @[ refuses("RoundTripDistinct") ]
 def collapse_bool : Path(Type, Bool, Bool) ;

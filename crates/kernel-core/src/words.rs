@@ -65,6 +65,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_check_memo::CheckMemo;
+use gandr_kernel_strata::Level;
 use gandr_kernel_term::CellIndex;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
@@ -72,6 +73,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FreeCells;
+use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::RuleNode;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
@@ -738,14 +740,19 @@ pub fn point(
 
 /// The carrier and endpoints of the path a transport follows, read off its
 /// type `ty`: a parameterless type of words is the path at its cells' point,
-/// any other type is read as [`crate::element_identity::path_parts`] reads it.
+/// `Path_U(x, y)` is the path from `x` to `y` in the level-zero value universe,
+/// and any other type is read as [`crate::element_identity::path_parts`] reads
+/// it.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: `(Data(S, []), pt, pt)` for `ty` a `Data(words, [])` whose
 ///   presentation carries free cells over the sort `S` looping at the closed
 ///   point `pt` ([`point`]), the path type `Presentations::words` reads as
-///   those words; the parts of a `Path` type otherwise.
+///   those words; `(U₀, x, y)` for `ty` a `PathUniverse(x, y)`, the level-zero
+///   value universe at which `Path(U₀, x, y)` and `Path_U(x, y)` are two
+///   readings of one classifier, as `equiv` checks at either; the parts of a
+///   `Path` type otherwise.
 /// - provides: the reading the element and telescope transports give the path
 ///   they follow, the checker's own.
 /// - fails: the value-shape mismatch naming `ty` for any other type.
@@ -757,10 +764,15 @@ pub fn point(
 /// # Adequacy
 /// - hypothesis: L3 — a composite and an inverse transported along a word
 ///   written inline admit at the circle's point and refuse at the wrong
-///   endpoints; reading the words as their own type refuses by shape.
+///   endpoints; reading the words as their own type refuses by shape; a list
+///   transported along a native path written in place admits as along one
+///   declared at the identity.
 /// - witness: `tests::native_formers::a_word_written_as_a_transport_path_is_that_path`
+/// - witness: `path_universe::tests::an_element_transport_follows_a_native_path_written_in_place_1064`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(domain, left, right)|
     matches!(arena.value_type(ty), Some(&ValueType::Path { domain: d, left: l, right: r }) if d == domain && l == left && r == right)
+        || (matches!(arena.value_type(ty), Some(&ValueType::PathUniverse(l, r)) if l == left && r == right)
+            && matches!(arena.value_type(domain), Some(&ValueType::Universe { sort: GroundSort::Value, ref level }) if *level == Level::zero()))
         || (left == right && matches!(arena.value(left), Some(&Value::Constructor { .. })))))]
 pub fn followed(
     arena: &mut TermArena,
@@ -781,6 +793,10 @@ pub fn followed(
     {
         let carrier = arena.value_type_data(sort, Vec::new());
         return Ok((carrier, at, at));
+    }
+    if let Some(&ValueType::PathUniverse(source, target)) = arena.value_type(ty) {
+        let carrier = arena.value_type_universe(GroundSort::Value, Level::zero());
+        return Ok((carrier, source, target));
     }
     crate::element_identity::path_parts(arena, ty)
 }
