@@ -1,7 +1,9 @@
 //! The seam: one interface, a null implementation and an ordered one.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::btree_map::Entry;
 use alloc::vec::Vec;
+use core::iter;
 
 use anodized::spec;
 
@@ -387,6 +389,109 @@ struct MemoEntry<Support, Outcome>
     outcome: Outcome,
 }
 
+/// The entries one digest selects: the first held inline, collisions spilled.
+///
+/// Digests are near-injective, so almost every bucket holds exactly one entry.
+/// Holding that entry inline, and spilling only a colliding one to a vector
+/// that stays unallocated until a collision, keeps recording a fresh digest
+/// free of a heap allocation of its own; the entry lives in the map's node.
+///
+/// # Specification
+/// - requires: every entry's support digests to the key the bucket is held
+///   under.
+/// - ensures: the entries are `first` followed by `collisions`, in recording
+///   order, and no two of their supports agree.
+/// - provides: a collision chain whose common case costs no allocation.
+/// - panics: none.
+/// - executable: none — agreement is the consumer's relation, and the data-item
+///   expansion does not check construction; the memo's recall and record
+///   operations check the observable boundaries.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lone entry and a colliding pair, with replacement of
+///   the spilled entry, distinguish a bucket that loses, crosses or overwrites
+///   an entry through exact answers.
+/// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
+/// - witness: `memo::tests::replacement_inside_a_collision_bucket_preserves_its_neighbour`
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Bucket<Support, Outcome>
+{
+    /// The entry recorded first under this digest.
+    first: MemoEntry<Support, Outcome>,
+    /// Entries whose supports collided with `first`'s digest, in recording
+    /// order; empty, and unallocated, until a collision.
+    collisions: Vec<MemoEntry<Support, Outcome>>,
+}
+
+impl<Support, Outcome> Bucket<Support, Outcome>
+where
+    Support: MemoKey,
+{
+    /// A bucket holding one entry, allocating nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn new(first: MemoEntry<Support, Outcome>) -> Self
+    {
+        Self {
+            first,
+            collisions: Vec::new(),
+        }
+    }
+
+    /// The entry whose support agrees with `support`, if any.
+    ///
+    /// # Specification
+    /// - ensures: the first entry, in recording order, whose support answers
+    ///   `ContentAgreement::Agree` against `support`, or `None`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an agreeing first entry, an agreeing spilled entry
+    ///   and a colliding miss distinguish a search that skips either half.
+    /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
+    #[spec(ensures: |ret| ret.is_none_or(|entry| {
+        matches!(entry.support.agreement(support), ContentAgreement::Agree)
+    }))]
+    #[inline]
+    fn find(
+        &self,
+        support: &Support,
+    ) -> Option<&MemoEntry<Support, Outcome>>
+    {
+        iter::once(&self.first)
+            .chain(&self.collisions)
+            .find(|entry| matches!(entry.support.agreement(support), ContentAgreement::Agree))
+    }
+
+    /// The entry whose support agrees with `support`, if any, to replace its
+    /// outcome.
+    ///
+    /// # Specification
+    /// - ensures: the first entry, in recording order, whose support answers
+    ///   `ContentAgreement::Agree` against `support`, or `None`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — replacing the spilled entry of a colliding pair
+    ///   distinguishes a search that overwrites the first entry instead.
+    /// - witness: `memo::tests::replacement_inside_a_collision_bucket_preserves_its_neighbour`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|entry| {
+        matches!(entry.support.agreement(support), ContentAgreement::Agree)
+    }))]
+    #[inline]
+    fn find_mut(
+        &mut self,
+        support: &Support,
+    ) -> Option<&mut MemoEntry<Support, Outcome>>
+    {
+        iter::once(&mut self.first)
+            .chain(&mut self.collisions)
+            .find(|entry| matches!(entry.support.agreement(support), ContentAgreement::Agree))
+    }
+}
+
 /// An ordered in-memory memo: the storage half, owned here so the checker holds
 /// none of it.
 ///
@@ -402,6 +507,10 @@ struct MemoEntry<Support, Outcome>
 /// positive-fast-path-only discipline as a data structure rather than as a rule
 /// to remember, and it is what lets the key be content-derived, and therefore
 /// arena-free.
+///
+/// **The first entry inline.** A bucket holds its first entry in the map's own
+/// node and spills only collisions to a vector, so recording a fresh digest —
+/// nearly every recording — allocates nothing beyond the map's own growth.
 ///
 /// # Specification
 /// - requires: supports obey the consumer laws of `MemoKey`.
@@ -426,7 +535,7 @@ where
     Support: MemoKey,
 {
     /// The recorded answers, bucketed by digest and ordered by it.
-    buckets: BTreeMap<ContentDigest, Vec<MemoEntry<Support, Outcome>>>,
+    buckets: BTreeMap<ContentDigest, Bucket<Support, Outcome>>,
     /// The entry counts, maintained as entries are recorded.
     census: EntryCensus<Support::Plane>,
 }
@@ -532,10 +641,7 @@ where
         support: &Support,
     ) -> Option<MemoHit<'memo, Support, Outcome>>
     {
-        let bucket = self.buckets.get(&support.digest())?;
-        let entry = bucket
-            .iter()
-            .find(|entry| matches!(entry.support.agreement(support), ContentAgreement::Agree))?;
+        let entry = self.buckets.get(&support.digest())?.find(support)?;
         Some(MemoHit {
             support: &entry.support,
             outcome: &entry.outcome,
@@ -551,9 +657,9 @@ where
     ///   leaves the entry count one greater; a support an agreeing entry
     ///   already holds has that entry's outcome replaced and leaves every count
     ///   where it was.
-    /// - provides: the record path, with the accounting bumped before the entry
-    ///   is pushed, so a refusal at the ceiling leaves the memo exactly as it
-    ///   was.
+    /// - provides: the record path, one map lookup deep, with the accounting
+    ///   bumped before the entry is stored, so a refusal at the ceiling leaves
+    ///   the memo exactly as it was.
     /// - fails: `MemoError::EntryCountOverflow` when the accounting cannot
     ///   admit another entry.
     /// - panics: none.
@@ -573,13 +679,6 @@ where
     /// - witness: `memo::tests::remembering_an_agreeing_support_replaces_rather_than_accumulates`
     /// - witness: `memo::tests::replacement_inside_a_collision_bucket_preserves_its_neighbour`
     /// - witness: `memo::tests::ceiling_refuses_insertion_but_allows_replacement`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the check recalls the support from its digest's bucket once, as the body searches that bucket"
-        )
-    )]
     #[spec(
         captures: [entry_count = self.entry_count(), entry_buckets = self.buckets.len(),
             was_held = self.recall(&support).is_some()],
@@ -602,23 +701,23 @@ where
         outcome: Outcome,
     ) -> Result<MemoRecord, MemoError>
     {
-        let digest = support.digest();
-        if let Some(bucket) = self.buckets.get_mut(&digest) {
-            let held = bucket
-                .iter_mut()
-                .find(|entry| matches!(entry.support.agreement(&support), ContentAgreement::Agree));
-            if let Some(entry) = held {
-                entry.outcome = outcome;
-                return Ok(MemoRecord::Replaced);
-            }
+        match self.buckets.entry(support.digest()) {
+            Entry::Occupied(mut held) => {
+                let bucket = held.get_mut();
+                if let Some(entry) = bucket.find_mut(&support) {
+                    entry.outcome = outcome;
+                    return Ok(MemoRecord::Replaced);
+                }
+                // The accounting is bumped before the entry is stored, so a
+                // refusal at the ceiling leaves the memo exactly as it was.
+                self.census.record(support.plane())?;
+                bucket.collisions.push(MemoEntry { support, outcome });
+            },
+            Entry::Vacant(fresh) => {
+                self.census.record(support.plane())?;
+                fresh.insert(Bucket::new(MemoEntry { support, outcome }));
+            },
         }
-        // The accounting is bumped before the entry is pushed, so a refusal at
-        // the ceiling leaves the memo exactly as it was.
-        self.census.record(support.plane())?;
-        self.buckets
-            .entry(digest)
-            .or_default()
-            .push(MemoEntry { support, outcome });
         Ok(MemoRecord::Recorded)
     }
 

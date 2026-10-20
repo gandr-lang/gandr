@@ -69,6 +69,17 @@
 //! the kernel's dependency wall, and iteration order is deterministic, so a
 //! measurement over the memo is re-derivable.
 //!
+//! A digest's bucket holds its first entry inline and spills only colliding
+//! entries to a vector, which stays unallocated until a collision. Digests are
+//! near-injective, so a vector per digest would cost a heap allocation for
+//! nearly every recorded answer; the inline first entry costs none. The bucket
+//! is a two-field type rather than `smallvec`'s `SmallVec<[_; 1]>` because the
+//! crate takes no runtime dependency. One contiguous entry vector with a chain
+//! head per digest also allocates nothing per entry, but it threads index links
+//! through the entries that the map's own buckets make unnecessary. Digests
+//! that collide often would reverse the choice: the buckets would be groups,
+//! and a plain vector serves a group.
+//!
 //! # Exhaustive matching
 //!
 //! No enum here is `#[non_exhaustive]`. The workspace does not publish, so the
@@ -119,13 +130,6 @@
     )
 )]
 #![no_std]
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        bucket_per_key,
-        reason = "1 cost-shape site (1 bucket_per_key); #814 lists it"
-    )
-)]
 
 extern crate alloc;
 
