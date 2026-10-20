@@ -183,5 +183,6 @@ pub use crate::parse::FormJoin;
 pub use crate::parse::FormSplit;
 pub use crate::parse::ParseCleanStatus;
 pub use crate::parse::ParseResult;
+pub use crate::parse::Unlayable;
 pub use crate::parse::parse;
 pub use crate::parse::parse_by_form;

@@ -16,7 +16,7 @@
 //!
 //! # Parent before child, and the invariant that follows
 //!
-//! Every child's position is strictly above its parent's, and the root is
+//! Every child's position is strictly above its parent's, and a parse's root is
 //! position zero. So a walk in ascending index order visits every parent before
 //! any of its children with no stack at all, an index comparison decides
 //! ancestry direction, and a cycle is unrepresentable rather than checked for.
@@ -44,6 +44,18 @@
 //! preorder rank, and the whole tree's digest folds its forms'. A node below a
 //! form has no content identity of its own.
 //!
+//! # Joined trees
+//!
+//! [`SyntaxTree::joined`] lays one tree's nodes after another's, over the text
+//! that lays their sources end to end: the second tree's positions move up by
+//! the first's node count and its spans by the first source's length, and the
+//! join has one root per tree joined ([`SyntaxTree::roots`]). Every position of
+//! the first tree names the same node in the join, so what was read of the
+//! first tree by position stays true of the join. Each root's nodes keep their
+//! level order, so an ascending scan still visits every parent before its
+//! children. The join's forms are the two trees' forms in order, and its digest
+//! is the one a parse of the whole text gives when its forms are those.
+//!
 //! # Level-order layout
 //!
 //! A node names its children as a contiguous range of strictly higher arena
@@ -60,10 +72,13 @@ use anodized::spec;
 
 use crate::digest::NodeDigest;
 use crate::digest::Preimage;
+use crate::error::SyntaxError;
 use crate::key::FormRank;
 use crate::key::NodeKey;
 use crate::label::NodeLabel;
 use crate::mold::GrammarFingerprint;
+use crate::span::ByteLength;
+use crate::span::ByteOffset;
 use crate::span::ByteSpan;
 use crate::span::SourceFragment;
 use crate::span::SourceText;
@@ -420,9 +435,11 @@ impl ExactSizeIterator for NodeIndices
 {
 }
 
-/// A concrete syntax tree: the source it was parsed from, the grammar whose
-/// molds its labels name, and its nodes, laid out in level order with the root
-/// at position zero.
+/// A concrete syntax tree: its source, its grammar, and its nodes in level
+/// order.
+///
+/// A parse's root is at position zero; a join's second root follows the first
+/// tree's nodes.
 ///
 /// # Specification
 /// - ensures: every stored child range is contiguous and strictly above its
@@ -446,8 +463,11 @@ pub struct SyntaxTree<'source>
     /// The grammar whose mold table every [`MoldId`](crate::MoldId) in this
     /// tree indexes.
     grammar: GrammarFingerprint,
-    /// The nodes, in level order: parents before children, siblings adjacent.
+    /// The nodes, each root's in level order — parents before children,
+    /// siblings adjacent — and the roots' runs in source order.
     nodes: Vec<Node>,
+    /// The positions of the roots, in source order.
+    roots: Vec<NodeIndex>,
     /// The top-level forms, their digests, each node's form and rank, and
     /// the whole tree's digest.
     index: FormIndex,
@@ -510,12 +530,117 @@ impl<'source> SyntaxTree<'source>
     ) -> Self
     {
         let index = index_forms(source, &nodes);
+        let roots = if nodes.is_empty() {
+            Vec::new()
+        }
+        else {
+            Vec::from([NodeIndex(0_usize)])
+        };
         Self {
             source,
             grammar,
             nodes,
+            roots,
             index,
         }
+    }
+
+    /// The tree laying `after`'s nodes after `before`'s, over `source`, the
+    /// text that lays their sources end to end.
+    ///
+    /// # Specification
+    /// - requires: nothing; a source that does not lay the two texts end to
+    ///   end, and trees of two grammars, are refused.
+    /// - ensures: on success, the tree over `source` under the two trees'
+    ///   grammar holding `before`'s nodes as they are, then `after`'s, each
+    ///   moved up by `before`'s node count — its child range likewise — and its
+    ///   span by `before`'s source length; its roots are `before`'s then
+    ///   `after`'s, moved likewise; its forms are `before`'s then `after`'s,
+    ///   moved likewise, each with its digest, so every node keeps its key; its
+    ///   digest is the one a parse of `source` gives when its forms are those.
+    /// - provides: a closure's parse kept across edits with the document's
+    ///   parse laid after it, so a position read in the closure's tree names
+    ///   the same node in the join.
+    /// - fails: [`SyntaxError::GrammarsDisagree`] for trees of two grammars;
+    ///   [`SyntaxError::SourcesDisagree`] for a `source` that is not `before`'s
+    ///   text then `after`'s.
+    /// - panics: none.
+    /// - intension: one copy of each node and of each form's index entry; the
+    ///   forms are not hashed again.
+    ///
+    /// # Errors
+    /// [`SyntaxError::GrammarsDisagree`] and [`SyntaxError::SourcesDisagree`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two trees joined keep every node, fragment and key at
+    ///   the moved position, the join's digest is the whole text's parse's, and
+    ///   a text out of order and a grammar of its own are refused by name.
+    /// - witness: `build::tests::a_join_lays_the_second_tree_after_the_first`
+    /// - witness: `build::tests::a_join_refuses_a_text_or_a_grammar_of_its_own`
+    #[spec(ensures: |ref ret| match *ret {
+        Ok(ref joined) => joined.nodes.len() == before.nodes.len().saturating_add(after.nodes.len())
+            && joined.roots.len() == before.roots.len().saturating_add(after.roots.len())
+            && joined.index.forms.len() == before.index.forms.len().saturating_add(after.index.forms.len())
+            && joined.nodes.get(.. before.nodes.len()) == Some(before.nodes.as_slice())
+            && joined.source == source
+            && joined.grammar == before.grammar,
+        Err(SyntaxError::GrammarsDisagree { before: first, after: second }) =>
+            first == before.grammar && second == after.grammar && first != second,
+        Err(SyntaxError::SourcesDisagree { at }) => usize::from(at) == <&str>::from(before.source).len(),
+        Err(_) => false,
+    })]
+    #[inline]
+    pub fn joined(
+        before: &SyntaxTree<'_>,
+        after: &SyntaxTree<'_>,
+        source: SourceText<'source>,
+    ) -> Result<Self, SyntaxError>
+    {
+        if before.grammar != after.grammar {
+            return Err(SyntaxError::GrammarsDisagree {
+                before: before.grammar,
+                after: after.grammar,
+            });
+        }
+        let text = <&str>::from(source);
+        let first = <&str>::from(before.source);
+        let at = first.len();
+        if text.get(.. at) != Some(first) || text.get(at ..) != Some(<&str>::from(after.source)) {
+            return Err(SyntaxError::SourcesDisagree {
+                at: ByteOffset::from(at),
+            });
+        }
+        let moved = before.nodes.len();
+        let by = ByteLength::from(at);
+        let mut nodes = Vec::with_capacity(moved.saturating_add(after.nodes.len()));
+        nodes.extend_from_slice(&before.nodes);
+        nodes.extend(after.nodes.iter().map(|node| Node {
+            span: node.span.shifted(by),
+            first_child: NodeIndex(node.first_child.0.saturating_add(moved)),
+            ..*node
+        }));
+        let mut roots = Vec::with_capacity(before.roots.len().saturating_add(after.roots.len()));
+        roots.extend_from_slice(&before.roots);
+        roots.extend(
+            after
+                .roots
+                .iter()
+                .map(|root| NodeIndex(root.0.saturating_add(moved))),
+        );
+        let index = joined_index(
+            (&before.index, &after.index),
+            source,
+            &nodes,
+            NodeIndex(moved),
+        );
+
+        Ok(Self {
+            source,
+            grammar: before.grammar,
+            nodes,
+            roots,
+            index,
+        })
     }
 
     /// The content digest of the whole tree: its root's label and text and
@@ -617,16 +742,18 @@ impl<'source> SyntaxTree<'source>
         self.grammar
     }
 
-    /// The position of the root, which the level-order layout fixes at zero.
+    /// The position of the first root, which the level-order layout fixes at
+    /// zero.
     ///
     /// # Specification
     /// - requires: nothing; the tree need not hold any node.
     /// - ensures: position zero, whatever the tree holds — the level-order
-    ///   layout fixes the root there rather than storing it.
-    /// - provides: the entry point of every walk. An empty tree answers with a
-    ///   position it does not hold, which [`SyntaxTree::node`] resolves to
-    ///   nothing; the alternative would be an absence every caller of a
-    ///   non-empty tree would have to discharge.
+    ///   layout fixes the first root there rather than storing it.
+    /// - provides: the entry point of every walk of a parse. An empty tree
+    ///   answers with a position it does not hold, which [`SyntaxTree::node`]
+    ///   resolves to nothing; the alternative would be an absence every caller
+    ///   of a non-empty tree would have to discharge. A walk of a join starts
+    ///   from each of [`SyntaxTree::roots`].
     /// - fails: never.
     /// - panics: none.
     ///
@@ -642,6 +769,18 @@ impl<'source> SyntaxTree<'source>
     pub const fn root(&self) -> NodeIndex
     {
         NodeIndex(0_usize)
+    }
+
+    /// The positions of the roots, in source order: a parse's one root, one
+    /// root per tree a join laid end to end, and none for an empty tree.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn roots(&self) -> &[NodeIndex]
+    {
+        self.roots.as_slice()
     }
 
     /// How many nodes the tree holds.
@@ -923,6 +1062,78 @@ fn index_forms(
     index.digest = Some(preimage.hash());
 
     index
+}
+
+/// The form index of `nodes` over `source`, the join of the trees `before` and
+/// `after` index, `after`'s nodes moved up to start at `moved`.
+///
+/// # Specification
+/// - requires: `nodes` is `before`'s tree's nodes then `after`'s, moved up by
+///   `moved`, the position past `before`'s tree's last node.
+/// - ensures: `before`'s forms, digests and ranks, then `after`'s, each form
+///   and each rank's slot moved past `before`'s; the digest folds the first
+///   node's label and text, the form count and every form's digest in order, as
+///   [`index_forms`] folds a parse's, and is absent exactly when `nodes` is
+///   empty.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`SyntaxTree::joined`].
+/// - witness: `build::tests::a_join_lays_the_second_tree_after_the_first`
+#[spec(ensures: |ret| ret.ranks.len() == before.ranks.len().saturating_add(after.ranks.len())
+    && ret.digests.len() == ret.forms.len()
+    && ret.forms.len() == before.forms.len().saturating_add(after.forms.len())
+    && ret.digest.is_some() != nodes.is_empty())]
+fn joined_index(
+    (before, after): (&FormIndex, &FormIndex),
+    source: SourceText<'_>,
+    nodes: &[Node],
+    moved: NodeIndex,
+) -> FormIndex
+{
+    let slots = before.forms.len();
+    let mut forms = Vec::with_capacity(slots.saturating_add(after.forms.len()));
+    forms.extend_from_slice(&before.forms);
+    forms.extend(
+        after
+            .forms
+            .iter()
+            .map(|form| NodeIndex(form.0.saturating_add(moved.0))),
+    );
+    let mut digests = Vec::with_capacity(forms.len());
+    digests.extend_from_slice(&before.digests);
+    digests.extend_from_slice(&after.digests);
+    let mut ranks = Vec::with_capacity(before.ranks.len().saturating_add(after.ranks.len()));
+    ranks.extend_from_slice(&before.ranks);
+    ranks.extend(
+        after
+            .ranks
+            .iter()
+            .map(|held| held.map(|(slot, rank)| (FormSlot(slot.0.saturating_add(slots)), rank))),
+    );
+    let digest = nodes.first().map(|root| {
+        let mut preimage = Preimage::default();
+        preimage.open_tree();
+        preimage.node(
+            root.label,
+            source
+                .fragment(root.span)
+                .unwrap_or_else(|_refused| SourceFragment::from("")),
+            ChildCount(digests.len()),
+        );
+        for &form in &digests {
+            preimage.digest(form);
+        }
+        preimage.hash()
+    });
+
+    FormIndex {
+        forms,
+        digests,
+        ranks,
+        digest,
+    }
 }
 
 #[cfg(test)]

@@ -178,6 +178,7 @@ use gandr_surface_grammar::built_in;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_session::CandidateIndex;
+use gandr_surface_session::ClosureSlot;
 use gandr_surface_session::FormCensus;
 use gandr_surface_session::Laying;
 use gandr_surface_session::Session;
@@ -630,11 +631,13 @@ pub fn recheck(
             Maybe::Absent(reason) => Maybe::Absent(reason),
         };
     };
+    let slot = ClosureSlot::new();
     let outcome = match laid {
         Maybe::Present(ref laid) => session.judge_unit_reading(
             SourceText::from(laid.text.as_str()),
             &laid.unit,
             laid.base,
+            &slot,
             read,
         ),
         Maybe::Absent(_) => session.judge_reading(text, read),

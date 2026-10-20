@@ -29,6 +29,7 @@ use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::entries;
 use gandr_surface_dispatcher::lay_out;
+use gandr_surface_session::ClosureSlot;
 use gandr_surface_session::KernelCheckpoint;
 use gandr_surface_session::Session;
 use gandr_surface_session::admitted;
@@ -89,10 +90,14 @@ fn every_source_submits_as_the_walk_composes_it()
                 .get(usize::from(base) ..)
                 .unwrap_or_default();
             let laid = lay_out(grammar, path, root, SourceText::from(own));
+            let slot = ClosureSlot::new();
             let submitted = match laid {
-                Maybe::Present(ref laid) => {
-                    session.submit_unit(SourceText::from(laid.text.as_str()), &laid.unit, laid.base)
-                },
+                Maybe::Present(ref laid) => session.submit_unit(
+                    SourceText::from(laid.text.as_str()),
+                    &laid.unit,
+                    laid.base,
+                    &slot,
+                ),
                 Maybe::Absent(_) => session.submit(SourceText::from(own)),
             };
             let submission = match submitted {

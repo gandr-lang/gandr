@@ -272,6 +272,7 @@
 //! returns to its type line alone.
 
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use core::fmt;
 use core::num::NonZeroUsize;
 use core::sync::atomic::AtomicUsize;
@@ -329,9 +330,12 @@ use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::judge_member;
+use gandr_surface_dispatcher::lower_closure;
 use gandr_surface_dispatcher::lower_parsed;
 use gandr_surface_dispatcher::lower_parsed_unit;
+use gandr_surface_dispatcher::lower_resumed_unit;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_lowering::ClosureLowering;
 use gandr_surface_lowering::DeclarationCount;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::DocumentationText;
@@ -340,6 +344,7 @@ use gandr_surface_lowering::ImportUri;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::Unit;
+use gandr_surface_lowering::UnitSource;
 use gandr_surface_lowering::documentation;
 use gandr_surface_lowering::namespace::NamePath;
 use gandr_surface_lowering::namespace::Scope;
@@ -360,6 +365,8 @@ use crate::edit::diff;
 use crate::forms::FormCensus;
 use crate::forms::FormStore;
 use crate::item_source::program;
+use crate::lowerings;
+use crate::lowerings::Held;
 
 quenchant_shape::reason_enum! {
     /// Why a submission carries no resume.
@@ -1479,8 +1486,9 @@ impl<Store, Blocks> Reopened<Store, Blocks>
 /// - witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`
 pub struct Session<Store, Blocks>
 {
-    /// The grammar every revision is parsed under.
-    grammar: Pbg,
+    /// The grammar every revision is parsed under, shared with the closure
+    /// lowerings the session holds.
+    grammar: Arc<Pbg>,
     /// The root the source sits under, which decides what its expectations
     /// mean.
     root: SourceRoot,
@@ -1592,7 +1600,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     ) -> Self
     {
         Self {
-            grammar,
+            grammar: Arc::new(grammar),
             root,
             incremental: IncrementalSession::new(store, backend, CheckBudget::DEFAULT),
             blocks,
@@ -1751,7 +1759,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         };
         Ok(Reopened {
             session: Self {
-                grammar,
+                grammar: Arc::new(grammar),
                 root,
                 incremental,
                 blocks,
@@ -1823,12 +1831,20 @@ impl<Store, Blocks> Session<Store, Blocks>
         Store: CheckpointStore,
         Blocks: BlockStore,
     {
-        self.submit_unit(revision, &Unit::single(), ByteOffset::from(0_usize))
+        let submission = self.judge_with(
+            revision,
+            &Unit::single(),
+            ByteOffset::from(0_usize),
+            None,
+            |_| (),
+        )?;
+        self.admit_into(submission)
     }
 
     /// Submit `revision`, the text `unit` lays out with the document's own
     /// text from `base` on: [`judge_unit_reading`](Self::judge_unit_reading)
-    /// it, then [`admit`](Self::admit) it.
+    /// it, the closure's lowering kept in `slot`, then [`admit`](Self::admit)
+    /// it.
     ///
     /// # Specification
     /// - requires: as [`judge_unit_reading`](Self::judge_unit_reading).
@@ -1839,7 +1855,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// - fails: as [`submit`](Self::submit).
     /// - panics: none.
     /// - executable: none — [`submit`](Self::submit) states the clauses and
-    ///   submits through this.
+    ///   submits through the same judgement and admission.
     ///
     /// # Errors
     /// As [`submit`](Self::submit).
@@ -1854,12 +1870,41 @@ impl<Store, Blocks> Session<Store, Blocks>
         revision: SourceText<'text>,
         unit: &Unit,
         base: ByteOffset,
+        slot: &'text ClosureSlot,
     ) -> Result<Submission<'text>, SessionFault<'text>>
     where
         Store: CheckpointStore,
         Blocks: BlockStore,
     {
-        let mut submission = self.judge_unit_reading(revision, unit, base, |_| ())?;
+        let submission = self.judge_with(revision, unit, base, Some(slot), |_| ())?;
+        self.admit_into(submission)
+    }
+
+    /// `submission`, the judgement the session holds the admission of, with
+    /// the admission run: its composition carrying the kernel artifact and
+    /// the submission the kernel checkpoint.
+    ///
+    /// # Specification
+    /// - requires: `submission` is the session's latest judgement.
+    /// - ensures: as [`submit`](Self::submit) past the judgement.
+    /// - fails: [`SessionFault::Compose`] with [`ComposeFault::Readmission`]
+    ///   when the kernel does not re-derive an acceptance.
+    /// - panics: none.
+    /// - executable: none — [`submit`](Self::submit) states the clauses.
+    ///
+    /// # Errors
+    /// As the specification's fails clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`submit`](Self::submit).
+    /// - witness: `tests::session::whole_file_submit_carries_definitions_forward`
+    fn admit_into<'text>(
+        &mut self,
+        mut submission: Submission<'text>,
+    ) -> Result<Submission<'text>, SessionFault<'text>>
+    where
+        Blocks: BlockStore,
+    {
         if let Maybe::Present(admitted) = self
             .admit()
             .map_err(|fault| SessionFault::Compose(ComposeFault::Readmission(fault)))?
@@ -2056,22 +2101,31 @@ impl<Store, Blocks> Session<Store, Blocks>
         Store: CheckpointStore,
         Read: FnOnce(&SyntaxTree<'text>),
     {
-        self.judge_unit_reading(revision, &Unit::single(), ByteOffset::from(0_usize), read)
+        self.judge_with(
+            revision,
+            &Unit::single(),
+            ByteOffset::from(0_usize),
+            None,
+            read,
+        )
     }
 
     /// Judge `revision`, the text `unit` lays out — the document after the
     /// siblings it imports, its own text from `base` on — as
-    /// [`judge_reading`](Self::judge_reading) judges a document alone.
+    /// [`judge_reading`](Self::judge_reading) judges a document alone, the
+    /// closure's lowering the submission borrows kept in `slot`.
     ///
     /// A document that imports a sibling is judged over it, as the walk judges
     /// the source: the siblings are the prefix of the unit's constants, so the
     /// incremental checker resumes over them unchanged while the revision's
-    /// own declarations change, and the form store takes their forms up from
-    /// the revision before.
+    /// own declarations change. The siblings — the closure — are parsed and
+    /// lowered once per process for every document laid after them: the
+    /// document's own text is parsed through the form store alone, laid after
+    /// the closure's tree, and lowered on the closure's lowering.
     ///
     /// # Specification
     /// - requires: `revision` is the text `unit` lays out, its last source
-    ///   starting at `base`.
+    ///   starting at `base`; `slot` is the submission's own.
     /// - ensures: what [`judge_reading`](Self::judge_reading) ensures of a
     ///   revision, over the unit: `read` is called once with the tree of
     ///   `revision`; the submission's text is `revision` and its base `base`;
@@ -2080,27 +2134,69 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   [`judge_member`] projects it, and its completion obligations are those
     ///   from `base` on; the import scope held is the revision's own. Exactly
     ///   [`judge_reading`](Self::judge_reading) at offset zero of
-    ///   [`Unit::single`].
+    ///   [`Unit::single`]. When the closure's text is one a document can be
+    ///   laid after, the tree is the document's parse laid after the closure's
+    ///   ([`ParseResult::after`]), the module the closure's lowering resumed
+    ///   over it ([`lower_resumed_unit`]), the closure's lowering held in
+    ///   `slot` and in the process's store, and the form census the document's
+    ///   own.
     /// - provides: an editor's judgement of a document that imports a sibling,
     ///   whose diagnostics are those `gandr check` gives the file.
     /// - fails: as [`judge`](Self::judge).
     /// - panics: only by propagating a panic of `read`.
     /// - executable: none — the clauses are [`judge`](Self::judge)'s over the
-    ///   unit, which judges through this.
+    ///   unit, which judges through the same path.
     ///
     /// # Errors
     /// As [`judge`](Self::judge).
     ///
     /// # Adequacy
     /// - hypothesis: L3 — every corpus source, an importer among them, submits
-    ///   as the walk composes it.
+    ///   as the walk composes it; an importer submitted twice lowers its
+    ///   closure once.
     /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
+    /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
     #[inline]
     pub fn judge_unit_reading<'text, Read>(
         &mut self,
         revision: SourceText<'text>,
         unit: &Unit,
         base: ByteOffset,
+        slot: &'text ClosureSlot,
+        read: Read,
+    ) -> Result<Submission<'text>, SessionFault<'text>>
+    where
+        Store: CheckpointStore,
+        Read: FnOnce(&SyntaxTree<'text>),
+    {
+        self.judge_with(revision, unit, base, Some(slot), read)
+    }
+
+    /// Judge `revision` as [`judge_unit_reading`](Self::judge_unit_reading)
+    /// does, its closure lowered whole without `slot`.
+    ///
+    /// # Specification
+    /// - requires: as [`judge_unit_reading`](Self::judge_unit_reading).
+    /// - ensures: as [`judge_unit_reading`](Self::judge_unit_reading); without
+    ///   a slot, the text is parsed through the form store and lowered whole.
+    /// - fails: as [`judge`](Self::judge).
+    /// - panics: only by propagating a panic of `read`.
+    /// - executable: none — as
+    ///   [`judge_unit_reading`](Self::judge_unit_reading).
+    ///
+    /// # Errors
+    /// As [`judge`](Self::judge).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`judge_unit_reading`](Self::judge_unit_reading).
+    /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
+    /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
+    fn judge_with<'text, Read>(
+        &mut self,
+        revision: SourceText<'text>,
+        unit: &Unit,
+        base: ByteOffset,
+        slot: Option<&'text ClosureSlot>,
         read: Read,
     ) -> Result<Submission<'text>, SessionFault<'text>>
     where
@@ -2109,13 +2205,42 @@ impl<Store, Blocks> Session<Store, Blocks>
     {
         let own = SourceIndex::from(unit.sources().len().saturating_sub(1_usize));
         self.admission = Maybe::Absent(admission::Absent::Idle);
-        let (parsed, forms) = self
-            .forms
-            .parse(&self.grammar, revision, self.threads)
-            .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
-        read(parsed.tree());
-        let lowering = lower_parsed_unit(&self.grammar, parsed, unit, &mut self.lowerings)
-            .map_err(SessionFault::Compose)?;
+        let parse_fault = |fault| SessionFault::Compose(ComposeFault::Parse(fault));
+        let closure = slot.and_then(|slot| match self.closure_lowering(revision, unit, base) {
+            Held::Lowered(lowered) => {
+                let held = slot.0.get_or_init(|| Arc::clone(&lowered));
+                Arc::ptr_eq(held, &lowered).then_some(&**held)
+            },
+            Held::Whole => None,
+        });
+        let (lowering, forms) = if let Some(closure) = closure {
+            let document = SourceText::from(
+                <&str>::from(revision)
+                    .get(usize::from(base) ..)
+                    .unwrap_or_default(),
+            );
+            let (parsed, forms) = self
+                .forms
+                .parse(&self.grammar, document, self.threads)
+                .map_err(parse_fault)?;
+            let parsed = parsed
+                .after(closure.tree(), revision)
+                .map_err(|fault| parse_fault(MeldError::Build(fault)))?;
+            read(parsed.tree());
+            let lowering = lower_resumed_unit(closure, parsed, unit, &mut self.lowerings)
+                .map_err(SessionFault::Compose)?;
+            (lowering, forms)
+        }
+        else {
+            let (parsed, forms) = self
+                .forms
+                .parse(&self.grammar, revision, self.threads)
+                .map_err(parse_fault)?;
+            read(parsed.tree());
+            let lowering = lower_parsed_unit(&self.grammar, parsed, unit, &mut self.lowerings)
+                .map_err(SessionFault::Compose)?;
+            (lowering, forms)
+        };
         let mut obligations = lowering.obligations().to_vec();
         obligations.retain(|obligation| obligation.span.start() >= base);
         obligations.sort_by_key(|obligation| obligation.span);
@@ -2464,7 +2589,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn grammar(&self) -> &Pbg
+    pub fn grammar(&self) -> &Pbg
     {
         &self.grammar
     }
@@ -2489,7 +2614,109 @@ impl<Store, Blocks> Session<Store, Blocks>
             .map(|(parsed, _census)| parsed)
     }
 
-    /// Every lowering the session performed: one per submission.
+    /// Parse `revision`, the text `unit` lays out with the document's own
+    /// text from `base` on, through the session's form store, leaving the
+    /// store as it was: the document's own text laid after its closure's tree
+    /// when the process holds the closure's lowering, as
+    /// [`judge_unit_reading`](Self::judge_unit_reading) parses it, else the
+    /// whole text as [`parse_held`](Self::parse_held) parses it.
+    ///
+    /// # Specification
+    /// - requires: as [`judge_unit_reading`](Self::judge_unit_reading).
+    /// - ensures: the tree the session's judgement of `revision` reads, its
+    ///   obligations the document's.
+    /// - provides: the parse a hover's typed run reads, the closure's forms
+    ///   neither molded again nor looked up.
+    /// - fails: the commit's [`MeldError`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The commit's [`MeldError`], when its arena cannot be built or the
+    /// document's tree cannot be laid after the closure's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a corpus-shaped importer's held parse is the tree its
+    ///   judgement read, laid after the closure the process holds.
+    /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|parsed| parsed.tree().source() == revision))]
+    #[inline]
+    pub fn parse_held_unit<'text>(
+        &self,
+        revision: SourceText<'text>,
+        unit: &Unit,
+        base: ByteOffset,
+    ) -> Result<ParseResult<'text>, MeldError>
+    {
+        parse_held_laid(
+            &self.grammar,
+            &self.forms,
+            revision,
+            Some((unit, base)),
+            self.threads,
+        )
+        .map(|(parsed, _census)| parsed)
+    }
+
+    /// The lowering the process holds for `revision`'s closure — its text
+    /// before `base`, `unit`'s sources before its last — lowered and kept
+    /// when the process holds none.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Held::Whole`] when `unit` lays out one source, or `base` is
+    ///   not where its last source starts; otherwise what the process holds for
+    ///   the closure, or, when it holds nothing, the closure's lowering
+    ///   ([`lower_closure`]) — [`Held::Whole`] when the closure is not one a
+    ///   document can be laid after — kept in the process's store and counted
+    ///   among the session's lowerings.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clauses read the process's store, which the
+    ///   call locks inside; the witness counts the lowerings a second judgement
+    ///   makes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an importer submitted twice lowers its closure once.
+    /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
+    fn closure_lowering(
+        &mut self,
+        revision: SourceText<'_>,
+        unit: &Unit,
+        base: ByteOffset,
+    ) -> Held
+    {
+        let Some((text, sources)) = closure_of(revision, unit, base)
+        else {
+            return Held::Whole;
+        };
+        let fingerprint = self.grammar.fingerprint();
+        if let Some(held) = lowerings::find(text, sources, fingerprint) {
+            return held;
+        }
+        let held = Unit::new(sources.to_vec())
+            .ok()
+            .and_then(|closure| {
+                lower_closure(
+                    Arc::clone(&self.grammar),
+                    String::from(<&str>::from(text)),
+                    closure,
+                    &mut self.lowerings,
+                )
+                .ok()
+            })
+            .map_or(Held::Whole, |lowered| Held::Lowered(Arc::new(lowered)));
+        lowerings::keep(
+            String::from(<&str>::from(text)),
+            sources.to_vec(),
+            fingerprint,
+            held.clone(),
+        );
+        held
+    }
+
+    /// Every source the session lowered: each source of a submission's unit,
+    /// those of an import closure the process holds counted once, by the
+    /// session that lowered the closure.
     ///
     /// # Specification
     /// trivial.
@@ -2781,6 +3008,112 @@ impl Laying<'_>
     }
 }
 
+/// Where a judgement of a document laid after its import closure keeps the
+/// closure's lowering its submission borrows: one per submission, held as
+/// long as the submission is.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+#[repr(transparent)]
+pub struct ClosureSlot(OnceLock<Arc<ClosureLowering>>);
+
+impl ClosureSlot
+{
+    /// An empty slot.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new() -> Self
+    {
+        Self(OnceLock::new())
+    }
+}
+
+/// The closure `revision` is laid out after: its text before `base`, and
+/// `unit`'s sources before its last.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `None` when `unit` lays out one source or `base` is not where its
+///   last source starts; otherwise the text before `base` and every source
+///   before the last.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a document alone has no closure, and an importer's is its
+///   siblings.
+/// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
+#[spec(ensures: |ret| ret.is_none_or(|(text, sources)| !sources.is_empty()
+    && <&str>::from(text).len() == usize::from(base)))]
+fn closure_of<'revision, 'unit>(
+    revision: SourceText<'revision>,
+    unit: &'unit Unit,
+    base: ByteOffset,
+) -> Option<(SourceText<'revision>, &'unit [UnitSource])>
+{
+    let (last, sources) = unit.sources().split_last()?;
+    if sources.is_empty() || last.start() != base {
+        return None;
+    }
+    let text = <&str>::from(revision).get(.. usize::from(base))?;
+    Some((SourceText::from(text), sources))
+}
+
+/// Parse `revision` through `forms` without changing it, as the judgement of
+/// a document laid out by `laid`'s unit with its own text from `laid`'s base
+/// on reads it: the document's own text laid after its closure's tree when
+/// the process holds the closure's lowering, else the whole text.
+///
+/// # Specification
+/// - requires: `laid`, when given, lays `revision` out.
+/// - ensures: the joined parse and the document's form census when the process
+///   holds the closure's lowering, else [`FormStore::parse_held`] of
+///   `revision`.
+/// - fails: the commit's [`MeldError`], and a join the closure's tree refuses
+///   as [`MeldError::Build`].
+/// - panics: only by propagating a molding thread's panic.
+///
+/// # Errors
+/// As the specification's fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a trial of a candidate and the held parse of an importer
+///   read the tree a judgement of the same text reads.
+/// - witness: `tests::trial::each_candidate_is_judged_as_a_fresh_session_judges_it`
+/// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
+#[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(ref parsed, _)| parsed.tree().source() == revision))]
+fn parse_held_laid<'text>(
+    grammar: &Pbg,
+    forms: &FormStore,
+    revision: SourceText<'text>,
+    laid: Option<(&Unit, ByteOffset)>,
+    threads: Threads,
+) -> Result<(ParseResult<'text>, FormCensus), MeldError>
+{
+    let held = laid
+        .and_then(|(unit, base)| closure_of(revision, unit, base))
+        .and_then(|(text, sources)| lowerings::find(text, sources, grammar.fingerprint()));
+    match held {
+        Some(Held::Lowered(closure)) => {
+            let document = SourceText::from(
+                <&str>::from(revision)
+                    .get(<&str>::from(closure.text()).len() ..)
+                    .unwrap_or_default(),
+            );
+            let (parsed, census) = forms.parse_held(grammar, document, threads)?;
+            let joined = parsed
+                .after(closure.tree(), revision)
+                .map_err(MeldError::Build)?;
+            Ok((joined, census))
+        },
+        Some(Held::Whole) | None => forms.parse_held(grammar, revision, threads),
+    }
+}
+
 /// One candidate of a trial, judged against the session's grammar, form store
 /// and root and kept nowhere.
 ///
@@ -2788,11 +3121,12 @@ impl Laying<'_>
 /// - requires: `forms` is the session's form store and `root` its root;
 ///   `laid`'s candidate is laid out as its laying says.
 /// - ensures: the candidate is parsed through `forms` without changing it, on
-///   `threads` threads, lowered alone or over its laying's unit under a count
-///   of its own, and judged and settled by the dispatcher's [`judge_member`]
-///   from its laying's base on; the submission carries the composition,
-///   standing and completion obligations [`Session::judge_unit_reading`] gives
-///   the text in a session that has accepted nothing, no resume and no edits
+///   `threads` threads, as [`Session::parse_held_unit`] parses it, lowered
+///   alone or over its laying's unit under a count of its own, and judged and
+///   settled by the dispatcher's [`judge_member`] from its laying's base on;
+///   the submission carries the composition, standing and completion
+///   obligations [`Session::judge_unit_reading`] gives the text in a session
+///   that has accepted nothing, no resume and no edits
 ///   ([`resumed::Absent::Tried`]), and no kernel checkpoint.
 /// - fails: [`SessionFault::Compose`] when the parse or the lowering faults or
 ///   the settle comparison refuses the verdicts, the kernel disagreement taking
@@ -2823,8 +3157,11 @@ fn try_candidate<'text>(
 {
     let (candidate, laying) = laid;
     let base = laying.base();
-    let (parsed, census) = forms
-        .parse_held(grammar, candidate, threads)
+    let laid_out = match laying {
+        Laying::Alone => None,
+        Laying::Member { unit, base: own } => Some((unit, own)),
+    };
+    let (parsed, census) = parse_held_laid(grammar, forms, candidate, laid_out, threads)
         .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
     let lowering = match laying {
         Laying::Alone => lower_parsed(grammar, parsed, &mut LoweringCount::default()),

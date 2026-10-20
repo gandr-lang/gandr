@@ -925,6 +925,58 @@ mod tests
         builder.finish(root).unwrap()
     }
 
+    /// Build four eleven-byte definitions `def ? = ? ;` at 0, 12, 23 and 35
+    /// over `source` under one root, layout wherever the text leaves a gap:
+    /// two [`two_forms`] sources laid end to end, parsed as one.
+    ///
+    /// # Specification
+    /// - requires: `source` is two [`two_forms`] sources laid end to end.
+    /// - ensures: the finished tree of that shape, with four forms.
+    /// - panics: when a span is refused against `source`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the join of the two halves is identified as this
+    ///   tree.
+    /// - witness: `build::tests::a_join_lays_the_second_tree_after_the_first`
+    #[spec(ensures: |ret| ret.forms().len() == 4_usize)]
+    fn four_forms(source: SourceText<'_>) -> SyntaxTree<'_>
+    {
+        let mut builder = TreeBuilder::new(source, grammar()).unwrap();
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut children = Vec::new();
+        let mut end = 0_usize;
+        for start in [0_usize, 12, 23, 35] {
+            if start > end {
+                children.push(builder.node(NodeLabel::Space, at(end, start), &[]).unwrap());
+            }
+            let name = builder
+                .node(
+                    word(),
+                    at(start.saturating_add(4), start.saturating_add(5)),
+                    &[],
+                )
+                .unwrap();
+            let value = builder
+                .node(
+                    word(),
+                    at(start.saturating_add(8), start.saturating_add(9)),
+                    &[],
+                )
+                .unwrap();
+            end = start.saturating_add(11);
+            children.push(
+                builder
+                    .node(definition(), at(start, end), &[name, value])
+                    .unwrap(),
+            );
+        }
+        let root = builder
+            .node(NodeLabel::Wald, at(0, end), &children)
+            .unwrap();
+
+        builder.finish(root).unwrap()
+    }
+
     /// The keys of every node of `tree` whose fragment is `text`, in level
     /// order.
     ///
@@ -998,6 +1050,107 @@ mod tests
         assert_ne!(
             keys_of(&base, SourceFragment::from("a")),
             keys_of(&edited, SourceFragment::from("a"))
+        );
+    }
+
+    #[test]
+    fn a_join_lays_the_second_tree_after_the_first()
+    {
+        let first = "def a = x ; def b = y ;";
+        let second = "def c = z ; def d = w ;";
+        let whole = format!("{first}{second}");
+        let before = two_forms(SourceText::from(first));
+        let after = two_forms(SourceText::from(second));
+        let joined = SyntaxTree::joined(&before, &after, SourceText::from(whole.as_str())).unwrap();
+        let moved = usize::from(before.node_count());
+        assert_eq!(
+            usize::from(joined.node_count()),
+            moved.saturating_add(usize::from(after.node_count()))
+        );
+        assert_eq!(joined.roots(), [
+            NodeIndex::from(0_usize),
+            NodeIndex::from(moved)
+        ]);
+        for position in before.positions() {
+            assert_eq!(joined.node(position), before.node(position), "{position}");
+            assert_eq!(joined.key(position), before.key(position), "{position}");
+        }
+        let lifted =
+            |position: NodeIndex| NodeIndex::from(usize::from(position).saturating_add(moved));
+        for position in after.positions() {
+            let at = lifted(position);
+            assert_eq!(joined.fragment(at), after.fragment(position), "{position}");
+            assert_eq!(joined.key(at), after.key(position), "{position}");
+            assert!(
+                joined.children(at).eq(after.children(position).map(lifted)),
+                "{position}"
+            );
+        }
+        assert_eq!(
+            joined
+                .forms()
+                .iter()
+                .map(|&form| joined.key(form))
+                .collect::<Vec<_>>(),
+            before
+                .forms()
+                .iter()
+                .map(|&form| before.key(form))
+                .chain(after.forms().iter().map(|&form| after.key(form)))
+                .collect::<Vec<_>>(),
+            "the join's forms are the first tree's, then the second's"
+        );
+        let four = four_forms(SourceText::from(whole.as_str()));
+        assert_eq!(
+            joined.digest(),
+            four.digest(),
+            "the join is identified as one tree of the same four forms"
+        );
+        assert_ne!(joined.digest(), before.digest());
+    }
+
+    #[test]
+    fn a_join_refuses_a_text_or_a_grammar_of_its_own()
+    {
+        let first = "def a = x ; def b = y ;";
+        let second = "def c = z ; def d = w ;";
+        let before = two_forms(SourceText::from(first));
+        let after = two_forms(SourceText::from(second));
+        let reversed = format!("{second}{first}");
+        assert_eq!(
+            SyntaxTree::joined(&before, &after, SourceText::from(reversed.as_str())),
+            Err(SyntaxError::SourcesDisagree {
+                at: ByteOffset::from(first.len())
+            }),
+            "the text must lay the first source before the second"
+        );
+        assert_eq!(
+            SyntaxTree::joined(&before, &after, SourceText::from(first)),
+            Err(SyntaxError::SourcesDisagree {
+                at: ByteOffset::from(first.len())
+            }),
+            "and must hold the second"
+        );
+        let mut builder = TreeBuilder::new(
+            SourceText::from(second),
+            GrammarFingerprint::from(0xf00d_u64),
+        )
+        .unwrap();
+        let root = builder
+            .node(
+                NodeLabel::Wald,
+                span(ByteOffset::from(0_usize), ByteOffset::from(second.len())),
+                &[],
+            )
+            .unwrap();
+        let foreign = builder.finish(root).unwrap();
+        let whole = format!("{first}{second}");
+        assert_eq!(
+            SyntaxTree::joined(&before, &foreign, SourceText::from(whole.as_str())),
+            Err(SyntaxError::GrammarsDisagree {
+                before: grammar(),
+                after: GrammarFingerprint::from(0xf00d_u64),
+            })
         );
     }
 

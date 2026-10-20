@@ -8,10 +8,13 @@
 //! The namespace engine's cases, in a `cfg(test)` module so the crate's lint
 //! wall reads them as test code rather than as shipping code.
 
+use alloc::sync::Arc;
+
 use anodized::spec;
 use gandr_core_term::CoreArena;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
+use gandr_surface_lowering::ClosureLowering;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::ImportBinding;
 use gandr_surface_lowering::ImportDeclaration;
@@ -46,6 +49,7 @@ use gandr_surface_lowering::namespace::ScopeError;
 use gandr_surface_lowering::namespace::Segment;
 use gandr_surface_lowering::namespace::SegmentCount;
 use gandr_surface_lowering::namespace::Trie;
+use gandr_surface_parser::ParseResult;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
@@ -1589,6 +1593,132 @@ fn a_source_lowers_alike_whatever_follows_it_776()
                 .comp_types_since(start)
                 .all(|id| whole_arena.comp_type(id) == alone_arena.comp_type(id)),
         "the base's arena rows lead the unit's arena"
+    );
+}
+
+/// #1033: a document parsed alone, laid after its closure's tree and resumed
+/// on the closure's lowering lowers as the whole unit does over that tree, the
+/// module and the arena alike, each time it is resumed, the closure's hole and
+/// the document's numbered as the whole unit numbers them; its declarations
+/// and arena are the ones the whole text's parse lowers to. A tree that does
+/// not extend the closure's is lowered whole, and a document that refuses the
+/// unit answers the whole lowering's refusal.
+#[test]
+fn a_document_resumed_after_its_closure_lowers_as_the_whole_1033()
+{
+    let pbg = grammar();
+    let base = SourceText::from(
+        "theory Nat {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : Nat) \
+         --> Nat;\n}\ndata Point : Type { One : Point; }\ndef one : Point ;\ndef one = One \
+         ;\ndef pending = ? ;\ndef inc(n : Integer) -> -F Integer { return n + 1 }",
+    );
+    let importer = SourceText::from(
+        "import \"./base.gandr\" ;\nmodule Counting : Model(Nat) {\n  type Nat = Integer;\n  \
+         def zero() -> -F Integer { return 0 }\n  def succ(n : Integer) -> -F Integer { return \
+         n + 1 }\n}\ndef again : Point ;\ndef again = one ;\ndef later = ?named ;",
+    );
+    let imports = [ImportTarget::Source(SourceIndex::from(0_usize))];
+    let (text, unit) = laid(&[(base, &[]), (importer, &imports)]);
+    let start = unit
+        .sources()
+        .get(1_usize)
+        .map(|source| usize::from(source.start()))
+        .expect("the importer is the second source");
+    let closure = ClosureLowering::new(
+        Arc::new(grammar()),
+        String::from(text.get(.. start).expect("the closure's text")),
+        Unit::new(unit.sources().get(.. 1_usize).expect("the base").to_vec())
+            .expect("the base alone is a unit"),
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+        |pbg, closure| parse(pbg, closure).map(ParseResult::into_tree),
+    )
+    .expect("the closure parses");
+    let joined = parse(
+        &pbg,
+        SourceText::from(text.get(start ..).expect("the importer's text")),
+    )
+    .expect("the document parses")
+    .after(closure.tree(), SourceText::from(text.as_str()))
+    .expect("the document lays after its closure")
+    .into_tree();
+    let mut whole_arena = CoreArena::new();
+    let whole = lower_unit(
+        &pbg,
+        &joined,
+        &unit,
+        &mut whole_arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+    )
+    .expect("the unit lowers");
+    assert!(
+        whole
+            .declarations()
+            .iter()
+            .all(|declaration| !matches!(declaration.outcome(), DeclarationOutcome::Refused(_))),
+        "nothing is refused"
+    );
+    for _ in 0_usize .. 2_usize {
+        let mut arena = CoreArena::new();
+        let resumed = closure
+            .resume(&joined, &unit, &mut arena)
+            .expect("the unit lowers resumed");
+        assert_eq!(resumed, whole, "the module the whole unit lowers to");
+        assert_eq!(arena, whole_arena, "the arena the whole unit mints");
+    }
+    let tree = parsed(&pbg, SourceText::from(text.as_str()));
+    let mut text_arena = CoreArena::new();
+    let from_text = lower_unit(
+        &pbg,
+        &tree,
+        &unit,
+        &mut text_arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+    )
+    .expect("the whole text lowers");
+    assert_eq!(
+        from_text.declarations(),
+        whole.declarations(),
+        "the whole text's declarations"
+    );
+    assert_eq!(text_arena, whole_arena, "the whole text's arena");
+    let mut fallback_arena = CoreArena::new();
+    assert_eq!(
+        closure.resume(&tree, &unit, &mut fallback_arena),
+        Ok(from_text),
+        "a tree that does not extend the closure's is lowered whole"
+    );
+    assert_eq!(fallback_arena, text_arena);
+    let refusing = SourceText::from(
+        "import \"./base.gandr\" as B ;\nimport \"./base.gandr\" as B ;\ndef c = ? ;",
+    );
+    let twice = [
+        ImportTarget::Source(SourceIndex::from(0_usize)),
+        ImportTarget::Source(SourceIndex::from(0_usize)),
+    ];
+    let (refused_text, refused_unit) = laid(&[(base, &[]), (refusing, &twice)]);
+    let refused = parse(&pbg, refusing)
+        .expect("the document parses")
+        .after(closure.tree(), SourceText::from(refused_text.as_str()))
+        .expect("the document lays after its closure")
+        .into_tree();
+    let expected = lower_unit(
+        &pbg,
+        &refused,
+        &refused_unit,
+        &mut CoreArena::new(),
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+    );
+    assert!(
+        expected.is_err(),
+        "two imports of one alias refuse the unit"
+    );
+    assert_eq!(
+        closure.resume(&refused, &refused_unit, &mut CoreArena::new()),
+        expected
     );
 }
 

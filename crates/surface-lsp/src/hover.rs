@@ -48,14 +48,14 @@
 //! # The table is typed over the session's held forms
 //!
 //! [`hovering`] parses the copy's text through its session's form store
-//! ([`Session::parse_held`]), which holds every form of the revision the
-//! session last judged — the import closure's among them, for a document that
-//! imports a sibling — so the table molds only what the recheck before it
-//! molded, never the closure again; the closure is laid out by the
-//! dispatcher's [`lay_out_shadowed`], which reads each sibling an editor holds
-//! as its copy and every other once per process. The
-//! lowering and the typed run still read the whole laid-out text, the
-//! closure with the document.
+//! without changing it. A document that imports a sibling is parsed as its
+//! judgement parses it ([`Session::parse_held_unit`]): its own text alone,
+//! through the forms the recheck before it molded, laid after the tree of the
+//! closure whose lowering the process holds, so the closure is neither molded
+//! nor looked up again; the closure is laid out by the dispatcher's
+//! [`lay_out_shadowed`], which reads each sibling an editor holds as its copy
+//! and every other once per process. The lowering and the typed run still
+//! read the whole laid-out text, the closure with the document.
 //!
 //! The alternative was a whole parse of the laid-out text per revision: on
 //! the λ-calculus closure of #776, half the table's time went to it. The
@@ -308,12 +308,11 @@ impl Hovering
 /// - requires: nothing; `session` may have judged any revision.
 /// - ensures: [`TypeTable::of_parsed_unit`] over the import closure the
 ///   dispatcher's [`lay_out_shadowed`] lays `text` out in under `shadows` when
-///   it imports a sibling by path, beside the closure's paths, else
-///   [`TypeTable::of_parsed`] over `text`, beside no path, each parsed through
-///   `session`'s form store ([`Session::parse_held`]), which takes up every
-///   form its latest submission molded — every form of the closure, for a
-///   session that judged the document — and leaves the store as it was; the
-///   empty table when the text did not parse.
+///   it imports a sibling by path, parsed as `session`'s judgement parses it
+///   ([`Session::parse_held_unit`]), beside the closure's paths, else
+///   [`TypeTable::of_parsed`] over `text` parsed through `session`'s form store
+///   ([`Session::parse_held`]), beside no path; the store is left as it was,
+///   and the table is empty when the text did not parse.
 /// - provides: what a document copy keeps for its hovers, its definitions, its
 ///   completions and its signature help: the names read off the table once
 ///   ([`Names::of`]) and the heads read off the same parse
@@ -349,7 +348,7 @@ pub fn hovering<Store, Blocks>(
     let (typed, paths) = match lay_out_shadowed(grammar, path, classify(path), text, shadows) {
         Maybe::Present(laid) => (
             session
-                .parse_held(SourceText::from(laid.text.as_str()))
+                .parse_held_unit(SourceText::from(laid.text.as_str()), &laid.unit, laid.base)
                 .ok()
                 .and_then(|parsed| {
                     let signatures = heads(parsed.tree(), &laid.unit);

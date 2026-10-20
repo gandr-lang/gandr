@@ -155,6 +155,7 @@
 //! because a second composition is exactly what this section rules out.
 
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 use alloc::sync::Arc;
 use core::fmt;
 
@@ -191,6 +192,7 @@ use gandr_surface_corpus::settle;
 use gandr_surface_diagnostics::Failures;
 use gandr_surface_diagnostics::TypeSpellings;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_lowering::ClosureLowering;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::InferredExit;
 use gandr_surface_lowering::InferredRun;
@@ -205,6 +207,7 @@ use gandr_surface_lowering::namespace::ShadowedBuiltin;
 use gandr_surface_parser::MeldError;
 use gandr_surface_parser::ObligationInstance;
 use gandr_surface_parser::ParseResult;
+use gandr_surface_parser::Unlayable;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
@@ -804,18 +807,24 @@ impl core::error::Error for ComposeFault<'_>
 /// once per lowering of the unit.
 mod lowering
 {
+    use alloc::string::String;
+    use alloc::sync::Arc;
+
     use anodized::spec;
     use gandr_core_term::CoreArena;
     use gandr_surface_grammar::Pbg;
+    use gandr_surface_lowering::ClosureLowering;
     use gandr_surface_lowering::LoweredModule;
     use gandr_surface_lowering::LoweringBudget;
     use gandr_surface_lowering::LoweringRefusal;
     use gandr_surface_lowering::Unit;
     use gandr_surface_lowering::lower_unit;
     use gandr_surface_lowering::namespace::Recognition;
+    use gandr_surface_parser::parse;
     use gandr_surface_syntax::SyntaxTree;
 
     use super::LoweringCount;
+    use super::Unheld;
 
     /// Lower the sources `unit` lays out in `tree` into `arena` against the
     /// empty outermost scope, counting each of them in `lowerings`.
@@ -861,6 +870,97 @@ mod lowering
             LoweringBudget::DEFAULT,
             Recognition::default(),
         )
+    }
+
+    /// Lower the closure `text` lays out as `unit` under `grammar`, against
+    /// the empty outermost scope, held for the documents laid after it;
+    /// each of its sources counted in `lowerings` once its text parses as a
+    /// text a document can be laid after.
+    ///
+    /// # Specification
+    /// - requires: `text` lays out `unit`'s sources end to end.
+    /// - ensures: on success, `lowerings` is more by the closure's sources,
+    ///   saturating; on refusal, unchanged.
+    /// - provides: the closure's lowering, once per closure.
+    /// - fails: [`Unheld::Parse`] when the text does not parse, and
+    ///   [`Unheld::Unlayable`] when its parse repairs it or it ends inside a
+    ///   token.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Unheld`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closure is counted by its own sources, and one that
+    ///   ends inside a comment is not held and counts nothing.
+    /// - witness: `compose::tests::a_closure_lowers_once_and_resumes_per_document_1033`
+    #[spec(
+        captures: [before = lowerings.0, sources = unit.sources().len()],
+        ensures: |ret| lowerings.0 == if ret.is_ok() { before.saturating_add(sources) } else { before },
+    )]
+    pub(super) fn suspend(
+        grammar: Arc<Pbg>,
+        text: String,
+        unit: Unit,
+        lowerings: &mut LoweringCount,
+    ) -> Result<ClosureLowering, Unheld>
+    {
+        let sources = unit.sources().len();
+        let closure = ClosureLowering::new(
+            grammar,
+            text,
+            unit,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+            |grammar, text| {
+                let parsed = parse(grammar, text).map_err(Unheld::Parse)?;
+                parsed.layable().map_err(Unheld::Unlayable)?;
+                Ok(parsed.into_tree())
+            },
+        )?;
+        *lowerings = LoweringCount(lowerings.0.saturating_add(sources));
+        Ok(closure)
+    }
+
+    /// Lower `tree`, a document laid after `closure`'s tree, as `unit` lays
+    /// it out, into `arena`, resuming `closure`'s lowering; each source after
+    /// the closure's counted in `lowerings`.
+    ///
+    /// # Specification
+    /// - requires: `tree` lays a document's parse after `closure`'s tree, and
+    ///   `unit` lays the closure's sources out first.
+    /// - ensures: `lowerings` is more by the unit's sources after the
+    ///   closure's, saturating, whatever the lowering answered; the answer is
+    ///   [`ClosureLowering::resume`]'s.
+    /// - provides: a document's lowering at the cost of its own source.
+    /// - fails: the lowering's refusal of the whole module, unchanged.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The [`LoweringRefusal`] the lowering returns for the whole module.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`suspend`].
+    /// - witness: `compose::tests::a_closure_lowers_once_and_resumes_per_document_1033`
+    #[spec(
+        captures: [before = lowerings.0],
+        ensures: lowerings.0 == before.saturating_add(
+            unit.sources().len().saturating_sub(closure.unit().sources().len())),
+    )]
+    pub(super) fn resume<'held>(
+        closure: &'held ClosureLowering,
+        tree: &SyntaxTree<'held>,
+        unit: &Unit,
+        arena: &mut CoreArena,
+        lowerings: &mut LoweringCount,
+    ) -> Result<LoweredModule<'held>, LoweringRefusal<'held>>
+    {
+        let after = unit
+            .sources()
+            .len()
+            .saturating_sub(closure.unit().sources().len());
+        *lowerings = LoweringCount(lowerings.0.saturating_add(after));
+        closure.resume(tree, unit, arena)
     }
 }
 
@@ -1120,6 +1220,108 @@ pub fn lower_parsed_unit<'source>(
     let tree = parsed.into_tree();
     let mut arena = CoreArena::new();
     let lowered = match lowering::lower(grammar, &tree, unit, &mut arena, lowerings) {
+        Ok(module) => Lowered::Module { module, arena },
+        Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
+            return Err(ComposeFault::Lowering(refusal));
+        },
+        Err(refusal) => Lowered::Refused(refusal),
+    };
+    Ok(Lowering {
+        obligations,
+        lowered,
+    })
+}
+
+/// Why an import closure's lowering is not held for the documents laid after
+/// it: each such document is lowered with its closure, whole.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Unheld
+{
+    /// The closure's text did not parse.
+    Parse(MeldError),
+    /// The closure's parse cannot stand before a document parsed alone.
+    Unlayable(Unlayable),
+}
+
+/// The lowering of the import closure `text` lays out as `unit` under
+/// `grammar`, held for the documents laid after it: [`lower_resumed_unit`]
+/// lowers each such document's own source alone.
+///
+/// # Specification
+/// - requires: `text` lays out `unit`'s sources end to end.
+/// - ensures: the closure's sources lowered as [`lower_parsed_unit`] lowers
+///   them ahead of any source after them, each counted in `lowerings`.
+/// - provides: what a session holds for a document's closure across the
+///   document's edits.
+/// - fails: [`Unheld`] when the text does not parse, its parse repairs it, or
+///   it ends inside a token; nothing is counted.
+/// - panics: none.
+///
+/// # Errors
+/// [`Unheld`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a closure is counted by its own sources, and one that
+///   ends inside a comment is not held and counts nothing.
+/// - witness: `compose::tests::a_closure_lowers_once_and_resumes_per_document_1033`
+#[spec(
+    captures: [before = lowerings.0, sources = unit.sources().len()],
+    ensures: |ret| lowerings.0 == if ret.is_ok() { before.saturating_add(sources) } else { before }
+        && ret.as_ref().map_or(true, |closure| closure.unit().sources().len() == sources),
+)]
+#[inline]
+pub fn lower_closure(
+    grammar: Arc<Pbg>,
+    text: String,
+    unit: Unit,
+    lowerings: &mut LoweringCount,
+) -> Result<ClosureLowering, Unheld>
+{
+    lowering::suspend(grammar, text, unit, lowerings)
+}
+
+/// [`lower_parsed_unit`] over `parsed`, resuming `closure`'s lowering.
+///
+/// `parsed` is a document parsed alone and laid after `closure`'s tree; the
+/// closure's sources are not lowered again.
+///
+/// # Specification
+/// - requires: `parsed` is a document's parse laid after `closure`'s tree
+///   ([`ParseResult::after`]), and `unit` lays the closure's sources out first.
+/// - ensures: as [`lower_parsed_unit`] over `parsed` and `unit`, `lowerings`
+///   advancing by the sources after the closure's.
+/// - provides: a document's lowering at the cost of its own source.
+/// - fails: as [`lower_parsed_unit`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`lower_parsed_unit`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a document resumed twice on one closure lowers each time
+///   to the module and arena the whole unit lowers to, counted by its own
+///   source.
+/// - witness: `compose::tests::a_closure_lowers_once_and_resumes_per_document_1033`
+#[inline]
+#[spec(
+    captures: [before = lowerings.0],
+    ensures: lowerings.0 == before.saturating_add(
+        unit.sources().len().saturating_sub(closure.unit().sources().len())),
+)]
+pub fn lower_resumed_unit<'held>(
+    closure: &'held ClosureLowering,
+    parsed: ParseResult<'held>,
+    unit: &Unit,
+    lowerings: &mut LoweringCount,
+) -> Result<Lowering<'held>, ComposeFault<'held>>
+{
+    let obligations = parsed.obligations().to_vec();
+    let tree = parsed.into_tree();
+    let mut arena = CoreArena::new();
+    let lowered = match lowering::resume(closure, &tree, unit, &mut arena, lowerings) {
         Ok(module) => Lowered::Module { module, arena },
         Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
             return Err(ComposeFault::Lowering(refusal));
@@ -2360,6 +2562,106 @@ mod tests
     fn grammar() -> Pbg
     {
         built_in().expect("the built-in grammar builds")
+    }
+
+    /// #1033: an import closure lowered once is counted by its own sources;
+    /// each document resumed on it is counted by the document's sources and
+    /// lowers as the whole unit lowers over the same parse; a closure that
+    /// ends inside a token is not held, and counts nothing.
+    #[test]
+    fn a_closure_lowers_once_and_resumes_per_document_1033()
+    {
+        use alloc::string::String;
+        use alloc::sync::Arc;
+
+        use gandr_surface_lowering::ImportTarget;
+        use gandr_surface_lowering::LoweredModule;
+        use gandr_surface_lowering::SourceIndex;
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_lowering::UnitSource;
+        use gandr_surface_parser::Unlayable;
+        use gandr_surface_syntax::ByteOffset;
+
+        use super::Lowering;
+        use super::Unheld;
+        use super::lower_closure;
+        use super::lower_parsed_unit;
+        use super::lower_resumed_unit;
+
+        /// The module and arena `lowering` lowered to.
+        ///
+        /// # Specification
+        /// trivial.
+        fn module(lowering: Lowering<'_>) -> (LoweredModule<'_>, CoreArena)
+        {
+            match lowering.into_lowered() {
+                Lowered::Module { module, arena } => (module, arena),
+                Lowered::Refused(refusal) => panic!("refused whole: {refusal}"),
+            }
+        }
+
+        let pbg = grammar();
+        let closure_text = "def one : Integer ;\ndef one = 1 ;\n";
+        let own = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
+        let text = format!("{closure_text}{own}");
+        let unit = Unit::new(vec![
+            UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+            UnitSource::new(ByteOffset::from(closure_text.len()), vec![
+                ImportTarget::Source(SourceIndex::from(0_usize)),
+            ]),
+        ])
+        .expect("two sources make a unit");
+        let alone = || {
+            Unit::new(vec![UnitSource::new(ByteOffset::from(0_usize), Vec::new())])
+                .expect("one source makes a unit")
+        };
+        let mut lowerings = LoweringCount::default();
+        let closure = lower_closure(
+            Arc::new(grammar()),
+            String::from(closure_text),
+            alone(),
+            &mut lowerings,
+        )
+        .expect("the closure is held");
+        assert_eq!(
+            lowerings,
+            LoweringCount::from(1_usize),
+            "the closure's one source"
+        );
+        for resumed in 1_usize ..= 2_usize {
+            let parsed = parse(&pbg, SourceText::from(own))
+                .expect("the document parses")
+                .after(closure.tree(), SourceText::from(text.as_str()))
+                .expect("the document lays after its closure");
+            let whole =
+                lower_parsed_unit(&pbg, parsed.clone(), &unit, &mut LoweringCount::default())
+                    .expect("the whole unit lowers");
+            let resumed_lowering = lower_resumed_unit(&closure, parsed, &unit, &mut lowerings)
+                .expect("the document lowers resumed");
+            assert_eq!(
+                module(resumed_lowering),
+                module(whole),
+                "the module and arena the whole unit lowers to"
+            );
+            assert_eq!(
+                lowerings,
+                LoweringCount::from(resumed.saturating_add(1_usize)),
+                "each resume counts the document's one source"
+            );
+        }
+        let mut untouched = LoweringCount::default();
+        assert_eq!(
+            lower_closure(
+                Arc::new(grammar()),
+                String::from("def one = 1 ;\n/* never closed"),
+                alone(),
+                &mut untouched,
+            )
+            .map(|_held| ()),
+            Err(Unheld::Unlayable(Unlayable::Open)),
+            "a closure that ends inside a comment is not held"
+        );
+        assert_eq!(untouched, LoweringCount::default(), "and counts nothing");
     }
 
     /// A readmission that resumes nothing and records nothing.
