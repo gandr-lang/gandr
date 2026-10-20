@@ -578,6 +578,9 @@ pub enum Tail
     /// The body ends here: a definition's body, the rest of a bind there, a
     /// lambda's or a thunk's body.
     Ends,
+    /// The body ends here, and nothing states its type: a thunk's body below
+    /// a value, as a constructor's field, a lambda's body there.
+    Unstated,
     /// The body goes on: the computation a bind runs, the function a call
     /// applies.
     Continues,
@@ -835,6 +838,46 @@ where
 ///
 /// # Specification
 /// - requires: nothing.
+/// - ensures: the slots [`slots`] reads, a data case's motive among them where
+///   [`case_motive`] writes it.
+/// - provides: the one table of child positions the scan and the walk share.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`slots`].
+/// - witness: `tests::goldens::a_case_nothing_types_writes_its_motive_815`
+#[spec(ensures: |ref ret| if let Former::DataCase { motive, arity, .. } = *former {
+    ret.len() == usize::from(arity).saturating_add(1_usize).saturating_add(usize::from(case_motive(source, motive, admits) == Motive::Written))
+} else {
+    true
+})]
+pub fn children<S>(
+    source: &S,
+    node: S::Node,
+    former: &Former<'_, S::Node>,
+    admits: Admits,
+    bodies: Bodies,
+) -> Vec<Slot<S::Node>>
+where
+    S: Source + ?Sized,
+{
+    let written = if let Former::DataCase { motive, .. } = *former {
+        case_motive(source, motive, admits)
+    }
+    else {
+        Motive::Left
+    };
+    slots(source, node, former, (admits, bodies), written)
+}
+
+/// The children `former` reads at `node`, each with what its position
+/// admits and the binders it stands under, in reading order, in a position
+/// admitting `admits` of a presentation writing its thunks as `bodies` says,
+/// a data case writing its motive as `written` says.
+///
+/// # Specification
+/// - requires: nothing.
 /// - ensures: an n-ary former's components, answered by the source for `node`,
 ///   a record's and a record type's after their field labels and an injection's
 ///   body after its summand; type children admit types and term children terms
@@ -849,11 +892,14 @@ where
 ///   each under one linear binder; the computation a bind runs, the function an
 ///   application applies, a computation where a value is read, an offer's arms
 ///   and a fork's child admit computations where the body goes on, a body in
-///   braces one where it ends, and a bind's rest and the branches of a case
-///   what its own position admits; a thunk's body is a child only where bodies
-///   are spelled; a family's arguments admit values their parameters state the
-///   type of, and a constructor's classifier is a child only where bodies are
-///   spelled and its position states no type; every leaf former has none.
+///   braces one where it ends, a thunk's body below a value and a lambda's body
+///   there one whose type nothing states, and a bind's rest and the branches of
+///   a case what its own position admits; a data case's motive is a type under
+///   one binder where `written` writes it; a thunk's body is a child only where
+///   bodies are spelled; a family's arguments admit values their parameters
+///   state the type of, and a constructor's classifier is a child only where
+///   bodies are spelled and its position states no type; every leaf former has
+///   none.
 /// - provides: the one table of child positions the scan and the walk share.
 /// - fails: never.
 /// - panics: none.
@@ -884,7 +930,9 @@ where
     },
     | Former::Pi { .. } | Former::Sigma { .. } | Former::StaticLambda(_) | Former::Lambda(_) | Former::Bind(..) | Former::Fixpoint(_)
         | Former::Shift(_) | Former::Leta { .. } => ret.last().is_some_and(|slot| slot.binds == Binds::ONE),
-    | Former::Case { arity, .. } | Former::DataCase { arity, .. } => ret.len() == usize::from(arity).saturating_add(1_usize)
+    | Former::Case { arity, .. } => ret.len() == usize::from(arity).saturating_add(1_usize)
+        && ret.first().is_some_and(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
+    | Former::DataCase { arity, .. } => ret.len() == usize::from(arity).saturating_add(1_usize).saturating_add(usize::from(written == Motive::Written))
         && ret.first().is_some_and(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
     | Former::Thunk(_) => ret.len() == match bodies { Bodies::Spelled => 1_usize, Bodies::Opaque => 0_usize },
     | Former::Session { payloads, .. } => ret.len() == usize::from(payloads)
@@ -903,12 +951,12 @@ where
         | Former::Reify | Former::Receive(_) | Former::Select { .. } | Former::Close(_) | Former::AbortView(_) | Former::Unreadable(_) => ret.is_empty(),
     | _ => !ret.is_empty(),
 })]
-pub fn children<S>(
+fn slots<S>(
     source: &S,
     node: S::Node,
     former: &Former<'_, S::Node>,
-    admits: Admits,
-    bodies: Bodies,
+    (admits, bodies): (Admits, Bodies),
+    written: Motive,
 ) -> Vec<Slot<S::Node>>
 where
     S: Source + ?Sized,
@@ -1065,10 +1113,27 @@ where
         Former::Application(function, argument) => {
             Vec::from([continues(function), value(argument)])
         },
+        // A lambda's body below a value states no more than the lambda.
         Former::Lambda(body) | Former::Fixpoint(body) | Former::Shift(body) => {
-            Vec::from([ends(body, Binds::ONE)])
+            Vec::from([match admits {
+                Admits::Computation(Tail::Unstated) => Slot::of(body, admits, Binds::ONE),
+                Admits::Computation(Tail::Ends | Tail::Continues)
+                | Admits::Type
+                | Admits::ValueType
+                | Admits::CompType
+                | Admits::Value
+                | Admits::Stated => ends(body, Binds::ONE),
+            }])
         },
+        // A thunk's body states its type only where the thunk's position
+        // does: a definition's value, a family's argument; below any other
+        // value, as a constructor's field, nothing states it.
         Former::Thunk(body) => match bodies {
+            Bodies::Spelled if admits == Admits::Value => Vec::from([Slot::of(
+                body,
+                Admits::Computation(Tail::Unstated),
+                Binds::NONE,
+            )]),
             Bodies::Spelled => Vec::from([ends(body, Binds::NONE)]),
             Bodies::Opaque => Vec::new(),
         },
@@ -1120,8 +1185,15 @@ where
                 Binds::intuitionistic(OpenBinders(usize::from(arity))),
             ),
         ]),
-        Former::DataCase { scrutinee, arity } => {
+        Former::DataCase {
+            scrutinee,
+            motive,
+            arity,
+        } => {
             let mut slots = Vec::from([value(scrutinee)]);
+            if written == Motive::Written {
+                slots.push(Slot::of(motive, Admits::CompType, Binds::ONE));
+            }
             slots.extend((0_usize .. usize::from(arity)).map(|index| {
                 let arm = arm(source, node, Component::from(index));
                 Slot {
@@ -2512,6 +2584,100 @@ where
         }
     }
     Maybe::Present(names)
+}
+
+/// Whether a data case writes its motive, `case n -> C { … }`.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Motive
+{
+    /// `case n -> C { … }`: nothing else states the case's type.
+    Written,
+    /// `case n { … }`: its position states the type, or the motive names
+    /// the scrutinee its binder stands for, which no written motive can.
+    Left,
+}
+
+/// Whether a data case at a position admitting `admits` writes its motive
+/// `motive`.
+///
+/// # Specification
+/// - requires: `motive` is a data case's motive in `source`.
+/// - ensures: [`Motive::Written`] where nothing states the case's type — the
+///   computation a bind runs or a call applies, a body whose type nothing
+///   states — and no variable in the motive names its own binder;
+///   [`Motive::Left`] otherwise, and where the scan takes more than the visit
+///   budget.
+/// - provides: the one decision a case's slots and its spelling share.
+/// - fails: never.
+/// - panics: none.
+/// - intension: the scan [`mentioned`] makes, counting the intuitionistic
+///   binders each slot opens.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a case a bind runs, one in a constructor's thunk and one
+///   ending a definition's body observe the motive written, written and left.
+/// - witness: `tests::goldens::a_case_nothing_types_writes_its_motive_815`
+#[spec(ensures: |ret| ret == Motive::Left || matches!(admits, Admits::Computation(Tail::Continues | Tail::Unstated)))]
+fn case_motive<S>(
+    source: &S,
+    motive: S::Node,
+    admits: Admits,
+) -> Motive
+where
+    S: Source + ?Sized,
+{
+    if !matches!(
+        admits,
+        Admits::Computation(Tail::Continues | Tail::Unstated)
+    ) {
+        return Motive::Left;
+    }
+    let mut pending = Vec::from([(motive, Admits::CompType, ValueDepth::ROOT, 0_usize)]);
+    let mut visits = 0_u32;
+    while let Some((node, admits, depth, opened)) = pending.pop() {
+        visits = visits.saturating_add(1_u32);
+        if visits > VISIT_BUDGET {
+            return Motive::Left;
+        }
+        let former = source.read(node);
+        let kind = kind(&former);
+        if reach(admits, depth, kind) != Reach::Spell {
+            continue;
+        }
+        if let Former::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        } = former
+            && usize::try_from(u32::from(index)).ok() == Some(opened)
+        {
+            return Motive::Left;
+        }
+        let below = below(depth, kind);
+        // A case inside the motive is scanned with its own motive, so a
+        // mention there counts whether or not that motive is written.
+        let read = slots(
+            source,
+            node,
+            &former,
+            (admits, Bodies::Spelled),
+            Motive::Written,
+        );
+        for slot in read {
+            if let Some(child) = slot.node {
+                let opened = if slot.binds.zone == Zone::Intuitionistic {
+                    opened.saturating_add(slot.binds.count)
+                }
+                else {
+                    opened
+                };
+                pending.push((child, slot.admits, below, opened));
+            }
+        }
+    }
+    Motive::Written
 }
 
 /// The surface spelling of the universe of `sort` at `level`.
@@ -4565,7 +4731,7 @@ impl Walk<'_, '_>
             // So does one that ends answering a `run`: bare at a statement's
             // head, `run` opens a bind, `run x <- c ; …`.
             | Former::Return(returned) => match admits {
-                | Admits::Computation(Tail::Ends)
+                | Admits::Computation(Tail::Ends | Tail::Unstated)
                     if !matches!(
                         source.read(returned),
                         Former::Quote(_) | Former::QuoteComputation(_) | Former::Run(_)
@@ -4573,7 +4739,7 @@ impl Walk<'_, '_>
                 {
                     None
                 },
-                | Admits::Computation(Tail::Ends | Tail::Continues)
+                | Admits::Computation(Tail::Ends | Tail::Continues | Tail::Unstated)
                 | Admits::Type
                 | Admits::ValueType
                 | Admits::CompType
@@ -5626,12 +5792,12 @@ impl Walk<'_, '_>
                 let _ = parts.text(" => ").piece(Binding::Arrow).part(Part::Close);
                 writes(Production("case_expression"), pattern)
             },
-            Former::DataCase { arity, .. } => {
-                let _ = parts
-                    .text("case ")
-                    .piece(Binding::Prefix)
-                    .text(" {")
-                    .part(Part::Open);
+            Former::DataCase { motive, arity, .. } => {
+                let _ = parts.text("case ").piece(Binding::Prefix);
+                if case_motive(source, motive, admits) == Motive::Written {
+                    let _ = parts.text(" -> ").piece(Binding::Prefix);
+                }
+                let _ = parts.text(" {").part(Part::Open);
                 for index in 0_usize .. usize::from(arity) {
                     let arm = arm(source, node, Component::from(index));
                     let name = self.spelled(arm.name, Unspelled::Unreadable(Unreadable::Unnamed));

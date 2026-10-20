@@ -2955,6 +2955,72 @@ fn an_elaborated_body_prints_with_its_exits_elided()
     }
 }
 
+/// A data case writes its motive where nothing states its type — the
+/// computation a bind runs, a body in a thunk a constructor holds — and
+/// leaves it where the body's type is stated or the motive names the
+/// scrutinee its binder stands for (#815).
+#[test]
+fn a_case_nothing_types_writes_its_motive_815()
+{
+    let mut core = CoreArena::new();
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = core.computation_return(bound);
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returns_nat = core.comp_type_returner(nat);
+    let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let returns_zero = core.computation_return(zero);
+    let field = core.computation_lambda(returned);
+    let case = core.computation_data_case(bound, returns_nat, vec![returns_zero, field]);
+    // `run b <- case a -> -F Nat { … } ; b`: a bind's run states no type.
+    let run = core.computation_bind(case, returned);
+    let running = core.computation_lambda(run);
+    // `Succ(thunk { fn (a) { case a -> -F Nat { … } } })`: nor does a
+    // thunk a constructor holds.
+    let matched = core.computation_lambda(case);
+    let held = core.value_thunk(matched);
+    let succ = core.value_constructor(nat, ConstructorTag::from(1_usize), vec![held]);
+    let holding = core.computation_return(succ);
+    // A motive naming the scrutinee's binder is left, as is one where the
+    // body's type is stated.
+    let point = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let run_of = core.value_type_run(point);
+    let returns_run = core.comp_type_returner(run_of);
+    let dependent = core.computation_data_case(bound, returns_run, vec![returns_zero, field]);
+    let dependent_run = core.computation_bind(dependent, returned);
+    let depending = core.computation_lambda(dependent_run);
+    let names = [Name::from("Nat")];
+    let mut constructors = Constructors::default();
+    constructors.family(Name::from("Nat"), [
+        (Name::from("Zero"), Arity::from(0_usize)),
+        (Name::from("Succ"), Arity::from(1_usize)),
+    ]);
+    constructors.case(case, Name::from("Nat"));
+    constructors.case(dependent, Name::from("Nat"));
+    let source = CoreSource::new(&core, &names).naming(&constructors);
+    let body = |id| Root::Computation(CoreNode::Computation(id));
+    for (root, expected) in [
+        (
+            running,
+            "fn (a) { run b <- case a -> -F Nat { Zero => pure Zero, Succ(b) => pure b } ; b }",
+        ),
+        (
+            holding,
+            "Succ(thunk { fn (a) { case a -> -F Nat { Zero => Zero, Succ(b) => b } } })",
+        ),
+        (matched, "fn (a) { case a { Zero => Zero, Succ(b) => b } }"),
+        (
+            depending,
+            "fn (a) { run b <- case a { Zero => pure Zero, Succ(b) => pure b } ; b }",
+        ),
+    ] {
+        assert_eq!(
+            spelled(&source, body(root)),
+            (expected.to_owned(), Fidelity::Faithful),
+            "{expected}"
+        );
+    }
+}
+
 /// A constructor of exactly `DEPTH_LIMIT` fields still binds its pattern:
 /// the limit is the most fields a branch is read under, not one past it.
 #[test]
