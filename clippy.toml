@@ -11,7 +11,7 @@ allow-unwrap-in-tests = true
 # keeps clippy's default list.
 doc-valid-idents = ["JUnit", ".."]
 
-# `multiple_crate_versions` stays denied for every split but these three.
+# `multiple_crate_versions` stays denied for every split but these four.
 #
 # `hashbrown`: petgraph 0.8.3 pins `hashbrown` 0.15 and kasuari 0.4, the
 # layout solver the terminal face's renderer links, pins `hashbrown` 0.16,
@@ -31,4 +31,9 @@ doc-valid-idents = ["JUnit", ".."]
 # crate that depends on the seam appears to reach both majors; each proc-macro
 # links one, and no artifact links both. Reversal: remove the entry when
 # `anodized` moves to `syn` 3.
-allowed-duplicate-crates = ["foldhash", "hashbrown", "syn"]
+#
+# `windows-sys`: notify 8.2, the file watcher the language server and the
+# terminal REPL link, pins `windows-sys` 0.60, while rustix, mio, errno and
+# rustyline resolve to 0.61; only Windows builds link either. Reversal: remove
+# the entry when a stable notify release depends on 0.61 (its 9.0 line does).
+allowed-duplicate-crates = ["foldhash", "hashbrown", "syn", "windows-sys"]

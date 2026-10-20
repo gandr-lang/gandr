@@ -10,10 +10,10 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
 use std::sync::PoisonError;
@@ -215,7 +215,7 @@ mod tests
             let _sent = noticing.send(path.to_path_buf());
         })
         .expect("the watcher starts");
-        watch.follow([file.as_path()].into_iter());
+        watch.follow(core::iter::once(file.as_path()));
         std::fs::write(&file, "def a = 2 ;\n").expect("the file writes");
         assert_eq!(
             notices.recv_timeout(PATIENCE).ok(),
@@ -227,7 +227,7 @@ mod tests
             notices.recv_timeout(Duration::from_millis(500)).is_err(),
             "a second rewrite before the next line makes no second notice"
         );
-        watch.follow([file.as_path()].into_iter());
+        watch.follow(core::iter::once(file.as_path()));
         std::fs::write(&file, "def a = 4 ;\n").expect("the file writes");
         assert_eq!(
             notices.recv_timeout(PATIENCE).ok(),

@@ -620,7 +620,7 @@ pub fn progress_ended(token: ProgressToken) -> Outgoing
         method: PROGRESS,
         params: ProgressParams {
             token,
-            value: WorkDone::End {},
+            value: WorkDone::End,
         },
     })
 }

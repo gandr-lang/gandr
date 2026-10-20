@@ -633,7 +633,7 @@ pub enum WorkDone
         message: String,
     },
     /// It ended.
-    End {},
+    End,
 }
 
 /// The text document client capabilities the server reads.
