@@ -863,7 +863,6 @@ mod kernel_corpus_partition
     use alloc::collections::BTreeMap;
     use alloc::vec::Vec;
 
-    use gandr_kernel_term::StructuredName;
     use gandr_storage_records::RecordCount;
     use gandr_storage_records::TreeParams;
 
@@ -874,9 +873,11 @@ mod kernel_corpus_partition
     #[test]
     fn corpus_partition_matches_the_manifest()
     {
+        let mut classes = BTreeMap::new();
         for exported in corpus() {
             let path = exported.path.display();
-            let classes: BTreeMap<_, _> = exported.classes.iter().copied().collect();
+            classes.clear();
+            classes.extend(exported.classes.iter().copied());
             for &(declaration, named) in &exported.withheld {
                 assert!(
                     !matches!(
@@ -908,20 +909,18 @@ mod kernel_corpus_partition
             let read = manifest
                 .read_under(&store, TreeParams::current())
                 .unwrap_or_else(|refusal| panic!("{path}: the records read back: {refusal}"));
-            let names: Vec<&StructuredName> = read
+            let names = read
                 .declarations()
                 .iter()
-                .map(|marked| marked.declaration().name())
-                .collect();
-            assert_eq!(
-                exported
-                    .natives
-                    .iter()
-                    .chain(&exported.crossed_names)
-                    .collect::<Vec<_>>(),
-                names,
+                .map(|marked| marked.declaration().name());
+            let expected = exported.natives.iter().chain(&exported.crossed_names);
+            assert!(
+                expected.clone().eq(names.clone()),
                 "{path}: the artifact holds exactly the natives the source uses and the \
-                 declarations that crossed, in admission order, under their names"
+                 declarations that crossed, in admission order, under their names: {:?} against \
+                 {:?}",
+                expected.collect::<Vec<_>>(),
+                names.collect::<Vec<_>>()
             );
         }
     }
