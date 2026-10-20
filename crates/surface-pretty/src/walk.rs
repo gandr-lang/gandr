@@ -1352,6 +1352,71 @@ fn below(
     }
 }
 
+/// The grammar sort the text at a node is read in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Surface
+{
+    /// As an expression: a definition's body, an argument, a quoted type.
+    Expression,
+    /// As a type: a signature, an annotation, a type application's argument.
+    Type,
+}
+
+/// The grammar sort a slot of `former`, spelled in `surface`, is read in.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a type for a type slot of a value or a computation that writes
+///   itself — an annotation, a binder's type, a typed bind's result — where the
+///   expression grammar embeds a type; `surface` itself otherwise. A quote, a
+///   nested or returned computation and an elided ascription write nothing of
+///   their own, so their slot is read as they are; a type former's value slot
+///   is read as the type is, since every type application reads its arguments
+///   in the type's own sort and a path or a flow whose endpoints are codes is
+///   over a universe, which reads them as types.
+/// - provides: whether a quote in the slot stands where an expression reads.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a quote as an argument, as a definition's body and as a
+///   decoded code in a type position distinguish the slots an expression reads
+///   from those a type reads.
+/// - witness: `tests::goldens::a_type_no_expression_reads_is_quoted_839`
+#[spec(ensures: |ret| ret == if !matches!(*former,
+    Former::Quote(_) | Former::QuoteComputation(_) | Former::Nested(_) | Former::Returned(_) | Former::Ascription { .. })
+    && matches!(kind(former), Kind::Value | Kind::Computation)
+    && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType)
+{
+    Surface::Type
+} else {
+    surface
+})]
+fn surface_below<Node>(
+    surface: Surface,
+    former: &Former<'_, Node>,
+    admits: Admits,
+) -> Surface
+{
+    let writes_nothing = matches!(
+        *former,
+        Former::Quote(_)
+            | Former::QuoteComputation(_)
+            | Former::Nested(_)
+            | Former::Returned(_)
+            | Former::Ascription { .. }
+    );
+    if !writes_nothing
+        && matches!(kind(former), Kind::Value | Kind::Computation)
+        && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType)
+    {
+        Surface::Type
+    }
+    else {
+        surface
+    }
+}
+
 /// How loosely a spelled piece binds, tightest first.
 ///
 /// A piece stands bare in a slot that admits its binding and is parenthesized
@@ -1609,6 +1674,54 @@ fn protocol_template(
     (segments, binding, fidelity)
 }
 
+/// The fixed name the surface spells the sum `node` by: `Bool` for two
+/// components, each the empty product.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: `Bool` exactly when `node` reads as a sum of two components that
+///   both read as the product of none; none otherwise.
+/// - provides: the one reading of `Bool` the spelling and the quote share, as
+///   the lowering reads the fixed name.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Bool`, a sum of a unit and an integer, and a sum of one
+///   unit spell apart.
+/// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+#[spec(ensures: |ret| ret.is_some() == (matches!(source.read(node), Former::Sum(arity) if usize::from(arity) == 2_usize)
+    && [0_usize, 1_usize].into_iter().all(|index| source.component(node, Component::from(index))
+        .is_some_and(|part| matches!(source.read(part), Former::Product(inner) if usize::from(inner) == 0_usize))))
+    && ret.is_none_or(|name| name.0 == "Bool"))]
+fn named_sum<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<Glyphs<'static>>
+where
+    S: Source + ?Sized,
+{
+    let two_units = matches!(source.read(node), Former::Sum(arity) if usize::from(arity) == 2_usize)
+        && [0_usize, 1_usize].into_iter().all(|index| {
+            source
+                .component(node, Component::from(index))
+                .is_some_and(|part| {
+                    matches!(source.read(part), Former::Product(inner) if usize::from(inner) == 0_usize)
+                })
+        });
+    two_units.then_some(Glyphs("Bool"))
+}
+
+/// Whether an expression reads a type written bare where it stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Bare
+{
+    /// It reads, as the code of the type.
+    Reads,
+    /// It does not: a part of it reads as another form or not at all.
+    Unread,
+}
+
 /// The bridges between the sorts, and the keywords that lead a computation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Prefix
@@ -1730,6 +1843,8 @@ enum Bracket
     Arrow,
     /// The recorded runs of a session code, `Run(s)`.
     Run,
+    /// A type quoted where an expression stands, `type(T)`.
+    TypeQuote,
 }
 
 impl Bracket
@@ -1760,6 +1875,7 @@ impl Bracket
             Self::Forward => "forward(",
             Self::Arrow => "arrow(",
             Self::Run => "Run(",
+            Self::TypeQuote => "type(",
         })
     }
 }
@@ -2472,6 +2588,8 @@ enum Task<Node>
     Label(Labelled<Node>),
     /// Combine finished pieces.
     Join(Join),
+    /// Read the nodes visited next in this grammar sort.
+    Surface(Surface),
 }
 
 /// What a walk produced.
@@ -3063,6 +3181,8 @@ struct Walk<'walk, 'names>
     /// The node reads the walk may still make: one per visit, and one per
     /// link the alias's look-ahead reads.
     remaining: u32,
+    /// The grammar sort the node visited now is read in.
+    surface: Surface,
 }
 
 impl Walk<'_, '_>
@@ -4028,6 +4148,138 @@ impl Walk<'_, '_>
         Some((body, result))
     }
 
+    /// Whether `node` is written with a head no expression reads: a session
+    /// type standing at a receive `?A. S`, a selection `+{…}` or an offer
+    /// `&{…}`, or a sum or a lazy product written between braces.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: true exactly when `node` reads as a session type whose
+    ///   state's own node is a receive, a selection or an offer; as a sum of
+    ///   one or more components that is not `Bool` and not, in the sugared
+    ///   form, a chain of two or more; or as a lazy product of one or more
+    ///   components that is not, in the sugared form, a chain of two or more.
+    /// - provides: the heads [`Self::unread_as_expression`] looks for.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a braced sum, a sum chain, `Bool` and a base type
+    ///   quoted as values, in both forms, distinguish the braced spellings from
+    ///   the bare ones.
+    /// - witness: `tests::goldens::a_type_no_expression_reads_is_quoted_839`
+    #[spec(ensures: |ret| (ret == Bare::Unread) == match source.read(node) {
+        | Former::Session { protocol, state, .. } => matches!(
+            protocol.node(state),
+            Ok(&(ProtocolNode::Receive { .. } | ProtocolNode::Select(_) | ProtocolNode::Offer(_)))
+        ),
+        | Former::Sum(arity) => usize::from(arity) >= 1_usize
+            && named_sum(source, node).is_none()
+            && (self.form == Form::Explicit || usize::from(arity) == 1_usize),
+        | Former::With(arity) => usize::from(arity) >= 1_usize
+            && (self.form == Form::Explicit || usize::from(arity) == 1_usize),
+        | _ => false,
+    })]
+    fn unread_head<S>(
+        &self,
+        source: &S,
+        node: S::Node,
+    ) -> Bare
+    where
+        S: Source + ?Sized,
+    {
+        let braced =
+            |count: usize| count >= 1_usize && (self.form == Form::Explicit || count == 1_usize);
+        let former = source.read(node);
+        let unread = if let Former::Session {
+            protocol, state, ..
+        } = former
+        {
+            matches!(
+                protocol.node(state),
+                Ok(&(ProtocolNode::Receive { .. }
+                    | ProtocolNode::Select(_)
+                    | ProtocolNode::Offer(_)))
+            )
+        }
+        else if let Former::Sum(arity) = former {
+            braced(usize::from(arity)) && named_sum(source, node).is_none()
+        }
+        else if let Former::With(arity) = former {
+            braced(usize::from(arity))
+        }
+        else {
+            false
+        };
+        if unread { Bare::Unread } else { Bare::Reads }
+    }
+
+    /// Whether the type `quoted`, written bare where an expression is read,
+    /// holds a part no expression reads: its own head or the head of a type
+    /// among its parts, which an expression reads as its own parts — `#{Unit,
+    /// +{Unit}}` does not read where `#{Unit, Integer}` does.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: [`Bare::Unread`] when [`Self::unread_head`] says so of
+    ///   `quoted` or of a node reached from it through type slots alone,
+    ///   visited within the walk's remaining visits; a value slot is not
+    ///   entered, since a quote there is written by its own visit. Every node
+    ///   read is one visit spent; none left, the scan stops and answers
+    ///   [`Bare::Reads`].
+    /// - provides: the quotes the walk writes `type(T)`, which the lowering
+    ///   reads back to the same code; every other quote stands bare.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Each round reads one node and spends one remaining visit, and the loop
+    /// stops when none is left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a braced sum quoted alone, as an argument and as a
+    ///   product's component, against a product of base types and a sum chain,
+    ///   distinguish a scan that stops at the head from one that enters the
+    ///   parts.
+    /// - witness: `tests::goldens::a_type_no_expression_reads_is_quoted_839`
+    #[spec(
+        captures: [entry = self.remaining, head = self.unread_head(source, quoted)],
+        ensures: |ret| self.remaining <= entry && (entry == 0_u32 || head == Bare::Reads || ret == Bare::Unread),
+    )]
+    fn unread_as_expression<S>(
+        &mut self,
+        source: &S,
+        quoted: S::Node,
+    ) -> Bare
+    where
+        S: Source + ?Sized,
+    {
+        let mut pending = Vec::from([quoted]);
+        while let Some(node) = pending.pop() {
+            let Some(left) = self.remaining.checked_sub(1_u32)
+            else {
+                return Bare::Reads;
+            };
+            self.remaining = left;
+            if self.unread_head(source, node) == Bare::Unread {
+                return Bare::Unread;
+            }
+            let former = source.read(node);
+            pending.extend(
+                children(source, node, &former, Admits::ValueType, self.bodies)
+                    .into_iter()
+                    .filter(|slot| {
+                        matches!(
+                            slot.admits,
+                            Admits::Type | Admits::ValueType | Admits::CompType
+                        )
+                    })
+                    .filter_map(|slot| slot.node),
+            );
+        }
+        Bare::Reads
+    }
+
     /// `(a, b, …)`: `items` between parentheses, each bare, a break after
     /// each comma and before the closer.
     ///
@@ -4383,46 +4635,43 @@ impl Walk<'_, '_>
         // place of its child table's.
         let mut shaped = None;
         let join = match former {
-            | Former::BaseType(BaseType::Integer) => {
+            Former::BaseType(BaseType::Integer) => {
                 return writes(Production("primitive_type"), self.atom(Glyphs("Integer")));
             },
-            | Former::BaseType(BaseType::String) => {
+            Former::BaseType(BaseType::String) => {
                 return writes(Production("primitive_type"), self.atom(Glyphs("String")));
             },
-            | Former::Product(arity) if usize::from(arity) == 0 => {
+            Former::Product(arity) if usize::from(arity) == 0 => {
                 return writes(Production("primitive_type"), self.atom(Glyphs("Unit")));
             },
-            | Former::Sum(arity) if usize::from(arity) == 0 => {
+            Former::Sum(arity) if usize::from(arity) == 0 => {
                 return writes(Production("primitive_type"), self.atom(Glyphs("Void")));
             },
             // `Bool` is the sum of two units, a fixed name as the lowering
             // reads it.
-            | Former::Sum(arity)
+            Former::Sum(arity)
                 if usize::from(arity) == 2
-                    && [0_usize, 1_usize].into_iter().all(|index| {
-                        source
-                            .component(node, Component::from(index))
-                            .is_some_and(|part| {
-                                matches!(source.read(part), Former::Product(inner) if usize::from(inner) == 0)
-                            })
-                    }) =>
+                    && let Some(name) = named_sum(source, node) =>
             {
-                return writes(Production("type_identifier"), self.atom(Glyphs("Bool")));
+                return writes(Production("type_identifier"), self.atom(name));
             },
-            | Former::Unit => {
+            Former::Unit => {
                 return writes(Production("unit.expression"), self.atom(Glyphs("unit")));
             },
-            | Former::ListNil => {
-                return writes(Production("identifier.expression"), self.atom(Glyphs("nil")));
+            Former::ListNil => {
+                return writes(
+                    Production("identifier.expression"),
+                    self.atom(Glyphs("nil")),
+                );
             },
             // A name is written as it stands, a qualified one as its path.
-            | Former::Abstract(name) => {
+            Former::Abstract(name) => {
                 return writes(
                     Production("type_identifier"),
                     writes(Production("type_path"), self.name(name)),
                 );
             },
-            | Former::Constant(name) => {
+            Former::Constant(name) => {
                 return writes(
                     Production("identifier.expression"),
                     writes(
@@ -4431,15 +4680,15 @@ impl Walk<'_, '_>
                     ),
                 );
             },
-            | Former::Literal(value) => {
+            Former::Literal(value) => {
                 let spelled = literal(value);
                 let production = match *value {
-                    | Literal::Integer(_) | Literal::Numeric(_) => Production("number.expression"),
-                    | Literal::Text(_) => Production("string.expression"),
+                    Literal::Integer(_) | Literal::Numeric(_) => Production("number.expression"),
+                    Literal::Text(_) => Production("string.expression"),
                 };
                 return writes(production, self.atom(Glyphs(spelled.0.as_str())));
             },
-            | Former::Capability {
+            Former::Capability {
                 authority,
                 grade,
                 region,
@@ -4452,13 +4701,14 @@ impl Walk<'_, '_>
                 spelled.push_str(&authority.granted().join(", "));
                 spelled.push('}');
                 return match region {
-                    | gandr_core_term::effect::capability::Region::Held => {
-                        writes(Production("capability_type"), self.atom(Glyphs(spelled.as_str())))
-                    },
+                    gandr_core_term::effect::capability::Region::Held => writes(
+                        Production("capability_type"),
+                        self.atom(Glyphs(spelled.as_str())),
+                    ),
                     // A scoped capability names the scope whose region it
                     // lives in, `Cap {…} at c`; past the scopes the source
                     // names, its region goes unwritten.
-                    | gandr_core_term::effect::capability::Region::Scoped(depth) => {
+                    gandr_core_term::effect::capability::Region::Scoped(depth) => {
                         let named = usize::try_from(u32::from(depth))
                             .ok()
                             .and_then(|depth| depth.checked_sub(1_usize))
@@ -4495,11 +4745,12 @@ impl Walk<'_, '_>
                     },
                 };
             },
-            | Former::Universe { sort, level } => {
+            Former::Universe { sort, level } => {
                 return match universe(sort, level) {
-                    | Maybe::Present(spelled) => {
-                        writes(Production("universe_type"), self.atom(Glyphs(spelled.0.as_str())))
-                    },
+                    Maybe::Present(spelled) => writes(
+                        Production("universe_type"),
+                        self.atom(Glyphs(spelled.0.as_str())),
+                    ),
                     #[cfg_attr(
                         dylint_lib = "quenchant_dylints",
                         expect(
@@ -4509,18 +4760,18 @@ impl Walk<'_, '_>
                                       numeral level, cannot write"
                         )
                     )]
-                    | Maybe::Absent(_) => self.unspell(Unspelled::Universe),
+                    Maybe::Absent(_) => self.unspell(Unspelled::Universe),
                 };
             },
             // A variable reads as the name of its binder, in a type as a type
             // variable.
-            | Former::Variable { zone, index } => {
+            Former::Variable { zone, index } => {
                 return writes(
                     Production("identifier.expression"),
                     writes(Production("type_variable"), self.variable(zone, index)),
                 );
             },
-            | Former::Thunk(_) => match self.bodies {
+            Former::Thunk(_) => match self.bodies {
                 #[cfg_attr(
                     dylint_lib = "quenchant_dylints",
                     expect(
@@ -4528,13 +4779,16 @@ impl Walk<'_, '_>
                         reason = "a thunk presented with its body opaque is written `<thunk>`"
                     )
                 )]
-                | Bodies::Opaque => {
+                Bodies::Opaque => {
                     return self.approximate(Glyphs("<thunk>"), Unspelled::Elided(Elided::Thunk));
                 },
-                | Bodies::Spelled => Some(writes(Production("thunk_expression"), Join::Thunk)),
+                Bodies::Spelled => Some(writes(Production("thunk_expression"), Join::Thunk)),
             },
-            | Former::Run(_) => Some(writes(Production("run_expression"), Join::Prefix(Prefix::Run))),
-            | Former::Path { .. }
+            Former::Run(_) => Some(writes(
+                Production("run_expression"),
+                Join::Prefix(Prefix::Run),
+            )),
+            Former::Path { .. }
             | Former::Flow { .. }
             | Former::Relation { .. }
             | Former::Data { .. }
@@ -4585,30 +4839,25 @@ impl Walk<'_, '_>
                     reason = "a reified stack has no surface spelling: written `<stack>`"
                 )
             )]
-            | Former::Reify => {
+            Former::Reify => {
                 return self.approximate(Glyphs("<stack>"), Unspelled::Elided(Elided::Stack));
             },
-            | Former::Stack(..) => {
-                Some(writes(Production("type_application"), Join::Bracket(Bracket::Stack)))
-            },
-            | Former::With(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
-                Some(writes(
-                    Production("lazy_product_type"),
-                    Join::Infix {
-                        infix: Infix::Lazy,
-                        arity: Arity(usize::from(arity)),
-                    },
-                ))
-            },
-            | Former::With(arity) => Some(writes(
-                Production("lazy_record_type"),
-                Join::Braced {
-                    brace: Brace::Ampersand,
-                    arity: Arity(usize::from(arity)),
-                    entries: Entries::Positional,
-                },
+            Former::Stack(..) => Some(writes(
+                Production("type_application"),
+                Join::Bracket(Bracket::Stack),
             )),
-            | Former::Session {
+            Former::With(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
+                Some(writes(Production("lazy_product_type"), Join::Infix {
+                    infix: Infix::Lazy,
+                    arity: Arity(usize::from(arity)),
+                }))
+            },
+            Former::With(arity) => Some(writes(Production("lazy_record_type"), Join::Braced {
+                brace: Brace::Ampersand,
+                arity: Arity(usize::from(arity)),
+                entries: Entries::Positional,
+            })),
+            Former::Session {
                 protocol,
                 state,
                 payloads,
@@ -4646,7 +4895,7 @@ impl Walk<'_, '_>
                               surface grammar has no name for"
                 )
             )]
-            | Former::BaseType(BaseType::Numeric) => {
+            Former::BaseType(BaseType::Numeric) => {
                 return self.unspell(Unspelled::Unreadable(Unreadable::NumericAtom));
             },
             // The unknown type, where a type is read, is the grammar's
@@ -4660,7 +4909,7 @@ impl Walk<'_, '_>
                               grammar's `unknown_type`, which the lowering does not admit"
                 )
             )]
-            | Former::Unreadable(Unreadable::UnknownType)
+            Former::Unreadable(Unreadable::UnknownType)
                 if matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType) =>
             {
                 return writes(
@@ -4680,7 +4929,7 @@ impl Walk<'_, '_>
                               the grammar's hole `?`"
                 )
             )]
-            | Former::Unreadable(Unreadable::Hole) => {
+            Former::Unreadable(Unreadable::Hole) => {
                 return writes(Production("hole"), self.atom(Glyphs("?")));
             },
             #[cfg_attr(
@@ -4692,7 +4941,7 @@ impl Walk<'_, '_>
                               type where a term is read, have no surface spelling"
                 )
             )]
-            | Former::Unreadable(reason) => return self.unspell(Unspelled::Unreadable(reason)),
+            Former::Unreadable(reason) => return self.unspell(Unspelled::Unreadable(reason)),
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
@@ -4701,9 +4950,12 @@ impl Walk<'_, '_>
                               notation"
                 )
             )]
-            | Former::PathUniverse(..) => {
+            Former::PathUniverse(..) => {
                 self.note(Unspelled::Notation(Notation::PathUniverse));
-                Some(writes(Production("type_application"), Join::Bracket(Bracket::PathUniverse)))
+                Some(writes(
+                    Production("type_application"),
+                    Join::Bracket(Bracket::PathUniverse),
+                ))
             },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
@@ -4713,50 +4965,66 @@ impl Walk<'_, '_>
                               the printer's notation"
                 )
             )]
-            | Former::PathRefl(_) => {
+            Former::PathRefl(_) => {
                 self.note(Unspelled::Notation(Notation::PathRefl));
-                Some(writes(Production("call_expression"), Join::Bracket(Bracket::PathRefl)))
+                Some(writes(
+                    Production("call_expression"),
+                    Join::Bracket(Bracket::PathRefl),
+                ))
             },
-            | Former::Here(_) => {
-                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Here)))
-            },
-            | Former::Funext(..) => {
-                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Funext)))
-            },
-            | Former::Equiv(..) => {
-                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Equiv)))
-            },
-            | Former::Univalence(_) => {
-                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Univalence)))
-            },
-            | Former::SessionRelated(SessionRelation::Equivalence, ..) => {
-                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Bisim)))
-            },
-            | Former::SessionRelated(SessionRelation::Subtyping, ..) => {
-                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Sim)))
-            },
-            | Former::Stay(_) => {
-                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Stay)))
-            },
-            | Former::FlowProduct(..) => {
-                Some(writes(Production("call_expression"), Join::Bracket(Bracket::FlowProduct)))
-            },
-            | Former::Back(_) => {
-                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Back)))
-            },
-            | Former::Cong(..) => {
-                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Cong)))
-            },
-            | Former::Forward(_) => {
-                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Forward)))
-            },
-            | Former::FunctionFlow(..) => {
-                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Arrow)))
-            },
-            | Former::RunType(_) => {
-                Some(writes(Production("type_application"), Join::Bracket(Bracket::Run)))
-            },
-            | Former::Ua {
+            Former::Here(_) => Some(writes(
+                Production("call_expression"),
+                Join::Bracket(Bracket::Here),
+            )),
+            Former::Funext(..) => Some(writes(
+                Production("call_expression"),
+                Join::Bracket(Bracket::Funext),
+            )),
+            Former::Equiv(..) => Some(writes(
+                Production("call_expression"),
+                Join::Bracket(Bracket::Equiv),
+            )),
+            Former::Univalence(_) => Some(writes(
+                Production("call_expression"),
+                Join::Bracket(Bracket::Univalence),
+            )),
+            Former::SessionRelated(SessionRelation::Equivalence, ..) => Some(writes(
+                Production("call_expression"),
+                Join::Bracket(Bracket::Bisim),
+            )),
+            Former::SessionRelated(SessionRelation::Subtyping, ..) => Some(writes(
+                Production("call_expression"),
+                Join::Bracket(Bracket::Sim),
+            )),
+            Former::Stay(_) => Some(writes(
+                Production("call_expression"),
+                Join::Bracket(Bracket::Stay),
+            )),
+            Former::FlowProduct(..) => Some(writes(
+                Production("call_expression"),
+                Join::Bracket(Bracket::FlowProduct),
+            )),
+            Former::Back(_) => Some(writes(
+                Production("call_expression"),
+                Join::Bracket(Bracket::Back),
+            )),
+            Former::Cong(..) => Some(writes(
+                Production("call_expression"),
+                Join::Bracket(Bracket::Cong),
+            )),
+            Former::Forward(_) => Some(writes(
+                Production("call_expression"),
+                Join::Bracket(Bracket::Forward),
+            )),
+            Former::FunctionFlow(..) => Some(writes(
+                Production("call_expression"),
+                Join::Bracket(Bracket::Arrow),
+            )),
+            Former::RunType(_) => Some(writes(
+                Production("type_application"),
+                Join::Bracket(Bracket::Run),
+            )),
+            Former::Ua {
                 stratum,
                 source: from,
                 target: to,
@@ -4791,73 +5059,62 @@ impl Walk<'_, '_>
                               the printer's notation"
                 )
             )]
-            | Former::PathEquiv(..) => {
+            Former::PathEquiv(..) => {
                 self.note(Unspelled::Notation(Notation::PathEquiv));
-                Some(writes(Production("call_expression"), Join::Bracket(Bracket::PathEquiv)))
-            },
-            | Former::PathProduct(..) => {
-                Some(writes(Production("call_expression"), Join::Bracket(Bracket::PathProduct)))
-            },
-            | Former::Product(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
                 Some(writes(
-                    Production("product_type"),
-                    Join::Infix {
-                        infix: Infix::Product,
-                        arity: Arity(usize::from(arity)),
-                    },
+                    Production("call_expression"),
+                    Join::Bracket(Bracket::PathEquiv),
                 ))
             },
-            | Former::Sum(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
-                Some(writes(
-                    Production("sum_type"),
-                    Join::Infix {
-                        infix: Infix::Sum,
-                        arity: Arity(usize::from(arity)),
-                    },
-                ))
+            Former::PathProduct(..) => Some(writes(
+                Production("call_expression"),
+                Join::Bracket(Bracket::PathProduct),
+            )),
+            Former::Product(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
+                Some(writes(Production("product_type"), Join::Infix {
+                    infix: Infix::Product,
+                    arity: Arity(usize::from(arity)),
+                }))
             },
-            | Former::Tuple(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
+            Former::Sum(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
+                Some(writes(Production("sum_type"), Join::Infix {
+                    infix: Infix::Sum,
+                    arity: Arity(usize::from(arity)),
+                }))
+            },
+            Former::Tuple(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
                 Some(writes(
                     Production("parenthesized_expression"),
                     Join::Tuple(Arity(usize::from(arity))),
                 ))
             },
-            | Former::Product(arity) => Some(writes(
-                Production("telescope_type"),
-                Join::Braced {
+            Former::Product(arity) => Some(writes(Production("telescope_type"), Join::Braced {
+                brace: Brace::Hash,
+                arity: Arity(usize::from(arity)),
+                entries: Entries::Positional,
+            })),
+            Former::Tuple(arity) => {
+                Some(writes(Production("telescope_expression"), Join::Braced {
                     brace: Brace::Hash,
                     arity: Arity(usize::from(arity)),
                     entries: Entries::Positional,
-                },
-            )),
-            | Former::Tuple(arity) => Some(writes(
-                Production("telescope_expression"),
-                Join::Braced {
-                    brace: Brace::Hash,
-                    arity: Arity(usize::from(arity)),
-                    entries: Entries::Positional,
-                },
-            )),
-            | Former::Sum(arity) => Some(writes(
-                Production("labelled_sum_type"),
-                Join::Braced {
-                    brace: Brace::Plus,
-                    arity: Arity(usize::from(arity)),
-                    entries: Entries::Positional,
-                },
-            )),
-            | Former::RecordType(arity) => Some(writes(
-                Production("telescope_type"),
-                Join::Braced {
-                    brace: Brace::Hash,
-                    arity: Arity(usize::from(arity)),
-                    entries: Entries::Labelled(Label::Field),
-                },
-            )),
-            | Former::List(_) => {
-                Some(writes(Production("type_application"), Join::Bracket(Bracket::List)))
+                }))
             },
-            | Former::ThunkType(body) => {
+            Former::Sum(arity) => Some(writes(Production("labelled_sum_type"), Join::Braced {
+                brace: Brace::Plus,
+                arity: Arity(usize::from(arity)),
+                entries: Entries::Positional,
+            })),
+            Former::RecordType(arity) => Some(writes(Production("telescope_type"), Join::Braced {
+                brace: Brace::Hash,
+                arity: Arity(usize::from(arity)),
+                entries: Entries::Labelled(Label::Field),
+            })),
+            Former::List(_) => Some(writes(
+                Production("type_application"),
+                Join::Bracket(Bracket::List),
+            )),
+            Former::ThunkType(body) => {
                 if self.form == Form::Sugared
                     && let Some((links, dependent, codomain)) = self.alias(source, body)
                 {
@@ -4893,8 +5150,10 @@ impl Walk<'_, '_>
                 }
                 Some(writes(Production("u_type"), Join::Prefix(Prefix::Thunk)))
             },
-            | Former::Returner(_) => Some(writes(Production("f_type"), Join::Prefix(Prefix::Returner))),
-            | Former::EffectfulReturner { effects, .. } => {
+            Former::Returner(_) => {
+                Some(writes(Production("f_type"), Join::Prefix(Prefix::Returner)))
+            },
+            Former::EffectfulReturner { effects, .. } => {
                 let mut annotation = String::from("-F [");
                 for (index, interface) in effects.interfaces().iter().enumerate() {
                     if index != 0 {
@@ -4906,31 +5165,31 @@ impl Walk<'_, '_>
                 let head = self.leaf(Glyphs(&annotation))?;
                 Some(writes(Production("f_type.row"), Join::EffectReturner(head)))
             },
-            | Former::Arrow { .. } | Former::StaticPi { .. } => {
+            Former::Arrow { .. } | Former::StaticPi { .. } => {
                 Some(writes(Production("function_type"), Join::Arrow))
             },
             // A dependent arrow names its binder in a parenthesized domain,
             // `(x : A) -> C`.
-            | Former::Pi { .. } => Some(writes(
+            Former::Pi { .. } => Some(writes(
                 Production("function_type"),
                 writes(Production("parenthesized_type"), Join::Pi),
             )),
-            | Former::Sigma { .. } => Some(writes(Production("telescope_type"), Join::Sigma)),
-            | Former::StaticLambda(_) => {
+            Former::Sigma { .. } => Some(writes(Production("telescope_type"), Join::Sigma)),
+            Former::StaticLambda(_) => {
                 Some(writes(Production("static_abstraction"), Join::StaticLambda))
             },
-            | Former::Record(arity) => Some(writes(
-                Production("telescope_expression"),
-                Join::Braced {
+            Former::Record(arity) => {
+                Some(writes(Production("telescope_expression"), Join::Braced {
                     brace: Brace::Hash,
                     arity: Arity(usize::from(arity)),
                     entries: Entries::Labelled(Label::Assignment),
-                },
-            )),
-            | Former::ListCons(..) => {
-                Some(writes(Production("call_expression"), Join::Bracket(Bracket::ListCons)))
+                }))
             },
-            | Former::Injection(..) => Some(writes(
+            Former::ListCons(..) => Some(writes(
+                Production("call_expression"),
+                Join::Bracket(Bracket::ListCons),
+            )),
+            Former::Injection(..) => Some(writes(
                 Production("labelled_sum_expression"),
                 Join::Braced {
                     brace: Brace::Plus,
@@ -4938,11 +5197,11 @@ impl Walk<'_, '_>
                     entries: Entries::Labelled(Label::Summand),
                 },
             )),
-            | Former::StaticApplication(operator, argument) => {
+            Former::StaticApplication(operator, argument) => {
                 Self::spine(source, operator, argument, depth, ReductAs::Term, tasks);
                 return writes(Production("type_application"), Ok(()));
             },
-            | Former::Application(function, argument) => {
+            Former::Application(function, argument) => {
                 Self::call(source, function, argument, depth, tasks);
                 return writes(Production("call_expression"), Ok(()));
             },
@@ -4950,8 +5209,8 @@ impl Walk<'_, '_>
             // lowering reads a type at a body's end only as a returned value.
             // So does one that ends answering a `run`: bare at a statement's
             // head, `run` opens a bind, `run x <- c ; …`.
-            | Former::Return(returned) => match admits {
-                | Admits::Computation(Tail::Ends | Tail::Unstated)
+            Former::Return(returned) => match admits {
+                Admits::Computation(Tail::Ends | Tail::Unstated)
                     if !matches!(
                         source.read(returned),
                         Former::Quote(_) | Former::QuoteComputation(_) | Former::Run(_)
@@ -4959,16 +5218,22 @@ impl Walk<'_, '_>
                 {
                     None
                 },
-                | Admits::Computation(Tail::Ends | Tail::Continues | Tail::Unstated)
+                Admits::Computation(Tail::Ends | Tail::Continues | Tail::Unstated)
                 | Admits::Type
                 | Admits::ValueType
                 | Admits::CompType
                 | Admits::Value
                 | Admits::Stated
-                | Admits::Operand => Some(writes(Production("pure_expression"), Join::Prefix(Prefix::Pure))),
+                | Admits::Operand => Some(writes(
+                    Production("pure_expression"),
+                    Join::Prefix(Prefix::Pure),
+                )),
             },
-            | Former::Force(_) => Some(writes(Production("force_expression"), Join::Prefix(Prefix::Force))),
-            | Former::Bind(bound, rest) => match self.typed_bind(source, bound) {
+            Former::Force(_) => Some(writes(
+                Production("force_expression"),
+                Join::Prefix(Prefix::Force),
+            )),
+            Former::Bind(bound, rest) => match self.typed_bind(source, bound) {
                 Some((ascribed, result)) => {
                     shaped = Some(Vec::from([
                         Slot::of(ascribed, Admits::Computation(Tail::Continues), Binds::NONE),
@@ -4992,30 +5257,46 @@ impl Walk<'_, '_>
                               it stands as its body"
                 )
             )]
-            | Former::Ascription { body, .. } => {
+            Former::Ascription { body, .. } => {
                 self.note(Unspelled::Elided(Elided::Ascription));
                 shaped = Some(Vec::from([Slot::of(body, admits, Binds::NONE)]));
                 None
             },
-            | Former::Lambda(_) => Some(writes(Production("lambda_expression"), Join::Lambda)),
+            Former::Lambda(_) => Some(writes(Production("lambda_expression"), Join::Lambda)),
             // A nested call the lowering bound by a run, `x ← f(a); g(x)`,
             // spells as the call it was written as, `g(f(a))`: a type has no
             // run to read back (#676).
-            | Former::Nested(body) | Former::Returned(body) if bound_call(source, body).is_some() => {
+            Former::Nested(body) | Former::Returned(body) if bound_call(source, body).is_some() => {
                 Self::inlined(source, body, below(depth, kind), tasks);
                 return writes(Production("call_expression"), Ok(()));
+            },
+            // A quoted type whose head no expression reads, standing where an
+            // expression is read, is written in the quote's own spelling,
+            // `type(T)`; every other one stands bare, as the lowering quotes a
+            // type written where a value is read, and a type position reads
+            // the type itself.
+            Former::Quote(quoted) | Former::QuoteComputation(quoted)
+                if self.surface == Surface::Expression
+                    && self.unread_as_expression(source, quoted) == Bare::Unread =>
+            {
+                Some(writes(
+                    Production("type_quote_expression"),
+                    Join::Bracket(Bracket::TypeQuote),
+                ))
             },
             // A quoted type stands where an expression is read, which takes
             // the alias only over one bare domain, `A => C`: a parenthesized
             // domain list there, `(c : U) => el(c)` or `() => C`, reads as a
             // parenthesized expression. Any other alias is written as the
             // thunk it stands for, `+U ((c : U) -> -F el(c))`.
-            | Former::Quote(quoted)
+            Former::Quote(quoted)
                 if self.form == Form::Sugared
                     && let Former::ThunkType(body) = source.read(quoted)
                     && !self
                         .alias(source, body)
-                        .is_some_and(|(links, dependent, _)| links.len() == 1_usize && dependent.0 == 0_u64) =>
+                        .is_some_and(|(links, dependent, _)| {
+                            links.len() == 1_usize && dependent.0 == 0_u64
+                        }) =>
             {
                 shaped = Some(Vec::from([Slot::of(body, Admits::CompType, Binds::NONE)]));
                 Some(writes(Production("u_type"), Join::Prefix(Prefix::Thunk)))
@@ -5024,7 +5305,7 @@ impl Walk<'_, '_>
             // to the checker, and so does the computation a returned value
             // stands for; its piece, as a decode's and a quote's, is the
             // node's.
-            | Former::Element(_)
+            Former::Element(_)
             | Former::ComputationElement(_)
             | Former::Quote(_)
             | Former::QuoteComputation(_)
@@ -5043,11 +5324,18 @@ impl Walk<'_, '_>
             for _ in 0_usize .. slot.binds.count {
                 tasks.push(Task::Unbind);
             }
+            let surface = surface_below(self.surface, &former, slot.admits);
+            if surface != self.surface {
+                tasks.push(Task::Surface(self.surface));
+            }
             tasks.push(slot.node.map_or(Task::Missing, |child| Task::Visit {
                 node: child,
                 admits: slot.admits,
                 depth: below,
             }));
+            if surface != self.surface {
+                tasks.push(Task::Surface(surface));
+            }
             let opener = (slot.binds.count == 1_usize).then_some(node);
             for _ in 0_usize .. slot.binds.count {
                 tasks.push(Task::Bind(slot.binds.zone, opener));
@@ -6424,7 +6712,7 @@ impl Walk<'_, '_>
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
             Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Lambda | Join::Thunk
-                | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Back | Bracket::Forward | Bracket::Run) => Some(1_usize),
+                | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Back | Bracket::Forward | Bracket::Run | Bracket::TypeQuote) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
                 | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) => Some(count),
             Join::ValueFunction(Arity(domains), _) => domains.checked_add(1_usize),
@@ -6787,7 +7075,8 @@ impl Walk<'_, '_>
                     | Bracket::Stay
                     | Bracket::Back
                     | Bracket::Forward
-                    | Bracket::Run => {
+                    | Bracket::Run
+                    | Bracket::TypeQuote => {
                         let body = self.pop()?;
                         let opener = self.leaf(bracket.opener())?;
                         items.extend([opener, body.doc]);
@@ -6935,6 +7224,12 @@ where
         form: style.form,
         spelling: style.spelling,
         remaining: VISIT_BUDGET,
+        surface: match admits {
+            Admits::Type | Admits::ValueType | Admits::CompType => Surface::Type,
+            Admits::Value | Admits::Stated | Admits::Operand | Admits::Computation(_) => {
+                Surface::Expression
+            },
+        },
     };
     let mut tasks = Vec::from([Task::Visit {
         node: root,
@@ -6988,6 +7283,7 @@ where
             Task::Missing => walk.unspell(Unspelled::Missing)?,
             Task::Label(Labelled { of, index, label }) => walk.label(source, of, index, label)?,
             Task::Join(join) => walk.join(join)?,
+            Task::Surface(surface) => walk.surface = surface,
         }
     }
     let root = walk.pop()?;
@@ -7243,6 +7539,7 @@ mod tests
             form: crate::Form::Sugared,
             spelling: super::grammar::Spelling::Unicode,
             remaining: super::VISIT_BUDGET,
+            surface: super::Surface::Expression,
         };
         let refusal = super::PresentationError::Build(
             gandr_surface_layout::error::BuildError::LimitExceeded {
@@ -7328,6 +7625,7 @@ mod tests
             form: crate::Form::Sugared,
             spelling: super::grammar::Spelling::Unicode,
             remaining: super::VISIT_BUDGET,
+            surface: super::Surface::Expression,
         };
         walk.atom(super::Glyphs("x")).expect("one operand builds");
         assert_eq!(

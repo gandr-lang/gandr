@@ -344,6 +344,7 @@ fn operand_of(
         | Former::Hole
         | Former::Number
         | Former::Text
+        | Former::TypeQuote
         | Former::Parenthesized
         | Former::Unit
         | Former::Thunk

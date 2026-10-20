@@ -24,8 +24,14 @@ use crate::leaf::Leaf;
 use crate::leaf::Material;
 
 /// The brackets that open a group, each beside the closer that ends it.
-pub const BRACKETS: [(&str, &str); 5] =
-    [("(", ")"), ("[", "]"), ("{", "}"), ("@[", "]"), ("#{", "}")];
+pub const BRACKETS: [(&str, &str); 6] = [
+    ("(", ")"),
+    ("type(", ")"),
+    ("[", "]"),
+    ("{", "}"),
+    ("@[", "]"),
+    ("#{", "}"),
+];
 
 /// The tokens that end an item of a group.
 pub const SEPARATORS: [&str; 2] = [",", ";"];

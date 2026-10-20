@@ -145,6 +145,7 @@ const OPENERS: &[&str] = &[
     "[",
     "command_substitution_start",
     "subshell_open",
+    "type(",
     "{",
 ];
 
@@ -160,8 +161,8 @@ const KEYWORDS: &[&str] = &[
     "include", "infix", "infixl", "infixr", "is", "leta", "loop", "migrate", "mobile", "module",
     "mu", "node", "obs", "offer", "on", "op", "oper", "pack", "package", "pi+", "postfix",
     "prefix", "pure", "rec", "recv", "release", "resume", "return", "rule", "run", "select",
-    "send", "shape", "sort", "tail", "then", "theory", "thunk", "type", "unit", "unpack", "unwind",
-    "val", "while", "with", "world",
+    "send", "shape", "sort", "tail", "then", "theory", "thunk", "type", "type(", "unit", "unpack",
+    "unwind", "val", "while", "with", "world",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the
@@ -1047,7 +1048,7 @@ mod tests
         let walk = occurrences(&pbg).expect("the walk numbers every tile");
         assert_eq!(pbg.mold_count().0, walk.len(), "one occurrence per mold");
         let closes: &[(&str, &[&str])] = &[
-            (")", &["("]),
+            (")", &["(", "type("]),
             ("]", &["@[", "["]),
             ("}", &["#!{", "#{", "${", "command_substitution_start", "{"]),
             ("subshell_close", &["subshell_open"]),

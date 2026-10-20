@@ -60,7 +60,10 @@
 //! doubled; a function's body, a computation where the declaration takes a
 //! value, is thunked; a type standing where a value is read
 //! is quoted into its code, a value type by `⌜A⌝` and a computation type by
-//! `⌜C⌝`, so `def t : Type ; def t = Integer ;` declares a code; and a name
+//! `⌜C⌝`, so `def t : Type ; def t = Integer ;` declares a code, and a type an
+//! expression cannot spell bare, a receive `?A. S` or a labelled sum `+{…}`,
+//! is written there as `type(T)`, which reads `T` at the quote's own position
+//! and so takes the same quote; and a name
 //! standing where a type is read, bound at a universe, is decoded out of it, as
 //! a value type when the universe is `Type[+, l]` and a computation type when
 //! it is `Type[-, l]`. Each bridge is decided by the position's sort and the
@@ -1258,7 +1261,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1278,6 +1281,7 @@ fn ending(former: Former) -> Ending
         | Former::Constructor
         | Former::Number
         | Former::Text
+        | Former::TypeQuote
         | Former::Unit
         | Former::Thunk
         | Former::Return
@@ -1347,7 +1351,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1393,6 +1397,7 @@ fn iterating(former: Former) -> Ending
                     | Former::Number
                     | Former::Text
                     | Former::Parenthesized
+                    | Former::TypeQuote
                     | Former::Unit
                     | Former::Thunk
                     | Former::Lambda
@@ -1469,6 +1474,7 @@ const fn family_of(former: Former) -> Family
         | Former::Number
         | Former::Text
         | Former::Parenthesized
+        | Former::TypeQuote
         | Former::Unit
         | Former::Thunk
         | Former::Lambda
@@ -5367,6 +5373,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::Number => self.number(site),
             Former::Text => self.text(site, pieces),
             Former::Parenthesized => self.parenthesized(site, cursor),
+            Former::TypeQuote => self.type_quote(site, cursor),
             Former::Unit => {
                 let _frame = self.require(site, Produced::Value)?;
                 self.plan(site, Plan::Unit);
@@ -6638,6 +6645,50 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let _passed = self.inherited.insert(inner.node, inherited);
         }
         self.pass_paths(site.at.node, inner.node);
+
+        self.plan(site, Plan::Transparent(inner.node));
+
+        Ok(())
+    }
+
+    /// Classify a type quote, `type(T)`: the code of `T` where an expression
+    /// stands.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at the `type(` of a type quote.
+    /// - ensures: the one type is read at the quote's own reading and adopted,
+    ///   so a type where a value is read is quoted at its own sort, as a type
+    ///   written bare there is.
+    /// - provides: the types an expression cannot spell bare — a receive `?(S).
+    ///   T` and a labelled sum `+{ … }` — as arguments.
+    /// - fails: yields the one-operand refusal and the unclosed-form fault,
+    ///   both naming the quote, and the type's own refusal at its reading.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a receive, a labelled sum and a computation type
+    ///   quoted as arguments lower to the exact core codes a bare type there
+    ///   lowers to.
+    /// - witness: `lower::tests::a_quoted_type_is_the_code_a_bare_type_is`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Transparent(child)) if self.reading(child) == site.reading)
+        },
+    )]
+    fn type_quote(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let _open = cursor.tile(TileName::TYPE_QUOTE_OPEN);
+        let inner = site.one(cursor.operands())?;
+        closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
+        self.read(inner.node, site.reading);
 
         self.plan(site, Plan::Transparent(inner.node));
 
@@ -15957,6 +16008,7 @@ pub fn parse_literal(
         | Former::Unary
         | Former::Constructor
         | Former::Parenthesized
+        | Former::TypeQuote
         | Former::Unit
         | Former::Thunk
         | Former::Lambda
@@ -17401,6 +17453,69 @@ mod tests
                 if arena.value_type(element) == Some(&ValueType::Base(BaseType::Integer))
                     && provenance == inserted),
             "a unary former written as a call where a value is read is its code (#539): {list:?}"
+        );
+    }
+
+    #[test]
+    fn a_quoted_type_is_the_code_a_bare_type_is()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def a = Integer ; def b = type(Integer) ; def c = -F Integer ; \
+                 def d = type(-F Integer) ; def e = type(+{Unit}) ;",
+            ),
+            &mut arena,
+        );
+        let quoted = |declaration: usize| {
+            let body = body_of(outcomes(&module)[declaration]);
+            let provenance = module
+                .origins()
+                .value(body)
+                .map(|origin| origin.provenance());
+            match arena.value(body) {
+                Some(&Value::Quote(inner)) => (arena.value_type(inner).cloned(), None, provenance),
+                Some(&Value::QuoteComputation(inner)) => {
+                    (None, arena.comp_type(inner).cloned(), provenance)
+                },
+                _ => (None, None, provenance),
+            }
+        };
+
+        assert_eq!(
+            quoted(1_usize),
+            quoted(0_usize),
+            "a quoted value type is the code its bare spelling is, inserted the same way"
+        );
+        assert!(
+            matches!(
+                quoted(0_usize),
+                (Some(ValueType::Base(BaseType::Integer)), None, _)
+            ),
+            "and that code is the base type's"
+        );
+        let returned = |declaration: usize| match quoted(declaration) {
+            (None, Some(CompType::Returner { result, effects }), provenance) => {
+                Some((arena.value_type(result).cloned(), effects, provenance))
+            },
+            _ => None,
+        };
+        assert_eq!(
+            returned(3_usize),
+            returned(2_usize),
+            "a quoted computation type is quoted at its own sort, as its bare spelling is"
+        );
+        assert!(
+            matches!(
+                returned(2_usize),
+                Some((Some(ValueType::Base(BaseType::Integer)), _, _))
+            ),
+            "and that code returns the base type"
+        );
+        let sum = quoted(4_usize);
+        assert!(
+            matches!(&sum, (Some(ValueType::Sum(components)), None, _) if components.len() == 1_usize),
+            "a labelled sum no expression reads bare is quoted as the sum's code: {sum:?}"
         );
     }
 

@@ -1,0 +1,8 @@
+// The twin of `../../model/sessions/type-quote.gandr`: a type quote is the
+// code of the type it quotes and of no other (#839).
+
+/// The stationary flow at a protocol that opens with a receive is no flow to
+/// one that opens with a send.
+@[ refuses("EndpointMismatch") ]
+def quoted_receive : Flow(Type, ?String. end, !String. end) ;
+def quoted_receive = stay(type(?String. end)) ;

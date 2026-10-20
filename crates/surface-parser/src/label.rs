@@ -2738,24 +2738,35 @@ fn bridge_end(
 /// prints parses as the binder and the universe it means.
 const MARKED_WORDS: [&[u8]; 2] = [b"pi", b"Type"];
 
+/// The words a `(` written straight after them opens, each one tile with its
+/// parenthesis: `type(`, a type quoted where an expression stands.
+///
+/// The keyword alone opens no expression, so `type` where a classifier
+/// belongs stays the stray keyword the repair names; `type (T)`, spaced, is
+/// the keyword and a group.
+const OPENED_WORDS: [&[u8]; 1] = [b"type"];
+
 /// The class and end of the word scanned from `pos` to `end`: a marked word
-/// with the `+` after it is one punctuation tile, any other word is `class`.
+/// with the `+` after it, or an opened word with the `(` after it, is one
+/// punctuation tile; any other word is `class`.
 ///
 /// # Specification
 /// - requires: `pos .. end` is one word the word scanner read.
 /// - ensures: punctuation through the `+` when the word is marked, the `+`
 ///   follows it and the byte after the `+` neither continues a word nor opens a
-///   prime; the word as `class` otherwise.
+///   prime; punctuation through the `(` when the word is opened and the `(`
+///   follows it; the word as `class` otherwise.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — each marked word before a space, a parenthesis, a
 ///   semicolon and the end of input, a marked word whose sign continues into a
 ///   word, an unmarked word before a sign and a spaced sign separate the
-///   decision.
+///   decision; an opened word straight before and spaced from its `(`, and an
+///   unopened word before one, separate the opening.
 /// - witness: `label::tests::a_marked_word_is_one_tile_only_where_its_sign_ends`
 #[spec(ensures: |ret| if ret.lexeme == Lexeme::Punct {
-    ret.next.0 == end.0.saturating_add(1) && bytes.0.get(end.0) == Some(&b'+')
+    ret.next.0 == end.0.saturating_add(1) && matches!(bytes.0.get(end.0), Some(&(b'+' | b'(')))
 } else {
     ret.lexeme == class && ret.next == end
 })]
@@ -2767,10 +2778,13 @@ fn scan_marked(
 ) -> ScanResult
 {
     let marked = end.advance(ByteWidth::ONE);
-    let spelled = MARKED_WORDS
-        .iter()
-        .any(|word| bool::from(bytes.span_matches(pos, end, BytePattern(word))));
+    let spelled_in = |words: &[&[u8]]| {
+        words
+            .iter()
+            .any(|word| bool::from(bytes.span_matches(pos, end, BytePattern(word))))
+    };
     let signed = bytes.byte(end) == Some(SourceByte::from(b'+'));
+    let opened = bytes.byte(end) == Some(SourceByte::from(b'('));
     let continues = bytes
         .byte(marked)
         .is_some_and(|byte| bool::from(byte.is_word_continue()))
@@ -2779,7 +2793,8 @@ fn scan_marked(
             marked.advance(ByteWidth::THREE),
             BytePattern(&PRIME_UTF8),
         ));
-    if spelled && signed && !continues {
+    if (spelled_in(&MARKED_WORDS) && signed && !continues) || (spelled_in(&OPENED_WORDS) && opened)
+    {
         ScanResult::new(Lexeme::Punct, marked)
     }
     else {
@@ -3991,6 +4006,24 @@ mod tests
                 punct(")"),
             ],
             "a spaced sign, or a sign after another word, is its own tile"
+        );
+        assert_eq!(
+            lexed("type(Unit) type (x) types(x) type"),
+            vec![
+                punct("type("),
+                upper("Unit"),
+                punct(")"),
+                lower("type"),
+                punct("("),
+                lower("x"),
+                punct(")"),
+                lower("types"),
+                punct("("),
+                lower("x"),
+                punct(")"),
+                lower("type"),
+            ],
+            "an opened word is one tile with the `(` straight after it, and only then"
         );
     }
     #[test]

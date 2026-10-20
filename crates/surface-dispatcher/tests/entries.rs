@@ -125,6 +125,10 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression send", Standing::Owed(0)),
     ("Expression then", Standing::Owed(0)),
     ("Expression thunk", Standing::Owed(0)),
+    (
+        "Expression type(",
+        Standing::Design("a type quote: the type inside answers, quoted where the value is read"),
+    ),
     ("Expression unit", Standing::Owed(0)),
     ("Expression while", Standing::Owed(0)),
     (

@@ -1,0 +1,33 @@
+// A type written where an expression stands, quoted as `type(T)`: an
+// expression reads a receive's `?` as a hole and a labelled sum's `+{` as an
+// injection, so the quote is the one spelling of such a type as an argument,
+// as it is spelled bare in a signature (#839).
+
+// The seat's protocol and its messages.
+import "./seat-base.gandr" ;
+
+/// The stationary flow at a protocol that opens with a receive.
+@[ checks ]
+def quoted_receive : Flow(Type, ?(Seat.Dispatch). end, ?(Seat.Dispatch). end) ;
+def quoted_receive = stay(type(?(Seat.Dispatch). end)) ;
+
+/// The stationary flow at a labelled sum of one summand.
+@[ checks ]
+def quoted_sum : Flow(Type, +{Unit}, +{Unit}) ;
+def quoted_sum = stay(type(+{Unit})) ;
+
+/// The seat's protocol, written out in full where an expression stands, and
+/// the protocol its name stands for.
+module Quoted {
+  type SeatEnd = Seat.SeatEnd;
+  /// The written protocol simulates the named one.
+  @[ checks ]
+  def protocol : Flow(Type, SeatEnd, ?(Seat.Dispatch). mu turn. +{
+    report : !(Seat.Report). &{ next : turn, retire : end },
+    handoff : !(Seat.Handoff). end
+  }) ;
+  def protocol = sim(SeatEnd, type(?(Seat.Dispatch). mu turn. +{
+    report : !(Seat.Report). &{ next : turn, retire : end },
+    handoff : !(Seat.Handoff). end
+  })) ;
+}

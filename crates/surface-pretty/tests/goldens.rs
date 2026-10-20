@@ -2254,6 +2254,64 @@ fn a_binder_only_a_dropped_argument_names_is_unnamed_736()
     }
 }
 
+/// #839: a quoted type that holds a part no expression reads — a sum or a
+/// lazy product written between braces, at its head or as a product's
+/// component — is written `type(T)` where an expression stands, as an
+/// argument and alone, so the lowering reads it back to the same code.
+/// `Bool` and a base type are read where an expression stands and stay bare,
+/// and so does any quote a type position reads, as the decoded code there.
+#[test]
+fn a_type_no_expression_reads_is_quoted_839()
+{
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    let unit = core.value_type_product(&[]);
+    let only = core.value_type_sum(&[integer]);
+    let unit_only = core.value_type_sum(&[unit]);
+    let holding = core.value_type_product(&[unit, unit_only]);
+    let boolean = core.value_type_sum(&[unit, unit]);
+    let returns = core.comp_type_returner(integer);
+    let lazy_one = core.comp_type_with(&[returns]);
+    let only = core.value_quote(only);
+    let holding = core.value_quote(holding);
+    let boolean = core.value_quote(boolean);
+    let integer = core.value_quote(integer);
+    let lazy_one = core.value_quote_computation(lazy_one);
+    let argument = core.value_stay(only);
+    let decoded = core.value_type_element(only, Level::zero());
+    let source = CoreSource::new(&core, &[]);
+    for form in [Form::Sugared, Form::Explicit] {
+        let presented = presented_in(
+            &source,
+            Root::Type(CoreNode::ValueType(decoded)),
+            wide(),
+            form,
+        );
+        assert_eq!(
+            (presented.as_ref(), presented.fidelity()),
+            ("+{Integer}", Fidelity::Faithful),
+            "a decoded quote in a type position stands bare in the {form:?} form"
+        );
+    }
+    for (root, sugared, explicit) in [
+        (only, "type(+{Integer})", "type(+{Integer})"),
+        (holding, "type(Unit * +{Unit})", "type(#{Unit, +{Unit}})"),
+        (boolean, "Bool", "Bool"),
+        (integer, "Integer", "Integer"),
+        (lazy_one, "type(&{-F Integer})", "type(&{-F Integer})"),
+        (argument, "stay(type(+{Integer}))", "stay(type(+{Integer}))"),
+    ] {
+        for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
+            let presented = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
+            assert_eq!(
+                (presented.as_ref(), presented.fidelity()),
+                (expected, Fidelity::Faithful),
+                "{root:?} in the {form:?} form"
+            );
+        }
+    }
+}
+
 /// #800: the sugared form writes a thunk over a dependent arrow chain as the
 /// dependent alias, naming each binder its codomain reads and writing every
 /// other domain bare, where it wrote the explicit thunk before; the explicit
