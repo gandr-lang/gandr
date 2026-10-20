@@ -300,8 +300,9 @@ fn store_with_eta_first(
             out.insert(cell.clone());
         }
     }
+    let selected: alloc::collections::BTreeSet<&CellId> = eta_ids.iter().collect();
     for (id, cell) in store.iter() {
-        if !eta_ids.contains(&id) {
+        if !selected.contains(&id) {
             out.insert(cell.clone());
         }
     }
@@ -338,6 +339,7 @@ fn store_without(
     dropped: &[CellId],
 ) -> CellStore
 {
+    let dropped: alloc::collections::BTreeSet<&CellId> = dropped.iter().collect();
     let mut out = CellStore::new();
     for (id, cell) in store.iter() {
         if !dropped.contains(&id) {

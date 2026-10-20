@@ -124,7 +124,7 @@ impl Count
 }
 
 /// One node of a term.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Head
 {
     /// A metavariable leaf: a rule's pattern variable.
@@ -710,6 +710,7 @@ fn anti_unify_terms(
         .collect();
     let mut suffix = Count(0);
     let mut stood: Vec<(Name, Vec<&[Head]>)> = Vec::new();
+    let mut stood_at: BTreeMap<Vec<&[Head]>, Name> = BTreeMap::new();
     let mut patterns = Vec::with_capacity(first.len());
     for (component, term) in first.iter().enumerate() {
         let members: Vec<&Term> = core::iter::once(term)
@@ -751,8 +752,8 @@ fn anti_unify_terms(
                         .unwrap_or_default()
                 })
                 .collect();
-            if let Some(seen) = stood.iter().find(|seen| seen.1 == column) {
-                nodes.push(Head::Var(seen.0.clone()));
+            if let Some(seen) = stood_at.get(&column) {
+                nodes.push(Head::Var(seen.clone()));
                 continue;
             }
             let fresh = loop {
@@ -762,6 +763,7 @@ fn anti_unify_terms(
                     break name;
                 }
             };
+            stood_at.insert(column.clone(), fresh.clone());
             stood.push((fresh.clone(), column));
             nodes.push(Head::Var(fresh));
         }
@@ -993,6 +995,7 @@ impl CellAlphabet for TermAlphabet
         vars: &[Self::Var],
     ) -> Self::Subst
     {
+        let vars: BTreeSet<&Name> = vars.iter().collect();
         TermSubst(
             subst
                 .0
@@ -1331,9 +1334,10 @@ impl CellAlphabet for TermAlphabet
         invertible: CellInvertibility,
     ) -> Self::Meta
     {
+        let mut seen: BTreeSet<&Name> = BTreeSet::new();
         let mut vars: Vec<Name> = Vec::new();
         for var in lhs.vars().chain(rhs.vars()) {
-            if !vars.contains(var) {
+            if seen.insert(var) {
                 vars.push(var.clone());
             }
         }
