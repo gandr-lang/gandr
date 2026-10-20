@@ -720,8 +720,8 @@ enum Task
     SessionType(ValueTypeId),
     /// Assemble a case with a normalized motive and ambient branch functions.
     DataCase(ComputationId),
-    /// Assemble a projection with the source's exact label or component.
-    Projection(ComputationId),
+    /// Assemble a projection with the projector's exact label or component.
+    Projection(crate::domain::Projector),
     /// Read back a value type a quote carries, in a frame.
     QuotedValueType
     {
@@ -2222,9 +2222,9 @@ fn run(
             && entry_comp_types.checked_sub(1) == Some(machine.comp_types.len())
             && entry_comps.checked_sub(branches.len()).and_then(|n| n.checked_add(1)) == Some(machine.comps.len())
             && machine.comps.last().is_some_and(|&id| matches!(core.computation(id), Some(Computation::DataCase { branches: actual, .. }) if actual.len() == branches.len()))),
-        | Task::Projection(source) => entry_values.checked_sub(1) == Some(machine.values.len())
+        | Task::Projection(_) => entry_values.checked_sub(1) == Some(machine.values.len())
             && machine.comps.len() == entry_comps.saturating_add(1)
-            && crate::rules::projection_key(core, source).is_ok_and(|key| machine.comps.last().is_some_and(|&id| crate::rules::projection_key(core, id).ok() == Some(key))),
+            && machine.comps.last().is_some_and(|&id| matches!(core.computation(id), Some(Computation::RecordProjection(..) | Computation::TupleProjection(..)))),
         | Task::Value { .. } | Task::Comp { .. } | Task::Spine(_) | Task::QuotedValueType { .. }
         | Task::QuotedCompType { .. } | Task::QuotedCode { .. } | Task::Suspended { .. } => true,
         | Task::Substitute { body, count } => machine.tasks.len() == entry_tasks
@@ -2407,44 +2407,12 @@ fn step(
                 .push(core.computation_data_case(scrutinee, motive, branches));
             Ok(())
         },
-        Task::Projection(source) => {
-            let Some(matched_native_node) = core.computation(source)
-            else {
-                return Err(ReadbackFault::MachineInvariant);
-            };
-            let projection = match *matched_native_node {
-                Computation::RecordProjection(_, ref label) => Ok(label.clone()),
-                Computation::TupleProjection(_, component) => Err(component),
-                Computation::Primitive { .. }
-                | Computation::Transport(..)
-                | Computation::PathTransport { .. }
-                | Computation::Ride { .. }
-                | Computation::TelescopeTransport { .. }
-                | Computation::Lambda(_)
-                | Computation::Fixpoint { .. }
-                | Computation::Application(..)
-                | Computation::Return(_)
-                | Computation::Bind(..)
-                | Computation::Ascribe { .. }
-                | Computation::Force(_)
-                | Computation::Case { .. }
-                | Computation::Split { .. }
-                | Computation::DataCase { .. }
-                | Computation::Hole(_)
-                | Computation::Mark { .. }
-                | Computation::ListFold { .. }
-                | Computation::Perform { .. }
-                | Computation::Handle { .. }
-                | Computation::Exercise { .. }
-                | Computation::Scope { .. }
-                | Computation::Resume(..)
-                | Computation::Reset(_)
-                | Computation::Shift(_)
-                | Computation::With(..)
-                | Computation::Project(..)
-                | Computation::Session(_)
-                | Computation::Memory(_)
-                | Computation::World(_) => return Err(ReadbackFault::MachineInvariant),
+        Task::Projection(projector) => {
+            let projection = match crate::rules::projection_key(core, projector)
+                .map_err(|_fault| ReadbackFault::MachineInvariant)?
+            {
+                crate::rules::ProjectionKey::Label(label) => Ok(label.clone()),
+                crate::rules::ProjectionKey::Component(component) => Err(component),
             };
             let projected = machine.pop_value()?;
             let assembled = match projection {

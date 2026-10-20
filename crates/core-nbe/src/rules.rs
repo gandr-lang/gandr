@@ -46,6 +46,7 @@ use crate::domain::DomainValue;
 use crate::domain::Elimination;
 use crate::domain::Glued;
 use crate::domain::NeutralHead;
+use crate::domain::Projector;
 use crate::domain::Unfolding;
 use crate::eval::Definitions;
 use crate::machine::DeclineReason;
@@ -230,6 +231,20 @@ pub enum Subgoal
     /// each applied to one fresh variable: the continuations of the binds the
     /// kernel reads over the endpoints' calls.
     Continued(NeutralId, NeutralId),
+    /// A tuple's component or a record's field against the same projection
+    /// of a neutral: η, the neutral read as the tuple or record of its own
+    /// projections.
+    Projected
+    {
+        /// The side the neutral stands on.
+        side: ConversionSide,
+        /// The neutral, in value position.
+        neutral: NeutralId,
+        /// What the projection selects.
+        projector: Projector,
+        /// The component or field on the other side.
+        field: DomainValueId,
+    },
 }
 
 /// A forced rule with one premise.
@@ -545,34 +560,57 @@ pub fn fixpoint_source(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: returns the projection's label, with no spelling normalization,
-///   or its component.
-/// - fails: a missing source or a non-projection body.
+/// - ensures: returns the label the source projection names, with no spelling
+///   normalization, or its component; a minted component as it stands; a minted
+///   field's label at its position among the record's labels.
+/// - fails: a missing source, a non-projection body, a record source that is no
+///   record, or a position past the record's last label.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — unlike labels remain unlike even on one neutral record,
-///   and unlike components on one neutral tuple.
+///   and unlike components on one neutral tuple; a minted selector names the
+///   label or component a written one would.
 /// - witness: `machine::tests::native_records_cases_and_traces_agree`
 /// - witness: `machine::tests::tuple_projections_of_one_neutral_compare_by_component`
-#[spec(ensures:|ret| core.computation(source).map_or_else(|| ret == Err(ConversionFault::MachineInvariant), |matched_native_node| match *matched_native_node {
-gandr_core_term::Computation::RecordProjection(_,ref label) => ret == Ok(ProjectionKey::Label(label)),
-gandr_core_term::Computation::TupleProjection(_,component) => ret == Ok(ProjectionKey::Component(component)),
-gandr_core_term::Computation::Primitive { .. } | gandr_core_term::Computation::Transport(..) | gandr_core_term::Computation::PathTransport { .. } | gandr_core_term::Computation::Ride { .. } | gandr_core_term::Computation::TelescopeTransport { .. } | gandr_core_term::Computation::Lambda(_) | gandr_core_term::Computation::Fixpoint { .. } | gandr_core_term::Computation::Application(..) | gandr_core_term::Computation::Return(_) | gandr_core_term::Computation::Bind(..) | gandr_core_term::Computation::Ascribe { .. } | gandr_core_term::Computation::Force(_) | gandr_core_term::Computation::Case { .. } | gandr_core_term::Computation::Split { .. } | gandr_core_term::Computation::DataCase { .. } | gandr_core_term::Computation::Hole(_) | gandr_core_term::Computation::Mark { .. } | gandr_core_term::Computation::ListFold { .. } | gandr_core_term::Computation::Perform { .. } | gandr_core_term::Computation::Handle { .. } | gandr_core_term::Computation::Exercise { .. } | gandr_core_term::Computation::Scope { .. } | gandr_core_term::Computation::Resume(..) | gandr_core_term::Computation::Reset(_) | gandr_core_term::Computation::Shift(_) | gandr_core_term::Computation::With(..) | gandr_core_term::Computation::Project(..) | gandr_core_term::Computation::Session(_) | gandr_core_term::Computation::Memory(_) | gandr_core_term::Computation::World(_) => ret == Err(ConversionFault::MachineInvariant),
-}))]
+/// - witness: `machine::tests::a_tuple_of_a_neutrals_projections_is_the_neutral_715`
+#[spec(ensures: |ret| match projector {
+    Projector::Source(source) => match core.computation(source) {
+        Some(&gandr_core_term::Computation::RecordProjection(_, ref label)) => ret == Ok(ProjectionKey::Label(label)),
+        Some(&gandr_core_term::Computation::TupleProjection(_, component)) => ret == Ok(ProjectionKey::Component(component)),
+        Some(_) | None => ret == Err(ConversionFault::MachineInvariant),
+    },
+    Projector::Component(component) => ret == Ok(ProjectionKey::Component(component)),
+    Projector::Field { record, at } => match core.value(record) {
+        Some(&Value::Record(ref labels)) => labels.keys().nth(usize::from(at))
+            .map_or_else(|| ret == Err(ConversionFault::MachineInvariant), |label| ret == Ok(ProjectionKey::Label(label))),
+        Some(_) | None => ret == Err(ConversionFault::MachineInvariant),
+    },
+})]
 pub fn projection_key(
     core: &CoreArena,
-    source: gandr_core_term::ComputationId,
+    projector: Projector,
 ) -> Result<ProjectionKey<'_>, ConversionFault>
 {
-    match core.computation(source) {
-        Some(&gandr_core_term::Computation::RecordProjection(_, ref label)) => {
-            Ok(ProjectionKey::Label(label))
+    match projector {
+        Projector::Source(source) => match core.computation(source) {
+            Some(&gandr_core_term::Computation::RecordProjection(_, ref label)) => {
+                Ok(ProjectionKey::Label(label))
+            },
+            Some(&gandr_core_term::Computation::TupleProjection(_, component)) => {
+                Ok(ProjectionKey::Component(component))
+            },
+            _ => Err(ConversionFault::MachineInvariant),
         },
-        Some(&gandr_core_term::Computation::TupleProjection(_, component)) => {
-            Ok(ProjectionKey::Component(component))
+        Projector::Component(component) => Ok(ProjectionKey::Component(component)),
+        Projector::Field { record, at } => match core.value(record) {
+            Some(&Value::Record(ref labels)) => labels
+                .keys()
+                .nth(usize::from(at))
+                .map(ProjectionKey::Label)
+                .ok_or(ConversionFault::MachineInvariant),
+            Some(_) | None => Err(ConversionFault::MachineInvariant),
         },
-        _ => Err(ConversionFault::MachineInvariant),
     }
 }
 
@@ -2399,6 +2437,23 @@ fn plan_values(
         | (DomainValue::Neutral { .. }, DomainValue::StaticLambda { .. }) => {
             Plan::Decline(DeclineReason::UndecidedCodes)
         },
+        // A tuple or a record against a rigid neutral compares part by part
+        // with the neutral's own projections: η for products and records. A
+        // frozen constant meets a former apart here, as the goal's unfolding
+        // branch relates them: its projections stay frozen on the same head,
+        // and η along them would never reach a verdict.
+        (
+            former @ (DomainValue::Tuple { .. } | DomainValue::Record { .. }),
+            DomainValue::Neutral { neutral, .. },
+        ) if matches!(right_head, Neutrality::Neutral(_, Head::Rigid)) => {
+            projected(domain, former, neutral, ConversionSide::Right)?
+        },
+        (
+            DomainValue::Neutral { neutral, .. },
+            former @ (DomainValue::Tuple { .. } | DomainValue::Record { .. }),
+        ) if matches!(left_head, Neutrality::Neutral(_, Head::Rigid)) => {
+            projected(domain, former, neutral, ConversionSide::Left)?
+        },
         (
             DomainValue::PathCertificate { .. }
             | DomainValue::Constructor { .. }
@@ -2421,6 +2476,83 @@ fn plan_values(
         ) => Plan::Leaf(Settled::NotConvertible),
     };
     Ok(planned)
+}
+
+/// The η decomposition of a tuple or a record against a rigid neutral: each
+/// component or field against the neutral's projection at it, in the order
+/// the tuple or the record's labels hold them.
+///
+/// # Specification
+/// - requires: `neutral` stands in value position on `side`, `former` on the
+///   other.
+/// - ensures: one [`Subgoal::Projected`] per component of a tuple, by
+///   [`Projector::Component`], or per field of a record, by
+///   [`Projector::Field`] over the record's source labels, in order; a leaf
+///   apart for an empty tuple or record and for any other former.
+/// - provides: η for products and records.
+/// - fails: [`ConversionFault::Domain`] when the fields do not resolve.
+/// - panics: none.
+///
+/// # Errors
+/// - [`ConversionFault::Domain`] — the fields do not resolve.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a tuple or record of a neutral's own projections converts
+///   to it on either side, and the kernel replays the same premises; swapped
+///   components and a different neutral stay apart. A frozen constant against a
+///   former is never expanded, so a goal that unfolds back into itself declines
+///   on the cycle instead of projecting without end.
+/// - witness: `machine::tests::a_tuple_of_a_neutrals_projections_is_the_neutral_715`
+/// - witness: `machine::tests::a_goal_resting_on_itself_declines_on_the_cycle`
+#[spec(ensures: |ret| if let DomainValue::Tuple { fields, .. } | DomainValue::Record { fields, .. } = former {
+    domain.fields(fields).map_or_else(|_| ret.is_err(), |held| match ret {
+        Ok(Plan::Decompose(ref subgoals)) => !held.is_empty() && subgoals.len() == held.len()
+            && subgoals.iter().zip(held).all(|(subgoal, &component)| matches!(*subgoal,
+                Subgoal::Projected { side: at, neutral: projected, field, .. } if at == side && projected == neutral && field == component)),
+        Ok(Plan::Leaf(Settled::NotConvertible)) => held.is_empty(),
+        Ok(_) | Err(_) => false,
+    })
+} else {
+    ret == Ok(Plan::Leaf(Settled::NotConvertible))
+})]
+fn projected(
+    domain: &DomainArena,
+    former: DomainValue,
+    neutral: NeutralId,
+    side: ConversionSide,
+) -> Result<Plan, ConversionFault>
+{
+    let (fields, record) = if let DomainValue::Tuple { fields, .. } = former {
+        (fields, None)
+    }
+    else if let DomainValue::Record { source, fields, .. } = former {
+        (fields, Some(source))
+    }
+    else {
+        return Ok(Plan::Leaf(Settled::NotConvertible));
+    };
+    let fields = domain.fields(fields).map_err(ConversionFault::Domain)?;
+    if fields.is_empty() {
+        return Ok(Plan::Leaf(Settled::NotConvertible));
+    }
+    Ok(Plan::Decompose(
+        fields
+            .iter()
+            .enumerate()
+            .map(|(position, &field)| {
+                let at = gandr_core_term::Component::from(position);
+                Subgoal::Projected {
+                    side,
+                    neutral,
+                    projector: record.map_or(Projector::Component(at), |record| Projector::Field {
+                        record,
+                        at,
+                    }),
+                    field,
+                }
+            })
+            .collect(),
+    ))
 }
 
 /// [`plan`] over two weak-head computations.

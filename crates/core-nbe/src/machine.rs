@@ -249,6 +249,7 @@ use crate::domain::DomainValue;
 use crate::domain::Elimination;
 use crate::domain::Glued;
 use crate::domain::NeutralHead;
+use crate::domain::Projector;
 use crate::domain::TermFace;
 use crate::domain::Unfolding;
 use crate::eval::Bound;
@@ -2958,6 +2959,22 @@ where
                         depth,
                     )
                 },
+                Subgoal::Projected {
+                    side,
+                    neutral,
+                    projector,
+                    field,
+                } => {
+                    let projected = self.projected(neutral, projector)?;
+                    let (left, right) = match side {
+                        ConversionSide::Left => (projected, field),
+                        ConversionSide::Right => (field, projected),
+                    };
+                    (
+                        SupportSides::Heads(Glued::Value(left), Glued::Value(right)),
+                        goal.depth,
+                    )
+                },
             };
             let child = self.start_fresh(sides, depth)?;
             let outcome = self.depend(id, child)?;
@@ -2981,6 +2998,38 @@ where
         else {
             Turn::Wait
         })
+    }
+
+    /// The projection `projector` selects of `neutral`, standing as the value
+    /// it returns: the neutral's side of [`Subgoal::Projected`].
+    ///
+    /// # Specification
+    /// - requires: `neutral` stands in value position.
+    /// - ensures: a value-position neutral headed by the computation that
+    ///   projects `neutral` by `projector`, with an empty spine.
+    /// - provides: the neutral's side of η for products and records.
+    /// - fails: [`ConversionFault::Evaluation`] for a dangling neutral.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the projection reads back as the source writes one,
+    ///   so the kernel's premise and this side name one term.
+    /// - witness: `machine::tests::a_tuple_of_a_neutrals_projections_is_the_neutral_715`
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|value|
+        crate::rules::returned(self.domain, *value).is_ok_and(|held| held.is_some())))]
+    fn projected(
+        &mut self,
+        neutral: NeutralId,
+        projector: Projector,
+    ) -> Result<DomainValueId, ConversionFault>
+    {
+        let grown = extend_spine(self.domain, neutral, Elimination::Projection(projector))
+            .map_err(ConversionFault::Evaluation)?;
+        let projection = self.domain.comp_neutral(grown, CompTermFace::Reduced);
+        crate::eval::returned_value(self.domain, projection).map_err(ConversionFault::Evaluation)
     }
 
     /// Quote a native case motive under the same fresh scrutinee on both sides.

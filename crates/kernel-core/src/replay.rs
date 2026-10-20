@@ -3727,8 +3727,9 @@ where
     /// - ensures: two formers of one kind decompose child by child, or close on
     ///   their payloads; two codes close on α-equality or rigid separation; two
     ///   returners, two lambdas, two lazy pairings, and two neutrals with one
-    ///   head and agreeing spines decompose; every other pair is a refuting
-    ///   leaf.
+    ///   head and agreeing spines decompose; a non-empty tuple or record
+    ///   against a neutral decomposes into its components or fields against the
+    ///   neutral's projections; every other pair is a refuting leaf.
     /// - provides: the leaf and decomposition rules.
     /// - fails: [`ReplayRefusal::Unreadable`] on a dangling former.
     /// - panics: none.
@@ -3746,12 +3747,14 @@ where
     /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
     /// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
     /// - witness: `replay::tests::a_lazy_pairing_meets_a_neutral_by_its_projections`
+    /// - witness: `replay::tests::a_tuple_meets_a_neutral_by_its_projections_715`
     #[spec(ensures: |ret| match (left, right) {
         (&Shape::Return(one), &Shape::Return(other)) => matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one, other)]),
         (&Shape::Lambda(one), &Shape::Lambda(other)) | (&Shape::Fixpoint(one), &Shape::Fixpoint(other)) => matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::computations(one, other)]),
         (&Shape::With(one_first, one_second), &Shape::With(other_first, other_second)) => matches!(ret, Ok(Structure::Premises(ref premises))
             if premises.as_slice() == [Premise::computations(one_first, other_first), Premise::computations(one_second, other_second)]),
-        (&Shape::Former, &Shape::Former) => true,
+        (&Shape::Former | &Shape::Neutral(..), &Shape::Former)
+        | (&Shape::Former, &Shape::Neutral(..)) => true,
         (&Shape::Neutral(one, _), &Shape::Neutral(other, _)) if one == other => match ret {
             Ok(Structure::Premises(ref premises)) => !premises.is_empty() && premises.iter().all(|premise|
                 matches!((premise.left, premise.right), (Term::Value(_), Term::Value(_)) | (Term::Computation(_), Term::Computation(_)))),
@@ -3792,6 +3795,12 @@ where
                 &Shape::Neutral(left_head, ref left_spine),
                 &Shape::Neutral(right_head, ref right_spine),
             ) if left_head == right_head => spines(self.arena, left_spine, right_spine)?,
+            (&Shape::Former, &Shape::Neutral(..)) => {
+                self.projections(goal.left, goal.right, ConversionSide::Right)?
+            },
+            (&Shape::Neutral(..), &Shape::Former) => {
+                self.projections(goal.right, goal.left, ConversionSide::Left)?
+            },
             (
                 &(Shape::Former
                 | Shape::Thunk(_)
@@ -3804,6 +3813,87 @@ where
             ) => Structure::Leaf(Expect::NotConvertible),
         };
         Ok(structure)
+    }
+
+    /// The η premises of a tuple or a record against a neutral: each component
+    /// or field against the neutral's projection at it, in the order the tuple
+    /// or the record's labels hold them, the neutral on `side`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for a non-empty tuple or record value against a neutral
+    ///   value, one value premise per component or field, its other side the
+    ///   returned projection of the neutral at its position or label, in order;
+    ///   a refuting leaf for any other pair.
+    /// - provides: η for products and records.
+    /// - fails: [`ReplayRefusal::Unreadable`] on a dangling former.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tuple or record of a neutral's own projections
+    ///   replays convertible on either side, and swapped components refute at
+    ///   the first.
+    /// - witness: `replay::tests::a_tuple_meets_a_neutral_by_its_projections_715`
+    #[spec(ensures: |ret| match ret {
+        Ok(Structure::Premises(ref premises)) => premises.iter().all(|premise| {
+            let (held, projected) = match side {
+                ConversionSide::Left => (premise.right, premise.left),
+                ConversionSide::Right => (premise.left, premise.right),
+            };
+            matches!((held, projected), (Term::Value(_), Term::Value(value))
+                if matches!(self.arena.value(value), Some(&Value::Returned(_))))
+        }),
+        Ok(Structure::Leaf(verdict)) => verdict == Expect::NotConvertible,
+        Err(_) => true,
+    })]
+    fn projections(
+        &mut self,
+        former: Term,
+        neutral: Term,
+        side: ConversionSide,
+    ) -> Result<Structure, Stop>
+    {
+        let (Term::Value(former), Term::Value(neutral)) = (former, neutral)
+        else {
+            return Ok(Structure::Leaf(Expect::NotConvertible));
+        };
+        let mut premises = Vec::new();
+        let premise = |held: ValueId, projected: ValueId| match side {
+            ConversionSide::Left => Premise::values(projected, held),
+            ConversionSide::Right => Premise::values(held, projected),
+        };
+        let held = self.arena.value(former).ok_or_else(unreadable)?;
+        if let Value::Tuple(ref components) = *held
+            && !components.is_empty()
+        {
+            let components = components.to_vec();
+            for (position, held) in components.into_iter().enumerate() {
+                let projection = self.arena.computation_tuple_projection(
+                    neutral,
+                    gandr_kernel_term::Component::from(position),
+                );
+                premises.push(premise(held, self.arena.value_returned(projection)));
+            }
+        }
+        else if let Value::Record(ref fields) = *held
+            && !fields.is_empty()
+        {
+            let fields: Vec<_> = fields
+                .iter()
+                .map(|(label, &held)| (label.clone(), held))
+                .collect();
+            for (label, held) in fields {
+                let projection = self.arena.computation_record_projection(neutral, label);
+                premises.push(premise(held, self.arena.value_returned(projection)));
+            }
+        }
+        else {
+            return Ok(Structure::Leaf(Expect::NotConvertible));
+        }
+        Ok(Structure::of(premises))
     }
 
     /// The structural rule over two value formers.
