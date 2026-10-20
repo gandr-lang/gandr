@@ -785,10 +785,8 @@ impl Edit<'_>
             if self.unset_values.contains(&(attribute, part)) {
                 continue;
             }
-            if let Some(column) = self.store.values.get_mut(usize::from(attribute))
-                && let Some(value) = column.values.get(usize::from(slot)).cloned()
-            {
-                column.index_remove(&value, part);
+            if let Some(column) = self.store.values.get_mut(usize::from(attribute)) {
+                column.index_remove_slot(slot, part);
             }
         }
         Ok(())
@@ -834,10 +832,8 @@ impl Edit<'_>
             if self.unset_values.contains(&(attribute, part)) {
                 continue;
             }
-            if let Some(column) = self.store.values.get_mut(usize::from(attribute))
-                && let Some(value) = column.values.get(usize::from(slot)).cloned()
-            {
-                column.index_insert(&value, part);
+            if let Some(column) = self.store.values.get_mut(usize::from(attribute)) {
+                column.index_insert_slot(slot, part);
             }
         }
     }
@@ -899,9 +895,7 @@ impl Edit<'_>
                     else {
                         continue;
                     };
-                    if let Some(current) = column.values.get(usize::from(slot)).cloned() {
-                        column.index_remove(&current, part);
-                    }
+                    column.index_remove_slot(slot, part);
                     match prior {
                         Prior::Set(old) => {
                             column.index_insert(&old, part);

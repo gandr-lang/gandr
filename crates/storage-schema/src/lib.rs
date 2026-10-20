@@ -127,10 +127,6 @@
         reason = "2 cost-shape sites; #814 lists them"
     )
 )]
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(clone_in_loop, reason = "4 cost-shape sites; #814 lists them")
-)]
 
 extern crate alloc;
 // The profiler's instrumentation names `std`; it links only into the

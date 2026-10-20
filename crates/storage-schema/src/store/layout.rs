@@ -583,9 +583,12 @@ impl Store
             let object = self.schema.attribute_at(attribute)?.object();
             let parts: Vec<PartKey> = self.table(object)?.iter().collect();
             for part in parts {
-                let value = self.value(attribute, part)?.clone();
+                // The read refuses a part that is not live; the inverse then
+                // takes the value from its slot in place.
+                let _held = self.value(attribute, part)?;
+                let slot = self.slot(object, part)?;
                 if let Some(column) = self.values.get_mut(usize::from(attribute)) {
-                    column.index_insert(&value, part);
+                    column.index_insert_slot(slot, part);
                 }
             }
         }
