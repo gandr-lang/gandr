@@ -49,7 +49,7 @@ use gandr_theory_graphs::WalkChainLength;
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
 /// the access's place: two molds, `[` and `]`, around the index after the
 /// held slot's name.
-const BUILT_IN_FINGERPRINT: u64 = 0x0098_61a5_e4a3_8a54;
+const BUILT_IN_FINGERPRINT: u64 = 0x11cf_b22f_739a_cb94;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block

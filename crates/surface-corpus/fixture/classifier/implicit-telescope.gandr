@@ -61,6 +61,23 @@ def apply(f : (y : Integer) => Integer, x : Integer) -> -F Integer { become f(x)
 def passedRun : () => Integer ;
 def passedRun = thunk { become apply(same[a = Integer], 3) } ;
 
+/// The integers' addition, a member of a module.
+module Adding {
+  /// The sum of two integers.
+  @[ checks ]
+  def plus(x : Integer, y : Integer) -> -F Integer { return x + y }
+}
+
+/// A value combined with itself, the combination and its carrier implicit.
+@[ checks ]
+def twice @[m : Type, combine : (x : m, y : m) => m] (x : m) -> -F m { become combine(x, x) }
+
+/// `twice` with its combination supplied by a module path: a resident's value
+/// runs to the slot's next `,` or its `]` (#1188).
+@[ runs("6") ]
+def twiceRun : () => Integer ;
+def twiceRun = thunk { become twice[m = Integer, combine = Adding.plus](3) } ;
+
 /// The explicit twin of `same`: the function `same`'s implicit makes explicit
 /// runs as the same curried function.
 @[ runs("fn (a) { fn (b) { b } }") ]
