@@ -14321,10 +14321,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: the slot's member coordinates are interpreted in this
     ///   lowering run.
-    /// - ensures: [`Owed::Owed`] when either half is present and is neither a
-    ///   top-level `oper`'s, which lowers to no core term, nor a witness of a
-    ///   member that carries a refusal, which is reported where the member is
-    ///   written; [`Owed::Nothing`] otherwise.
+    /// - ensures: [`Owed::Nothing`] for a witness of a member that carries a
+    ///   refusal, whatever its other half — the refusal is reported where the
+    ///   member is written; otherwise [`Owed::Owed`] when either half is
+    ///   present and is not a top-level `oper`'s, which lowers to no core term.
     /// - provides: the halves whose absence [`Self::outcome`] refuses.
     /// - fails: never.
     /// - panics: none.
@@ -14332,44 +14332,45 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a function whose halves the mint left unminted owes a
     ///   declaration; reading a top-level `oper` as owing one would refuse
-    ///   every such declaration across the corpus.
+    ///   every such declaration across the corpus, and reading a model witness
+    ///   of a refused member as owing one reports the refusal twice.
     /// - witness: `lower::tests::a_declaration_minting_neither_half_is_refused_by_name_455`
+    /// - witness: `tests::modules::models::a_refused_member_of_a_model_is_refused_once_1081`
     #[spec(
-        ensures: |ret| (ret == Owed::Owed) == [slot.signature, slot.definition].into_iter().any(|half| match half {
-            | Maybe::Present(Half { operand: Operand::Signature, .. }) | Maybe::Absent(_) => false,
-            | Maybe::Present(Half { operand: Operand::Member(target), .. }) => !self
-                .collected
-                .slots
-                .get(usize::from(target))
-                .is_some_and(|member| matches!(member.refusal, Maybe::Present(_))),
-            | Maybe::Present(_) => true,
-        }),
+        ensures: |ret| (ret == Owed::Owed) == (
+            ![slot.signature, slot.definition].into_iter().any(|half| matches!(half,
+                Maybe::Present(Half { operand: Operand::Member(target), .. })
+                    if self.collected.slots.get(usize::from(target)).is_some_and(|member| matches!(member.refusal, Maybe::Present(_)))))
+            && [slot.signature, slot.definition].into_iter().any(|half| matches!(half,
+                Maybe::Present(Half { operand: Operand::Written(_) | Operand::Function | Operand::Member(_) | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Presented | Operand::Code | Operand::Model(_), .. })))
+        ),
     )]
     fn lowers_a_half(
         &self,
         slot: &DeclarationSlot<'source>,
     ) -> Owed
     {
-        let owed = [slot.signature, slot.definition]
-            .into_iter()
-            .any(|half| match half {
+        let halves = [slot.signature, slot.definition];
+        let restates_a_refusal = halves.into_iter().any(|half| {
+            matches!(half, Maybe::Present(Half { operand: Operand::Member(target), .. })
+                if self
+                    .collected
+                    .slots
+                    .get(usize::from(target))
+                    .is_some_and(|member| matches!(member.refusal, Maybe::Present(_))))
+        });
+        let owed = !restates_a_refusal
+            && halves.into_iter().any(|half| match half {
                 Maybe::Present(Half {
                     operand: Operand::Signature | Operand::World,
                     ..
                 })
                 | Maybe::Absent(_) => false,
                 Maybe::Present(Half {
-                    operand: Operand::Member(target),
-                    ..
-                }) => !self
-                    .collected
-                    .slots
-                    .get(usize::from(target))
-                    .is_some_and(|member| matches!(member.refusal, Maybe::Present(_))),
-                Maybe::Present(Half {
                     operand:
                         Operand::Written(_)
                         | Operand::Function
+                        | Operand::Member(_)
                         | Operand::Data(_)
                         | Operand::Words(_)
                         | Operand::Loop { .. }

@@ -293,6 +293,33 @@ fn a_written_family_of_the_wrong_telescope_is_refused()
 }
 
 #[test]
+fn a_refused_member_of_a_model_is_refused_once_1081()
+{
+    let source = "theory Toggle {\n  sort T : Type;\n  oper flip : (t : T) --> T;\n}\nmodule Bits : \
+                  Model(Toggle) {\n  type T = Bool;\n  def flip(b : Bool) -> -F Bool {\n    case b \
+                  {\n      true => return false,\n      false => return true\n    }\n  }\n}\n";
+    let found = rows(&lower(source));
+    let refusals: Vec<LoweringRefusal<'_>> = found
+        .iter()
+        .filter_map(|&(_, _, amounts)| {
+            if let Amounts::Refused(refusal) = amounts {
+                Some(refusal)
+            }
+            else {
+                None
+            }
+        })
+        .collect();
+    assert!(
+        matches!(*refusals.as_slice(), [
+            LoweringRefusal::OutOfFragment { .. }
+        ]),
+        "a member the lowering refuses is refused where it is written, and the model's witness \
+         of it is not refused again: {found:?}"
+    );
+}
+
+#[test]
 fn a_family_applied_to_too_few_indices_is_refused()
 {
     let source = "module M { type Ob = Type; type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b); def f : Hom(Integer); }";
