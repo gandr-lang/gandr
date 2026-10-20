@@ -1047,6 +1047,130 @@ fn an_edit_to_a_large_document_rechecks_its_forms()
     );
 }
 
+/// How many items a timing line counts as judged.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Judged(usize);
+
+/// The items judged that a timing line counts.
+///
+/// # Specification
+/// - requires: `line` is a timing line of a revision the judgement accepted.
+/// - ensures: the `<judged>` of its `<judged>/<items> items judged`.
+/// - provides: the incremental checker's census as a number.
+/// - fails: never in the valid domain.
+/// - panics: a line not in the logged shape violates the requirement.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an opening judges every item and a change to nothing
+///   judges none; a misread count breaks one of the two.
+/// - witness: `tests::session::an_edit_that_changes_nothing_republishes_the_same_bytes`
+#[spec(ensures: |ret| line.contains(&format!(" {}/", ret.0)))]
+fn judged(Line(line): Line<'_>) -> Judged
+{
+    let (_, after) = line
+        .split_once(" forms molded, ")
+        .expect("the line counts forms");
+    let (judged, _) = after.split_once('/').expect("judged of items");
+    Judged(judged.parse().expect("a judged count"))
+}
+
+#[test]
+fn an_edit_that_changes_nothing_republishes_the_same_bytes()
+{
+    let uri = "file:///tmp/unchanged.gandr";
+    let text =
+        "def a : Integer ;\ndef a = 1 ;\ndef b : Integer ;\ndef b = \"text\" ;\ndef c = a ;\n";
+    let mut messages = opening();
+    if let Some(params) = messages
+        .first_mut()
+        .and_then(|initialize| initialize.get_mut("params"))
+    {
+        params["initializationOptions"] = json!({"diagnostics": {"quiet": 0_i32}});
+    }
+    messages.push(open(&Source {
+        uri: uri.to_owned(),
+        text: text.to_owned(),
+    }));
+    // The whole text replaced by itself, then one character by itself.
+    messages.push(
+        json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+            "textDocument": {"uri": uri, "version": 2_i32},
+            "contentChanges": [{"text": text}],
+        }}),
+    );
+    messages.push(
+        json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+            "textDocument": {"uri": uri, "version": 3_i32},
+            "contentChanges": [{
+                "range": {
+                    "start": {"line": 1_i32, "character": 8_i32},
+                    "end": {"line": 1_i32, "character": 9_i32},
+                },
+                "text": "1",
+            }],
+        }}),
+    );
+    messages.extend(closing());
+    let input = frames(&messages);
+    let mut stream = input.as_ref();
+    let mut output = Vec::new();
+    let mut log = Vec::new();
+    let served = serve(&mut stream, &mut output, &mut log, Spelling::Unicode)
+        .expect("the streams carry the session");
+    assert_eq!(served, Served::Clean);
+
+    // Each publication's bytes as the server wrote them, its version written
+    // as zero: everything else the frame carries is the verdict.
+    let mut frames_written = output.as_slice();
+    let mut publications = Vec::new();
+    while let Maybe::Present(body) =
+        read_frame(&mut frames_written).expect("the server writes frames")
+    {
+        let message: Value = serde_json::from_slice(body.as_ref()).expect("each frame is JSON");
+        if message.get("method").and_then(Value::as_str) == Some("textDocument/publishDiagnostics")
+        {
+            let version = message
+                .pointer("/params/version")
+                .and_then(Value::as_i64)
+                .expect("a publication names its version");
+            let bytes = core::str::from_utf8(body.as_ref()).expect("a frame is UTF-8");
+            let (before, after) = bytes
+                .split_once("\"version\":")
+                .expect("a publication writes its version");
+            let rest = after.trim_start_matches(|c: char| c.is_ascii_digit());
+            publications.push((version, [before, "\"version\":0", rest].concat()));
+        }
+    }
+    let [(1_i64, ref opened), (2_i64, ref whole), (3_i64, ref ranged)] = *publications.as_slice()
+    else {
+        panic!("one publication per synchronisation: {publications:?}");
+    };
+    assert!(
+        opened.contains("TypeMismatch"),
+        "the document publishes its mismatch: {opened}"
+    );
+    assert_eq!(
+        (whole, ranged),
+        (opened, opened),
+        "a change to nothing publishes the bytes opening published"
+    );
+
+    let log = String::from_utf8(log).expect("the log is UTF-8");
+    let lines: Vec<&str> = log.lines().collect();
+    let [_, replaced, retyped] = *lines.as_slice()
+    else {
+        panic!("one timing line per synchronisation: {log}");
+    };
+    for line in [replaced, retyped] {
+        assert_eq!(
+            (census(Line(line)).molded, judged(Line(line))),
+            (0_usize, Judged(0)),
+            "a change to nothing molds no form and judges no item: {line}"
+        );
+    }
+}
+
 /// #776: an importer's edit to its own text offers the kernel its own
 /// declarations alone, as its synchronisation's log line counts them, where
 /// opening it offered the whole closure.

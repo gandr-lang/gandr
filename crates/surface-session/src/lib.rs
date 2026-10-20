@@ -45,6 +45,18 @@
 //! [`program`], to the incremental checker, which adopts what still answers
 //! and persists the checkpoints.
 //!
+//! # An edit judges what its supports touch
+//!
+//! The resume is held to zero drift against a from-scratch judgement of the
+//! same text. After each accepted edit the resumed checkpoints — content,
+//! footprint, consulted answers and typing — are the ones a fresh session
+//! records for the text, and the items judged are exactly those the two
+//! support logs separate: an item is adopted when the previous resume holds a
+//! checkpoint of its content whose consulted answers are the ones the fresh
+//! judgement records, and judged otherwise. The same text submitted again
+//! judges no item, molds no form, and composes the same report and kernel
+//! manifest.
+//!
 //! # Edits are reconstructed from the lowered core
 //!
 //! Each accepted [`Submission`] carries the [`EditScript`] from the latest
@@ -105,7 +117,7 @@
 //!
 //! | Decision surface | Evidence and bounded domain | Rung |
 //! | ---------------- | --------------------------- | ---- |
-//! | Incremental reuse | Literal adoption and retyping fixtures, plus 200 generated edit chains; complete typings compared with a fresh checker. | L2 |
+//! | Incremental reuse | Literal adoption and retyping fixtures, plus 200 generated edit chains; complete typings compared with a fresh checker. Over 200 chains of each of two generators — one of them retyping definitions that later ones read — the resumed checkpoints and the judged set are compared with a from-scratch session, the same text resubmitted, and the reach of adopted, new and retouched items asserted. | L2 |
 //! | Corpus composition | Every source from both configured corpus roots compared with the walk; both paths share parsing and judgement. | L3 |
 //! | Edit reconstruction | Literal actions, 200 generated revision pairs, and a hand-built dynamic tree; applying the diff reconstructs the new image. | L3 |
 //! | Item alignment | All subset/permutation pairs of three references compared with exhaustive reference subsequences. | L2 |

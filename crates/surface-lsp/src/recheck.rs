@@ -544,7 +544,9 @@ pub struct Rechecked
 ///   admission is pending when the judgement left one. The form is
 ///   [`caret_form`] of the judged tree at `caret`, `caret`'s own reason when it
 ///   is absent, and [`formless::Absent::Unparsed`] when the judgement faulted
-///   or the grammar did not build.
+///   or the grammar did not build. A text the session last judged, submitted
+///   again, molds no form and judges no item, and its diagnostics are the ones
+///   its previous recheck produced.
 /// - provides: the one recheck every synchronisation publishes.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
@@ -556,9 +558,12 @@ pub struct Rechecked
 ///   same ranges and codes; L3 — a type mismatch and a duplicate signature are
 ///   asserted at their related locations, a mismatch under a function at its
 ///   annotations then its rules in order, an unlocated rule in its message, and
-///   a pending source at its ledger line.
+///   a pending source at its ledger line; L3 — a change to nothing, the whole
+///   text replaced by itself and one character by itself, publishes the bytes
+///   opening published and counts no form molded and no item judged.
 /// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
+/// - witness: `tests::session::an_edit_that_changes_nothing_republishes_the_same_bytes`
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
 /// - witness: `recheck::tests::related_information_is_the_annotations_then_the_located_contexts`

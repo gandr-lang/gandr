@@ -1776,7 +1776,12 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   reads, the composition then carries the kernel artifact its admission
     ///   exported and the submission the kernel checkpoint committed into the
     ///   block store: the composition `gandr check` gives the same text under
-    ///   the same root, kernel artifact included.
+    ///   the same root, kernel artifact included. An accepted revision's
+    ///   resumed checkpoints are those a fresh session records for its text,
+    ///   its items judged exactly those whose content the latest resume does
+    ///   not hold or whose recorded answers the fresh judgement does not
+    ///   record; the latest accepted text submitted again judges no item, molds
+    ///   no form and composes the same report and kernel checkpoint.
     /// - provides: a report whose verdicts are the batch pipeline's, beside the
     ///   census of what the resume adopted, the manifest of the kernel
     ///   environment it leaves, the edits that led to it and the repairs the
@@ -1795,9 +1800,13 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   accepted, refused and edited revisions; exact synthesis, import,
     ///   snapshot and lowering-count observations; and kernel readback.
     ///   Generated edit/replay and incremental/batch witnesses provide
-    ///   independent bounded relational checks.
+    ///   independent bounded relational checks; L2 — generated edit chains
+    ///   compare the resumed checkpoints and judged items with a from-scratch
+    ///   session and resubmit each text.
     /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
     /// - witness: `tests::session::whole_file_submit_carries_definitions_forward`
+    /// - witness: `tests::incremental::an_edit_judges_exactly_the_items_its_support_logs_separate`
+    /// - witness: `tests::incremental::a_retyped_definition_dirties_its_reader_and_nothing_else`
     /// - witness: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`
     /// - witness: `tests::checkpoint::a_kernel_store_failure_preserves_resume_and_edit_state`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |submission| match submission.composed {
