@@ -18,7 +18,7 @@ data Two : Type {
 /// not strictly positive.
 @[ checks ]
 data Test(a : Type) : Type {
-  MkTest : (probe : +U (a -> -F Two)) --> Test(a);
+  MkTest : (probe : a => Two) --> Test(a);
 }
 
 /// A node over a test of nodes: `Rose` nested under `Test`, whose parameter

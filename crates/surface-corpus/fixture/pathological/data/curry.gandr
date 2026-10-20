@@ -13,12 +13,12 @@ data Empty : Type {}
 /// A node holding a function from its own family into the empty type.
 @[ checks ]
 data Bad : Type {
-  MkBad : (f : +U (Bad -> -F Empty)) --> Bad;
+  MkBad : (f : Bad => Empty) --> Bad;
 }
 
 /// A function applied to a node, each at its declared type.
 @[ checks ]
-def apply(g : +U (Bad -> -F Empty), b : Bad) -> -F Empty {
+def apply(g : Bad => Empty, b : Bad) -> -F Empty {
   g(b)
 }
 

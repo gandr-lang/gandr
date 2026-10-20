@@ -16,7 +16,7 @@ data Two : Type {
 /// `Lop(Two)` stands left of the arrow where no stage reaches (#517).
 @[ refuses("NegativeOccurrence") ]
 data Lop(a : Type) : Type {
-  MkLop : (f : +U (Lop(Two) -> -F Two)) --> Lop(a);
+  MkLop : (f : Lop(Two) => Two) --> Lop(a);
 }
 
 /// The same node with its domain written through a definition of its block
@@ -26,7 +26,7 @@ rec {
   /// A node consuming its own family through `hidden`.
   @[ refuses("NegativeOccurrence") ]
   data Hidden : Type {
-    MkH : (f : +U (hidden -> -F Two)) --> Hidden;
+    MkH : (f : hidden => Two) --> Hidden;
   }
 
   /// The family, named by a definition of its block, refused with it.

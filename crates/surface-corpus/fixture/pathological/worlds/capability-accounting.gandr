@@ -27,6 +27,6 @@ def unheld() -> -F Seat.Report {
 /// number of times, and a capability is spent once.
 @[ refuses("CapabilityCaptured") ]
 @[ entry((operator, seat)) ]
-def suspended() -> -F (+U (-F Seat.Report)) {
+def suspended() -> -F (() => Seat.Report) {
   pure thunk { migrate [seat] { pure Seat.progress } }
 }

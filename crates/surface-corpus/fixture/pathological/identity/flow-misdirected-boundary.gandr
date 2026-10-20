@@ -1,16 +1,16 @@
 module Schema {
-  type Old = #{String, Integer};
-  type New = #{Integer, String};
+  type Old = String * Integer;
+  type New = Integer * String;
   @[ checks ]
   def toNew(old : Old) -> -F New {
     case old {
-      #{name, age} => return #{age, name}
+      #{name, age} => return (age, name)
     }
   }
   @[ checks ]
   def upgrade : Flow(Type, Old, New) ;
   def upgrade = forward(toNew) ;
   @[ refuses("Boundary") ]
-  def reader : Flow(Type, +U (Old -> -F Integer), +U (New -> -F Integer)) ;
+  def reader : Flow(Type, Old => Integer, New => Integer) ;
   def reader = arrow(upgrade, stay(Integer)) ;
 }

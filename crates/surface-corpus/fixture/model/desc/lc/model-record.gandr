@@ -17,8 +17,8 @@ import "./syntax-model.gandr" ;
 @[ checks ]
 def lcSyntax : #{
   con : Type,
-  sub : +U (con -> con -> -F Type),
-  tm : +U (con -> -F Type),
+  sub : (con, con) => Type,
+  tm : con => Type,
   empty : () => con,
   subTm : (g : con, d : con, t : tm(g), s : sub(d, g)) => tm(d),
   extendTm : (g : con) => con,
@@ -55,54 +55,54 @@ def lcSyntax : #{
     app(d, subTm(g, d, t, s), subTm(g, d, u, s))
   )
 } ;
-def lcSyntax = #{
+def lcSyntax = (
   N,
-  #{
+  (
     thunk { fn (d) { fn (g) { return Env } } },
-    #{
+    (
       thunk { fn (g) { return Term } },
-      #{
+      (
         LCSyntax.empty,
-        #{
+        (
           LCSyntax.subTm,
-          #{
+          (
             LCSyntax.extendTm,
-            #{
+            (
               LCSyntax.pTm,
-              #{
+              (
                 LCSyntax.qTm,
-                #{
+                (
                   LCSyntax.singleTm,
-                  #{
+                  (
                     LCSyntax.liftTm,
-                    #{
+                    (
                       LCSyntax.lam,
-                      #{
+                      (
                         LCSyntax.app,
-                        #{
+                        (
                           LCSyntax.law1,
-                          #{
+                          (
                             LCSyntax.law2,
-                            #{LCSyntax.law3, #{LCSyntax.law4, #{LCSyntax.law5, LCSyntax.law6}}}
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-} ;
+                            (LCSyntax.law3, (LCSyntax.law4, (LCSyntax.law5, LCSyntax.law6)))
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+) ;
 
 /// `(λx. x)(λx. x)` contracts, by the model's single substitution of the
 /// argument into the body, to `λx. x`.
 @[ runs("Lam(Ix(Z))") ]
-def betaIdentity : +U (-F Term) ;
+def betaIdentity : () => Term ;
 def betaIdentity = thunk {
   run q <- LCSyntax.qTm(Z);
   run identity <- LCSyntax.lam(Z, q);

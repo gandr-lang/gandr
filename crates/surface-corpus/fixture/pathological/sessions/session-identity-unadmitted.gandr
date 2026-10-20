@@ -20,5 +20,5 @@ def served = recorded(
 ) ;
 
 @[ refuses("RunNotAdmitted") ]
-def retired : +U (-F Run(Evolution.Kept)) ;
+def retired : () => Run(Evolution.Kept) ;
 def retired = thunk { become ride(\X. Run(X), Evolution.keep, served) } ;

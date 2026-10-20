@@ -21,7 +21,7 @@ def first(n : Nat) -> -F Nat {
 }
 
 @[ runs("Succ(Succ(Zero))") ]
-def first_zero : +U (-F Nat) ;
+def first_zero : () => Nat ;
 def first_zero = thunk { become first(Zero) } ;
 
 @[ checks ]
@@ -36,7 +36,7 @@ def pick(n : Nat) -> -F Nat {
 }
 
 @[ runs("Succ(Succ(Zero))") ]
-def pick_two : +U (-F Nat) ;
+def pick_two : () => Nat ;
 def pick_two = thunk { become pick(Succ(Succ(Zero))) } ;
 
 @[ checks ]
@@ -50,7 +50,7 @@ def leave(n : Nat) -> -F Nat {
 }
 
 @[ runs("Zero") ]
-def leave_one : +U (-F Nat) ;
+def leave_one : () => Nat ;
 def leave_one = thunk { become leave(Succ(Zero)) } ;
 
 @[ checks ]
@@ -59,7 +59,7 @@ def hand(n : Nat) -> -F Nat {
 }
 
 @[ runs("Succ(Zero)") ]
-def hand_one : +U (-F Nat) ;
+def hand_one : () => Nat ;
 def hand_one = thunk { become hand(Succ(Zero)) } ;
 
 @[ checks ]
@@ -69,11 +69,11 @@ def until_done(n : Integer) -> -F Integer {
 }
 
 @[ runs("3") ]
-def until_three : +U (-F Integer) ;
+def until_three : () => Integer ;
 def until_three = thunk { become until_done(3) } ;
 
 @[ runs("0") ]
-def until_none : +U (-F Integer) ;
+def until_none : () => Integer ;
 def until_none = thunk { become until_done(0) } ;
 
 @[ checks ]
@@ -88,7 +88,7 @@ def sift(n : Nat) -> -F Nat {
 }
 
 @[ runs("Zero") ]
-def sift_zero : +U (-F Nat) ;
+def sift_zero : () => Nat ;
 def sift_zero = thunk { become sift(Zero) } ;
 
 @[ checks ]
@@ -103,7 +103,7 @@ def handled(n : Nat) -> -F Nat {
 }
 
 @[ runs("Succ(Succ(Zero))") ]
-def handled_zero : +U (-F Nat) ;
+def handled_zero : () => Nat ;
 def handled_zero = thunk { become handled(Zero) } ;
 
 @[ refuses("OutsideLoop") ]
@@ -140,13 +140,13 @@ def find_succ(xs : List(Nat), otherwise : Nat) -> -F Nat {
 
 /// The search returns from the second cell (#283).
 @[ runs("Succ(Zero)") ]
-def find_one : +U (-F Nat) ;
+def find_one : () => Nat ;
 def find_one = thunk { become find_succ(cons(Zero, cons(Succ(Succ(Zero)), nil)), Zero) } ;
 
 /// The search reaches the empty list, which leaves the loop with unit, and
 /// returns what it was given (#283).
 @[ runs("Succ(Zero)") ]
-def find_none : +U (-F Nat) ;
+def find_none : () => Nat ;
 def find_none = thunk { become find_succ(cons(Zero, nil), Succ(Zero)) } ;
 
 /// A `for` ending a body runs it on every cell and returns unit (#283).

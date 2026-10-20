@@ -21,7 +21,7 @@ theory Semi {
 /// A relabelling of the corolla's four elements, natural along its
 /// automorphisms.
 @[ checks ]
-def rename(e : +{Unit, Unit, Unit, Unit}) -> -F +{Unit, Unit, Unit, Unit} {
+def rename(e : Unit + Unit + Unit + Unit) -> -F (Unit + Unit + Unit + Unit) {
   case e {
     +{.0 = u} => return +{.2 = u},
     +{.1 = u} => return +{.3 = u},
@@ -33,7 +33,7 @@ def rename(e : +{Unit, Unit, Unit, Unit}) -> -F +{Unit, Unit, Unit, Unit} {
 /// A relabelling of the corolla's four elements that is not natural along
 /// its automorphisms.
 @[ checks ]
-def cross(e : +{Unit, Unit, Unit, Unit}) -> -F +{Unit, Unit, Unit, Unit} {
+def cross(e : Unit + Unit + Unit + Unit) -> -F (Unit + Unit + Unit + Unit) {
   case e {
     +{.0 = u} => return +{.2 = u},
     +{.1 = u} => return +{.1 = u},
@@ -49,11 +49,11 @@ def dual = ua[1, 4](Rig, Rig, #{.plus = rename}, #{.plus = rename}) ;
 /// Transport along it relabels the corolla's element.
 @[ checks ]
 def swaps : Path(
-  #{Unit, +{Unit, Unit, Unit, Unit}},
-  transport(\X. X, dual, #{unit, +{.1 = unit}}),
-  #{unit, +{.3 = unit}}
+  Unit * (Unit + Unit + Unit + Unit),
+  transport(\X. X, dual, (unit, +{.1 = unit})),
+  (unit, +{.3 = unit})
 ) ;
-def swaps = here(#{unit, +{.3 = unit}}) ;
+def swaps = here((unit, +{.3 = unit})) ;
 
 /// A relabelling that does not commute with the corolla's symmetry.
 @[ refuses("NotNatural") ]
@@ -65,7 +65,7 @@ def twice = ua[1, 4](Rig, Rig, #{.plus = rename, .times = rename}, #{.plus = ren
 
 /// The booleans into the corolla's four elements.
 @[ checks ]
-def widen(b : Bool) -> -F +{Unit, Unit, Unit, Unit} {
+def widen(b : Bool) -> -F (Unit + Unit + Unit + Unit) {
   case b {
     true => return +{.0 = unit},
     false => return +{.1 = unit}
@@ -74,7 +74,7 @@ def widen(b : Bool) -> -F +{Unit, Unit, Unit, Unit} {
 
 /// The corolla's four elements onto the booleans.
 @[ checks ]
-def narrow(e : +{Unit, Unit, Unit, Unit}) -> -F Bool {
+def narrow(e : Unit + Unit + Unit + Unit) -> -F Bool {
   case e {
     +{.0 = u} => return +{.0 = u},
     +{.1 = u} => return +{.1 = u},

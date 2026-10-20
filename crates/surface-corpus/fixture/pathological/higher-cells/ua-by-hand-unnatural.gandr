@@ -10,10 +10,10 @@ theory Rig {
 /// the hand-built product is a path, but it does not commute with the
 /// corolla's input swap, so `ua` refuses it.
 module Unnatural {
-  type Tel = #{Unit, +{Unit, Unit, Unit, Unit}};
+  type Tel = Unit * (Unit + Unit + Unit + Unit);
 
   @[ checks ]
-  def cross(e : +{Unit, Unit, Unit, Unit}) -> -F +{Unit, Unit, Unit, Unit} {
+  def cross(e : Unit + Unit + Unit + Unit) -> -F (Unit + Unit + Unit + Unit) {
     case e {
       +{.0 = u} => return +{.2 = u},
       +{.1 = u} => return +{.1 = u},
