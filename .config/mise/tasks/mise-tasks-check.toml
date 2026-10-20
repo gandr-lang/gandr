@@ -516,6 +516,21 @@ fi
 echo 'merge residue check OK: no conflict markers or merge-driver trailers in tracked files'
 """
 
+# A workflow never hashes a tarball through `hashFiles`: the expression
+# engine reads the whole archive within a 120 s budget, and a build state
+# large enough to exceed it fails a lane whose tests all passed (#1173). A
+# step that writes or restores a tarball raises a flag in `GITHUB_ENV` and
+# the conditions read the flag.
+["check:workflow-hashing"]
+description = "No hashFiles over a tarball in a workflow or composite action"
+run = """
+if git grep -nIE -e 'hashFiles[(][^)]*[.]tar' -- ':/.github'; then
+  echo 'workflow hashing check FAILED: hashFiles over a tarball; raise a flag where the tarball is written' >&2
+  exit 1
+fi
+echo 'workflow hashing check OK: no hashFiles over a tarball'
+"""
+
 # A clone may wire a merge driver for Rust sources. A driver that merges a
 # rebase "cleanly" into something else than the line merge reaches CI unseen,
 # because `pr:land` pushes a conflict-free rebase without re-running the gates

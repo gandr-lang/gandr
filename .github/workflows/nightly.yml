@@ -129,9 +129,16 @@ jobs:
           path: build-state-${{ env.CI_BUILD_STATE }}.tar.zst
           key: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-${{ env.CI_BUILD_GENERATION }}-${{ env.CI_BUILD_FINGERPRINT }}-${{ github.sha }}
           restore-keys: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-${{ env.CI_BUILD_GENERATION }}-
+      # Whether the state came down, tested once in the shell: `hashFiles`
+      # over a tarball reads the whole archive inside the expression engine,
+      # whose 120 s budget a large state exceeds.
+      - &find-build-state
+        name: find the restored build state
+        shell: bash
+        run: if [[ -e "build-state-$CI_BUILD_STATE.tar.zst" ]]; then echo CI_BUILD_STATE_FOUND=true >> "$GITHUB_ENV"; fi
       - &unpack-build-state
         name: unpack build state
-        if: &state-found ${{ hashFiles('build-state-*.tar.zst') != '' }}
+        if: &state-found ${{ env.CI_BUILD_STATE_FOUND == 'true' }}
         shell: bash
         run: zstd -dc "build-state-$CI_BUILD_STATE.tar.zst" | tar -xf -
       # The dependency cache also holds Cargo's registry; this fills it.
@@ -192,6 +199,7 @@ jobs:
       - *setup-rust
       - *identify-build-state
       - *restore-test-state
+      - *find-build-state
       - *unpack-build-state
       - *fetch-dependencies
       - name: run the night's sweeps

@@ -35,6 +35,15 @@ pass_filenames = false
 always_run = true
 stages = ["pre-commit"]
 
+[[repos.hooks]]
+id = "workflow-hashing"
+name = "workflow hashing check"
+language = "system"
+entry = "mise run check:workflow-hashing"
+pass_filenames = false
+files = "^\\.github/"
+stages = ["pre-commit"]
+
 # Identity requirements are checked by commitlint, not a stamping hook.
 
 [[repos.hooks]]
