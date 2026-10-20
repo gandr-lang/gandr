@@ -2670,6 +2670,10 @@ pub struct DocumentSymbol
     pub range: Range,
     /// The declared name's tile.
     pub selection_range: Range,
+    /// What the declaration writes after its name before its body or
+    /// definition — a function's parameters and result, a declared type — its
+    /// layout collapsed; none when it writes nothing there.
+    pub detail: Option<String>,
     /// The position of the declaration holding it among the document's
     /// symbols; none at the top level.
     pub holder: Option<usize>,
@@ -2719,6 +2723,9 @@ impl Serialize for DocumentSymbols
                 "selectionRange".to_owned(),
                 serde_json::to_value(symbol.selection_range).map_err(ser::Error::custom)?,
             );
+            if let Some(ref detail) = symbol.detail {
+                let _detail = object.insert("detail".to_owned(), Value::String(detail.clone()));
+            }
             objects.push(object);
         }
         // Every symbol a symbol holds stands after it, so writing from the
@@ -3267,6 +3274,7 @@ mod tests
             kind: SymbolKind::FUNCTION,
             range: Range::default(),
             selection_range: Range::default(),
+            detail: None,
             holder,
         };
         let symbols = DocumentSymbols(Vec::from([

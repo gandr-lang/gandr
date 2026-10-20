@@ -29,15 +29,15 @@
 //! would show fills that do nothing; requiring the filled document to carry no
 //! error at all would keep nothing in a document with an unrelated refusal
 //! elsewhere. Moving a kept proposal's range through an edit, rather than
-//! withdrawing it, would show a fill checked against a text that no longer
-//! exists. Pushing `workspace/codeLens/refresh` to the editors when a proposal
-//! is kept would show the lens at once, at the cost of a server-to-client
-//! request the relay and every client must answer; the editor asks for lenses
-//! again on its own triggers, and ghost text and actions are pulled at the
-//! cursor. A lens over a range with one checked fill runs [`APPLY_FILL`],
-//! which the server executes by asking the client to apply the fill
-//! (`workspace/applyEdit`), so the lens applies the fill in any editor that
-//! applies such edits, with no command of the editor's own; a range with
+//! withdrawing it, would show a fill checked against a text the document has
+//! moved past. Pushing `workspace/codeLens/refresh` to the editors when a
+//! proposal is kept would show the lens at once, at the cost of a
+//! server-to-client request the relay and every client must answer; the editor
+//! asks for lenses again on its own triggers, and ghost text and actions are
+//! pulled at the cursor. A lens over a range with one checked fill runs
+//! [`APPLY_FILL`], which the server executes by asking the client to apply the
+//! fill (`workspace/applyEdit`), so the lens applies the fill in any editor
+//! that applies such edits, with no command of the editor's own; a range with
 //! several fills is left to the actions, which name each.
 //!
 //! **Reversal.** A proposal that should survive an edit far from its range

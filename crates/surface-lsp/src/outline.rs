@@ -56,6 +56,7 @@ use gandr_surface_grammar::Sort;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::LineIndex;
+use gandr_surface_syntax::ByteOffset as SyntaxOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::Node;
 use gandr_surface_syntax::NodeIndex;
@@ -233,6 +234,12 @@ fn declared(
                 role @ (HlRole::FunctionDef | HlRole::VariableDef | HlRole::Type | HlRole::Label),
             ) => {
                 let name = tree.fragment(child)?;
+                let named = tree.node(child)?.span();
+                let body = tree
+                    .children(at)
+                    .skip_while(|&later| later != child)
+                    .find_map(|later| body_start(tree, later))
+                    .unwrap_or_else(|| node.span().end());
                 return Some(DocumentSymbol {
                     name: String::from(<&str>::from(name)),
                     kind: kind_of(role, keyword),
@@ -240,7 +247,8 @@ fn declared(
                         index,
                         decorated.map_or_else(|| node.span(), |blocks| blocks.join(node.span())),
                     )?,
-                    selection_range: range_of(index, tree.node(child)?.span())?,
+                    selection_range: range_of(index, named)?,
+                    detail: detail(tree, named.end(), body),
                     holder: None,
                 });
             },
@@ -248,6 +256,59 @@ fn declared(
         }
     }
     None
+}
+
+/// Where the node at `at` starts, when it is a tile ending what a declaration
+/// writes after its name: the `=` before its definition, the `{` opening its
+/// body or the `;` ending it.
+///
+/// # Specification
+/// trivial.
+fn body_start(
+    tree: &SyntaxTree<'_>,
+    at: NodeIndex,
+) -> Option<SyntaxOffset>
+{
+    let node = tree.node(at)?;
+    let NodeLabel::Tile(_) = node.label()
+    else {
+        return None;
+    };
+    tree.fragment(at)
+        .filter(|text| matches!(<&str>::from(*text), "=" | "{" | ";"))
+        .map(|_| node.span().start())
+}
+
+/// What a declaration writes between `start`, where its name ends, and `end`,
+/// where its definition or body starts: the source's text there, each run of
+/// layout one space — none after an opening bracket or before a closing one —
+/// a leading `:` and a trailing `;` dropped; none when nothing remains.
+///
+/// # Specification
+/// trivial.
+fn detail(
+    tree: &SyntaxTree<'_>,
+    start: SyntaxOffset,
+    end: SyntaxOffset,
+) -> Option<String>
+{
+    let written = <&str>::from(
+        tree.source()
+            .fragment(ByteSpan::new(start, end).ok()?)
+            .ok()?,
+    );
+    let written = written.trim();
+    let written = written.strip_prefix(':').unwrap_or(written);
+    let written = written.strip_suffix(';').unwrap_or(written);
+    let mut collapsed = String::new();
+    for word in written.split_whitespace() {
+        let glued = collapsed.ends_with(['(', '[', '{']) || word.starts_with([')', ']', '}']);
+        if !collapsed.is_empty() && !glued {
+            collapsed.push(' ');
+        }
+        collapsed.push_str(word);
+    }
+    (!collapsed.is_empty()).then_some(collapsed)
 }
 
 /// What a declaration named by a tile of `role` declares, after its first
@@ -278,7 +339,8 @@ pub struct Run
     /// From its first child to the `;` ending it, or to its last child
     /// before the closing `}`.
     pub span: ByteSpan,
-    /// Its own tiles at the braces' depth, in source order.
+    /// Its own tiles written at the braces' depth, in source order: the `{`
+    /// opening a nested group among them, the `}` closing it not.
     tiles: Vec<NodeIndex>,
 }
 
@@ -327,6 +389,7 @@ pub fn runs(
             | NodeLabel::GhostClose { .. } => false,
         };
         let text = tree.fragment(child).filter(|_| tile).map(<&str>::from);
+        let written_at = depth;
         match (depth, text) {
             (0, Some("{")) => {
                 depth = 1;
@@ -356,7 +419,7 @@ pub fn runs(
         }
         let span = node.span();
         written = Some(written.map_or(span, |run| run.join(span)));
-        if depth == 1 && tile {
+        if written_at == 1 && tile {
             tiles.push(child);
         }
     }
@@ -429,7 +492,14 @@ fn members(
                 Ok(_) | Err(_) => {},
             }
         }
-        if let Some(symbol) = member(tree, index, run.span, keyword, name) {
+        let body = name.and_then(|(named, _)| {
+            run.tiles
+                .iter()
+                .copied()
+                .skip_while(|&later| later != named)
+                .find_map(|later| body_start(tree, later))
+        });
+        if let Some(symbol) = member(tree, index, &run, keyword, name, body) {
             found.push((Declarer::Member(at, run.span), DocumentSymbol {
                 holder: Some(holder),
                 ..symbol
@@ -438,29 +508,33 @@ fn members(
     }
 }
 
-/// The symbol of a member written over `span` after its keyword `keyword`,
-/// named by the tile at `name`, or none for an unnamed member or an
-/// `include`.
+/// The symbol of a member written as `run` after its keyword `keyword`, named
+/// by the tile at `name`, its body or definition starting at `body`, or none
+/// for an unnamed member or an `include`.
 ///
 /// # Specification
 /// trivial.
 fn member(
     tree: &SyntaxTree<'_>,
     index: &LineIndex<'_>,
-    span: ByteSpan,
+    run: &Run,
     keyword: Option<SourceFragment<'_>>,
     name: Option<(NodeIndex, HlRole)>,
+    body: Option<SyntaxOffset>,
 ) -> Option<DocumentSymbol>
 {
     let (named, role) = name?;
     if keyword.map(<&str>::from) == Some("include") {
         return None;
     }
+    let named_span = tree.node(named)?.span();
+    let end = body.unwrap_or_else(|| run.span.end());
     Some(DocumentSymbol {
         name: String::from(<&str>::from(tree.fragment(named)?)),
         kind: member_kind(role, keyword),
-        range: range_of(index, span)?,
-        selection_range: range_of(index, tree.node(named)?.span())?,
+        range: range_of(index, run.span)?,
+        selection_range: range_of(index, named_span)?,
+        detail: detail(tree, named_span.end(), end),
         holder: None,
     })
 }
@@ -868,6 +942,40 @@ mod tests
                 .is_some_and(|twice| twice.get("children").is_none()),
             "a symbol holding none writes no children"
         );
+    }
+
+    /// Each declaration carries what it writes between its name and its body
+    /// or definition, its layout collapsed and a leading `:` dropped; one
+    /// that writes nothing there, a member among them, carries none.
+    #[test]
+    fn each_symbol_carries_what_it_writes_after_its_name()
+    {
+        let source = "def twice(\n  x : Integer\n) -> -F Integer {\n  return x\n}\ndef answer = 42 \
+                      ;\ndef later : Integer ;\ndata Color : Type { Red : Color; }\ntheory Shapes {\n  \
+                      sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n  rule spin : (data s : \
+                      M) ==> (out : M) {\n    node : mul(s, s) --> (out);\n  };\n}\nmodule Plain \
+                      {\n  def one = 1 ;\n}\nworld seat ;\n";
+        let details: Vec<(String, Option<String>)> = Reading::of(SourceText::from(source))
+            .symbols()
+            .0
+            .into_iter()
+            .map(|symbol| (symbol.name, symbol.detail))
+            .collect();
+        let row = |name: &str, detail: Option<&str>| (name.to_owned(), detail.map(str::to_owned));
+        assert_eq!(details, [
+            row("twice", Some("(x : Integer) -> -F Integer")),
+            row("answer", None),
+            row("later", Some("Integer")),
+            row("Color", Some("Type")),
+            row("Red", Some("Color")),
+            row("Shapes", None),
+            row("M", Some("Type")),
+            row("mul", Some("(x : M, y : M) --> M")),
+            row("spin", Some("(data s : M) ==> (out : M)")),
+            row("Plain", None),
+            row("one", None),
+            row("seat", None),
+        ]);
     }
 
     /// A theory's members nest under it, one of each kind with its own kind;
