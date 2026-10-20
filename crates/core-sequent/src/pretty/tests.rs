@@ -444,6 +444,7 @@ fn depth_limits_and_dangling_nodes_are_distinct()
     );
     let limit = usize::try_from(RenderDepth::LIMIT.0).expect("small fixed rendering limit");
     let mut nested = unit;
+    let mut expected = String::new();
     for depth in 1_usize ..= limit.saturating_add(1) {
         nested = arena
             .mint_producer(ProducerNode::Constructor {
@@ -455,8 +456,14 @@ fn depth_limits_and_dangling_nodes_are_distinct()
         if depth >= limit.saturating_sub(1) {
             let visible = depth.min(limit);
             let leaf = if depth < limit { "()" } else { "…" };
-            let expected =
-                alloc::format!("{}{}{}", "inl(".repeat(visible), leaf, ")".repeat(visible));
+            expected.clear();
+            for _ in 0 .. visible {
+                expected.push_str("inl(");
+            }
+            expected.push_str(leaf);
+            for _ in 0 .. visible {
+                expected.push(')');
+            }
             assert_eq!(expected, render_producer(&arena, nested));
         }
     }

@@ -605,6 +605,14 @@ impl Walk<'_>
                     consumers,
                 )?;
             },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    linear_search_in_loop,
+                    reason = "bounded: `seen` holds the arms one case writes; a constructor head \
+                              has no order to key a set by, and the crate takes no hasher"
+                )
+            )]
             ConsumerNode::Case { ref arms } => {
                 let mut seen: Vec<&ConstructorTag> = Vec::new();
                 for arm in arms {
