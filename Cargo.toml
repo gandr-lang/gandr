@@ -732,6 +732,7 @@ default-features = false
 # guard it is earned against, the causal order, the certificate normal form.
 # consumers:
 # - core-checker
+# - core-session
 # - storage-artifact
 # - theory-computads
 # - theory-decomposition-spaces

@@ -20,6 +20,7 @@ path = "tests/lib.rs"
 anodized.workspace = true
 gandr-kernel-core.workspace = true
 gandr-kernel-term.workspace = true
+gandr-theory-deep-inference.workspace = true
 
 [lints]
 workspace = true

@@ -224,6 +224,7 @@ pub use crate::causal::exchange_application;
 pub use crate::causal_web::CausalWeb;
 pub use crate::causal_web::DependenceBits;
 pub use crate::causal_web::HomomorphismFrontier;
+pub use crate::causal_web::LinearizationRefusal;
 pub use crate::causal_web::RefinementCounterexample;
 pub use crate::causal_web::RefinementVerdict;
 pub use crate::causal_web::SliceChain;
