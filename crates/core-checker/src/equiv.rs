@@ -8,18 +8,22 @@
 //! `U (B → F A)`, both translators are closed, `A` and `B` are codes of the
 //! native universe-path vocabulary, and both round trips return their input.
 //! The vocabulary is the unit type, the base atoms, sums of at least one
-//! summand and products of any arity. A round trip is decided at every pattern
-//! the code's coverage reaches: the unit value, a fresh variable at a base
-//! atom, each summand's patterns injected, and each tuple of the components'
-//! patterns, an earlier component read past a later one's binders. At a
-//! pattern `p` standing under its binders, `x ← f p; g x` must convert to
-//! `return p`, every admitted definition unfolding and every binder read as a
-//! rigid variable.
+//! summand, products of any arity and lists of a code in it. A round trip is
+//! decided at every pattern the code's coverage reaches: the unit value, a
+//! fresh variable at a base atom, each summand's patterns injected, each tuple
+//! of the components' patterns, an earlier component read past a later one's
+//! binders, and at a list the empty list, then each element pattern consed
+//! onto a fresh variable at the list, its tail, the element read past the
+//! tail's binder. At a pattern `p` standing under its binders, `x ← f p; g x`
+//! must convert to `return p`, every admitted definition unfolding and every
+//! binder read as a rigid variable. A tail is never unfolded: a round trip
+//! that converts with the tail rigid returns every list that cell begins.
 //!
 //! A round trip that does not convert is [`CheckRefusal::RoundTripDistinct`]:
-//! the rule admits what it shows and refutes nothing it cannot. A List code
-//! is [`CheckRefusal::UncertifiedStratum`]: its inhabitants are unbounded, so
-//! no finite coverage certifies a round trip over it. Open translators, a
+//! the rule admits what it shows and refutes nothing it cannot. At a pattern
+//! with a fresh tail it is [`CheckRefusal::UncertifiedStratum`] naming that
+//! list instead: the conversion it lacks may be the round trip at the tail
+//! itself, a hypothesis the rule does not assume. Open translators, a
 //! classifier that is no thunk of a pure non-dependent arrow, and a code
 //! outside the vocabulary are [`CheckRefusal::EquivUnsupported`].
 //!
@@ -50,9 +54,6 @@
 //!   backward translator checks against the arrow they determine. Reversal: a
 //!   checking rule against `Path(Type, A, B)` reads the codes from the expected
 //!   type instead, and admits a λ as the forward translator.
-//! - **Recursive codes refused by name.** The stratum of unbounded codes ends
-//!   the vocabulary, as it ends the kernel's. Reversal: a guarded round-trip
-//!   discipline that certifies an unobserved tail.
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -160,6 +161,37 @@ pub struct Pattern
     binders: u32,
     /// The pattern.
     value: ValueId,
+    /// Whether the pattern leaves a list's tail unobserved.
+    tail: Tail,
+}
+
+/// Whether a pattern holds a fresh variable at a list, a cell's tail.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Tail
+{
+    /// Every position of the pattern is a constructor or a base variable.
+    Closed,
+    /// A cell's tail is a fresh variable at this list code, the first such
+    /// in the pattern's left-to-right order.
+    Open(ValueTypeId),
+}
+
+impl Tail
+{
+    /// The first open tail of `self` and then `next`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn or(
+        self,
+        next: Self,
+    ) -> Self
+    {
+        match self {
+            Self::Open(_) => self,
+            Self::Closed => next,
+        }
+    }
 }
 
 impl Pattern
@@ -194,6 +226,9 @@ enum Task
     Sum(usize),
     /// Cross the coverages of this many components, the last on top.
     Product(usize),
+    /// Cons each pattern of the element coverage on top onto a fresh tail at
+    /// this list code, after the empty list.
+    List(ValueTypeId),
 }
 
 /// The two codes the classifier of an equivalence's forward translator names:
@@ -280,12 +315,12 @@ pub fn translator(
 /// - provides: the decision the judgement's `equiv` rule makes and the record
 ///   the bridge erases.
 /// - fails: [`CheckRefusal::EquivUnsupported`] at `at` for open translators, a
-///   code outside the unit type, the base atoms, sums of at least one summand
-///   and products, or a coverage past the kernel's allowance;
-///   [`CheckRefusal::UncertifiedStratum`] at `at` naming the first List code
-///   either code reaches; [`CheckRefusal::RoundTripDistinct`] at `at` when a
-///   round trip does not convert to returning its input; a weak-head, view or
-///   machine refusal as those raise it.
+///   code outside the unit type, the base atoms, sums of at least one summand,
+///   products and lists, or a coverage past the kernel's allowance;
+///   [`CheckRefusal::UncertifiedStratum`] at `at` naming the list when a round
+///   trip does not convert at a pattern with a fresh tail;
+///   [`CheckRefusal::RoundTripDistinct`] at `at` when one does not convert at
+///   any other pattern; a weak-head, view or machine refusal as those raise it.
 /// - panics: none.
 ///
 /// # Errors
@@ -299,9 +334,11 @@ pub fn translator(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — negation is its own inverse at both injections; the
-///   identity and negation are not inverse; a translator out of a list and an
-///   open translator refuse by name.
+///   identity and negation are not inverse; the identity on a list is an
+///   equivalence, cell by cell; a translator to the empty list, which loses the
+///   first cell, and an open translator refuse by name.
 /// - witness: `equiv::tests::an_involution_is_its_own_inverse_by_computation`
+/// - witness: `equiv::tests::a_list_round_trip_holds_with_its_tail_rigid`
 /// - witness: `equiv::tests::what_the_rule_cannot_show_it_refuses_by_name`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::EquivUnsupported { at: site, .. } | CheckRefusal::UncertifiedStratum { at: site, .. } | CheckRefusal::RoundTripDistinct { at: site }) => site == at,
@@ -373,7 +410,7 @@ fn round_trips(
     (first, second): (ValueId, ValueId),
 ) -> Result<Vec<Vec<ConversionDecision<()>>>, CheckRefusal>
 {
-    let Maybe::Present(patterns) = coverage(context, at, code)?
+    let Maybe::Present(patterns) = coverage(context, code)?
     else {
         return Err(CheckRefusal::EquivUnsupported {
             at,
@@ -394,7 +431,10 @@ fn round_trips(
             context.trace_conversion(at, (round, returned), OpenBinders(pattern.binders))?;
         let Maybe::Present(dialogue) = traced
         else {
-            return Err(CheckRefusal::RoundTripDistinct { at });
+            return Err(match pattern.tail {
+                Tail::Open(code) => CheckRefusal::UncertifiedStratum { at, code },
+                Tail::Closed => CheckRefusal::RoundTripDistinct { at },
+            });
         };
         dialogues.push(dialogue);
     }
@@ -403,17 +443,18 @@ fn round_trips(
 
 /// The coverage of `code`, as the kernel's universe-path patterns lay it out:
 /// the unit value; one fresh variable at a base atom; each summand's patterns
-/// injected, the first summand first; and each tuple crossing the components'
+/// injected, the first summand first; each tuple crossing the components'
 /// patterns lexicographically, an earlier component read past a later one's
-/// binders.
+/// binders; and at a list the empty list, then each element pattern consed
+/// onto a fresh variable at the list, the element read past it.
 ///
 /// # Specification
 /// - requires: `code` is formed under the judgement's binders.
 /// - ensures: the patterns in the kernel's order, or nothing when a type in the
 ///   tree is outside the unit type, the base atoms, sums of at least one
-///   summand and products, or when the work passes the kernel's allowance.
-/// - fails: [`CheckRefusal::UncertifiedStratum`] at `at` naming the first List
-///   code the walk reaches; a weak-head or view refusal as those raise it.
+///   summand, products and lists, or when the work passes the kernel's
+///   allowance. A pattern with a fresh tail names the first such list.
+/// - fails: a weak-head or view refusal as those raise it.
 /// - panics: none.
 ///
 /// # Errors
@@ -426,19 +467,18 @@ fn round_trips(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a sum of two units covers as its two injections in order,
-///   a list refuses by its stratum, and a thunk type covers as nothing.
+///   a list of them as the empty list and one cell per injection over a fresh
+///   tail, and a thunk type covers as nothing.
 /// - witness: `equiv::tests::an_involution_is_its_own_inverse_by_computation`
-/// - witness: `equiv::tests::what_the_rule_cannot_show_it_refuses_by_name`
+/// - witness: `equiv::tests::a_list_round_trip_holds_with_its_tail_rigid`
 /// - witness: `equiv::tests::the_empty_sum_has_no_coverage`
 #[spec(ensures: |ret| match ret {
     | Ok(Maybe::Present(ref patterns)) => !patterns.is_empty()
         && patterns.iter().all(|pattern| context.arena().value(pattern.value).is_some()),
-    | Err(CheckRefusal::UncertifiedStratum { at: site, .. }) => site == at,
     | Ok(Maybe::Absent(_)) | Err(_) => true,
 })]
 pub fn coverage(
     context: &mut CheckingContext<'_>,
-    at: ValueId,
     code: ValueTypeId,
 ) -> Result<Maybe<Vec<Pattern>, uncovered::Absent>, CheckRefusal>
 {
@@ -460,6 +500,7 @@ pub fn coverage(
                         built.push(Vec::from([Pattern {
                             binders: 0,
                             value: unit,
+                            tail: Tail::Closed,
                         }]));
                     },
                     ValueTypeView::Integer | ValueTypeView::String => {
@@ -469,6 +510,7 @@ pub fn coverage(
                         built.push(Vec::from([Pattern {
                             binders: 1,
                             value: leaf,
+                            tail: Tail::Closed,
                         }]));
                     },
                     ValueTypeView::Sum(parts) if !parts.is_empty() => {
@@ -479,8 +521,9 @@ pub fn coverage(
                         tasks.push(Task::Product(parts.len()));
                         tasks.extend(parts.iter().rev().copied().map(Task::Cover));
                     },
-                    ValueTypeView::List(_) => {
-                        return Err(CheckRefusal::UncertifiedStratum { at, code: head });
+                    ValueTypeView::List(element) => {
+                        tasks.push(Task::List(head));
+                        tasks.push(Task::Cover(element));
                     },
                     ValueTypeView::Data { .. }
                     | ValueTypeView::Record(_)
@@ -535,10 +578,10 @@ pub fn coverage(
                     .len()
                     .checked_sub(arity)
                     .ok_or(CheckRefusal::MachineInvariant)?;
-                let mut tuples = Vec::from([(Vec::<ValueId>::new(), 0_u32)]);
+                let mut tuples = Vec::from([(Vec::<ValueId>::new(), 0_u32, Tail::Closed)]);
                 for component in built.drain(start ..) {
                     let mut crossed = Vec::new();
-                    for &(ref prefix, binders) in &tuples {
+                    for &(ref prefix, binders, tail) in &tuples {
                         for next in &component {
                             let Some(left) = allowance.checked_sub(1)
                             else {
@@ -561,7 +604,7 @@ pub fn coverage(
                                 );
                             }
                             values.push(next.value);
-                            crossed.push((values, binders));
+                            crossed.push((values, binders, tail.or(next.tail)));
                         }
                     }
                     tuples = crossed;
@@ -569,11 +612,48 @@ pub fn coverage(
                 let arena = context.arena_mut();
                 let joined = tuples
                     .into_iter()
-                    .map(|(values, binders)| Pattern {
+                    .map(|(values, binders, tail)| Pattern {
                         binders,
                         value: arena.value_tuple(&values),
+                        tail,
                     })
                     .collect();
+                built.push(joined);
+            },
+            // The empty list, then one cell per element pattern: the element
+            // shifts past the tail's binder, the tail is the innermost
+            // variable.
+            Task::List(list) => {
+                let elements = built.pop().ok_or(CheckRefusal::MachineInvariant)?;
+                let mut joined = Vec::with_capacity(elements.len().saturating_add(1));
+                let empty = context.arena_mut().value_list_nil();
+                joined.push(Pattern {
+                    binders: 0,
+                    value: empty,
+                    tail: Tail::Closed,
+                });
+                for element in elements {
+                    let Some(left) = allowance.checked_sub(1)
+                    else {
+                        return Ok(Maybe::Absent(uncovered::Absent::Allowance));
+                    };
+                    allowance = left;
+                    let binders = element
+                        .binders
+                        .checked_add(1)
+                        .ok_or(CheckRefusal::MachineInvariant)?;
+                    let arena = context.arena_mut();
+                    let head =
+                        gandr_core_term::shift_value(arena, element.value, Binders::from(1_u32))
+                            .settle(arena);
+                    let tail =
+                        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                    joined.push(Pattern {
+                        binders,
+                        value: arena.value_list_cons(head, tail),
+                        tail: element.tail.or(Tail::Open(list)),
+                    });
+                }
                 built.push(joined);
             },
         }

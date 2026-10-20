@@ -188,33 +188,6 @@ fn what_the_rule_cannot_show_it_refuses_by_name()
         "a refused equiv records nothing"
     );
 
-    // A list code is the uncertified stratum, even for the identity.
-    let mut arena = CoreArena::new();
-    let functions = booleans(&mut arena);
-    let list = arena.value_type_list(functions.ty);
-    let returns = arena.comp_type_returner(list);
-    let arrow = arena.comp_type_arrow(list, returns);
-    let translator = arena.value_type_thunk(arrow);
-    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let returned = arena.computation_return(bound);
-    let lambda = arena.computation_lambda(returned);
-    let same_list = arena.value_thunk(lambda);
-    let constant = arena.value_constant(ConstantIndex::from(3_usize));
-    let path = identity(&mut arena, list);
-    let equiv = arena.value_equiv(constant, constant);
-    let report = judged(&mut arena, &functions, &[
-        declaration(At(3), translator, Maybe::Present(same_list)),
-        declaration(At(4), path, Maybe::Present(equiv)),
-    ]);
-    assert!(
-        matches!(
-            report.judged().get(4).map(Judged::verdict),
-            Some(Verdict::Refused(CheckRefusal::UncertifiedStratum { at, code }))
-                if at == equiv && arena.value_type(code) == Some(&ValueType::List(functions.ty))
-        ),
-        "{report:?}"
-    );
-
     // A forward translator that is no function names no codes.
     let mut arena = CoreArena::new();
     let functions = booleans(&mut arena);
@@ -261,16 +234,84 @@ fn what_the_rule_cannot_show_it_refuses_by_name()
 }
 
 #[test]
+fn a_list_round_trip_holds_with_its_tail_rigid()
+{
+    // `same_list` at position three, `emptied` at four, then the equivs.
+    let mut arena = CoreArena::new();
+    let functions = booleans(&mut arena);
+    let list = arena.value_type_list(functions.ty);
+    let returns = arena.comp_type_returner(list);
+    let arrow = arena.comp_type_arrow(list, returns);
+    let translator = arena.value_type_thunk(arrow);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(bound);
+    let lambda = arena.computation_lambda(returned);
+    let same_list = arena.value_thunk(lambda);
+    let empty = arena.value_list_nil();
+    let returned = arena.computation_return(empty);
+    let lambda = arena.computation_lambda(returned);
+    let emptied = arena.value_thunk(lambda);
+    let same = arena.value_constant(ConstantIndex::from(3_usize));
+    let none = arena.value_constant(ConstantIndex::from(4_usize));
+    let path = identity(&mut arena, list);
+    let kept = arena.value_equiv(same, same);
+    let collapsed = arena.value_equiv(none, same);
+    let report = judged(&mut arena, &functions, &[
+        declaration(At(3), translator, Maybe::Present(same_list)),
+        declaration(At(4), translator, Maybe::Present(emptied)),
+        declaration(At(5), path, Maybe::Present(kept)),
+        declaration(At(6), path, Maybe::Present(collapsed)),
+    ]);
+
+    // The identity on lists: the empty list and one cell per boolean, the
+    // tail a rigid variable.
+    assert!(
+        matches!(
+            report.judged().get(5).map(Judged::verdict),
+            Some(Verdict::Checked { .. })
+        ),
+        "{report:?}"
+    );
+    let Some(decided) = report.equivalences().get(&kept)
+    else {
+        panic!("the decision is recorded at the equiv node");
+    };
+    assert_eq!(
+        (
+            decided.evidence().source.len(),
+            decided.evidence().target.len()
+        ),
+        (3, 3),
+        "the empty list and two cells on each side"
+    );
+
+    // To the empty list and back: the empty pattern returns, the first cell
+    // does not, and its tail is fresh, so the refusal names the list.
+    assert!(
+        matches!(
+            report.judged().get(6).map(Judged::verdict),
+            Some(Verdict::Refused(CheckRefusal::UncertifiedStratum { at, code }))
+                if at == collapsed && arena.value_type(code) == Some(&ValueType::List(functions.ty))
+        ),
+        "{report:?}"
+    );
+    assert_eq!(
+        report.equivalences().len(),
+        1,
+        "a refused equiv records nothing"
+    );
+}
+
+#[test]
 fn the_empty_sum_has_no_coverage()
 {
     let mut arena = CoreArena::new();
     let unit = arena.value_type_unit();
     let void = arena.value_type_sum(&[]);
     let hollow = arena.value_type_product(&[unit, void]);
-    let at = arena.value_unit();
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     for code in [void, hollow] {
-        let covered = super::coverage(&mut context, at, code);
+        let covered = super::coverage(&mut context, code);
         assert!(
             matches!(covered, Ok(Maybe::Absent(super::uncovered::Absent::Former))),
             "a sum of no summand covers nothing the rule decides over, alone or in a product: \

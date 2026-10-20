@@ -34,10 +34,10 @@
 //! and visited instructions. A productive infinite spine still returns
 //! `DepthBound`: productivity does not establish a finite equality decision.
 //! There is no recursive conversion rule. The universe path between two List
-//! codes is the uncertified stratum, refused by name at formation
-//! ([`crate::path_universe::PathError::UncertifiedStratum`]); a native list
-//! moves along a path at its element code by element transport in a List
-//! motive, one cell per replay step.
+//! codes is certified one cell deep over a rigid tail
+//! ([`crate::path_universe::coverage`]); a native list moves along a path at
+//! its element code by element transport in a List motive, one cell per
+//! replay step.
 //!
 //! **Choice.** A native finite List former plus borrowed guarded observations
 //! keeps code identity decidable and list observations incremental.

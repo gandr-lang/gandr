@@ -3,8 +3,9 @@
 // in the family of lists: negation, its own inverse, makes a path from the
 // booleans to themselves, and transport along it negates every element, by
 // conversion and by a run. A pair of maps whose round trips differ makes no
-// path, and an equivalence between types of lists is out of the stratum
-// `equiv` certifies.
+// path. Between types of lists, `equiv` covers one cell over a rigid tail:
+// the empty list, then one cell per element pattern, the tail a fresh
+// variable a round trip returns without reading.
 
 // Negation and the identity on the booleans.
 import "./funext.gandr" ;
@@ -51,7 +52,33 @@ def keep(xs : List(Bool)) -> -F List(Bool) {
   return xs
 }
 
-/// An equivalence between types of lists is outside the stratum `equiv`
-/// certifies.
-@[ refuses("UncertifiedStratum") ]
+/// Lists of booleans to themselves by the identity: its round trip returns
+/// the empty list and each cell over a rigid tail.
+@[ checks ]
+def lists : Path(Type, List(Bool), List(Bool)) ;
 def lists = equiv(keep, keep) ;
+
+/// A list transported along the identity's path is itself, by conversion.
+@[ checks ]
+def kept_beta : Path(List(Bool), transport(\X. X, lists, both), both) ;
+def kept_beta = here(both) ;
+
+/// A flag beside a list of booleans, negated, the list left as it is.
+@[ checks ]
+def flip_flag(entry : Bool * List(Bool)) -> -F (Bool * List(Bool)) {
+  case entry {
+    #{b, xs} => { run c <- not(b); return (c, xs) }
+  }
+}
+
+/// Negating the flag is its own inverse: at each boolean beside the empty
+/// list and beside each cell over a rigid tail.
+@[ checks ]
+def flagged : Path(Type, Bool * List(Bool), Bool * List(Bool)) ;
+def flagged = equiv(flip_flag, flip_flag) ;
+
+/// Truth beside `both`, transported along the flag's path by a run: the flag
+/// negates and the list stays.
+@[ runs("(+{.1 = unit}, cons(+{.0 = unit}, cons(+{.1 = unit}, nil)))") ]
+def flagged_run : () => Bool * List(Bool) ;
+def flagged_run = thunk { transport(\X. X, flagged, (+{.0 = unit}, both)) } ;

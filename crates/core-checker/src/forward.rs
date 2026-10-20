@@ -267,12 +267,9 @@ pub fn decide(
         return Err(unsupported);
     }
     first_order(context, at, target)?;
-    let patterns = match crate::equiv::coverage(context, at, source) {
-        Ok(Maybe::Present(patterns)) => patterns,
-        Ok(Maybe::Absent(_)) | Err(CheckRefusal::UncertifiedStratum { .. }) => {
-            return Err(unsupported);
-        },
-        Err(refusal) => return Err(refusal),
+    let Maybe::Present(patterns) = crate::equiv::coverage(context, source)?
+    else {
+        return Err(unsupported);
     };
     let mut images = Vec::with_capacity(patterns.len());
     let mut dialogues = Vec::with_capacity(patterns.len());
