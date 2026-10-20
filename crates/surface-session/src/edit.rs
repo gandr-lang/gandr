@@ -4043,6 +4043,8 @@ mod tests
     ) -> Maybe<CorePath, located::Absent>
     {
         let mut best: Option<(ByteSpan, usize, CorePath)> = None;
+        let mut reached: Vec<Option<(usize, ChildSlot)>> = Vec::new();
+        let mut depth: Vec<usize> = Vec::new();
         for (ordinal, (item, spans)) in snapshot.items.iter().zip(&snapshot.spans).enumerate() {
             let &ItemTree {
                 declaration:
@@ -4056,8 +4058,10 @@ mod tests
                 continue;
             };
             // Breadth-first numbering lists every parent before its children.
-            let mut reached: Vec<Option<(usize, ChildSlot)>> = vec![None; tree.nodes.len()];
-            let mut depth = vec![0_usize; tree.nodes.len()];
+            reached.clear();
+            reached.resize(tree.nodes.len(), None);
+            depth.clear();
+            depth.resize(tree.nodes.len(), 0_usize);
             for (index, node) in tree.nodes.iter().enumerate() {
                 let below = depth
                     .get(index)
