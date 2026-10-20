@@ -663,6 +663,7 @@ pub mod seal;
 pub mod stage;
 pub mod stage_order;
 pub mod support;
+mod theory_rules;
 mod witness;
 mod words;
 

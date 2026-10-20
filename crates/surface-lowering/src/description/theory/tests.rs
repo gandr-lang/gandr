@@ -973,7 +973,7 @@ fn a_theory_block_defines_its_presentation()
             .iter()
             .map(alloc::vec::Vec::len)
             .collect::<alloc::vec::Vec<_>>(),
-        [3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4],
+        [3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3],
         "each constructor's names, then its recursions"
     );
     let mut declarations = alloc::vec![gandr_core_checker::Declaration::data(
@@ -1084,8 +1084,8 @@ fn a_rule_bearing_theory_defines_its_presentation_with_its_laws()
     };
     assert_eq!(
         spelled(&arena, body),
-        r#"Presents(Sort("Pt", End, End), Oper("base", End, Port("", "Pt", End, End), Oper("turn", Port("x", "Pt", End, End), Port("", "Pt", End, End), Oper("unturn", Port("x", "Pt", End, End), Port("", "Pt", End, End), End))), Rule("turnUnturn", App("turn", Arg(App("unturn", Arg(Var("x"), End)), End)), Var("x"), Rule("unturnTurn", App("unturn", Arg(App("turn", Arg(Var("x"), End)), End)), Var("x"), End)))"#,
-        "the value carries each law as a `Rule`, read node for node"
+        r#"Presents(Sort("Pt", End, End), Oper("base", End, Port("", "Pt", End, End), Oper("turn", Port("x", "Pt", End, End), Port("", "Pt", End, End), Oper("unturn", Port("x", "Pt", End, End), Port("", "Pt", End, End), End))), Rule("turnUnturn", App("turn", Arg(App("unturn", Arg(Var("x"), End)), End)), Var("x"), Rule("unturnTurn", App("unturn", Arg(App("turn", Arg(Var("x"), End)), End)), Var("x"), Rank("turn", "1", Rank("unturn", "1", End)))))"#,
+        "the value carries each law as a `Rule`, read node for node, then the rank of each operation a law applies"
     );
     assert!(
         matches!(

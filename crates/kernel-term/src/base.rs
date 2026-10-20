@@ -432,7 +432,7 @@ impl IntegerLiteral
 /// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
 /// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
 #[repr(transparent)]
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct StringLiteral(String);
 
 impl StringLiteral

@@ -65,7 +65,7 @@
 //!
 //! # One sort, chained
 //!
-//! `Theory` is one self-recursive sort of sixteen constructors, in tag order:
+//! `Theory` is one self-recursive sort of nineteen constructors, in tag order:
 //!
 //! | tag | constructor | fields |
 //! |---|---|---|
@@ -85,6 +85,9 @@
 //! | 13 | `Shape` | name, size, its face chain, the rest of the sorts |
 //! | 14 | `Face` | name, its points, the rest of the faces |
 //! | 15 | `Obs` | as `Oper`, for an observation |
+//! | 16 | `Turned` | as `Rule`, for a rule oriented right to left |
+//! | 17 | `Derived` | its peak's outer rule, position and inner rule, its left term, its right term, the rest |
+//! | 18 | `Rank` | an operation's name, its rank, the rest |
 //!
 //! Every list a presentation holds is a chain of its member constructor ended
 //! by `End`, and every name is a `String` field; an unnamed port carries the
@@ -156,6 +159,23 @@
 //! `Oper`'s fields. The constructor is appended to the table, so a
 //! presentation that declares no observation keeps the bytes it had.
 //!
+//! # The rule certificate
+//!
+//! A presentation's rule chain may carry, after its written rules, what the
+//! kernel needs to decide them as one convergent rewriting system by replay
+//! ([`RuleCertificate`]): each written rule is a `Rule` when it rewrites as
+//! written and a `Turned` when it rewrites right to left, its fields as written
+//! either way; then each rule a completion derived, a `Derived` with the
+//! critical pair it joins — the rule it overlaps, the pre-order position of
+//! that rule's oriented left side where the overlap stands and the rule
+//! overlapping it, each a decimal numeral numbering the rules written first,
+//! then derived — and its left and right terms; then a `Rank` per ranked
+//! operation, its name and its rank in the path order as a decimal numeral.
+//! [`TheoryValue::encode`] writes no certificate, so a presentation coded
+//! before the certificate existed keeps its bytes; [`TheoryValue::decode`]
+//! reads the written rules of either and [`TheoryValue::certificate`] reads the
+//! certificate.
+//!
 //! # Inclusion
 //!
 //! [`TheoryParts::include`] is `include` on presentations: it extends a
@@ -195,6 +215,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::boundary::ConstructorTag;
 use crate::boundary::NominalSerial;
+use crate::boundary::RuleIndex;
 use crate::boundary::SerializedValueBytes;
 use crate::boundary::ShapePoint;
 use crate::boundary::ShapeSize;
@@ -223,7 +244,7 @@ use crate::rule::TermView;
 
 /// The names of `Theory`'s constructors, in tag order: the names a program that
 /// matches on a presentation writes.
-pub const THEORY_CONSTRUCTORS: [&str; 16] = [
+pub const THEORY_CONSTRUCTORS: [&str; 19] = [
     "Presents",
     "End",
     "Sort",
@@ -240,11 +261,14 @@ pub const THEORY_CONSTRUCTORS: [&str; 16] = [
     "Shape",
     "Face",
     "Obs",
+    "Turned",
+    "Derived",
+    "Rank",
 ];
 
 /// Each constructor of `Theory`, in tag order, with its count of `String`
 /// fields, which come first, and its count of recursive fields after them.
-const CONSTRUCTORS: [(&str, usize, usize); 16] = [
+const CONSTRUCTORS: [(&str, usize, usize); 19] = [
     (THEORY_CONSTRUCTORS[0], 0, 3),
     (THEORY_CONSTRUCTORS[1], 0, 0),
     (THEORY_CONSTRUCTORS[2], 1, 2),
@@ -261,6 +285,9 @@ const CONSTRUCTORS: [(&str, usize, usize); 16] = [
     (THEORY_CONSTRUCTORS[13], 2, 2),
     (THEORY_CONSTRUCTORS[14], 2, 1),
     (THEORY_CONSTRUCTORS[15], 1, 3),
+    (THEORY_CONSTRUCTORS[16], 1, 3),
+    (THEORY_CONSTRUCTORS[17], 3, 3),
+    (THEORY_CONSTRUCTORS[18], 2, 1),
 ];
 
 /// One constructor of `Theory`, by its tag.
@@ -299,6 +326,12 @@ enum Tag
     Face,
     /// An observation and the rest of the operations.
     Obs,
+    /// A rule face oriented right to left and the rest of the rules.
+    Turned,
+    /// A derived rule, its peak, and the rest of the rules.
+    Derived,
+    /// An operation's rank and the rest of the ranks.
+    Rank,
 }
 
 impl Tag
@@ -327,11 +360,14 @@ impl Tag
             Self::Shape => 13,
             Self::Face => 14,
             Self::Obs => 15,
+            Self::Turned => 16,
+            Self::Derived => 17,
+            Self::Rank => 18,
         })
     }
 }
 
-/// The description of `Theory`, one data sort of sixteen constructors.
+/// The description of `Theory`, one data sort of nineteen constructors.
 ///
 /// The constructors stand in the order the module documentation tables; every
 /// name is a `String` field and every other field a recursive occurrence.
@@ -339,10 +375,11 @@ impl Tag
 /// # Specification
 /// - ensures: no parameters, one data sort `Theory`, and the constructors
 ///   `Presents`, `End`, `Sort`, `Oper`, `Port`, `Rule`, `Var`, `App`, `Con`,
-///   `Tuple`, `Arg`, `Representable`, `Bound`, `Shape`, `Face` and `Obs` in
-///   that order, each at the result sort `Theory`; a constructor's `String`
-///   fields carry `grade` and come first, two for `Port`, `Bound`, `Shape` and
-///   `Face` and one for every other constructor that names something, and its
+///   `Tuple`, `Arg`, `Representable`, `Bound`, `Shape`, `Face`, `Obs`,
+///   `Turned`, `Derived` and `Rank` in that order, each at the result sort
+///   `Theory`; a constructor's `String` fields carry `grade` and come first,
+///   three for `Derived`, two for `Port`, `Bound`, `Shape`, `Face` and `Rank`
+///   and one for every other constructor that names something, and its
 ///   remaining fields are `Theory`.
 /// - panics: none.
 ///
@@ -352,7 +389,7 @@ impl Tag
 ///   constructor table and the exact identity bytes of a presentation;
 ///   reordered constructors, a dropped field or a name read as a recursion
 ///   change them.
-/// - witness: `theory::tests::the_code_is_one_data_sort_of_sixteen_constructors`
+/// - witness: `theory::tests::the_code_is_one_data_sort_of_nineteen_constructors`
 /// - witness: `theory::tests::a_presentation_encodes_to_its_exact_identity_bytes`
 #[inline]
 #[must_use]
@@ -524,6 +561,117 @@ pub struct TheoryRule
     pub left: FreeTerm,
     /// The right-hand side.
     pub right: FreeTerm,
+}
+
+/// How a written rule rewrites: as written, or right to left.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum RuleTurn
+{
+    /// Its left side rewrites to its right.
+    #[default]
+    AsWritten,
+    /// Its right side rewrites to its left.
+    Turned,
+}
+
+/// A position of a rule side, by its pre-order index.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SidePlace(usize);
+
+impl From<usize> for SidePlace
+{
+    /// The position `index`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: usize) -> Self
+    {
+        Self(index)
+    }
+}
+
+impl From<SidePlace> for usize
+{
+    /// The position's index.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(place: SidePlace) -> Self
+    {
+        place.0
+    }
+}
+
+/// The critical pair a derived rule joins: `inner`'s left side overlapping
+/// `outer`'s oriented left side at `position`, the rules numbered written
+/// first, then derived.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct DerivedPeak
+{
+    /// The rule overlapped.
+    pub outer: RuleIndex,
+    /// Where in its oriented left side, in pre-order.
+    pub position: SidePlace,
+    /// The rule overlapping it.
+    pub inner: RuleIndex,
+}
+
+/// A rule a completion derived, rewriting its left side to its right, with
+/// the critical pair it joins.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the sides keep their orientation, left to right.
+/// - executable: none — a data carrier with no invocation boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`TheoryValue::encode_certified`].
+/// - witness: `theory::tests::a_certified_presentation_carries_its_rule_certificate`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct DerivedFace
+{
+    /// The left side.
+    pub left: FreeTerm,
+    /// The right side.
+    pub right: FreeTerm,
+    /// The critical pair it joins.
+    pub peak: DerivedPeak,
+}
+
+/// What the kernel needs to decide a presentation's rules by replay: each
+/// written rule's orientation, the rules a completion derived, and each
+/// ranked operation's rank in the path order.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `turns` parallels the written rules, a missing entry read as
+///   [`RuleTurn::AsWritten`]; the derived rules keep their derivation order.
+/// - executable: none — a data carrier with no invocation boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`TheoryValue::encode_certified`].
+/// - witness: `theory::tests::a_certified_presentation_carries_its_rule_certificate`
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct RuleCertificate
+{
+    /// Each written rule's orientation, in rule order.
+    pub turns: Vec<RuleTurn>,
+    /// The derived rules, in derivation order.
+    pub derived: Vec<DerivedFace>,
+    /// Each ranked operation's name and rank.
+    pub ranks: Vec<(Name, crate::termination::Rank)>,
 }
 
 /// A presentation's members as `Theory` codes them, each list in written order.
@@ -853,7 +1001,29 @@ pub struct TheoryValue(DescValue);
 
 impl TheoryValue
 {
-    /// The value coding `parts`.
+    /// The value coding `parts`, with no rule certificate.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::encode_certified`].
+    /// - ensures: [`Self::encode_certified`] with the empty certificate: every
+    ///   written rule a `Rule`, no derived rule and no rank.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::encode_certified`].
+    /// - witness: `theory::tests::a_presentation_encodes_to_its_exact_identity_bytes`
+    #[inline]
+    #[must_use]
+    #[spec(
+        requires: parts.sorts.iter().flat_map(|sort| sort.indices.iter()).all(|index| index.bindings.is_empty()),
+        ensures: |ref value| *value == Self::encode_certified(parts, &RuleCertificate::default()),
+    )]
+    pub fn encode(parts: &TheoryParts) -> Self
+    {
+        Self::encode_certified(parts, &RuleCertificate::default())
+    }
+
+    /// The value coding `parts`, its rule chain carrying `certificate`.
     ///
     /// # Specification
     /// - requires: only an operation's port binds, and a binder binds nothing
@@ -861,8 +1031,11 @@ impl TheoryValue
     /// - ensures: the root is `Presents` over the sort, operation and rule
     ///   chains, each member in order, a shape as a `Shape` at the head of the
     ///   sort chain over its `Face` chain, a representable sort as
-    ///   `Representable` and a port with binders as `Bound`; [`Self::decode`]
-    ///   reads `parts` back.
+    ///   `Representable` and a port with binders as `Bound`; the rule chain
+    ///   holds each written rule as a `Turned` where `certificate` turns it and
+    ///   a `Rule` otherwise, then each derived rule as a `Derived`, then each
+    ///   rank as a `Rank`. [`Self::decode`] reads `parts` back and
+    ///   [`Self::certificate`] the certificate, its turns one per written rule.
     /// - panics: none.
     /// - intension: every chain is folded from its end and every term built
     ///   from a post-order worklist, so no step recurses.
@@ -877,6 +1050,7 @@ impl TheoryValue
     ///   or a forgotten representability changes the decoded parts or the
     ///   bytes.
     /// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
+    /// - witness: `theory::tests::a_certified_presentation_carries_its_rule_certificate`
     /// - witness: `theory::tests::a_presentation_encodes_to_its_exact_identity_bytes`
     /// - witness: `theory::tests::a_second_order_presentation_encodes_its_binders`
     /// - witness: `theory::tests::a_shaped_presentation_codes_its_faces`
@@ -886,7 +1060,10 @@ impl TheoryValue
         requires: parts.sorts.iter().flat_map(|sort| sort.indices.iter()).all(|index| index.bindings.is_empty()),
         ensures: |ref value| value.0.ctor == Tag::Presents.constructor(),
     )]
-    pub fn encode(parts: &TheoryParts) -> Self
+    pub fn encode_certified(
+        parts: &TheoryParts,
+        certificate: &RuleCertificate,
+    ) -> Self
     {
         let mut sorts = value(Tag::End, Vec::new());
         for sort in parts.sorts.iter().rev() {
@@ -929,10 +1106,31 @@ impl TheoryValue
             ]);
         }
         let mut rules = value(Tag::End, Vec::new());
-        for rule in parts.rules.iter().rev() {
+        for &(ref name, rank) in certificate.ranks.iter().rev() {
+            rules = value(Tag::Rank, vec![
+                leaf(name),
+                numeral(usize::from(rank)),
+                rec(rules),
+            ]);
+        }
+        for face in certificate.derived.iter().rev() {
+            rules = value(Tag::Derived, vec![
+                numeral(usize::from(face.peak.outer)),
+                numeral(usize::from(face.peak.position)),
+                numeral(usize::from(face.peak.inner)),
+                rec(term(face.left.to_node())),
+                rec(term(face.right.to_node())),
+                rec(rules),
+            ]);
+        }
+        for (index, rule) in parts.rules.iter().enumerate().rev() {
             let left = term(rule.left.to_node());
             let right = term(rule.right.to_node());
-            rules = value(Tag::Rule, vec![
+            let tag = match certificate.turns.get(index) {
+                Some(&RuleTurn::Turned) => Tag::Turned,
+                Some(&RuleTurn::AsWritten) | None => Tag::Rule,
+            };
+            rules = value(tag, vec![
                 leaf(&rule.name),
                 rec(left),
                 rec(right),
@@ -1071,22 +1269,42 @@ impl TheoryValue
             });
             at = nested(rest)?;
         }
-        let mut at = nested(rules)?;
-        loop {
-            let next = member::<4>(at, Tag::Rule)?;
-            let Maybe::Present([name, left, right, rest]) = next
-            else {
-                break;
-            };
-            let name = text(name)?;
-            let left = nested(left)?;
-            let left = read_term(left)?;
-            let right = nested(right)?;
-            let right = read_term(right)?;
-            parts.rules.push(TheoryRule { name, left, right });
-            at = nested(rest)?;
-        }
+        parts.rules = read_rules(nested(rules)?)?.0;
         Ok(parts)
+    }
+
+    /// The rule certificate the value's rule chain carries.
+    ///
+    /// # Specification
+    /// - ensures: one turn per written rule, `Turned` for a `Turned` member and
+    ///   as written for a `Rule`; each `Derived` member's sides and peak, in
+    ///   order; each `Rank` member's name and rank, in order. A value
+    ///   [`Self::encode`] built carries every rule as written and nothing else.
+    /// - fails: a root other than `Presents`, and as [`Self::decode`] reads the
+    ///   rule chain: a member out of the order written rules, derived rules,
+    ///   ranks; a term position holding no term; a peak's or a rank's numeral
+    ///   not in its one spelling.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns the first [`TheoryFault`] met.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a presentation with a turned rule, a derived rule and
+    ///   two ranks carries them back exactly and decodes to its written rules;
+    ///   a rank before a derived rule and a padded peak numeral are refused by
+    ///   their faults.
+    /// - witness: `theory::tests::a_certified_presentation_carries_its_rule_certificate`
+    #[spec(ensures: |ref ret| ret.is_err() || self.0.ctor == Tag::Presents.constructor())]
+    #[inline]
+    pub fn certificate(&self) -> Result<RuleCertificate, TheoryFault>
+    {
+        let root = Node {
+            ctor: self.0.ctor,
+            payload: self.0.payload.to_node(),
+        };
+        let [_, _, rules] = expect::<3>(root, Tag::Presents)?;
+        Ok(read_rules(nested(rules)?)?.1)
     }
 
     /// The value's canonical bytes: the presentation's identity.
@@ -1142,6 +1360,17 @@ fn leaf(name: &Name) -> Payload
 fn rec(nested: DescValue) -> Payload
 {
     Payload::rec(nested)
+}
+
+/// The payload spelling `number` in decimal.
+///
+/// # Specification
+/// trivial.
+fn numeral<N>(number: N) -> Payload
+where
+    N: core::fmt::Display,
+{
+    Payload::leaf(format!("{number}").as_bytes())
 }
 
 /// The chain coding `list`, in order: a port with binders as `Bound` over the
@@ -1544,6 +1773,82 @@ fn read_shape(
         ShapeSize::from(usize::from(points)),
         read,
     ))
+}
+
+/// The written rules of the rule chain at `node`, in order, each with its
+/// written sides, and the certificate the chain carries after them.
+///
+/// # Specification
+/// - ensures: one rule and one turn per `Rule` or `Turned` member, then one
+///   derived rule per `Derived` member, then one rank per `Rank` member, the
+///   chain ending at `End`.
+/// - fails: as [`member`], [`text`], [`nested`] and [`read_term`] for a member
+///   out of that order or a malformed field; [`TheoryFault::Numeral`] for a
+///   peak's or a rank's numeral not in its one spelling.
+/// - panics: none.
+/// - executable: none — a predicate would read the chain a second time.
+///
+/// # Errors
+/// As stated.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`TheoryValue::certificate`].
+/// - witness: `theory::tests::a_certified_presentation_carries_its_rule_certificate`
+fn read_rules(mut at: Node<'_>) -> Result<(Vec<TheoryRule>, RuleCertificate), TheoryFault>
+{
+    let numeral = |field: PayloadNode<'_>| -> Result<usize, TheoryFault> {
+        let &[number] = read_numerals(&text(field)?)?.as_slice()
+        else {
+            return Err(TheoryFault::Numeral);
+        };
+        Ok(usize::from(number))
+    };
+    let mut rules = Vec::new();
+    let mut certificate = RuleCertificate::default();
+    while at.ctor != Tag::Derived.constructor() && at.ctor != Tag::Rank.constructor() {
+        let turn = if at.ctor == Tag::Turned.constructor() {
+            RuleTurn::Turned
+        }
+        else {
+            RuleTurn::AsWritten
+        };
+        let tag = match turn {
+            RuleTurn::AsWritten => Tag::Rule,
+            RuleTurn::Turned => Tag::Turned,
+        };
+        let Maybe::Present([name, left, right, rest]) = member::<4>(at, tag)?
+        else {
+            return Ok((rules, certificate));
+        };
+        let name = text(name)?;
+        let left = read_term(nested(left)?)?;
+        let right = read_term(nested(right)?)?;
+        rules.push(TheoryRule { name, left, right });
+        certificate.turns.push(turn);
+        at = nested(rest)?;
+    }
+    while at.ctor == Tag::Derived.constructor() {
+        let [outer, position, inner, left, right, rest] = expect::<6>(at, Tag::Derived)?;
+        let peak = DerivedPeak {
+            outer: RuleIndex::from(numeral(outer)?),
+            position: SidePlace(numeral(position)?),
+            inner: RuleIndex::from(numeral(inner)?),
+        };
+        let left = read_term(nested(left)?)?;
+        let right = read_term(nested(right)?)?;
+        certificate.derived.push(DerivedFace { left, right, peak });
+        at = nested(rest)?;
+    }
+    loop {
+        let Maybe::Present([name, rank, rest]) = member::<3>(at, Tag::Rank)?
+        else {
+            return Ok((rules, certificate));
+        };
+        let name = text(name)?;
+        let rank = crate::termination::Rank::from(numeral(rank)?);
+        certificate.ranks.push((name, rank));
+        at = nested(rest)?;
+    }
 }
 
 /// The ports of an operation's chain at `node`, in order, each with the

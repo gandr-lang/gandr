@@ -593,6 +593,11 @@ pub enum KernelError
     /// not oriented by the path order, or one of its critical pairs does not
     /// join.
     OperationRulesRefused(gandr_kernel_term::OperationRuleRefusal),
+    /// A presentation's rules are not one convergent rewriting system as its
+    /// value states them: a rule is unreadable or malformed, not decreased by
+    /// the stated order, a derived rule does not replay its peak, or a
+    /// critical pair does not join.
+    PresentationRulesRefused(gandr_kernel_term::TheoryRuleRefusal),
     /// A ruled definition's body is not its rules' decision tree: its shape is
     /// not a fixpoint over cases, or a leaf is the right side of no rule
     /// whose left side matches it.
@@ -921,6 +926,9 @@ impl core::fmt::Display for KernelError
             },
             Self::OperationRulesRefused(_) => {
                 f.write_str("a definition's operation rules did not converge")
+            },
+            Self::PresentationRulesRefused(_) => {
+                f.write_str("a presentation's rules did not converge as its value states them")
             },
             Self::OperationBodyUnlinked(_) => {
                 f.write_str("a definition's body is not its operation rules' decision tree")
