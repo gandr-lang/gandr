@@ -1,5 +1,6 @@
 //! The import closures this process's sessions lowered, held so that a
-//! document laid out after the same closure lowers its own source alone.
+//! document laid out after the same closure lowers and is judged on its own
+//! source alone.
 //!
 //! An editor rechecks a document by laying it out after its import closure.
 //! A source lowers alike whatever follows it, so the closure's lowering is the
@@ -7,7 +8,11 @@
 //! closure's text, its sources and the grammar's fingerprint, and a recheck
 //! resumes it for the document's own source
 //! ([`ClosureLowering::resume`](gandr_surface_lowering::ClosureLowering::resume)).
-//! A closure a document cannot be laid after
+//! The closure's own declarations are judged, focused, settled and spelled
+//! once per corpus root, the first time a document laid after it is judged
+//! under that root ([`JudgedClosure`]), and every revision is lowered after
+//! that judgement's arena and judged on a copy of its state. A closure a
+//! document cannot be laid after
 //! ([`Unheld`](gandr_surface_dispatcher::Unheld)) is held as such, so its
 //! documents are lowered whole without the closure being parsed again. Every
 //! session reads the one store, and every lowering it holds is under the
@@ -19,9 +24,13 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use std::sync::Mutex;
+use std::sync::OnceLock;
 use std::sync::PoisonError;
 
 use anodized::spec;
+use gandr_surface_corpus::CorpusRoot;
+use gandr_surface_dispatcher::HostGrant;
+use gandr_surface_dispatcher::JudgedClosure;
 use gandr_surface_lowering::ClosureLowering;
 use gandr_surface_lowering::UnitSource;
 use gandr_surface_syntax::GrammarFingerprint;
@@ -39,9 +48,89 @@ const LOWERINGS_HELD: usize = 8;
 pub enum Held
 {
     /// The closure's lowering.
-    Lowered(Arc<ClosureLowering>),
+    Lowered(Arc<Closure>),
     /// No lowering: a document laid after the closure is lowered whole.
     Whole,
+}
+
+/// A closure's lowering, with its own declarations' judgement under each root
+/// once a document laid after it asks for it.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+pub struct Closure
+{
+    /// The closure's lowering.
+    lowering: Arc<ClosureLowering>,
+    /// Its own declarations judged under the unbounded grant a session judges
+    /// under and settled under the strict root, made the first time it is
+    /// asked for.
+    strict: OnceLock<Option<JudgedClosure>>,
+    /// The same, settled under the fixture root.
+    fixture: OnceLock<Option<JudgedClosure>>,
+}
+
+impl Closure
+{
+    /// `lowering`, its declarations not judged yet.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn new(lowering: ClosureLowering) -> Self
+    {
+        Self {
+            lowering: Arc::new(lowering),
+            strict: OnceLock::new(),
+            fixture: OnceLock::new(),
+        }
+    }
+
+    /// The closure's lowering.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn lowering(&self) -> &ClosureLowering
+    {
+        &self.lowering
+    }
+
+    /// The closure's own declarations judged under
+    /// [`HostGrant::UNBOUNDED`] and settled under `root`, judged the first
+    /// time any session asks under `root`: `None` when its lowering did not
+    /// reach its end.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`JudgedClosure::new`] of the lowering under the unbounded
+    ///   grant and `root`, the same answer on every call under `root`.
+    /// - provides: the state every revision of a document laid after the
+    ///   closure is judged from.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause names a judgement the first call alone
+    ///   makes; the session's witness judges a document cold and warm.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a document judged with the closure's judgement made
+    ///   by an earlier session and with it made fresh composes alike.
+    /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
+    pub fn judged(
+        &self,
+        root: CorpusRoot,
+    ) -> Option<&JudgedClosure>
+    {
+        let slot = match root {
+            CorpusRoot::Strict => &self.strict,
+            CorpusRoot::Fixture => &self.fixture,
+        };
+        slot.get_or_init(|| {
+            JudgedClosure::new(Arc::clone(&self.lowering), &HostGrant::UNBOUNDED, root)
+        })
+        .as_ref()
+    }
 }
 
 /// One closure's lowering, under the text, sources and grammar that select
@@ -144,7 +233,8 @@ pub fn find(
 /// - hypothesis: L3 — as [`find`].
 /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
 #[spec(requires: match held {
-    Held::Lowered(ref lowered) => <&str>::from(lowered.text()) == text && lowered.unit().sources() == sources.as_slice(),
+    Held::Lowered(ref lowered) => <&str>::from(lowered.lowering().text()) == text
+        && lowered.lowering().unit().sources() == sources.as_slice(),
     Held::Whole => true,
 })]
 pub fn keep(

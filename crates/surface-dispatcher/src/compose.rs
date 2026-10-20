@@ -163,10 +163,12 @@ use anodized::spec;
 use gandr_core_checker::AbstractType;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
+use gandr_core_checker::Checkpoint;
 use gandr_core_checker::ComponentOrdinal;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::HostGrant;
 use gandr_core_checker::ModuleReport;
+use gandr_core_checker::ModuleRun;
 use gandr_core_checker::Nesting;
 use gandr_core_checker::ObligationCount;
 use gandr_core_checker::OriginToken;
@@ -178,17 +180,24 @@ use gandr_core_checker::bridge;
 use gandr_core_checker::check_module;
 use gandr_core_checker::signature;
 use gandr_core_checker::worlds::Entry;
+use gandr_core_checker::worlds::HostEntry;
 use gandr_core_checker::worlds::Mobility;
 use gandr_core_checker::worlds::WorldName;
+use gandr_core_term::Carried;
+use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
+use gandr_core_term::ValueId;
+use gandr_core_term::hole::HoleId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::EncodedArtifact;
 use gandr_kernel_term::StructuredName;
 use gandr_surface_corpus::CorpusRoot;
+use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::SettleFault;
 use gandr_surface_corpus::SettleReport;
 use gandr_surface_corpus::settle;
+use gandr_surface_corpus::settle_after;
 use gandr_surface_diagnostics::Failures;
 use gandr_surface_diagnostics::TypeSpellings;
 use gandr_surface_grammar::Pbg;
@@ -200,6 +209,7 @@ use gandr_surface_lowering::LoweredDeclaration;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::Mark;
+use gandr_surface_lowering::Onto;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::Sealing;
 use gandr_surface_lowering::Unit;
@@ -215,6 +225,7 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::component::Member;
+use crate::evaluate::Focused;
 use crate::evaluate::Program;
 use crate::exercised::Exercised;
 
@@ -811,12 +822,16 @@ mod lowering
     use alloc::sync::Arc;
 
     use anodized::spec;
+    use gandr_core_term::Carried;
+    use gandr_core_term::ComputationId;
     use gandr_core_term::CoreArena;
+    use gandr_core_term::ValueId;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_lowering::ClosureLowering;
     use gandr_surface_lowering::LoweredModule;
     use gandr_surface_lowering::LoweringBudget;
     use gandr_surface_lowering::LoweringRefusal;
+    use gandr_surface_lowering::Onto;
     use gandr_surface_lowering::Unit;
     use gandr_surface_lowering::lower_unit;
     use gandr_surface_lowering::namespace::Recognition;
@@ -961,6 +976,52 @@ mod lowering
             .saturating_sub(closure.unit().sources().len());
         *lowerings = LoweringCount(lowerings.0.saturating_add(after));
         closure.resume(tree, unit, arena)
+    }
+
+    /// Lower `tree`, a document laid after `closure`'s tree, as `unit` lays
+    /// it out, after the nodes of `arena`, resuming `closure`'s lowering;
+    /// each source after the closure's counted in `lowerings` unless the tree
+    /// is left to the whole lowering.
+    ///
+    /// # Specification
+    /// - requires: as [`ClosureLowering::resume_onto`].
+    /// - ensures: `lowerings` is more by the unit's sources after the
+    ///   closure's, saturating, unless the answer is [`Onto::Whole`], which
+    ///   lowers nothing; the answer is [`ClosureLowering::resume_onto`]'s.
+    /// - provides: a document's lowering after its closure's judged arena.
+    /// - fails: the lowering's refusal of the whole module, unchanged.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The [`LoweringRefusal`] the lowering returns for the whole module.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`suspend`].
+    /// - witness: `compose::tests::a_closure_judged_once_judges_each_document_alike_776`
+    #[spec(
+        captures: [before = lowerings.0],
+        ensures: |ret| lowerings.0 == if matches!(ret, Ok(Onto::Whole)) { before } else {
+            before.saturating_add(unit.sources().len().saturating_sub(closure.unit().sources().len()))
+        },
+    )]
+    pub(super) fn resume_onto<'held>(
+        closure: &'held ClosureLowering,
+        tree: &SyntaxTree<'held>,
+        unit: &Unit,
+        arena: &mut CoreArena,
+        (carried, binds): (&[Carried], &[(ValueId, ComputationId)]),
+        lowerings: &mut LoweringCount,
+    ) -> Result<Onto<'held>, LoweringRefusal<'held>>
+    {
+        let answer = closure.resume_onto(tree, unit, arena, carried, binds);
+        if !matches!(answer, Ok(Onto::Whole)) {
+            let after = unit
+                .sources()
+                .len()
+                .saturating_sub(closure.unit().sources().len());
+            *lowerings = LoweringCount(lowerings.0.saturating_add(after));
+        }
+        answer
     }
 }
 
@@ -1334,6 +1395,355 @@ pub fn lower_resumed_unit<'held>(
     })
 }
 
+/// A closure's own declarations judged once, held with the closure's lowering.
+///
+/// It holds the arena they were judged over, the run and the checker's state
+/// after the last of them, the grant, entry and root they were judged and
+/// settled under, and their share of the program, the settle comparison and
+/// the spellings.
+///
+/// A document laid after the closure is lowered after this arena's nodes
+/// ([`lower_onto_closure`]) and judged on a copy of the rest
+/// ([`judge_member_after`]): the closure's declarations are not judged,
+/// focused, settled or spelled again, and every revision of the document is
+/// judged from the same state, its ids included.
+///
+/// # Specification
+/// - executable: none — a data type; [`judge_member_after`] states what a
+///   document judged on it answers.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one judged closure, read by two documents in turn and by
+///   a document twice, answers each as a fresh one does.
+/// - witness: `compose::tests::a_closure_judged_once_judges_each_document_alike_776`
+#[repr(transparent)]
+pub struct JudgedClosure(cells::Judged);
+
+/// What judging a closure's own declarations made, its program part and
+/// settle reports borrowing the closure's lowering.
+#[derive(Debug)]
+struct ClosureJudgement<'held>
+{
+    /// The closure's arena, the checker's nodes minted after the lowering's.
+    arena: CoreArena,
+    /// The closure's declarations, as the checker reads them.
+    declarations: Vec<Declaration>,
+    /// The run over them.
+    run: ModuleRun,
+    /// The checker's state after the last of them.
+    checkpoint: Checkpoint,
+    /// The grant they were judged under.
+    grant: HostGrant,
+    /// The entry `grant` names against the closure's worlds.
+    entry: HostEntry,
+    /// The root they were settled under.
+    root: CorpusRoot,
+    /// The admission position after the last of them.
+    boundary: ConstantIndex,
+    /// The nodes their elaborations minted, each beside the node it stands
+    /// for, and the binds minted for runs beside their runs: located in a
+    /// document's table before its own nodes
+    /// ([`ClosureLowering::resume_onto`]).
+    elaborated: (Vec<Carried>, Vec<(ValueId, ComputationId)>),
+    /// Their share of the program: each focused, before any ran.
+    program: Focused<'held>,
+    /// Their settle reports, or the settle fault.
+    settled: Result<Vec<DeclarationReport<'held>>, SettleFault>,
+    /// The types their checker refusals compare and their failures name.
+    spellings: TypeSpellings,
+}
+
+/// The self-referential cell a judged closure is held in: the closure's
+/// lowering with what judging its declarations made.
+#[expect(
+    clippy::mem_forget,
+    reason = "the cells self_cell generates forget their construction guard once the dependent \
+              is built: the guard frees the joint allocation only when building unwinds"
+)]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        recursive_owned_pointer,
+        reason = "self_cell names each cell as a marker type parameter of the cell it holds, not \
+                  an owning link: the cell owns one joint allocation of the owner and the \
+                  dependent, and its drop frees that allocation once without recursing"
+    )
+)]
+mod cells
+{
+    use alloc::sync::Arc;
+
+    use gandr_surface_lowering::ClosureLowering;
+    use self_cell::self_cell;
+
+    use super::ClosureJudgement;
+
+    self_cell!(
+        /// The closure's lowering with what judging its declarations made.
+        ///
+        /// # Specification
+        /// trivial.
+        pub(super) struct Judged
+        {
+            owner: Arc<ClosureLowering>,
+
+            #[covariant]
+            dependent: ClosureJudgement,
+        }
+    );
+}
+
+impl JudgedClosure
+{
+    /// `closure`'s own declarations judged under `grant` and settled under
+    /// `root`, as [`judge`] judges and settles a module: `None` when the
+    /// closure's lowering did not reach its end.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the closure's own module ([`ClosureLowering::alone`]) adapted
+    ///   and judged with its held capabilities bounded by `grant`, minted into
+    ///   the closure's arena, entered at `grant`'s entry read against its
+    ///   worlds, its pattern holes kept; the run and the checker's state after
+    ///   its last declaration held. Its verdicts, finished on a copy of that
+    ///   state, are focused, settled under `root` and spelled as [`judge`]
+    ///   does, and each part held.
+    /// - provides: what every document laid after the closure is judged from.
+    /// - fails: never; a closure with no module is `None`.
+    /// - panics: none.
+    /// - executable: none — the clauses compare the held parts with a judgement
+    ///   of a module no argument carries; the witness judges documents on a
+    ///   held and a fresh one and compares.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the type.
+    /// - witness: `compose::tests::a_closure_judged_once_judges_each_document_alike_776`
+    #[inline]
+    #[must_use]
+    pub fn new(
+        closure: Arc<ClosureLowering>,
+        grant: &HostGrant,
+        root: CorpusRoot,
+    ) -> Option<Self>
+    {
+        cells::Judged::try_new(closure, |closure| {
+            judge_closure(closure, grant, root).ok_or(())
+        })
+        .ok()
+        .map(Self)
+    }
+
+    /// The closure's lowering.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn lowering(&self) -> &ClosureLowering
+    {
+        self.0.borrow_owner()
+    }
+
+    /// What judging the closure's declarations made.
+    ///
+    /// # Specification
+    /// trivial.
+    fn judgement(&self) -> &ClosureJudgement<'_>
+    {
+        self.0.borrow_dependent()
+    }
+}
+
+impl fmt::Debug for JudgedClosure
+{
+    /// The judgement; the lowering is the closure's.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.debug_tuple("JudgedClosure")
+            .field(self.judgement())
+            .finish()
+    }
+}
+
+/// What [`JudgedClosure::new`] holds of `closure`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: as [`JudgedClosure::new`].
+/// - fails: `None` for a closure with no module.
+/// - panics: none.
+/// - executable: none — as [`JudgedClosure::new`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`JudgedClosure`].
+/// - witness: `compose::tests::a_closure_judged_once_judges_each_document_alike_776`
+fn judge_closure<'held>(
+    closure: &'held ClosureLowering,
+    grant: &HostGrant,
+    root: CorpusRoot,
+) -> Option<ClosureJudgement<'held>>
+{
+    let (mut module, mut arena) = closure.alone()?;
+    let declarations = adapt(&module);
+    let entry = grant.entry(&declared_worlds(&module));
+    let holes = pattern_holes(&module);
+    let grants = grant.grants(&mut arena);
+    let mut run = ModuleRun::new();
+    let checkpoint = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        context.grant(grants);
+        context.enter_at(entry.clone());
+        context.keep_pattern_holes(&holes);
+        run.judge(&mut context, &declarations, |_, _, _| {});
+        context.checkpoint()
+    };
+    // The closure's verdicts, as a document after it finishes them.
+    let mut closing = arena.clone();
+    let verdicts = run.clone().finish(&mut CheckingContext::resume(
+        &mut closing,
+        checkpoint.clone(),
+    ));
+    let mut program = Program::new(&closing, &module, &verdicts);
+    // A run reads the program; the document continues it as focused.
+    let focused = program.clone().into_focused();
+    let settled = settle(root, &closing, &module, &verdicts, &mut program);
+    let first = ConstantIndex::from(0_usize);
+    let minted = elaborated(&verdicts, first);
+    let spellings = settled.as_ref().map_or_else(
+        |_| TypeSpellings::default(),
+        |report| {
+            module.origins_mut().carry(&minted.0, &minted.1);
+            TypeSpellings::of(
+                &closing,
+                &module,
+                report,
+                &Failures::of(&verdicts),
+                (module.origins(), closure.text()),
+            )
+        },
+    );
+    let boundary = module.declarations().last().map_or(first, |last| {
+        ConstantIndex::from(usize::from(last.constant()).saturating_add(1))
+    });
+    Some(ClosureJudgement {
+        arena,
+        declarations,
+        run,
+        checkpoint,
+        grant: grant.clone(),
+        entry,
+        root,
+        boundary,
+        elaborated: minted,
+        program: focused,
+        settled: settled.map(|report| report.declarations().to_vec()),
+        spellings,
+    })
+}
+
+/// How a lowered module is checked: whole, or after a closure judged once.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+pub enum Checking<'closure>
+{
+    /// Every declaration of the module is judged.
+    Whole,
+    /// The module was lowered after the closure's judged arena
+    /// ([`lower_onto_closure`]): only its declarations after the closure's are
+    /// judged, on a copy of the closure's state.
+    After(&'closure JudgedClosure),
+}
+
+/// [`lower_resumed_unit`] over `parsed` after `judged`'s closure, minting the
+/// document's nodes after `judged`'s arena, so that the document is judged on
+/// a copy of `judged`'s state.
+///
+/// # Specification
+/// - requires: as [`lower_resumed_unit`] over [`JudgedClosure::lowering`].
+/// - ensures: the module [`ClosureLowering::resume_onto`] lowers onto a copy of
+///   `judged`'s arena, judged [`Checking::After`] it; or, for a tree the
+///   closure's lowering does not continue over, [`lower_resumed_unit`]'s
+///   answer, judged [`Checking::Whole`]. `lowerings` advances by the sources
+///   after the closure's.
+/// - provides: a document's lowering whose judgement continues its closure's.
+/// - fails: as [`lower_parsed_unit`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`lower_parsed_unit`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a document lowered after a judged closure twice, and
+///   another document after it, lowers alike each time and is counted by its
+///   own source.
+/// - witness: `compose::tests::a_closure_judged_once_judges_each_document_alike_776`
+#[inline]
+#[spec(
+    captures: [before = lowerings.0],
+    ensures: lowerings.0 == before.saturating_add(
+        unit.sources().len().saturating_sub(judged.lowering().unit().sources().len())),
+)]
+pub fn lower_onto_closure<'held>(
+    judged: &'held JudgedClosure,
+    parsed: ParseResult<'held>,
+    unit: &Unit,
+    lowerings: &mut LoweringCount,
+) -> Result<(Lowering<'held>, Checking<'held>), ComposeFault<'held>>
+{
+    let closure = judged.lowering();
+    let obligations = parsed.obligations().to_vec();
+    let tree = parsed.into_tree();
+    let judgement = judged.judgement();
+    let mut arena = judgement.arena.clone();
+    let (ref carried, ref binds) = judgement.elaborated;
+    let (lowered, checking) = match lowering::resume_onto(
+        closure,
+        &tree,
+        unit,
+        &mut arena,
+        (carried, binds),
+        lowerings,
+    ) {
+        Ok(Onto::Resumed(module)) => (Lowered::Module { module, arena }, Checking::After(judged)),
+        Ok(Onto::Whole) => {
+            let mut whole = CoreArena::new();
+            match lowering::resume(closure, &tree, unit, &mut whole, lowerings) {
+                Ok(module) => (
+                    Lowered::Module {
+                        module,
+                        arena: whole,
+                    },
+                    Checking::Whole,
+                ),
+                Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
+                    return Err(ComposeFault::Lowering(refusal));
+                },
+                Err(refusal) => (Lowered::Refused(refusal), Checking::Whole),
+            }
+        },
+        Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
+            return Err(ComposeFault::Lowering(refusal));
+        },
+        Err(refusal) => (Lowered::Refused(refusal), Checking::Whole),
+    };
+    Ok((
+        Lowering {
+            obligations,
+            lowered,
+        },
+        checking,
+    ))
+}
+
 /// Judge and settle one lowered module, its kernel admission left to run.
 ///
 /// # Specification
@@ -1437,6 +1847,58 @@ pub fn judge_member<'source>(
     base: ByteOffset,
 ) -> Judged<'source>
 {
+    judge_member_after(root, (module, text), arena, (grant, Checking::Whole), base)
+}
+
+/// [`judge_member`] of a module checked as `checking` says.
+///
+/// After a closure judged once, its declarations are taken as judged, focused,
+/// settled and spelled, and the module's later ones judged on a copy of its
+/// state.
+///
+/// # Specification
+/// - requires: as [`judge_member`]; under [`Checking::After`], `module` and
+///   `arena` are [`lower_onto_closure`]'s after that closure.
+/// - ensures: as [`judge_member`], the verdicts one run over the module's
+///   declarations answers when it is judged in two stretches: the closure's, as
+///   [`JudgedClosure::new`] judged them, then the rest on a copy of the state
+///   after them; the program, settle reports and spellings the closure's share
+///   of each continued over the rest. The closure's judgement is taken when
+///   `grant` and `root` are the ones it was judged and settled under, the entry
+///   `grant` names against the module's worlds is the one it names against the
+///   closure's, and the module's leading declarations are the closure's;
+///   otherwise, and under [`Checking::Whole`], every declaration is judged over
+///   `arena`.
+/// - provides: a document's composition at the cost of its own declarations'
+///   judgements.
+/// - fails: never; a settle fault is carried.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a document judged after a judged closure twice, and
+///   another document after it, composes as each does judged after a fresh one,
+///   and reports what the whole route reports of its own declarations.
+/// - witness: `compose::tests::a_closure_judged_once_judges_each_document_alike_776`
+#[inline]
+#[must_use]
+#[spec(
+    captures: [expected_declarations = module.declarations().len()],
+    ensures: |ret| match ret.settled {
+        Ok(Composed::Settled { ref report, .. }) =>
+            report.declarations().len() <= expected_declarations
+                && report.declarations().iter().all(|declaration| declaration.span().start() >= base),
+        Ok(Composed::Refused(_)) => false,
+        Err(_) => true,
+    },
+)]
+pub fn judge_member_after<'source>(
+    root: CorpusRoot,
+    (module, text): (LoweredModule<'source>, SourceText<'source>),
+    arena: CoreArena,
+    (grant, checking): (&HostGrant, Checking<'source>),
+    base: ByteOffset,
+) -> Judged<'source>
+{
     let last = Member {
         start: base,
         end: ByteOffset::from(text.as_ref().len()),
@@ -1445,7 +1907,7 @@ pub fn judge_member<'source>(
         root,
         (module, text),
         arena,
-        grant,
+        (grant, checking),
         (&[], last),
         &mut SpellingCount::default(),
     );
@@ -1525,36 +1987,87 @@ fn judge_members<'source>(
     root: CorpusRoot,
     (mut module, text): (LoweredModule<'source>, SourceText<'source>),
     mut arena: CoreArena,
-    grant: &HostGrant,
+    (grant, checking): (&HostGrant, Checking<'source>),
     (earlier, last): (&[Member], Member),
     spelled: &mut SpellingCount,
 ) -> (Projected<'source>, Admission)
 {
     let declarations = adapt(&module);
-    let grants = grant.grants(&mut arena);
     let entry = grant.entry(&declared_worlds(&module));
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-    context.grant(grants);
-    context.enter_at(entry);
-    let pattern_holes: Vec<_> = module
-        .origins()
-        .cases()
-        .flat_map(|(_, case)| case.patterns.holes())
-        .collect();
-    context.keep_pattern_holes(&pattern_holes);
-    let verdicts = check_module(&mut context, &declarations);
+    let holes = pattern_holes(&module);
+    let after = match checking {
+        Checking::After(closure) => Some(closure.judgement()).filter(|judgement| {
+            judgement.grant == *grant
+                && judgement.root == root
+                && judgement.entry == entry
+                && declarations.get(.. judgement.declarations.len())
+                    == Some(judgement.declarations.as_slice())
+        }),
+        Checking::Whole => None,
+    };
+    let verdicts = if let Some(closure) = after {
+        let mut context = CheckingContext::resume(&mut arena, closure.checkpoint.clone());
+        context.keep_pattern_holes(&holes);
+        let mut run = closure.run.clone();
+        run.judge(
+            &mut context,
+            declarations
+                .get(closure.declarations.len() ..)
+                .unwrap_or_default(),
+            |_, _, _| {},
+        );
+        run.finish(&mut context)
+    }
+    else {
+        let grants = grant.grants(&mut arena);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        context.grant(grants);
+        context.enter_at(entry);
+        context.keep_pattern_holes(&holes);
+        check_module(&mut context, &declarations)
+    };
     let names = module.structured_names();
-    let mut program = Program::new(&arena, &module, &verdicts);
-    let projected = match settle(root, &arena, &module, &verdicts, &mut program) {
+    let mut program = after.map_or_else(
+        || Program::new(&arena, &module, &verdicts),
+        |closure| Program::after(closure.program.clone(), &arena, &module, &verdicts),
+    );
+    let settled_report = match after {
+        Some(closure) => closure
+            .settled
+            .as_ref()
+            .map_err(|&fault| fault)
+            .and_then(|earlier| {
+                settle_after(root, &arena, &module, &verdicts, &mut program, earlier)
+            }),
+        None => settle(root, &arena, &module, &verdicts, &mut program),
+    };
+    let projected = match settled_report {
         Ok(report) => {
             let failures = Failures::of(&verdicts);
-            located(module.origins_mut(), &verdicts);
-            let spellings = TypeSpellings::of(
-                &arena,
-                &module,
-                &report,
-                &failures,
-                (module.origins(), text),
+            located(
+                module.origins_mut(),
+                &verdicts,
+                after.map_or_else(|| ConstantIndex::from(0_usize), |closure| closure.boundary),
+            );
+            let spellings = after.map_or_else(
+                || {
+                    TypeSpellings::of(
+                        &arena,
+                        &module,
+                        &report,
+                        &failures,
+                        (module.origins(), text),
+                    )
+                },
+                |closure| {
+                    TypeSpellings::after(
+                        &closure.spellings,
+                        closure.boundary,
+                        (&arena, &module),
+                        (&report, &failures),
+                        (module.origins(), text),
+                    )
+                },
             );
             spelled.tick();
             let unit = Unitwide {
@@ -1780,8 +2293,14 @@ pub fn judge_component<'source>(
     };
     match lowering.into_lowered() {
         Lowered::Module { module, arena } => {
-            let (projected, admission) =
-                judge_members(root, (module, text), arena, grant, (earlier, last), spelled);
+            let (projected, admission) = judge_members(
+                root,
+                (module, text),
+                arena,
+                (grant, Checking::Whole),
+                (earlier, last),
+                spelled,
+            );
             match admission.admit() {
                 Ok(kernel) => {
                     let mut composed: Vec<_> = projected
@@ -1853,8 +2372,9 @@ fn inferred_runs(
     )
 }
 
-/// The lowering's origin table, with every node the checker's elaborations
-/// minted located at the written node it elaborates.
+/// The lowering's origin table, with every node the checker's elaborations of
+/// the declarations from `from` on minted located at the written node it
+/// elaborates.
 ///
 /// A body holding a computation written where a value is read is judged
 /// twice, and the verdict is the second run's, over the elaborated body: a
@@ -1866,38 +2386,68 @@ fn inferred_runs(
 ///
 /// # Specification
 /// - requires: `origins` is the table of the module `verdicts` judged, read
-///   before any node of that judgement was recorded in it.
-/// - ensures: `origins` with [`OriginTable::carry`] applied to every node each
-///   elaboration reports minting beside the node it stands for; `origins`
-///   itself when no body was elaborated.
+///   before any node the elaborations of the declarations from `from` on minted
+///   was recorded in it, those of the declarations before `from` located
+///   already ([`ClosureLowering::resume_onto`]).
+/// - ensures: `origins` with [`OriginTable::carry`] applied to what
+///   [`elaborated`] answers of `verdicts` from `from`; `origins` itself when no
+///   body from `from` on was elaborated.
 /// - provides: the table a second-run refusal is located through.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a fold nesting its call and its bound twin, each refused
-///   by the rule it tells apart, refuse at one case block.
+///   by the rule it tells apart, refuse at one case block; a closure's fold and
+///   a document's nested call, judged on a held closure, locate as on a fresh
+///   one.
 /// - witness: `entry::tests::a_second_run_refusal_is_located_where_its_bound_spelling_is_380`
+/// - witness: `compose::tests::a_closure_judged_once_judges_each_document_alike_776`
 #[spec(captures: [declarations = origins.declaration_count(), recorded = origins.recorded_count()],
     ensures: origins.declaration_count() == declarations && origins.recorded_count() >= recorded)]
 fn located(
     origins: &mut OriginTable,
     verdicts: &ModuleReport,
+    from: ConstantIndex,
 )
 {
-    let elaborations = verdicts.nested_elaborations();
-    if elaborations.is_empty() {
-        return;
-    }
-    let carried: Vec<_> = elaborations
-        .values()
-        .flat_map(|elaboration| elaboration.carried().iter().copied())
-        .collect();
-    let binds: Vec<_> = elaborations
-        .values()
-        .flat_map(|elaboration| elaboration.binds().iter().copied())
-        .collect();
+    let (carried, binds) = elaborated(verdicts, from);
     origins.carry(&carried, &binds);
+}
+
+/// What the checker's elaborations of `verdicts`' declarations from `from` on
+/// minted: each node beside the node it stands for, and each bind minted for
+/// a run beside its run.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: every carried pair, then every bind, of the nested elaboration of
+///   each declaration at or after `from`, in admission order.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`located`].
+/// - witness: `compose::tests::a_closure_judged_once_judges_each_document_alike_776`
+#[spec(ensures: |ret| {
+    let elaborations = verdicts.nested_elaborations().range(from ..);
+    ret.0.len() == elaborations.clone().map(|(_, elaboration)| elaboration.carried().len()).sum::<usize>()
+        && ret.1.len() == elaborations.map(|(_, elaboration)| elaboration.binds().len()).sum::<usize>()
+})]
+fn elaborated(
+    verdicts: &ModuleReport,
+    from: ConstantIndex,
+) -> (Vec<Carried>, Vec<(ValueId, ComputationId)>)
+{
+    let elaborations = verdicts.nested_elaborations().range(from ..);
+    let carried = elaborations
+        .clone()
+        .flat_map(|(_, elaboration)| elaboration.carried().iter().copied())
+        .collect();
+    let binds = elaborations
+        .flat_map(|(_, elaboration)| elaboration.binds().iter().copied())
+        .collect();
+    (carried, binds)
 }
 
 /// Judge one lowered module: the second half of the composition.
@@ -2156,6 +2706,20 @@ fn declared_worlds(module: &LoweredModule<'_>) -> BTreeMap<WorldName, ConstantIn
                 declaration.constant(),
             )
         })
+        .collect()
+}
+
+/// The holes `module`'s matches were written with in place of a pattern: what
+/// the checker refuses at a match tree's leaf.
+///
+/// # Specification
+/// trivial.
+fn pattern_holes(module: &LoweredModule<'_>) -> Vec<HoleId>
+{
+    module
+        .origins()
+        .cases()
+        .flat_map(|(_, case)| case.patterns.holes())
         .collect()
 }
 
@@ -2664,6 +3228,291 @@ mod tests
         assert_eq!(untouched, LoweringCount::default(), "and counts nothing");
     }
 
+    /// #776: a closure judged once judges each document laid after it as a
+    /// closure judged fresh for that document does — two revisions in turn,
+    /// then the first again — down to the composition and the kernel's
+    /// artifact, each lowering counted by the document's own source; and each
+    /// reports of its own declarations what the whole unit, lowered and judged
+    /// whole, reports: their names, spans, statements, debts, waits, the kind
+    /// of each verdict, each outcome — a run of a closure's constant included —
+    /// and the spelling of each type a refusal compares, the closure refusing
+    /// one of its own declarations at its lowering and one at its check; and
+    /// every node the closure's fold elaborated from a located node is located
+    /// in the document's table, the document's own nested call carried after
+    /// its lowering.
+    #[test]
+    fn a_closure_judged_once_judges_each_document_alike_776()
+    {
+        use alloc::string::String;
+        use alloc::sync::Arc;
+        use core::mem::Discriminant;
+
+        use gandr_core_term::Carried;
+        use gandr_surface_corpus::Outcome;
+        use gandr_surface_corpus::Refusal;
+        use gandr_surface_corpus::Stated;
+        use gandr_surface_lowering::ImportTarget;
+        use gandr_surface_lowering::LoweredModule;
+        use gandr_surface_lowering::SourceIndex;
+        use gandr_surface_lowering::SurfaceName;
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_lowering::UnitSource;
+        use gandr_surface_pretty::Spelling;
+        use gandr_surface_syntax::ByteOffset;
+        use gandr_surface_syntax::ByteSpan;
+
+        use super::Checking;
+        use super::Judged;
+        use super::JudgedClosure;
+        use super::Lowering;
+        use super::judge_member;
+        use super::judge_member_after;
+        use super::lower_closure;
+        use super::lower_onto_closure;
+        use super::lower_parsed_unit;
+
+        /// One declaration's report: its name, span, statement, debt, waits,
+        /// the kinds of what it produced and of its verdict, its outcome and
+        /// the spellings of the types its refusal compares.
+        type Reported<'source> = (
+            SurfaceName<'source>,
+            ByteSpan,
+            Stated,
+            ObligationCount,
+            Vec<SurfaceName<'source>>,
+            (
+                Discriminant<Produced<'source>>,
+                Option<Discriminant<Verdict>>,
+            ),
+            (Outcome, Vec<String>),
+        );
+
+        /// The module and arena `lowering` lowered to.
+        ///
+        /// # Specification
+        /// trivial.
+        fn module(lowering: Lowering<'_>) -> (LoweredModule<'_>, CoreArena)
+        {
+            match lowering.into_lowered() {
+                Lowered::Module { module, arena } => (module, arena),
+                Lowered::Refused(refusal) => panic!("refused whole: {refusal}"),
+            }
+        }
+
+        /// `own`, laid after `judged`'s closure in `text` as `unit` lays it
+        /// out from `base`, lowered after `judged`'s arena and judged after
+        /// it.
+        ///
+        /// # Specification
+        /// trivial.
+        fn after<'held>(
+            judged: &'held JudgedClosure,
+            (own, text): (SourceText<'held>, SourceText<'held>),
+            (unit, base): (&Unit, ByteOffset),
+            lowerings: &mut LoweringCount,
+        ) -> Judged<'held>
+        {
+            let closure = judged.lowering();
+            let parsed = parse(closure.grammar(), own)
+                .expect("the document parses")
+                .after(closure.tree(), text)
+                .expect("the document lays after its closure");
+            let (lowering, checking) =
+                lower_onto_closure(judged, parsed, unit, lowerings).expect("the document lowers");
+            assert!(
+                matches!(checking, Checking::After(_)),
+                "the document is judged after the closure"
+            );
+            let (module, arena) = module(lowering);
+            judge_member_after(
+                CorpusRoot::Strict,
+                (module, text),
+                arena,
+                (&HostGrant::UNBOUNDED, checking),
+                base,
+            )
+        }
+
+        /// Each declaration `judged` reports, its ids set aside.
+        ///
+        /// # Specification
+        /// trivial.
+        fn reported(judged: Judged<'_>) -> Vec<Reported<'_>>
+        {
+            let Ok(Composed::Settled {
+                report, spellings, ..
+            }) = judged.settled
+            else {
+                panic!("the document settles");
+            };
+            let spelled = spellings.spelled(Spelling::Unicode);
+            report
+                .declarations()
+                .iter()
+                .map(|declaration| {
+                    let produced = declaration.produced();
+                    let verdict = match produced {
+                        Produced::Judged(verdict) => Some(core::mem::discriminant(&verdict)),
+                        Produced::Unlowered(_) | Produced::Guarded(_) => None,
+                    };
+                    let compared = match produced.refusal() {
+                        Maybe::Present(Refusal::Checking(refusal)) => {
+                            let compared = refusal.compared();
+                            [compared.expected, compared.found]
+                                .into_iter()
+                                .map(|side| match side {
+                                    Maybe::Present(node) => match spelled.get(node) {
+                                        Maybe::Present(spelling) => String::from(spelling.as_ref()),
+                                        Maybe::Absent(_) => String::from("unspelled"),
+                                    },
+                                    Maybe::Absent(_) => String::from("absent"),
+                                })
+                                .collect()
+                        },
+                        Maybe::Present(Refusal::Lowering(_) | Refusal::Corpus(_))
+                        | Maybe::Absent(_) => Vec::new(),
+                    };
+                    (
+                        declaration.name(),
+                        declaration.span(),
+                        declaration.stated().clone(),
+                        declaration.owed(),
+                        declaration.waits().to_vec(),
+                        (core::mem::discriminant(&produced), verdict),
+                        (declaration.outcome(), compared),
+                    )
+                })
+                .collect()
+        }
+
+        let pbg = grammar();
+        // The fold's nested calls and `told`'s are elaborated: the closure's
+        // nodes are located before the document's lowering, the document's
+        // after it.
+        let closure_text = "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n  P : (x : \
+                            Int) --> Int;\n  rule S(P(x)) ==> x;\n  rule P(S(x)) ==> x;\n}\ndef \
+                            rec tell(n : Int) -> -F Int {\n  case n {\n    Z => Z,\n    S(x) \
+                            => S(tell[<](x)),\n    P(x) => P(tell[<](x))\n  }\n}\ndef one : \
+                            Integer ;\ndef one = 1 ;\ndef owed : Integer ;\ndef lost = nowhere \
+                            ;\ndef bad : Integer ;\ndef bad = \"bad\" ;\n";
+        let first = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n@[ \
+                     runs(\"1\") ] def ran = one ;\ndef told = S(tell(Z)) ;\n";
+        let second = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = \"two\" \
+                      ;\ndef three : Integer ;\ndef three = owed ;\n";
+        let base = ByteOffset::from(closure_text.len());
+        let unit = Unit::new(vec![
+            UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+            UnitSource::new(base, vec![ImportTarget::Source(SourceIndex::from(0_usize))]),
+        ])
+        .expect("two sources make a unit");
+        let mut lowerings = LoweringCount::default();
+        let closure = Arc::new(
+            lower_closure(
+                Arc::new(grammar()),
+                String::from(closure_text),
+                Unit::new(vec![UnitSource::new(ByteOffset::from(0_usize), Vec::new())])
+                    .expect("one source makes a unit"),
+                &mut lowerings,
+            )
+            .expect("the closure is held"),
+        );
+        let held = JudgedClosure::new(
+            Arc::clone(&closure),
+            &HostGrant::UNBOUNDED,
+            CorpusRoot::Strict,
+        )
+        .expect("the closure lowers to its end");
+        for (step, own) in [first, second, first].into_iter().enumerate() {
+            let text = format!("{closure_text}{own}");
+            let text = SourceText::from(text.as_str());
+            let parsed = || {
+                parse(&pbg, SourceText::from(own))
+                    .expect("the document parses")
+                    .after(closure.tree(), text)
+                    .expect("the document lays after its closure")
+            };
+            let judged = after(
+                &held,
+                (SourceText::from(own), text),
+                (&unit, base),
+                &mut lowerings,
+            );
+            assert_eq!(
+                lowerings,
+                LoweringCount::from(step.saturating_add(2_usize)),
+                "each document counts its own source"
+            );
+            let Ok(Composed::Settled { ref origins, .. }) = judged.settled
+            else {
+                panic!("the document settles");
+            };
+            let carried = &held.judgement().elaborated.0;
+            assert!(!carried.is_empty(), "the closure's fold is elaborated");
+            for &pair in carried {
+                let (source, minted) = match pair {
+                    Carried::Value(source, minted) => {
+                        (origins.value(source), origins.value(minted))
+                    },
+                    Carried::Computation(source, minted) => {
+                        (origins.computation(source), origins.computation(minted))
+                    },
+                    Carried::ValueType(source, minted) => {
+                        (origins.value_type(source), origins.value_type(minted))
+                    },
+                    Carried::CompType(source, minted) => {
+                        (origins.comp_type(source), origins.comp_type(minted))
+                    },
+                };
+                assert!(
+                    matches!(source, Maybe::Absent(_)) || matches!(minted, Maybe::Present(_)),
+                    "revision {step} locates {pair:?}, which the closure's fold minted"
+                );
+            }
+            let fresh_closure = JudgedClosure::new(
+                Arc::clone(&closure),
+                &HostGrant::UNBOUNDED,
+                CorpusRoot::Strict,
+            )
+            .expect("the closure lowers to its end");
+            let fresh = after(
+                &fresh_closure,
+                (SourceText::from(own), text),
+                (&unit, base),
+                &mut LoweringCount::default(),
+            );
+            assert_eq!(
+                judged.settled, fresh.settled,
+                "revision {step} composes as on a fresh judgement of its closure"
+            );
+            let kernel = judged
+                .admission
+                .clone()
+                .admit()
+                .expect("the kernel readmits the document");
+            assert_eq!(
+                kernel,
+                fresh.admission.admit().expect("and the fresh one"),
+                "to one artifact"
+            );
+            let (whole_module, whole_arena) = module(
+                lower_parsed_unit(&pbg, parsed(), &unit, &mut LoweringCount::default())
+                    .expect("the whole unit lowers"),
+            );
+            let whole = judge_member(
+                CorpusRoot::Strict,
+                (whole_module, text),
+                whole_arena,
+                &HostGrant::UNBOUNDED,
+                base,
+            );
+            assert_eq!(
+                reported(judged),
+                reported(whole),
+                "revision {step} reports what the whole unit reports"
+            );
+        }
+    }
+
     /// A readmission that resumes nothing and records nothing.
     const WHOLE: (
         bridge::LeadingCount,
@@ -3161,7 +4010,11 @@ def h = 1 ;"#,
             let exercised = Exercised::of(&arena, &module, &report);
             let unstatable = super::unstatable(&module);
             let failures = super::Failures::of(&verdicts);
-            super::located(module.origins_mut(), &verdicts);
+            super::located(
+                module.origins_mut(),
+                &verdicts,
+                super::ConstantIndex::from(0_usize),
+            );
             let spellings = super::TypeSpellings::of(
                 &arena,
                 &module,

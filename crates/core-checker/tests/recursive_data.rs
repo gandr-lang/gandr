@@ -11,6 +11,7 @@ use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::ExpectedShape;
 use gandr_core_checker::ModuleReport;
+use gandr_core_checker::ModuleRun;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::Verdict;
@@ -2049,6 +2050,45 @@ fn a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers()
         "{:?}",
         report.judged()[2].verdict()
     );
+}
+
+/// #776: a run judged in two stretches, the first ending where a mutual block
+/// ends, a checkpoint taken between them and the second resumed over a copy of
+/// the arena, reports what one run reports and mints the same arena — a block
+/// left open at the checkpoint closed by the next declaration, and a refused
+/// block still open at the checkpoint refused whole when the resumed run
+/// finishes.
+#[test]
+fn a_run_resumed_from_a_checkpoint_judges_as_one_run_776()
+{
+    /// What builds a case's declarations into an arena.
+    type Build = fn(&mut CoreArena) -> Vec<Declaration>;
+    let cases: [(Build, usize); 2] = [
+        (|arena| forest(arena, Rose::Below), 2_usize),
+        (|arena| universe(arena, Decoded::Level), 3_usize),
+    ];
+    for (build, leading) in cases {
+        let mut whole_arena = CoreArena::new();
+        let declarations = build(&mut whole_arena);
+        let mut split_arena = whole_arena.clone();
+        let whole = check_module(
+            &mut CheckingContext::new(&mut whole_arena, CheckBudget::DEFAULT),
+            &declarations,
+        );
+        let (first, second) = declarations.split_at(leading);
+        let mut run = ModuleRun::new();
+        let checkpoint = {
+            let mut context = CheckingContext::new(&mut split_arena, CheckBudget::DEFAULT);
+            run.judge(&mut context, first, |_, _, _| {});
+            context.checkpoint()
+        };
+        let mut resumed_arena = split_arena.clone();
+        let mut context = CheckingContext::resume(&mut resumed_arena, checkpoint);
+        run.judge(&mut context, second, |_, _, _| {});
+        let resumed = run.finish(&mut context);
+        assert_eq!(whole, resumed, "the resumed run reports as one run");
+        assert_eq!(whole_arena, resumed_arena, "and mints the same arena");
+    }
 }
 
 /// A block whose first family consumes its second where no stage reaches

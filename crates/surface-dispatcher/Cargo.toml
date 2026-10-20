@@ -27,6 +27,8 @@ path = "tests/lib.rs"
 # normaliser's staging observer programs and checks them through the
 # checker's program entry on a `rayon` pool of the driver's width. The
 # `ledger` verb writes the syntax ledger's machine form through serde_json.
+# A closure's judgement is held in a self_cell with the closure's lowering,
+# whose names it borrows.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled.
 [dependencies]
@@ -47,6 +49,7 @@ gandr-surface-pretty.workspace = true
 gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true
 rayon.workspace = true
+self_cell.workspace = true
 serde_json.workspace = true
 tracing = { workspace = true, optional = true }
 

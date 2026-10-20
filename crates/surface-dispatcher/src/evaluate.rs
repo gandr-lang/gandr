@@ -280,6 +280,30 @@ pub struct Program<'source>
     spelling: Spelling,
 }
 
+/// The part of a program a module's leading declarations make: each of them
+/// focused, with the sealed type of each whose run reaches a hidden member.
+/// A program over a module they lead continues it ([`Program::after`]).
+///
+/// # Specification
+/// - executable: none — a data type; [`Program::after`] states what continuing
+///   it answers.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Program::after`].
+/// - witness: `compose::tests::a_closure_judged_once_judges_each_document_alike_776`
+#[derive(Clone, Debug, Default)]
+pub struct Focused<'source>
+{
+    /// Every focused definition.
+    arena: CommandArena,
+    /// What each constant unfolds to, by admission position.
+    definitions: Definitions,
+    /// Each declaration's name and standing, by admission position.
+    declarations: BTreeMap<ConstantIndex, Declared<'source>>,
+    /// The sealed declared types, by admission position and spelling.
+    sealed: BTreeMap<(ConstantIndex, Spelling), String>,
+}
+
 /// One declaration of a program: its name and how it stands for a run.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Declared<'source>
@@ -628,10 +652,48 @@ impl<'source> Program<'source>
         verdicts: &ModuleReport,
     ) -> Self
     {
-        let mut arena = CommandArena::default();
+        Self::after(Focused::default(), core, module, verdicts)
+    }
+
+    /// [`Self::new`] continuing `focused`, the part of the program the
+    /// module's leading declarations make: its declarations are taken as
+    /// focused and sealed, and only the later ones are focused and spelled.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::new`]; `focused` is [`Self::into_focused`] of the
+    ///   program of a module whose declarations lead `module`'s, judged over an
+    ///   arena `core` extends, its verdicts leading `verdicts`.
+    /// - ensures: the program [`Self::new`] builds of `module`.
+    /// - provides: a document's program at the cost of its own declarations.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause is [`Self::new`]'s answer over the whole
+    ///   module; the witness compares the two.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a document judged after a closure judged once
+    ///   composes, its program included, as on a fresh judgement of the
+    ///   closure.
+    /// - witness: `compose::tests::a_closure_judged_once_judges_each_document_alike_776`
+    /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
+    #[must_use]
+    pub(crate) fn after(
+        focused: Focused<'source>,
+        core: &CoreArena,
+        module: &LoweredModule<'source>,
+        verdicts: &ModuleReport,
+    ) -> Self
+    {
+        let Focused {
+            mut arena,
+            mut definitions,
+            mut declarations,
+            mut sealed,
+        } = focused;
+        // Focusing only records each command's origin, which no program
+        // keeps, so a continued focusing starts an empty table.
         let mut provenance = Provenance::new();
-        let mut definitions = Definitions::new();
-        let mut declarations = BTreeMap::new();
+        let boundary = usize::from(definitions.len());
         let mut judged = verdicts.judged().iter().peekable();
         for lowered in module.declarations() {
             let constant = lowered.constant();
@@ -681,47 +743,51 @@ impl<'source> Program<'source>
         // the module's would misname.
         let families = Families::declared(module);
         let hidden = hidden_members(module);
-        let sealed = if hidden.is_empty() {
-            BTreeMap::new()
-        }
-        else {
+        if !hidden.is_empty() {
             let reaching = reaching(&declarations, &hidden);
             let printed: Vec<Name<'_>> =
                 names.iter().map(|name| Name::from(name.as_str())).collect();
             let constructors = families.naming(&printed);
             let source = CoreSource::new(core, &printed).naming(&constructors);
-            verdicts
-                .judged()
-                .iter()
-                .filter(|judged| reaching.contains(&judged.constant()))
-                .filter_map(|judged| match judged.verdict() {
-                    Verdict::Checked { declared, .. } | Verdict::Suspended(declared) => {
-                        Some((judged.constant(), declared.id()))
-                    },
-                    Verdict::Synthesised { synthesised, .. } => {
-                        Some((judged.constant(), synthesised.produced().id()))
-                    },
-                    Verdict::Data | Verdict::Owed(_) | Verdict::Refused(_) => None,
-                })
-                .flat_map(|(constant, declared)| {
-                    [Spelling::Unicode, Spelling::Ascii]
-                        .map(|spelling| ((constant, spelling), declared))
-                })
-                .filter_map(|((constant, spelling), declared)| {
-                    present_type(
-                        &source,
-                        CoreNode::ValueType(declared),
-                        PageWidth::from(u32::from(u16::MAX)),
-                        Style {
-                            form: Form::Sugared,
-                            spelling,
+            // A leading declaration's references, and the members it can
+            // reach, are the leading module's, so its type was spelled
+            // there.
+            sealed.extend(
+                verdicts
+                    .judged()
+                    .iter()
+                    .filter(|judged| {
+                        usize::from(judged.constant()) >= boundary
+                            && reaching.contains(&judged.constant())
+                    })
+                    .filter_map(|judged| match judged.verdict() {
+                        Verdict::Checked { declared, .. } | Verdict::Suspended(declared) => {
+                            Some((judged.constant(), declared.id()))
                         },
-                    )
-                    .ok()
-                    .map(|spelled| ((constant, spelling), spelled.to_string()))
-                })
-                .collect()
-        };
+                        Verdict::Synthesised { synthesised, .. } => {
+                            Some((judged.constant(), synthesised.produced().id()))
+                        },
+                        Verdict::Data | Verdict::Owed(_) | Verdict::Refused(_) => None,
+                    })
+                    .flat_map(|(constant, declared)| {
+                        [Spelling::Unicode, Spelling::Ascii]
+                            .map(|spelling| ((constant, spelling), declared))
+                    })
+                    .filter_map(|((constant, spelling), declared)| {
+                        present_type(
+                            &source,
+                            CoreNode::ValueType(declared),
+                            PageWidth::from(u32::from(u16::MAX)),
+                            Style {
+                                form: Form::Sugared,
+                                spelling,
+                            },
+                        )
+                        .ok()
+                        .map(|spelled| ((constant, spelling), spelled.to_string()))
+                    }),
+            );
+        }
         Self {
             arena,
             definitions,
@@ -731,6 +797,29 @@ impl<'source> Program<'source>
             sealed,
             families,
             spelling: Spelling::Unicode,
+        }
+    }
+
+    /// The part of this program a module laid after its module continues
+    /// ([`Self::after`]): its focused declarations and sealed types.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) fn into_focused(self) -> Focused<'source>
+    {
+        let Self {
+            arena,
+            definitions,
+            declarations,
+            sealed,
+            ..
+        } = self;
+        Focused {
+            arena,
+            definitions,
+            declarations,
+            sealed,
         }
     }
 

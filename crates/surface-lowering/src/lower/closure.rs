@@ -7,14 +7,21 @@
 //! the closure once and keeps the lowering suspended at the closure's end;
 //! [`ClosureLowering::resume`] lowers a document's tree laid after the
 //! closure's on a copy of that state, and answers what [`super::lower_unit`]
-//! answers over the same tree and unit.
+//! answers over the same tree and unit. [`ClosureLowering::alone`] answers the
+//! closure's own module, which a checker can judge once, and
+//! [`ClosureLowering::resume_onto`] lowers a document after the arena that
+//! judgement minted into, so the document's nodes follow the checker's.
 
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::fmt;
 
+use gandr_core_term::Carried;
+use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::ValueId;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
@@ -34,6 +41,7 @@ use super::rooted;
 use crate::description::DescriptionReport;
 use crate::description::elaborate_roots;
 use crate::error::LoweringRefusal;
+use crate::form::Piece;
 use crate::module::LoweredModule;
 use crate::module::begin_collection;
 use crate::module::pieces_under;
@@ -122,6 +130,64 @@ enum Prefix<'closure>
         /// The lowering, stopped at the closure's end.
         state: Box<Suspended<'closure>>,
     },
+}
+
+/// How a document's tree continues a closure's lowering.
+///
+/// # Specification
+/// trivial.
+enum Route<'held>
+{
+    /// The tree is lowered whole: it does not extend the closure's, or the
+    /// lowering it continues would not be the closure's suspended one.
+    Whole,
+    /// Neither the closure's roots nor the document's read as a module's.
+    Empty,
+    /// The closure's suspended lowering continues over the added sources.
+    Continue
+    {
+        /// The lowering stopped at the closure's end.
+        state: &'held Suspended<'held>,
+        /// The description reading of the roots the tree adds.
+        described: DescriptionReport,
+        /// The top-level forms of the roots the tree adds.
+        pieces: Vec<Piece>,
+    },
+}
+
+/// The arena a document's lowering after a closure mints into.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Base
+{
+    /// An empty arena: the closure's arena is copied into it first.
+    Empty,
+    /// The closure's arena with more nodes minted after them.
+    Closure,
+}
+
+/// What lowering a document onto its closure's arena came to.
+///
+/// # Specification
+/// trivial.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one per document lowered after a closure, matched at once; the resumed module is \
+              the common variant, and boxing it would allocate per keystroke to shrink the rare \
+              whole one"
+)]
+#[derive(Clone, Debug)]
+pub enum Onto<'held>
+{
+    /// The document's sources lowered after the arena's nodes, the closure's
+    /// sources not lowered again.
+    Resumed(LoweredModule<'held>),
+    /// The tree is not one the closure's suspended lowering continues over:
+    /// it is lowered whole ([`ClosureLowering::resume`]), into an arena of its
+    /// own.
+    Whole,
 }
 
 /// The self-referential cells a closure's lowering is held in: the closure's
@@ -330,6 +396,176 @@ impl ClosureLowering
     ) -> Result<LoweredModule<'held>, LoweringRefusal<'held>>
     {
         let held = self.0.borrow_owner().borrow_owner();
+        let base = if arena.watermark() == CoreArena::new().watermark() {
+            Base::Empty
+        }
+        else {
+            // A filled arena is lowered into whole: only an empty one is
+            // known to take the closure's copy.
+            return lower_unit(
+                &held.grammar,
+                tree,
+                unit,
+                arena,
+                held.budget,
+                held.outermost.clone(),
+            );
+        };
+        match self.route(tree, unit, base)? {
+            Route::Whole => lower_unit(
+                &held.grammar,
+                tree,
+                unit,
+                arena,
+                held.budget,
+                held.outermost.clone(),
+            ),
+            Route::Empty => Ok(empty_module(held.outermost.clone())),
+            Route::Continue {
+                state,
+                described,
+                pieces,
+            } => {
+                arena.clone_from(&state.arena);
+                continue_from(
+                    (&held.unit, state),
+                    (tree, unit),
+                    (described, pieces),
+                    arena,
+                    (&[], &[]),
+                )
+            },
+        }
+    }
+
+    /// The closure's own module and the arena it was lowered into: what the
+    /// closure's lowering answers with no source after it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `None` when the closure's lowering stopped before its end, or
+    ///   finishing it refuses; otherwise the closure's declarations as
+    ///   [`super::lower_unit`] lowers them ahead of any source after them, ids
+    ///   included, over a copy of the closure's arena.
+    /// - provides: the declarations a checker judges once for every document
+    ///   laid after the closure, and the arena it judges them over.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clauses compare with [`super::lower_unit`] over
+    ///   a tree no argument carries; the witness compares.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closure's own module lowers to the leading
+    ///   declarations of a document lowered onto its arena, ids included.
+    /// - witness: `tests::namespace::a_document_lowered_onto_its_closure_s_arena_follows_its_nodes_776`
+    #[inline]
+    #[must_use]
+    pub fn alone(&self) -> Option<(LoweredModule<'_>, CoreArena)>
+    {
+        let Prefix::Suspended { ref state, .. } = *self.0.borrow_dependent()
+        else {
+            return None;
+        };
+        let arena = state.arena.clone();
+        let lowerer = state.lowerer.clone();
+        lowerer
+            .finish(&arena, state.origins.clone())
+            .ok()
+            .map(|module| (module, arena))
+    }
+
+    /// Lower `tree`, the closure's tree with a document's laid after it, as
+    /// `unit` lays it out, after the nodes of `arena`, which holds the
+    /// closure's arena with more nodes minted after it: the closure's
+    /// lowering resumed, `carried` and `binds` located first, only the sources
+    /// after the closure's lowered.
+    ///
+    /// # Specification
+    /// - requires: `arena` is [`Self::alone`]'s arena with any nodes minted
+    ///   after its own; every node `carried` and `binds` name as minted is one
+    ///   of those, as [`OriginTable::carry`] requires of the closure's table.
+    /// - ensures: [`Onto::Whole`], `arena` untouched, when `tree` is not one
+    ///   [`Self::resume`] would continue the closure's lowering over; otherwise
+    ///   the module [`Self::resume`] answers, the closure's declarations and
+    ///   its arena rows unchanged, its origin table carrying `carried` and
+    ///   `binds` before the later sources' nodes, which are minted after
+    ///   `arena`'s; or the refusal it answers.
+    /// - provides: a document's lowering that a judgement of the closure's
+    ///   declarations over `arena` continues, the nodes that judgement's
+    ///   elaborations minted located where their sources are written.
+    /// - fails: as [`Self::resume`].
+    /// - panics: none.
+    /// - executable: none — as [`Self::resume`].
+    ///
+    /// # Errors
+    /// As [`Self::resume`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a document lowered onto its closure's arena after
+    ///   more nodes keeps the closure's declarations and arena rows, locates a
+    ///   node minted after them where its source is written, and reads as the
+    ///   whole lowering does once its own ids are set aside.
+    /// - witness: `tests::namespace::a_document_lowered_onto_its_closure_s_arena_follows_its_nodes_776`
+    #[inline]
+    pub fn resume_onto<'held>(
+        &'held self,
+        tree: &SyntaxTree<'held>,
+        unit: &Unit,
+        arena: &mut CoreArena,
+        carried: &[Carried],
+        binds: &[(ValueId, ComputationId)],
+    ) -> Result<Onto<'held>, LoweringRefusal<'held>>
+    {
+        match self.route(tree, unit, Base::Closure)? {
+            Route::Whole | Route::Empty => Ok(Onto::Whole),
+            Route::Continue {
+                state,
+                described,
+                pieces,
+            } => continue_from(
+                (self.unit(), state),
+                (tree, unit),
+                (described, pieces),
+                arena,
+                (carried, binds),
+            )
+            .map(Onto::Resumed),
+        }
+    }
+
+    /// How `tree`, laid out as `unit`, continues the closure's lowering into
+    /// an arena that is `base`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Route::Whole`] when `tree` does not extend the closure's
+    ///   tree over its text with `unit` laying its sources out first and more
+    ///   after them, or, onto the closure's arena, when the closure's lowering
+    ///   stopped before its end; otherwise the refusal the whole lowering
+    ///   answers first, [`Route::Empty`] when no root reads as a module's, or
+    ///   the suspended lowering with the added roots' descriptions and forms.
+    /// - fails: the refusal the whole lowering answers before any source after
+    ///   the closure's is lowered: the closure's, then the added roots', phase
+    ///   by phase.
+    /// - panics: none.
+    /// - executable: none — the clauses compare the route with the whole
+    ///   lowering over a tree no argument carries; the witness resumes it and
+    ///   compares.
+    ///
+    /// # Errors
+    /// As the specification's fails clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::resume`].
+    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    fn route<'held>(
+        &'held self,
+        tree: &SyntaxTree<'held>,
+        unit: &Unit,
+        base: Base,
+    ) -> Result<Route<'held>, LoweringRefusal<'held>>
+    {
+        let held = self.0.borrow_owner().borrow_owner();
         let closure = self.tree();
         let pbg: &Pbg = &held.grammar;
         let lowered = held.unit.sources().len();
@@ -340,19 +576,19 @@ impl ClosureLowering
             && tree.roots().starts_with(closure.roots())
             && unit.sources().get(.. lowered) == Some(held.unit.sources())
             && unit.sources().len() > lowered
-            && arena.watermark() == CoreArena::new().watermark()
             && closure
                 .positions()
                 .all(|position| tree.node(position) == closure.node(position))
             && usize::from(tree.node_count()) > read;
-        if !extends {
-            return lower_unit(pbg, tree, unit, arena, held.budget, held.outermost.clone());
+        let prefix = self.0.borrow_dependent();
+        let suspended = matches!(*prefix, Prefix::Suspended { .. });
+        if !extends || (base == Base::Closure && !suspended) {
+            return Ok(Route::Whole);
         }
         let added = tree
             .roots()
             .get(closure.roots().len() ..)
             .unwrap_or_default();
-        let prefix = self.0.borrow_dependent();
         // The order the whole lowering refuses in: every root's shape, then
         // every root's descriptions, then every root's forms, then each
         // source; the closure's first at each phase.
@@ -361,7 +597,7 @@ impl ClosureLowering
             Prefix::Halted { rooted, .. } | Prefix::Suspended { rooted, .. } => rooted,
         };
         if (closure_rooted, rooted(pbg, tree, added)?) == (Rooted(false), Rooted(false)) {
-            return Ok(empty_module(held.outermost.clone()));
+            return Ok(Route::Empty);
         }
         let halted = |at: Stage| match *prefix {
             Prefix::Halted { stage, refusal, .. } if stage == at => Err(refusal),
@@ -384,28 +620,65 @@ impl ClosureLowering
         let Prefix::Suspended { ref state, .. } = *prefix
         else {
             // Every other prefix answered above.
-            return lower_unit(pbg, tree, unit, arena, held.budget, held.outermost.clone());
+            return Ok(Route::Whole);
         };
-        let Suspended {
-            lowerer,
-            arena: minted,
-            mut origins,
-            tables,
-        } = Suspended::clone(state);
-        let mut lowerer: Lowerer<'_, 'held> = lowerer;
-        lowerer.widen(tree, unit, described);
-        *arena = minted;
-        let mut sink = Sink::new(arena, &mut origins, tables);
-        for (source, own) in source_pieces(unit, pieces)
-            .into_iter()
-            .enumerate()
-            .skip(lowered)
-        {
-            lowerer.lower_source(SourceIndex::from(source), own, &mut sink)?;
-        }
-
-        lowerer.finish(arena, origins)
+        Ok(Route::Continue {
+            state,
+            described,
+            pieces,
+        })
     }
+}
+
+/// Continue `state`, the suspended lowering of the closure whose sources
+/// `closure` lays out, over `tree` laid out as `unit`, the added roots read as
+/// `described` and `pieces`, minting after `arena`'s nodes, `carried` and
+/// `binds` located first.
+///
+/// # Specification
+/// - requires: `arena` holds `state`'s arena with any nodes minted after its
+///   own, among them every node `carried` and `binds` name as minted; `tree`
+///   and `unit` extend the closure's, and `described` and `pieces` are the
+///   added roots' readings ([`ClosureLowering::route`]).
+/// - ensures: on a copy of the lowering's state, its origin table carrying
+///   `carried` and `binds` ([`OriginTable::carry`]), the sources after the
+///   closure's lowered into `arena` after its nodes, and the module finished.
+/// - fails: as [`super::lower_unit`], raised by a source after the closure's.
+/// - panics: none.
+/// - executable: none — the clauses compare the module with the whole
+///   lowering's over a tree no argument carries; the witnesses resume it and
+///   compare.
+///
+/// # Errors
+/// As the specification's fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`ClosureLowering::resume`].
+/// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+/// - witness: `tests::namespace::a_document_lowered_onto_its_closure_s_arena_follows_its_nodes_776`
+fn continue_from<'held>(
+    (closure, state): (&Unit, &'held Suspended<'held>),
+    (tree, unit): (&SyntaxTree<'held>, &Unit),
+    (described, pieces): (DescriptionReport, Vec<Piece>),
+    arena: &mut CoreArena,
+    (carried, binds): (&[Carried], &[(ValueId, ComputationId)]),
+) -> Result<LoweredModule<'held>, LoweringRefusal<'held>>
+{
+    let lowered = closure.sources().len();
+    let mut lowerer: Lowerer<'_, 'held> = state.lowerer.clone();
+    let mut origins = state.origins.clone();
+    origins.carry(carried, binds);
+    lowerer.widen(tree, unit, described);
+    let mut sink = Sink::new(arena, &mut origins, state.tables.clone());
+    for (source, own) in source_pieces(unit, pieces)
+        .into_iter()
+        .enumerate()
+        .skip(lowered)
+    {
+        lowerer.lower_source(SourceIndex::from(source), own, &mut sink)?;
+    }
+
+    lowerer.finish(arena, origins)
 }
 
 impl fmt::Debug for ClosureLowering

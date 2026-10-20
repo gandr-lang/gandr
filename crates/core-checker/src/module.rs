@@ -1600,86 +1600,223 @@ pub fn check_module(
 pub fn run<Settle>(
     context: &mut CheckingContext<'_>,
     declarations: &[Declaration],
-    mut settle: Settle,
+    settle: Settle,
 ) -> ModuleReport
 where
     Settle: FnMut(&mut CheckingContext<'_>, &Declaration, Verdict),
 {
-    let mut judged = Vec::with_capacity(declarations.len());
-    let mut ledger = ObligationLedger::new();
-    let mut failures = BTreeMap::new();
-    let mut nested_elaborations = BTreeMap::new();
-    let mut suspensions = BTreeMap::new();
-    let mut open = Maybe::Absent(open::Absent::Lone);
-    let mut blocks = Vec::new();
-    for (index, declaration) in declarations.iter().enumerate() {
-        let was = open;
-        schedule(
-            context,
-            declarations.get(index ..).unwrap_or_default(),
-            &mut open,
-        );
-        if let Maybe::Present(end) = open
-            && was != open
-        {
-            blocks.push((declaration.constant(), end));
+    let mut run = ModuleRun::new();
+    run.judge(context, declarations, settle);
+    run.finish(context)
+}
+
+/// A module run part way: the verdicts of the declarations judged so far and
+/// the schedule's state after the last of them, so that judging the rest
+/// later continues the run.
+///
+/// A run judged in stretches reports what one run over every stretch reports.
+/// Together with a [`crate::context::Checkpoint`] taken where a stretch ends,
+/// it lets a module's leading declarations be judged once and every revision
+/// of the declarations after them be judged on a copy.
+///
+/// # Specification
+/// - executable: none — a data type; the witness compares a run judged in two
+///   stretches, resumed between them, with one run.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a module whose mutual block ends where the first stretch
+///   ends reports what one run reports.
+/// - witness: `tests::recursive_data::a_run_resumed_from_a_checkpoint_judges_as_one_run_776`
+#[derive(Clone, Debug)]
+pub struct ModuleRun
+{
+    /// One entry per declaration judged, in order.
+    judged: Vec<Judged>,
+    /// The holes owed, in the order met.
+    ledger: ObligationLedger,
+    /// The failure of each body refused, by position.
+    failures: BTreeMap<ConstantIndex, Failure>,
+    /// What elaborating each body with a nested computation did, by position.
+    nested_elaborations: BTreeMap<ConstantIndex, NestedElaboration>,
+    /// What each suspended declaration waits on, by position.
+    suspensions: BTreeMap<ConstantIndex, Suspension>,
+    /// The end of the mutual block the schedule holds open, or why none is.
+    open: Maybe<ConstantIndex, open::Absent>,
+    /// Each mutual block opened, by its first position and its end.
+    blocks: Vec<(ConstantIndex, ConstantIndex)>,
+}
+
+impl ModuleRun
+{
+    /// A run that has judged nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new() -> Self
+    {
+        Self {
+            judged: Vec::new(),
+            ledger: ObligationLedger::new(),
+            failures: BTreeMap::new(),
+            nested_elaborations: BTreeMap::new(),
+            suspensions: BTreeMap::new(),
+            open: Maybe::Absent(open::Absent::Lone),
+            blocks: Vec::new(),
         }
-        let decision = decide(context, declaration, Run::Judged);
-        if let Maybe::Present(failure) = decision.failure {
-            failures.insert(declaration.constant(), failure);
-        }
-        if let Maybe::Present(elaboration) = decision.elaboration {
-            nested_elaborations.insert(declaration.constant(), elaboration);
-        }
-        match decision.verdict {
-            Verdict::Owed(entry) => ledger.record(entry),
-            Verdict::Suspended(declared) => {
-                let suspension = Suspension::new(
-                    declared,
-                    decision.residue,
-                    &context.deferrals().owed,
-                    &suspensions,
-                );
-                suspensions.insert(declaration.constant(), suspension);
-            },
-            Verdict::Data
-            | Verdict::Checked { .. }
-            | Verdict::Synthesised { .. }
-            | Verdict::Refused(_) => {},
-        }
-        settle(context, declaration, decision.verdict);
-        judged.push(Judged {
-            constant: declaration.constant(),
-            origin: declaration.origin(),
-            verdict: decision.verdict,
-        });
     }
-    if let Maybe::Present(_) = open {
-        context.close_mutual();
+
+    /// Judge `declarations` in order after the ones judged so far, handing
+    /// each verdict to `settle` the moment it is judged, as [`run`] does.
+    ///
+    /// # Specification
+    /// - requires: `context` is the context the declarations judged so far were
+    ///   judged in, or one resumed from a checkpoint taken after the last of
+    ///   them; `declarations` follow them in the module, and hold every member
+    ///   of each mutual block they begin: the schedule opens a block only when
+    ///   it sees all of its members.
+    /// - ensures: one more verdict per declaration, in order; `settle` is
+    ///   called once per declaration, as [`run`] states.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ModuleRun`].
+    /// - witness: `tests::recursive_data::a_run_resumed_from_a_checkpoint_judges_as_one_run_776`
+    /// - witness: `module::tests::a_refusal_does_not_stop_the_run`
+    #[spec(
+        captures: before = self.judged.len(),
+        ensures: self.judged.len() == before.saturating_add(declarations.len()),
+    )]
+    #[inline]
+    pub fn judge<Settle>(
+        &mut self,
+        context: &mut CheckingContext<'_>,
+        declarations: &[Declaration],
+        mut settle: Settle,
+    ) where
+        Settle: FnMut(&mut CheckingContext<'_>, &Declaration, Verdict),
+    {
+        for (index, declaration) in declarations.iter().enumerate() {
+            let was = self.open;
+            schedule(
+                context,
+                declarations.get(index ..).unwrap_or_default(),
+                &mut self.open,
+            );
+            if let Maybe::Present(end) = self.open
+                && was != self.open
+            {
+                self.blocks.push((declaration.constant(), end));
+            }
+            let decision = decide(context, declaration, Run::Judged);
+            if let Maybe::Present(failure) = decision.failure {
+                self.failures.insert(declaration.constant(), failure);
+            }
+            if let Maybe::Present(elaboration) = decision.elaboration {
+                self.nested_elaborations
+                    .insert(declaration.constant(), elaboration);
+            }
+            match decision.verdict {
+                Verdict::Owed(entry) => self.ledger.record(entry),
+                Verdict::Suspended(declared) => {
+                    let suspension = Suspension::new(
+                        declared,
+                        decision.residue,
+                        &context.deferrals().owed,
+                        &self.suspensions,
+                    );
+                    self.suspensions.insert(declaration.constant(), suspension);
+                },
+                Verdict::Data
+                | Verdict::Checked { .. }
+                | Verdict::Synthesised { .. }
+                | Verdict::Refused(_) => {},
+            }
+            settle(context, declaration, decision.verdict);
+            self.judged.push(Judged {
+                constant: declaration.constant(),
+                origin: declaration.origin(),
+                verdict: decision.verdict,
+            });
+        }
     }
-    refuse_whole(&blocks, &mut judged, &mut failures);
-    ModuleReport {
-        judged,
-        ledger,
-        lifts: context.lifts().clone(),
-        funexts: context.funexts().clone(),
-        equivalences: context.equivalences().clone(),
-        flows: context.flows().clone(),
-        directed: context.directed().clone(),
-        reflexivities: context.reflexivities().clone(),
-        relations: context.relations().clone(),
-        laws: context.laws().clone(),
-        operation_rules: context.operation_rules().clone(),
-        natives: context.natives().clone(),
-        definitions: context.definitions().definitions().collect(),
-        data_signatures: context.data_signatures().clone(),
-        codata_signatures: context.codata_signatures().clone(),
-        abstract_types: context.abstract_types().collect(),
-        seal_table: context.seal_table().clone(),
-        failures,
-        nested_elaborations,
-        worlds: context.worlds().declared().clone(),
-        suspensions,
+
+    /// The report of every declaration judged: the mutual block left open
+    /// closed, a block's refusal spread over its members, and the context's
+    /// tables read.
+    ///
+    /// # Specification
+    /// - requires: `context` is the context the last declaration was judged in.
+    /// - ensures: the report [`check_module`] states of the declarations
+    ///   judged, in order.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ModuleRun`].
+    /// - witness: `tests::recursive_data::a_run_resumed_from_a_checkpoint_judges_as_one_run_776`
+    #[spec(
+        captures: before = self.judged.len(),
+        ensures: |ret| ret.judged.len() == before,
+    )]
+    #[must_use]
+    #[inline]
+    pub fn finish(
+        self,
+        context: &mut CheckingContext<'_>,
+    ) -> ModuleReport
+    {
+        let Self {
+            mut judged,
+            ledger,
+            mut failures,
+            nested_elaborations,
+            suspensions,
+            open,
+            blocks,
+        } = self;
+        if let Maybe::Present(_) = open {
+            context.close_mutual();
+        }
+        refuse_whole(&blocks, &mut judged, &mut failures);
+        ModuleReport {
+            judged,
+            ledger,
+            lifts: context.lifts().clone(),
+            funexts: context.funexts().clone(),
+            equivalences: context.equivalences().clone(),
+            flows: context.flows().clone(),
+            directed: context.directed().clone(),
+            reflexivities: context.reflexivities().clone(),
+            relations: context.relations().clone(),
+            laws: context.laws().clone(),
+            operation_rules: context.operation_rules().clone(),
+            natives: context.natives().clone(),
+            definitions: context.definitions().definitions().collect(),
+            data_signatures: context.data_signatures().clone(),
+            codata_signatures: context.codata_signatures().clone(),
+            abstract_types: context.abstract_types().collect(),
+            seal_table: context.seal_table().clone(),
+            failures,
+            nested_elaborations,
+            worlds: context.worlds().declared().clone(),
+            suspensions,
+        }
+    }
+}
+
+impl Default for ModuleRun
+{
+    /// [`ModuleRun::new`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self::new()
     }
 }
 

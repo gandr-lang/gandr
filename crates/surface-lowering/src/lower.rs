@@ -657,6 +657,7 @@ mod capability;
 mod closure;
 
 pub use closure::ClosureLowering;
+pub use closure::Onto;
 
 mod description;
 

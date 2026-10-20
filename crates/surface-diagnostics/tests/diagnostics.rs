@@ -775,6 +775,150 @@ fn a_refusal_keeps_its_failure_and_spells_its_types()
     );
 }
 
+/// #776: a unit judged after its closure, the closure judged once, spells each
+/// type its checker refusals compare and its failures' hypotheses name — the
+/// closure's own refusal among them, a failure under binders among the
+/// document's — in both spellings, as the unit judged at once spells it.
+#[test]
+fn a_document_judged_after_its_closure_spells_as_the_whole_unit_776()
+{
+    use alloc::sync::Arc;
+
+    use gandr_core_checker::HostGrant;
+    use gandr_surface_corpus::CorpusRoot;
+    use gandr_surface_dispatcher::Checking;
+    use gandr_surface_dispatcher::Judged;
+    use gandr_surface_dispatcher::JudgedClosure;
+    use gandr_surface_dispatcher::judge_member;
+    use gandr_surface_dispatcher::judge_member_after;
+    use gandr_surface_dispatcher::lower_closure;
+    use gandr_surface_dispatcher::lower_onto_closure;
+    use gandr_surface_dispatcher::lower_parsed_unit;
+    use gandr_surface_lowering::ImportTarget;
+    use gandr_surface_lowering::SourceIndex;
+    use gandr_surface_lowering::Unit;
+    use gandr_surface_lowering::UnitSource;
+
+    /// Each type `judged`'s checker refusals compare and its failures'
+    /// hypotheses name, in declaration order, in each spelling.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spelled(judged: Judged<'_>) -> Vec<[Option<String>; 2]>
+    {
+        let (settled, _admission) = judged.into_parts();
+        let Ok(Composed::Settled {
+            report,
+            failures,
+            spellings,
+            ..
+        }) = settled
+        else {
+            panic!("the unit settles");
+        };
+        let mut nodes = Vec::new();
+        for declaration in report.declarations() {
+            if let Maybe::Present(Refusal::Checking(refusal)) = declaration.produced().refusal() {
+                let compared = refusal.compared();
+                nodes.extend(
+                    [compared.expected, compared.found]
+                        .into_iter()
+                        .filter_map(|side| match side {
+                            Maybe::Present(node) => Some(node),
+                            Maybe::Absent(_) => None,
+                        }),
+                );
+            }
+            if let Maybe::Present(failure) = failures.get(declaration.constant()) {
+                nodes.extend(failure.hypotheses().iter().map(|&ty| TypeNode::Value(ty)));
+            }
+        }
+        nodes
+            .into_iter()
+            .map(|node| {
+                [Spelling::Unicode, Spelling::Ascii].map(|spelling| {
+                    match spellings.spelled(spelling).get(node) {
+                        Maybe::Present(presentation) => Some(presentation.to_string()),
+                        Maybe::Absent(_) => None,
+                    }
+                })
+            })
+            .collect()
+    }
+
+    let pbg = built_in().expect("the built-in grammar builds");
+    let own = format!(
+        "import \"./base.gandr\" ;\n{BOUND}def worse : Integer ;\ndef worse = \"worse\" ;\n"
+    );
+    let text = format!("{MISMATCH}{own}");
+    let text = SourceText::from(text.as_str());
+    let base = ByteOffset::from(MISMATCH.len());
+    let unit = Unit::new(vec![
+        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+        UnitSource::new(base, vec![ImportTarget::Source(SourceIndex::from(0_usize))]),
+    ])
+    .expect("two sources make a unit");
+    let closure = Arc::new(
+        lower_closure(
+            Arc::new(built_in().expect("the built-in grammar builds")),
+            String::from(MISMATCH),
+            Unit::new(vec![UnitSource::new(ByteOffset::from(0_usize), Vec::new())])
+                .expect("one source makes a unit"),
+            &mut LoweringCount::default(),
+        )
+        .expect("the closure is held"),
+    );
+    let parsed = || {
+        gandr_surface_parser::parse(&pbg, SourceText::from(own.as_str()))
+            .expect("the document parses")
+            .after(closure.tree(), text)
+            .expect("the document lays after its closure")
+    };
+    let judged = JudgedClosure::new(
+        Arc::clone(&closure),
+        &HostGrant::UNBOUNDED,
+        CorpusRoot::Strict,
+    )
+    .expect("the closure lowers to its end");
+    let (lowering, checking) =
+        lower_onto_closure(&judged, parsed(), &unit, &mut LoweringCount::default())
+            .expect("the document lowers");
+    assert!(
+        matches!(checking, Checking::After(_)),
+        "the document is judged after its closure"
+    );
+    let Lowered::Module { module, arena } = lowering.into_lowered()
+    else {
+        panic!("the unit is one module");
+    };
+    let after = spelled(judge_member_after(
+        CorpusRoot::Strict,
+        (module, text),
+        arena,
+        (&HostGrant::UNBOUNDED, checking),
+        ByteOffset::from(0_usize),
+    ));
+    let Lowered::Module { module, arena } =
+        lower_parsed_unit(&pbg, parsed(), &unit, &mut LoweringCount::default())
+            .expect("the unit lowers")
+            .into_lowered()
+    else {
+        panic!("the unit is one module");
+    };
+    let whole = spelled(judge_member(
+        CorpusRoot::Strict,
+        (module, text),
+        arena,
+        &HostGrant::UNBOUNDED,
+        ByteOffset::from(0_usize),
+    ));
+    assert_eq!(after, whole, "the unit spells as it does judged at once");
+    assert!(
+        whole.iter().flatten().all(Option::is_some),
+        "every type is spelled: {whole:?}"
+    );
+}
+
 #[test]
 fn a_sealed_type_is_spelled_by_its_path()
 {
