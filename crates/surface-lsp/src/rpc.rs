@@ -13,6 +13,7 @@ use serde_json::Value;
 use crate::protocol::Answer;
 use crate::protocol::ApplyEditParams;
 use crate::protocol::ChoiceParams;
+use crate::protocol::ContentParams;
 use crate::protocol::CreateProgressParams;
 use crate::protocol::MessageParams;
 use crate::protocol::ProgressParams;
@@ -75,6 +76,10 @@ const REFRESH_TOKENS: &str = "workspace/semanticTokens/refresh";
 /// The method a server asks the client to request its folding ranges again
 /// with.
 const REFRESH_FOLDS: &str = "workspace/foldingRange/refresh";
+
+/// The method a server asks the client to request a virtual document's text
+/// again with.
+const REFRESH_CONTENT: &str = "workspace/textDocumentContent/refresh";
 
 /// The method a server asks the client to show progress under a token with.
 const CREATE_PROGRESS: &str = "window/workDoneProgress/create";
@@ -463,6 +468,8 @@ pub enum Asked
     Applying(ApplyEditParams),
     /// `window/showDocument`.
     Showing(ShowDocumentParams),
+    /// `workspace/textDocumentContent/refresh`.
+    Viewing(ContentParams),
 }
 
 /// A message reporting the progress of work the server started.
@@ -926,6 +933,26 @@ pub fn refresh(
         id: numbered(Called(method), sent),
         method,
         params: None,
+    }
+}
+
+/// The request asking the client to request the text of the virtual document
+/// `params` names again, the `sent`th numbered request this connection sent.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn refresh_content(
+    params: ContentParams,
+    sent: Requests,
+) -> Outgoing
+{
+    Outgoing::Request {
+        jsonrpc: VERSION,
+        id: numbered(Called(REFRESH_CONTENT), sent),
+        method: REFRESH_CONTENT,
+        params: Some(Asked::Viewing(params)),
     }
 }
 

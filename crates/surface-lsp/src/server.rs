@@ -114,6 +114,8 @@ use crate::protocol::ChoiceParams;
 use crate::protocol::CompletionItem;
 use crate::protocol::ConfigurationParams;
 use crate::protocol::ContentChange;
+use crate::protocol::ContentParams;
+use crate::protocol::ContentResult;
 use crate::protocol::DeltaParams;
 use crate::protocol::Diagnostic;
 use crate::protocol::DidChangeParams;
@@ -171,6 +173,7 @@ use crate::protocol::TraceParams;
 use crate::protocol::TypedParams;
 use crate::protocol::UnregistrationParams;
 use crate::protocol::Unresolved;
+use crate::protocol::ViewsContent;
 use crate::protocol::WatchedFilesParams;
 use crate::protocol::WatchesFiles;
 use crate::protocol::WorkTitle;
@@ -225,6 +228,7 @@ use crate::rpc::progress_ended;
 use crate::rpc::publish;
 use crate::rpc::pull;
 use crate::rpc::refresh;
+use crate::rpc::refresh_content;
 use crate::rpc::register;
 use crate::rpc::show;
 use crate::rpc::success;
@@ -234,6 +238,7 @@ use crate::rpc::unregister;
 use crate::search::FOUND_HELD;
 use crate::search::kind_of;
 use crate::signature::help;
+use crate::syntax::printed;
 use crate::tokens::ResultId;
 use crate::tokens::TokenStream;
 use crate::tokens::encode;
@@ -362,13 +367,13 @@ impl Document
     }
 }
 
-/// A copy's text and, once a request has asked, the one [`Reading`] of it and
-/// the [`Hovering`] its hovers read.
+/// A copy's text and, once a request has asked, the one [`Reading`] of it, its
+/// printed syntax tree and the [`Hovering`] its hovers read.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a reading or a hover table, once made, is of the text as it
-///   stands: every change to the text drops both.
+/// - ensures: a reading, a printed tree or a hover table, once made, is of the
+///   text as it stands: every change to the text drops all three.
 /// - panics: none.
 /// - executable: none — the text and what is read off it are private and change
 ///   only together, so the structure states the invariant and no call boundary
@@ -387,6 +392,8 @@ struct HeldText
     text: String,
     /// The reading of `text`, made by the first request that asks.
     reading: OnceCell<Reading>,
+    /// The syntax tree of `text`, printed by the first request that asks.
+    tree: OnceCell<ContentResult>,
     /// The type table of `text`, made by the first request that reads it after
     /// the text changed.
     hovering: OnceCell<Hovering>,
@@ -403,6 +410,7 @@ impl HeldText
         Self {
             text: String::new(),
             reading: OnceCell::new(),
+            tree: OnceCell::new(),
             hovering: OnceCell::new(),
         }
     }
@@ -427,6 +435,7 @@ impl HeldText
     {
         self.text = text;
         self.reading = OnceCell::new();
+        self.tree = OnceCell::new();
         self.hovering = OnceCell::new();
     }
 
@@ -442,6 +451,7 @@ impl HeldText
     {
         let caret = apply(&mut self.text, change);
         self.reading = OnceCell::new();
+        self.tree = OnceCell::new();
         self.hovering = OnceCell::new();
         caret
     }
@@ -454,6 +464,18 @@ impl HeldText
     fn reading(&self) -> &Reading
     {
         self.reading.get_or_init(|| Reading::of(self.source()))
+    }
+
+    /// The syntax tree of the text held, printed now when no request has
+    /// asked since it last changed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn tree(&self) -> &ContentResult
+    {
+        self.tree.get_or_init(|| ContentResult {
+            text: printed(self.source()),
+        })
     }
 
     /// What the hovers of the text held, the document at `path` that `session`
@@ -1304,10 +1326,12 @@ impl Workspace
             applying: AppliesEdits(false),
             showing: ShowsDocuments(false),
             listing: ListsFolders(false),
+            viewer: ViewsContent(false),
             announced: BTreeMap::new(),
             offered: Vec::new(),
             choices: Vec::new(),
             streams: BTreeMap::new(),
+            viewing: BTreeSet::new(),
         };
         let answer = match classify(request) {
             Err(malformed) => malformed.response(),
@@ -1553,6 +1577,10 @@ pub struct Server
     /// at `initialize`: a folder change that does not read then asks for
     /// them whole.
     listing: ListsFolders,
+    /// Whether its client shows the text of a virtual document, read at
+    /// `initialize`: the syntax trees it asks for are then recorded, and asked
+    /// of it again after each change.
+    viewer: ViewsContent,
     /// For each document it holds whose kept fills its user was offered, the
     /// version its copy was at: a fill is withdrawn only by an edit, so a
     /// fill kept at a later version is offered again.
@@ -1567,6 +1595,11 @@ pub struct Server
     /// with the id it sent it under: what a delta request is answered against.
     /// A document's entry goes when the connection closes it.
     streams: BTreeMap<DocumentUri, (ResultId, TokenStream)>,
+    /// Each document whose syntax tree its client asked for, with the URI it
+    /// asked under, when the client requests a virtual document's text again
+    /// when asked: a change of the document asks it for the tree again, and the
+    /// entry goes when the connection closes the document.
+    viewing: BTreeSet<(DocumentUri, DocumentUri)>,
 }
 
 /// Where a choice put to the user stands.
@@ -1639,10 +1672,12 @@ impl Server
             applying: AppliesEdits(false),
             showing: ShowsDocuments(false),
             listing: ListsFolders(false),
+            viewer: ViewsContent(false),
             announced: BTreeMap::new(),
             offered: Vec::new(),
             choices: Vec::new(),
             streams: BTreeMap::new(),
+            viewing: BTreeSet::new(),
         }
     }
 
@@ -1784,6 +1819,31 @@ impl Server
     ) -> Outgoing
     {
         refresh(answer, self.next_request())
+    }
+
+    /// The requests asking this connection's client for the syntax tree of the
+    /// document at `uri` again: one under each URI the client asked for it by,
+    /// each counted.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reviewed(
+        &mut self,
+        uri: &DocumentUri,
+    ) -> Vec<Outgoing>
+    {
+        let mut sent = self.sent;
+        let asked = self
+            .viewing
+            .range((uri.clone(), DocumentUri::from("")) ..)
+            .take_while(|&&(ref viewed, _)| viewed == uri)
+            .map(|&(_, ref tree)| {
+                sent = Requests(sent.0.saturating_add(1_u64));
+                refresh_content(ContentParams { uri: tree.clone() }, sent)
+            })
+            .collect();
+        self.sent = sent;
+        asked
     }
 
     /// The number of the next numbered request this connection sends,
@@ -2072,7 +2132,10 @@ impl Server
     ///   client watches files for it is answered after the request withdrawing
     ///   the watcher; a `workspace/executeCommand` of a running session is run
     ///   as `Server::execute` states; a response is handled as
-    ///   `Server::response` states.
+    ///   `Server::response` states; a change of a document this connection
+    ///   holds and whose syntax tree its client asked for asks the client for
+    ///   the tree again under each URI it asked by, after the change's own
+    ///   messages.
     /// - provides: the step of [`serve`] and of each hub connection, which read
     ///   ahead of the message they handle.
     /// - fails: never; every refusal is a message to the client.
@@ -2085,6 +2148,7 @@ impl Server
     /// - witness: `server::tests::a_request_withdrawn_by_a_later_message_is_not_run`
     /// - witness: `server::tests::a_watching_client_is_asked_to_watch_every_source`
     /// - witness: `server::tests::a_lens_applies_its_one_checked_fill`
+    /// - witness: `server::tests::a_viewed_tree_answers_its_document_and_is_asked_again_after_each_change`
     #[spec(
         captures: phase = self.phase,
         ensures: |ret| ret.log.len() <= ret.messages.len()
@@ -2140,7 +2204,18 @@ impl Server
                 }
             },
             Ok(Incoming::Notification { method, params }) => {
-                self.notification(workspace, &method, params)
+                let changed = (self.phase == Phase::Running
+                    && method.as_ref() == "textDocument/didChange")
+                    .then(|| params.pointer("/textDocument/uri").and_then(Value::as_str))
+                    .flatten()
+                    .map(DocumentUri::from);
+                let mut outcome = self.notification(workspace, &method, params);
+                if let Some(uri) = changed
+                    && workspace.documents.contains_key(&uri)
+                {
+                    outcome.messages.extend(self.reviewed(&uri));
+                }
+                outcome
             },
         }
     }
@@ -2923,6 +2998,13 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
+            (Phase::Running, "workspace/textDocumentContent") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Content(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } =>
+                        error.code == ErrorCode::INVALID_PARAMS || error.code == ErrorCode::REQUEST_FAILED,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
             (Phase::Running, _) => self.phase == phase && matches!(ret,
                 Outgoing::Failure { ref error, .. } if error.code == ErrorCode::METHOD_NOT_FOUND),
         },
@@ -2957,6 +3039,7 @@ impl Server
                 self.applying = initial_applying(&params);
                 self.showing = initial_showing(&params);
                 self.listing = initial_listing(&params);
+                self.viewer = initial_viewer(&params);
                 workspace.rooted(self.peer, &initial_roots(&params));
                 success(
                     id,
@@ -3374,6 +3457,32 @@ impl Server
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
+            (Phase::Running, "workspace/textDocumentContent") => {
+                match serde_json::from_value::<ContentParams>(params) {
+                    Ok(ContentParams { uri }) => match uri.viewed() {
+                        None => failure(
+                            id,
+                            ErrorCode::INVALID_PARAMS,
+                            format!("`{uri}` names no document's syntax tree"),
+                        ),
+                        Some(viewed) => match workspace.view(&viewed, self.peer) {
+                            Maybe::Present(document) => {
+                                let tree = document.text.tree().clone();
+                                if self.viewer.0 {
+                                    let _added = self.viewing.insert((viewed, uri));
+                                }
+                                success(id, Answer::Content(tree))
+                            },
+                            Maybe::Absent(_) => failure(
+                                id,
+                                ErrorCode::REQUEST_FAILED,
+                                format!("no document is open at `{viewed}`"),
+                            ),
+                        },
+                    },
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
             (Phase::Running, _) => failure(
                 id,
                 ErrorCode::METHOD_NOT_FOUND,
@@ -3622,6 +3731,8 @@ impl Server
                 };
                 let _forgotten = self.streams.remove(&text_document.uri);
                 let _unoffered = self.announced.remove(&text_document.uri);
+                self.viewing
+                    .retain(|&(ref viewed, _)| *viewed != text_document.uri);
                 let named = match workspace.documents.remove_entry(&text_document.uri) {
                     Some((uri, held)) => {
                         // The disk stands in for the last copy, so what its
@@ -4070,7 +4181,7 @@ impl Workspace
         Answer::Initialize(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
-            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) => false,
+            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) => false,
     })]
     fn tokens(
         &self,
@@ -4127,7 +4238,7 @@ impl Workspace
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
-            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) => false,
+            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) => false,
     })]
     fn inline(
         &self,
@@ -5354,6 +5465,18 @@ fn initial_listing(params: &Value) -> ListsFolders
         .unwrap_or_default()
 }
 
+/// Whether the client `initialize` names in `params` shows the text of a
+/// virtual document the server serves; not when the parameters do not read.
+///
+/// # Specification
+/// trivial.
+fn initial_viewer(params: &Value) -> ViewsContent
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.views_content())
+        .unwrap_or_default()
+}
+
 /// The warning logged to the client when its `gandr` settings do not read:
 /// what `error` says, and that none of them is applied.
 ///
@@ -6001,7 +6124,8 @@ mod tests
                                 {"scheme":"file","pattern":{"glob":"**","matches":"folder"}}]},
                             "willRename":{"filters":[
                                 {"scheme":"file","pattern":{"glob":"**/*.gandr","matches":"file"}},
-                                {"scheme":"file","pattern":{"glob":"**","matches":"folder"}}]}}}},
+                                {"scheme":"file","pattern":{"glob":"**","matches":"folder"}}]}},
+                            "textDocumentContent":{"schemes":["gandr-tree"]}}},
                     "serverInfo":{"name":"gandr","version":""#,
                 env!("CARGO_PKG_VERSION"),
                 r#""}}}]"#
@@ -7183,6 +7307,133 @@ mod tests
             invalidated(&mut Connected::default()),
             serde_json::json!([]),
             "nor is one not yet initialised"
+        );
+    }
+
+    #[test]
+    fn a_viewed_tree_answers_its_document_and_is_asked_again_after_each_change()
+    {
+        let first = "def f = 1 ;\n";
+        let started = |workspace: &str| {
+            let mut server = Connected::default();
+            let _answered = send(
+                &mut server,
+                Json(&format!(
+                    r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
+                    {{"workspace":{workspace}}}}}}}"#
+                )),
+            );
+            let _opened = send(
+                &mut server,
+                Json(&serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen",
+                    "params": {"textDocument": {"uri": "file:///tmp/tree.gandr", "languageId": "gandr",
+                    "version": 1_i32, "text": first}}}).to_string()),
+            );
+            server
+        };
+        let content = |server: &mut Connected, id: u32, uri: &str| {
+            send(
+                server,
+                Json(
+                    &serde_json::json!({"jsonrpc": "2.0", "id": id,
+                    "method": "workspace/textDocumentContent", "params": {"uri": uri}})
+                    .to_string(),
+                ),
+            )
+        };
+        let tree = |id: u32, text: &str| {
+            serde_json::json!([{"jsonrpc": "2.0", "id": id,
+                "result": {"text": crate::syntax::printed(gandr_surface_syntax::SourceText::from(text))}}])
+        };
+        let changed = |server: &mut Connected, version: i32, text: &str| {
+            let messages = send(
+                server,
+                Json(&serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange",
+                    "params": {"textDocument": {"uri": "file:///tmp/tree.gandr", "version": version},
+                    "contentChanges": [{"text": text}]}}).to_string()),
+            );
+            messages
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|message| {
+                    message.get("method").and_then(Value::as_str)
+                        == Some("workspace/textDocumentContent/refresh")
+                })
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        let asked = |number: u32, uri: &str| {
+            serde_json::json!({"jsonrpc": "2.0",
+                "id": format!("workspace/textDocumentContent/refresh/{number}"),
+                "method": "workspace/textDocumentContent/refresh", "params": {"uri": uri}})
+        };
+        let code = |answer: &Value| answer.pointer("/0/error/code").and_then(Value::as_i64);
+
+        let mut viewing = started(r#"{"textDocumentContent":{"dynamicRegistration":true}}"#);
+        assert_eq!(
+            content(&mut viewing, 2, "gandr-tree:/tmp/tree.gandr"),
+            tree(2, first),
+            "a tree URI without its empty authority answers the open document's tree"
+        );
+        assert_eq!(
+            content(&mut viewing, 3, "gandr-tree:///tmp/tree.gandr"),
+            tree(3, first),
+            "and so does one with it"
+        );
+        let second = "def f = 2 ;\n";
+        assert_eq!(
+            changed(&mut viewing, 2_i32, second),
+            [
+                asked(1, "gandr-tree:///tmp/tree.gandr"),
+                asked(2, "gandr-tree:/tmp/tree.gandr")
+            ],
+            "a change asks for the tree again under each URI the client asked by"
+        );
+        assert_eq!(
+            content(&mut viewing, 4, "gandr-tree:/tmp/tree.gandr"),
+            tree(4, second),
+            "the tree asked for again is the changed text's"
+        );
+        assert_eq!(
+            code(&content(&mut viewing, 5, "gandr-tree:/tmp/other.gandr")),
+            Some(-32_803_i64),
+            "a document no editor holds open has no tree"
+        );
+        assert_eq!(
+            code(&content(&mut viewing, 6, "file:///tmp/tree.gandr")),
+            Some(-32_602_i64),
+            "a URI of another scheme names no tree"
+        );
+        let _closed = send(
+            &mut viewing,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":"file:///tmp/tree.gandr"}}}"#,
+            ),
+        );
+        let _reopened = send(
+            &mut viewing,
+            Json(
+                &serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen",
+                "params": {"textDocument": {"uri": "file:///tmp/tree.gandr", "languageId": "gandr",
+                "version": 1_i32, "text": first}}})
+                .to_string(),
+            ),
+        );
+        assert!(
+            changed(&mut viewing, 2_i32, second).is_empty(),
+            "closing the document forgets that its tree was asked for"
+        );
+
+        let mut plain = started("{}");
+        assert_eq!(
+            content(&mut plain, 2, "gandr-tree:/tmp/tree.gandr"),
+            tree(2, first),
+            "a client that declares no content provider is answered"
+        );
+        assert!(
+            changed(&mut plain, 2_i32, second).is_empty(),
+            "but never asked again"
         );
     }
 

@@ -10,6 +10,9 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("gandr.toggleForm", () => toggleForm(languageClient)),
   );
   context.subscriptions.push(
+    vscode.commands.registerCommand("gandr.showSyntaxTree", showSyntaxTree),
+  );
+  context.subscriptions.push(
     vscode.languages.registerDocumentDropEditProvider(
       { language: "gandr" },
       new ImportDrop(languageClient),
@@ -39,4 +42,25 @@ async function toggleForm(languageClient: GandrLanguageClient): Promise<void> {
   if (vscode.window.activeTextEditor?.document.languageId === "gandr") {
     await vscode.commands.executeCommand("editor.action.showHover");
   }
+}
+
+// Open the molded tree of the active gandr editor's document beside it, as
+// the server's `gandr-tree` virtual document: the server serves its text over
+// `workspace/textDocumentContent` and asks for it again after each change, so
+// the view follows the edits. Shown as plain text, not as gandr.
+async function showSyntaxTree(): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  if (editor?.document.languageId !== "gandr" || editor.document.uri.scheme !== "file") {
+    return;
+  }
+  const tree = editor.document.uri.with({ scheme: "gandr-tree" });
+  const document = await vscode.languages.setTextDocumentLanguage(
+    await vscode.workspace.openTextDocument(tree),
+    "plaintext",
+  );
+  await vscode.window.showTextDocument(document, {
+    viewColumn: vscode.ViewColumn.Beside,
+    preserveFocus: true,
+    preview: false,
+  });
 }

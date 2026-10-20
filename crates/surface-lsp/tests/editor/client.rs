@@ -82,8 +82,9 @@ enum Connection
 {
     /// `serve` on a thread of its own, over in-memory framed streams.
     Served(Streams),
-    /// A connection driven in process, over a workspace others may join.
-    Joined(Joined),
+    /// A connection driven in process, over a workspace others may join; boxed,
+    /// the server it drives outweighing the streams.
+    Joined(Box<Joined>),
 }
 
 /// Bytes on a framed stream: whole frames, back to back.
@@ -259,13 +260,13 @@ impl Client
             Peer::from(joined.joined)
         };
         Self {
-            connection: Connection::Joined(Joined {
+            connection: Connection::Joined(Box::new(Joined {
                 server: Server::new(peer),
                 shared,
                 record,
                 sent: Vec::new(),
                 received: Vec::new(),
-            }),
+            })),
             requests: 0_i64,
         }
         .initialize(quiet)
