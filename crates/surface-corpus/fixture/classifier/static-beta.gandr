@@ -2,11 +2,8 @@
 // applied in a signature reduces before the kernel reads the declaration, and
 // the run never sees it. `sum` takes a pair whose type is `apply(twice,
 // Integer)`, two static applications deep; `doubled` returns one. Implicit
-// parameters `@[…]`, the telescope a use would supply by name, are elaborated
-// only for stages (`model/data/sized-higher-order.gandr`); any other is
-// refused by name (`ImplicitTelescope`) at the function it opens, and at the
-// declaration itself before any other tail, where no corpus expectation can
-// state it (#526).
+// parameters `@[…]`, which a use supplies by name, are
+// `implicit-telescope.gandr`'s.
 
 /// Apply a type operator to a type.
 @[ checks ]

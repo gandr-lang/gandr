@@ -1,0 +1,616 @@
+//! Implicit parameters in the lowering: a function whose telescope `@[a :
+//! Type]` binds a value binds every parameter in its merged telescope's order
+//! ([`crate::module::Plicity`]), and a call supplies the implicits by name,
+//! `f[a = T](x)`.
+//!
+//! # Supply by name
+//!
+//! A call whose head instantiates a function with every resident written `a
+//! = e` is that function applied to one argument per parameter of its merged
+//! telescope: an implicit's argument is the resident naming it, in any
+//! order, and an explicit one's the next argument the parentheses write. The
+//! core sees an ordinary application: plicity is the declaration's metadata,
+//! never type structure, so the declared type and the application are the
+//! ones the function written with every parameter explicit would give.
+//!
+//! A supply where no call applies it, `apply(same[a = Integer], 3)`, is the
+//! function applied to its implicits alone, a function of the rest: the
+//! declaration taken as a value has every implicit determined where it is
+//! taken.
+//!
+//! # Boundaries
+//!
+//! - A use of a function with implicits supplies all of them:
+//!   [`LoweringRefusal::ImplicitUnsupplied`] names the first one a use leaves
+//!   out, and a bare use of the function, called or not, leaves out all.
+//! - A call writing one argument per parameter in its parentheses, the
+//!   implicits among them, is [`LoweringRefusal::ImplicitInParentheses`].
+//! - A resident naming no implicit of the function is
+//!   [`LoweringRefusal::UnresolvedName`] at the name.
+//! - Nothing is inferred: an implicit is supplied where the function is used.
+//! - A supply standing as a value takes implicits that lead the merged
+//!   telescope: an implicit the merge places after an explicit parameter, whose
+//!   type mentions it, leaves the fragment there, and a lambda that calls the
+//!   function supplies it.
+//! - The grammar writes no telescope after `def rec`, so a recursive function
+//!   has no implicits.
+
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_kernel_term::ConstantIndex;
+use gandr_surface_syntax::NodeIndex;
+use quenchant_shape::shape::Maybe;
+
+use super::Lowerer;
+use super::Parameter;
+use super::Plan;
+use super::Produced;
+use super::Reading;
+use super::Resolved;
+use super::Site;
+use super::Stretch;
+use super::arguments;
+use super::arity;
+use super::stated;
+use crate::error::FormFault;
+use crate::error::FragmentBoundary;
+use crate::error::LoweringRefusal;
+use crate::form::Cursor;
+use crate::form::Former;
+use crate::form::Piece;
+use crate::form::Placed;
+use crate::form::Run;
+use crate::form::Shape;
+use crate::form::TileName;
+use crate::form::read_pieces;
+use crate::form::shape_of;
+use crate::module::Plicity;
+use crate::module::SlotIndex;
+use crate::module::TelescopeEntry;
+use crate::module::merged;
+use crate::resolve::Frame;
+use crate::resolve::SurfaceName;
+
+#[cfg(test)]
+mod tests;
+
+/// How a supply's function is applied.
+enum Use<'cursor>
+{
+    /// The head of a call, whose parentheses, at the cursor, write the
+    /// explicit arguments.
+    Called(Cursor<'cursor>),
+    /// Standing where no call applies it, passed or returned as a value.
+    Standing,
+}
+
+impl<'source> Lowerer<'_, 'source>
+{
+    /// The merged telescope of the function whose declaration holds `node`,
+    /// when its telescope binds a value.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the entries the collection merged for the declaration owning
+    ///   `node`; absent for a node no declaration owns and a declaration with
+    ///   no implicit.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function with an implicit and one without separate
+    ///   the answers.
+    /// - witness: `lower::implicit::tests::plicity_is_metadata_not_type_structure`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(entries) => entries.iter().any(|entry| entry.plicity == Plicity::Implicit),
+        Maybe::Absent(_) => true,
+    })]
+    pub(super) fn merged_at(
+        &self,
+        node: NodeIndex,
+    ) -> Maybe<&[TelescopeEntry<'source>], merged::Absent>
+    {
+        let entries = match self.collected.owner_of(node) {
+            Maybe::Present(slot) => self.collected.plicities.get(&slot),
+            Maybe::Absent(_) => None,
+        };
+        if let Some(&Ok(ref entries)) = entries {
+            Maybe::Present(entries.as_slice())
+        }
+        else {
+            Maybe::Absent(merged::Absent::NoImplicit)
+        }
+    }
+
+    /// The refusal the merge of the telescope of the function whose
+    /// declaration holds `node` met, when it met one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Ok` for a declaration whose telescope merged or binds no
+    ///   value.
+    /// - fails: the merge's own refusal, [`LoweringRefusal::TelescopeCycle`]
+    ///   for parameters whose types mention each other.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a telescope in a cycle and one that merges separate
+    ///   the answers.
+    /// - witness: `lower::implicit::tests::a_telescope_cycle_is_refused_naming_the_cycle`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(self.merged_at(node), Maybe::Absent(_)))]
+    pub(super) fn merge_refusal(
+        &self,
+        node: NodeIndex,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let merged = match self.collected.owner_of(node) {
+            Maybe::Present(slot) => self.collected.plicities.get(&slot),
+            Maybe::Absent(_) => None,
+        };
+        match merged {
+            Some(&Err(refusal)) => Err(refusal),
+            Some(&Ok(_)) | None => Ok(()),
+        }
+    }
+
+    /// Bind the parameters of the function `site` declares in its merged
+    /// telescope's order, when it has one, under `frame`.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the parameter list's `(`;
+    ///   `function` is the function tail's site.
+    /// - ensures: for a function with a merged telescope, each entry is bound
+    ///   in a frame extending the one before it, its type, when written, read
+    ///   as a value type under that frame and recorded on its parameter; the
+    ///   cursor then stands at the list's `)`, and the frame the last entry
+    ///   bound is returned. Otherwise nothing changes and `frame` is returned.
+    /// - fails: a binder's own refusal; a fault at the parameter list when it
+    ///   ends before its `)`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an implicit whose type names a later explicit
+    ///   parameter binds after it, and its declared type equals the one the
+    ///   function written with every parameter explicit, in that order, gives.
+    /// - witness: `lower::implicit::tests::plicity_is_metadata_not_type_structure`
+    /// - witness: `lower::implicit::tests::a_forward_reference_from_the_prefix_binds_after_its_target`
+    #[spec(
+        captures: before = self.parameters.len(),
+        ensures: |ret| ret.is_err() || self.parameters.len() >= before,
+    )]
+    pub(super) fn merged_parameters(
+        &mut self,
+        site: Site,
+        function: Site,
+        cursor: &mut Cursor<'_>,
+        frame: Frame,
+    ) -> Result<Frame, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(entries) = self.merged_at(site.at.node)
+        else {
+            return Ok(frame);
+        };
+        let entries = entries.to_vec();
+        let mut frame = frame;
+        for entry in entries {
+            let declared = match entry.declared {
+                Maybe::Present(declared) => {
+                    self.read(declared.node, Reading::ValueType(frame));
+                    Maybe::Present(declared.node)
+                },
+                Maybe::Absent(_) => Maybe::Absent(stated::Absent::Unstated),
+            };
+            self.note_binder(entry.binder, entry.name)?;
+            let written = Maybe::Present(entry.binder.span);
+            let bound = match declared {
+                Maybe::Present(declared) => self
+                    .scope
+                    .extend_typed(frame, entry.name, declared, written),
+                Maybe::Absent(_) => self.scope.extend(frame, entry.name, written),
+            };
+            self.parameters.push(Parameter {
+                binder: entry.binder.node,
+                frame: bound,
+                declared,
+            });
+            frame = Frame::Inner(bound);
+        }
+        while let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE) {
+            if let Maybe::Absent(_) = cursor.read() {
+                return Err(function.fault(cursor.here(), FormFault::MisplacedTile));
+            }
+        }
+
+        Ok(frame)
+    }
+
+    /// Refuse the use at `site` of the declaration `constant` when the
+    /// declaration has implicits and the use supplies none.
+    ///
+    /// # Specification
+    /// - requires: the name at `site` resolved to `constant`.
+    /// - ensures: `Ok` for a declaration with no implicit and for the head of a
+    ///   call that supplies them.
+    /// - fails: [`LoweringRefusal::ImplicitUnsupplied`] at `site`, naming the
+    ///   declaration's first implicit, otherwise.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bare use and a supplied call separate the answers.
+    /// - witness: `lower::implicit::tests::an_unsupplied_implicit_is_refused_with_its_slot_spelling`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::ImplicitUnsupplied { .. })))]
+    pub(super) fn supplied_or_refused(
+        &self,
+        site: Site,
+        constant: ConstantIndex,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let slot = SlotIndex::from(usize::from(constant));
+        let Some(&Ok(ref entries)) = self.collected.plicities.get(&slot)
+        else {
+            return Ok(());
+        };
+        if self.supplied.contains(&site.at.node) {
+            return Ok(());
+        }
+        let Some(first) = entries
+            .iter()
+            .find(|entry| entry.plicity == Plicity::Implicit)
+        else {
+            return Ok(());
+        };
+        let function = self
+            .collected
+            .slots
+            .get(usize::from(slot))
+            .map_or(first.name, |declared| declared.name);
+
+        Err(LoweringRefusal::ImplicitUnsupplied {
+            span: site.at.span,
+            function,
+            implicit: first.name,
+        })
+    }
+
+    /// Plan the call at `site` whose head names a function with implicits:
+    /// supplied by name, the function applied in its merged telescope's
+    /// order; otherwise refused.
+    ///
+    /// # Specification
+    /// - requires: `site` is a call read as a computation under `frame`;
+    ///   `cursor` stands at its head.
+    /// - ensures: [`arity::Planned`] true exactly when the head is an
+    ///   instantiation of a declaration with implicits, every resident `a = e`
+    ///   naming one, the call then planned as the declaration applied to one
+    ///   argument per merged entry, an implicit's the resident naming it and an
+    ///   explicit one's the next written argument, each read as a value under
+    ///   `frame` and the declaration's name as the head; the head is recorded
+    ///   as supplied. False, with nothing changed, for any other head but a
+    ///   bare name of a declaration with implicits.
+    /// - fails: [`LoweringRefusal::ImplicitInParentheses`] for a call writing
+    ///   one argument per parameter, [`LoweringRefusal::ImplicitUnsupplied`]
+    ///   for one leaving an implicit unsupplied, the bare name included;
+    ///   [`LoweringRefusal::UnresolvedName`] at a resident naming no implicit;
+    ///   a fault at a resident written twice; the reserved refusal for a
+    ///   resident other than `a = e` beside one that is; a form fault reading
+    ///   the head.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — residents in either order apply alike; a missing
+    ///   resident, an implicit among the parentheses and a resident naming
+    ///   nothing each refuse by their own name.
+    /// - witness: `lower::implicit::tests::supply_by_name_is_order_free`
+    /// - witness: `lower::implicit::tests::an_unsupplied_implicit_is_refused_with_its_slot_spelling`
+    /// - witness: `lower::implicit::tests::an_implicit_in_the_parentheses_is_refused`
+    /// - witness: `lower::implicit::tests::a_resident_naming_no_implicit_is_unresolved`
+    #[spec(
+        captures: start = self.operands.len(),
+        ensures: |ret| match ret {
+            Ok(arity::Planned(true)) => matches!(
+                self.plans.get(usize::from(site.at.node)),
+                Some(&Plan::Application(_, arguments)) if arguments.start == start && arguments.end == self.operands.len()
+            ),
+            Ok(arity::Planned(false)) => self.operands.len() == start,
+            Err(_) => true,
+        },
+    )]
+    pub(super) fn supplied_call(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        cursor: &Cursor<'_>,
+    ) -> Result<arity::Planned, LoweringRefusal<'source>>
+    {
+        let mut rest = cursor.clone();
+        let Run::One(head) = rest.operands()
+        else {
+            return Ok(arity::Planned(false));
+        };
+        self.supply(site, frame, head, Use::Called(rest))
+    }
+
+    /// Plan the instantiation at `site` that supplies a function's implicits
+    /// where no call applies it: the function applied to its implicits, which
+    /// lead its merged telescope, a function of the rest.
+    ///
+    /// # Specification
+    /// - requires: `site` is an instantiation.
+    /// - ensures: [`arity::Planned`] true exactly when the instantiation's head
+    ///   names a declaration with implicits and every resident `a = e` names
+    ///   one, the instantiation then planned as the declaration applied to the
+    ///   residents in its merged telescope's order, each read as a value, and
+    ///   bridged as a computation read where it stands. False, with nothing
+    ///   changed, for any other instantiation, a recursion's claim among them.
+    /// - fails: [`LoweringRefusal::ImplicitUnsupplied`] for a supply leaving an
+    ///   implicit out; the unadmitted refusal for an implicit the merged
+    ///   telescope places after an explicit parameter, whose type its own
+    ///   mentions; the wrong-sort refusal where no computation can stand; the
+    ///   refusals of [`Self::supplied_call`] at a resident.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a supplied function passed as a value applies to its
+    ///   implicits alone, and runs once applied; an implicit placed after an
+    ///   explicit parameter refuses.
+    /// - witness: `lower::implicit::tests::a_supplied_function_stands_as_a_value`
+    /// - witness: `lower::implicit::tests::a_standing_supply_takes_only_leading_implicits`
+    #[spec(
+        captures: start = self.operands.len(),
+        ensures: |ret| match ret {
+            Ok(arity::Planned(true)) => matches!(
+                self.plans.get(usize::from(site.at.node)),
+                Some(&Plan::Application(_, arguments)) if arguments.start == start && arguments.end == self.operands.len()
+            ),
+            Ok(arity::Planned(false)) => self.operands.len() == start,
+            Err(_) => true,
+        },
+    )]
+    pub(super) fn supplied_value(
+        &mut self,
+        site: Site,
+    ) -> Result<arity::Planned, LoweringRefusal<'source>>
+    {
+        self.supply(site, site.reading.frame(), site.at, Use::Standing)
+    }
+
+    /// Plan `site`, whose head is `head`, as the supply its residents write,
+    /// applied as `used` says.
+    ///
+    /// # Specification
+    /// - requires: `head` is the call's head or, standing, `site` itself.
+    /// - ensures: as [`Self::supplied_call`] for [`Use::Called`] and
+    ///   [`Self::supplied_value`] for [`Use::Standing`].
+    /// - fails: as theirs.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exercised through both callers.
+    /// - witness: `lower::implicit::tests::supply_by_name_is_order_free`
+    /// - witness: `lower::implicit::tests::a_supplied_function_stands_as_a_value`
+    #[spec(
+        captures: start = self.operands.len(),
+        ensures: |ret| match ret {
+            Ok(arity::Planned(false)) => self.operands.len() == start,
+            Ok(arity::Planned(true)) | Err(_) => true,
+        },
+    )]
+    fn supply(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        head: Placed,
+        used: Use<'_>,
+    ) -> Result<arity::Planned, LoweringRefusal<'source>>
+    {
+        let former_of = |node: NodeIndex| {
+            let shape = shape_of(self.pbg, self.tree.node(node)?).ok()?;
+            if let Shape::Form { former, .. } = shape {
+                Some(former)
+            }
+            else {
+                None
+            }
+        };
+        let former = former_of(head.node);
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, head.node, &mut scratch);
+        let pieces = scratch.pieces.clone();
+        self.scratch = scratch;
+        read?;
+        let called = matches!(used, Use::Called(_));
+        let (inner, residents) = match (former, pieces.as_slice()) {
+            (Some(Former::Instantiation), &[Piece::Operand(inner), ref rest @ ..]) => (inner, rest),
+            (Some(Former::Name), _) if called => (head, &[][..]),
+            (Some(_) | None, _) => return Ok(arity::Planned(false)),
+        };
+        if former_of(inner.node) != Some(Former::Name) {
+            return Ok(arity::Planned(false));
+        }
+        // The head and its residents are never read as forms of their own:
+        // the name and each supplied value are. Each takes its owner here, as
+        // reading a form gives its children theirs.
+        self.inherit_owner(head.node);
+        // The residents are read before the head resolves: a recursive
+        // call's claim, `f[<]`, is no supply, and its head names a binder.
+        let mut supplied: BTreeMap<SurfaceName<'source>, (Placed, NodeIndex)> = BTreeMap::new();
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let mut outcome = Ok(arity::Planned(true));
+        for piece in residents {
+            let Piece::Operand(resident) = *piece
+            else {
+                continue;
+            };
+            if let Err(refusal) = read_pieces(self.pbg, self.tree, resident.node, &mut scratch) {
+                outcome = Err(refusal);
+                break;
+            }
+            self.inherit_owner(resident.node);
+            let reserved = Site {
+                at: resident,
+                ..site
+            }
+            .out(FragmentBoundary::Reserved);
+            let [
+                Piece::Tile { label, at: written },
+                Piece::Tile { label: equals, .. },
+                Piece::Operand(value),
+            ] = *scratch.pieces.as_slice()
+            else {
+                outcome = if supplied.is_empty() {
+                    Ok(arity::Planned(false))
+                }
+                else {
+                    Err(reserved)
+                };
+                break;
+            };
+            if label != TileName::IDENTIFIER || equals != TileName::EQUALS {
+                outcome = Err(reserved);
+                break;
+            }
+            let implicit = self.name_at(written);
+            if supplied.insert(implicit, (written, value.node)).is_some() {
+                outcome = Err(site.fault(written.span, FormFault::MisplacedTile));
+                break;
+            }
+        }
+        self.scratch = scratch;
+        if outcome? == arity::Planned(false) {
+            return Ok(arity::Planned(false));
+        }
+        let name = self.name_at(inner);
+        if let Maybe::Present(_) = self.scope.resolve(frame, name, &mut self.fuel)? {
+            return Ok(arity::Planned(false));
+        }
+        let named_site = Site { at: inner, ..site };
+        let resolved = self.resolve_name(named_site, frame, name)?;
+        let Maybe::Present(Resolved::Declaration { constant, .. }) = resolved
+        else {
+            return Ok(arity::Planned(false));
+        };
+        let slot = SlotIndex::from(usize::from(constant));
+        let Some(Ok(entries)) = self.collected.plicities.get(&slot).cloned()
+        else {
+            return Ok(arity::Planned(false));
+        };
+        let implicits: BTreeSet<SurfaceName<'source>> = entries
+            .iter()
+            .filter(|entry| entry.plicity == Plicity::Implicit)
+            .map(|entry| entry.name)
+            .collect();
+        if let Some((&unknown, &(written, _))) = supplied
+            .iter()
+            .find(|&(supplied_name, _)| !implicits.contains(supplied_name))
+        {
+            return Err(LoweringRefusal::UnresolvedName {
+                span: written.span,
+                name: unknown,
+            });
+        }
+        let mut written = Vec::new();
+        let standing = match used {
+            Use::Called(mut rest) => {
+                arguments(site, &mut rest, &mut written)?;
+                false
+            },
+            Use::Standing => true,
+        };
+        let explicit = entries
+            .iter()
+            .filter(|entry| entry.plicity == Plicity::Explicit)
+            .count();
+        let function = self
+            .collected
+            .slots
+            .get(usize::from(slot))
+            .map_or(name, |declared| declared.name);
+        if let Some(missing) = entries
+            .iter()
+            .find(|entry| entry.plicity == Plicity::Implicit && !supplied.contains_key(&entry.name))
+        {
+            let refusal = if written.len() == entries.len() && written.len() > explicit {
+                LoweringRefusal::ImplicitInParentheses {
+                    span: site.at.span,
+                    function,
+                    implicit: missing.name,
+                }
+            }
+            else {
+                LoweringRefusal::ImplicitUnsupplied {
+                    span: site.at.span,
+                    function,
+                    implicit: missing.name,
+                }
+            };
+            return Err(refusal);
+        }
+        // Standing, the supply applies the function to its implicits alone:
+        // they must lead the merged telescope, as an implicit placed after an
+        // explicit parameter mentions it in its type.
+        if standing {
+            let leading = entries
+                .iter()
+                .take_while(|entry| entry.plicity == Plicity::Implicit)
+                .count();
+            if entries
+                .iter()
+                .skip(leading)
+                .any(|entry| entry.plicity == Plicity::Implicit)
+            {
+                return Err(site.out(FragmentBoundary::Unadmitted));
+            }
+            let _frame = self.require(site, Produced::Computation)?;
+        }
+        let start = self.operands.len();
+        let mut positional = written.iter();
+        for entry in &entries {
+            let argument = match entry.plicity {
+                Plicity::Implicit => supplied.get(&entry.name).map(|&(_, value)| value),
+                Plicity::Explicit => positional.next().copied(),
+            };
+            if let Some(argument) = argument {
+                self.operands.push(argument);
+            }
+        }
+        self.operands.extend(positional.copied());
+        let applied = Stretch {
+            start,
+            end: self.operands.len(),
+        };
+        let _fresh = self.supplied.insert(inner.node);
+        if applied.start == applied.end {
+            let _first = self.nullary.insert(inner.node, site.at.node);
+        }
+        self.read(inner.node, Reading::Head(frame));
+        for position in applied.start .. applied.end {
+            if let Some(&argument) = self.operands.get(position) {
+                self.read(argument, Reading::Value(frame));
+            }
+        }
+        self.plan(site, Plan::Application(inner.node, applied));
+
+        Ok(arity::Planned(true))
+    }
+}

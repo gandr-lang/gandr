@@ -325,6 +325,8 @@ mod functor;
 
 mod model;
 
+mod plicity;
+
 mod sealing;
 
 mod world;
@@ -355,6 +357,9 @@ pub use self::model::ParameterList;
 pub use self::model::derived;
 pub use self::model::spine_domains;
 pub use self::model::ungrouped;
+pub use self::plicity::Plicity;
+pub use self::plicity::TelescopeEntry;
+pub use self::plicity::merged;
 pub use self::sealing::AbstractSlot;
 pub use self::sealing::ComponentPlace;
 use self::sealing::KindForm;
@@ -1367,6 +1372,12 @@ pub struct Collected<'source>
     /// The slots declared `def rec`: in a mutual block, its recursive
     /// functions recurse through one another.
     pub recursive: BTreeSet<SlotIndex>,
+    /// The merged telescope of each function whose implicit telescope binds a
+    /// value, by its slot: every parameter in the order the declared type
+    /// binds it, with where it is written; or the refusal the merge met,
+    /// which the function's lowering raises.
+    pub plicities:
+        BTreeMap<SlotIndex, Result<Vec<TelescopeEntry<'source>>, LoweringRefusal<'source>>>,
     /// Each declaration's name the collection resolved where it is written,
     /// beside the slot it names: a model ascription's theory and a `theory`
     /// block's include.
@@ -2283,6 +2294,7 @@ pub fn begin_collection<'source>(
         theory_sources: BTreeSet::new(),
         blocks: Vec::new(),
         recursive: BTreeSet::new(),
+        plicities: BTreeMap::new(),
         declared_uses: Vec::new(),
     })
 }
@@ -4132,6 +4144,14 @@ impl<'source> Collector<'_, 'source>
             Tail::Refused(refusal)
         }
         else {
+            let merged = match self.merged_telescope(&header, declaration) {
+                Ok(Maybe::Present(entries)) => Some(Ok(entries)),
+                Ok(Maybe::Absent(_)) => None,
+                Err(refusal) => Some(Err(refusal)),
+            };
+            if let Some(merged) = merged {
+                let _first = self.collected.plicities.insert(slot, merged);
+            }
             read_tail(&mut header, declaration)
         };
         self.file(slot, declaration, named, tail, attributes);
@@ -7383,18 +7403,18 @@ fn signing(mut header: Cursor<'_>) -> Signing
 /// # Specification
 /// - requires: `header` stands just past the form's name, at no `:`, `=` or
 ///   `(`.
-/// - ensures: an implicit telescope is declined by name at the declaration; an
-///   operand is one the form does not take; every other piece is a misplaced
-///   tile.
+/// - ensures: an implicit telescope, which only a function's parameters follow,
+///   is refused by name at the declaration; an operand is one the form does not
+///   take; every other piece is a misplaced tile.
 /// - provides: the decline of the declaration tails the fragment does not read.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an implicit telescope is declined by name at the
-///   declaration, while a closing tile without a tail is misplaced at its own
-///   span.
-/// - witness: `lower::tests::an_implicit_telescope_is_declined_by_name`
+/// - hypothesis: L3 — an implicit telescope before a definition is refused by
+///   name at the declaration, while a closing tile without a tail is misplaced
+///   at its own span.
+/// - witness: `lower::tests::an_implicit_telescope_on_no_function_is_refused_by_name`
 /// - witness: `lower::tests::a_tile_out_of_place_is_refused`
 #[spec(
     ensures: |ret| {

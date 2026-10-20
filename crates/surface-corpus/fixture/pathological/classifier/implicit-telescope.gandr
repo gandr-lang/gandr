@@ -1,0 +1,39 @@
+// The refusals of implicit parameters (#315): a use leaving an implicit
+// unsupplied, an implicit written among the parentheses, a resident naming no
+// implicit, a supply standing as a value whose implicit follows an explicit
+// parameter, and a telescope whose types mention each other.
+
+// `same`, the identity at a type supplied by name, and `chosen`, whose
+// implicit's type names its explicit parameter.
+import "../../classifier/implicit-telescope.gandr" ;
+
+/// A call supplying no implicit: nothing is inferred, so `a` is unsupplied.
+@[ refuses("ImplicitUnsupplied") ]
+def unsupplied : () => Integer ;
+def unsupplied = thunk { become same(3) } ;
+
+/// The implicit written among the parentheses, as for `sameExplicit`.
+@[ refuses("ImplicitInParentheses") ]
+def inParentheses : () => Integer ;
+def inParentheses = thunk { become same(Integer, 3) } ;
+
+/// A resident naming no implicit of `same`.
+@[ refuses("UnresolvedName") ]
+def strayResident : () => Integer ;
+def strayResident = thunk { become same[b = Integer](3) } ;
+
+/// `same` named as a value, its implicit unsupplied.
+@[ refuses("ImplicitUnsupplied") ]
+def sameNamed : +U (Integer -> -F Integer) ;
+def sameNamed = same ;
+
+/// `chosen` passed as a value with `x` supplied: `x`'s type names `t`, which
+/// stands before it and is not supplied, so a lambda calling `chosen` supplies
+/// it.
+@[ refuses("OutOfFragment") ]
+def chosenStanding : +U (Type -> -F Integer) ;
+def chosenStanding = chosen[x = 7] ;
+
+/// Two implicits each typed by the other: no order binds either first.
+@[ refuses("TelescopeCycle") ]
+def tangled @[a : b, b : a] (x : a) -> -F a { return x }

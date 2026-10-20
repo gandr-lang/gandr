@@ -7847,7 +7847,8 @@ fn record_copied_since(
 impl<'source> Lowerer<'_, 'source>
 {
     /// Classify an instantiation, `f[<]`: the head of a recursive call
-    /// claiming structural descent, or the self reference a value passes on.
+    /// claiming structural descent, the self reference a value passes on, or
+    /// a function's implicits supplied where no call applies it.
     ///
     /// # Specification
     /// - requires: `site` is an instantiation in term position.
@@ -7865,7 +7866,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   fixpoint binder, or the sibling member's declaration. A call whose one
     ///   resident is `>` and which is the whole arm of a copattern block stands
     ///   as the same variable, passes its arguments as a descent call does, and
-    ///   claims nothing: the fixpoint stays partial.
+    ///   claims nothing: the fixpoint stays partial. An instantiation whose
+    ///   residents supply a function's implicits by name is planned as
+    ///   [`Self::supplied_value`] plans it.
     /// - provides: the head of a recursive call, and the self reference a value
     ///   position passes on.
     /// - fails: the reserved refusal for any other resident, a termination
@@ -7901,13 +7904,16 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::an_unapplied_claim_lowers_to_the_self_binder`
     /// - witness: `lower::native::tests::a_productive_call_is_the_whole_arm_of_a_copattern_block`
     /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Variable(..))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&(Plan::Variable(..) | Plan::Application(..)))))]
     pub(super) fn instantiation(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        if self.supplied_value(site)? == arity::Planned(true) {
+            return Ok(());
+        }
         let frame = self.require(site, Produced::Value)?;
         let head = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::BRACKET_OPEN)?;

@@ -124,6 +124,9 @@ impl LoweringRefusal<'_>
             | Self::ProjectionFromApplication { .. }
             | Self::FamilyTelescope { .. }
             | Self::LowercaseModuleName { .. }
+            | Self::TelescopeCycle { .. }
+            | Self::ImplicitUnsupplied { .. }
+            | Self::ImplicitInParentheses { .. }
             | Self::NonExhaustiveMatch { .. }
             | Self::UnmarkedSelfReference { .. }
             | Self::Unreachable { .. }
@@ -166,6 +169,9 @@ impl LoweringRefusal<'_>
             | Self::ProjectionFromApplication { .. }
             | Self::FamilyTelescope { .. }
             | Self::LowercaseModuleName { .. }
+            | Self::TelescopeCycle { .. }
+            | Self::ImplicitUnsupplied { .. }
+            | Self::ImplicitInParentheses { .. }
             | Self::NonExhaustiveMatch { .. }
             | Self::UnmarkedSelfReference { .. }
             | Self::Unreachable { .. }
@@ -247,7 +253,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 47_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 50_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -445,6 +451,21 @@ mod tests
                 rule: empty,
             },
             LoweringRefusal::ImplicitTelescope { span: empty },
+            LoweringRefusal::TelescopeCycle {
+                span: empty,
+                first: SurfaceName::from("a"),
+                second: SurfaceName::from("b"),
+            },
+            LoweringRefusal::ImplicitUnsupplied {
+                span: empty,
+                function: SurfaceName::from("same"),
+                implicit: SurfaceName::from("a"),
+            },
+            LoweringRefusal::ImplicitInParentheses {
+                span: empty,
+                function: SurfaceName::from("same"),
+                implicit: SurfaceName::from("a"),
+            },
         ]
     }
 
@@ -498,6 +519,10 @@ mod tests
             FailureClass::Unrepresentable,
             FailureClass::MalformedSource,
             FailureClass::Unrepresentable,
+            FailureClass::Unrepresentable,
+            FailureClass::MalformedSource,
+            FailureClass::MalformedSource,
+            FailureClass::MalformedSource,
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {

@@ -428,9 +428,28 @@ fn lowered(
             "the module `{name}` must start with an uppercase letter at the top level"
         ),
         LoweringRefusal::ImplicitTelescope { .. } => f.write_str(
-            "implicit parameters `@[…]` are elaborated only for stages, `@[i : Size, i < n]`; \
-             write each other one as an explicit parameter, `(a : Type, …)`, and pass it at \
-             every call",
+            "this implicit telescope `@[…]` has an entry out of shape: write `a : Type` for an \
+             implicit, `i : Size` for a stage and `i < n` for its bound, before the function's \
+             parameters",
+        ),
+        LoweringRefusal::TelescopeCycle { first, second, .. } => write!(
+            f,
+            "`{first}` and `{second}` mention each other in their types, so neither can come \
+             first"
+        ),
+        LoweringRefusal::ImplicitUnsupplied {
+            function, implicit, ..
+        } => write!(
+            f,
+            "`{function}` needs its implicit `{implicit}`; supply it by name, \
+             `{function}[{implicit} = …](…)`"
+        ),
+        LoweringRefusal::ImplicitInParentheses {
+            function, implicit, ..
+        } => write!(
+            f,
+            "`{function}`'s implicit `{implicit}` is supplied by name, \
+             `{function}[{implicit} = …](…)`, not among the parentheses"
         ),
         LoweringRefusal::NonExhaustiveMatch { .. } => {
             f.write_str("this match does not cover every value it can be given")
@@ -1186,6 +1205,21 @@ mod tests
             },
             LoweringRefusal::LowercaseModuleName { span, name },
             LoweringRefusal::ImplicitTelescope { span },
+            LoweringRefusal::TelescopeCycle {
+                span,
+                first: name,
+                second: name,
+            },
+            LoweringRefusal::ImplicitUnsupplied {
+                span,
+                function: name,
+                implicit: name,
+            },
+            LoweringRefusal::ImplicitInParentheses {
+                span,
+                function: name,
+                implicit: name,
+            },
             LoweringRefusal::NonExhaustiveMatch { span },
             LoweringRefusal::UnmarkedSelfReference { span, name },
             LoweringRefusal::UnguardedCorecursion { span, name },

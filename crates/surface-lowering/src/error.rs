@@ -991,13 +991,53 @@ pub enum LoweringRefusal<'source>
     },
 
     /// A declaration whose header binds parameters in an implicit telescope
-    /// `@[…]` other than stages: the entries are static parameters a use
-    /// supplies by name, which the fragment does not elaborate; a stage
-    /// binder `i : Size` and its bound `i < n` are the telescope it admits.
+    /// `@[…]` an entry of which is out of shape: an entry is a lower-case name
+    /// and its sort, `a : Type` or the stage binder `i : Size`, or a stage's
+    /// bound `i < n`, and a telescope binding a value stands before a
+    /// function's parameters.
     ImplicitTelescope
     {
         /// The bytes the declaration covers.
         span: ByteSpan,
+    },
+
+    /// A function whose merged telescope has no order: two parameters each
+    /// mention the other in their types, directly or through the telescope.
+    TelescopeCycle
+    {
+        /// The bytes the declaration covers.
+        span: ByteSpan,
+        /// A parameter the merge could not place.
+        first: SurfaceName<'source>,
+        /// A parameter its type waits on.
+        second: SurfaceName<'source>,
+    },
+
+    /// A use of a function with an implicit parameter that supplies none for
+    /// it: an implicit is supplied by name in the instantiation slot, `f[a =
+    /// T](…)`, never inferred in this fragment and never written among the
+    /// parentheses.
+    ImplicitUnsupplied
+    {
+        /// The bytes of the use.
+        span: ByteSpan,
+        /// The function's name.
+        function: SurfaceName<'source>,
+        /// The first implicit the use leaves unsupplied.
+        implicit: SurfaceName<'source>,
+    },
+
+    /// A call writing a function's implicit argument among its parentheses:
+    /// it passes one argument per parameter, the implicits with the explicit
+    /// ones, where an implicit is supplied by name.
+    ImplicitInParentheses
+    {
+        /// The bytes of the call.
+        span: ByteSpan,
+        /// The function's name.
+        function: SurfaceName<'source>,
+        /// The first implicit of the function.
+        implicit: SurfaceName<'source>,
     },
 
     /// A match some scrutinee reaches no arm of: a constructor, or an integer
@@ -1317,9 +1357,30 @@ impl fmt::Display for LoweringRefusal<'_>
                  name starts with an uppercase letter"
             ),
             Self::ImplicitTelescope { .. } => f.write_str(
-                "this declaration binds parameters in an implicit telescope `@[…]`, which the \
-                 fragment elaborates only for stages, `@[i : Size, i < n]`; write each other \
-                 entry as an explicit parameter, `(a : Type, …)`",
+                "this declaration's implicit telescope `@[…]` has an entry out of shape: an entry \
+                 is a lower-case name and its sort, `a : Type` or a stage `i : Size`, or a \
+                 stage's bound `i < n`, and a telescope binding a value stands before a \
+                 function's parameters",
+            ),
+            Self::TelescopeCycle { first, second, .. } => write!(
+                f,
+                "the parameters `{first}` and `{second}` mention each other through their types, \
+                 so no order of the telescope binds each after what its type names"
+            ),
+            Self::ImplicitUnsupplied {
+                function, implicit, ..
+            } => write!(
+                f,
+                "`{function}` takes the implicit `{implicit}`, which this use does not supply; \
+                 supply it by name, `{function}[{implicit} = …](…)`"
+            ),
+            Self::ImplicitInParentheses {
+                function, implicit, ..
+            } => write!(
+                f,
+                "this call writes `{function}`'s implicit arguments among its parentheses; \
+                 supply `{implicit}` by name, `{function}[{implicit} = …](…)`, and pass the \
+                 explicit arguments alone"
             ),
             Self::NonExhaustiveMatch { .. } => {
                 f.write_str("the match leaves a value of its scrutinee that no arm matches")
@@ -1477,6 +1538,9 @@ impl LoweringRefusal<'_>
             | Self::FamilyTelescope { span, .. }
             | Self::LowercaseModuleName { span, .. }
             | Self::ImplicitTelescope { span }
+            | Self::TelescopeCycle { span, .. }
+            | Self::ImplicitUnsupplied { span, .. }
+            | Self::ImplicitInParentheses { span, .. }
             | Self::NonExhaustiveMatch { span }
             | Self::UnmarkedSelfReference { span, .. }
             | Self::UnguardedCorecursion { span, .. }
@@ -1554,7 +1618,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 44_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 47_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -1757,6 +1821,21 @@ mod tests
             LoweringRefusal::ImplicitTelescope {
                 span: s(81_usize, 82_usize),
             },
+            LoweringRefusal::TelescopeCycle {
+                span: s(83_usize, 84_usize),
+                first: SurfaceName::from("a"),
+                second: SurfaceName::from("b"),
+            },
+            LoweringRefusal::ImplicitUnsupplied {
+                span: s(85_usize, 86_usize),
+                function: SurfaceName::from("same"),
+                implicit: SurfaceName::from("a"),
+            },
+            LoweringRefusal::ImplicitInParentheses {
+                span: s(87_usize, 88_usize),
+                function: SurfaceName::from("same"),
+                implicit: SurfaceName::from("a"),
+            },
         ]
     }
 
@@ -1811,6 +1890,10 @@ mod tests
             s(75_usize, 76_usize),
             s(77_usize, 78_usize),
             s(79_usize, 80_usize),
+            s(81_usize, 82_usize),
+            s(83_usize, 84_usize),
+            s(85_usize, 86_usize),
+            s(87_usize, 88_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

@@ -1,0 +1,67 @@
+// Implicit parameters: the telescope `@[a : Type]` after a function's name
+// binds parameters a use supplies by name in the instantiation slot,
+// `same[a = Integer](3)`, in any order (#315). The implicit and the explicit
+// parameters merge into one telescope, each after every parameter its type
+// names, ties kept in the written order; which ones are implicit is the
+// declaration's metadata, so the declared type is the one the function written
+// with every parameter explicit, in the merged order, has. Nothing is inferred
+// yet. What refuses is in `../pathological/classifier/implicit-telescope.gandr`.
+
+/// The identity at a type supplied by name.
+@[ checks ]
+def same @[a : Type] (y : a) -> -F a { return y }
+
+/// `same` at the integers, supplied by name.
+@[ runs("3") ]
+def sameRun : () => Integer ;
+def sameRun = thunk { become same[a = Integer](3) } ;
+
+/// The first of two values of two types, both implicit.
+@[ checks ]
+def first @[a : Type, b : Type] (x : a, y : b) -> -F a { return x }
+
+/// `first` supplied with its implicits in the written order.
+@[ runs("5") ]
+def firstRun : () => Integer ;
+def firstRun = thunk { become first[a = Integer, b = Unit](5, unit) } ;
+
+/// `first` supplied with its implicits the other way round: a resident names
+/// its implicit, so the order the slot writes them in is free.
+@[ runs("5") ]
+def firstSwapped : () => Integer ;
+def firstSwapped = thunk { become first[b = Unit, a = Integer](5, unit) } ;
+
+/// An implicit whose type names an explicit parameter written after it: the
+/// merge binds `t` first, so `x : t` reads it.
+@[ checks ]
+def chosen @[x : t] (t : Type) -> -F t { return x }
+
+/// `chosen` at the integers, its implicit supplied by name.
+@[ runs("7") ]
+def chosenRun : () => Integer ;
+def chosenRun = thunk { become chosen[x = 7](Integer) } ;
+
+/// A stage and an implicit in one telescope: the stage quantifies the
+/// signature and binds no value, the implicit binds the first parameter.
+@[ checks ]
+def kept @[i : Size, a : Type] (n : Integer, y : a) -> -F a { return y }
+
+/// `kept` with its implicit supplied by name.
+@[ runs("4") ]
+def keptRun : () => Integer ;
+def keptRun = thunk { become kept[a = Integer](0, 4) } ;
+
+/// A function applied to the integer it is passed.
+@[ checks ]
+def apply(f : (y : Integer) => Integer, x : Integer) -> -F Integer { become f(x) }
+
+/// `same` passed as a value, its implicit supplied where it is taken: the
+/// function applied to its implicits alone is a function of the rest.
+@[ runs("3") ]
+def passedRun : () => Integer ;
+def passedRun = thunk { become apply(same[a = Integer], 3) } ;
+
+/// The explicit twin of `same`: the function `same`'s implicit makes explicit
+/// runs as the same curried function.
+@[ runs("fn (a) { fn (b) { b } }") ]
+def sameExplicit(a : Type, y : a) -> -F a { return y }
