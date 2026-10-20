@@ -318,6 +318,7 @@ impl Store
         B: BlockStore + ?Sized,
     {
         let mut trees = self.committed.trees.to_vec();
+        let mut rebuilt = Vec::new();
         for object in self.schema.objects() {
             let stale = self
                 .committed
@@ -327,8 +328,12 @@ impl Store
             if !stale {
                 continue;
             }
-            let records = self.table_records(object)?;
-            let refs: Vec<RecordRef<'_>> = records.iter().map(Record::as_record_ref).collect();
+            rebuilt.push((object, self.table_records(object)?));
+        }
+        let mut refs: Vec<RecordRef<'_>> = Vec::new();
+        for &(object, ref records) in &rebuilt {
+            refs.clear();
+            refs.extend(records.iter().map(Record::as_record_ref));
             let tree = RecordTree::build(&refs, self.params)?;
             if let Some(slot) = trees.get_mut(usize::from(object)) {
                 *slot = tree;
@@ -396,13 +401,17 @@ impl Store
         manifest.ensure_reader(&schema, params)?;
         let mut store = Self::new(schema, params)?;
 
-        let mut loaded = Vec::new();
-        let mut trees = Vec::new();
         let objects: Vec<ObjectId> = store.schema.objects().collect();
-        for (&object, table) in objects.iter().zip(manifest.tables()) {
+        let mut loaded = Vec::with_capacity(objects.len());
+        for (_, table) in objects.iter().zip(manifest.tables()) {
+            loaded.push(load_records(blocks, table.root_node())?);
+        }
+        let mut refs: Vec<RecordRef<'_>> = Vec::new();
+        let mut trees = Vec::with_capacity(loaded.len());
+        for ((&object, table), records) in objects.iter().zip(manifest.tables()).zip(&loaded) {
             let name = store.object_name(object)?;
-            let records = load_records(blocks, table.root_node())?;
-            let refs: Vec<RecordRef<'_>> = records.iter().map(Record::as_record_ref).collect();
+            refs.clear();
+            refs.extend(records.iter().map(Record::as_record_ref));
             let tree = RecordTree::build(&refs, params)?;
             if tree.root_node_hash() != table.root_node()
                 || tree.root().record_count() != table.records()
@@ -415,8 +424,7 @@ impl Store
             if let Some(parts) = store.tables.get_mut(usize::from(object)) {
                 *parts = PartSet::reserved(table.next());
             }
-            store.read_table(object, &records)?;
-            loaded.push(records);
+            store.read_table(object, records)?;
             trees.push(tree);
         }
 
