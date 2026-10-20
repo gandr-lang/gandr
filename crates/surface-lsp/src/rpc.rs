@@ -17,6 +17,7 @@ use crate::protocol::ProgressToken;
 use crate::protocol::PublishParams;
 use crate::protocol::RegistrationParams;
 use crate::protocol::WorkDone;
+use crate::protocol::WorkTitle;
 use crate::transport::Body;
 
 /// The version every envelope names.
@@ -579,7 +580,7 @@ pub fn register(params: RegistrationParams) -> Outgoing
 #[must_use]
 pub fn progress_begun(
     token: &ProgressToken,
-    title: &'static str,
+    title: WorkTitle,
     message: String,
 ) -> [Outgoing; 2]
 {
@@ -620,7 +621,7 @@ pub fn progress_ended(token: ProgressToken) -> Outgoing
         method: PROGRESS,
         params: ProgressParams {
             token,
-            value: WorkDone::End {},
+            value: WorkDone::End,
         },
     })
 }

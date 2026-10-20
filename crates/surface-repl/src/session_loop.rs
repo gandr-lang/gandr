@@ -817,13 +817,11 @@ impl SessionLoop
     /// - witness: `tests::repl_loop::a_definition_is_visible_on_the_next_line`
     /// - witness: `tests::repl_loop::a_reloaded_file_replaces_its_chunk`
     #[spec(requires: start <= end && usize::from(end) <= self.accepted.len(),
-        captures: [accepted = self.accepted.clone()],
-        ensures: |ret| match ret {
-            Ok(Revision::Kept(_)) => !matches!(subject, Subject::Probe { .. })
+        ensures: |ret| !matches!(ret, Ok(Revision::Kept(_)))
+            || (!matches!(subject, Subject::Probe { .. })
                 && self.accepted.ends_with('\n')
-                && self.accepted.get(usize::from(start)..).is_some_and(|after| after.starts_with(<&str>::from(chunk))),
-            Ok(Revision::Refused(_)) | Err(_) => self.accepted == accepted,
-        })]
+                && self.accepted.get(usize::from(start)..).is_some_and(|after| after.starts_with(<&str>::from(chunk)))),
+    )]
     fn revise(
         &mut self,
         echo: Echo,
@@ -911,68 +909,83 @@ impl SessionLoop
     ) -> Result<TranscriptBlock, LoopError>
     {
         let mut lines: Vec<(OutKind, String)> = Vec::new();
-        let mut index = 0_usize;
-        while let Some(loaded) = self.loaded.get(index).cloned() {
-            index = index.saturating_add(1);
-            let text = match std::fs::read_to_string(&loaded.path) {
-                Ok(text) => text,
-                Err(error) => {
-                    lines.push((
-                        OutKind::Diag,
-                        format!("cannot read `{}`: {error}", loaded.path.display()),
-                    ));
+        // The files move out for the walk, as resubmitting borrows the loop;
+        // they move back however it ends.
+        let mut files = core::mem::take(&mut self.loaded);
+        let walked = 'files: {
+            for index in 0 .. files.len() {
+                let Some(file) = files.get(index)
+                else {
+                    break;
+                };
+                let (start, end_before) = (file.start, file.end);
+                let text = match std::fs::read_to_string(&file.path) {
+                    Ok(text) => text,
+                    Err(error) => {
+                        lines.push((
+                            OutKind::Diag,
+                            format!("cannot read `{}`: {error}", file.path.display()),
+                        ));
+                        continue;
+                    },
+                };
+                if self
+                    .accepted
+                    .get(usize::from(start) .. usize::from(end_before))
+                    == Some(text.as_str())
+                {
                     continue;
-                },
-            };
-            if self
-                .accepted
-                .get(usize::from(loaded.start) .. usize::from(loaded.end))
-                == Some(text.as_str())
-            {
-                continue;
-            }
-            let echoed = Echo::new(echo.to_string(), Vec::new());
-            match self.revise(
-                echoed,
-                loaded.start,
-                loaded.end,
-                SourceText::from(text.as_str()),
-                Subject::Declarations,
-            )? {
-                Revision::Kept(block) => {
-                    lines.push((
-                        OutKind::Info,
-                        format!("`{}` resubmitted", loaded.path.display()),
-                    ));
-                    lines.extend(block.lines);
-                    let end = usize::from(loaded.start).saturating_add(text.len());
-                    for later in &mut self.loaded {
-                        if later.start >= loaded.end {
-                            later.start = ByteOffset::from(
-                                usize::from(later.start)
-                                    .saturating_sub(usize::from(loaded.end))
-                                    .saturating_add(end),
-                            );
-                            later.end = ByteOffset::from(
-                                usize::from(later.end)
-                                    .saturating_sub(usize::from(loaded.end))
-                                    .saturating_add(end),
-                            );
+                }
+                let echoed = Echo::new(echo.to_string(), Vec::new());
+                let revised = match self.revise(
+                    echoed,
+                    start,
+                    end_before,
+                    SourceText::from(text.as_str()),
+                    Subject::Declarations,
+                ) {
+                    Ok(revised) => revised,
+                    Err(fault) => break 'files Err(fault),
+                };
+                match revised {
+                    Revision::Kept(block) => {
+                        lines.push((
+                            OutKind::Info,
+                            format!("`{}` resubmitted", file.path.display()),
+                        ));
+                        lines.extend(block.lines);
+                        let end = usize::from(start).saturating_add(text.len());
+                        for later in &mut files {
+                            if later.start >= end_before {
+                                later.start = ByteOffset::from(
+                                    usize::from(later.start)
+                                        .saturating_sub(usize::from(end_before))
+                                        .saturating_add(end),
+                                );
+                                later.end = ByteOffset::from(
+                                    usize::from(later.end)
+                                        .saturating_sub(usize::from(end_before))
+                                        .saturating_add(end),
+                                );
+                            }
                         }
-                    }
-                    if let Some(reloaded) = self.loaded.get_mut(index.saturating_sub(1)) {
-                        reloaded.end = ByteOffset::from(end);
-                    }
-                },
-                Revision::Refused(block) => {
-                    lines.extend(block.lines);
-                    lines.push((
-                        OutKind::Info,
-                        format!("`{}` keeps its earlier chunk", loaded.path.display()),
-                    ));
-                },
+                        if let Some(reloaded) = files.get_mut(index) {
+                            reloaded.end = ByteOffset::from(end);
+                        }
+                    },
+                    Revision::Refused(block) => {
+                        lines.extend(block.lines);
+                        lines.push((
+                            OutKind::Info,
+                            format!("`{}` keeps its earlier chunk", file.path.display()),
+                        ));
+                    },
+                }
             }
-        }
+            Ok(())
+        };
+        self.loaded = files;
+        walked?;
         if lines.is_empty() {
             lines.push((
                 OutKind::Info,
