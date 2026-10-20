@@ -847,7 +847,7 @@ fn translate_operation<G>(
         ]));
     }
     for output in &op.arity.outputs {
-        let family = output.sort.clone();
+        let family = &output.sort;
         let output = SortRef::new(output.name.clone(), output.sort.clone()).applied(
             core::iter::once(variable("G"))
                 .chain(output.arguments.iter().cloned())
@@ -861,7 +861,7 @@ fn translate_operation<G>(
                 .iter()
                 .map(|input| FreeTerm::var(input.name.clone())),
         );
-        let lhs = application(named("sub".into(), &family), [subject, variable("s")]);
+        let lhs = application(named("sub".into(), family), [subject, variable("s")]);
         push_equation(
             model,
             lhs,

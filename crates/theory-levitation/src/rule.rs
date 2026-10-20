@@ -318,6 +318,7 @@ impl fmt::Display for FreeTerm
     ) -> fmt::Result
     {
         let mut rendered: Vec<String> = Vec::new();
+        let mut args: Vec<String> = Vec::new();
         for head in self.0.heads() {
             let (name, arity) = match *head {
                 TermHead::Var(ref name) => (Some(name), 0_usize),
@@ -330,7 +331,7 @@ impl fmt::Display for FreeTerm
                 rendered.push(name.to_string());
                 continue;
             }
-            let mut args: Vec<String> = Vec::with_capacity(arity);
+            args.clear();
             for _ in 0 .. arity {
                 args.push(rendered.pop().unwrap_or_default());
             }

@@ -173,12 +173,13 @@ fn the_code_is_one_data_sort_of_fifteen_constructors()
         "the code is a well-formed description"
     );
     let string = ValueTypeRef::prim(PrimTy::StringTy);
+    let mut pending = Vec::new();
     let fields: Vec<(&str, Vec<&str>)> = desc
         .ctors
         .iter()
         .map(|ctor| {
             let mut leaves = Vec::new();
-            let mut pending = vec![ctor.code.to_node()];
+            pending.push(ctor.code.to_node());
             while let Some(node) = pending.pop() {
                 match node.view() {
                     CodeView::Prod(mut factors) => {

@@ -799,6 +799,7 @@ pub fn derive_boundary_within(
             steps
         },
     };
+    let mut pending: Vec<TermNode<'_>> = Vec::new();
     while let Some(step) = stack.pop() {
         // Charge one node visit per resolution, term node, or rebuild. Every
         // node the reading emits is charged, so the count bounds the derived
@@ -859,8 +860,9 @@ pub fn derive_boundary_within(
                     TermView::Results { args } => (Step::FinishResults(args.len()), args),
                 };
                 stack.push(finish);
-                let args: Vec<TermNode<'_>> = args.collect();
-                stack.extend(args.iter().rev().copied().map(Step::Term));
+                pending.clear();
+                pending.extend(args);
+                stack.extend(pending.iter().rev().copied().map(Step::Term));
             },
             Step::Finish(head, arity) => {
                 let args = results.split_off(results.len().saturating_sub(arity));
