@@ -44,6 +44,7 @@ use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::access::AccessDefect;
+use gandr_core_checker::codata::CodataFault;
 use gandr_core_checker::compared;
 use gandr_core_checker::session::Capture;
 use gandr_core_checker::session::LinearityDefect;
@@ -710,7 +711,7 @@ impl Annotations
             | CheckRefusal::MachineInvariant | CheckRefusal::CapabilityUngranted { .. } => ret.primary == Maybe::Present(Annotation {
                 span: declaration, label,
             }) && ret.context == UNNAMED,
-        CheckRefusal::IndexedCase(_) | CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
+        CheckRefusal::IndexedCase(_) | CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Codata { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
     }
 })]
 fn checked(
@@ -935,6 +936,7 @@ fn checked(
                 | LinearityDefect::Unbound { .. },
         }
         | CheckRefusal::Access { at, .. }
+        | CheckRefusal::Codata { at, .. }
         | CheckRefusal::Located { at, .. } => (node(origins, at), UNNAMED),
     };
     let primary = match primary {
@@ -1399,6 +1401,14 @@ impl fmt::Display for Checked
                     "the access's unwind performs an effect: an unwind runs under the empty row",
                 ),
             },
+            | CheckRefusal::Codata { fault, .. } => f.write_str(match fault {
+                | CodataFault::Undeclared => "the codata application names no admitted codata declaration",
+                | CodataFault::KindNotUniverse => "a codata kind must be a computation universe",
+                | CodataFault::WithoutObservations => "the codata declaration states no observation",
+                | CodataFault::Occurrence => "the codata declaration names itself other than at an observation's result at its parameter variables",
+                | CodataFault::ObservationLevel => "an observation exceeds the declared universe",
+                | CodataFault::Arity => "the codata application's arguments do not match its declaration's telescope",
+            }),
             | CheckRefusal::Located { defect, .. } => match defect {
                 | LocatedDefect::Immobile {
                     crossed, predicate, ..
@@ -2450,6 +2460,7 @@ mod tests
         use gandr_core_checker::LoopRespect;
         use gandr_core_checker::RunFault;
         use gandr_core_checker::access::AccessDefect;
+        use gandr_core_checker::codata::CodataFault;
         use gandr_core_checker::ua::StratumDefect;
         use gandr_core_checker::ua::UaDefect;
         use gandr_core_checker::worlds::Crossed;
@@ -2915,6 +2926,14 @@ mod tests
                 at: comp,
                 defect: AccessDefect::UnwindEffect,
             },
+            CheckRefusal::Codata {
+                at: comp,
+                fault: CodataFault::Occurrence,
+            },
+            CheckRefusal::Codata {
+                at: comp,
+                fault: CodataFault::Arity,
+            },
             CheckRefusal::Located {
                 at: comp,
                 defect: LocatedDefect::Immobile {
@@ -3204,6 +3223,7 @@ mod tests
                         | CheckRefusal::OutOfFragment { .. }
                         | CheckRefusal::DanglingNode { .. }
                         | CheckRefusal::Access { .. }
+                        | CheckRefusal::Codata { .. }
                         | CheckRefusal::Located { .. } => spans[1_usize],
                         CheckRefusal::NotSynthesisable {
                             form: CheckingForm::Hole(_),
@@ -3444,6 +3464,7 @@ mod tests
         use gandr_core_checker::LoopRespect;
         use gandr_core_checker::RunFault;
         use gandr_core_checker::access::AccessDefect;
+        use gandr_core_checker::codata::CodataFault;
         use gandr_core_checker::ua::StratumDefect;
         use gandr_core_checker::ua::UaDefect;
         use gandr_core_checker::worlds::Crossed;
@@ -3857,6 +3878,20 @@ mod tests
         for (index, title) in access.iter().enumerate() {
             for earlier in &access[.. index] {
                 assert_ne!(earlier, title, "each access defect names its own subject");
+            }
+        }
+        let codata = [
+            CodataFault::Undeclared,
+            CodataFault::KindNotUniverse,
+            CodataFault::WithoutObservations,
+            CodataFault::Occurrence,
+            CodataFault::ObservationLevel,
+            CodataFault::Arity,
+        ]
+        .map(|fault| title(CheckRefusal::Codata { at: comp, fault }));
+        for (index, title) in codata.iter().enumerate() {
+            for earlier in &codata[.. index] {
+                assert_ne!(earlier, title, "each codata fault names its own subject");
             }
         }
         let located = [

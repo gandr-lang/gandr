@@ -59,6 +59,7 @@ use core::fmt;
 use anodized::spec;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::access::AccessDefect;
+use gandr_core_checker::codata::CodataFault;
 use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
@@ -581,6 +582,20 @@ pub enum RefusalName
     NotAView,
     /// An access's unwind performing an effect.
     UnwindEffect,
+    /// A codata application whose head names no admitted codata declaration.
+    CodataUndeclared,
+    /// A codata declaration whose kind is not a computation universe.
+    CodataKindNotUniverse,
+    /// A codata declaration that states no observation.
+    CodataWithoutObservations,
+    /// A codata declaration naming itself other than at an observation's
+    /// result at its parameter variables.
+    CodataOccurrence,
+    /// A codata observation above the declared universe.
+    CodataObservationLevel,
+    /// A codata application at another arity than its declaration's
+    /// telescope.
+    CodataArity,
     /// A value crossing to a world its type does not reach.
     Immobile,
     /// A migration with no capability for its world.
@@ -624,7 +639,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 160_usize] = [
+    pub const VOCABULARY: [Self; 166_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -773,6 +788,12 @@ impl RefusalName
         Self::ViewSpent,
         Self::NotAView,
         Self::UnwindEffect,
+        Self::CodataUndeclared,
+        Self::CodataKindNotUniverse,
+        Self::CodataWithoutObservations,
+        Self::CodataOccurrence,
+        Self::CodataObservationLevel,
+        Self::CodataArity,
         Self::Immobile,
         Self::CapabilityMissing,
         Self::CapabilityCaptured,
@@ -923,6 +944,12 @@ impl RefusalName
         | (Self::ViewSpent, b"ViewSpent")
         | (Self::NotAView, b"NotAView")
         | (Self::UnwindEffect, b"UnwindEffect")
+        | (Self::CodataUndeclared, b"CodataUndeclared")
+        | (Self::CodataKindNotUniverse, b"CodataKindNotUniverse")
+        | (Self::CodataWithoutObservations, b"CodataWithoutObservations")
+        | (Self::CodataOccurrence, b"CodataOccurrence")
+        | (Self::CodataObservationLevel, b"CodataObservationLevel")
+        | (Self::CodataArity, b"CodataArity")
         | (Self::Immobile, b"Immobile")
         | (Self::CapabilityMissing, b"CapabilityMissing")
         | (Self::CapabilityCaptured, b"CapabilityCaptured")
@@ -1039,6 +1066,12 @@ impl RefusalName
             Self::ViewSpent => "ViewSpent",
             Self::NotAView => "NotAView",
             Self::UnwindEffect => "UnwindEffect",
+            Self::CodataUndeclared => "CodataUndeclared",
+            Self::CodataKindNotUniverse => "CodataKindNotUniverse",
+            Self::CodataWithoutObservations => "CodataWithoutObservations",
+            Self::CodataOccurrence => "CodataOccurrence",
+            Self::CodataObservationLevel => "CodataObservationLevel",
+            Self::CodataArity => "CodataArity",
             Self::Immobile => "Immobile",
             Self::CapabilityMissing => "CapabilityMissing",
             Self::CapabilityCaptured => "CapabilityCaptured",
@@ -1387,6 +1420,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::SessionMismatch { .. }), RefusalName::SessionMismatch | RefusalName::UnofferedLabel | RefusalName::OfferArms)
         | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::Delegation | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint)
         | (Self::Checking(CheckRefusal::Access { .. }), RefusalName::NotHeld | RefusalName::HeldLent | RefusalName::HeldCaptured | RefusalName::ViewEscaped | RefusalName::ViewUnended | RefusalName::ViewSpent | RefusalName::NotAView | RefusalName::UnwindEffect)
+        | (Self::Checking(CheckRefusal::Codata { .. }), RefusalName::CodataUndeclared | RefusalName::CodataKindNotUniverse | RefusalName::CodataWithoutObservations | RefusalName::CodataOccurrence | RefusalName::CodataObservationLevel | RefusalName::CodataArity)
         | (Self::Checking(CheckRefusal::Located { .. }), RefusalName::Immobile | RefusalName::CapabilityMissing | RefusalName::CapabilityCaptured | RefusalName::Elsewhere | RefusalName::HoldElsewhere | RefusalName::Unlocated | RefusalName::UndeclaredWorld | RefusalName::HostWorldUndeclared | RefusalName::MarkUnfounded | RefusalName::EntryNamed | RefusalName::EntryUngranted | RefusalName::NotAHandle)
         | (Self::Checking(CheckRefusal::CapabilityForged { .. }), RefusalName::CapabilityForged)
         | (Self::Checking(CheckRefusal::CapabilityAmplified(_)), RefusalName::CapabilityAmplified)
@@ -1681,6 +1715,12 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::Access { defect: AccessDefect::Spent, .. }, RefusalName::ViewSpent)
         | (CheckRefusal::Access { defect: AccessDefect::NotAView, .. }, RefusalName::NotAView)
         | (CheckRefusal::Access { defect: AccessDefect::UnwindEffect, .. }, RefusalName::UnwindEffect)
+        | (CheckRefusal::Codata { fault: CodataFault::Undeclared, .. }, RefusalName::CodataUndeclared)
+        | (CheckRefusal::Codata { fault: CodataFault::KindNotUniverse, .. }, RefusalName::CodataKindNotUniverse)
+        | (CheckRefusal::Codata { fault: CodataFault::WithoutObservations, .. }, RefusalName::CodataWithoutObservations)
+        | (CheckRefusal::Codata { fault: CodataFault::Occurrence, .. }, RefusalName::CodataOccurrence)
+        | (CheckRefusal::Codata { fault: CodataFault::ObservationLevel, .. }, RefusalName::CodataObservationLevel)
+        | (CheckRefusal::Codata { fault: CodataFault::Arity, .. }, RefusalName::CodataArity)
         | (CheckRefusal::Located { defect: LocatedDefect::Immobile { .. }, .. }, RefusalName::Immobile)
         | (CheckRefusal::Located { defect: LocatedDefect::CapabilityMissing { .. }, .. }, RefusalName::CapabilityMissing)
         | (CheckRefusal::Located { defect: LocatedDefect::CapabilityCaptured { .. }, .. }, RefusalName::CapabilityCaptured)
@@ -1791,6 +1831,14 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
             AccessDefect::Spent => RefusalName::ViewSpent,
             AccessDefect::NotAView => RefusalName::NotAView,
             AccessDefect::UnwindEffect => RefusalName::UnwindEffect,
+        },
+        CheckRefusal::Codata { fault, .. } => match fault {
+            CodataFault::Undeclared => RefusalName::CodataUndeclared,
+            CodataFault::KindNotUniverse => RefusalName::CodataKindNotUniverse,
+            CodataFault::WithoutObservations => RefusalName::CodataWithoutObservations,
+            CodataFault::Occurrence => RefusalName::CodataOccurrence,
+            CodataFault::ObservationLevel => RefusalName::CodataObservationLevel,
+            CodataFault::Arity => RefusalName::CodataArity,
         },
         CheckRefusal::Located { defect, .. } => match defect {
             LocatedDefect::Immobile { .. } => RefusalName::Immobile,

@@ -713,6 +713,8 @@ enum Task
     Record(ValueId),
     /// Assemble a nominal type with the source's declaration identity.
     DataType(ValueTypeId),
+    /// Assemble a codata type with the source's declaration identity.
+    CodataType(CompTypeId),
     /// Assemble a record type with the source's exact labels.
     RecordType(ValueTypeId),
     /// Assemble a session type with the source's protocol and state over as
@@ -2185,7 +2187,7 @@ fn run(
         | Task::Returner { source } => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
             && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
-            && core.comp_type(source).is_some_and(|node| match *node { CompType::Returner { ref effects, .. } => entry_value_types.checked_sub(1_usize.saturating_add(effects.types().count())) == Some(machine.value_types.len()), CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) => false })
+            && core.comp_type(source).is_some_and(|node| match *node { CompType::Returner { ref effects, .. } => entry_value_types.checked_sub(1_usize.saturating_add(effects.types().count())) == Some(machine.value_types.len()), CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => false })
             && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.comp_types.len())
             && machine.comp_types.last().is_some_and(|id| core.comp_type(*id).is_some()),
         | Task::CapabilityType { source } => machine.tasks.len() == entry_tasks
@@ -2210,6 +2212,10 @@ fn run(
             if entry_values.checked_sub(arguments.len()) == Some(machine.values.len())
             && machine.value_types.len() == entry_value_types.saturating_add(1)
             && machine.value_types.last().is_some_and(|&id| matches!(core.value_type(id), Some(ValueType::Data { declaration: actual, arguments: args }) if actual == declaration && args.len() == arguments.len()))),
+        | Task::CodataType(source) => matches!(core.comp_type(source), Some(CompType::Codata { declaration, arguments })
+            if entry_values.checked_sub(arguments.len()) == Some(machine.values.len())
+            && machine.comp_types.len() == entry_comp_types.saturating_add(1)
+            && machine.comp_types.last().is_some_and(|&id| matches!(core.comp_type(id), Some(CompType::Codata { declaration: actual, arguments: args }) if actual == declaration && args.len() == arguments.len()))),
         | Task::RecordType(source) => matches!(core.value_type(source), Some(ValueType::Record(fields))
             if entry_value_types.checked_sub(fields.len()).and_then(|n| n.checked_add(1)) == Some(machine.value_types.len())
             && machine.value_types.last().is_some_and(|&id| matches!(core.value_type(id), Some(ValueType::Record(result)) if fields.keys().eq(result.keys())))),
@@ -2338,6 +2344,25 @@ fn step(
             machine
                 .value_types
                 .push(core.value_type_data(declaration, arguments));
+            Ok(())
+        },
+        Task::CodataType(source) => {
+            let Some(&CompType::Codata {
+                declaration,
+                ref arguments,
+            }) = core.comp_type(source)
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let start = machine
+                .values
+                .len()
+                .checked_sub(arguments.len())
+                .ok_or(ReadbackFault::MachineInvariant)?;
+            let arguments = machine.values.drain(start ..).collect();
+            machine
+                .comp_types
+                .push(core.comp_type_codata(declaration, arguments));
             Ok(())
         },
         Task::RecordType(source) => {
@@ -3302,6 +3327,9 @@ fn step_quoted_value_type(
     captures: [entry_tasks = machine.tasks.len(), entry_frames = machine.frames.len(), entry_fuel = machine.fuel],
     ensures: |ret| machine.fuel == entry_fuel && (ret.is_err() || machine.tasks.get(entry_tasks ..).is_some_and(|new_tasks| match core.comp_type(quoted) {
         | Some(&CompType::With(left, right)) => matches!(new_tasks, [Task::WithType, Task::QuotedCompType { quoted: second, frame: second_frame, binders: second_binders }, Task::QuotedCompType { quoted: first, frame: first_frame, binders: first_binders }] if *first == left && *second == right && *first_frame == frame && *second_frame == frame && *first_binders == binders && *second_binders == binders),
+        | Some(&CompType::Codata { ref arguments, .. }) => new_tasks.first() == Some(&Task::CodataType(quoted))
+            && new_tasks.len() == arguments.len().saturating_add(1)
+            && new_tasks.iter().skip(1).zip(arguments.iter().rev()).all(|(task, argument)| *task == Task::QuotedCode { code: *argument, frame, binders }),
         | Some(&CompType::Returner { result, ref effects }) => new_tasks.first() == Some(&Task::Returner { source: quoted })
             && new_tasks.len() == effects.types().count().saturating_add(2)
             && new_tasks.iter().skip(1).zip(effects.types().rev().chain(core::iter::once(result))).all(|(task, child)| matches!(task, Task::QuotedValueType { quoted, frame: child_frame, binders: child_binders } if *quoted == child && *child_frame == frame && *child_binders == binders)),
@@ -3347,6 +3375,16 @@ fn step_quoted_comp_type(
                     binders,
                 },
             ]);
+        },
+        CompType::Codata { arguments, .. } => {
+            machine.tasks.push(Task::CodataType(quoted));
+            for code in arguments.into_iter().rev() {
+                machine.tasks.push(Task::QuotedCode {
+                    code,
+                    frame,
+                    binders,
+                });
+            }
         },
         CompType::Returner { result, effects } => {
             machine.tasks.push(Task::Returner { source: quoted });

@@ -148,7 +148,8 @@ impl Machine<'_, '_>
             CompTypeView::With(..)
             | CompTypeView::Arrow { .. }
             | CompTypeView::Pi { .. }
-            | CompTypeView::Element { .. } => false,
+            | CompTypeView::Element { .. }
+            | CompTypeView::Codata { .. } => false,
         };
         if pure {
             return Ok(());

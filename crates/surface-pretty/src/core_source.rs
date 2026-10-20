@@ -1189,7 +1189,7 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     #[spec(ensures: |ret| match (self.arena.comp_type(id), ret) {
         | (Some(&CompType::With(first, second)), Former::With(a, b)) => a == CoreNode::CompType(first) && b == CoreNode::CompType(second),
-        | (Some(&CompType::Unknown), Former::Unreadable(Unreadable::UnknownType)) | (None, Former::Unreadable(Unreadable::Dangling)) => true,
+        | (Some(&CompType::Unknown), Former::Unreadable(Unreadable::UnknownType)) | (Some(&CompType::Codata { .. }), Former::Unreadable(Unreadable::Codata)) | (None, Former::Unreadable(Unreadable::Dangling)) => true,
         | (Some(&CompType::Returner { result, ref effects }), Former::Returner(actual)) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Pure,
         | (Some(&CompType::Returner { result, ref effects }), Former::EffectfulReturner { result: actual, .. }) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Effectful,
         | (Some(&CompType::Arrow { domain, codomain }), Former::Arrow { domain: actual_domain, codomain: actual_codomain })
@@ -1251,6 +1251,15 @@ impl<'arena> CoreSource<'arena>
                 codomain: CoreNode::CompType(codomain),
             },
             CompType::Element { code, .. } => Former::ComputationElement(CoreNode::Value(code)),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a codata application: a computation type the surface grammar has \
+                              no syntax for yet"
+                )
+            )]
+            CompType::Codata { .. } => Former::Unreadable(Unreadable::Codata),
         }
     }
 

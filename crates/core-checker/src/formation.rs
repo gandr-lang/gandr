@@ -523,6 +523,16 @@ pub fn level_of(
                     tasks.push(Task::Enter(TypeNode::Value(domain)));
                 },
                 CompTypeView::Element { target, .. } => levels.push(target.clone()),
+                CompTypeView::Codata { declaration, .. } => {
+                    let Maybe::Present(signature) = context.codata_in_scope(declaration)
+                    else {
+                        return Err(CheckRefusal::Codata {
+                            at: crate::CoreNode::Type(TypeNode::Computation(at)),
+                            fault: crate::codata::CodataFault::Undeclared,
+                        });
+                    };
+                    levels.push(crate::codata::kind_level(context, signature.kind())?);
+                },
                 CompTypeView::Unknown => levels.push(Level::zero()),
             },
         }

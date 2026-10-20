@@ -75,6 +75,7 @@ fn signed(declaration: &Declaration) -> ValueTypeId
         } => declared,
         ref other @ (DeclarationContent::Value { .. }
         | DeclarationContent::Data(_)
+        | DeclarationContent::Codata(_)
         | DeclarationContent::Abstract(_)
         | DeclarationContent::World) => {
             panic!("a signed value declaration, got {other:?}")

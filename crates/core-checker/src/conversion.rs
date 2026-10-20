@@ -1475,11 +1475,33 @@ fn convert(
                         left_target == right_target
                     },
                     (
+                        CompTypeView::Codata {
+                            declaration: a,
+                            arguments: left_arguments,
+                        },
+                        CompTypeView::Codata {
+                            declaration: b,
+                            arguments: right_arguments,
+                        },
+                    ) => {
+                        if a != b || left_arguments.len() != right_arguments.len() {
+                            return Ok(Agreement::Apart);
+                        }
+                        pending.extend(
+                            left_arguments
+                                .iter()
+                                .zip(right_arguments)
+                                .map(|(&a, &b)| Pairing::Terms(a, b)),
+                        );
+                        true
+                    },
+                    (
                         CompTypeView::Returner { .. }
                         | CompTypeView::With(..)
                         | CompTypeView::Arrow { .. }
                         | CompTypeView::Pi { .. }
-                        | CompTypeView::Element { .. },
+                        | CompTypeView::Element { .. }
+                        | CompTypeView::Codata { .. },
                         _,
                     ) => false,
                 }
@@ -1806,6 +1828,7 @@ fn comp_head(
         | CompTypeView::Returner { .. }
         | CompTypeView::Arrow { .. }
         | CompTypeView::Pi { .. }
+        | CompTypeView::Codata { .. }
         | CompTypeView::Unknown => Ok(side),
     }
 }
@@ -2028,8 +2051,8 @@ fn relocated_values(
 /// # Specification
 /// - requires: both sides at their weak heads.
 /// - ensures: as [`relocated_values`], for lazy pairs, returners over the empty
-///   row, and arrows of either kind; a returner over a row and a decode are
-///   [`through::Absent::Unread`].
+///   row, and arrows of either kind; a returner over a row, a decode and a
+///   codata type are [`through::Absent::Unread`].
 /// - fails: the view's refusal for a node outside the fragment.
 /// - panics: none.
 ///
@@ -2057,7 +2080,8 @@ fn relocated_comps(
         comp_type_view(arena, left.node())?,
         comp_type_view(arena, right.node())?,
     ) {
-        (CompTypeView::Element { .. }, _) | (_, CompTypeView::Element { .. }) => {
+        (CompTypeView::Element { .. } | CompTypeView::Codata { .. }, _)
+        | (_, CompTypeView::Element { .. } | CompTypeView::Codata { .. }) => {
             return Ok(Maybe::Absent(through::Absent::Unread));
         },
         (CompTypeView::Unknown, _) | (_, CompTypeView::Unknown) => Read::Pushed,

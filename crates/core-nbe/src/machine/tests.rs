@@ -1853,7 +1853,7 @@ impl Kernel
               ValueType::Base(_) | ValueType::Universe{..} | ValueType::Abstract(_) | ValueType::Unknown => ret.is_empty(),
              }),
              Node::CompType(id) => core.comp_type(id).is_some_and(|comp_type| match *comp_type {
-              CompType::With(..) => false,
+              CompType::With(..) | CompType::Codata { .. } => false,
               CompType::Returner { result, ref effects } => effects.purity() == gandr_core_term::effect::Purity::Pure && ret.as_slice() == [Node::ValueType(result)],
               CompType::Arrow{domain,codomain} | CompType::Pi{domain,codomain} => ret.as_slice() == [Node::ValueType(domain),Node::CompType(codomain)],
               CompType::Element{code,..} => ret.as_slice() == [Node::Value(code)],
@@ -2074,6 +2074,7 @@ impl Kernel
             Node::CompType(comp_type) => {
                 match *core.comp_type(comp_type).expect("a fixture type resolves") {
                     CompType::With(..) => panic!("the kernel has no lazy computation pair"),
+                    CompType::Codata { .. } => panic!("kernel replay fixtures hold no codata"),
                     CompType::Returner {
                         result,
                         ref effects,
@@ -2502,6 +2503,7 @@ impl Kernel
                 };
                 let copy = match *core.comp_type(id).expect("a fixture type resolves") {
                     CompType::With(..) => panic!("the kernel has no lazy computation pair"),
+                    CompType::Codata { .. } => panic!("kernel replay fixtures hold no codata"),
                     CompType::Returner {
                         result,
                         ref effects,

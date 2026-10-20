@@ -363,7 +363,12 @@ fn every_footprint_stance_and_answer_round_trips()
         }
     }
     let ty = crate::fixture::type_content(&[ContentNode::Product(Vec::new())]);
-    for answer in [Answer::Untyped, Answer::Typed(ty), Answer::Data(None)] {
+    for answer in [
+        Answer::Untyped,
+        Answer::Typed(ty),
+        Answer::Data(None),
+        Answer::Codata,
+    ] {
         let mut bytes = CheckpointBytes::default();
         super::write_answer(&mut Writer { sink: &mut bytes }, &answer).expect("a portable answer");
         assert!(encodings.insert(bytes.as_ref().to_vec()));
@@ -2351,6 +2356,17 @@ fn every_refusal() -> Vec<Refusal>
             AccessDefect::UnwindEffect,
         ]
         .map(|defect| Refusal::Access { at, defect }),
+    );
+    refusals.extend(
+        [
+            gandr_core_checker::codata::CodataFault::Undeclared,
+            gandr_core_checker::codata::CodataFault::KindNotUniverse,
+            gandr_core_checker::codata::CodataFault::WithoutObservations,
+            gandr_core_checker::codata::CodataFault::Occurrence,
+            gandr_core_checker::codata::CodataFault::ObservationLevel,
+            gandr_core_checker::codata::CodataFault::Arity,
+        ]
+        .map(|fault| Refusal::Codata { at, fault }),
     );
     let step = RunStep::from(2_u32);
     refusals.extend(

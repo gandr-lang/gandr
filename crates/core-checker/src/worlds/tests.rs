@@ -198,6 +198,7 @@ fn body_of(declaration: &Declaration) -> ValueId
         } => body,
         DeclarationContent::Value { .. }
         | DeclarationContent::Data(_)
+        | DeclarationContent::Codata(_)
         | DeclarationContent::Abstract(_)
         | DeclarationContent::World => panic!("the fixture reads the body of a defined value"),
     }

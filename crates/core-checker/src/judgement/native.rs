@@ -368,6 +368,43 @@ impl Machine<'_, '_>
         Ok(Step::Ascend(Produced::Checked))
     }
 
+    /// Queue each argument of a codata application at its instantiated
+    /// parameter classifier.
+    ///
+    /// # Specification
+    /// - requires: `codata` is a codata application.
+    /// - ensures: every argument checks against its telescope entry,
+    ///   instantiated at the arguments before it.
+    /// - fails: as [`crate::codata::signature`]: the declaration whose
+    ///   observations are forming, an absent declaration or a wrong arity.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal::Codata`] names the failed formation premise.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a stream at a type code forms; a stream at an integer
+    ///   is a type mismatch and one at two arguments refused by arity.
+    /// - witness: `tests::codata::a_codata_application_names_an_admitted_declaration_at_its_arity`
+    #[spec(ensures: |ret| ret.is_err() || ret == Ok(Step::Ascend(Produced::Checked)))]
+    pub(super) fn native_codata(
+        &mut self,
+        codata: gandr_core_term::CompTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let signature = crate::codata::signature(self.context, codata)?;
+        for (index, &parameter) in signature.parameters().iter().enumerate().rev() {
+            let at = crate::codata::ParameterAt(index);
+            let expected = crate::codata::instantiate_value(self.context, codata, parameter, at)?;
+            let argument = crate::codata::argument(self.context, codata, at)?;
+            self.wait(Frame::NativeNext(Goal::Value {
+                term: argument,
+                direction: Direction::Check(expected),
+            }));
+        }
+        Ok(Step::Ascend(Produced::Checked))
+    }
+
     /// Refuse a constructor of an indexed family whose annotation names other
     /// indices than the ones the constructor states.
     ///

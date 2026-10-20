@@ -576,6 +576,7 @@ fn fault(refusal: CheckRefusal) -> Refusal
         | CheckRefusal::ForwardUnsupported { .. }
         | CheckRefusal::Boundary { .. }
         | CheckRefusal::Access { .. }
+        | CheckRefusal::Codata { .. }
         | CheckRefusal::Located { .. } => Refusal::MachineInvariant,
     }
 }
@@ -597,11 +598,12 @@ fn fault(refusal: CheckRefusal) -> Refusal
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Refusal
 {
-    /// A nominal head names a declaration that did not cross.
+    /// A nominal head — a data or codata type — names a declaration that did
+    /// not cross.
     WithheldData
     {
         /// The source nominal type.
-        at: ValueTypeId,
+        at: TypeNode,
         /// Its source declaration identity.
         constant: ConstantIndex,
     },
@@ -1751,11 +1753,13 @@ where
             (None, Verdict::Data) => {
                 let offer = match (
                     report.data_signatures().get(&constant),
+                    report.codata_signatures().get(&constant),
                     report.abstract_types().get(&constant),
                 ) {
-                    (Some(signature), _) => Offer::Data(signature),
-                    (None, Some(&declared)) => Offer::Abstract(declared),
-                    (None, None) if report.worlds().contains(&constant) => {
+                    (Some(signature), ..) => Offer::Data(signature),
+                    (None, Some(signature), _) => Offer::Codata(signature),
+                    (None, None, Some(&declared)) => Offer::Abstract(declared),
+                    (None, None, None) if report.worlds().contains(&constant) => {
                         readmitted.push(Readmitted {
                             constant,
                             origin: judged.origin(),
@@ -1764,7 +1768,7 @@ where
                         });
                         continue;
                     },
-                    (None, None) => {
+                    (None, None, None) => {
                         readmitted.push(Readmitted {
                             constant,
                             origin: judged.origin(),
@@ -2067,6 +2071,8 @@ enum Offer<'signature>
 {
     /// A native nominal declaration's checked signature.
     Data(&'signature gandr_core_term::DataSignature),
+    /// A codata declaration's checked signature.
+    Codata(&'signature gandr_core_term::CodataSignature),
     /// A sealed abstract type: its kind and its representation.
     Abstract(AbstractType),
     /// A definition: a body at the type it was judged at.
@@ -2134,6 +2140,16 @@ enum Erased
         /// The representation's image.
         representation: gandr_kernel_term::ValueTypeId,
     },
+    /// A codata signature's images.
+    Codata
+    {
+        /// The parameter telescope.
+        parameters: Vec<gandr_kernel_term::ValueTypeId>,
+        /// The observations, under the parameters.
+        observations: Vec<gandr_kernel_term::CompTypeId>,
+        /// The computation universe.
+        kind: gandr_kernel_term::ValueTypeId,
+    },
 }
 
 /// Erase `offer`, the declaration at `constant`, into a staging session of
@@ -2177,7 +2193,7 @@ enum Erased
             && positions.exports.len().checked_sub(exports) == Some(1)
             && positions.admitted.len().checked_sub(crossed) == Some(1)
             && positions.admitted.get(&constant) == Some(&admitted.position())
-            && matches!((offer, &ret.0), (Offer::Definition { .. }, &Outcome::Defined { .. }) | (Offer::Data(_) | Offer::Abstract(_), &Outcome::Data { .. }) | (Offer::Axiom { .. }, &Outcome::Assumed { .. }))
+            && matches!((offer, &ret.0), (Offer::Definition { .. }, &Outcome::Defined { .. }) | (Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_), &Outcome::Data { .. }) | (Offer::Axiom { .. }, &Outcome::Assumed { .. }))
             && ret.1.iter().all(|replay| replay.verdict() == KernelVerdict::Convertible),
         | Outcome::Refused(_) | Outcome::Rejected(_) =>
             environment.entries().len() == entries
@@ -2201,7 +2217,7 @@ where
     let base = ConstantIndex::from(usize::from(next).saturating_add(1));
     let own = [(constant, next)];
     let crossing: &[(ConstantIndex, ConstantIndex)] = match offer {
-        Offer::Data(_) => &own,
+        Offer::Data(_) | Offer::Codata(_) => &own,
         Offer::Abstract(_) | Offer::Definition { .. } | Offer::Axiom { .. } => &[],
     };
     let staged = match stage(
@@ -2309,9 +2325,10 @@ where
     };
     let image = match erased {
         Erased::Definition { ref body, .. } => Maybe::Present(*body),
-        Erased::Data { .. } | Erased::Axiom { .. } | Erased::Abstract { .. } => {
-            Maybe::Absent(staged::Absent::Bodiless)
-        },
+        Erased::Data { .. }
+        | Erased::Codata { .. }
+        | Erased::Axiom { .. }
+        | Erased::Abstract { .. } => Maybe::Absent(staged::Absent::Bodiless),
     };
     let declaration = match erased {
         Erased::Data {
@@ -2351,7 +2368,10 @@ where
                         },
                     ))
                 },
-                Offer::Abstract(_) | Offer::Definition { .. } | Offer::Axiom { .. } => staged,
+                Offer::Abstract(_)
+                | Offer::Codata(_)
+                | Offer::Definition { .. }
+                | Offer::Axiom { .. } => staged,
             }
         },
         Erased::Definition {
@@ -2364,6 +2384,16 @@ where
             .relating(related)
             .lawful(laws),
         Erased::Axiom { declared } => staging.axiom(LevelSignature::monomorphic(), declared),
+        Erased::Codata {
+            parameters,
+            observations,
+            kind,
+        } => staging.codata(
+            LevelSignature::monomorphic(),
+            parameters,
+            observations,
+            kind,
+        ),
         Erased::Abstract {
             kind,
             representation,
@@ -2427,7 +2457,7 @@ fn settle(
             }
             Outcome::Data { admitted, audit }
         },
-        (Offer::Abstract(_), _) => {
+        (Offer::Abstract(_) | Offer::Codata(_), _) => {
             positions.declare(constant, admitted);
             Outcome::Data { admitted, audit }
         },
@@ -3778,6 +3808,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     && related.iter().all(|pair| target.value(pair.left).is_some() && target.value(pair.right).is_some()) }
  else if matches!(matched_left_value, Offer::Axiom { .. }) && let Ok(Erased::Axiom { ref declared }) = *matched_right_value { target.value_type(*declared).is_some() }
  else if matches!(matched_left_value, Offer::Abstract(_)) && let Ok(Erased::Abstract { ref kind, ref representation }) = *matched_right_value { target.value_type(*kind).is_some() && target.value_type(*representation).is_some() }
+ else if let Offer::Codata(signature) = matched_left_value && let Ok(Erased::Codata { ref parameters, ref observations, ref kind }) = *matched_right_value { parameters.len() == signature.parameters().len() && observations.len() == signature.observations().len() && target.value_type(*kind).is_some() }
  else { (*matched_right_value).is_err() }
 })]
     fn offer(
@@ -3884,6 +3915,24 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Ok(Erased::Abstract {
                     kind,
                     representation,
+                })
+            },
+            Offer::Codata(signature) => {
+                let parameters = signature
+                    .parameters()
+                    .iter()
+                    .map(|&parameter| self.value_type(target, parameter))
+                    .collect::<Result<_, _>>()?;
+                let observations = signature
+                    .observations()
+                    .iter()
+                    .map(|&observation| self.comp_type(target, observation))
+                    .collect::<Result<_, _>>()?;
+                let kind = self.value_type(target, signature.kind())?;
+                Ok(Erased::Codata {
+                    parameters,
+                    observations,
+                    kind,
                 })
             },
         }
@@ -4358,6 +4407,40 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         match image {
             AnyNode::ValueType(erased) => Ok(erased),
             AnyNode::Value(_) | AnyNode::Computation(_) | AnyNode::CompType(_) => {
+                Err(Refusal::MachineInvariant)
+            },
+        }
+    }
+
+    /// Erase the computation type `root` into `target`.
+    ///
+    /// # Specification
+    /// - requires: no earlier erasure of this machine was refused.
+    /// - ensures: the image of `root`, as [`Self::erase`] gives it.
+    /// - fails: as [`Self::erase`]; [`Refusal::MachineInvariant`] when the
+    ///   image is not a computation type.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - any [`Refusal`] [`Self::erase`] gives.
+    /// - [`Refusal::MachineInvariant`] — the machine produced another family.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a stream's observations cross as their kernel
+    ///   computation types, its tail naming its own kernel position.
+    /// - witness: `tests::codata::a_stream_is_admitted_observed_and_adopted`
+    #[spec(ensures: |ret| match ret { | Ok(image) => target.comp_type(image).is_some()
+        && self.reached().comp_types.get(&root) == Some(&Image::Erased(image)), | Err(_) => true })]
+    fn comp_type(
+        &mut self,
+        target: &mut TermArena,
+        root: CompTypeId,
+    ) -> Result<gandr_kernel_term::CompTypeId, Refusal>
+    {
+        let image = self.erase(target, CoreNode::Type(TypeNode::Computation(root)))?;
+        match image {
+            AnyNode::CompType(erased) => Ok(erased),
+            AnyNode::Value(_) | AnyNode::Computation(_) | AnyNode::ValueType(_) => {
                 Err(Refusal::MachineInvariant)
             },
         }
@@ -5653,6 +5736,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 (Frame::ArrowDomain { at, codomain }, domain)
             },
             CompTypeView::Pi { domain, codomain } => (Frame::PiDomain { at, codomain }, domain),
+            CompTypeView::Codata { .. } => {
+                return self.prepare_native(target, CoreNode::Type(TypeNode::Computation(at)));
+            },
             CompTypeView::Element { .. } | CompTypeView::Unknown => {
                 let Some(&gandr_core_term::CompType::Element {
                     code,

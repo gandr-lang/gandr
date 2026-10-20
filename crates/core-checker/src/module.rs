@@ -278,6 +278,7 @@ fn schedule(
             },
             (
                 &crate::DeclarationContent::Data(_)
+                | &crate::DeclarationContent::Codata(_)
                 | &crate::DeclarationContent::Abstract(_)
                 | &crate::DeclarationContent::World,
                 _,
@@ -514,6 +515,8 @@ pub struct ModuleReport
     definitions: BTreeMap<ConstantIndex, ValueId>,
     /// Native signatures retained for kernel readmission.
     data_signatures: BTreeMap<ConstantIndex, alloc::sync::Arc<gandr_core_term::DataSignature>>,
+    /// Codata signatures retained for kernel readmission.
+    codata_signatures: BTreeMap<ConstantIndex, alloc::sync::Arc<gandr_core_term::CodataSignature>>,
     /// The sealed abstract types that formed, by position, for kernel
     /// readmission.
     abstract_types: BTreeMap<ConstantIndex, AbstractType>,
@@ -543,6 +546,19 @@ impl ModuleReport
     ) -> &BTreeMap<ConstantIndex, alloc::sync::Arc<gandr_core_term::DataSignature>>
     {
         &self.data_signatures
+    }
+
+    /// The successfully formed codata signatures.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn codata_signatures(
+        &self
+    ) -> &BTreeMap<ConstantIndex, alloc::sync::Arc<gandr_core_term::CodataSignature>>
+    {
+        &self.codata_signatures
     }
 
     /// The sealed abstract types that formed, by position.
@@ -864,6 +880,7 @@ enum Run
     ensures: |ret| context.depth(gandr_core_term::Zone::Intuitionistic) == depth && match ret {
         | Verdict::Data => match *declaration.content() {
             | crate::DeclarationContent::Data(ref signature) => context.data_signatures().get(&declaration.constant()) == Some(signature),
+            | crate::DeclarationContent::Codata(ref signature) => context.codata_signatures().get(&declaration.constant()) == Some(signature),
             | crate::DeclarationContent::Abstract(_) | crate::DeclarationContent::World => true,
             | crate::DeclarationContent::Value { .. } => false,
         },
@@ -975,6 +992,7 @@ fn decide(
     let collecting = match *declaration.content() {
         crate::DeclarationContent::Value { .. } => Collecting::On,
         crate::DeclarationContent::Data(_)
+        | crate::DeclarationContent::Codata(_)
         | crate::DeclarationContent::Abstract(_)
         | crate::DeclarationContent::World => Collecting::Off,
     };
@@ -1016,6 +1034,14 @@ fn decide(
             let verdict = crate::former::form_signature(context, constant, signature);
             if verdict.is_ok() {
                 context.record_data(constant, alloc::sync::Arc::clone(signature));
+            }
+            let signed = finish(context, outer);
+            return formed(verdict, kept(signed));
+        },
+        crate::DeclarationContent::Codata(ref signature) => {
+            let verdict = crate::codata::form_signature(context, constant, signature);
+            if verdict.is_ok() {
+                context.record_codata(constant, alloc::sync::Arc::clone(signature));
             }
             let signed = finish(context, outer);
             return formed(verdict, kept(signed));
@@ -1535,6 +1561,7 @@ where
         natives: context.natives().clone(),
         definitions: context.definitions().definitions().collect(),
         data_signatures: context.data_signatures().clone(),
+        codata_signatures: context.codata_signatures().clone(),
         abstract_types: context.abstract_types().collect(),
         seal_table: context.seal_table().clone(),
         failures,
@@ -1595,6 +1622,7 @@ where
         match *declaration.content() {
             crate::DeclarationContent::Value { .. } => adopt(context, declaration)?,
             crate::DeclarationContent::Data(_)
+            | crate::DeclarationContent::Codata(_)
             | crate::DeclarationContent::Abstract(_)
             | crate::DeclarationContent::World => {
                 let _formed = decide(context, declaration, Run::Judged);

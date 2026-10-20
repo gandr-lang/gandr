@@ -818,6 +818,7 @@ fn function_parts(
         | CompTypeView::Arrow { .. }
         | CompTypeView::Pi { .. }
         | CompTypeView::Element { .. }
+        | CompTypeView::Codata { .. }
         | CompTypeView::Unknown => Ok(Maybe::Absent(unread::Absent::Unbound)),
     }
 }

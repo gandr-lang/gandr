@@ -440,3 +440,142 @@ fn a_path_product_resumes_to_its_native_path()
         "a product is judged again for its native path; the renamed item has no checkpoint"
     );
 }
+
+/// The order a stream declares its observations in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Observed
+{
+    /// `head` before `tail`.
+    HeadFirst,
+    /// `tail` before `head`.
+    TailFirst,
+}
+
+/// A stream, the stream of units, a reader of its second element through its
+/// observations, and a bystander.
+///
+/// # Specification
+/// - ensures: the first item declares the stream, its observations in the order
+///   `observed` names.
+/// - panics: only if the ordered fixture is rejected by the program container.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the reader names no codata type in its own content, so
+///   only its consultation of the stream's signature can make it judged again.
+/// - witness: `tests::native_formers::a_codata_reader_is_judged_afresh`
+#[spec(ensures: |ret| ret.items().len() == 4)]
+fn streams(observed: Observed) -> Program
+{
+    let mut arena = CoreArena::new();
+    let family = ConstantIndex::from(0_usize);
+    let parameter_kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Computation), Level::zero());
+    let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let element = arena.value_type_element(parameter, Level::zero());
+    let head = arena.comp_type_returner(element);
+    let tail = arena.comp_type_codata(family, vec![parameter]);
+    let observations = match observed {
+        Observed::HeadFirst => vec![head, tail],
+        Observed::TailFirst => vec![tail, head],
+    };
+    let stream = Declaration::codata(
+        family,
+        Arc::new(gandr_core_term::CodataSignature::new(
+            vec![parameter_kind],
+            observations,
+            kind,
+        )),
+        OriginToken::from(0_usize),
+    );
+    let unit_type = arena.value_type_unit();
+    let unit_code = arena.value_quote(unit_type);
+    let units = arena.comp_type_codata(family, vec![unit_code]);
+    let units = arena.value_type_thunk(units);
+    let unit = arena.value_unit();
+    let returned = arena.computation_return(unit);
+    let own = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = arena.computation_force(own);
+    let pair = arena.computation_with(returned, forced);
+    let fixpoint = arena.computation_fixpoint(pair, gandr_kernel_term::FixpointEvidence::Partial);
+    let ones = arena.value_thunk(fixpoint);
+    let ones_constant = arena.value_constant(ConstantIndex::from(1_usize));
+    let forced = arena.computation_force(ones_constant);
+    let rest = arena.computation_project(gandr_kernel_term::Side::Right, forced);
+    let second = arena.computation_project(gandr_kernel_term::Side::Left, rest);
+    let second = arena.value_thunk(second);
+    let returner = arena.comp_type_returner(unit_type);
+    let returner = arena.value_type_thunk(returner);
+    let definition = |position: usize, declared, body| {
+        Declaration::new(
+            ConstantIndex::from(position),
+            Maybe::Present(declared),
+            Maybe::Present(body),
+            OriginToken::from(position),
+        )
+    };
+    Program::new(arena, vec![
+        Item::new(ItemKey::from("Stream"), stream),
+        Item::new(ItemKey::from("ones"), definition(1, units, ones)),
+        Item::new(ItemKey::from("second"), definition(2, returner, second)),
+        Item::new(ItemKey::from("unit"), definition(3, unit_type, unit)),
+    ])
+    .expect("fixture positions ascend")
+}
+
+#[test]
+fn a_codata_reader_is_judged_afresh()
+{
+    let original = check_program(&mut streams(Observed::HeadFirst), CheckBudget::DEFAULT)
+        .expect("the initial pass succeeds");
+    let checkpoints = original.checkpoints();
+    assert_eq!(checkpoints.items()[0].typing(), &Typing::Data);
+    for item in &checkpoints.items()[1 ..] {
+        assert!(
+            matches!(item.typing(), Typing::Checked { .. }),
+            "{:?}",
+            item.typing()
+        );
+    }
+    assert!(
+        checkpoints.items()[2]
+            .support()
+            .iter()
+            .any(|answered| matches!(answered.answer(), Answer::Codata)),
+        "the reader consulted the stream's signature"
+    );
+    assert_eq!(
+        encode_checkpoints(checkpoints).err(),
+        Some(
+            gandr_core_incremental::CheckpointStoreError::UnsupportedPersistence(
+                gandr_core_incremental::UnsupportedPersistence::Codata
+            )
+        ),
+        "a codata signature has no content form to persist"
+    );
+    let unchanged =
+        resume_from(checkpoints, &mut streams(Observed::HeadFirst)).expect("the program resumes");
+    assert_eq!(unchanged.checkpoints(), checkpoints);
+    assert_eq!(
+        unchanged.adoptions(),
+        [
+            Adoption::Judged,
+            Adoption::Judged,
+            Adoption::Judged,
+            Adoption::Adopted
+        ],
+        "the stream and every item reading it are judged; the bystander is adopted"
+    );
+    let swapped =
+        resume_from(checkpoints, &mut streams(Observed::TailFirst)).expect("the program resumes");
+    let fresh = check_program(&mut streams(Observed::TailFirst), CheckBudget::DEFAULT)
+        .expect("fresh checking succeeds");
+    assert_eq!(swapped.checkpoints(), fresh.checkpoints());
+    assert!(
+        matches!(
+            swapped.checkpoints().items()[2].typing(),
+            Typing::Refused(_)
+        ),
+        "the reader of swapped observations is refused: {:?}",
+        swapped.checkpoints().items()[2].typing()
+    );
+}

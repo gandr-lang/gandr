@@ -243,7 +243,7 @@ impl AbstractType
     }
 }
 
-/// The four disjoint declaration judgments.
+/// The five disjoint declaration judgments.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum DeclarationContent
 {
@@ -257,6 +257,8 @@ pub enum DeclarationContent
     },
     /// A native nominal signature; it is neither a value body nor a hole.
     Data(alloc::sync::Arc<gandr_core_term::DataSignature>),
+    /// A codata signature: its telescope and its observations.
+    Codata(alloc::sync::Arc<gandr_core_term::CodataSignature>),
     /// A sealed abstract type; an atom, neither a value nor an assumption.
     Abstract(AbstractType),
     /// A world: its position is its identity, and it carries nothing.
@@ -360,6 +362,27 @@ impl Declaration
             constant,
             origin,
             content: DeclarationContent::Data(signature),
+            laws: Vec::new(),
+            entry: Maybe::Absent(entry::Absent::Unstated),
+        }
+    }
+
+    /// A codata declaration at its own admission position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn codata(
+        constant: ConstantIndex,
+        signature: alloc::sync::Arc<gandr_core_term::CodataSignature>,
+        origin: OriginToken,
+    ) -> Self
+    {
+        Self {
+            constant,
+            origin,
+            content: DeclarationContent::Codata(signature),
             laws: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
@@ -474,6 +497,7 @@ impl Declaration
         match self.content {
             DeclarationContent::Value { .. } => Self { laws, ..self },
             DeclarationContent::Data(_)
+            | DeclarationContent::Codata(_)
             | DeclarationContent::Abstract(_)
             | DeclarationContent::World => self,
         }
@@ -513,6 +537,7 @@ impl Declaration
                 ..self
             },
             DeclarationContent::Data(_)
+            | DeclarationContent::Codata(_)
             | DeclarationContent::Abstract(_)
             | DeclarationContent::World => self,
         }

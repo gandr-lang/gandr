@@ -845,6 +845,14 @@ pub enum Refusal
         /// What the discipline refuses.
         defect: gandr_core_checker::access::AccessDefect,
     },
+    /// A codata declaration or application refused.
+    Codata
+    {
+        /// The node where the fault was found.
+        at: Site,
+        /// What is refused.
+        fault: gandr_core_checker::codata::CodataFault,
+    },
     /// A located judgement broke.
     Located
     {
@@ -1415,6 +1423,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let (CheckRefusal::NonCovariantMotive { at }, &Refusal::NonCovariantMotive(projected)) | (CheckRefusal::RideUnsupported { at }, &Refusal::RideUnsupported(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::RunNotAdmitted { at, fault } = matched_left_value && let Refusal::RunNotAdmitted { at: projected, fault: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == fault }
  else if let CheckRefusal::Access { at, defect } = matched_left_value && let Refusal::Access { at: projected, defect: kept } = *matched_right_value { projected == self.core_site(at) && kept == defect }
+ else if let CheckRefusal::Codata { at, fault } = matched_left_value && let Refusal::Codata { at: projected, fault: kept } = *matched_right_value { projected == self.core_site(at) && kept == fault }
  else if let CheckRefusal::Located { at, defect } = matched_left_value && let Refusal::Located { at: projected, defect: ref kept } = *matched_right_value { projected == self.core_site(at) && *kept == self.located(defect) }
  else { false }
 })]
@@ -1789,6 +1798,10 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             CheckRefusal::Access { at, defect } => Refusal::Access {
                 at: self.core_site(at),
                 defect,
+            },
+            CheckRefusal::Codata { at, fault } => Refusal::Codata {
+                at: self.core_site(at),
+                fault,
             },
             CheckRefusal::Located { at, defect } => Refusal::Located {
                 at: self.core_site(at),

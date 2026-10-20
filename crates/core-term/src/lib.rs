@@ -300,6 +300,7 @@ pub use crate::rewrite::substitute_environment;
 pub use crate::rewrite::substitute_environment_traced;
 pub use crate::rewrite::wrap_marks;
 pub use crate::syntax::CertificateEquality;
+pub use crate::syntax::CodataSignature;
 pub use crate::syntax::CompType;
 pub use crate::syntax::ComponentCount;
 pub use crate::syntax::Computation;

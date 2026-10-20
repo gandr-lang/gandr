@@ -1145,6 +1145,21 @@ where
                 Some(&CompType::Element { code, .. }) => {
                     pending.push((AnyNode::Value(code), reach.term()));
                 },
+                // A codata declaration's parameters have no variance its
+                // admission decides: what its arguments name stands nested.
+                Some(&CompType::Codata {
+                    declaration,
+                    ref arguments,
+                }) => {
+                    if declaration >= block.end {
+                        return Err(declaration);
+                    }
+                    pending.extend(
+                        arguments
+                            .iter()
+                            .map(|&argument| (AnyNode::Value(argument), reach.nest())),
+                    );
+                },
                 Some(&CompType::Unknown) | None => {},
             },
             AnyNode::Value(id) => match arena.value(id) {

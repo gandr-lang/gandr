@@ -202,7 +202,8 @@ pub fn open_fixpoint(
             CompTypeView::Unknown => return Ok(Maybe::Absent(Unstaged::Unknown)),
             CompTypeView::Returner { .. }
             | CompTypeView::With(..)
-            | CompTypeView::Element { .. } => {
+            | CompTypeView::Element { .. }
+            | CompTypeView::Codata { .. } => {
                 return Err(refused);
             },
         };
@@ -706,6 +707,7 @@ pub fn stage_branch(
                 &(CompType::Returner { .. }
                 | CompType::With(..)
                 | CompType::Element { .. }
+                | CompType::Codata { .. }
                 | CompType::Unknown),
             )
             | None => return Err(CheckRefusal::MachineInvariant),

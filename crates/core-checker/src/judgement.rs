@@ -2542,7 +2542,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         classifier: CompTypeId,
     ) -> Result<(CompTypeId, CompTypeId), CheckRefusal>
     {
-        let head = self.context.whnf_comp_type(classifier)?;
+        let head = crate::codata::read(self.context, classifier)?;
         match matched_with(self.context.arena_mut(), head) {
             Maybe::Present(components) => Ok(components),
             Maybe::Absent(absent) => Err(unmatched(
@@ -2575,7 +2575,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         classifier: CompTypeId,
     ) -> Result<(ValueTypeId, Codomain), CheckRefusal>
     {
-        let head = self.context.whnf_comp_type(classifier)?;
+        let head = crate::codata::read(self.context, classifier)?;
         match matched_function(self.context.arena_mut(), head) {
             Maybe::Present(function) => Ok((function.domain(), match function.scope() {
                 CodomainScope::Ambient => Codomain::Ambient(function.codomain()),
@@ -3023,7 +3023,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             CompTypeView::Element { .. }
             | CompTypeView::Arrow { .. }
             | CompTypeView::Pi { .. }
-            | CompTypeView::With(..) => return Err(CheckRefusal::MachineInvariant),
+            | CompTypeView::With(..)
+            | CompTypeView::Codata { .. } => return Err(CheckRefusal::MachineInvariant),
         };
         let input = self
             .context
@@ -3212,7 +3213,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             CompTypeView::Element { .. }
             | CompTypeView::Arrow { .. }
             | CompTypeView::Pi { .. }
-            | CompTypeView::With(..) => return Err(CheckRefusal::MachineInvariant),
+            | CompTypeView::With(..)
+            | CompTypeView::Codata { .. } => return Err(CheckRefusal::MachineInvariant),
         };
         let handled = gandr_core_term::effect::EffectRow::singleton(signature);
         let Ok(row) = ambient.union(&handled, self.context.arena())
@@ -5608,7 +5610,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             && match comp_type_view(self.context.arena(), expected) {
                 | Ok(CompTypeView::Pi { domain: held_domain, codomain: held_codomain }) => domain == held_domain && codomain == held_codomain,
                 | Ok(CompTypeView::Arrow { domain: held, .. }) => domain == held,
-                | Ok(CompTypeView::Element { .. } | CompTypeView::Unknown) => true,
+                | Ok(CompTypeView::Element { .. } | CompTypeView::Unknown | CompTypeView::Codata { .. }) => true,
                 | Ok(CompTypeView::Returner { .. } | CompTypeView::With(..)) | Err(_) => false,
             },
         | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found }) => named == TermNode::Computation(at)
@@ -5621,7 +5623,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         expected: CompTypeId,
     ) -> Result<(ValueTypeId, CompTypeId), CheckRefusal>
     {
-        let head = self.context.whnf_comp_type(expected)?;
+        let head = crate::codata::read(self.context, expected)?;
         match matched_function(self.context.arena_mut(), head) {
             Maybe::Present(function) => match function.scope() {
                 CodomainScope::Ambient => {
@@ -5673,7 +5675,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         | Ok(result) => self.context.arena().value_type(result).is_some()
             && match comp_type_view(self.context.arena(), expected) {
                 | Ok(CompTypeView::Returner { result: held, .. }) => result == held,
-                | Ok(CompTypeView::Element { .. } | CompTypeView::Unknown) => true,
+                | Ok(CompTypeView::Element { .. } | CompTypeView::Unknown | CompTypeView::Codata { .. }) => true,
                 | Ok(CompTypeView::Arrow { .. } | CompTypeView::Pi { .. } | CompTypeView::With(..)) | Err(_) => false,
             },
         | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found }) => named == TermNode::Computation(at)
@@ -5686,7 +5688,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         expected: CompTypeId,
     ) -> Result<ValueTypeId, CheckRefusal>
     {
-        let head = self.context.whnf_comp_type(expected)?;
+        let head = crate::codata::read(self.context, expected)?;
         match matched_returner(self.context.arena_mut(), head) {
             Maybe::Present(result) => Ok(result),
             Maybe::Absent(absent) => Err(unmatched(
@@ -5924,8 +5926,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - ensures: a returner forms its result; an arrow forms its domain, then
     ///   its codomain; a dependent arrow forms its domain, then its codomain
     ///   under a binder of the domain; a decode awaits its code's synthesised
-    ///   type; the unknown type is formed at once.
-    /// - fails: the view's refusal for a dangling id.
+    ///   type; a codata application checks each argument against its
+    ///   instantiated parameter; the unknown type is formed at once.
+    /// - fails: the view's refusal for a dangling id; [`CheckRefusal::Codata`]
+    ///   for a codata application naming the declaration being formed, no
+    ///   admitted declaration, or another number of arguments.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -5936,8 +5941,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `formation::tests::the_dependent_arrow_forms_at_the_join_of_its_levels`
     #[spec(
         captures: before = self.frames.len(),
-        ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(_))) && self.frames.len() >= before)
-            || (matches!(ret, Ok(Step::Ascend(Produced::Checked))) && self.frames.len() == before),
+        ensures: |ret| ret.is_err()
+            || (matches!(ret, Ok(Step::Descend(_) | Step::Ascend(Produced::Checked))) && self.frames.len() >= before),
     )]
     fn form_comp_type(
         &mut self,
@@ -5975,6 +5980,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
+            CompTypeView::Codata { .. } => self.native_codata(at),
             CompTypeView::Unknown => Ok(Step::Ascend(Produced::Checked)),
         }
     }
@@ -6273,6 +6279,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | CompTypeView::With(..)
                 | CompTypeView::Arrow { .. }
                 | CompTypeView::Pi { .. }
+                | CompTypeView::Codata { .. }
                 | CompTypeView::Unknown => {
                     return Err(CheckRefusal::MachineInvariant);
                 },
@@ -6997,7 +7004,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     CompTypeView::With(..)
                     | CompTypeView::Arrow { .. }
                     | CompTypeView::Pi { .. }
-                    | CompTypeView::Element { .. } => {
+                    | CompTypeView::Element { .. }
+                    | CompTypeView::Codata { .. } => {
                         let Some(&(Value::Nested(nested) | Value::Run(nested))) =
                             self.context.arena().value(at)
                         else {
@@ -7040,7 +7048,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CompTypeView::With(..)
                     | CompTypeView::Arrow { .. }
                     | CompTypeView::Pi { .. }
-                    | CompTypeView::Element { .. } => {
+                    | CompTypeView::Element { .. }
+                    | CompTypeView::Codata { .. } => {
                         Err(CheckRefusal::CompoundEndpoint { at, synthesised })
                     },
                 }
@@ -7533,7 +7542,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::CompType(synthesised),
             ) => {
-                let read = self.context.whnf_comp_type(synthesised)?;
+                let read = crate::codata::read(self.context, synthesised)?;
                 let result = match matched_returner(self.context.arena_mut(), read) {
                     Maybe::Present(result) => result,
                     Maybe::Absent(absent) => {
@@ -7781,6 +7790,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CheckRefusal::ForwardUnsupported { .. }
                     | CheckRefusal::Boundary { .. }
                     | CheckRefusal::Access { .. }
+                    | CheckRefusal::Codata { .. }
                     | CheckRefusal::Located { .. }) => other,
                 })?;
                 Ok(Step::Ascend(Produced::ValueType(codomain.into())))

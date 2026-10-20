@@ -5277,9 +5277,12 @@ where
                         gandr_kernel_term::Side::Right => right_type,
                     });
                 },
+                // A bind reads its bound's returner, a codata type read through
+                // its observations; any other classifier is refused by name.
                 Frame::SynthBind(body) => {
                     let bound_type = produced.comp_type()?;
-                    match arena.comp_type(bound_type) {
+                    let bound_shape = codata::read(arena, session, judgement, bound_type)?;
+                    match arena.comp_type(bound_shape) {
                         Some(&CompType::Returner(result)) => {
                             context.push(result);
                             frames.push(Frame::Strengthen);
@@ -5374,7 +5377,8 @@ where
                 },
                 Frame::CheckBind(body, expected) => {
                     let bound_type = produced.comp_type()?;
-                    match arena.comp_type(bound_type) {
+                    let bound_shape = codata::read(arena, session, judgement, bound_type)?;
+                    match arena.comp_type(bound_shape) {
                         Some(&CompType::Returner(result)) => {
                             let scoped = weakened(arena, session, expected);
                             context.push(result);

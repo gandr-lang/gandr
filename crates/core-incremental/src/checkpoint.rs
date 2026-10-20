@@ -207,6 +207,10 @@ pub enum Answer
     Typed(TypeContent),
     /// The complete nominal signature, or its absence in the nominal table.
     Data(Option<crate::content::DataContent>),
+    /// A codata signature was read. It has no content form, so the answer
+    /// never stands for a recorded one: a judgement that read a codata
+    /// signature is judged afresh.
+    Codata,
 }
 
 /// Which signature table a consultation reads.
@@ -217,6 +221,8 @@ pub enum Consultation
     Value,
     /// The nominal-signature table.
     Data,
+    /// The codata-signature table.
+    Codata,
 }
 
 impl Answer
@@ -230,6 +236,7 @@ impl Answer
         match *(self) {
             Self::Untyped | Self::Typed(_) => Consultation::Value,
             Self::Data(_) => Consultation::Data,
+            Self::Codata => Consultation::Codata,
         }
     }
 
@@ -237,7 +244,7 @@ impl Answer
     ///
     /// # Specification
     /// - ensures: a typed answer's type table, a data answer's signature table,
-    ///   empty for an absence.
+    ///   empty for an absence and for a codata answer.
     /// - panics: none.
     /// - executable: none — the result is a field borrow chosen by variant.
     ///
@@ -248,7 +255,7 @@ impl Answer
     pub(crate) fn nodes(&self) -> &[crate::support::SupportedNode]
     {
         match *(self) {
-            Self::Untyped | Self::Data(None) => &[],
+            Self::Untyped | Self::Data(None) | Self::Codata => &[],
             Self::Typed(ref ty) => ty.nodes(),
             Self::Data(Some(ref signature)) => signature.nodes(),
         }
@@ -259,7 +266,8 @@ impl Answer
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a typed answer's root reads, a data answer's reads over its
-    ///   roots, nothing for an absence; ascending, each once.
+    ///   roots, nothing for an absence or a codata answer; ascending, each
+    ///   once.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -268,14 +276,14 @@ impl Answer
     ///   untyped answer does not.
     /// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
     #[spec(ensures: |ret| match *self {
-        Self::Untyped | Self::Data(None) => ret.is_empty(),
+        Self::Untyped | Self::Data(None) | Self::Codata => ret.is_empty(),
         Self::Typed(ref ty) => ty.reads().all(|read| ret.contains(read)),
         Self::Data(Some(ref signature)) => ret.eq(&signature.reads()),
     })]
     pub(crate) fn reads(&self) -> alloc::collections::BTreeSet<&Reference>
     {
         match *(self) {
-            Self::Untyped | Self::Data(None) => alloc::collections::BTreeSet::new(),
+            Self::Untyped | Self::Data(None) | Self::Codata => alloc::collections::BTreeSet::new(),
             Self::Typed(ref ty) => ty.reads().collect(),
             Self::Data(Some(ref signature)) => signature.reads(),
         }
@@ -1785,6 +1793,7 @@ where
                             |signature| crate::content::DataContent::of(arena, layout, signature),
                         ))
                     },
+                    gandr_core_checker::DeclarationContent::Codata(_) => Answer::Codata,
                     gandr_core_checker::DeclarationContent::Abstract(_)
                     | gandr_core_checker::DeclarationContent::World => Answer::Untyped,
                 };
@@ -2061,9 +2070,11 @@ fn adopt(
                 Answer::Untyped,
             ));
         },
-        // A world declaration belongs to a located program, whose items are
-        // opaque and returned before this.
-        gandr_core_checker::DeclarationContent::World => {
+        // A world declaration belongs to a located program, and a codata
+        // declaration has no content form: both items are opaque and
+        // returned before this.
+        gandr_core_checker::DeclarationContent::World
+        | gandr_core_checker::DeclarationContent::Codata(_) => {
             return Maybe::Absent(recall::Absent::Opaque);
         },
     };
@@ -2153,7 +2164,8 @@ fn adopt(
 /// - ensures: `Stands` exactly when, for each recorded answer, the item its
 ///   reference names in the edited program precedes this one and supplied an
 ///   equal answer, or no such item precedes it and the recorded answer is
-///   `Untyped`.
+///   `Untyped`; a recorded codata answer, and a typed one whose content is
+///   opaque, never stands.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2180,7 +2192,9 @@ fn adopt(
                         |current| match answered.answer {
                             Answer::Untyped => !matches!(current,Answer::Typed(_)),
                             Answer::Data(None) => !matches!(current,Answer::Data(Some(_))),
-                            Answer::Typed(_) | Answer::Data(Some(_)) => *current == answered.answer,
+                            Answer::Typed(ref ty) => ty.nodes().first().is_none_or(|root| root.opacity() == Opacity::Transparent) && *current == answered.answer,
+                            Answer::Data(Some(_)) => *current == answered.answer,
+                            Answer::Codata => false,
                         },
                     )
             })
@@ -2201,7 +2215,16 @@ fn support_holds(
         match answered.answer {
             Answer::Untyped => !matches!(current, Some(Answer::Typed(_))),
             Answer::Data(None) => !matches!(current, Some(Answer::Data(Some(_)))),
-            Answer::Typed(_) | Answer::Data(Some(_)) => current == Some(&answered.answer),
+            // A type with a node of no content form is equal to every type
+            // with another such node in its place.
+            Answer::Typed(ref ty) => {
+                ty.nodes()
+                    .first()
+                    .is_none_or(|root| root.opacity() == Opacity::Transparent)
+                    && current == Some(&answered.answer)
+            },
+            Answer::Data(Some(_)) => current == Some(&answered.answer),
+            Answer::Codata => false,
         }
     });
     if holds {
@@ -2273,7 +2296,7 @@ fn touches(
 /// - witness: `tests::incremental::uncoordinated_rename_leaves_a_dangling_reader`
 #[spec(
     ensures: |ret| {
-        ret.len() <= support.consulted().len().saturating_add(support.data_consulted().len())
+        ret.len() <= support.consulted().len().saturating_add(support.data_consulted().len()).saturating_add(support.codata_consulted().len())
             && ret.windows(2).all(|pair| {
                 pair.first()
                     .zip(pair.last())
@@ -2305,6 +2328,10 @@ fn answered(
                     .map(|signature| crate::content::DataContent::of(arena, layout, signature)),
             ),
         }
+    }));
+    answers.extend(support.codata_consulted().iter().map(|consulted| Answered {
+        reference: layout.resolve(consulted.constant()),
+        answer: Answer::Codata,
     }));
     canonical_support(answers)
 }
@@ -2371,7 +2398,7 @@ fn canonical_support(mut support: Vec<Answered>) -> Vec<Answered>
                     .is_some_and(|node| node.sort() == crate::content::Sort::ValueType)
         },
         | Answer::Untyped => !present,
-        Answer::Data(_) => false,
+        Answer::Data(_) | Answer::Codata => false,
     },
 )]
 fn answer_of(

@@ -1386,6 +1386,10 @@ Err(_) => false,
                     ),
                     CompType::Element { code, .. } => one(value(code), Lowering::NONE),
                     CompType::Unknown => [None, None, None, None, None],
+                    CompType::Codata { ref arguments, .. } => {
+                        extra = ExtraChildren::Values(arguments.iter());
+                        [None, None, None, None, None]
+                    },
                 }
             },
         };

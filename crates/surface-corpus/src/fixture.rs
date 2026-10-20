@@ -206,7 +206,8 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
                         gandr_core_checker::DeclarationContent::Data(ref held) => matches!(lowered.outcome(), DeclarationOutcome::Data(index) if module.data(index) == Maybe::Present(held)),
                         gandr_core_checker::DeclarationContent::Abstract(sealed) => matches!(lowered.outcome(), DeclarationOutcome::Abstract(sealing) if sealed == abstract_type(sealing)),
                         gandr_core_checker::DeclarationContent::World => matches!(lowered.outcome(), DeclarationOutcome::World),
-                        gandr_core_checker::DeclarationContent::Value { .. } => false,
+                        gandr_core_checker::DeclarationContent::Codata(_)
+                        | gandr_core_checker::DeclarationContent::Value { .. } => false,
                     } && declared.constant() == lowered.constant()
                         && usize::from(declared.origin()) == usize::from(lowered.origin());
                 };

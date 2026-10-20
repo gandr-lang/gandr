@@ -196,7 +196,7 @@ impl Footprint
         && node.type_reads().all(|read| ret.type_reads.contains(read))))
     && ret.hole == match *(content.declaration()) {
 crate::content::DeclarationRoots::Value { body:Maybe::Absent(body::Absent::Hole),.. } => HoleMark::Hole,
-crate::content::DeclarationRoots::Value { body:Maybe::Present(_),.. } | crate::content::DeclarationRoots::Data(_) | crate::content::DeclarationRoots::Abstract(_) | crate::content::DeclarationRoots::World => HoleMark::Filled,
+crate::content::DeclarationRoots::Value { body:Maybe::Present(_),.. } | crate::content::DeclarationRoots::Data(_) | crate::content::DeclarationRoots::Abstract(_) | crate::content::DeclarationRoots::World | crate::content::DeclarationRoots::Codata => HoleMark::Filled,
 })]
 #[inline]
 #[must_use]
@@ -228,7 +228,8 @@ pub fn footprint_of(content: &ItemContent) -> Footprint
             }
             | crate::content::DeclarationRoots::Data(_)
             | crate::content::DeclarationRoots::Abstract(_)
-            | crate::content::DeclarationRoots::World => HoleMark::Filled,
+            | crate::content::DeclarationRoots::World
+            | crate::content::DeclarationRoots::Codata => HoleMark::Filled,
         },
     }
 }

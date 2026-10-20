@@ -1168,6 +1168,21 @@ pub enum CompType
     Unknown,
     /// A lazy negative product; an observation selects one component.
     With(CompTypeId, CompTypeId),
+    /// A nominal codata type `νX. &{dᵢ : Bᵢ}` applied to its declaration's
+    /// parameter telescope.
+    ///
+    /// It is read as the lazy product of its observations, each instantiated
+    /// at `arguments`, only where a computation is introduced against it or
+    /// one of its observations is taken; two codata types are equal exactly
+    /// when they name one declaration at equal arguments, and none is equal
+    /// to the product of its observations.
+    Codata
+    {
+        /// Admission position of the codata signature.
+        declaration: ConstantIndex,
+        /// Quoted type or ordinary value arguments, in telescope order.
+        arguments: Vec<ValueId>,
+    },
 }
 
 /// One pair of native syntax roots awaiting structural comparison.
@@ -3330,6 +3345,18 @@ fn equal_syntax(
                         },
                     ) if target == other => pending.push(V(a, b)),
                     (&CompType::Unknown, &CompType::Unknown) => {},
+                    (
+                        &CompType::Codata {
+                            declaration: a,
+                            arguments: ref left,
+                        },
+                        &CompType::Codata {
+                            declaration: b,
+                            arguments: ref right,
+                        },
+                    ) if a == b && left.len() == right.len() => {
+                        pending.extend(left.iter().zip(right).map(|(a, b)| V(*a, *b)));
+                    },
                     _ => return CertificateEquality::Different,
                 }
             },
@@ -4941,5 +4968,80 @@ impl DataSignature
             presentation,
             ..self
         }
+    }
+}
+
+/// A nominal codata declaration's parameter telescope, its observations and
+/// the computation universe bounding them.
+///
+/// Parameter classifiers are scoped under their predecessors; each
+/// observation is a computation type scoped under all parameters, which may
+/// name the declaration itself at its result. Admission, not this container,
+/// verifies those scopes, the universe bound and that every self reference
+/// stands at an observation's result.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct CodataSignature
+{
+    /// Parameter classifiers in telescope order.
+    parameters: Vec<ValueTypeId>,
+    /// The observations, in written order.
+    observations: Vec<CompTypeId>,
+    /// The computation universe bounding every observation.
+    kind: ValueTypeId,
+}
+
+impl CodataSignature
+{
+    /// Construct a signature whose formation remains the checker's
+    /// obligation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn new(
+        parameters: Vec<ValueTypeId>,
+        observations: Vec<CompTypeId>,
+        kind: ValueTypeId,
+    ) -> Self
+    {
+        Self {
+            parameters,
+            observations,
+            kind,
+        }
+    }
+
+    /// Parameter classifiers in telescope order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn parameters(&self) -> &[ValueTypeId]
+    {
+        &self.parameters
+    }
+
+    /// The observations, in written order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn observations(&self) -> &[CompTypeId]
+    {
+        &self.observations
+    }
+
+    /// The computation universe bounding the observations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn kind(&self) -> ValueTypeId
+    {
+        self.kind
     }
 }

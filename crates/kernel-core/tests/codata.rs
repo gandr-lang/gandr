@@ -237,6 +237,52 @@ fn a_single_observation_reads_as_itself()
 }
 
 #[test]
+fn a_bind_observes_a_returner_codata()
+{
+    let mut environment = Environment::new();
+    let nat = nat(&mut environment).position();
+    // `Later = ν. { now : F Nat }` and `later : U Later = thunk (return 1)`.
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let nat_type = arena.value_type_data(nat, vec![]);
+    let returns = arena.comp_type_returner(nat_type);
+    let kind = arena.value_type_universe(GroundSort::Computation, Level::zero());
+    let declaration = staging.codata(LevelSignature::monomorphic(), vec![], vec![returns], kind);
+    let delayed = environment
+        .add_decl(declaration)
+        .expect("one observation admits")
+        .position();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let own = arena.comp_type_codata(delayed, vec![]);
+    let declared = arena.value_type_thunk(own);
+    let one = one(arena, nat);
+    let returned = arena.computation_return(one);
+    let value = arena.value_thunk(returned);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    let later = environment
+        .add_decl(declaration)
+        .expect("a return checks against the one observation")
+        .position();
+    // `now : U (F Nat) = thunk (x ← force later; return x)`: the bind reads
+    // the bound's codata type through its observation.
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let nat_type = arena.value_type_data(nat, vec![]);
+    let returns = arena.comp_type_returner(nat_type);
+    let declared = arena.value_type_thunk(returns);
+    let named = arena.value_constant(later);
+    let forced = arena.computation_force(named);
+    let bound = arena.value_variable(DeBruijnIndex::from(0));
+    let rest = arena.computation_return(bound);
+    let observed = arena.computation_bind(forced, rest);
+    let value = arena.value_thunk(observed);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    let checked = environment.add_decl(declaration);
+    assert!(checked.is_ok(), "{checked:?}");
+}
+
+#[test]
 fn the_observation_product_is_not_the_codata_type()
 {
     let mut environment = Environment::new();
