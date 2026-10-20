@@ -952,6 +952,100 @@ fn a_fixpoint_unfolds_at_a_constructor_and_sticks_at_a_neutral()
     }
 }
 
+/// `fix count. λacc. λb. case b { Z ⇒ return acc; S(x) ⇒ count (S acc) x }`,
+/// staged at its second binder: the accumulator varies on every call.
+///
+/// # Specification
+/// trivial.
+fn counting(
+    core: &mut CoreArena,
+    nat: gandr_core_term::ValueTypeId,
+) -> gandr_core_term::ComputationId
+{
+    let successor = gandr_kernel_term::ConstructorTag::from(1_usize);
+    let returner = core.comp_type_returner(nat);
+    let accumulated = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let on_zero = core.computation_return(accumulated);
+    let recursive = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(3_u32));
+    let forced = core.computation_force(recursive);
+    let accumulator = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+    let grown = core.value_constructor(nat, successor, Vec::from([accumulator]));
+    let leading = core.computation_application(forced, grown);
+    let field = core.value_variable(Zone::Intuitionistic, innermost());
+    let call = core.computation_application(leading, field);
+    let on_successor = core.computation_lambda(call);
+    let scrutinee = core.value_variable(Zone::Intuitionistic, innermost());
+    let case = core.computation_data_case(scrutinee, returner, Vec::from([on_zero, on_successor]));
+    let staged = core.computation_lambda(case);
+    let body = core.computation_lambda(staged);
+    core.computation_fixpoint(body, gandr_kernel_term::FixpointEvidence::Staged {
+        position: gandr_kernel_term::StagedPosition::from(1_usize),
+    })
+}
+
+#[test]
+fn a_fixpoint_staged_past_its_first_binder_carries_its_leading_arguments_626()
+{
+    let mut core = CoreArena::new();
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let successor = gandr_kernel_term::ConstructorTag::from(1_usize);
+    let zero = core.value_constructor(
+        nat,
+        gandr_kernel_term::ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let one = core.value_constructor(nat, successor, Vec::from([zero]));
+    let two = core.value_constructor(nat, successor, Vec::from([one]));
+    let fixpoint = counting(&mut core, nat);
+    let taken = core.computation_application(fixpoint, zero);
+    let applied = core.computation_application(taken, two);
+    let expected = core.computation_return(two);
+    let variable = core.value_variable(Zone::Intuitionistic, innermost());
+    let stuck = core.computation_application(taken, variable);
+    let abstracted = core.computation_lambda(stuck);
+
+    let (chain, environment) = nothing_unfolds();
+    let scope = environment.root();
+    let definitions = Definitions::new(&chain, &environment, scope);
+    let mut domain = DomainArena::new();
+    let partial = eval_computation(&core, &mut domain, definitions, ample(), taken)
+        .expect("a fixpoint takes an argument before its staged one");
+    let Some(&DomainComp::Fixpoint { leading, .. }) = domain.computation(partial)
+    else {
+        panic!("an argument before the staged one is held, not gated");
+    };
+    assert_eq!(
+        domain.fields(leading).map(<[_]>::len),
+        Ok(1_usize),
+        "the fixpoint holds the one argument it took"
+    );
+    for (term, normal) in [
+        (applied, expected),
+        (abstracted, abstracted),
+        (taken, taken),
+    ] {
+        let evaluated = eval_computation(&core, &mut domain, definitions, ample(), term)
+            .expect("a gated fixpoint reaches its weak head");
+        let read = crate::readback::readback_computation(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            evaluated,
+        )
+        .expect("the weak head reads back");
+        let read = core.value_thunk(read);
+        let normal = core.value_thunk(normal);
+        assert_eq!(
+            gandr_core_term::CertificateEquality::Equal,
+            gandr_core_term::equal_certificate_syntax(&core, read, normal),
+            "at a constructor the accumulator is returned; at a neutral the fixpoint \
+                 stands with its leading argument, and reads back as itself applied to it"
+        );
+    }
+}
+
 #[test]
 fn an_observed_loop_runs_out_of_fuel()
 {

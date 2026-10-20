@@ -309,6 +309,7 @@ use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
+use gandr_kernel_term::StagedPosition;
 use gandr_kernel_term::Summand;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
@@ -598,20 +599,44 @@ pub(super) struct CaseIndex(usize);
 pub(super) struct Claimed(pub bool);
 
 /// A recursive function's parameter, by its position in the function's
-/// parameter list; the staged one's position also counts the parameters before
-/// it, which every recursive call passes unchanged.
+/// parameter list.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct ParameterAt(pub usize);
+
+/// Where a recursive function closes its fixpoint and which parameter the
+/// fixpoint stages, read off its body ([`Lowerer::staged_by_body`]).
+///
+/// # Specification
+/// - ensures: `kept <= staged`; the parameters before `kept` stand outside the
+///   fixpoint, and the ones from `kept` to `staged` are its leading binders.
+/// - executable: none — a plain pair of positions its producer establishes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a function whose recursive calls pass its first parameter
+///   unchanged keeps it outside; one whose calls change it carries it as a
+///   leading binder before the staged one.
+/// - witness: `lower::native::tests::a_definition_descends_on_the_parameter_its_cases_scrutinise`
+/// - witness: `lower::native::tests::a_varying_parameter_before_the_staged_one_is_a_leading_binder_626`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct Staging
+{
+    /// How many parameters, from the first, every recursive call passes
+    /// unchanged: the fixpoint closes after them.
+    pub kept: ParameterAt,
+    /// The parameter the fixpoint stages, counted from the function's first.
+    pub staged: ParameterAt,
+}
 
 /// A recursive function's own name, which the frame of its fixpoint binds.
 ///
 /// # Specification
 /// - requires: coordinates, when present, are interpreted in their originating
 ///   run.
-/// - ensures: the function's parameters, the ones before the staged one that
-///   every recursive call passes unchanged, whether a call claims descent and
-///   the tile writing the name stay together under the frame binding the name.
+/// - ensures: the function's parameters, the ones before the fixpoint that
+///   every recursive call passes unchanged, the staged one, whether a call
+///   claims descent and the tile writing the name stay together under the frame
+///   binding the name.
 /// - provides: what a descent claim checks its call against, the evidence the
 ///   fixpoint carries, and the name its binder is read by.
 /// - fails: none as a data value; interpretation belongs to its consumers.
@@ -631,9 +656,12 @@ pub(super) struct Recursion
 {
     /// Every parameter, in the lowerer's parameter store.
     pub parameters: Stretch,
-    /// The parameters before the staged one, in the lowerer's parameter
-    /// store: the ones every recursive call passes unchanged.
+    /// The parameters before the fixpoint, in the lowerer's parameter store:
+    /// the ones every recursive call passes unchanged.
     pub uniform: Stretch,
+    /// The parameter the fixpoint stages, counted from the function's first:
+    /// at or past the uniform ones.
+    pub staged: ParameterAt,
     /// Whether a call claims descent, which makes the fixpoint's evidence
     /// structural rather than partial.
     pub claimed: Claimed,
@@ -8059,14 +8087,19 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `parameters` are the function's parameter names in order,
     ///   and `roots` the syntax the function writes after its parameter list,
     ///   in source order.
-    /// - ensures: the position, in `0 .. parameters.len()`, of the parameter
-    ///   the innermost match above the first instantiation of `own` in source
-    ///   order scrutinises, a scrutinee written as a bare name equal to that
-    ///   parameter's; the last position otherwise. The classification sweep
-    ///   checks every claim against it ([`Self::claim`]), so a name a binder
-    ///   between the match and the parameter shadows is refused there.
-    /// - provides: where the function binds its own name: between the
-    ///   parameters before the staged one and the staged one.
+    /// - ensures: `staged` is the position, in `0 .. parameters.len()`, of the
+    ///   parameter the innermost match above the first instantiation of `own`
+    ///   in source order scrutinises, a scrutinee written as a bare name equal
+    ///   to that parameter's; the last position otherwise. `kept` is the
+    ///   longest run of parameters before `staged`, from the first, that every
+    ///   call of `own` under `roots` writes back bare in its own place
+    ///   ([`Self::kept_before`]). The classification sweep checks every claim
+    ///   against `staged` ([`Self::claim`]) and every kept argument against its
+    ///   parameter ([`Self::uniform_descent`]), so a name a binder between the
+    ///   match and the parameter shadows is refused there.
+    /// - provides: where the function binds its own name: after the kept
+    ///   parameters, the ones from `kept` to `staged` its fixpoint's leading
+    ///   binders.
     /// - fails: a fault reading a form's pieces or shape.
     /// - panics: none.
     ///
@@ -8081,21 +8114,137 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — claims under a match on the first parameter, under
     ///   nested matches on one parameter's fields and under no match on a
-    ///   parameter each stage their own position.
+    ///   parameter each stage their own position; an accumulator before the
+    ///   staged parameter that the calls change is not kept.
     /// - witness: `lower::native::tests::a_definition_descends_on_the_parameter_its_cases_scrutinise`
     /// - witness: `lower::native::tests::a_definition_without_a_case_on_a_parameter_stages_its_last`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |position| position.0 < parameters.len().max(1)))]
+    /// - witness: `lower::native::tests::a_varying_parameter_before_the_staged_one_is_a_leading_binder_626`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |staging| staging.kept <= staging.staged && staging.staged.0 < parameters.len().max(1)))]
     pub(super) fn staged_by_body(
         &mut self,
         own: SurfaceName<'source>,
         parameters: &[SurfaceName<'source>],
         roots: &[NodeIndex],
-    ) -> Result<ParameterAt, LoweringRefusal<'source>>
+    ) -> Result<Staging, LoweringRefusal<'source>>
     {
         let mut scratch = core::mem::take(&mut self.scratch);
         let found = self.first_claim(own, parameters, roots, &mut scratch);
+        let staged = match found {
+            Ok(found) => found.unwrap_or_else(|| ParameterAt(parameters.len().saturating_sub(1))),
+            Err(refusal) => {
+                self.scratch = scratch;
+                return Err(refusal);
+            },
+        };
+        let kept = self.kept_before(own, parameters, roots, staged, &mut scratch);
         self.scratch = scratch;
-        Ok(found?.unwrap_or_else(|| ParameterAt(parameters.len().saturating_sub(1))))
+        Ok(Staging {
+            kept: kept?,
+            staged,
+        })
+    }
+
+    /// How many parameters, from the first and before `staged`, every call of
+    /// `own` under `roots` writes back bare in its own place.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::staged_by_body`]; `scratch` is free for reading
+    ///   pieces.
+    /// - ensures: the largest `k <= staged` such that every call form headed by
+    ///   an instantiation of `own` writes, at each position below `k`, a bare
+    ///   name equal to the parameter at that position; `staged` when no call
+    ///   stands under `roots`.
+    /// - fails: as [`Self::staged_by_body`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form fault.
+    ///
+    /// # Termination
+    /// - reason: as [`Self::staged_by_body`].
+    /// - measure: the nodes under `roots` not yet popped.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::staged_by_body`].
+    /// - witness: `lower::native::tests::a_varying_parameter_before_the_staged_one_is_a_leading_binder_626`
+    /// - witness: `lower::native::tests::a_recursive_call_passes_its_leading_parameters_unchanged`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |kept| *kept <= staged))]
+    fn kept_before(
+        &self,
+        own: SurfaceName<'source>,
+        parameters: &[SurfaceName<'source>],
+        roots: &[NodeIndex],
+        staged: ParameterAt,
+        scratch: &mut Pieces,
+    ) -> Result<ParameterAt, LoweringRefusal<'source>>
+    {
+        let mut kept = staged.0;
+        let named = |operand: Placed,
+                     expected: SurfaceName<'source>|
+         -> Result<bool, LoweringRefusal<'source>> {
+            let Some(node) = self.tree.node(operand.node)
+            else {
+                return Ok(false);
+            };
+            Ok(matches!(shape_of(self.pbg, node)?, Shape::Form {
+                former: Former::Name,
+                ..
+            }) && self.name_at(operand) == expected)
+        };
+        let mut pending: Vec<NodeIndex> = roots.iter().rev().copied().collect();
+        let mut operands: Vec<Placed> = Vec::new();
+        while let Some(at) = pending.pop() {
+            if kept == 0 {
+                break;
+            }
+            let Some(node) = self.tree.node(at)
+            else {
+                continue;
+            };
+            let former = match shape_of(self.pbg, node)? {
+                Shape::Form { former, .. } => Some(former),
+                Shape::Root | Shape::Repair(_) | Shape::Layout => None,
+            };
+            read_pieces(self.pbg, self.tree, at, scratch)?;
+            operands.clear();
+            operands.extend(scratch.pieces.iter().filter_map(|piece| match *piece {
+                Piece::Operand(operand) => Some(operand),
+                Piece::Tile { .. } => None,
+            }));
+            if former == Some(Former::Call)
+                && let Some((&head, arguments)) = operands.split_first()
+                && self.tree.node(head.node).is_some_and(|node| {
+                    matches!(
+                        shape_of(self.pbg, node),
+                        Ok(Shape::Form {
+                            former: Former::Instantiation,
+                            ..
+                        })
+                    )
+                })
+            {
+                read_pieces(self.pbg, self.tree, head.node, scratch)?;
+                let instantiated = scratch.pieces.iter().find_map(|piece| match *piece {
+                    Piece::Operand(operand) => Some(operand),
+                    Piece::Tile { .. } => None,
+                });
+                if let Some(instantiated) = instantiated
+                    && named(instantiated, own)?
+                {
+                    let mut passed = 0_usize;
+                    for (&argument, &parameter) in arguments.iter().zip(parameters).take(kept) {
+                        if !named(argument, parameter)? {
+                            break;
+                        }
+                        passed = passed.saturating_add(1);
+                    }
+                    kept = kept.min(passed);
+                }
+            }
+            pending.extend(operands.iter().rev().map(|operand| operand.node));
+        }
+
+        Ok(ParameterAt(kept))
     }
 
     /// The position the match above the first instantiation of `own` under
@@ -8309,7 +8458,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(());
         };
         let parameters = stretch(&self.parameters, held.parameters);
-        let staged = ParameterAt(stretch(&self.parameters, held.uniform).len());
+        let staged = held.staged;
         let claimed = match self.scrutinised.get(&site.at.node) {
             Some(scrutiny) if scrutiny.recursion == recursion => scrutiny.position,
             Some(_) | None => ParameterAt(parameters.len().saturating_sub(1)),
@@ -8492,19 +8641,30 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: the classification is complete, so every claim is recorded.
-    /// - ensures: structural descent for a recursive tail one of whose calls
-    ///   claims it, partial evidence for a recursive tail none of whose calls
-    ///   does, and the plain absence for a tail that does not recurse.
+    /// - ensures: for a recursive tail one of whose calls claims descent,
+    ///   structural descent when the fixpoint stages its first binder, and
+    ///   descent staged at the fixpoint's binder `staged - kept` when leading
+    ///   binders stand before it; partial evidence for a recursive tail none of
+    ///   whose calls claims it, and the plain absence for a tail that does not
+    ///   recurse.
     /// - provides: the claim [`Self::mint_function`] closes the fixpoint with.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a recursive function with a descent call and one with
-    ///   no call each carry their own evidence.
+    /// - hypothesis: L3 — a recursive function with a descent call, one with no
+    ///   call and one whose calls change a parameter before the staged one each
+    ///   carry their own evidence.
     /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
+    /// - witness: `lower::native::tests::a_varying_parameter_before_the_staged_one_is_a_leading_binder_626`
     #[spec(ensures: |ret| match function.recursion {
-        | Maybe::Present(frame) => ret == Maybe::Present(if self.recursions.get(&frame).is_some_and(|held| held.claimed.0) { FixpointEvidence::StructuralDescent } else { FixpointEvidence::Partial }),
+        | Maybe::Present(frame) => ret == Maybe::Present(match self.recursions.get(&frame) {
+            Some(held) if held.claimed.0 => match held.staged.0.saturating_sub(stretch(&self.parameters, held.uniform).len()) {
+                0 => FixpointEvidence::StructuralDescent,
+                position => FixpointEvidence::Staged { position: StagedPosition::from(position) },
+            },
+            Some(_) | None => FixpointEvidence::Partial,
+        }),
         | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
     })]
     pub(super) fn evidence(
@@ -8514,7 +8674,15 @@ impl<'source> Lowerer<'_, 'source>
     {
         match function.recursion {
             Maybe::Present(frame) => Maybe::Present(match self.recursions.get(&frame) {
-                Some(held) if held.claimed.0 => FixpointEvidence::StructuralDescent,
+                Some(held) if held.claimed.0 => {
+                    let kept = stretch(&self.parameters, held.uniform).len();
+                    match held.staged.0.saturating_sub(kept) {
+                        0 => FixpointEvidence::StructuralDescent,
+                        position => FixpointEvidence::Staged {
+                            position: StagedPosition::from(position),
+                        },
+                    }
+                },
                 Some(_) | None => FixpointEvidence::Partial,
             }),
             Maybe::Absent(reason) => Maybe::Absent(reason),

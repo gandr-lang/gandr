@@ -1621,8 +1621,9 @@ enum Elimination
     ListFold(ComputationId, ComputationId),
     /// A static application to this code: the one value elimination.
     StaticApply(ValueId),
-    /// A fixpoint applied to the neutral head; the arena node is the
-    /// fixpoint itself, compared as a computation.
+    /// A fixpoint applied, past its leading arguments, to the neutral head;
+    /// the arena node is the fixpoint applied to those leading arguments, `fix
+    /// a₀ … aₖ₋₁`, the fixpoint itself when it has none.
     Fixpoint(ComputationId),
 }
 
@@ -1638,8 +1639,9 @@ enum Shape
     Lambda(ComputationId),
     /// A lazy pairing of these two components.
     With(ComputationId, ComputationId),
-    /// A fixpoint over this body, standing at no gate.
-    Fixpoint(ComputationId),
+    /// A fixpoint over this body, standing at no gate, applied to these
+    /// leading arguments, first to last.
+    Fixpoint(ComputationId, Vec<ValueId>),
     /// A returner of this value.
     Return(ValueId),
     /// A head under its spine, innermost elimination first; a value's spine
@@ -3750,7 +3752,12 @@ where
     /// - witness: `replay::tests::a_tuple_meets_a_neutral_by_its_projections_715`
     #[spec(ensures: |ret| match (left, right) {
         (&Shape::Return(one), &Shape::Return(other)) => matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one, other)]),
-        (&Shape::Lambda(one), &Shape::Lambda(other)) | (&Shape::Fixpoint(one), &Shape::Fixpoint(other)) => matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::computations(one, other)]),
+        (&Shape::Lambda(one), &Shape::Lambda(other)) => matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::computations(one, other)]),
+        (&Shape::Fixpoint(one, ref ones), &Shape::Fixpoint(other, ref others)) => if ones.len() == others.len() {
+            matches!(ret, Ok(Structure::Premises(ref premises)) if premises.first() == Some(&Premise::computations(one, other)) && Some(premises.len()) == ones.len().checked_add(1_usize))
+        } else {
+            ret == Ok(Structure::Leaf(Expect::NotConvertible))
+        },
         (&Shape::With(one_first, one_second), &Shape::With(other_first, other_second)) => matches!(ret, Ok(Structure::Premises(ref premises))
             if premises.as_slice() == [Premise::computations(one_first, other_first), Premise::computations(one_second, other_second)]),
         (&Shape::Former | &Shape::Neutral(..), &Shape::Former)
@@ -3781,9 +3788,27 @@ where
             (&Shape::Return(left_value), &Shape::Return(right_value)) => {
                 Structure::of(Vec::from([Premise::values(left_value, right_value)]))
             },
-            (&Shape::Lambda(left_body), &Shape::Lambda(right_body))
-            | (&Shape::Fixpoint(left_body), &Shape::Fixpoint(right_body)) => {
+            (&Shape::Lambda(left_body), &Shape::Lambda(right_body)) => {
                 Structure::of(Vec::from([Premise::computations(left_body, right_body)]))
+            },
+            // Two fixpoints compare by their bodies, then by the leading
+            // arguments each has taken, pairwise; a different count is apart.
+            (
+                &Shape::Fixpoint(left_body, ref left_leading),
+                &Shape::Fixpoint(right_body, ref right_leading),
+            ) => {
+                if left_leading.len() != right_leading.len() {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+                let mut premises = Vec::with_capacity(left_leading.len().saturating_add(1));
+                premises.push(Premise::computations(left_body, right_body));
+                premises.extend(
+                    left_leading
+                        .iter()
+                        .zip(right_leading)
+                        .map(|(&one, &other)| Premise::values(one, other)),
+                );
+                Structure::of(premises)
             },
             (&Shape::With(left_first, left_second), &Shape::With(right_first, right_second)) => {
                 Structure::of(Vec::from([
@@ -3806,7 +3831,7 @@ where
                 | Shape::Thunk(_)
                 | Shape::Lambda(_)
                 | Shape::With(..)
-                | Shape::Fixpoint(_)
+                | Shape::Fixpoint(..)
                 | Shape::Return(_)
                 | Shape::Neutral(..)),
                 _,
@@ -4604,12 +4629,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         Term::Computation(computation) => match self.arena.computation(computation) {
             Some(&Computation::Lambda(body)) => ret == Ok(Shape::Lambda(body)),
             Some(&Computation::With(first, second)) => ret == Ok(Shape::With(first, second)),
-            Some(&Computation::Fixpoint { body, .. }) => ret == Ok(Shape::Fixpoint(body)),
+            Some(&Computation::Fixpoint { body, .. }) => ret == Ok(Shape::Fixpoint(body, Vec::new())),
             Some(&Computation::Return(value)) => ret == Ok(Shape::Return(value)),
             Some(node) => match ret {
+                Ok(Shape::Fixpoint(_, ref leading)) => matches!(*node, Computation::Application(_, argument) if leading.last() == Some(&argument)),
                 Ok(Shape::Neutral(_, ref spine)) => match *node {
                     Computation::Application(head, argument) => spine.last() == Some(&Elimination::Apply(argument))
-                        || (matches!(self.arena.computation(head), Some(&Computation::Fixpoint { .. })) && spine.last() == Some(&Elimination::Fixpoint(head))),
+                        || spine.last() == Some(&Elimination::Fixpoint(head)),
                     Computation::Bind(_, body) => spine.last() == Some(&Elimination::Bind(body)),
                     Computation::Force(_) => spine.as_slice() == [Elimination::Force],
                     Computation::Transport(path, value) => if matches!(self.arena.value(path), Some(&Value::PathProduct(..))) {
@@ -4696,6 +4722,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             Term::Computation(computation) => computation,
         };
         let mut spine = Vec::new();
+        // The application node over each `Apply` the spine holds, in step:
+        // a stuck fixpoint's elimination names the one over its last leading
+        // argument.
+        let mut applications = Vec::new();
         let mut focus = start;
         let head = loop {
             match self.arena.computation(focus) {
@@ -4752,17 +4782,37 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     return Ok(Shape::With(first, second));
                 },
                 Some(&Computation::Fixpoint { body, .. }) if spine.is_empty() => {
-                    return Ok(Shape::Fixpoint(body));
+                    return Ok(Shape::Fixpoint(body, Vec::new()));
                 },
-                // A fixpoint applied to a neutral argument is stuck on that
-                // argument's head: the application directly over it becomes the
-                // fixpoint's elimination, and the argument's head the neutral's.
-                Some(&Computation::Fixpoint { .. }) => {
-                    let Some(Elimination::Apply(argument)) = spine.pop()
-                    else {
-                        return Err(unreadable());
+                // A fixpoint takes its leading arguments, the applications
+                // directly over it; applied past them to a neutral argument it
+                // is stuck on that argument's head: the application over its
+                // last leading argument becomes the fixpoint's elimination, and
+                // the argument's head the neutral's. Short of its staged
+                // argument it stands at no gate.
+                Some(&Computation::Fixpoint { body, evidence }) => {
+                    let staged = match evidence {
+                        FixpointEvidence::Staged { position } => usize::from(position),
+                        FixpointEvidence::Partial | FixpointEvidence::StructuralDescent => 0,
                     };
-                    spine.push(Elimination::Fixpoint(focus));
+                    let mut leading = Vec::with_capacity(staged);
+                    let mut applied = focus;
+                    while leading.len() < staged {
+                        match spine.pop() {
+                            Some(Elimination::Apply(argument)) => {
+                                leading.push(argument);
+                                applied = applications.pop().ok_or_else(unreadable)?;
+                            },
+                            None => return Ok(Shape::Fixpoint(body, leading)),
+                            Some(_) => return Err(unreadable()),
+                        }
+                    }
+                    let argument = match spine.pop() {
+                        Some(Elimination::Apply(argument)) => argument,
+                        None => return Ok(Shape::Fixpoint(body, leading)),
+                        Some(_) => return Err(unreadable()),
+                    };
+                    spine.push(Elimination::Fixpoint(applied));
                     break self.value_head(argument, frozen, side)?;
                 },
                 Some(&Computation::Return(value)) if spine.is_empty() => {
@@ -4770,6 +4820,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 },
                 Some(&Computation::Application(head, argument)) => {
                     spine.push(Elimination::Apply(argument));
+                    applications.push(focus);
                     focus = head;
                 },
                 Some(&Computation::Bind(bound, body)) => {
@@ -6665,7 +6716,7 @@ fn rule(
             | Shape::Thunk(_)
             | Shape::Lambda(_)
             | Shape::With(..)
-            | Shape::Fixpoint(_)
+            | Shape::Fixpoint(..)
             | Shape::Return(_)
             | Shape::Neutral(..)),
             _,
@@ -6754,13 +6805,15 @@ fn bind_rule(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a refuting leaf when the spines differ in length or in any
-///   elimination's kind; else an application's or a static application's
+///   elimination's kind, or two stuck fixpoints in the number of leading
+///   arguments they hold; else an application's or a static application's
 ///   arguments, a bind's continuations, a sum case's two branches and a
 ///   dependent split's bodies, in spine order. A native data case first
 ///   compares its quoted motive, then its ordinary branch functions; a ride or
-///   a path transport compares its quoted motive, then its value; a force, a
-///   matching record projection or a projection of one lazy-product side
-///   contributes none.
+///   a path transport compares its quoted motive, then its value; a stuck
+///   fixpoint compares its fixpoint, then its leading arguments in order; a
+///   force, a matching record projection or a projection of one lazy-product
+///   side contributes none.
 /// - provides: the decomposition of two neutrals over one head.
 /// - fails: unreadable native metadata when a retained source is missing or
 ///   malformed.
@@ -6784,6 +6837,7 @@ fn bind_rule(
 /// - witness: `replay::tests::a_ride_unfolds_its_flow_where_the_dialogue_names_it`
 /// - witness: `replay::tests::two_stuck_path_transports_compare_by_motive_and_value`
 /// - witness: `replay::tests::the_forced_loop_compares_children_only_where_the_shapes_agree`
+/// - witness: `replay::tests::a_stuck_fixpoint_compares_its_leading_arguments_626`
 #[spec(ensures: |ret| {
     let compatible = left.len() == right.len() && left.iter().zip(right).all(|(one, other)| match (*one,*other) {
         (Elimination::RecordProjection(a),Elimination::RecordProjection(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::RecordProjection(_,a)),Some(Computation::RecordProjection(_,b))) if a == b),
@@ -6794,6 +6848,7 @@ fn bind_rule(
             width(a).is_some() && width(a) == width(b)
         },
         (Elimination::Project(a), Elimination::Project(b)) => a == b,
+        (Elimination::Fixpoint(a), Elimination::Fixpoint(b)) => matches!((fixpoint_chain(arena, a), fixpoint_chain(arena, b)), (Some((_, ref ones)), Some((_, ref others))) if ones.len() == others.len()),
         _ => core::mem::discriminant(one) == core::mem::discriminant(other),
     });
     match ret {
@@ -6822,7 +6877,9 @@ if let Some(matched_left_node) = matched_left_value && let Computation::DataCase
                         && pending.next() == Some(&Premise::values(a_value, b_value))
                 } else { false },
                 (Elimination::Transport(one), Elimination::Transport(other)) | (Elimination::ProductTransport(one), Elimination::ProductTransport(other)) | (Elimination::Apply(one), Elimination::Apply(other)) | (Elimination::StaticApply(one), Elimination::StaticApply(other)) => pending.next() == Some(&Premise::values(one, other)),
-                (Elimination::Bind(one), Elimination::Bind(other)) | (Elimination::Fixpoint(one), Elimination::Fixpoint(other)) => pending.next() == Some(&Premise::computations(one, other)),
+                (Elimination::Bind(one), Elimination::Bind(other)) => pending.next() == Some(&Premise::computations(one, other)),
+                (Elimination::Fixpoint(one), Elimination::Fixpoint(other)) => matches!((fixpoint_chain(arena, one), fixpoint_chain(arena, other)), (Some((one, ref ones)), Some((other, ref others)))
+                    if pending.next() == Some(&Premise::computations(one, other)) && ones.iter().zip(others).all(|(&a, &b)| pending.next() == Some(&Premise::values(a, b)))),
                 (Elimination::SigmaSplit(a), Elimination::SigmaSplit(b)) => matches!((arena.computation(a), arena.computation(b)), (Some(&Computation::SigmaSplit { body: one, .. }), Some(&Computation::SigmaSplit { body: other, .. })) if pending.next() == Some(&Premise::computations(one, other))),
                 (Elimination::ListFold(one_left, one_right), Elimination::ListFold(other_left, other_right)) =>
                     pending.next() == Some(&Premise::computations(one_left, other_left)) && pending.next() == Some(&Premise::computations(one_right, other_right)),
@@ -7010,9 +7067,24 @@ fn spines(
                     Premise::values(a_value, b_value),
                 ]);
             },
-            (Elimination::Bind(a), Elimination::Bind(b))
-            | (Elimination::Fixpoint(a), Elimination::Fixpoint(b)) => {
+            (Elimination::Bind(a), Elimination::Bind(b)) => {
                 premises.push(Premise::computations(a, b));
+            },
+            (Elimination::Fixpoint(a), Elimination::Fixpoint(b)) => {
+                let (Some((one, ones)), Some((other, others))) =
+                    (fixpoint_chain(arena, a), fixpoint_chain(arena, b))
+                else {
+                    return Err(unreadable());
+                };
+                if ones.len() != others.len() {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+                premises.push(Premise::computations(one, other));
+                premises.extend(
+                    ones.iter()
+                        .zip(&others)
+                        .map(|(&first, &second)| Premise::values(first, second)),
+                );
             },
             (Elimination::ListFold(a, b), Elimination::ListFold(c, d)) => {
                 premises.extend([Premise::computations(a, c), Premise::computations(b, d)]);
@@ -7059,6 +7131,52 @@ fn spines(
         }
     }
     Ok(Structure::of(premises))
+}
+
+/// The fixpoint a stuck fixpoint's elimination stands on and the leading
+/// arguments it holds, first to last: `fix a₀ … aₖ₋₁` read as `fix` and `[a₀,
+/// …, aₖ₋₁]`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some` exactly when `applied` is a fixpoint under zero or more
+///   applications, with that fixpoint and the applications' arguments in the
+///   order they apply; `None` for a dangling node or another head.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `loop` below, which descends application heads, not recursion.
+/// - measure: the arena position of the focus, which falls at every descent
+///   because a child is minted before its parent.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a fixpoint staged at its second binder, stuck on a
+///   variable past a leading argument, compares its leading argument after its
+///   fixpoint, and two such stuck forms with different leading arguments are
+///   apart.
+/// - witness: `replay::tests::a_stuck_fixpoint_compares_its_leading_arguments_626`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|&(fixpoint, _)| matches!(arena.computation(fixpoint), Some(&Computation::Fixpoint { .. }))))]
+fn fixpoint_chain(
+    arena: &TermArena,
+    applied: ComputationId,
+) -> Option<(ComputationId, Vec<ValueId>)>
+{
+    let mut leading = Vec::new();
+    let mut focus = applied;
+    loop {
+        let node = arena.computation(focus)?;
+        if let &Computation::Application(head, argument) = node {
+            leading.push(argument);
+            focus = head;
+            continue;
+        }
+        if !matches!(*node, Computation::Fixpoint { .. }) {
+            return None;
+        }
+        leading.reverse();
+        return Some((focus, leading));
+    }
 }
 
 #[cfg(test)]

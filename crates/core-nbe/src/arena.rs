@@ -254,6 +254,12 @@ pub struct FieldSpan
     end: usize,
 }
 
+impl FieldSpan
+{
+    /// The span of no fields, which every arena resolves.
+    pub const EMPTY: Self = Self { start: 0, end: 0 };
+}
+
 /// A half-open range of case-branch closures in one domain arena.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct BranchSpan
@@ -775,7 +781,7 @@ impl DomainArena
         (!matches!(unfolding, Unfolding::Rigid) || matches!(head, NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_)) || spine.iter().any(|elimination| match *elimination {
             Elimination::Apply(argument) | Elimination::StaticApply(argument) =>
                 !matches!(self.value_guard(argument), Ok(Guard::Rigid(_))),
-            Elimination::ListFold { .. } | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::TelescopeTransport { .. } | Elimination::Bind(_) | Elimination::Case { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Fixpoint(_) => true,
+            Elimination::ListFold { .. } | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::TelescopeTransport { .. } | Elimination::Bind(_) | Elimination::Case { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Fixpoint { .. } => true,
             Elimination::Force => false,
         })))]
     fn neutral_word(
@@ -827,7 +833,7 @@ impl DomainArena
                 | Elimination::Bind(_)
                 | Elimination::ListFold { .. }
                 | Elimination::Case { .. }
-                | Elimination::Fixpoint(_) => return Guard::Flexible,
+                | Elimination::Fixpoint { .. } => return Guard::Flexible,
             };
         }
         word
@@ -2154,11 +2160,14 @@ impl DomainArena
         forced.map_err(DomainFault::from)
     }
 
-    /// Mint a fixpoint over its own closed source node.
+    /// Mint a fixpoint over its own closed source node, applied to `leading`.
     ///
     /// # Specification
-    /// - requires: `recursive` closes a source fixpoint over its environment.
-    /// - ensures: a fresh computation node carrying that closure id and `face`.
+    /// - requires: `recursive` closes a source fixpoint over its environment,
+    ///   and `leading` holds no more arguments than the binders before its
+    ///   staged one.
+    /// - ensures: a fresh computation node carrying that closure id, the
+    ///   leading arguments and `face`.
     /// - provides: the weak-head form a fixpoint evaluates to, inert until a
     ///   gate observes it; the comparison opens it like a lambda, so its guard
     ///   is flexible.
@@ -2170,15 +2179,24 @@ impl DomainArena
     /// - hypothesis: L3 — a bare fixpoint reads back as itself, and a stuck one
     ///   keeps its binder; a wrong closure or face changes the observed term.
     /// - witness: `readback::tests::a_fixpoint_reads_back_with_its_self_binder`
+    /// - witness: `eval::tests::a_fixpoint_staged_past_its_first_binder_carries_its_leading_arguments_626`
     #[inline]
-    #[spec(ensures: |ret| self.computation(ret) == Some(&DomainComp::Fixpoint { recursive, face }))]
+    #[spec(ensures: |ret| self.computation(ret) == Some(&DomainComp::Fixpoint { recursive, leading, face }))]
     pub fn comp_fixpoint(
         &mut self,
         recursive: CompClosureId,
+        leading: FieldSpan,
         face: CompTermFace,
     ) -> DomainCompId
     {
-        self.alloc_computation(DomainComp::Fixpoint { recursive, face }, Guard::Flexible)
+        self.alloc_computation(
+            DomainComp::Fixpoint {
+                recursive,
+                leading,
+                face,
+            },
+            Guard::Flexible,
+        )
     }
 }
 

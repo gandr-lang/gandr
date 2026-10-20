@@ -151,7 +151,6 @@ fragment/unmarked-self-reference.gandr:bare:c78175776d973f53
 fragment/unmarked-self-reference.gandr:constant:468f169e12ee8af0
 fragment/unmarked-self-reference.gandr:idle:216962589726748c
 fragment/unmarked-self-reference.gandr:marked:229fce7bb34db408
-fragment/unmarked-self-reference.gandr:varied:46fc5dfb9caf06b3
 pathological/attributes/effectful-payload.gandr:<file>
 pathological/attributes/effectful-payload.gandr:f:6c7a03ac8be78ae4
 pathological/attributes/ill-typed-payload.gandr:<file>

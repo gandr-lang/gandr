@@ -3772,15 +3772,13 @@ where
                         let (own, inside) = match position {
                             None => (expected, expected),
                             Some(position) => {
-                                if usize::from(position) == 0 {
-                                    root = respect::fold_root(
-                                        arena,
-                                        judgement.presentations,
-                                        id,
-                                        expected,
-                                        body,
-                                    );
-                                }
+                                root = respect::fold_root(
+                                    arena,
+                                    judgement.presentations,
+                                    id,
+                                    (expected, position),
+                                    body,
+                                );
                                 let opened = recursion::open_fixpoint(
                                     arena,
                                     &mut stages,

@@ -971,7 +971,7 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
                 | Elimination::Bind(_)
                 | Elimination::ListFold { .. }
                 | Elimination::Case { .. }
-                | Elimination::Fixpoint(_)),
+                | Elimination::Fixpoint { .. }),
             ) => Ok(Atom::Other(Node::Stuck(neutral, prefix))),
             None => Err(ConversionFault::MachineInvariant),
         }

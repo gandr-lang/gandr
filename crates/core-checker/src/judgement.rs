@@ -5142,9 +5142,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let (own, inside) = match position {
                     None => (expected, expected),
                     Some(position) => {
-                        if usize::from(position) == 0 {
-                            self.root = self.fold_root(term, expected, body)?;
-                        }
+                        self.root = self.fold_root(term, (expected, position), body)?;
                         match crate::recursion::open_fixpoint(
                             self.context,
                             term,

@@ -372,10 +372,18 @@ pub enum Elimination
     /// `f a`: a static application whose operator was stuck, applied to a
     /// domain value argument.
     StaticApply(DomainValueId),
-    /// `(fix x. M) v`: a fixpoint applied to the stuck value, retaining the
-    /// fixpoint as its source node closed over its environment. Re-applied
-    /// when the head unfolds, it meets its gate again.
-    Fixpoint(CompClosureId),
+    /// `(fix x. M) a₀ … aₖ₋₁ v`: a fixpoint applied, past the arguments before
+    /// its staged one, to the stuck value at its staged position, retaining
+    /// the fixpoint as its source node closed over its environment and those
+    /// leading arguments in order. Re-applied when the head unfolds, it meets
+    /// its gate again.
+    Fixpoint
+    {
+        /// The fixpoint's own source node, closed over its environment.
+        recursive: CompClosureId,
+        /// The arguments before the staged one, in application order.
+        leading: crate::arena::FieldSpan,
+    },
 }
 
 /// A stuck computation or value: a head, the eliminations stacked on it, and
@@ -917,14 +925,17 @@ pub enum DomainComp
         /// The term face.
         face: CompTermFace,
     },
-    /// A fixpoint standing at no gate: inert until an application to a
-    /// canonical value or a bind observes it.
+    /// A fixpoint standing at no gate, applied to the arguments before its
+    /// staged one that have arrived: inert until an application at its staged
+    /// position to a canonical value or a bind observes it.
     Fixpoint
     {
         /// The fixpoint's own source node, closed over its environment: what
         /// the self thunk suspends, and what an unfolding or an opening reads
         /// the body from.
         recursive: CompClosureId,
+        /// The arguments before the staged one applied so far, in order.
+        leading: crate::arena::FieldSpan,
         /// The term face.
         face: CompTermFace,
     },

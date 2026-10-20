@@ -109,6 +109,7 @@ use gandr_kernel_term::RuleIndex;
 use gandr_kernel_term::RuleNode;
 use gandr_kernel_term::RuleSlot;
 use gandr_kernel_term::RuleVariable;
+use gandr_kernel_term::StagedPosition;
 use gandr_kernel_term::VariableCount;
 use gandr_kernel_term::build_side;
 use quenchant_shape::shape::Maybe;
@@ -153,14 +154,18 @@ quenchant_shape::reason_enum! {
 pub enum Reading
 {
     /// The case is the root of a structural fixpoint: the fixpoint itself,
-    /// out of `domain`, both standing where the fixpoint stands.
+    /// past its `leading` arguments, out of `domain`, both standing where the
+    /// fixpoint stands.
     Fold
     {
         /// The fixpoint.
         fixpoint: ComputationId,
+        /// How many arguments the fixpoint takes before the one it folds over.
+        leading: StagedPosition,
         /// The data application it recurses over.
         domain: ValueTypeId,
-        /// The fixpoint's type, whose codomain a law's endpoints stand at.
+        /// The fixpoint's type past its leading arguments, whose codomain a
+        /// law's endpoints stand at.
         arrow: CompTypeId,
     },
     /// Any other case: the case itself, its scrutinee of `datatype`, both
@@ -182,9 +187,11 @@ pub enum Reading
 /// - ensures: `Ok(())` exactly when, for every rule `l ==> r` in written order,
 ///   `F(l)` converts with `F(r)` under
 ///   [`crate::code::CodeDefinitions::convert_rigidly`], `l` and `r` built over
-///   one fresh variable per pattern variable and `F` read as `reading` says;
-///   or, at a fold, the law at the rule's position among the laws the
-///   declaration under judgement names relates them, as [`lawful`] decides.
+///   one fresh variable per pattern variable and `F` read as `reading` says — a
+///   fold past `k` leading arguments applied first to `k` fresh variables bound
+///   outside the rule's own; or, at a fold over its first binder, the law at
+///   the rule's position among the laws the declaration under judgement names
+///   relates them, as [`lawful`] decides.
 /// - fails: [`CheckRefusal::RuleNotRespected`] at `at` naming the first rule
 ///   whose sides neither convert nor are related by a law, with the two sides
 ///   as built; [`CheckRefusal::MachineInvariant`] for a rule side that does not
@@ -204,10 +211,12 @@ pub enum Reading
 ///   inverse letters is admitted, a case reading the letter as written is
 ///   refused at the first rule, and the same refusal names the rule's two
 ///   sides; a fold computing the integers is admitted on its two cancellation
-///   laws and refused without them or with a law stating another path; the
-///   kernel re-derives every verdict.
+///   laws and refused without them or with a law stating another path; a fold
+///   over the integers past an accumulator that each letter changes is admitted
+///   where the accumulators cancel; the kernel re-derives every verdict.
 /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 /// - witness: `tests::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
+/// - witness: `bridge::tests::every_fixture_the_checker_accepts_is_readmitted`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::RuleNotRespected { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
 pub fn respected(
     context: &mut CheckingContext<'_>,
@@ -221,18 +230,43 @@ pub fn respected(
         .iter()
         .map(|fields| FieldCount::from(fields.len()))
         .collect();
-    let (head, datatype) = match reading {
+    let (head, datatype, leading) = match reading {
         Reading::Fold {
-            fixpoint, domain, ..
-        } => (fixpoint, domain),
-        Reading::Case { datatype } => (at, datatype),
+            fixpoint,
+            domain,
+            leading,
+            ..
+        } => (
+            fixpoint,
+            domain,
+            u32::try_from(usize::from(leading))
+                .map_err(|_overflow| CheckRefusal::MachineInvariant)?,
+        ),
+        Reading::Case { datatype } => (at, datatype, 0_u32),
     };
     for (index, rule) in signature.presentation().rules().iter().enumerate() {
         let bound = u32::from(rule.variables());
-        let amount = Binders::from(bound);
+        let amount = Binders::from(
+            bound
+                .checked_add(leading)
+                .ok_or(CheckRefusal::MachineInvariant)?,
+        );
         let arena = context.arena_mut();
         let datatype = shift_value_type(arena, datatype, amount).settle(arena);
         let head = shift_computation_under(arena, head, Binders::NONE, amount).settle(arena);
+        // A fold past leading arguments is applied to one fresh variable per
+        // argument, bound outside the rule's own.
+        let head = (0 .. leading).rev().try_fold(
+            head,
+            |applied, outward| -> Result<ComputationId, CheckRefusal> {
+                let index = bound
+                    .checked_add(outward)
+                    .ok_or(CheckRefusal::MachineInvariant)?;
+                let argument =
+                    arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+                Ok(arena.computation_application(applied, argument))
+            },
+        )?;
         let mut side = |nodes: &[RuleNode]| {
             build_side(nodes, &arities, |node, fields| match node {
                 RuleNode::Variable(variable) => arena.value_variable(
@@ -273,12 +307,19 @@ pub fn respected(
         {
             continue;
         }
-        if let Reading::Fold { arrow, .. } = reading
+        // A law and a set's parallel paths speak of a fold at its first
+        // binder; a fold past leading arguments rests on conversion alone.
+        if leading == 0
+            && let Reading::Fold { arrow, .. } = reading
             && parallel_in_a_set(context, (arrow, amount), (left, right)) == Related::Related
         {
             continue;
         }
-        let law = context.admitted_laws().get(index).copied();
+        let law = context
+            .admitted_laws()
+            .get(index)
+            .copied()
+            .filter(|_| leading == 0);
         let related = match (reading, law) {
             (Reading::Fold { arrow, .. }, Some(law)) => {
                 let obliged = Obliged {

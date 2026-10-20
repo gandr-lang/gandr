@@ -22,6 +22,7 @@ use gandr_core_term::shift_comp_type_under;
 use gandr_kernel_term::Apartness;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::StagedPosition;
 use quenchant_shape::shape::Maybe;
 
 use super::Direction;
@@ -947,17 +948,19 @@ impl Machine<'_, '_>
         Ok(Step::Ascend(Produced::Checked))
     }
 
-    /// The case a structural fixpoint opens with, read as the fixpoint
-    /// against its type's rules.
+    /// The case a structural fixpoint opens with past its `leading` binders,
+    /// read as the fixpoint against its type's rules.
     ///
     /// # Specification
     /// - requires: `body` is the body of the fixpoint `fixpoint`, whose
-    ///   structural evidence stages its first parameter at `expected`.
-    /// - ensures: the case under the body's lambda beside [`Reading::Fold`]
-    ///   naming the fixpoint, the domain of `expected`, read as its words where
-    ///   it is a path at a looped point, and `expected` itself, when that
-    ///   case's scrutinee is the lambda's argument;
-    ///   [`root::Absent::NotOverCase`] otherwise.
+    ///   evidence stages its parameter at `leading` at `expected`.
+    /// - ensures: the case under the body's `leading + 1` lambdas beside
+    ///   [`Reading::Fold`] naming the fixpoint, `leading`, the domain of the
+    ///   arrow `expected` holds past `leading` plain arrows, read as its words
+    ///   where it is a path at a looped point, and that arrow, when that case's
+    ///   scrutinee is the innermost lambda's argument;
+    ///   [`root::Absent::NotOverCase`] otherwise, and where a leading arrow is
+    ///   dependent.
     /// - fails: as [`crate::context::CheckingContext::identified`].
     /// - panics: none.
     ///
@@ -967,24 +970,39 @@ impl Machine<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`crate::respect::respected`]: the fold reading
     ///   admits a fixpoint over the circle that a bare reading of its case
-    ///   would refuse, and a fold over a path at a looped point respects its
-    ///   words' cancellations.
+    ///   would refuse, a fold over a path at a looped point respects its words'
+    ///   cancellations, and a fold over the integers past an accumulator
+    ///   respects the cancellations the accumulator meets.
     /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
     /// - witness: `tests::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |root| match *root { Maybe::Present((_, reading)) => matches!(reading, Reading::Fold { fixpoint: marked, .. } if marked == fixpoint), Maybe::Absent(reason) => reason == root::Absent::NotOverCase }))]
+    /// - witness: `bridge::tests::every_fixture_the_checker_accepts_is_readmitted`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |root| match *root { Maybe::Present((_, reading)) => matches!(reading, Reading::Fold { fixpoint: marked, leading: past, .. } if marked == fixpoint && past == leading), Maybe::Absent(reason) => reason == root::Absent::NotOverCase }))]
     pub(super) fn fold_root(
         &mut self,
         fixpoint: ComputationId,
-        expected: gandr_core_term::CompTypeId,
+        (expected, leading): (gandr_core_term::CompTypeId, StagedPosition),
         body: ComputationId,
     ) -> Result<Maybe<(ComputationId, Reading), root::Absent>, CheckRefusal>
     {
         let arena = self.context.arena();
         let not_over_case = Ok(Maybe::Absent(root::Absent::NotOverCase));
+        let mut arrow = expected;
+        let mut body = body;
+        for _ in 0 .. usize::from(leading) {
+            let (
+                Some(&gandr_core_term::CompType::Arrow { codomain, .. }),
+                Some(&Computation::Lambda(inner)),
+            ) = (arena.comp_type(arrow), arena.computation(body))
+            else {
+                return not_over_case;
+            };
+            arrow = codomain;
+            body = inner;
+        }
         let Some(
             &(gandr_core_term::CompType::Arrow { domain, .. }
             | gandr_core_term::CompType::Pi { domain, .. }),
-        ) = arena.comp_type(expected)
+        ) = arena.comp_type(arrow)
         else {
             return not_over_case;
         };
@@ -1005,8 +1023,9 @@ impl Machine<'_, '_>
         }
         Ok(Maybe::Present((case, Reading::Fold {
             fixpoint,
+            leading,
             domain: self.context.identified(domain)?,
-            arrow: expected,
+            arrow,
         })))
     }
 

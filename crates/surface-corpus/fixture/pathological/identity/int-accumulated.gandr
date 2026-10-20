@@ -1,0 +1,18 @@
+// A sum by recursion on its second summand into an accumulator that the
+// integers' rules do not cancel: the fold past its leading accumulator owes
+// each rule as the fold over the first parameter does (#626).
+
+// The integers, one successor more and one predecessor more.
+import "../../model/identity/circle-base.gandr" ;
+
+/// The accumulating sum with a predecessor moved onto the accumulator as a
+/// successor: at `S(P(x))` it computes `count(S(S(acc)), x)`, which no rule
+/// reads as `count(acc, x)`, so the case is refused at the first rule.
+@[ refuses("RuleNotRespected") ]
+def rec count(acc : Int, b : Int) -> -F Int {
+  case b {
+    Z => acc,
+    S(x) => count[<](S(acc), x),
+    P(x) => count[<](S(acc), x)
+  }
+}

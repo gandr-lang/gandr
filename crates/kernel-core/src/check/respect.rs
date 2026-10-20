@@ -54,6 +54,7 @@ use gandr_kernel_term::RuleIndex;
 use gandr_kernel_term::RuleNode;
 use gandr_kernel_term::RuleSlot;
 use gandr_kernel_term::RuleVariable;
+use gandr_kernel_term::StagedPosition;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
@@ -115,14 +116,18 @@ quenchant_shape::reason_enum! {
 pub(super) enum Reading
 {
     /// The case is the root of a structural fixpoint: the fixpoint itself,
-    /// out of `domain`, both standing where the fixpoint stands.
+    /// past its `leading` arguments, out of `domain`, both standing where the
+    /// fixpoint stands.
     Fold
     {
         /// The fixpoint.
         fixpoint: ComputationId,
+        /// How many arguments the fixpoint takes before the one it folds over.
+        leading: StagedPosition,
         /// The data application it recurses over.
         domain: ValueTypeId,
-        /// The fixpoint's type, whose codomain a law's endpoints stand at.
+        /// The fixpoint's type past its leading arguments, whose codomain a
+        /// law's endpoints stand at.
         arrow: CompTypeId,
     },
     /// Any other case: the case itself, its scrutinee of `datatype`, both
@@ -134,37 +139,52 @@ pub(super) enum Reading
     },
 }
 
-/// The case a structural fixpoint opens with, read as the fixpoint against
-/// its type's rules.
+/// The case a structural fixpoint opens with past its `leading` binders, read
+/// as the fixpoint against its type's rules.
 ///
 /// # Specification
-/// - requires: `body` is the body of the fixpoint `fixpoint`, whose structural
-///   evidence stages its first parameter at `expected`.
-/// - ensures: the case under the body's lambda beside [`Reading::Fold`] naming
-///   the fixpoint and the domain of `expected`, read as its words where it is a
-///   path at a looped point ([`Presentations::identified`]), when that case's
-///   scrutinee is the lambda's argument; [`root::Absent::NotOverCase`]
-///   otherwise.
+/// - requires: `body` is the body of the fixpoint `fixpoint`, whose evidence
+///   stages its parameter at `leading` at `expected`.
+/// - ensures: the case under the body's `leading + 1` lambdas beside
+///   [`Reading::Fold`] naming the fixpoint, `leading`, the domain of the arrow
+///   `expected` holds past `leading` plain arrows, read as its words where it
+///   is a path at a looped point ([`Presentations::identified`]), and that
+///   arrow, when that case's scrutinee is the innermost lambda's argument;
+///   [`root::Absent::NotOverCase`] otherwise, and where a leading arrow is
+///   dependent.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`respected`]: the fold reading admits a fixpoint over
-///   the circle that a bare reading of its case would refuse, and a fold over a
-///   path at a looped point respects its words' cancellations.
+///   the circle that a bare reading of its case would refuse, a fold over a
+///   path at a looped point respects its words' cancellations, and a fold over
+///   the integers past an accumulator respects the cancellations the
+///   accumulator meets.
 /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 /// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
-#[spec(ensures: |ret| match ret { Maybe::Present((_, reading)) => matches!(reading, Reading::Fold { fixpoint: marked, .. } if marked == fixpoint), Maybe::Absent(reason) => reason == root::Absent::NotOverCase })]
+#[spec(ensures: |ret| match ret { Maybe::Present((_, reading)) => matches!(reading, Reading::Fold { fixpoint: marked, leading: past, .. } if marked == fixpoint && past == leading), Maybe::Absent(reason) => reason == root::Absent::NotOverCase })]
 pub(super) fn fold_root(
     arena: &mut TermArena,
     presentations: &Presentations,
     fixpoint: ComputationId,
-    expected: CompTypeId,
+    (expected, leading): (CompTypeId, StagedPosition),
     body: ComputationId,
 ) -> Maybe<(ComputationId, Reading), root::Absent>
 {
     let not_over_case = Maybe::Absent(root::Absent::NotOverCase);
+    let mut arrow = expected;
+    let mut body = body;
+    for _ in 0 .. usize::from(leading) {
+        let (Some(&CompType::Arrow { codomain, .. }), Some(&Computation::Lambda(inner))) =
+            (arena.comp_type(arrow), arena.computation(body))
+        else {
+            return not_over_case;
+        };
+        arrow = codomain;
+        body = inner;
+    }
     let Some(&(CompType::Arrow { domain, .. } | CompType::Pi { domain, .. })) =
-        arena.comp_type(expected)
+        arena.comp_type(arrow)
     else {
         return not_over_case;
     };
@@ -181,8 +201,9 @@ pub(super) fn fold_root(
     }
     Maybe::Present((case, Reading::Fold {
         fixpoint,
+        leading,
         domain: presentations.identified(arena, domain),
-        arrow: expected,
+        arrow,
     }))
 }
 
@@ -276,6 +297,9 @@ pub(super) fn respected(
         } => (fixpoint, domain),
         Reading::Case { datatype } => (case, datatype),
     };
+    // A law and a set's parallel paths speak of a fold at its first binder; a
+    // fold past leading arguments rests on conversion alone.
+    let first = !matches!(reading, Reading::Fold { leading, .. } if usize::from(leading) != 0);
     let Some(&ValueType::Data { declaration, .. }) = arena.value_type(datatype)
     else {
         return Err(KernelError::ArenaFault);
@@ -302,7 +326,8 @@ pub(super) fn respected(
                 {
                     return Ok(());
                 }
-                if let Reading::Fold { arrow, .. } = reading
+                if first
+                    && let Reading::Fold { arrow, .. } = reading
                     && parallel_in_a_set(
                         arena,
                         (entries, unfoldings),
@@ -312,7 +337,7 @@ pub(super) fn respected(
                 {
                     return Ok(());
                 }
-                match (reading, laws.get(index)) {
+                match (reading, laws.get(index).filter(|_| first)) {
                     (Reading::Fold { arrow, .. }, Some(&law)) => {
                         let related = lawful(
                             arena,
@@ -367,12 +392,13 @@ enum Related
 /// # Specification
 /// - requires: `head` is the fixpoint or the case `reading` names, and
 ///   `datatype` its data application.
-/// - ensures: `F(l)` and `F(r)` beneath one fresh binder per pattern variable,
-///   with `l` and `r` themselves, `head` and `datatype` shifted past them: the
-///   shifted fixpoint applied to each side, or the shifted case with each side
-///   in its scrutinee's place.
-/// - fails: [`KernelError::ArenaFault`] for a rule side that does not build or
-///   a case node the arena does not hold.
+/// - ensures: `F(l)` and `F(r)` beneath one fresh binder per leading argument
+///   of a fold and, inside those, one per pattern variable, with `l` and `r`
+///   themselves, `head` and `datatype` shifted past them all: the shifted
+///   fixpoint applied to the leading binders, outermost first, and then to each
+///   side, or the shifted case with each side in its scrutinee's place.
+/// - fails: [`KernelError::ArenaFault`] for a rule side that does not build, a
+///   case node the arena does not hold, or a binder count past the index range.
 /// - panics: none.
 ///
 /// # Errors
@@ -391,7 +417,13 @@ fn obligation(
 ) -> Result<Obliged, KernelError>
 {
     let bound = u32::from(rule.variables());
-    let amount = BinderDepth::from(bound);
+    let leading = match reading {
+        Reading::Fold { leading, .. } => {
+            u32::try_from(usize::from(leading)).map_err(|_overflow| KernelError::ArenaFault)?
+        },
+        Reading::Case { .. } => 0_u32,
+    };
+    let amount = BinderDepth::from(bound.checked_add(leading).ok_or(KernelError::ArenaFault)?);
     let mut table = ContentTable::default();
     let datatype = shift_value_type(
         arena,
@@ -409,6 +441,14 @@ fn obligation(
         BinderDepth::NONE,
         amount,
     );
+    let head = (0 .. leading).rev().try_fold(
+        head,
+        |applied, outward| -> Result<ComputationId, KernelError> {
+            let index = bound.checked_add(outward).ok_or(KernelError::ArenaFault)?;
+            let argument = arena.value_variable(DeBruijnIndex::from(index));
+            Ok(arena.computation_application(applied, argument))
+        },
+    )?;
     let mut side = |nodes: &[RuleNode]| {
         build_side(nodes, arities, |node, fields| match node {
             RuleNode::Variable(variable) => {

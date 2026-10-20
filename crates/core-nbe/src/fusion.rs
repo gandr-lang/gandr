@@ -246,7 +246,7 @@ pub fn fused(
             | Elimination::Case(_)
             | Elimination::ListFold { .. }
             | Elimination::StaticApply(_)
-            | Elimination::Fixpoint(_) => None,
+            | Elimination::Fixpoint { .. } => None,
         })
         .collect();
     let point = variable(domain, fresh)?;
