@@ -2770,6 +2770,14 @@ impl SymbolKind
     pub const STRUCT: Self = Self(23);
     /// A family's constructor.
     pub const CONSTRUCTOR: Self = Self(9);
+    /// A theory's operation.
+    pub const METHOD: Self = Self(6);
+    /// A theory's law.
+    pub const PROPERTY: Self = Self(7);
+    /// An observation: of a codata declaration, or a theory's.
+    pub const FIELD: Self = Self(8);
+    /// A theory's sort, shape or extension: a type the theory is over.
+    pub const TYPE_PARAMETER: Self = Self(26);
 }
 
 /// A run of lines a client can fold.
