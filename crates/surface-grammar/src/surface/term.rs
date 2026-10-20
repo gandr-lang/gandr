@@ -107,7 +107,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 115 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=20 => Sort::Item, 21..=24 => Sort::ModuleMember, 25..=36 | 99..=105 => Sort::Pattern, 37..=42 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "escape_sequence")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 109 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=20 => Sort::Item, 21..=24 => Sort::ModuleMember, 25..=36 | 99..=100 => Sort::Pattern, 37..=42 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "string.expression")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -2023,8 +2023,11 @@ fn expressions(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: appends seven pattern lexical forms followed by nine expression
-///   lexical forms, preserving the shared source kinds and distinct bands.
+/// - ensures: appends two pattern lexical forms followed by eight expression
+///   lexical forms, preserving the shared source kinds and distinct bands. A
+///   constructor, boolean, number or string pattern is read by
+///   `constructor_pattern` and `literal_pattern`, so the pattern sort has no
+///   lexical rule of its own for them.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2035,7 +2038,7 @@ fn expressions(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 16 && added.iter().zip([("identifier.pattern", "identifier", Sort::Pattern, pat), ("constructor.pattern", "constructor", Sort::Pattern, pat), ("boolean.pattern", "boolean", Sort::Pattern, pat), ("unit.pattern", "unit", Sort::Pattern, pat), ("number.pattern", "number", Sort::Pattern, pat), ("typed_number.pattern", "typed_number", Sort::Pattern, pat), ("string.pattern", "string", Sort::Pattern, pat), ("identifier.expression", "identifier", Sort::Expression, expr), ("constructor.expression", "constructor", Sort::Expression, expr), ("boolean.expression", "boolean", Sort::Expression, expr), ("unit.expression", "unit", Sort::Expression, expr), ("number.expression", "number", Sort::Expression, expr), ("typed_number.expression", "typed_number", Sort::Expression, expr), ("character", "character", Sort::Expression, expr), ("string.expression", "string", Sort::Expression, expr), ("escape_sequence", "escape_sequence", Sort::Expression, expr)]).all(|(rule, (name, provenance, sort, prec))| rule.name().0 == name && rule.provenance().0 == provenance && rule.sort() == sort && rule.prec() == prec)))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 10 && added.iter().zip([("identifier.pattern", "identifier", Sort::Pattern, pat), ("unit.pattern", "unit", Sort::Pattern, pat), ("identifier.expression", "identifier", Sort::Expression, expr), ("constructor.expression", "constructor", Sort::Expression, expr), ("boolean.expression", "boolean", Sort::Expression, expr), ("unit.expression", "unit", Sort::Expression, expr), ("number.expression", "number", Sort::Expression, expr), ("typed_number.expression", "typed_number", Sort::Expression, expr), ("character", "character", Sort::Expression, expr), ("string.expression", "string", Sort::Expression, expr)]).all(|(rule, (name, provenance, sort, prec))| rule.name().0 == name && rule.provenance().0 == provenance && rule.sort() == sort && rule.prec() == prec)))]
 fn lexical(
     out: &mut Vec<Rule>,
     pat: Prec,
@@ -2051,53 +2054,11 @@ fn lexical(
         t(TileLabel("identifier")),
     ));
     out.push(r(
-        RuleName("constructor.pattern"),
-        Provenance("constructor"),
-        p,
-        pat,
-        t(TileLabel("constructor")),
-    ));
-    out.push(r(
-        RuleName("boolean.pattern"),
-        Provenance("boolean"),
-        p,
-        pat,
-        alt([t(TileLabel("true")), t(TileLabel("false"))]),
-    ));
-    out.push(r(
         RuleName("unit.pattern"),
         Provenance("unit"),
         p,
         pat,
         t(TileLabel("unit")),
-    ));
-    out.push(r(
-        RuleName("number.pattern"),
-        Provenance("number"),
-        p,
-        pat,
-        t(TileLabel("number")),
-    ));
-    out.push(r(
-        RuleName("typed_number.pattern"),
-        Provenance("typed_number"),
-        p,
-        pat,
-        t(TileLabel("typed_number")),
-    ));
-    out.push(r(
-        RuleName("string.pattern"),
-        Provenance("string"),
-        p,
-        pat,
-        seq([
-            t(TileLabel("\"")),
-            repeat(alt([
-                t(TileLabel("escape_sequence")),
-                t(TileLabel("string_fragment")),
-            ])),
-            t(TileLabel("\"")),
-        ]),
     ));
 
     let e = Sort::Expression;
@@ -2178,14 +2139,12 @@ fn lexical(
         SurfaceForm("string_interpolation"),
         AdaptationReason("an expression string carries `${ E }` interpolation segments as a bracket-family member of the fragment and escape repeat; the `${` opener and `}` closer are the labeler's string-segment boundaries. No format specifiers."),
     ));
-    out.push(string_expr);
-    out.push(r(
-        RuleName("escape_sequence"),
-        Provenance("escape_sequence"),
-        e,
-        expr,
-        t(TileLabel("escape_sequence")),
+    string_expr.adaptations.push(Adaptation::new(
+        RuleName("string.expression"),
+        SurfaceForm("escape_sequence"),
+        AdaptationReason("an escape is a tile of the string forms, lexed only between a string's quotes, so it has no form of its own: the `escape_sequence` named kind is realised by the tile inside `string.expression`, the pattern-position string of `literal_pattern` and the shell `double_quoted_string`"),
     ));
+    out.push(string_expr);
 }
 
 /// Expression precedence bundle.

@@ -3529,12 +3529,12 @@ impl<'pbg> Molder<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — a type application's name tied with the bare type
     ///   name before `(` and before `,`, beside a second opener `(` continues,
-    ///   and beside a tile with a successor, and a constructor pattern's name
-    ///   tied with the bare constructor before `(`: the first and the last
-    ///   return the continued opener; dropping the uniqueness check, admitting
-    ///   a tile with a successor as complete, or refusing a form-last opener
-    ///   each changes one case. The corpus and a long application after `-F`
-    ///   observe the choice through whole parses.
+    ///   and beside a tile with a successor, and a constructor pattern's name,
+    ///   which can end its form, before `(`: the first and the last return the
+    ///   continued opener; dropping the uniqueness check, admitting a tile with
+    ///   a successor as complete, or refusing a form-last opener each changes
+    ///   one case. The corpus and a long application after `-F` observe the
+    ///   choice through whole parses.
     /// - witness: `mold::tests::a_continued_opener_beats_a_one_tile_form`
     /// - witness: `mold::tests::a_long_type_application_is_read_whole`
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
@@ -3594,9 +3594,9 @@ impl<'pbg> Molder<'pbg>
     /// stand alike as operands to whatever follows: one sort, one precedence,
     /// nothing left open. Every window then closes with the same obligations,
     /// and the exact-tie rule keeps the least opener; this keeps it without
-    /// molding the windows. A constructor pattern's name before `=>` ties its
-    /// two rules this way, as a parenthesized expression's `)` ties its two
-    /// closers.
+    /// molding the windows. A primitive type's spelling before `,` ties its
+    /// primitive and type-variable readings this way, as a parenthesized
+    /// expression's `)` ties its two closers.
     ///
     /// # Specification
     /// - requires: `self.openers` ascending.
@@ -3606,10 +3606,11 @@ impl<'pbg> Molder<'pbg>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a constructor pattern's two rules before `=>` and
-    ///   before `(`, a constructor pattern beside a constructor expression, and
-    ///   a type application's name beside the bare type name: only the first
-    ///   returns the least; ignoring the next token, the sort, or the form-last
+    /// - hypothesis: L3 — a primitive type's two readings before `,`, a
+    ///   constructor pattern's name before `=>` and before `(`, the name beside
+    ///   a constructor expression, and a type application's name beside the
+    ///   bare type name: only the alike readings and the lone name before `=>`
+    ///   return the least; ignoring the next token, the sort, or the form-last
     ///   check each changes one case. The corpus molds to the same trees with
     ///   the windows the rule skips.
     /// - witness: `mold::tests::readings_that_end_alike_keep_the_least`
@@ -4533,9 +4534,8 @@ mod tests
         )?;
         // A parameter comma: neither continued by `(` nor a form of its own.
         let parameter_comma = mold_in(&pbg, DEF, COMMA, RightSide::Closed, &[TYPE_IDENTIFIER])?;
-        // `Some(x)` against the bare constructor `Some`: the pattern's name
-        // can also end its form.
-        let (pattern_name, bare_constructor) = constructor_patterns(&pbg)?;
+        // `Some(x)`: the pattern's name, which can also end its form.
+        let pattern_name = constructor_pattern(&pbg)?;
         let parenthesis = [CandidateLabel::from("(")];
         let comma = [CandidateLabel::from(",")];
         let cases: [(&[MoldId], &[CandidateLabel<'_>], Option<MoldId>); 5] = [
@@ -4543,11 +4543,7 @@ mod tests
             (&[application, bare], &comma, None),
             (&[application, declared], &parenthesis, None),
             (&[application, parameter_comma], &parenthesis, None),
-            (
-                &[pattern_name, bare_constructor],
-                &parenthesis,
-                Some(pattern_name),
-            ),
+            (&[pattern_name], &parenthesis, Some(pattern_name)),
         ];
         for (openers, labels, expected) in cases {
             let mut ascending = openers.to_vec();
@@ -4562,41 +4558,31 @@ mod tests
         Ok(())
     }
 
-    /// The two molds of a constructor's name in a pattern: the name opening
-    /// `constructor_pattern`, whose arguments are optional, and the whole
-    /// one-tile `constructor.pattern`.
+    /// The name opening `constructor_pattern`, whose arguments are optional.
     ///
     /// # Specification
-    /// - ensures: the opener, then the one-tile form.
+    /// - ensures: the mold of the constructor tile `(` continues in
+    ///   `constructor_pattern`.
     /// - fails: the grammar declares no such mold.
     /// - panics: none.
     ///
     /// # Errors
-    /// Either mold is missing.
+    /// The mold is missing.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the tie witnesses read both molds' form membership; a
-    ///   swapped pair or a wrong rule changes which rule they exercise.
+    /// - hypothesis: L3 — the tie witnesses read the mold's form membership; a
+    ///   wrong rule changes which rule they exercise.
     /// - witness: `mold::tests::readings_that_end_alike_keep_the_least`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(opener, whole)| pbg.rule_of(opener).is_ok_and(|rule| rule.name() == RuleName("constructor_pattern")) && pbg.rule_of(whole).is_ok_and(|rule| rule.name() == RuleName("constructor.pattern"))))]
-    fn constructor_patterns(pbg: &Pbg) -> Result<(MoldId, MoldId), Box<dyn Error>>
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&opener| pbg.rule_of(opener).is_ok_and(|rule| rule.name() == RuleName("constructor_pattern"))))]
+    fn constructor_pattern(pbg: &Pbg) -> Result<MoldId, Box<dyn Error>>
     {
-        let constructor = TileLabel("constructor");
-        let opener = mold_in(
+        mold_in(
             pbg,
             RuleName("constructor_pattern"),
-            constructor,
+            TileLabel("constructor"),
             RightSide::Closed,
             &[TileLabel("(")],
-        )?;
-        let whole = mold_in(
-            pbg,
-            RuleName("constructor.pattern"),
-            constructor,
-            RightSide::Closed,
-            &[],
-        )?;
-        Ok((opener, whole))
+        )
     }
 
     #[test]
@@ -4604,7 +4590,22 @@ mod tests
     {
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
-        let (pattern_name, bare_constructor) = constructor_patterns(&pbg)?;
+        let pattern_name = constructor_pattern(&pbg)?;
+        // `u32` read as the primitive type and as a type variable.
+        let primitive = mold_in(
+            &pbg,
+            RuleName("primitive_type"),
+            TileLabel("u32"),
+            RightSide::Closed,
+            &[],
+        )?;
+        let variable = mold_in(
+            &pbg,
+            RuleName("type_variable"),
+            TileLabel("type_variable"),
+            RightSide::Closed,
+            &[],
+        )?;
         // The constructor in expression position: a form of another sort.
         let expression = mold_in(
             &pbg,
@@ -4631,12 +4632,17 @@ mod tests
         let arrow = [CandidateLabel::from("=>")];
         let parenthesis = [CandidateLabel::from("(")];
         let comma = [CandidateLabel::from(",")];
-        let least = pattern_name.min(bare_constructor);
-        let cases: [(&[MoldId], &[CandidateLabel<'_>], Option<MoldId>); 4] = [
-            (&[pattern_name, bare_constructor], &arrow, Some(least)),
-            (&[pattern_name, bare_constructor], &parenthesis, None),
-            (&[bare_constructor, expression], &arrow, None),
+        let cases: [(&[MoldId], &[CandidateLabel<'_>], Option<MoldId>); 6] = [
+            (
+                &[primitive, variable],
+                &comma,
+                Some(primitive.min(variable)),
+            ),
+            (&[pattern_name], &arrow, Some(pattern_name)),
+            (&[pattern_name], &parenthesis, None),
+            (&[pattern_name, expression], &arrow, None),
             (&[application, bare], &comma, None),
+            (&[primitive, application], &comma, None),
         ];
         for (openers, labels, expected) in cases {
             let mut ascending = openers.to_vec();

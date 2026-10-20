@@ -1377,8 +1377,16 @@ mod tests
     use std::path::Path;
     use std::path::PathBuf;
 
+    use gandr_surface_grammar::Pbg;
+    use gandr_surface_grammar::PrecName;
+    use gandr_surface_grammar::Provenance;
+    use gandr_surface_grammar::Regex;
+    use gandr_surface_grammar::Rule;
     use gandr_surface_grammar::RuleName;
+    use gandr_surface_grammar::Sort;
+    use gandr_surface_grammar::TileLabel;
     use gandr_surface_grammar::built_in;
+    use gandr_surface_grammar::built_in_prec_table;
 
     use super::Code;
     use super::Counted;
@@ -1390,6 +1398,7 @@ mod tests
     use super::SyntaxLedger;
     use super::molds_by_rule;
     use super::standing::Internal;
+    use super::standing::standing;
     use super::tree;
 
     /// A directory of this test's own under the system's temporary directory,
@@ -1513,14 +1522,14 @@ mod tests
         assert_eq!(form("world_declaration"), "world ‹identifier› ;");
         assert_eq!(
             form("import_declaration"),
-            "import ⟨string.pattern⟩ ⦅ as ‹identifier› ⦆? ;"
+            "import \" ⦅ ‹escape_sequence› ‖ ‹string_fragment› ⦆* \" ⦅ as ‹identifier› ⦆? ;"
         );
         assert_eq!(form("binary_expression.or"), "EXPRESSION || EXPRESSION");
-        assert_eq!(form("boolean.pattern"), "true ‖ false");
+        assert_eq!(form("boolean.expression"), "true ‖ false");
         assert_eq!(form("hole"), "? ⦅ ‹hole_name› ⦆?");
         assert_eq!(
-            form("string.pattern"),
-            "\" ⦅ ‹escape_sequence› ‖ ‹string_fragment› ⦆* \""
+            form("literal_pattern"),
+            "‹number› ‖ ‹typed_number› ‖ \" ⦅ ‹escape_sequence› ‖ ‹string_fragment› ⦆* \" ‖ true ‖ false"
         );
         assert!(
             form("lambda_expression").contains("⟨block⟩"),
@@ -1562,30 +1571,87 @@ mod tests
                 Standing::Committed => None,
             })
             .collect();
-        let shadowed = |by| Internal::Shadowed { by };
-        let captured = |tile, by| Internal::Captured { tile, by };
-        assert_eq!(internal, [
-            ("instantiation.type", Internal::Tileless),
-            ("constructor.pattern", shadowed("constructor_pattern")),
-            ("boolean.pattern", shadowed("literal_pattern")),
-            ("number.pattern", shadowed("literal_pattern")),
-            ("typed_number.pattern", shadowed("literal_pattern")),
-            ("string.pattern", shadowed("literal_pattern")),
-            ("escape_sequence", Internal::Enclosed {
-                class: "escape_sequence"
-            }),
-            ("block_comment", Internal::Layout { tile: "/*" }),
-            ("shell_list", captured("shell_or", "identifier.expression")),
+        // The type argument's coercion into the instantiation sort: a lone
+        // hole, which no tree names.
+        assert_eq!(internal, [("instantiation.type", Internal::Tileless)]);
+    }
+
+    #[test]
+    fn each_unmoldable_form_has_its_derived_reason()
+    {
+        let precs = built_in_prec_table().expect("the band table builds");
+        let rule = |name, sort, band, regex| {
+            let prec = precs.prec(PrecName(band)).expect("the band is built in");
+            Rule::with_provenance(RuleName(name), Provenance(name), sort, prec, regex)
+        };
+        let tile = |label| Regex::tile(TileLabel(label));
+        // One form per reason a built-in rule no longer gives, each added to
+        // the built-in grammar.
+        let probes = [
             (
-                "or_expression",
-                captured("shell_and", "identifier.expression")
+                rule(
+                    "block_comment",
+                    Sort::Item,
+                    "item.singleton",
+                    Regex::seq([
+                        tile("/*"),
+                        Regex::repeat(tile("block_comment_content")),
+                        tile("*/"),
+                    ]),
+                ),
+                Internal::Layout { tile: "/*" },
             ),
             (
-                "and_expression",
-                captured("pipeline_operand", "identifier.expression")
+                rule(
+                    "constructor.pattern",
+                    Sort::Pattern,
+                    "pattern.atom",
+                    tile("constructor"),
+                ),
+                Internal::Shadowed {
+                    by: "constructor_pattern",
+                },
             ),
-            ("negation", captured("negation", "identifier.expression")),
-        ]);
+            (
+                rule(
+                    "negation",
+                    Sort::Expression,
+                    "expression.atom",
+                    tile("negation"),
+                ),
+                Internal::Captured {
+                    tile: "negation",
+                    by: "identifier.expression",
+                },
+            ),
+            (
+                rule(
+                    "escape_sequence",
+                    Sort::Expression,
+                    "expression.atom",
+                    tile("escape_sequence"),
+                ),
+                Internal::Enclosed {
+                    class: "escape_sequence",
+                },
+            ),
+        ];
+        let mut rules = built_in().expect("the grammar builds").rules().to_vec();
+        rules.extend(probes.iter().map(|&(ref probe, _)| probe.clone()));
+        let pbg = Pbg::build_table(precs, rules).expect("the probed grammar builds");
+        for &(ref probe, reason) in &probes {
+            let built = pbg
+                .rules()
+                .iter()
+                .find(|built| built.name() == probe.name())
+                .expect("the probe is a rule of the grammar");
+            assert_eq!(
+                standing(&pbg, built).expect("the standing derives"),
+                Standing::Internal(reason),
+                "{}",
+                probe.name().0
+            );
+        }
     }
 
     #[test]

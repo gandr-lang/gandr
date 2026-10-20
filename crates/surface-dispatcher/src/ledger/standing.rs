@@ -359,8 +359,11 @@ enum Probed
 /// [`LedgerFault::Sample`] naming the class.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — over the built-in grammar each reason fires on the rules
-///   it names and on no rule a committed exemplar shows.
+/// - hypothesis: L3 — over the built-in grammar with one form per reason added,
+///   each reason fires on its form; over the built-in grammar alone only the
+///   type argument's coercion is internal, and every committed exemplar molds
+///   its rule.
+/// - witness: `ledger::tests::each_unmoldable_form_has_its_derived_reason`
 /// - witness: `ledger::tests::every_internal_rule_has_its_derived_reason`
 /// - witness: `ledger::exemplars::tests::the_committed_exemplars_verify`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |standing| *standing == Standing::Committed || matches!(*standing, Standing::Internal(_))))]
@@ -393,8 +396,9 @@ pub(super) fn standing(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the block comment is internal through `/*`; a keyword
-///   form and the line comment are not.
+/// - hypothesis: L3 — a block comment form is internal through `/*`; every
+///   built-in form, the line comment included, is not.
+/// - witness: `ledger::tests::each_unmoldable_form_has_its_derived_reason`
 /// - witness: `ledger::tests::every_internal_rule_has_its_derived_reason`
 #[spec(ensures: |ret| ret == Standing::Committed || matches!(ret, Standing::Internal(Internal::Layout { .. })))]
 fn layout(root: RegexView<'_>) -> Standing
@@ -439,7 +443,8 @@ fn layout(root: RegexView<'_>) -> Standing
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the type instantiation, a lone hole, is tileless.
+/// - hypothesis: L3 — the type instantiation, a lone hole, is tileless; every
+///   other built-in form holds a tile.
 /// - witness: `ledger::tests::every_internal_rule_has_its_derived_reason`
 #[spec(ensures: |ret| ret == Standing::Committed || ret == Standing::Internal(Internal::Tileless))]
 fn tileless(root: RegexView<'_>) -> Standing
@@ -484,9 +489,10 @@ fn alternatives(view: RegexView<'_>) -> Vec<RegexView<'_>>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the five pattern atoms `literal_pattern` and
-///   `constructor_pattern` read are shadowed, and the identifier pattern, which
-///   `cons_pattern` opens with but does not end at, is not.
+/// - hypothesis: L3 — a one-tile constructor pattern, which
+///   `constructor_pattern` reads, is shadowed, and the identifier pattern,
+///   which `cons_pattern` opens with but does not end at, is not.
+/// - witness: `ledger::tests::each_unmoldable_form_has_its_derived_reason`
 /// - witness: `ledger::tests::every_internal_rule_has_its_derived_reason`
 #[spec(ensures: |ret| ret == Standing::Committed || matches!(ret, Standing::Internal(Internal::Shadowed { .. })))]
 fn shadowed(
@@ -545,9 +551,10 @@ fn shadowed(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the four shell composites whose words read as identifiers
-///   are captured; the line comment, whose sort has no identifier rule, and the
+/// - hypothesis: L3 — a shell form whose word reads as an identifier is
+///   captured; the line comment, whose sort has no identifier rule, and the
 ///   reserved `unit` are not.
+/// - witness: `ledger::tests::each_unmoldable_form_has_its_derived_reason`
 /// - witness: `ledger::tests::every_internal_rule_has_its_derived_reason`
 #[spec(ensures: |ret| ret == Standing::Committed || matches!(ret, Standing::Internal(Internal::Captured { .. })))]
 fn captured(
@@ -672,10 +679,11 @@ fn emits(
 /// [`LedgerFault::Sample`] naming the class.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the escape sequence is enclosed; the shell variable name,
-///   reached two rules deep inside a string's interpolation inside a shell
-///   block, the shell word, reached through the shell block's hole, and the
-///   identifier, reached alone, are not.
+/// - hypothesis: L3 — a lone escape sequence is enclosed; the shell variable
+///   name, reached two rules deep inside a string's interpolation inside a
+///   shell block, the shell word, reached through the shell block's hole, and
+///   the identifier, reached alone, are not.
+/// - witness: `ledger::tests::each_unmoldable_form_has_its_derived_reason`
 /// - witness: `ledger::tests::every_internal_rule_has_its_derived_reason`
 /// - witness: `ledger::exemplars::tests::the_committed_exemplars_verify`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |standing| *standing == Standing::Committed || matches!(*standing, Standing::Internal(Internal::Enclosed { .. }))))]
