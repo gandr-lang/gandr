@@ -100,7 +100,6 @@ dishonest_constructors = [
   "gandr_surface_pretty::former::Former::Unreadable",
   "gandr_surface_pretty::former::Unspelled",
   "gandr_surface_pretty::walk::Kind::Unknown",
-  "gandr_surface_lsp::hover::hovered::Absent::Unknown",
 ]
 dishonest_spellings = [{ text = "?", crates = ["gandr_surface_pretty", "gandr_surface_lsp"] }]
 presenters = [

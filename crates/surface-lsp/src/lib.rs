@@ -27,12 +27,14 @@
 //! type and documentation, a binder the type its uses were judged at, a term
 //! its type (and the type it was checked against when the two differ), a
 //! written type its universe, and any other position in a declaration's head
-//! that declaration. The types come from a typed run over the document's
-//! text, built at the first hover after an edit and kept until the next: its
-//! entries are the nodes the run judged, the binders their uses resolve to,
-//! the written types it formed, and the members of `theory` blocks and `data`
-//! families at the types the description route states for them. Each type is
-//! spelled in the form the editor's `gandr.presentation.form` names, the
+//! that declaration. A theory, a module and a member a theory writes answer
+//! as written, a theory with its members. The types come from a typed run
+//! over the document's text, built at the first hover after an edit and kept
+//! until the next: its entries are the nodes the run judged, the binders their
+//! uses resolve to, the written types it formed, and the members of `theory`
+//! blocks and `data` families at the types the description route states for
+//! them. Each type is spelled in the form the editor's
+//! `gandr.presentation.form` names, the
 //! sugared one unless it names the explicit one, and every construct with a
 //! glyph in the spelling its `gandr.presentation.spelling` names, `unicode` or
 //! `ascii`, the user's configured spelling (the [`Spelling`] [`serve`] and

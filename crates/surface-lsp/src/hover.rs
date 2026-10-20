@@ -15,7 +15,14 @@
 //!   latest accepted lowering filed for the declaring form, after a blank line,
 //!   about the name's range. The table keys a declaration by each of its forms,
 //!   so a signature and the definition completing it both answer the one
-//!   declaration they make.
+//!   declaration they make. A theory, a module and a declaration the table does
+//!   not type answer as written instead: the head up to the brace opening its
+//!   body — a module's ascription included — and, for a theory, its members
+//!   between braces, one to a line, an `include` among them unflattened.
+//! - **A member a theory, a family or a codata declaration writes** among its
+//!   own tiles — on its name when nothing inside it is typed, and anywhere in
+//!   it when the only entry there is its holder's — as written, without the
+//!   body a rule fills; an `include` likewise.
 //! - **The innermost typed node holding the cursor**, about its span: a term
 //!   with its type, and, when an outer judgement checked it against a type
 //!   spelled otherwise, that type after it; a binder with its name and the type
@@ -29,7 +36,8 @@
 //! - **The head of the innermost declaration holding the cursor** — from its
 //!   declaring form's start to the brace opening its own body, or all of it
 //!   when it has none — about the head, as for its name: the keyword that
-//!   introduces it, the colon of its signature, the layout before its body. An
+//!   introduces it, the colon of its signature, a module's ascription, the
+//!   layout before its body. A member's keyword answers the member. An
 //!   attribute before the head answers the same, about the attributes. Inside a
 //!   body, a member answers by its own entries, and a position no entry holds
 //!   answers nothing, rather than the declaration around it.
@@ -178,9 +186,6 @@ quenchant_shape::reason_enum! {
             Unparsed,
             /// The position is in no typed node and no declaration.
             Untyped,
-            /// The session knows neither a type nor documentation for the
-            /// declaration.
-            Unknown,
         }
     }
 }
@@ -415,24 +420,27 @@ impl Style
 ///   last checked `text`, as the server's synchronisation leaves them; a stale
 ///   session answers the documentation it last accepted.
 /// - ensures: on a declaration's name — from its first character to just past
-///   its last — a block of `gandr` text holding the name and, when the table
-///   types the declaration by its form's key, ` : ` and its type, or, when the
-///   table holds the lowering's refusal of it, that refusal after a blank line;
-///   then the documentation the session filed for the form after a blank line,
-///   about the name's range; else, on the innermost typed node holding the
-///   position: when the node spans a whole declaration — its body's term
-///   written over the declaration, or a module's instantiation written over the
-///   module (#405), which answers nothing when its name answers nothing — as on
-///   that declaration's name, about its head when the position is there and the
-///   node's range otherwise; else a block of its type — a binder's name, a
-///   written type's text or a term written as one name before ` : ` — and, for
-///   a term checked against a type spelled otherwise, that type in a second
-///   block, about the node's range; else, in the head of a non-module
-///   declaration — from its form's start to the brace opening its own body — as
-///   on its name, about the head, and in the attributes before the head, about
-///   them. Absent elsewhere, and absent for a declaration with neither a type,
-///   a refusal nor documentation. Every type is spelled in `style`'s form, and
-///   every block is written as [`Code`] writes it in `style`'s markup.
+///   its last — [`declared`]'s block about the name's range: the name and its
+///   type when the table types it, the name and the lowering's refusal when the
+///   table holds one, else the declaration as written, a theory and a module
+///   always so; then the documentation the session filed for the form after a
+///   blank line. On a member's name with no entry inside the member, the member
+///   as written, about the name. Else, in a run a theory writes that declares
+///   nothing, with no entry inside it, the run as written, about it. Else, on
+///   the innermost typed node holding the position: inside a member whose
+///   entries are none of them there, the member as written, about the member;
+///   when the node spans a whole declaration — its body's term written over the
+///   declaration, or a module's instantiation written over the module (#405) —
+///   as on that declaration's name, about its head when the position is there
+///   and the node's range otherwise; else a block of its type — a binder's
+///   name, a written type's text or a term written as one name before ` : ` —
+///   and, for a term checked against a type spelled otherwise, that type in a
+///   second block, about the node's range. Else, in the head of a declaration —
+///   from its form's start to the brace opening its own body, a member's
+///   keyword to its name — as on its name, about the head, and in the
+///   attributes before the head, about them. Absent elsewhere. Every type is
+///   spelled in `style`'s form, and every block is written as [`Code`] writes
+///   it in `style`'s markup.
 /// - provides: the answer to `textDocument/hover`.
 /// - fails: never; an absence names its reason.
 /// - panics: none.
@@ -446,8 +454,10 @@ impl Style
 ///   comment and a position past the last declaration are asserted at their
 ///   exact answers, and so is each position a fixed defect hovered wrongly — a
 ///   decode and a constructor written in a type, a type under a static binder,
-///   a module's instantiation and two pattern tiles; a declaration and a
-///   written type in HTML, coloured by their roles.
+///   a module's instantiation and two pattern tiles; a theory, its `include`, a
+///   module's name and ascription, a type alias, a shape and a circuit rule as
+///   written; a declaration and a written type in HTML, coloured by their
+///   roles.
 /// - witness: `hover::tests::a_declaration_hovers_its_type_and_documentation`
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::each_member_hovers_its_own_type`
@@ -455,7 +465,8 @@ impl Style
 /// - witness: `hover::tests::a_decode_written_as_a_type_hovers_as_a_type_419`
 /// - witness: `hover::tests::a_constructor_applied_inside_a_type_hovers_its_text_420`
 /// - witness: `hover::tests::a_type_under_a_static_binder_hovers_its_text_404`
-/// - witness: `hover::tests::a_module_instantiation_answers_its_own_entry_never_a_member_s_type_405`
+/// - witness: `hover::tests::a_module_instantiation_answers_itself_never_a_member_s_type_405`
+/// - witness: `hover::tests::a_theory_and_a_module_hover_as_written_1122_1124`
 /// - witness: `hover::tests::the_parentheses_around_an_inverted_letter_answer_the_cons_pattern_408`
 /// - witness: `hover::tests::a_sum_pattern_s_positional_label_answers_as_a_label_408`
 #[spec(ensures: |ref ret| match *ret {
@@ -476,10 +487,6 @@ pub fn hover<Store, Blocks>(
     else {
         return Maybe::Absent(hovered::Absent::Unparsed);
     };
-    // A member written among its holder's tiles has no form of its own to key
-    // a type or documentation by; the table types its name where it is
-    // written.
-    let forms = || found.iter().filter(|found| found.written == Written::Form);
     let table = &hovering.table;
     let index = LineIndex::new(<&str>::from(text).into());
     let quoted = Quoted {
@@ -487,37 +494,98 @@ pub fn hover<Store, Blocks>(
         index: &index,
         spans: reading.spans(),
     };
-    if let Some(named) = forms().find(|found| {
+    let offset = ByteOffset::from(usize::from(position.byte(&index)));
+    let entry = table.at(offset, PageWidth::from(HOVER_WIDTH), style.printed());
+    let entered = match entry {
+        Maybe::Present(ref entry) => Some((
+            usize::from(entry.span().start()),
+            usize::from(entry.span().end()),
+        )),
+        Maybe::Absent(_) => None,
+    };
+    // A member written among its holder's tiles has no form of its own to key
+    // a type or documentation by: the table types it where an entry inside it
+    // answers, and it answers as written where the only entry is its
+    // holder's.
+    let typed_inside = |member: &Declaration| {
+        let start = usize::from(member.symbol.range.start.byte(&index));
+        let end = usize::from(member.symbol.range.end.byte(&index));
+        entered.is_some_and(|(from, to)| start <= from && to <= end)
+    };
+    let forms = || found.iter().filter(|found| found.written == Written::Form);
+    if let Some(named) = found.iter().find(|found| {
         found.symbol.selection_range.start <= position
             && position <= found.symbol.selection_range.end
     }) {
-        return declared(
-            session,
-            table,
-            named,
-            named.symbol.selection_range,
+        match named.written {
+            Written::Form => {
+                return Maybe::Present(declared(
+                    session,
+                    table,
+                    named,
+                    named.symbol.selection_range,
+                    &quoted,
+                    style,
+                ));
+            },
+            Written::Member if !typed_inside(named) => {
+                return Maybe::Present(member(named, named.symbol.selection_range, &quoted, style));
+            },
+            Written::Member => {},
+        }
+    }
+    // A run a theory writes that declares nothing — an `include` — answers as
+    // written where nothing inside it is typed.
+    let at = usize::from(offset);
+    let unnamed = forms()
+        .flat_map(|form| form.members.iter())
+        .map(|run| (usize::from(run.start()), usize::from(run.end())))
+        .find(|&(start, end)| {
+            start <= at
+                && at < end
+                && !entered.is_some_and(|(from, to)| start <= from && to <= end)
+                && !found.iter().any(|found| {
+                    found.written == Written::Member
+                        && usize::from(found.symbol.range.start.byte(&index)) == start
+                })
+        });
+    if let Some((start, end)) = unnamed
+        && let Ok(range) =
+            Range::of_bytes(&index, RenderOffset::from(start), RenderOffset::from(end))
+    {
+        return Maybe::Present(as_written(
+            RenderOffset::from(start),
+            RenderOffset::from(end),
+            range,
             &quoted,
             style,
-        );
+        ));
     }
-    let offset = ByteOffset::from(usize::from(position.byte(&index)));
     let oriented = table
         .orientations()
         .iter()
         .find_map(|&(span, note)| (span.start() <= offset && offset < span.end()).then_some(note));
-    if let Maybe::Present(entry) = table.at(offset, PageWidth::from(HOVER_WIDTH), style.printed())
+    if let Maybe::Present(entry) = entry
         && let Ok(range) = Range::of_bytes(
             &index,
             RenderOffset::from(usize::from(entry.span().start())),
             RenderOffset::from(usize::from(entry.span().end())),
         )
     {
+        if let Some(held) = found.iter().rfind(|found| {
+            found.written == Written::Member
+                && found.symbol.range.start <= position
+                && position <= found.symbol.range.end
+                && !typed_inside(found)
+        }) {
+            return Maybe::Present(member(held, held.symbol.range, &quoted, style));
+        }
         // An entry standing for a whole declaration — its body's term, or a
         // module's instantiation, written at the declaration's span — answers
         // as the declaration it stands for. A module with a body has no entry
         // over it whole, so its members answer for themselves; an
         // instantiation's entry is one of the members it instantiates, so a
-        // module answers its own entry or nothing (#405).
+        // module answers itself, never a member's type (#405).
         if let Some(whole) = forms().rfind(|found| {
             range.start <= found.symbol.selection_range.start
                 && found.symbol.range.end <= range.end
@@ -530,10 +598,7 @@ pub fn hover<Store, Blocks>(
             else {
                 range
             };
-            let answer = declared(session, table, whole, about, &quoted, style);
-            if whole.symbol.kind == SymbolKind::MODULE || matches!(answer, Maybe::Present(_)) {
-                return answer;
-            }
+            return Maybe::Present(declared(session, table, whole, about, &quoted, style));
         }
         let mut value = typed(&quoted, &entry, style.markup);
         if let Some(note) = oriented {
@@ -577,13 +642,12 @@ pub fn hover<Store, Blocks>(
             });
         }
     }
-    // The head answers its declaration, and so do the attributes before it,
-    // about their own stretch.
-    let enclosing = forms().rfind(|found| {
-        found.symbol.kind != SymbolKind::MODULE
-            && found.symbol.range.start <= position
-            && position < found.head.end
-    });
+    // The head answers its declaration — a module's ascription and a member's
+    // keyword included — and so do the attributes before it, about their own
+    // stretch.
+    let enclosing = found
+        .iter()
+        .rfind(|found| found.symbol.range.start <= position && position < found.head.end);
     enclosing.map_or(Maybe::Absent(hovered::Absent::Untyped), |enclosing| {
         let about = if enclosing.head.start <= position {
             enclosing.head
@@ -594,7 +658,10 @@ pub fn hover<Store, Blocks>(
                 end: enclosing.head.start,
             }
         };
-        declared(session, table, enclosing, about, &quoted, style)
+        Maybe::Present(match enclosing.written {
+            Written::Form => declared(session, table, enclosing, about, &quoted, style),
+            Written::Member => member(enclosing, about, &quoted, style),
+        })
     })
 }
 
@@ -642,14 +709,16 @@ impl Quoted<'_>
 /// # Specification
 /// - requires: `range` holds the hovered position, and `quoted` is the document
 ///   `declaration` was read from.
-/// - ensures: a block of the name — in the colours the document gives it — and,
-///   when `table` types the declaration by its form's key and the symbol is no
-///   module, ` : ` and its type in `style`'s form; when `table` holds the
-///   lowering's refusal of it instead, that refusal after a blank line; then
-///   the documentation `session` filed under the form's key after a blank line;
-///   absent when none is known.
+/// - ensures: a block of the declaration. For one that is neither a module nor
+///   a theory and that `table` types by its form's key: the name — in the
+///   colours the document gives it — then ` : ` and its type in `style`'s form.
+///   For one `table` holds the lowering's refusal of instead: the name, then
+///   that refusal after a blank line. Otherwise, a theory and a module always
+///   among them, the declaration as [`written`] writes it, a theory with its
+///   members. Then the documentation `session` filed under the form's key after
+///   a blank line.
 /// - provides: the declaration half of [`hover`].
-/// - fails: never; an absence names its reason.
+/// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -658,11 +727,9 @@ impl Quoted<'_>
 /// - witness: `hover::tests::each_member_hovers_its_own_type`
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::html_hovers_colour_the_name_and_the_type`
-#[spec(ensures: |ref ret| match *ret {
-    Maybe::Present(ref hover) => hover.range == range
-        && hover.contents.value.starts_with(style.markup.opener().0),
-    Maybe::Absent(reason) => reason == hovered::Absent::Unknown,
-})]
+/// - witness: `hover::tests::a_theory_and_a_module_hover_as_written_1122_1124`
+#[spec(ensures: |ref ret| ret.range == range
+    && ret.contents.value.starts_with(style.markup.opener().0))]
 fn declared<Store, Blocks>(
     session: &Session<Store, Blocks>,
     table: &TypeTable,
@@ -670,60 +737,240 @@ fn declared<Store, Blocks>(
     range: Range,
     quoted: &Quoted<'_>,
     style: Style,
-) -> Maybe<Hover, hovered::Absent>
+) -> Hover
 {
     let symbol = &declaration.symbol;
     let key = declaration.key;
-    let held = match key {
-        Some(key) if symbol.kind != SymbolKind::MODULE => {
-            match table.declared(key, PageWidth::from(HOVER_WIDTH), style.printed()) {
+    let theory = symbol.kind == SymbolKind::INTERFACE;
+    let held = key
+        .filter(|_| symbol.kind != SymbolKind::MODULE)
+        .and_then(
+            |key| match table.declared(key, PageWidth::from(HOVER_WIDTH), style.printed()) {
                 Maybe::Present(held) => Some(held),
                 Maybe::Absent(_) => None,
-            }
-        },
-        Some(_) | None => None,
-    };
+            },
+        );
     let documented = key.and_then(|key| match session.documentation(key) {
         Maybe::Present(text) => Some(text),
         Maybe::Absent(_) => None,
     });
-    if held.is_none() && documented.is_none() {
-        #[cfg_attr(
-            dylint_lib = "quenchant_dylints",
-            expect(
-                answer_totality,
-                reason = "the session holds neither a type nor documentation for the declaration, \
-                          as for an undocumented module, which has no type: the hover shows \
-                          nothing rather than a guess"
-            )
-        )]
-        return Maybe::Absent(hovered::Absent::Unknown);
-    }
     let mut code = Code::new(style.markup);
-    let start = symbol.selection_range.start.byte(quoted.index);
-    quoted.quote(&mut code, SourceText::from(symbol.name.as_str()), start);
+    let name = |code: &mut Code| {
+        let start = symbol.selection_range.start.byte(quoted.index);
+        quoted.quote(code, SourceText::from(symbol.name.as_str()), start);
+    };
     let mut value = match held {
-        Some(Declared::Typed(spelled)) => {
+        Some(Declared::Typed(spelled)) if !theory => {
+            name(&mut code);
             code.printed(
                 SourceText::from(format!(" : {}", spelled.as_ref()).as_str()),
                 Host::Signature,
             );
             code.block()
         },
-        Some(Declared::Refused(refusal)) => format!("{}\n\nrefused: {refusal}", code.block()),
-        None => code.block(),
+        Some(Declared::Refused(refusal)) => {
+            if theory {
+                written(&mut code, declaration, quoted);
+            }
+            else {
+                name(&mut code);
+            }
+            format!("{}\n\nrefused: {refusal}", code.block())
+        },
+        Some(Declared::Typed(_)) | None => {
+            written(&mut code, declaration, quoted);
+            code.block()
+        },
     };
     if let Some(text) = documented {
         value.push_str("\n\n");
         value.push_str(text.as_ref());
     }
-    Maybe::Present(Hover {
+    Hover {
         contents: MarkupContent {
             kind: "markdown",
             value,
         },
         range,
-    })
+    }
+}
+
+/// The hover of `member`, a member its holder writes among its own tiles,
+/// about `range`.
+///
+/// # Specification
+/// - requires: `range` holds the hovered position, and `quoted` is the document
+///   `member` was read from.
+/// - ensures: [`as_written`] over the member's range, the body an operation or
+///   a rule fills — from its first `{` — left out.
+/// - provides: the member half of [`hover`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a shape with its faces, a circuit rule with a body, and a
+///   member's keyword are asserted at their exact answers.
+/// - witness: `hover::tests::a_theory_and_a_module_hover_as_written_1122_1124`
+/// - witness: `hover::tests::a_described_member_hovers_its_own_type`
+#[spec(ensures: |ref ret| ret.range == range
+    && ret.contents.value.starts_with(style.markup.opener().0))]
+fn member(
+    member: &Declaration,
+    range: Range,
+    quoted: &Quoted<'_>,
+    style: Style,
+) -> Hover
+{
+    let start = member.symbol.range.start.byte(quoted.index);
+    let end = member.symbol.range.end.byte(quoted.index);
+    let open = <&str>::from(quoted.text)
+        .get(usize::from(start) .. usize::from(end))
+        .and_then(|run| run.find('{'))
+        .filter(|_| {
+            matches!(
+                member.symbol.kind,
+                SymbolKind::METHOD | SymbolKind::PROPERTY
+            )
+        });
+    let end = open.map_or(end, |open| {
+        RenderOffset::from(usize::from(start).saturating_add(open))
+    });
+    as_written(start, end, range, quoted, style)
+}
+
+/// The hover of the document's text from byte `start` to byte `end`, about
+/// `range`.
+///
+/// # Specification
+/// - requires: `range` holds the hovered position, and `start` and `end` fall
+///   on character boundaries of `quoted`'s text.
+/// - ensures: a block of the text as the document writes it, in its colours,
+///   each line after the first taken back to the indentation of the line it
+///   starts on, without trailing layout or a trailing `;`.
+/// - provides: the hover of a member, and of a run a theory writes that
+///   declares nothing, as an `include`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`member`], and an `include` hovers as written.
+/// - witness: `hover::tests::a_theory_and_a_module_hover_as_written_1122_1124`
+#[spec(ensures: |ref ret| ret.range == range
+    && ret.contents.value.starts_with(style.markup.opener().0))]
+fn as_written(
+    start: RenderOffset,
+    end: RenderOffset,
+    range: Range,
+    quoted: &Quoted<'_>,
+    style: Style,
+) -> Hover
+{
+    let run = <&str>::from(quoted.text)
+        .get(usize::from(start) .. usize::from(end))
+        .unwrap_or_default();
+    let mut code = Code::new(style.markup);
+    lines(
+        &mut code,
+        quoted,
+        start,
+        SourceText::from(run.trim_end().trim_end_matches(';').trim_end()),
+        SourceText::from(""),
+    );
+    Hover {
+        contents: MarkupContent {
+            kind: "markdown",
+            value: code.block(),
+        },
+        range,
+    }
+}
+
+/// Append to `code` the declaration `declaration` as the document writes it,
+/// in its colours: its head — from its form's own start to the brace opening
+/// its own body, or its whole text without a trailing `;` for a form without
+/// one — and, for a theory, its members between braces, one to a line
+/// indented by two spaces, an `include` among them as written.
+///
+/// # Specification
+/// trivial.
+fn written(
+    code: &mut Code,
+    declaration: &Declaration,
+    quoted: &Quoted<'_>,
+)
+{
+    let text = <&str>::from(quoted.text);
+    let start = usize::from(declaration.head.start.byte(quoted.index));
+    let end = usize::from(declaration.head.end.byte(quoted.index));
+    let head = text.get(start .. end).unwrap_or_default();
+    lines(
+        code,
+        quoted,
+        RenderOffset::from(start),
+        SourceText::from(head.trim_end().trim_end_matches(';').trim_end()),
+        SourceText::from(""),
+    );
+    if declaration.symbol.kind != SymbolKind::INTERFACE {
+        return;
+    }
+    code.plain(SourceText::from(" {"));
+    for &run in &declaration.members {
+        let from = usize::from(run.start());
+        let written = text.get(from .. usize::from(run.end())).unwrap_or_default();
+        code.plain(SourceText::from("\n  "));
+        lines(
+            code,
+            quoted,
+            RenderOffset::from(from),
+            SourceText::from(written.trim_end()),
+            SourceText::from("  "),
+        );
+    }
+    code.plain(SourceText::from("\n}"));
+}
+
+/// Append to `code` `run`, the document's text from byte `start`, a line at
+/// a time in the document's colours: each line after the first with as much
+/// of the indentation of the line `run` starts on taken off as it has, and
+/// `indent` before it.
+///
+/// # Specification
+/// trivial.
+fn lines(
+    code: &mut Code,
+    quoted: &Quoted<'_>,
+    start: RenderOffset,
+    run: SourceText<'_>,
+    indent: SourceText<'_>,
+)
+{
+    let text = <&str>::from(quoted.text);
+    let start = usize::from(start);
+    let column = text
+        .get(.. start)
+        .and_then(|before| before.rfind('\n'))
+        .map_or(start, |newline| {
+            start.saturating_sub(newline).saturating_sub(1)
+        });
+    let mut at = start;
+    for (number, line) in <&str>::from(run).split('\n').enumerate() {
+        let cut = if number == 0 {
+            0
+        }
+        else {
+            code.plain(SourceText::from("\n"));
+            code.plain(indent);
+            line.len()
+                .saturating_sub(line.trim_start_matches(' ').len())
+                .min(column)
+        };
+        quoted.quote(
+            code,
+            SourceText::from(line.get(cut ..).unwrap_or_default()),
+            RenderOffset::from(at.saturating_add(cut)),
+        );
+        at = at.saturating_add(line.len()).saturating_add(1);
+    }
 }
 
 /// The hover text of the typed node `entry` of the `quoted` document, in
@@ -1188,7 +1435,7 @@ mod tests
     }
 
     #[test]
-    fn a_module_instantiation_answers_its_own_entry_never_a_member_s_type_405()
+    fn a_module_instantiation_answers_itself_never_a_member_s_type_405()
     {
         assert_eq!(
             marked(SourceText::from(
@@ -1196,7 +1443,7 @@ mod tests
                  0;\n}\nmodule Keep(S : #{ type T, zero : T }) :> #{ type T, zero : T } {\n  type \
                  T = S.T;\n  def zero = S.zero;\n}\nmodule A = Keep(S$0eed) ;\n"
             )),
-            Err(hovered::Absent::Unknown)
+            Ok(fenced(SourceText::from("module A = Keep(Seed)")))
         );
     }
 
@@ -1267,8 +1514,8 @@ mod tests
         );
         assert_eq!(
             shown(text, (0.into(), 7.into())),
-            Err(hovered::Absent::Unknown),
-            "an undocumented module has no type to show"
+            Ok(String::from("```gandr\nmodule A\n```")),
+            "an undocumented module shows its head as written"
         );
     }
 
@@ -1396,7 +1643,9 @@ mod tests
                 "a member's keyword",
                 data,
                 (3, 3),
-                Err(hovered::Absent::Untyped),
+                Ok(fenced(SourceText::from(
+                    "oper divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv)",
+                ))),
             ),
             (
                 "a field's parenthesis",
@@ -1428,8 +1677,71 @@ mod tests
                 "a theory member's keyword",
                 theory,
                 (5, 3),
-                Err(hovered::Absent::Untyped),
+                Ok(fenced(SourceText::from(
+                    "rule unitL : comp(id(a), f) ==> f",
+                ))),
             ),
+        ];
+        for (position, text, (line, character), expected) in rows {
+            assert_eq!(
+                shown(SourceText::from(text), (line.into(), character.into())),
+                expected,
+                "{position}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_theory_and_a_module_hover_as_written_1122_1124()
+    {
+        let model = "theory Semigroup {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> \
+                     M;\n}\n\n/// A semigroup with a unit.\ntheory Monoid {\n  include \
+                     Semigroup;\n  oper one : () --> M;\n  rule unitL : mul(one(), x) ==> \
+                     x;\n}\n\nmodule Ints : Model(Semigroup) {\n  type M = Integer;\n  def \
+                     mul(x : Integer, y : Integer) -> -F Integer { return y }\n}\n";
+        let shaped = "theory Generated {\n  shape Two : 2 {\n    left = {0};\n  };\n  sort Val : \
+                      Type;\n  oper zero : Val;\n  ext Cell = Val on left is zero;\n}\n\ntheory \
+                      Wheel {\n  sort Nat : Type;\n  obs emit : (s : Nat, x : Nat) --> (y : \
+                      Nat);\n  rule spin : (data stream : Nat) ==> (out : Nat) {\n    node : \
+                      emit(state, stream) --> (out);\n    feed : (out) --> (state);\n  };\n}\n";
+        let monoid = format!(
+            "{}\n\nA semigroup with a unit.",
+            fenced(SourceText::from(
+                "theory Monoid {\n  include Semigroup;\n  oper one : () --> M;\n  rule unitL : \
+                 mul(one(), x) ==> x;\n}"
+            ))
+        );
+        let module = fenced(SourceText::from("module Ints : Model(Semigroup)"));
+        let shape = fenced(SourceText::from("shape Two : 2 {\n  left = {0};\n}"));
+        let rule = fenced(SourceText::from(
+            "rule spin : (data stream : Nat) ==> (out : Nat)",
+        ));
+        let rows: [Row<'_>; 10] = [
+            ("a theory's name", model, (6, 8), Ok(monoid.clone())),
+            ("a theory's keyword", model, (6, 2), Ok(monoid)),
+            (
+                "an include's keyword",
+                model,
+                (7, 3),
+                Ok(fenced(SourceText::from("include Semigroup"))),
+            ),
+            (
+                "an include's name",
+                model,
+                (7, 12),
+                Ok(fenced(SourceText::from("include Semigroup"))),
+            ),
+            ("a module's name", model, (12, 8), Ok(module.clone())),
+            ("a module's ascription", model, (12, 22), Ok(module)),
+            (
+                "a type member",
+                model,
+                (13, 7),
+                Ok(fenced(SourceText::from("type M = Integer"))),
+            ),
+            ("a shape's name", shaped, (1, 9), Ok(shape.clone())),
+            ("a shape's face", shaped, (2, 5), Ok(shape)),
+            ("a circuit rule's name", shaped, (12, 8), Ok(rule)),
         ];
         for (position, text, (line, character), expected) in rows {
             assert_eq!(
