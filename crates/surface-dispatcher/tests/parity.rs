@@ -40,9 +40,11 @@ use gandr_surface_parser::label;
 use gandr_surface_parser::parse;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
+use gandr_surface_pretty::Elided;
 use gandr_surface_pretty::Fidelity;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Name;
+use gandr_surface_pretty::Notation;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_pretty::Style;
@@ -519,8 +521,9 @@ enum Held
 {
     /// A `case` arm on a path constructor printed `?` (#823).
     Unnamed,
-    /// A printing marked approximate that names no reason (#820).
-    Unreasoned,
+    /// A printing in the printer's own notation, which the grammar does not
+    /// read back (#941).
+    Notation,
     /// A printing that, substituted for the declaration, does not lower back
     /// to itself (#815).
     Unread,
@@ -546,7 +549,7 @@ impl fmt::Display for Held
     {
         f.write_str(match *self {
             Self::Unnamed => "#823, a path-constructor arm printed `?`",
-            Self::Unreasoned => "#820, approximate with no reason",
+            Self::Notation => "#941, written in the printer's own notation",
             Self::Unread => "#815, the printing does not lower back",
             Self::Apart => "#808, the two spellings lower apart",
             Self::ApartComposite => "#803, the two spellings of a composite lower apart",
@@ -654,13 +657,34 @@ fn spelt(
         .copied()
         .collect();
     if unspelled.is_empty() {
-        Spelt::Held(Held::Unreasoned)
+        Spelt::Unfaithful(format!("approximate, naming no reason (#820): {text}"))
     }
     else if unspelled
         .iter()
         .all(|reason| *reason == Unspelled::Unreadable(Unreadable::Unnamed))
     {
         Spelt::Held(Held::Unnamed)
+    }
+    // A handler written as `reset` and `shift` leaves the scope of each
+    // capability it delimits unnamed, so its region is elided with it.
+    else if unspelled.iter().all(|reason| match *reason {
+        Unspelled::Notation(_) | Unspelled::Unreadable(Unreadable::Unnamed) => true,
+        Unspelled::Elided(Elided::Region) => {
+            unspelled.contains(&Unspelled::Notation(Notation::Reset))
+        },
+        Unspelled::Elided(_)
+        | Unspelled::Unreadable(_)
+        | Unspelled::Misplaced
+        | Unspelled::Missing
+        | Unspelled::Unbound
+        | Unspelled::Exhausted
+        | Unspelled::Unprintable
+        | Unspelled::Primed
+        | Unspelled::Universe
+        | Unspelled::Protocol
+        | Unspelled::OverBudget => false,
+    }) {
+        Spelt::Held(Held::Notation)
     }
     else {
         Spelt::Unfaithful(format!("{unspelled:?}: {text}"))

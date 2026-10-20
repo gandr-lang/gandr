@@ -902,8 +902,64 @@ pub enum Unreadable
     WorldCapability,
 }
 
-/// Why the printer wrote `?` at a node: the node read as no former it
-/// spells, or the node and its position or its source disagree.
+/// A former the printer writes in a notation of its own, which does not read
+/// back to it: the surface grammar has no syntax for the former, or the text
+/// written lowers to another term.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Notation
+{
+    /// A fixpoint, written `rec x { … }`.
+    Fixpoint,
+    /// A delimited-control reset, written `reset { … }`.
+    Reset,
+    /// A delimited-control shift, written `shift k { … }`.
+    Shift,
+    /// A projection out of a computation pair, written `c.0` or `c.1`.
+    Projection,
+    /// A transport along a type equality, written `transport(e, v)`.
+    Transport,
+    /// A handler's resumption, written `resume(k, v)`.
+    Resume,
+    /// A list fold, written `fold l { nil => …, cons(x, r) => … }`.
+    ListFold,
+    /// A path between universes, written as a type application.
+    PathUniverse,
+    /// A reflexivity path, written as a call.
+    PathRefl,
+    /// A path out of an equivalence, written as a call without its
+    /// classifier or its replay evidence.
+    PathEquiv,
+}
+
+/// A part of a node the presentation leaves out: the text stands for the
+/// node without writing the part.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Elided
+{
+    /// A node past the depth the presentation walks, written `<deep>`.
+    Deep,
+    /// A thunk's body, written `<thunk>` where the presentation leaves
+    /// bodies opaque.
+    Thunk,
+    /// A reified stack, written `<stack>`.
+    Stack,
+    /// The region of a scoped capability past the scopes its source names.
+    Region,
+    /// An ascription's type: the ascription stands as its body.
+    Ascription,
+}
+
+/// Why a presentation is approximate.
+///
+/// The printer wrote `?` at a node — the node read as no former it spells,
+/// or the node and its position or its source disagree — wrote a former in
+/// a notation of its own, or left part of a node out.
 ///
 /// # Specification
 /// trivial.
@@ -912,6 +968,10 @@ pub enum Unspelled
 {
     /// The node read as a member of the honest set.
     Unreadable(Unreadable),
+    /// A former written in the printer's own notation.
+    Notation(Notation),
+    /// A part of a node left out.
+    Elided(Elided),
     /// A node of a sort its position does not admit.
     Misplaced,
     /// A component or a field label the source does not answer.
