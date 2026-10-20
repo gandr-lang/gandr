@@ -2969,6 +2969,7 @@ mod tests
             .expect("builder")
             .finish()
             .expect("arena");
+        let mut expected: Vec<Measure> = Vec::new();
         for length in 0_u32 ..= 3 {
             for encoded in 0_usize .. 9_usize.saturating_pow(length) {
                 let mut meter = RenderMeter::new(RenderLimits::default());
@@ -2999,30 +3000,34 @@ mod tests
                 }
                 let all_plans: [Option<PlanId>; 3] =
                     core::array::from_fn(|index| candidates.get(index).map(|measure| measure.plan));
-                let mut expected: Vec<Measure> = candidates
-                    .iter()
-                    .copied()
-                    .enumerate()
-                    .filter(|&(index, candidate)| {
-                        !candidates.iter().enumerate().any(|(other_index, other)| {
-                            match (
-                                other.cost.cmp(&candidate.cost),
-                                other.last_column.cmp(&candidate.last_column),
-                            ) {
-                                (
-                                    core::cmp::Ordering::Less,
-                                    core::cmp::Ordering::Less | core::cmp::Ordering::Equal,
-                                )
-                                | (core::cmp::Ordering::Equal, core::cmp::Ordering::Less) => true,
-                                (core::cmp::Ordering::Equal, core::cmp::Ordering::Equal) => {
-                                    other_index < index
-                                },
-                                _ => false,
-                            }
+                expected.clear();
+                expected.extend(
+                    candidates
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .filter(|&(index, candidate)| {
+                            !candidates.iter().enumerate().any(|(other_index, other)| {
+                                match (
+                                    other.cost.cmp(&candidate.cost),
+                                    other.last_column.cmp(&candidate.last_column),
+                                ) {
+                                    (
+                                        core::cmp::Ordering::Less,
+                                        core::cmp::Ordering::Less | core::cmp::Ordering::Equal,
+                                    )
+                                    | (core::cmp::Ordering::Equal, core::cmp::Ordering::Less) => {
+                                        true
+                                    },
+                                    (core::cmp::Ordering::Equal, core::cmp::Ordering::Equal) => {
+                                        other_index < index
+                                    },
+                                    _ => false,
+                                }
+                            })
                         })
-                    })
-                    .map(|(_index, candidate)| candidate)
-                    .collect();
+                        .map(|(_index, candidate)| candidate),
+                );
                 expected.sort_by_key(|measure| measure.cost);
                 let frontier = resolver.normalize(candidates).expect("normalized frontier");
                 assert_eq!(frontier, expected);

@@ -877,10 +877,14 @@ mod tests
         let direct = std::io::Write::write_all(&mut [0_u8; 0].as_mut_slice(), b"x")
             .expect_err("exhausted sink");
         let mut messages = alloc::collections::BTreeSet::new();
+        let mut digits = alloc::string::String::new();
         for error in build {
             let message = error.to_string();
             if let BuildError::LimitExceeded { limit, .. } = error {
-                assert!(message.contains(&u64::from(limit).to_string()));
+                digits.clear();
+                core::fmt::Write::write_fmt(&mut digits, format_args!("{}", u64::from(limit)))
+                    .expect("a bound writes");
+                assert!(message.contains(digits.as_str()));
             }
             let mut storage = [0_u8; 1];
             let refusal =
@@ -950,7 +954,10 @@ mod tests
         for error in render {
             let message = error.to_string();
             if let RenderError::LimitExceeded { limit, .. } = error {
-                assert!(message.contains(&u64::from(limit).to_string()));
+                digits.clear();
+                core::fmt::Write::write_fmt(&mut digits, format_args!("{}", u64::from(limit)))
+                    .expect("a bound writes");
+                assert!(message.contains(digits.as_str()));
             }
             let mut storage = [0_u8; 1];
             let refusal =
