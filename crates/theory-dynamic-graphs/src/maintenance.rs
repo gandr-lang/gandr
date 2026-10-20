@@ -29,6 +29,7 @@
 //! neither set are not moved and keep their neighbours, which is what keeps
 //! their relation to the relocated nodes correct without inspecting them.
 
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
@@ -1302,10 +1303,13 @@ impl AcyclicityMaintenance
         // found: a node in both would put the edge's target on a path to its
         // source, which the forward search reports as a cycle instead.
         debug_assert!(
-            scratch
-                .backward_region
-                .iter()
-                .all(|node| !scratch.forward_region.contains(node)),
+            {
+                let forward: BTreeSet<&NodeId> = scratch.forward_region.iter().collect();
+                scratch
+                    .backward_region
+                    .iter()
+                    .all(|node| !forward.contains(node))
+            },
             "an acyclic insertion leaves the two searched sets disjoint"
         );
         self.sorted_by_order(&scratch.backward_region, &mut scratch.backward_sorted)?;
