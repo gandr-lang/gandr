@@ -4533,6 +4533,7 @@ impl<'source> Lowerer<'_, 'source>
             |(constant, _)| Maybe::Present(constant),
         );
         let mut branches = Vec::with_capacity(arities.len());
+        let mut fresh: Vec<TreeLevel> = Vec::new();
         for (tag, &arity) in arities.iter().enumerate() {
             let mut specialised = Vec::new();
             for row in &item.rows {
@@ -4570,9 +4571,11 @@ impl<'source> Lowerer<'_, 'source>
                 next.columns = splice(&row.columns, switch.column, &replacement);
                 specialised.push(next);
             }
-            let fresh: Vec<TreeLevel> = (0 .. arity)
-                .map(|field| TreeLevel(item.depth.0.saturating_add(field).saturating_add(1)))
-                .collect();
+            fresh.clear();
+            fresh.extend(
+                (0 .. arity)
+                    .map(|field| TreeLevel(item.depth.0.saturating_add(field).saturating_add(1))),
+            );
             let child = tree.queue(
                 Depth(item.depth.0.saturating_add(arity)),
                 splice(&item.levels, switch.column, &fresh),
@@ -5541,12 +5544,13 @@ impl<'source> Lowerer<'_, 'source>
         else {
             cells.oriented.as_slice()
         };
+        let mut variables = Vec::new();
         for &(index, _cell) in &presented.faces {
             let Some(face) = faces.get(usize::from(index))
             else {
                 continue;
             };
-            let mut variables = Vec::new();
+            variables.clear();
             let (Maybe::Present(left), Maybe::Present(right)) = (
                 rule_side(&face.lhs, &names, &mut variables, Binding::Binds),
                 rule_side(&face.rhs, &names, &mut variables, Binding::Reads),
@@ -6395,6 +6399,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let branches = branches.clone();
         let mut all = branches.clone();
+        let mut rewritten = Vec::new();
         for arm in &form.loops {
             let Maybe::Present(body) = self.computation_at(arm.body)
             else {
@@ -6423,7 +6428,7 @@ impl<'source> Lowerer<'_, 'source>
                 return unminted;
             };
             let carried = gandr_core_term::identity::answer_at(sink.arena, at, motive, &branches);
-            let mut rewritten = Vec::new();
+            rewritten.clear();
             let instantiated = gandr_core_term::instantiate_computation_traced(
                 sink.arena,
                 body,
@@ -8413,28 +8418,25 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     )
     {
+        let mut joined = Vec::new();
         for index in self.current.blocks .. self.collected.blocks.len() {
             let Some(&block) = self.collected.blocks.get(index)
             else {
                 continue;
             };
-            let members: Vec<SlotIndex> = self
-                .collected
-                .recursive
-                .range(block.first .. block.end)
-                .copied()
-                .collect();
-            if members.len() < 2 {
+            let members = self.collected.recursive.range(block.first .. block.end);
+            let count = members.clone().count();
+            if count < 2 {
                 continue;
             }
-            let mut joined = Vec::with_capacity(members.len());
-            for &member in &members {
+            joined.clear();
+            for &member in members {
                 match self.joinable(member, sink) {
                     Maybe::Present(read) => joined.push(read),
                     Maybe::Absent(_) => break,
                 }
             }
-            if joined.len() == members.len() {
+            if joined.len() == count {
                 self.join(&joined, sink);
             }
         }

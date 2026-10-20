@@ -813,6 +813,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut faults = BTreeMap::new();
         let mut checks = BTreeMap::new();
+        let mut parameters = Vec::new();
         for (&slot, check) in self
             .collected
             .family_checks
@@ -832,7 +833,7 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 continue;
             };
-            let mut parameters = Vec::with_capacity(family.parameters.len());
+            parameters.clear();
             for parameter in &family.parameters {
                 match self.value_type_at(parameter.classifier.node) {
                     Maybe::Present(id) => parameters.push(id),

@@ -581,11 +581,13 @@ fn presentation_term(
 {
     let mut steps = vec![Step::Visit(value.ctor, value.payload.to_node())];
     let mut built: Vec<ValueId> = Vec::new();
+    let mut pending = Vec::new();
     while let Some(step) = steps.pop() {
         match step {
             Step::Visit(tag, payload) => {
                 let mut fields = Vec::new();
-                let mut pending = vec![payload];
+                pending.clear();
+                pending.push(payload);
                 while let Some(node) = pending.pop() {
                     match node.view() {
                         PayloadView::Unit => {},

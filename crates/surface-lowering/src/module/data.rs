@@ -1232,6 +1232,7 @@ impl<'source> Collector<'_, 'source>
                 return;
             }
             let mut table = self.route_table();
+            let mut faces = Vec::new();
             for &named in &form.operations {
                 let name = self.name_of(named);
                 let Some((position, operation)) = described
@@ -1254,7 +1255,7 @@ impl<'source> Collector<'_, 'source>
                 {
                     continue;
                 }
-                let mut faces = Vec::new();
+                faces.clear();
                 let mut declined = false;
                 let written = if cells.oriented.is_empty() {
                     described.description.rules.as_ref()

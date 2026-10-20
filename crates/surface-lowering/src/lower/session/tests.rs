@@ -177,8 +177,14 @@ fn walked(
                 else {
                     "&"
                 };
-                let labels: Vec<&str> = branches.labels().map(AsRef::as_ref).collect();
-                tokens.push(format!("{polarity}{}", labels.join(",")));
+                let mut token = String::from(polarity);
+                for (index, label) in branches.labels().enumerate() {
+                    if index > 0 {
+                        token.push(',');
+                    }
+                    token.push_str(AsRef::<str>::as_ref(label));
+                }
+                tokens.push(token);
                 let Move::Take(label) = taken
                 else {
                     panic!("a choice is entered by a label");
