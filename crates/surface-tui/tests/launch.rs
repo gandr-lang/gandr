@@ -346,10 +346,10 @@ where
         .collect();
     let area = buffer.area;
     let mut found = Vec::new();
+    let mut cells = Vec::new();
     for y in area.top() .. area.bottom() {
-        let cells: Vec<_> = (area.left() .. area.right())
-            .map(|x| &buffer[(x, y)])
-            .collect();
+        cells.clear();
+        cells.extend((area.left() .. area.right()).map(|x| &buffer[(x, y)]));
         for window in cells.windows(symbols.len()) {
             if window
                 .iter()
@@ -421,9 +421,10 @@ fn an_outcome_refusal_is_visible_in_the_transcript_pane()
     let refusal: Vec<String> = rows(block)
         .filter(|row| row.kind == OutKind::Diag)
         .map(|row| {
-            format!("{}{}", <&str>::from(row.lead), row.text)
-                .trim_end()
-                .to_owned()
+            let mut text = format!("{}{}", <&str>::from(row.lead), row.text);
+            let kept = text.trim_end().len();
+            text.truncate(kept);
+            text
         })
         .collect();
     assert!(!refusal.is_empty(), "the definition is refused: {block:?}");
