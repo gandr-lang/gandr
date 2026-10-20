@@ -1064,10 +1064,8 @@ fn corpus_molds_to_zero_obligations() -> Result<(), Box<dyn Error>>
             .unwrap_or(path)
             .to_string_lossy()
             .into_owned();
-        let owed: Vec<(Oblig, &str)> = result
-            .obligations()
-            .iter()
-            .map(|obligation| {
+        let owed = || {
+            result.obligations().iter().map(|obligation| {
                 (
                     obligation.class,
                     src.get(
@@ -1076,17 +1074,17 @@ fn corpus_molds_to_zero_obligations() -> Result<(), Box<dyn Error>>
                     .unwrap_or_default(),
                 )
             })
-            .collect();
+        };
         let expected = PARSE_ERRORS
             .iter()
             .find(|&&(source, _)| source == relative)
             .map_or(&[][..], |&(_, owes)| owes);
         pinned = pinned.saturating_add(usize::from(!expected.is_empty()));
-        if owed != expected {
+        if !owed().eq(expected.iter().copied()) {
             dirty.push((
                 relative,
-                owed.iter()
-                    .map(|&(class, written)| format!("{class:?} @ {written:?}"))
+                owed()
+                    .map(|(class, written)| format!("{class:?} @ {written:?}"))
                     .collect(),
             ));
         }
@@ -1531,31 +1529,38 @@ fn comments_reach_no_digest_and_lose_no_byte() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
     let mut comments = 0_usize;
+    let mut read_back = String::new();
+    let mut blanked = String::new();
+    let mut leaves: Vec<(usize, String)> = Vec::new();
     for path in &gandr_files(&corpus_root()) {
         let src = read_source(path)?;
         let result = parse(pbg, SourceText::from(src.as_str()))?;
         let tree = result.tree();
-        let mut leaves: Vec<(usize, String)> = tree
-            .positions()
-            .filter(|&at| {
-                tree.node(at)
-                    .is_some_and(|node| bool::from(node.label().carries_text()))
-            })
-            .map(|at| {
-                span(tree, at).map_or((0, String::new()), |bytes| {
-                    (usize::from(bytes.start()), text(tree, at))
+        leaves.clear();
+        leaves.extend(
+            tree.positions()
+                .filter(|&at| {
+                    tree.node(at)
+                        .is_some_and(|node| bool::from(node.label().carries_text()))
                 })
-            })
-            .collect();
+                .map(|at| {
+                    span(tree, at).map_or((0, String::new()), |bytes| {
+                        (usize::from(bytes.start()), text(tree, at))
+                    })
+                }),
+        );
         leaves.sort_unstable();
-        let read_back: String = leaves.into_iter().map(|(_, written)| written).collect();
+        read_back.clear();
+        for &(_, ref written) in &leaves {
+            read_back.push_str(written);
+        }
         assert_eq!(
             read_back,
             src,
             "{} reads back byte for byte",
             path.display()
         );
-        let mut blanked = String::with_capacity(src.len());
+        blanked.clear();
         for token in label(SourceFragment::from(src.as_str())) {
             let start = usize::try_from(token.start)?;
             let end = usize::try_from(token.end)?;
@@ -1689,6 +1694,7 @@ fn expected_agrees_with_committed_finalize() -> Result<(), Box<dyn Error>>
         read_source(&corpus_root().join("fixture/surface/string-interpolation.gandr"))?,
     ];
     let mut excess_seen = 0_usize;
+    let mut excess: Vec<Oblig> = Vec::new();
     for src in &sources {
         let source = SourceFragment::from(src.as_str());
         let tokens = label(source);
@@ -1703,12 +1709,14 @@ fn expected_agrees_with_committed_finalize() -> Result<(), Box<dyn Error>>
                     || !bool::from(completion.is_complete()),
                 "an owed tile is expected material at prefix {upto} of {src:?}"
             );
-            let mut excess: Vec<Oblig> = state
-                .obligations()
-                .iter()
-                .chain(completion.obligations())
-                .map(|obligation| obligation.class)
-                .collect();
+            excess.clear();
+            excess.extend(
+                state
+                    .obligations()
+                    .iter()
+                    .chain(completion.obligations())
+                    .map(|obligation| obligation.class),
+            );
             let prefix_end = upto
                 .checked_sub(1)
                 .and_then(|last| tokens.get(last))

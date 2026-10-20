@@ -106,13 +106,6 @@
     )
 )]
 #![no_std]
-#![cfg_attr(
-    all(test, dylint_lib = "quenchant_dylints"),
-    expect(
-        allocation_in_repeated_body,
-        reason = "10 cost-shape sites in test modules; #814 lists them"
-    )
-)]
 
 extern crate alloc;
 #[cfg(test)]

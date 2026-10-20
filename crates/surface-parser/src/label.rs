@@ -2926,10 +2926,14 @@ mod tests
                 (" \t\u{c}\u{b}\u{a0}\u{200b}\u{2060}\u{feff}\nx", 15),
             ]),
         ];
+        let mut input = alloc::string::String::new();
         for &(scan, rows) in cases {
             for &(source, end) in rows {
                 for prefix in ["", "?"] {
-                    let input = alloc::format!("{prefix}{source}");
+                    input.clear();
+                    for part in [prefix, source] {
+                        input.push_str(part);
+                    }
                     assert_eq!(
                         usize::from(scan(
                             super::SourceBytes::from(input.as_bytes()),
@@ -3231,10 +3235,14 @@ mod tests
                 ("~", Lexeme::Unknown, 1),
             ]),
         ];
+        let mut input = alloc::string::String::new();
         for &(scan, rows) in cases {
             for &(source, class, end) in rows {
                 for prefix in ["", "?"] {
-                    let input = alloc::format!("{prefix}{source}");
+                    input.clear();
+                    for part in [prefix, source] {
+                        input.push_str(part);
+                    }
                     let result = scan(
                         super::SourceBytes::from(input.as_bytes()),
                         super::ByteOffset::from(prefix.len()),
