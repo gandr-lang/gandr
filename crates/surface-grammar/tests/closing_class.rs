@@ -50,8 +50,8 @@ fn one_rule(regex: Regex) -> Result<Pbg, Box<dyn Error>>
 /// stays interior, so a container member reaching `}` only after any number
 /// of further members still derives `Brace`. A form whose completions end at
 /// something that closes nothing derives nothing, which keeps `def name = E ;`
-/// unclassed. And the count of unclassed item braces is pinned, so a
-/// container family that stops deriving its class moves it.
+/// unclassed. And every brace derives `Brace`, so a container family that
+/// stops deriving its class is caught.
 #[test]
 fn closing_class_is_form_level() -> Result<(), Box<dyn Error>>
 {
@@ -77,13 +77,13 @@ fn closing_class_is_form_level() -> Result<(), Box<dyn Error>>
     }
     assert!(module_bodies > 0);
 
-    // Exactly two braces derive nothing, both item-sort.
+    // Every brace derives `Brace`.
     let unclassed: Vec<Sort> = braces
         .iter()
         .filter(|&&mold| pbg.closing_class(mold).is_none())
         .map(|&mold| pbg.mold(mold).map(|def| def.sort))
         .collect::<Result<_, _>>()?;
-    assert_eq!(vec![Sort::Item, Sort::Item], unclassed);
+    assert!(unclassed.is_empty(), "unclassed braces: {unclassed:?}");
 
     // A module member's `=` reaches `}` across the member repeat; a
     // definition's `=` completes at `;`.

@@ -183,6 +183,7 @@ const COUNTED: &[&str] = &[
     "pattern telescope_pattern",
     "pattern telescope_pattern name",
     "pattern tuple_pattern",
+    "pattern unit",
     "pattern wildcard",
     "type at_type",
     "type at_type name",

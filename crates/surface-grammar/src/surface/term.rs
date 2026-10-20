@@ -88,8 +88,8 @@ use crate::model::Sym;
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: item, declaration, attribute, extern, statement, module member,
-///   pattern, instantiation, expression and lexical forms, in that order, over
+/// - ensures: item, declaration, attribute, extern, module member, pattern,
+///   instantiation, expression and lexical forms, in that order, over
 ///   [`Sort::Item`], [`Sort::ModuleMember`], [`Sort::Pattern`],
 ///   [`Sort::Expression`], [`Sort::Type`] and [`Sort::Instantiation`] holes.
 /// - fails: a group `precs` does not hold.
@@ -107,7 +107,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 109 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=20 => Sort::Item, 21..=24 => Sort::ModuleMember, 25..=36 | 99..=100 => Sort::Pattern, 37..=42 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "string.expression")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 98 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=9 => Sort::Item, 10..=13 => Sort::ModuleMember, 14..=25 | 88..=89 => Sort::Pattern, 26..=31 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "string.expression")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -130,7 +130,6 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
     items(&mut out, item);
     declarations(&mut out, item);
     attributes_parameters_externs(&mut out, item);
-    statements(&mut out, item);
     module_members(&mut out, item);
     patterns(&mut out, PatternPrecs {
         or: pat_or,
@@ -224,9 +223,9 @@ fn items(
 /// members, `import`, the reserved operator-fixity declaration, and the
 /// reserved mutual-recursion `rec` block.
 ///
-/// All land at `item.singleton` beside the def and val families. Every form
-/// is keyword-led (a fresh first-token discriminator with no lookahead against
-/// `def`, `val`, `import`, …), so no new shared-prefix window opens. The
+/// All land at `item.singleton` beside the def family. Every form is
+/// keyword-led (a fresh first-token discriminator with no lookahead against
+/// `def`, `import`, …), so no new shared-prefix window opens. The
 /// tree-sitter grammar does not produce these constructs, so their provenance
 /// names are in [`PBG_ONLY_KINDS`](crate::PBG_ONLY_KINDS) and the named-kind
 /// inventory never lists them.
@@ -1357,139 +1356,6 @@ fn attributes_parameters_externs(
         AdaptationReason("folded into extern_block: the `def id (params) -> T? ;` member is inlined in the block body, not a top-level form whose `def` competes with a real definition"),
     ));
     out.push(extern_block);
-}
-
-/// Append block statement forms.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: appends the eleven ordered statement forms at the item sort and
-///   supplied band.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: For the built-in band table, L3 grammar identity and corpus
-///   role observations catch lost or reordered forms, changed provenance and
-///   misplaced precedence bands. The predicate observes the appended metadata
-///   without cloning the prior rules; arbitrary pre-existing prefixes and table
-///   aliases are not exhausted.
-/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 11 && added.iter().zip(["val_statement", "bind_statement", "unpack_statement", "leta_statement", "hold_statement", "recv_statement", "acquire_statement", "release_statement", "fork_statement", "fork_shared_statement", "expression_statement"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
-fn statements(
-    out: &mut Vec<Rule>,
-    p: Prec,
-)
-{
-    let s = Sort::Item;
-    out.push(r(
-        RuleName("val_statement"),
-        Provenance("val_statement"),
-        s,
-        p,
-        val_statement(),
-    ));
-    out.push(r(
-        RuleName("bind_statement"),
-        Provenance("bind_statement"),
-        s,
-        p,
-        bind_statement(),
-    ));
-    out.push(r(
-        RuleName("unpack_statement"),
-        Provenance("unpack_statement"),
-        s,
-        p,
-        unpack_statement(),
-    ));
-    out.push(r(
-        RuleName("leta_statement"),
-        Provenance("leta_statement"),
-        s,
-        p,
-        seq([
-            t(TileLabel("leta")),
-            t(TileLabel("identifier")),
-            t(TileLabel("=")),
-            h(Sort::Expression),
-            t(TileLabel(";")),
-        ]),
-    ));
-    // `hold x = e;` opens the held slot `x` for the rest of the block: the
-    // one value an `access` lends to a view. It shares the `hold` lead with
-    // the worlds `hold e` expression and discriminates on the `=` after the
-    // name, which no expression takes there.
-    out.push(r(
-        RuleName("hold_statement"),
-        Provenance("hold_statement"),
-        s,
-        p,
-        hold_statement(),
-    ));
-    out.push(r(
-        RuleName("recv_statement"),
-        Provenance("recv_statement"),
-        s,
-        p,
-        session_stmt(TileLabel("recv")),
-    ));
-    out.push(r(
-        RuleName("acquire_statement"),
-        Provenance("acquire_statement"),
-        s,
-        p,
-        session_stmt(TileLabel("acquire")),
-    ));
-    out.push(r(
-        RuleName("release_statement"),
-        Provenance("release_statement"),
-        s,
-        p,
-        session_stmt(TileLabel("release")),
-    ));
-    out.push(r(
-        RuleName("fork_statement"),
-        Provenance("fork_statement"),
-        s,
-        p,
-        seq([
-            t(TileLabel("fork")),
-            t(TileLabel("(")),
-            t(TileLabel("identifier")),
-            t(TileLabel(":")),
-            h(Sort::Type),
-            t(TileLabel(")")),
-            block(),
-            t(TileLabel("as")),
-            t(TileLabel("identifier")),
-            t(TileLabel(";")),
-        ]),
-    ));
-    out.push(r(
-        RuleName("fork_shared_statement"),
-        Provenance("fork_shared_statement"),
-        s,
-        p,
-        seq([
-            t(TileLabel("fork")),
-            t(TileLabel("!")),
-            t(TileLabel("(")),
-            t(TileLabel("identifier")),
-            t(TileLabel(":")),
-            h(Sort::Type),
-            t(TileLabel(")")),
-            block(),
-            t(TileLabel(";")),
-        ]),
-    ));
-    out.push(r(
-        RuleName("expression_statement"),
-        Provenance("expression_statement"),
-        s,
-        p,
-        seq([h(Sort::Expression), t(TileLabel(";"))]),
-    ));
 }
 
 /// Append pattern forms.
@@ -3816,7 +3682,27 @@ fn primary_expressions(
         p,
         seq([t(TileLabel("[")), opt(comma1(h(s))), t(TileLabel("]"))]),
     ));
-    out.push(r(RuleName("block"), Provenance("block"), s, p, block()));
+    let mut block_rule = r(RuleName("block"), Provenance("block"), s, p, block());
+    for statement in [
+        "val_statement",
+        "bind_statement",
+        "unpack_statement",
+        "leta_statement",
+        "hold_statement",
+        "recv_statement",
+        "acquire_statement",
+        "release_statement",
+        "fork_statement",
+        "fork_shared_statement",
+        "expression_statement",
+    ] {
+        block_rule.adaptations.push(Adaptation::new(
+            RuleName("block"),
+            SurfaceForm(statement),
+            AdaptationReason("inlined into the block: a statement stands only among the statements of a block or of the body a form opens, whose own alternatives read it; at the top level the molder's expectation set names what a declaration needs"),
+        ));
+    }
+    out.push(block_rule);
     // The value lambda `fn (params) { … }` and the type abstraction
     // `fn [ tyvars ] { … }` share the `fn` prefix and diverge only at the tile
     // after it — `(` versus `[`. Declaring them as two rules gives `fn` two molds

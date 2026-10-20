@@ -3216,7 +3216,7 @@ fn a_repaired_container_keeps_its_member()
 #[test]
 fn an_unread_module_body_is_refused_not_emptied()
 {
-    let source = "module M : #{\n  val x : Integer\n} {\n  def x = 1;\n}\n\ndef after = 1;\n";
+    let source = "module M : #{\n  def x : Integer\n} {\n  def x = 1;\n}\n\ndef after = 1;\n";
     let lowered = repaired(source);
     let found = rows(&lowered);
     assert!(
@@ -3226,7 +3226,7 @@ fn an_unread_module_body_is_refused_not_emptied()
                 span,
                 form: FormName::MODULE,
                 fault: FormFault::MisplacedTile,
-            }))] if module == "M" && span.start() == span_of(source, "val", 0_usize).start()
+            }))] if module == "M" && span.start() == span_of(source, "def", 0_usize).start()
         ),
         "the module is refused where its signature stops being read, got {found:?}"
     );

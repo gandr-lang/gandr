@@ -1,2 +1,6 @@
 /// `unit.pattern`: the unit value in pattern position.
-val unit = nothing ;
+def answer(u : Unit) -> -F Integer {
+  case u {
+    unit => return 42
+  }
+}

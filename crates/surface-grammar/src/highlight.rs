@@ -25,8 +25,7 @@
 //!
 //! The classification, in order:
 //!
-//! - The comment and shebang rules' tiles are `Comment` and `Directive`; every
-//!   tile of a shell list separator or a redirection is `Operator`.
+//! - Every tile of a shell list separator or a redirection is `Operator`.
 //! - Literals, string pieces, escapes, constructors, type names, type
 //!   variables, hole names, shell variables, environment assignments and shell
 //!   words take their class by label; keywords, operators and primitive types
@@ -742,19 +741,18 @@ fn occurrences(pbg: &Pbg) -> Result<Vec<Occurrence<'_>>, PbgError>
 ///
 /// # Specification
 /// - requires: nothing; a label no class names is admissible input.
-/// - ensures: the tiles of the comment rules are [`HlRole::Comment`] and the
-///   shebang rule's [`HlRole::Directive`]; every tile of a shell list separator
-///   or a redirection is [`HlRole::Operator`]. Otherwise by label: `identifier`
-///   takes the role of the place it names ([`identifier_role`]); `_` is a
-///   parameter inside a parenthesised list and a variable elsewhere; `!` is
-///   part of the keyword after `fork` and an operator elsewhere; `?` is a hole
-///   under the hole rule, the gradual type under its rule and an operator
-///   elsewhere; `+` and `-` are the sort literals, keywords, inside a universe
-///   and operators elsewhere; literals, string pieces, escapes, constructors,
-///   type names, type variables, hole names, shell variables, environment
-///   assignments and shell words take their class; keywords, operators and
-///   primitive types take theirs by spelling; every other tile — a bracket, a
-///   separator, a delimiter, a label no class names — is [`HlRole::Other`].
+/// - ensures: every tile of a shell list separator or a redirection is
+///   [`HlRole::Operator`]. Otherwise by label: `identifier` takes the role of
+///   the place it names ([`identifier_role`]); `_` is a parameter inside a
+///   parenthesised list and a variable elsewhere; `!` is part of the keyword
+///   after `fork` and an operator elsewhere; `?` is a hole under the hole rule,
+///   the gradual type under its rule and an operator elsewhere; `+` and `-` are
+///   the sort literals, keywords, inside a universe and operators elsewhere;
+///   literals, string pieces, escapes, constructors, type names, type
+///   variables, hole names, shell variables, environment assignments and shell
+///   words take their class; keywords, operators and primitive types take
+///   theirs by spelling; every other tile — a bracket, a separator, a
+///   delimiter, a label no class names — is [`HlRole::Other`].
 /// - panics: none.
 ///
 /// # Adequacy
@@ -766,8 +764,6 @@ fn occurrences(pbg: &Pbg) -> Result<Vec<Occurrence<'_>>, PbgError>
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `highlight::tests::role_priorities_distinguish_competing_contexts`
 #[spec(ensures: |ret| ret == match facts.kind.0 {
-    "line_comment" | "block_comment" => HlRole::Comment,
-    "shebang" => HlRole::Directive,
     "list_operator" | "redirection_operator" => HlRole::Operator,
     _ => match facts.label.0 {
         "identifier" => identifier_role(facts),
@@ -798,11 +794,8 @@ fn occurrences(pbg: &Pbg) -> Result<Vec<Occurrence<'_>>, PbgError>
 fn classify(facts: &MoldFacts<'_>) -> HlRole
 {
     let label = facts.label.0;
-    match facts.kind.0 {
-        "line_comment" | "block_comment" => return HlRole::Comment,
-        "shebang" => return HlRole::Directive,
-        "list_operator" | "redirection_operator" => return HlRole::Operator,
-        _ => {},
+    if matches!(facts.kind.0, "list_operator" | "redirection_operator") {
+        return HlRole::Operator;
     }
     let left_crosses = |tile: &'static str| bool::from(facts.left.crosses(TileLabel(tile)));
     match label {
@@ -1099,11 +1092,11 @@ mod tests
         }
     }
 
-    /// One mold class at a time, pinned to its exact role: the comment and
-    /// shebang rules, literals, string pieces, keywords, operators and
-    /// primitive types by spelling, a label shared by several rules told apart
-    /// by its rule (`?` a hole, the gradual type, a receive; `!` after `fork`
-    /// and as a send), and every identifier place by the tile beside it. Every
+    /// One mold class at a time, pinned to its exact role: literals, string
+    /// pieces, keywords, operators and primitive types by spelling, a label
+    /// shared by several rules told apart by its rule (`?` a hole, the gradual
+    /// type, a receive; `!` after `fork` and as a send), and every identifier
+    /// place by the tile beside it. Every
     /// mold matching a row is pinned, not only the first. The last id answers
     /// and the first id past the table is refused with that id.
     #[test]
@@ -1113,7 +1106,7 @@ mod tests
         let table = RoleTable::build(&pbg).expect("the role table builds");
         let classes: &[(&str, &str, HlRole)] = &[
             ("def", "def_value", HlRole::Keyword),
-            ("val", "val_statement", HlRole::Keyword),
+            ("val", "block", HlRole::Keyword),
             ("->", "function_type", HlRole::Operator),
             ("<>", "redirection_operator", HlRole::Operator),
             (";", "list_operator", HlRole::Operator),
@@ -1134,7 +1127,7 @@ mod tests
             ("hole_name", "hole", HlRole::Label),
             ("?", "unknown_type", HlRole::TypeBuiltin),
             ("?", "receive_session_type", HlRole::Operator),
-            ("!", "fork_statement", HlRole::Keyword),
+            ("!", "block", HlRole::Keyword),
             ("!", "send_session_type", HlRole::Operator),
             ("+U", "u_type", HlRole::Keyword),
             ("-F", "f_type", HlRole::Keyword),
@@ -1150,8 +1143,6 @@ mod tests
                 "environment_assignment",
                 HlRole::VariableParam,
             ),
-            ("line_comment", "line_comment", HlRole::Comment),
-            ("shebang", "shebang", HlRole::Directive),
             ("(", "parenthesized_expression", HlRole::Other),
             (";", "import_declaration", HlRole::Other),
             ("identifier", "identifier", HlRole::Variable),
@@ -1189,7 +1180,7 @@ mod tests
             ("def_value", "rec", None, HlRole::FunctionDef),
             ("data_declaration", "op", None, HlRole::FunctionDef),
             ("lambda_expression", "(", Some(")"), HlRole::VariableParam),
-            ("fork_statement", "(", None, HlRole::VariableParam),
+            ("block", "(", None, HlRole::VariableParam),
             ("def_value", "@[", Some(":"), HlRole::VariableParam),
             ("attribute_block", "@[", Some("("), HlRole::Other),
             ("data_declaration", "[", None, HlRole::Other),
@@ -1364,15 +1355,10 @@ mod tests
             label: TileLabel("#{"),
             left: Side(&[]),
         };
-        for (kind, expected) in [
-            ("line_comment", HlRole::Comment),
-            ("block_comment", HlRole::Comment),
-            ("shebang", HlRole::Directive),
-            ("redirection_operator", HlRole::Operator),
-        ] {
+        for kind in ["list_operator", "redirection_operator"] {
             for label in ["identifier", "number", "+", "unknown"] {
                 assert_eq!(
-                    expected,
+                    HlRole::Operator,
                     classify(&MoldFacts {
                         label: TileLabel(label),
                         kind: NamedKind(kind),

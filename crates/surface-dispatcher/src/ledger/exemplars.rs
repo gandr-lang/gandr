@@ -24,10 +24,7 @@
 //! and the lowering refuses a name nothing declares. A world is no module
 //! member, so wrapping both in one module is not an option.
 //!
-//! An internal rule has no exemplar: no source molds it. A rule whose one tile
-//! is a word no other rule of its sort reads (`line_comment`, `shebang`) is
-//! committed, and its exemplar spells that word where a statement stands,
-//! which is the form the parser accepts today.
+//! An internal rule has no exemplar: no source molds it.
 //!
 //! - Choice: the mold check reads the committed tree, so an exemplar holding
 //!   another rule's form that happens to share a spelling fails.

@@ -48,13 +48,12 @@ use crate::TileLabel;
 use crate::model::RegexShape;
 use crate::model::Sym;
 
-/// Builds the type, session-type, lexical and shell-context rules.
+/// Builds the type, session-type and shell-context rules.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the type and session-type rules, then the lexical rules, then the
-///   shell-context rules, each with the provenance of the named kind it
-///   realises.
+/// - ensures: the type and session-type rules, then the shell-context rules,
+///   each with the provenance of the named kind it realises.
 /// - fails: a group `precs` does not hold.
 /// - panics: none.
 ///
@@ -70,12 +69,11 @@ use crate::model::Sym;
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow", "item.singleton", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 52 && rules.iter().take(36).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(36).take(2).all(|rule| rule.sort() == Sort::Item) && rules.iter().skip(38).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "forall_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 50 && rules.iter().take(36).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(36).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "forall_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let mut rules = Vec::new();
     add_type_rules(&mut rules, precs)?;
-    add_lexical_rules(&mut rules, precs)?;
     add_shell_rules(&mut rules, precs)?;
     Ok(rules)
 }
@@ -703,62 +701,6 @@ fn add_type_rules(
     Ok(())
 }
 
-/// Add lexical named node rules from the grammar suffix.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: appends this group's rules to `rules`, in order.
-/// - fails: a group `precs` does not hold.
-/// - panics: none.
-///
-/// # Errors
-/// [`PbgError::MissingPrec`] naming the absent group.
-///
-/// # Adequacy
-/// - hypothesis: For the built-in groups and missing-band tables, L2 suffix and
-///   prefix observations plus L3 grammar identity catch reordered families,
-///   incorrect sorts, lost prior rules and premature mutation. The predicate
-///   observes returned metadata and the first missing lookup; arbitrary table
-///   aliases and allocation failure are not exhausted.
-/// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
-/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name: "item.singleton" }) && precs.get(PrecName("item.singleton")).is_none(), |&()| rules.get(before..).is_some_and(|added| added.len() == 2 && added.iter().zip(["line_comment", "shebang"]).all(|(rule, name)| rule.name().0 == name && rule.provenance().0 == name && rule.sort() == Sort::Item && precs.get(PrecName("item.singleton")) == Some(rule.prec())))))]
-fn add_lexical_rules(
-    rules: &mut Vec<Rule>,
-    precs: &PrecTable,
-) -> Result<(), PbgError>
-{
-    let item = Sort::Item;
-    let item_singleton = precs.prec(PrecName("item.singleton"))?;
-
-    // The Expression-atom lexical forms `identifier` / `constructor` /
-    // `boolean` / `number` / `typed_number` / `string` are declared once, by
-    // the term lexical forms (the `*.expression` rules, beside their
-    // Pattern-sort twins). A second declaration here would give each lexeme
-    // two identical Expression-atom molds that tie on the molder's local key at
-    // every operand position.
-    let mut line_comment = rule(
-        RuleName("line_comment"),
-        item,
-        item_singleton,
-        tile(TileLabel("line_comment")),
-    );
-    line_comment.adaptations.push(Adaptation::new(
-        RuleName("line_comment"),
-        SurfaceForm("block_comment"),
-        AdaptationReason("the labeler reads a `/* … */` comment, nested ones included, as layout between tokens, so no form holds one: the `block_comment` named kind is realised as trivia beside the forms, as a line comment between tokens is"),
-    ));
-    rules.push(line_comment);
-    rules.push(rule(
-        RuleName("shebang"),
-        item,
-        item_singleton,
-        tile(TileLabel("shebang")),
-    ));
-    Ok(())
-}
-
 /// Add shell-context structural rules — the POSIX shell DSL surface.
 ///
 /// # Shell-surface coverage
@@ -1327,7 +1269,6 @@ mod tests
     use gandr_theory_graphs::PrecDag;
     use gandr_theory_graphs::PrecSpec;
 
-    use super::add_lexical_rules;
     use super::add_shell_rules;
     use super::add_type_rules;
     use super::binary_infix_rule;
@@ -1351,7 +1292,6 @@ mod tests
         for (missing, assemble) in [
             ("type.atom", add_types),
             ("type.arrow", add_type_rules),
-            ("item.singleton", add_lexical_rules),
             ("expression.postfix", add_shell_rules),
         ] {
             let complete = built_in_prec_table().expect("built-in bands");

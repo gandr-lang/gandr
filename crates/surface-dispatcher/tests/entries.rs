@@ -69,6 +69,7 @@ const EXIT: &str = "an exit keyword ends the computation its operand gives: the 
 /// where it stands. An owed count only shrinks: lower it with the change
 /// that gives the nodes their entries.
 const KINDS: &[(&str, Standing)] = &[
+    ("Expression !=", Standing::Owed(0)),
     ("Expression \"", Standing::Owed(0)),
     ("Expression #{", Standing::Owed(0)),
     ("Expression &", Standing::Owed(0)),
@@ -80,7 +81,9 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression +", Standing::Owed(0)),
     ("Expression -", Standing::Owed(0)),
     ("Expression .", Standing::Owed(0)),
+    ("Expression <=", Standing::Owed(0)),
     ("Expression >", Standing::Owed(0)),
+    ("Expression >=", Standing::Owed(0)),
     ("Expression ?", Standing::Owed(0)),
     (
         "Expression [",
@@ -130,6 +133,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Pattern identifier", Standing::Owed(0)),
     ("Pattern number", Standing::Owed(0)),
     ("Pattern true", Standing::Owed(0)),
+    ("Pattern unit", Standing::Owed(0)),
     ("Pattern |", Standing::Owed(0)),
     ("Type !", Standing::Owed(0)),
     ("Type #{", Standing::Owed(0)),
