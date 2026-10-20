@@ -69,9 +69,11 @@ fn send(
     messages: &[Value],
 ) -> io::Result<()>
 {
+    let mut line = String::new();
     for message in messages {
-        let mut line = message.to_string();
-        line.push('\n');
+        line.clear();
+        core::fmt::Write::write_fmt(&mut line, format_args!("{message}\n"))
+            .map_err(io::Error::other)?;
         writing.write_all(line.as_bytes())?;
     }
     writing.flush()
