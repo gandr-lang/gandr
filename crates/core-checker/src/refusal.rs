@@ -541,6 +541,10 @@ pub enum CheckRefusal
     ConstructorArity(ValueId),
     /// A case omits or adds constructor branches.
     NonExhaustiveDataCase(ComputationId),
+    /// A leaf of a match's tree is one of its pattern holes: which arm runs
+    /// for some value is left undecided, so the match is not shown to cover
+    /// its scrutinee.
+    UndecidedCoverage(ComputationId),
     /// A projection names no field in its operand's record type.
     AbsentRecordField(ComputationId),
     /// A tuple projection names a component past its operand's product
@@ -1118,7 +1122,7 @@ impl CheckRefusal
         | Self::Undecided { .. }
         | Self::LoopUndecided { .. } => matches!(ret, FailureClass::EngineFault),
         | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. } | Self::NotOver { .. } | Self::UaInequivalent { .. }
-        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::LoopNotRespected { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
+        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::LoopNotRespected { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::UndecidedCoverage(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
         | Self::EffectSignatureConflict { .. }
         | Self::UnknownOperation { .. } | Self::HandlerCoverage { .. }
@@ -1164,6 +1168,7 @@ impl CheckRefusal
             | Self::UnknownConstructor { .. }
             | Self::ConstructorArity(_)
             | Self::NonExhaustiveDataCase(_)
+            | Self::UndecidedCoverage(_)
             | Self::AbsentRecordField(_)
             | Self::AbsentTupleComponent(_)
             | Self::MissingRecordField { .. }
@@ -1368,6 +1373,7 @@ impl CheckRefusal
             | Self::UnknownConstructor { .. }
             | Self::ConstructorArity(_)
             | Self::NonExhaustiveDataCase(_)
+            | Self::UndecidedCoverage(_)
             | Self::AbsentRecordField(_)
             | Self::AbsentTupleComponent(_)
             | Self::MissingRecordField { .. }

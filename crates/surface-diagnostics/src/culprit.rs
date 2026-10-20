@@ -238,6 +238,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::UnknownConstructor { .. } => "no constructor of the datatype",
         CheckRefusal::ConstructorArity(_) => "the wrong number of fields",
         CheckRefusal::NonExhaustiveDataCase(_) => "not every constructor once",
+        CheckRefusal::UndecidedCoverage(_) => "an arm left to a pattern hole",
         CheckRefusal::AbsentRecordField(_) => "no field of the record type",
         CheckRefusal::AbsentTupleComponent(_) => "no component of the product type",
         CheckRefusal::MissingRecordField { .. } => "a required field is missing",

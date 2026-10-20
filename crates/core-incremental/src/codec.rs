@@ -5770,6 +5770,10 @@ where
             writer.tag(Tag(25));
             write_site(writer, at)?;
         },
+        Refusal::UndecidedCoverage(at) => {
+            writer.tag(Tag(80));
+            write_site(writer, at)?;
+        },
         Refusal::AbsentRecordField(at) => {
             writer.tag(Tag(26));
             write_site(writer, at)?;
@@ -6311,6 +6315,7 @@ where
                     Refusal::UnknownConstructor {..} => 23,
                     Refusal::ConstructorArity(_) => 24,
                     Refusal::NonExhaustiveDataCase(_) => 25,
+                    Refusal::UndecidedCoverage(_) => 80,
                     Refusal::AbsentRecordField(_) => 26,
                     Refusal::MissingRecordField {..} => 27,
                     | Refusal::TypeMismatch { .. } => 0,
@@ -6433,6 +6438,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         },
         24 => Refusal::ConstructorArity(read_site(reader)?),
         25 => Refusal::NonExhaustiveDataCase(read_site(reader)?),
+        80 => Refusal::UndecidedCoverage(read_site(reader)?),
         26 => Refusal::AbsentRecordField(read_site(reader)?),
         39 => Refusal::AbsentTupleComponent(read_site(reader)?),
         27 => Refusal::MissingRecordField {
@@ -7325,6 +7331,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::UnknownConstructor { .. }
             | Refusal::ConstructorArity(_)
             | Refusal::NonExhaustiveDataCase(_)
+            | Refusal::UndecidedCoverage(_)
             | Refusal::AbsentRecordField(_)
             | Refusal::AbsentTupleComponent(_)
             | Refusal::UnknownOperation { .. }

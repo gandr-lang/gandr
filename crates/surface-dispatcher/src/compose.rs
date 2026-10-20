@@ -1278,7 +1278,8 @@ struct Share<'source>
 ///   whole unit reports everything, nothing copied. A settle fault is every
 ///   source's. The admission holds the arena, the verdicts and the unit's
 ///   structured names. `spelled` advances once when the unit settles: its one
-///   spelling pass.
+///   spelling pass. The checker holds every hole the unit's patterns were
+///   written with, so a match whose tree leaves an arm to one is refused.
 /// - fails: never; a settle fault is carried.
 /// - panics: none.
 /// - intension: one check, one program, one settle comparison and one spelling
@@ -1289,10 +1290,12 @@ struct Share<'source>
 /// - hypothesis: L3 — a diamond judged as one component reports each source's
 ///   own declarations at each source, and a unit of one source reports all of
 ///   its own; a subject whose importers share their base's component is spelled
-///   once per component.
+///   once per component; a match leaving an arm to a pattern hole, beside one
+///   whose arm body is a hole, separates the pattern hole from the term hole.
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
 /// - witness: `compose::tests::a_module_settles_every_declaration_once`
 /// - witness: `tests::corpus::the_identity_base_is_spelled_once_for_its_importers_595`
+/// - witness: `tests::corpus::the_fixture_root_settles_every_fixture`
 #[spec(ensures: |ref ret| ret.0.earlier.len() == earlier.len())]
 fn judge_members<'source>(
     root: CorpusRoot,
@@ -1309,6 +1312,12 @@ fn judge_members<'source>(
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     context.grant(grants);
     context.enter_at(entry);
+    let pattern_holes: Vec<_> = module
+        .origins()
+        .cases()
+        .flat_map(|(_, case)| case.patterns.holes())
+        .collect();
+    context.keep_pattern_holes(&pattern_holes);
     let verdicts = check_module(&mut context, &declarations);
     let names = module.structured_names();
     let mut program = Program::new(&arena, &module, &verdicts);

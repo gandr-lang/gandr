@@ -65,3 +65,22 @@ fn a_pattern_names_its_parts_in_order()
         "an empty table resolves nothing"
     );
 }
+
+#[test]
+fn a_table_names_its_holes()
+{
+    let mut patterns = Patterns::new();
+    let wildcard = patterns.mint(Pattern::Wildcard);
+    let later = patterns.mint(Pattern::Hole(HoleId::from(9_u32)));
+    let earlier = patterns.mint(Pattern::Hole(HoleId::from(2_u32)));
+    patterns.mint(Pattern::Constructor {
+        tag: ConstructorTag::from(0_usize),
+        fields: vec![earlier, wildcard, later],
+    });
+    assert_eq!(
+        patterns.holes(),
+        vec![HoleId::from(9_u32), HoleId::from(2_u32)],
+        "the holes in mint order, not by id, and nothing else"
+    );
+    assert_eq!(Patterns::new().holes(), Vec::<HoleId>::new());
+}
