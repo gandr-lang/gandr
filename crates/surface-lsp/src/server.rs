@@ -130,6 +130,7 @@ use crate::protocol::StringValue;
 use crate::protocol::SymbolInformation;
 use crate::protocol::WatchedFilesParams;
 use crate::protocol::WatchesFiles;
+use crate::protocol::WorkTitle;
 use crate::protocol::WorkspaceSymbolParams;
 use crate::quiet::Holding;
 use crate::quiet::Inbox;
@@ -1612,7 +1613,7 @@ impl Server
                     || uri.to_owned(),
                     |name| name.to_string_lossy().into_owned(),
                 );
-                ("Checking", name)
+                (WorkTitle("Checking"), name)
             },
             "workspace/didChangeWatchedFiles" => {
                 let Ok(WatchedFilesParams { changes }) = WatchedFilesParams::deserialize(params)
@@ -1679,14 +1680,14 @@ impl Server
             .documents
             .values()
             .filter(|held| match held.own(self.peer) {
-                Maybe::Present(document) => names_any(&document.named, changed),
+                Maybe::Present(document) => first_named(&document.named, changed).is_some(),
                 Maybe::Absent(_) => false,
             })
             .count();
         match rechecked {
             0 => Reported::default(),
-            1 => self.piece("Rechecking", String::from("1 open document")),
-            many => self.piece("Rechecking", format!("{many} open documents")),
+            1 => self.piece(WorkTitle("Rechecking"), String::from("1 open document")),
+            many => self.piece(WorkTitle("Rechecking"), format!("{many} open documents")),
         }
     }
 
@@ -1697,7 +1698,7 @@ impl Server
     /// trivial.
     fn piece(
         &mut self,
-        title: &'static str,
+        title: WorkTitle,
         about: String,
     ) -> Reported
     {
@@ -1797,7 +1798,7 @@ impl Server
             else {
                 continue;
             };
-            if !names_any(&document.named, changed) {
+            if first_named(&document.named, changed).is_none() {
                 continue;
             }
             let rechecked = synchronised(
@@ -3225,16 +3226,18 @@ fn changed_paths(changes: &[FileEvent]) -> Vec<PathBuf>
     changed
 }
 
-/// Whether `named`, a closure's sorted paths, holds any of `changed`.
+/// The first file of `changed` that `named`, a closure's sorted paths, holds.
 ///
 /// # Specification
 /// trivial.
-fn names_any(
+fn first_named<'changed>(
     named: &[PathBuf],
-    changed: &[PathBuf],
-) -> bool
+    changed: &'changed [PathBuf],
+) -> Option<&'changed PathBuf>
 {
-    changed.iter().any(|path| named.binary_search(path).is_ok())
+    changed
+        .iter()
+        .find(|path| named.binary_search(path).is_ok())
 }
 
 /// The range of `form`, the form under `document`'s caret in the revision

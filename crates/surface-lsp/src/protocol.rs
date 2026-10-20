@@ -616,6 +616,13 @@ pub struct ProgressParams
     pub value: WorkDone,
 }
 
+/// What a piece of work the server reports progress on is, as a client shows
+/// it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct WorkTitle(pub &'static str);
+
 /// Where a piece of work is.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -625,7 +632,7 @@ pub enum WorkDone
     Begin
     {
         /// What the work is.
-        title: &'static str,
+        title: WorkTitle,
         /// Whether the client may cancel it: never, as the work runs to its end
         /// before the next message is read.
         cancellable: bool,
