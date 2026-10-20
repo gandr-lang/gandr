@@ -122,11 +122,16 @@ pub fn holding<Held>(
 where
     Held: Fn(&[NodeKey]) -> bool,
 {
+    let mut keys = Vec::new();
     module
         .declarations()
         .iter()
         .filter(|declaration| declaration.span().start() >= base)
-        .find(|declaration| held(&halves(declaration).collect::<Vec<_>>()))
+        .find(|declaration| {
+            keys.clear();
+            keys.extend(halves(declaration));
+            held(&keys)
+        })
         .map(|declaration| Withdrawal {
             declaration: format!("{}", declaration.name()),
             span: own(declaration.span(), base),
