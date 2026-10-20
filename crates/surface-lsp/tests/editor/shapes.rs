@@ -21,6 +21,7 @@
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::fmt::Write as _;
 use std::path::Path;
 
 use anodized::spec;
@@ -448,6 +449,7 @@ fn golden(
         }
     }
     let mut out = String::new();
+    let mut shown_text = String::new();
     for (first, last, shown) in runs {
         let end = source
             .text
@@ -459,17 +461,18 @@ fn golden(
             .get(first .. end)
             .unwrap_or_default()
             .replace('\n', "⏎");
-        let mut shown_text: String = spanned.chars().take(24).collect();
+        shown_text.clear();
+        shown_text.extend(spanned.chars().take(24));
         if spanned.chars().nth(24).is_some() {
             shown_text.push('…');
         }
-        let line = format!(
-            "{}-{} {shown_text} ⇒ {}\n",
+        let _written = writeln!(
+            out,
+            "{}-{} {shown_text} ⇒ {}",
             place(first),
             place(last),
             answer(shown)
         );
-        out.push_str(&line);
     }
     out
 }
@@ -483,10 +486,13 @@ fn the_headline_sources_hover_as_their_goldens()
     let grammar = built_in().expect("the built-in grammar builds");
     let sources = corpus();
     let goldens = Path::new(env!("CARGO_MANIFEST_DIR")).join("../surface-grammar/tests/highlight");
+    let mut suffix = String::new();
     for path in GOLDENS {
+        suffix.clear();
+        let _written = write!(suffix, "surface-corpus/{path}");
         let source = sources
             .iter()
-            .find(|source| source.uri.ends_with(&format!("surface-corpus/{path}")))
+            .find(|source| source.uri.ends_with(suffix.as_str()))
             .unwrap_or_else(|| panic!("`{path}` is a corpus source"));
         let hovers = hovered(&grammar, source, Every(1));
         expect_file![goldens.join(path).with_extension("hover")]

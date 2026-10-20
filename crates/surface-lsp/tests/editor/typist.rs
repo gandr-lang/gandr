@@ -80,16 +80,18 @@ impl Session
         let text = String::from(self.buffer().text().0);
         let (before, after) = text.split_at(self.buffer().cursor().0);
         let kept = Kept(after.len());
+        let mut so_far = String::new();
         loop {
             let done = self.buffer().cursor().0.saturating_sub(before.len());
-            assert_eq!(
-                self.buffer().text().0.get(.. self.buffer().cursor().0),
-                insertion
-                    .0
-                    .get(.. done)
-                    .map(|typed| format!("{before}{typed}"))
-                    .as_deref(),
-                "the text up to the cursor is what was typed"
+            let shown = self.buffer().text().0.get(.. self.buffer().cursor().0);
+            let typed = insertion.0.get(.. done);
+            assert!(
+                match (shown, typed) {
+                    (Some(shown), Some(typed)) => shown.strip_prefix(before) == Some(typed),
+                    (None, None) => true,
+                    (Some(_), None) | (None, Some(_)) => false,
+                },
+                "the text up to the cursor is what was typed: {shown:?} after {before:?} and {typed:?}"
             );
             let Some(rest) = insertion.0.get(done ..)
             else {
@@ -120,7 +122,10 @@ impl Session
                     .0
                     .get(.. done.saturating_add(typed.len_utf8()))
                     .expect("typing stops on boundaries");
-                self.repair_outdent(Text(&format!("{before}{typed_so_far}")));
+                so_far.clear();
+                so_far.push_str(before);
+                so_far.push_str(typed_so_far);
+                self.repair_outdent(Text(&so_far));
             }
         }
         while !self.junk(kept).is_empty() {

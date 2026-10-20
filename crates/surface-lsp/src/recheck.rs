@@ -144,6 +144,7 @@
 //! corpus source holds it to the walk's own reports.
 
 use core::fmt;
+use core::fmt::Write as _;
 use core::time::Duration;
 use std::path::Path;
 use std::path::PathBuf;
@@ -1057,8 +1058,7 @@ fn diagnostic(
             message.push_str(note);
         }
         for detail in found.details(verbosity) {
-            message.push('\n');
-            message.push_str(&detail.to_string());
+            let _written = write!(message, "\n{detail}");
         }
         message
     };

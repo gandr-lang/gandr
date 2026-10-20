@@ -406,7 +406,7 @@ fn connection<Log>(
     let mut server = Server::new(peer);
     if writer.is_ok() {
         let _ended = paced(&mut reading, |met, deadlines| {
-            let body = match met {
+            let (message, later) = match met {
                 Met::Closed => return Ok(ControlFlow::Break(())),
                 Met::Quiet(uri) => {
                     let mut held = lock(workspace);
@@ -415,10 +415,10 @@ fn connection<Log>(
                     }
                     return Ok(ControlFlow::Continue(()));
                 },
-                Met::Frame(body) => body,
+                Met::Frame { message, later } => (message, later),
             };
             let mut held = lock(workspace);
-            let mut outcome = server.handle(&mut held, &body);
+            let mut outcome = server.answer(&mut held, message, later);
             for message in outcome.messages {
                 drop(outbox.send(message));
             }

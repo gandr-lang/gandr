@@ -143,11 +143,13 @@ use crate::recheck::forms;
 use crate::recheck::grammar;
 use crate::recheck::open;
 use crate::recheck::recheck;
+use crate::rpc::Classified;
 use crate::rpc::ErrorCode;
 use crate::rpc::Incoming;
 use crate::rpc::Method;
 use crate::rpc::Outgoing;
 use crate::rpc::RequestId;
+use crate::rpc::Withdrawn;
 use crate::rpc::classify;
 use crate::rpc::failure;
 use crate::rpc::publish;
@@ -1358,11 +1360,59 @@ impl Server
         body: &Body,
     ) -> Outcome
     {
-        match classify(body) {
+        self.answer(workspace, classify(body), &[])
+    }
+
+    /// Handle one classified `message` over `workspace`, knowing the messages
+    /// `later` the client sent after it.
+    ///
+    /// # Specification
+    /// - requires: `later` is what the client sent after `message`, in order.
+    /// - ensures: as [`Server::handle`], except that a request of a running
+    ///   session other than `shutdown` that [`Withdrawn::of`] withdraws by
+    ///   `later` is answered with the error the withdrawal owes, under its own
+    ///   identifier, and not run.
+    /// - provides: the step of [`serve`] and of each hub connection, which read
+    ///   ahead of the message they handle.
+    /// - fails: never; every refusal is a message to the client.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a hover cancelled by a later message, one whose
+    ///   document a later change edits, one with neither, and a `shutdown`
+    ///   cancelled after it, are each asserted at their answer.
+    /// - witness: `server::tests::a_request_withdrawn_by_a_later_message_is_not_run`
+    #[spec(
+        captures: phase = self.phase,
+        ensures: |ret| ret.log.len() <= ret.messages.len()
+            && (self.phase == phase || matches!((phase, self.phase),
+                (Phase::Waiting, Phase::Running) | (Phase::Running, Phase::ShuttingDown)))
+            && match ret.flow { Flow::Continue => true, Flow::Exit(ending) =>
+                ret.messages.is_empty() && ending == self.closed() },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn answer(
+        &mut self,
+        workspace: &mut Workspace,
+        message: Classified,
+        later: &[Classified],
+    ) -> Outcome
+    {
+        match message {
             Err(malformed) => Outcome::say(malformed.response()),
             Ok(Incoming::Response) => Outcome::quiet(),
             Ok(Incoming::Request { id, method, params }) => {
-                Outcome::say(self.request(workspace, id, &method, params))
+                let withdrawn = match (self.phase, method.as_ref()) {
+                    (Phase::Running, name) if name != "shutdown" => {
+                        Withdrawn::of(&id, &params, later)
+                    },
+                    _ => None,
+                };
+                Outcome::say(match withdrawn {
+                    Some(withdrawn) => withdrawn.response(id),
+                    None => self.request(workspace, id, &method, params),
+                })
             },
             Ok(Incoming::Notification { method, params }) => {
                 self.notification(workspace, &method, params)
@@ -3038,7 +3088,7 @@ where
     let mut workspace = Workspace::spelled(spelling);
     let mut server = Server::default();
     paced(input, |met, deadlines| {
-        let body = match met {
+        let (message, later) = match met {
             Met::Closed => return Ok(ControlFlow::Break(server.closed())),
             Met::Quiet(uri) => {
                 for message in &server.release(&mut workspace, &uri) {
@@ -3046,9 +3096,9 @@ where
                 }
                 return Ok(ControlFlow::Continue(()));
             },
-            Met::Frame(body) => body,
+            Met::Frame { message, later } => (message, later),
         };
-        let mut outcome = server.handle(&mut workspace, &body);
+        let mut outcome = server.answer(&mut workspace, message, later);
         for message in &outcome.messages {
             written(output, message)?;
         }
@@ -3117,6 +3167,7 @@ mod tests
     use crate::protocol::ContentChange;
     use crate::protocol::DocumentUri;
     use crate::protocol::Linked;
+    use crate::rpc::Classified;
     use crate::rpc::Outgoing;
     use crate::server::Logged;
     use crate::transport::Body;
@@ -5021,6 +5072,58 @@ mod tests
             restored.pointer("/0/params/diagnostics"),
             Some(&serde_json::json!([]))
         );
+    }
+
+    #[test]
+    fn a_request_withdrawn_by_a_later_message_is_not_run()
+    {
+        let mut server = server_over_the_known_document();
+        let read = |text: &str| crate::rpc::classify(&Body::from(text.as_bytes().to_vec()));
+        let answer = |server: &mut Connected, request: &str, later: &[&str]| {
+            let later: Vec<Classified> = later.iter().map(|&text| read(text)).collect();
+            Value::Array(
+                server
+                    .server
+                    .answer(&mut server.workspace, read(request), &later)
+                    .messages
+                    .iter()
+                    .map(|outgoing| serde_json::to_value(outgoing).expect("a message encodes"))
+                    .collect(),
+            )
+        };
+        let hover = r#"{"jsonrpc":"2.0","id":5,"method":"textDocument/hover","params":{
+            "textDocument":{"uri":"file:///tmp/example.gandr"},"position":{"line":0,"character":4}}}"#;
+        let cancel = |id: u32| {
+            format!(r#"{{"jsonrpc":"2.0","method":"$/cancelRequest","params":{{"id":{id}}}}}"#)
+        };
+        let change = r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+            "textDocument":{"uri":"file:///tmp/example.gandr","version":2},"contentChanges":[]}}"#;
+        assert_eq!(
+            answer(&mut server, hover, &[&cancel(5)]),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":5,"error":{"code":-32800,"message":"the client cancelled the request"}}]"#
+            )),
+            "a cancellation read after the hover"
+        );
+        assert_eq!(
+            answer(&mut server, hover, &[change]),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":5,"error":{"code":-32801,"message":"the document changed before the request was read"}}]"#
+            )),
+            "a change of its document read after it"
+        );
+        let ran = answer(&mut server, hover, &[&cancel(6)]);
+        assert!(
+            ran.pointer("/0/error").is_none() && ran.pointer("/0/result").is_some(),
+            "a cancellation of another request leaves the hover run: {ran}"
+        );
+        let shutdown = r#"{"jsonrpc":"2.0","id":9,"method":"shutdown"}"#;
+        assert_eq!(
+            answer(&mut server, shutdown, &[&cancel(9)]),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":null}]"#)),
+            "the lifecycle is never withdrawn"
+        );
+        assert_eq!(server.closed(), Served::Clean);
     }
 
     #[test]

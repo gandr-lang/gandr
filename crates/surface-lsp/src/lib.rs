@@ -115,6 +115,7 @@
 //! | Feature | Methods | State |
 //! | ------- | ------- | ----- |
 //! | lifecycle | `initialize`, `initialized`, `shutdown`, `exit` | served |
+//! | cancellation | `$/cancelRequest` | served: a request is answered `RequestCancelled` when its cancellation was read before it was handled, and `ContentModified` when a change of the document it reads was, without being run |
 //! | document synchronisation | `textDocument/didOpen`, `didChange` (incremental), `didClose` | served |
 //! | save notifications | `textDocument/willSave`, `willSaveWaitUntil`, `didSave` | declined: every change is judged as it arrives, so a save changes nothing the server holds |
 //! | notebook synchronisation | `notebookDocument/*` | declined: gandr has no notebook format |
@@ -338,13 +339,6 @@
         doc_issue_reference,
         module_doc_budget,
         reason = "module documentation that predates the shape lint"
-    )
-)]
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        allocation_in_repeated_body,
-        reason = "1 cost-shape site; #814 lists it"
     )
 )]
 

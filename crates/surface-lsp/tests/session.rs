@@ -445,16 +445,20 @@ fn published(publication: &Value) -> Vec<Value>
             .expect("a publication carries diagnostics")
             .iter()
             .map(|diagnostic| {
-                let related: Vec<_> = diagnostic.get("relatedInformation").and_then(Value::as_array)
-                    .into_iter().flatten().map(|annotation| json!({
-                        "range": annotation.pointer("/location/range"), "message": annotation.get("message"),
-                    })).collect();
-                json!({
+                let mut projected = json!({
                     "range": diagnostic["range"],
                     "code": diagnostic.get("code").cloned().unwrap_or(Value::Null),
                     "message": diagnostic["message"],
-                    "related": related,
-                })
+                });
+                if let Some(fields) = projected.as_object_mut() {
+                    let _absent = fields.insert(String::from("related"), Value::Array(
+                        diagnostic.get("relatedInformation").and_then(Value::as_array)
+                            .into_iter().flatten().map(|annotation| json!({
+                                "range": annotation.pointer("/location/range"), "message": annotation.get("message"),
+                            })).collect(),
+                    ));
+                }
+                projected
             })
             .collect()
 }
@@ -717,17 +721,26 @@ fn idled(quiet: &Value) -> Vec<Value>
             message.get("method").map_or_else(
                 || json!(message.get("id")),
                 |method| {
-                    json!([
-                        method,
-                        message.pointer("/params/version"),
+                    Value::Array(Vec::from([
+                        method.clone(),
+                        message
+                            .pointer("/params/version")
+                            .cloned()
+                            .unwrap_or(Value::Null),
                         message
                             .pointer("/params/diagnostics")
                             .and_then(Value::as_array)
-                            .map(|diagnostics| diagnostics
-                                .iter()
-                                .map(|diagnostic| diagnostic.get("code"))
-                                .collect::<Vec<_>>()),
-                    ])
+                            .map_or(Value::Null, |diagnostics| {
+                                Value::Array(
+                                    diagnostics
+                                        .iter()
+                                        .map(|diagnostic| {
+                                            diagnostic.get("code").cloned().unwrap_or(Value::Null)
+                                        })
+                                        .collect(),
+                                )
+                            }),
+                    ]))
                 },
             )
         })
@@ -1301,13 +1314,15 @@ mod sweeps
                 ))
             })
             .collect::<BTreeMap<_, _>>();
+        let mut expected = Vec::new();
+        let mut decoded = Vec::new();
         for (id, source) in sources.iter().enumerate() {
             let text = source.text.as_str();
             let tree = gandr_surface_parser::parse(&grammar, text.into())
                 .expect("a corpus source parses")
                 .into_tree();
             let spans = roles.highlight(&tree).expect("a corpus source highlights");
-            let mut expected = Vec::new();
+            expected.clear();
             for span in spans.iter().filter(|span| span.role != HlRole::Other) {
                 let (start, end) = (
                     usize::from(span.range.start()),
@@ -1339,7 +1354,7 @@ mod sweeps
             let stream = &streams[&u64::try_from(id).expect("an id fits")];
             assert_eq!(stream.len() % 5, 0_usize, "five integers per token");
             let (mut row, mut col) = (0_u64, 0_u64);
-            let mut decoded = Vec::new();
+            decoded.clear();
             for token in stream.chunks_exact(5) {
                 let &[line_delta, start_delta, length, _, _] = token
                 else {
