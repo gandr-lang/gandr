@@ -1941,6 +1941,7 @@ fn admit(
 {
     let mut admitted: Vec<Embedding> = Vec::new();
     let mut refused: Vec<ConvexityRefusal> = Vec::new();
+    let mut members: BTreeSet<Edge> = BTreeSet::new();
     for completion in completions {
         let image: Option<Vec<Edge>> = completion.generators.iter().copied().collect();
         let Some(image) = image
@@ -1950,7 +1951,9 @@ fn admit(
         let verdict = match warrant {
             ConvexityWarrant::StronglyConnectedOverAcyclicTarget => Sweep::Convex,
             ConvexityWarrant::SweptOverTheComplement => {
-                sweep(target, &image.iter().copied().collect())
+                members.clear();
+                members.extend(image.iter().copied());
+                sweep(target, &members)
             },
         };
         match verdict {

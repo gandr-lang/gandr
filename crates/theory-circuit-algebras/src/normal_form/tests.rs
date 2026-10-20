@@ -1119,10 +1119,12 @@ fn cospan_verdict(
     }
     let count = usize::from(left.edge_count());
     let mut bijections: Vec<Vec<usize>> = alloc::vec![Vec::new()];
+    let mut used: BTreeSet<usize> = BTreeSet::new();
     for _ in 0 .. count {
         let mut grown: Vec<Vec<usize>> = Vec::new();
         for prefix in &bijections {
-            let used: BTreeSet<usize> = prefix.iter().copied().collect();
+            used.clear();
+            used.extend(prefix.iter().copied());
             for candidate in (0 .. count).filter(|candidate| !used.contains(candidate)) {
                 let mut extended = prefix.clone();
                 extended.push(candidate);
