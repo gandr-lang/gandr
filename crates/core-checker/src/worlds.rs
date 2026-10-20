@@ -925,6 +925,9 @@ pub(crate) fn crosses(
         scope: Scope::Standing { depth: 0 },
     }]);
     let mut fields_read: BTreeSet<ConstantIndex> = BTreeSet::new();
+    // A data type's arguments, copied out of the arena while it grows; one
+    // buffer refilled per data type met.
+    let mut arguments_held = Vec::new();
     while let Some(Pending {
         ty,
         predicate,
@@ -989,12 +992,13 @@ pub(crate) fn crosses(
                 declaration,
                 arguments,
             } => {
-                let arguments = arguments.to_vec();
+                arguments_held.clear();
+                arguments_held.extend_from_slice(arguments);
                 let Some(signature) = context.consult_data(declaration)
                 else {
                     return Ok(stays);
                 };
-                for (&argument, &classifier) in arguments.iter().zip(signature.parameters()) {
+                for (&argument, &classifier) in arguments_held.iter().zip(signature.parameters()) {
                     let ValueTypeView::Universe { level, .. } =
                         value_type_view(context.arena(), classifier)?
                     else {

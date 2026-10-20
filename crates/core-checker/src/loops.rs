@@ -72,6 +72,7 @@
 //! shown a set by some other means than its presentation, or a square the
 //! tree computes, lifts the refusal off a set.
 
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -254,6 +255,9 @@ pub fn respected(
         .iter()
         .map(|fields| FieldCount::from(fields.len()))
         .collect();
+    // The substitution environment and the odometer over the held variables'
+    // points, refilled per owed loop.
+    let (mut environment, mut choice) = (Vec::new(), Vec::new());
     for owed in owed {
         let point = point(context, (datatype, &arities), owed.words)?;
         let arena = context.arena_mut();
@@ -283,7 +287,8 @@ pub fn respected(
         }
         let depth = usize::from(context.binders().depth(Zone::Intuitionistic));
         let arena = context.arena_mut();
-        let mut environment = Vec::with_capacity(depth);
+        environment.clear();
+        environment.reserve(depth);
         for index in 0 .. depth {
             let index = u32::try_from(index).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
             environment
@@ -291,7 +296,8 @@ pub fn respected(
         }
         // Each choice of a point per held scrutinee, as an odometer: the
         // first scrutinee's choice turns fastest.
-        let mut choice = alloc::vec![0_usize; held.len()];
+        choice.clear();
+        choice.resize(held.len(), 0_usize);
         loop {
             for (&chosen, variable) in choice.iter().zip(&held) {
                 let slot = environment
@@ -419,6 +425,10 @@ fn scrutinees(
 ) -> Result<Vec<Held>, CheckRefusal>
 {
     let mut held: Vec<Held> = Vec::new();
+    // The slots held so far, so a variable met again ends the descent in one
+    // lookup.
+    let mut seen: BTreeSet<usize> = BTreeSet::new();
+    let mut arities: Vec<FieldCount> = Vec::new();
     let Some(&Value::Constructor {
         tag, ref fields, ..
     }) = context.arena().value(at)
@@ -431,15 +441,10 @@ fn scrutinees(
     };
     let mut body = selected;
     loop {
-        let Some(&Computation::DataCase {
-            scrutinee,
-            ref branches,
-            ..
-        }) = context.arena().computation(body)
+        let Some(&Computation::DataCase { scrutinee, .. }) = context.arena().computation(body)
         else {
             return Ok(held);
         };
-        let branches = branches.clone();
         let Some(&Value::Variable {
             zone: Zone::Intuitionistic,
             index,
@@ -465,19 +470,27 @@ fn scrutinees(
         {
             return Ok(held);
         }
-        let arities = alloc::vec![FieldCount::from(0_usize); signature.constructors().len()];
+        // Every constructor of a set's sort takes no field.
+        arities.clear();
+        arities.resize(signature.constructors().len(), FieldCount::from(0_usize));
         let arena = context.arena_mut();
         let points = (0 .. arities.len())
             .map(|tag| arena.value_constructor(sort, ConstructorTag::from(tag), Vec::new()))
             .collect();
         let slot = usize::try_from(u32::from(index))
             .map_err(|_overflow| CheckRefusal::MachineInvariant)?;
-        if held.iter().any(|seen| seen.slot == slot) {
+        if !seen.insert(slot) {
             return Ok(held);
         }
         held.push(Held { slot, points });
         let at = point(context, (sort, &arities), first.words)?;
         let Some(&Value::Constructor { tag, .. }) = context.arena().value(at)
+        else {
+            return Ok(held);
+        };
+        // The arena only grows, so the case read above still holds its
+        // branches.
+        let Some(&Computation::DataCase { ref branches, .. }) = context.arena().computation(body)
         else {
             return Ok(held);
         };

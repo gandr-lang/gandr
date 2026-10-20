@@ -68,6 +68,7 @@
 //! `coverage::tests::a_pattern_hole_is_answered_possibly` and
 //! `coverage::tests::an_unknown_scrutinee_reads_the_least_and_the_widest_signature`.
 
+use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -881,13 +882,14 @@ impl Walker<'_, '_, '_>
             Kind::Data => {
                 let count = self.signature(column)?.constructors().len();
                 if (0 .. count).all(|tag| named(&Head::Constructor(ConstructorTag::from(tag)))) {
+                    let arms = constructor_arms(&present);
                     let mut all = Vec::with_capacity(count);
                     for tag in 0 .. count {
-                        let head = Head::Constructor(ConstructorTag::from(tag));
-                        let &(_, arity, pattern) = present
-                            .iter()
-                            .find(|entry| entry.0 == head)
+                        let tag = ConstructorTag::from(tag);
+                        let &(arity, pattern) = arms
+                            .get(&tag)
                             .ok_or(CoverageFault::Refused(CheckRefusal::MachineInvariant))?;
+                        let head = Head::Constructor(tag);
                         let fields = self.fields(column, kind, &head, arity, pattern)?;
                         all.push((head, fields));
                     }
@@ -971,14 +973,15 @@ impl Walker<'_, '_, '_>
                     })
                     .max()
                     .unwrap_or(0);
+                let arms = constructor_arms(present);
                 let mut all = Vec::new();
                 for tag in 0 ..= largest {
-                    let head = Head::Constructor(ConstructorTag::from(tag));
-                    let Some(&(_, arity, _)) = present.iter().find(|entry| entry.0 == head)
+                    let tag = ConstructorTag::from(tag);
+                    let Some(&(arity, _)) = arms.get(&tag)
                     else {
                         return Ok(Completeness::Incomplete);
                     };
-                    all.push((head, vec![unknown; arity.0]));
+                    all.push((Head::Constructor(tag), vec![unknown; arity.0]));
                 }
                 Completeness::Complete(all)
             },
@@ -1132,6 +1135,39 @@ impl Walker<'_, '_, '_>
             columns: problem.columns.get(1 ..).ok_or(invariant)?.to_vec(),
         })
     }
+}
+
+/// The constructor heads of a column, each with the arity and pattern of
+/// the first row that names it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a tag maps to the arity and pattern of the first entry of
+///   `present` whose head is that constructor; a tag no entry names is absent,
+///   as is every head that is not a constructor.
+/// - provides: one lookup per tag where a scan of `present` per tag would grow
+///   with the column's rows.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a closed data column whose rows name every constructor
+///   completes with each constructor's own fields, and an unknown column
+///   missing a tag below its largest stays incomplete; a map keeping a later
+///   row's arity, or losing a tag, changes the answer.
+/// - witness: `coverage::tests::usefulness_decides_exhaustiveness_and_redundancy`
+/// - witness: `coverage::tests::an_unknown_scrutinee_reads_the_least_and_the_widest_signature`
+#[spec(ensures: |arms| arms.len() <= present.len())]
+fn constructor_arms(
+    present: &[(Head, Arity, PatternId)]
+) -> BTreeMap<ConstructorTag, (Arity, PatternId)>
+{
+    let mut arms = BTreeMap::new();
+    for &(ref head, arity, pattern) in present {
+        if let Head::Constructor(tag) = *head {
+            let _first = arms.entry(tag).or_insert((arity, pattern));
+        }
+    }
+    arms
 }
 
 #[cfg(test)]
