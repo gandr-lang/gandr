@@ -392,9 +392,11 @@ pub fn decode_signature<G>(
         return Err(DecodeError::ParameterArity);
     }
     let mut constructors = Vec::with_capacity(description.ctors.len());
+    let mut pending = Vec::new();
     for constructor in &description.ctors {
         let mut fields = Vec::new();
-        let mut pending = vec![constructor.code.to_node()];
+        // The walk below drains the stack, so each constructor starts it empty.
+        pending.push(constructor.code.to_node());
         while let Some(node) = pending.pop() {
             match node.view() {
                 CodeView::Unit => {},
