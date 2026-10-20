@@ -803,6 +803,60 @@ fn a_derived_operation_needs_a_written_path_answer()
     }
 }
 
+/// #1003: `back(loop)` at the circle's point moves the empty word, as the
+/// written transport's `here(Base)` lowers there, so the two spellings lower
+/// to one transport. Away from a looped point it moves `here`, as
+/// `back_then_and_cong_unfold_to_transports` pins.
+#[test]
+fn back_at_a_looped_point_moves_its_empty_word_1003()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\n",
+            "def derived : Path(Circle, Base, Base);\ndef derived = back(loop);\n",
+            "def written : Path(Circle, Base, Base);\ndef written = transport(\\a. Path(Circle, a, Base), loop, here(Base));\n",
+        )),
+        &mut arena,
+    );
+    let moved = |name: &str| {
+        let body = match outcome_of(&module, name.into()) {
+            DeclarationOutcome::Completed { body, .. } => body,
+            other @ (DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World
+            | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers both halves: {other:?}"),
+        };
+        // The derived inverse is returned; the written transport, in value
+        // position, is nested.
+        let Some(&(Value::Returned(computation) | Value::Nested(computation))) = arena.value(body)
+        else {
+            panic!("`{name}` is the value its transport returns");
+        };
+        let Some(&Computation::PathTransport { value, .. }) = arena.computation(computation)
+        else {
+            panic!("`{name}` is a transport");
+        };
+        value
+    };
+    let empty = |name: &str| match arena.value(moved(name)) {
+        Some(&Value::Constructor {
+            datatype,
+            ref fields,
+            ..
+        }) if fields.is_empty() => arena.value_type(datatype).cloned(),
+        other => panic!("`{name}` moves a nullary constructor: {other:?}"),
+    };
+    assert_eq!(
+        empty("derived"),
+        empty("written"),
+        "the derived inverse moves the empty word the written `here(Base)` is"
+    );
+}
+
 #[test]
 fn a_derived_operation_synthesises_its_path_at_the_words()
 {

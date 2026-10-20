@@ -2003,8 +2003,9 @@ enum Derived<Node>
 
 /// The derived path operation `body` is the transport of: a path transport
 /// whose motive is `Path(A, a, y)` over its own binder `y` (a composite), or
-/// `Path(A, y, a)` moving reflexivity (an inverse), or `Path(B, f(a), f(y))`
-/// moving reflexivity (an action on a path), where every other part of the
+/// `Path(A, y, a)` moving reflexivity, `here(a)` or the empty word at a looped
+/// point `a` (an inverse), or `Path(B, f(a), f(y))` moving `here` (an action
+/// on a path), where every other part of the
 /// motive names no `y`.
 ///
 /// # Specification
@@ -2013,13 +2014,14 @@ enum Derived<Node>
 ///   motive reads as a path type with one endpoint the intuitionistic variable
 ///   of index zero, or for an action the forced map applied to it and returned
 ///   and the other endpoint the same map, the same constant or variable,
-///   applied and returned; an inverse and an action move a reflexivity. The
-///   motive's carrier, its other endpoint and an action's map, read down
-///   through every child [`children`] lists, name no intuitionistic variable
-///   counting out to the motive's binder; absent otherwise, and absent when
-///   that scan reads more than [`VISIT_BUDGET`] nodes. A well-typed transport
-///   of these shapes moves the reflexivity at the endpoint the derivation
-///   would, up to conversion, so the operation stands for it.
+///   applied and returned; an inverse moves `here` or a nullary constructor,
+///   the only one a path type at a looped point holds, and an action moves
+///   `here`. The motive's carrier, its other endpoint and an action's map, read
+///   down through every child [`children`] lists, name no intuitionistic
+///   variable counting out to the motive's binder; absent otherwise, and absent
+///   when that scan reads more than [`VISIT_BUDGET`] nodes. A well-typed
+///   transport of these shapes moves the reflexivity at the endpoint the
+///   derivation would, up to conversion, so the operation stands for it.
 /// - provides: the shapes `p then q`, `back(p)` and `cong(f, p)` derive
 ///   (`gandr_core_term::identity`), which the sugared form writes as the
 ///   lowering reads them back.
@@ -2071,6 +2073,9 @@ where
         )
     };
     let reflexive = matches!(source.read(value), Former::Here(_));
+    // A nullary constructor at `Path(A, a, a)` is the empty word of the words
+    // at a looped point `a`, which an inverse moves there.
+    let empty = matches!(source.read(value), Former::Constructor { arity, .. } if usize::from(arity) == 0_usize);
     // The map applied and returned, as an action's endpoints are: `f(x)`.
     let image = |node: S::Node| {
         if let Former::Returned(applied) = source.read(node)
@@ -2100,7 +2105,7 @@ where
     let (operation, apart) = if moving(right) {
         (Derived::Composite { value, path }, [carrier, left, carrier])
     }
-    else if moving(left) && reflexive {
+    else if moving(left) && (reflexive || empty) {
         (Derived::Inverse(path), [carrier, right, carrier])
     }
     else if reflexive

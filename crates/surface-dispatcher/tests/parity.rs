@@ -423,15 +423,7 @@ fn misses(
     for (declaration, pair) in printed(&table, &signatures) {
         match pair {
             (Spelled::Faithful(sugared), Spelled::Faithful(explicit)) => {
-                // An inverse's two spellings lower apart at a looped point
-                // (#1003), so the formatter keeps each as written: held out,
-                // as the body parity holds it.
-                let inverse = tokens(SourceFragment::from(sugared.as_str()))
-                    .iter()
-                    .any(|token| token == "back");
-                if !inverse {
-                    drop(printed_whole.insert(declaration, (sugared, explicit)));
-                }
+                drop(printed_whole.insert(declaration, (sugared, explicit)));
             },
             (Spelled::Unfaithful(text), _) | (_, Spelled::Unfaithful(text)) => misses.push(format!(
                 "{name}: `{declaration}`: the printer does not spell its type faithfully: {text}"
@@ -529,9 +521,6 @@ enum Held
     /// or a map's action `cong`, whose explicit spelling holds a transport
     /// or a call in value position (#985).
     ApartComposite,
-    /// The same, where the sugared spelling writes an inverse `back`, whose
-    /// explicit spelling moves `here(a)` at a looped point (#1003).
-    ApartInverse,
 }
 
 impl fmt::Display for Held
@@ -551,7 +540,6 @@ impl fmt::Display for Held
             Self::ApartComposite => {
                 "#985, the two spellings of a composite or an action lower apart"
             },
-            Self::ApartInverse => "#1003, the two spellings of an inverse lower apart",
         })
     }
 }
@@ -1116,9 +1104,6 @@ fn bodies(
         };
         let held = if writes("then") || writes("cong") {
             Held::ApartComposite
-        }
-        else if writes("back") {
-            Held::ApartInverse
         }
         else {
             Held::Apart
