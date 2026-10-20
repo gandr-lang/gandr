@@ -1439,6 +1439,13 @@ struct Written
     /// Each wildcard a labelled pattern leaves for a field it does not
     /// write, with the field's label, in the order read.
     unwritten: Vec<(PatternAt, FieldLabel)>,
+    /// Whether a sum pattern under no stated sum reads its index as a summand
+    /// of the sum the case's arms settle: set where the patterns are a case's
+    /// arms.
+    positional: Positional,
+    /// Each sum pattern read so under no stated sum, at the arity its index
+    /// alone gives, with the site it was read at.
+    unstated: Vec<(PatternAt, Site)>,
 }
 
 /// The matcher every unwritten column entry reads as.
@@ -1512,6 +1519,15 @@ enum Head
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Punned(bool);
+
+/// Whether a sum pattern under no stated sum may read its index as a summand
+/// whose arity the case's arms settle together.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Positional(bool);
 
 /// Whether the places of a dependent record a pattern splits are written,
 /// each with its type, or are the fields of the record a relation between
@@ -2932,7 +2948,10 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         let arms = constructed;
-        let mut patterns = Written::default();
+        let mut patterns = Written {
+            positional: Positional(true),
+            ..Written::default()
+        };
         let mut rows = Vec::new();
         let mut variables: Vec<Vec<Placed>> = Vec::with_capacity(arms.len());
         let mut kept = CaseOrigin {
@@ -2977,6 +2996,7 @@ impl<'source> Lowerer<'_, 'source>
             }
             variables.push(bound);
         }
+        settle_unstated(&mut patterns, &roots)?;
         let tests = self.compile(site, &patterns, rows)?;
         let loops = self.loop_arms(site, &tests, looped)?;
         let eliminates = tests.iter().any(|test| {
@@ -3842,7 +3862,7 @@ impl<'source> Lowerer<'_, 'source>
             let payload = here.one(cursor.operands())?;
             closed(here, &mut cursor, TileName::BRACE_CLOSE)?;
             exhausted(here, &cursor)?;
-            return self.injected(here, queued.stated, key, payload, patterns, work);
+            return self.injected(here, queued, key, payload, patterns, work);
         }
 
         Err(here.out(FragmentBoundary::Unadmitted))
@@ -4300,8 +4320,8 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
-    /// The injection shape of a sum pattern `+{ key = payload }` whose
-    /// position states the type `stated`.
+    /// The injection shape of a sum pattern `+{ key = payload }` queued as
+    /// `queued`, whose position states the type `queued.stated`.
     ///
     /// # Specification
     /// - requires: `key` and `payload` are the sum pattern's at `here`.
@@ -4311,9 +4331,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   key spelled at the payload, which it names. A position stating the
     ///   atom `Bool`, through parentheses, states the sum `+{Unit, Unit}` it
     ///   stands for, whose summands write no type to queue the payload with.
-    /// - fails: the unannotated refusal where the position states no sum; a
-    ///   misplaced tile at an index past the sum; the unresolved-name refusal
-    ///   for a label the sum lacks.
+    ///   Where the position states no sum and `patterns` reads a case's arms,
+    ///   an index names its summand of a sum one wider than it, recorded among
+    ///   the unstated for the case to settle.
+    /// - fails: the unannotated refusal where the position states no sum and
+    ///   the pattern is not an index among a case's arms; a misplaced tile at
+    ///   an index past the sum; the unresolved-name refusal for a label the sum
+    ///   lacks.
     /// - panics: none.
     ///
     /// # Errors
@@ -4321,37 +4345,48 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — labelled and indexed sum patterns under a stated sum,
-    ///   nested in a telescope pattern, under `Bool`, and with no stated sum.
+    ///   nested in a telescope pattern, under `Bool`, with no stated sum, and
+    ///   indexed with no stated sum among a case's arms.
     /// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
     /// - witness: `lower::native::tests::a_sum_pattern_reads_bool_as_its_sum_815`
+    /// - witness: `lower::native::tests::indexed_arms_settle_their_sum_1169`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |shape| matches!(*shape, Matcher::Injection { summand, arity, .. } if summand < arity)))]
     fn injected(
         &mut self,
         here: Site,
-        stated: Maybe<NodeIndex, binder_type::Absent>,
+        queued: Queued,
         key: arity::Key<'source>,
         payload: Placed,
         patterns: &mut Written,
         work: &mut Vec<Queued>,
     ) -> Result<Matcher, LoweringRefusal<'source>>
     {
+        let stated = queued.stated;
         let summands = match stated {
             Maybe::Present(node) => {
                 self.stated_entries(here, node, Former::LabelledSumType, arity::Thunked(false))?
             },
             Maybe::Absent(_) => Maybe::Absent(arity::stated_labels::Absent::Otherwise),
         };
-        let summands = match summands {
-            Maybe::Present(summands) => summands,
-            Maybe::Absent(_) if self.stated_atom(stated)? == Some(TypeAtom::Boolean) => Vec::new(),
-            Maybe::Absent(_) => return Err(here.out(FragmentBoundary::Unannotated)),
-        };
-        // `Bool` writes no summand, so its two are read off the atom.
-        let arity = if summands.is_empty() {
-            2_usize
-        }
-        else {
-            summands.len()
+        let (summands, arity) = match summands {
+            // `Bool` writes no summand, so its two are read off the atom.
+            Maybe::Present(summands) if summands.is_empty() => (summands, 2_usize),
+            Maybe::Present(summands) => {
+                let arity = summands.len();
+                (summands, arity)
+            },
+            Maybe::Absent(_) if self.stated_atom(stated)? == Some(TypeAtom::Boolean) => {
+                (Vec::new(), 2_usize)
+            },
+            Maybe::Absent(_) => match key {
+                arity::Key::Index(index, ..) if patterns.positional.0 => {
+                    patterns.unstated.push((queued.slot, here));
+                    (Vec::new(), index.saturating_add(1))
+                },
+                arity::Key::Index(..) | arity::Key::Label(..) | arity::Key::Positional => {
+                    return Err(here.out(FragmentBoundary::Unannotated));
+                },
+            },
         };
         let (summand, held, keyed) = match key {
             arity::Key::Index(index, _, written) if index < arity => (
@@ -7666,6 +7701,73 @@ fn allocated(
     }
 
     Stretch { start, end }
+}
+
+/// Settle the sum a case's sum patterns inject into where no sum is stated:
+/// arms whose roots are indices under no stated sum, covering the summands
+/// `.0` to `.n-1` between them, inject into a sum of `n` summands.
+///
+/// # Specification
+/// - requires: `roots` holds each arm's root pattern in `patterns`, the
+///   patterns of a case's arms.
+/// - ensures: every sum pattern read under no stated sum injects into a sum one
+///   wider than the greatest index among them, when each is an arm's root,
+///   every root is one, and their indices cover every summand below the
+///   greatest; nothing changes when none was read.
+/// - fails: the unannotated refusal, at the first such pattern, otherwise.
+/// - panics: none.
+/// - executable: none — the settled arity is the width the switch the case
+///   compiles next takes from the arms, whose branch count its own predicate
+///   checks.
+///
+/// # Errors
+/// The unannotated refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two and three indexed arms settle their sum; an arm that
+///   matches anything, a summand no arm writes and an index nested in a tuple
+///   are refused.
+/// - witness: `lower::native::tests::indexed_arms_settle_their_sum_1169`
+fn settle_unstated<'source>(
+    patterns: &mut Written,
+    roots: &[(ArmAt, PatternAt, NodeIndex, NodeIndex)],
+) -> Result<(), LoweringRefusal<'source>>
+{
+    let Some(&(_, first)) = patterns.unstated.first()
+    else {
+        return Ok(());
+    };
+    let refused = || first.out(FragmentBoundary::Unannotated);
+    let unstated: BTreeSet<PatternAt> = patterns.unstated.iter().map(|&(slot, _)| slot).collect();
+    let rooted: BTreeSet<PatternAt> = roots.iter().map(|&(_, root, ..)| root).collect();
+    if unstated != rooted {
+        return Err(refused());
+    }
+    let mut covered: Vec<bool> = Vec::new();
+    for root in rooted {
+        let Some(&(_, Matcher::Injection { summand, .. })) = patterns.shapes.get(root.0)
+        else {
+            return Err(refused());
+        };
+        if covered.len() <= summand {
+            covered.resize(summand.saturating_add(1), false);
+        }
+        if let Some(seen) = covered.get_mut(summand) {
+            *seen = true;
+        }
+    }
+    if !covered.iter().all(|&seen| seen) {
+        return Err(refused());
+    }
+    let width = covered.len();
+    for &(slot, _) in &patterns.unstated {
+        if let Some(&mut (_, Matcher::Injection { ref mut arity, .. })) =
+            patterns.shapes.get_mut(slot.0)
+        {
+            *arity = width;
+        }
+    }
+    Ok(())
 }
 
 /// Record `origin` for every node minted since `mark`, and the root's own
