@@ -338,6 +338,61 @@ pub struct WorkspaceFolder
     pub uri: DocumentUri,
 }
 
+/// The parameters of `workspace/didChangeWorkspaceFolders`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct FoldersChangedParams
+{
+    /// The folders opened and closed.
+    pub event: FoldersChanged,
+}
+
+/// The folders a client opened and closed.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+pub struct FoldersChanged
+{
+    /// The folders opened.
+    #[serde(default)]
+    pub added: Vec<WorkspaceFolder>,
+    /// The folders closed.
+    #[serde(default)]
+    pub removed: Vec<WorkspaceFolder>,
+}
+
+impl FoldersChanged
+{
+    /// The paths of the folders opened, each a `file` URI's path.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn added(&self) -> Vec<PathBuf>
+    {
+        absolute(self.added.iter().map(|folder| &folder.uri))
+    }
+
+    /// The paths of the folders closed, each a `file` URI's path.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn removed(&self) -> Vec<PathBuf>
+    {
+        absolute(self.removed.iter().map(|folder| &folder.uri))
+    }
+}
+
+/// The path of each of `uris` that a `file` URI names, in order.
+///
+/// # Specification
+/// trivial.
+fn absolute<'uri>(uris: impl Iterator<Item = &'uri DocumentUri>) -> Vec<PathBuf>
+{
+    uris.map(DocumentUri::path)
+        .filter(|path| path.is_absolute())
+        .collect()
+}
+
 impl InitializeParams
 {
     /// The paths of the folders the client opened: its workspace folders, or
@@ -363,11 +418,7 @@ impl InitializeParams
             || self.root_uri.iter().collect::<Vec<_>>(),
             |folders| folders.iter().map(|folder| &folder.uri).collect(),
         );
-        named
-            .into_iter()
-            .map(DocumentUri::path)
-            .filter(|path| path.is_absolute())
-            .collect()
+        absolute(named.into_iter())
     }
 
     /// The markup a hover is written in for this client: [`Markup::Html`]
@@ -1110,7 +1161,8 @@ impl InitializeResult
     ///   a `,` is typed and again at a `)`; definition and type definition;
     ///   formatting over the whole document and over a range; code lenses,
     ///   resolved in the answer, and code actions; document links, resolved in
-    ///   the answer; the server named `gandr` at this crate's version.
+    ///   the answer; workspace folders, with a notification as they change; the
+    ///   server named `gandr` at this crate's version.
     /// - provides: the one capabilities answer, written by `initialize` and by
     ///   the driver's `gandr lsp --capabilities` alike.
     /// - fails: never.
@@ -1145,6 +1197,8 @@ impl InitializeResult
             && ret.capabilities.references_provider.0
             && ret.capabilities.rename_provider.prepare_provider
             && !ret.capabilities.document_link_provider.resolve_provider
+            && ret.capabilities.workspace.workspace_folders.supported
+            && ret.capabilities.workspace.workspace_folders.change_notifications
             && !ret.capabilities.code_lens_provider.resolve_provider
             && !ret.capabilities.completion_provider.resolve_provider)]
     #[inline]
@@ -1194,6 +1248,12 @@ impl InitializeResult
                 },
                 document_link_provider: DocumentLinkOptions {
                     resolve_provider: false,
+                },
+                workspace: WorkspaceOptions {
+                    workspace_folders: FoldersOptions {
+                        supported: true,
+                        change_notifications: true,
+                    },
                 },
             },
             server_info: ServerInfo {
@@ -1259,6 +1319,8 @@ pub struct ServerCapabilities
     /// Document links are answered, each resolved in the answer: every path
     /// import's address, linked to the file it names.
     pub document_link_provider: DocumentLinkOptions,
+    /// The workspace features answered.
+    pub workspace: WorkspaceOptions,
 }
 
 /// The rename provider, as advertised.
@@ -1279,6 +1341,27 @@ pub struct DocumentLinkOptions
 {
     /// Whether a link's target is resolved by a second request: never.
     pub resolve_provider: bool,
+}
+
+/// The workspace features, as advertised.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct WorkspaceOptions
+{
+    /// The folders the client opens.
+    pub workspace_folders: FoldersOptions,
+}
+
+/// Workspace folders, as advertised.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FoldersOptions
+{
+    /// The folders a client opened are read at `initialize`.
+    pub supported: bool,
+    /// The client tells the server as it opens and closes folders.
+    pub change_notifications: bool,
 }
 
 /// Whether a request is answered, advertised as a provider with no options.

@@ -2,16 +2,17 @@
 //! by a stable id, with the files it imports, so the sources that import a
 //! file are a lookup.
 //!
-//! A root is a folder the client opened, resolved once, when it is added. The
-//! sources under it are reached when an answer needs them
-//! ([`Files::importers`]), not at the connection's start, so a session that
-//! never asks pays nothing; a source is reached as `gandr check` reaches one,
-//! by the dispatcher's [`Traversal`]: a directory depth-first in byte order,
-//! its `.gandr` entries, no link in a listing followed. Each source keeps the
-//! files its imports name ([`imports_named`]), read from its import forms
-//! without judging it, and the length and modification time its file had when
-//! they were read: an answer reads again only a source whose file differs from
-//! its stamp, so the table is current whether or not anything watches the
+//! A root is a folder a client opened, resolved once, when it is added, and
+//! held while any connection holds it open; a folder inside another root is
+//! walked from the outer. The sources under the roots are reached when an
+//! answer needs them ([`Files::importers`]), not at the connection's start, so
+//! a session that never asks pays nothing; a source is reached as `gandr check`
+//! reaches one, by the dispatcher's [`Traversal`]: a directory depth-first in
+//! byte order, its `.gandr` entries, no link in a listing followed. Each source
+//! keeps the files its imports name ([`imports_named`]), read from its import
+//! forms without judging it, and the length and modification time its file had
+//! when they were read: an answer reads again only a source whose file differs
+//! from its stamp, so the table is current whether or not anything watches the
 //! roots. A source the last walk did not reach keeps its id and imports
 //! nothing.
 //!
@@ -35,6 +36,8 @@ use gandr_surface_dispatcher::named_path;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
+
+use crate::server::Peer;
 
 /// A source's place in the table, stable while the table lives.
 #[repr(transparent)]
@@ -84,8 +87,8 @@ struct Named
 #[derive(Debug, Default)]
 pub struct Files
 {
-    /// The roots, each resolved once.
-    roots: Vec<PathBuf>,
+    /// The roots, each resolved once, with the connections holding it open.
+    roots: BTreeMap<PathBuf, BTreeSet<Peer>>,
     /// Each path the table names, by its id.
     named: Vec<Named>,
     /// The id of each path the table names.
@@ -94,20 +97,80 @@ pub struct Files
 
 impl Files
 {
-    /// Add `root`, resolved now, unless a root held already holds it.
+    /// Add `root`, resolved now, as a folder `peer` opened.
     ///
     /// # Specification
     /// trivial.
     pub fn root(
         &mut self,
+        peer: Peer,
+        root: &Path,
+    )
+    {
+        let _opened = self.roots.entry(named_path(root)).or_default().insert(peer);
+    }
+
+    /// Withdraw `root`, resolved now, as a folder `peer` opened; the root goes
+    /// once no connection holds it open.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn unroot(
+        &mut self,
+        peer: Peer,
         root: &Path,
     )
     {
         let root = named_path(root);
-        if self.roots.iter().any(|held| root.starts_with(held)) {
-            return;
+        if let Some(openers) = self.roots.get_mut(&root) {
+            let _closed = openers.remove(&peer);
+            if openers.is_empty() {
+                let _gone = self.roots.remove(&root);
+            }
         }
-        self.roots.push(root);
+    }
+
+    /// Withdraw every root `peer` opened, as its connection ends.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn depart(
+        &mut self,
+        peer: Peer,
+    )
+    {
+        self.roots.retain(|_, openers| {
+            let _closed = openers.remove(&peer);
+            !openers.is_empty()
+        });
+    }
+
+    /// The roots a walk starts from: each root no other root holds, ascending.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every root is under exactly one root answered, and no root
+    ///   answered is under another.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one pass over the roots in path order, which places every
+    ///   root directly after the root holding it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a folder opened inside another is walked once, from
+    ///   the outer, and from itself once the outer is withdrawn.
+    /// - witness: `files::tests::a_root_is_walked_while_a_connection_holds_it_open`
+    #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(pair, [first, second] if !second.starts_with(first))))]
+    fn outermost(&self) -> Vec<PathBuf>
+    {
+        let mut outermost: Vec<PathBuf> = Vec::new();
+        for root in self.roots.keys() {
+            if outermost.last().is_some_and(|held| root.starts_with(held)) {
+                continue;
+            }
+            outermost.push(root.clone());
+        }
+        outermost
     }
 
     /// The root holding `path`, if one does.
@@ -120,7 +183,7 @@ impl Files
     ) -> Option<&Path>
     {
         self.roots
-            .iter()
+            .keys()
             .find(|root| path.starts_with(root))
             .map(PathBuf::as_path)
     }
@@ -182,7 +245,7 @@ impl Files
     )
     {
         let mut reached = BTreeSet::new();
-        let mut traversal = Traversal::new(self.roots.clone());
+        let mut traversal = Traversal::new(self.outermost());
         let mut text = String::new();
         while let Maybe::Present(found) = traversal.reach() {
             if !matches!(found, Reached::Source) {
@@ -303,6 +366,7 @@ mod tests
     use gandr_surface_grammar::built_in;
 
     use super::Files;
+    use crate::server::Peer;
 
     #[test]
     fn a_file_s_importers_are_every_source_reaching_it()
@@ -327,7 +391,7 @@ mod tests
             std::fs::write(at(file), text).expect("the source is written");
         }
         let mut files = Files::default();
-        files.root(&directory);
+        files.root(Peer::from(1_u64), &directory);
         assert_eq!(
             files.importers(&grammar, &at("base.gandr"), &[]),
             [at("deeper/mid.gandr"), at("top.gandr")],
@@ -370,6 +434,60 @@ mod tests
             files.importers(&grammar, &at("base.gandr"), &[]),
             Vec::<PathBuf>::new(),
             "a source removed imports nothing"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_root_is_walked_while_a_connection_holds_it_open()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let directory = std::env::temp_dir().join(format!("gandr-roots-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(directory.join("deeper")).expect("the scratch tree is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        let at = |file: &str| directory.join(file);
+        for (file, text) in [
+            ("base.gandr", "def one : Integer ;\ndef one = 1 ;\n"),
+            (
+                "deeper/mid.gandr",
+                "import \"../base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n",
+            ),
+            (
+                "top.gandr",
+                "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = one ;\n",
+            ),
+        ] {
+            std::fs::write(at(file), text).expect("the source is written");
+        }
+        let (first, second) = (Peer::from(1_u64), Peer::from(2_u64));
+        let mut files = Files::default();
+        files.root(first, &directory);
+        files.root(second, &directory);
+        files.root(first, &at("deeper"));
+        assert_eq!(
+            files.importers(&grammar, &at("base.gandr"), &[]),
+            [at("deeper/mid.gandr"), at("top.gandr")],
+            "a folder inside an open one is walked once, from the outer"
+        );
+        files.unroot(first, &directory);
+        assert_eq!(
+            files.importers(&grammar, &at("base.gandr"), &[]),
+            [at("deeper/mid.gandr"), at("top.gandr")],
+            "a folder another connection holds open stays a root"
+        );
+        files.depart(second);
+        assert_eq!(
+            files.importers(&grammar, &at("base.gandr"), &[]),
+            [at("deeper/mid.gandr")],
+            "once no connection holds the outer folder open, only the inner is walked"
+        );
+        files.depart(first);
+        assert_eq!(
+            files.importers(&grammar, &at("base.gandr"), &[]),
+            Vec::<PathBuf>::new(),
+            "with no root left, nothing is walked"
         );
         let _removed = std::fs::remove_dir_all(&directory);
     }
