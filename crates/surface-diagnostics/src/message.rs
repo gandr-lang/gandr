@@ -1626,8 +1626,11 @@ mod tests
             .filter(|vocabulary| !named.contains(vocabulary))
             .collect();
         assert!(missing.is_empty(), "every name is exercised: {missing:?}");
+        let mut message = String::new();
         for refusal in refusals {
-            let message = Plain(refusal).to_string();
+            message.clear();
+            core::fmt::Write::write_fmt(&mut message, format_args!("{}", Plain(refusal)))
+                .expect("a message writes");
             assert!(!message.is_empty(), "{:?} has a message", refusal.name());
             assert!(!message.contains('\n'), "one line: {message}");
             assert!(

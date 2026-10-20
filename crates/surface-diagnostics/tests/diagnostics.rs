@@ -1709,6 +1709,7 @@ fn each_verb_prints_its_entries()
     }
     let printed = |verb: Verb| {
         let mut printed = Vec::new();
+        let mut line = String::new();
         let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()]).visit(
             Width::SERIAL,
             |step| -> ControlFlow<Infallible> {
@@ -1717,10 +1718,19 @@ fn each_verb_prints_its_entries()
                         let image: serde_json::Value = serde_json::from_str(&diagnostic.json())
                             .expect("a ledger line's JSON image parses");
                         assert_eq!(image["level"], "line");
+                        line.clear();
+                        core::fmt::Write::write_fmt(
+                            &mut line,
+                            format_args!(
+                                "{}: {}",
+                                diagnostic.path.display(),
+                                diagnostic.message.text
+                            ),
+                        )
+                        .expect("a ledger line writes");
                         assert_eq!(
                             image["line"],
-                            format!("{}: {}", diagnostic.path.display(), diagnostic.message.text)
-                                .as_str(),
+                            line.as_str(),
                             "the JSON image carries the line as the terminal prints it"
                         );
                     }
@@ -1916,6 +1926,7 @@ mod sweeps
             .expect("the corpus is checked out beside this crate")
             .join("fixture/pathological");
         let mut repaired = 0_usize;
+        let mut severities = Vec::new();
         let ControlFlow::Continue(_report) =
             Walk::new(vec![root]).visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
                 let Step::Source {
@@ -1961,21 +1972,26 @@ mod sweeps
                     else {
                         continue;
                     };
-                    let unsettled: Vec<_> = report
-                        .declarations()
-                        .iter()
-                        .filter(|declaration| declaration.settlement() == Settlement::Unsettled)
-                        .collect();
-                    let severities: Vec<Severity> = entries(&step, Verb::Check(Goals::Gated))
-                        .map(|diagnostic| diagnostic.severity)
-                        .filter(|&severity| matches!(severity, Severity::Error | Severity::Note))
-                        .collect();
+                    let unsettled = || {
+                        report
+                            .declarations()
+                            .iter()
+                            .filter(|declaration| declaration.settlement() == Settlement::Unsettled)
+                    };
+                    severities.clear();
+                    severities.extend(
+                        entries(&step, Verb::Check(Goals::Gated))
+                            .map(|diagnostic| diagnostic.severity)
+                            .filter(|&severity| {
+                                matches!(severity, Severity::Error | Severity::Note)
+                            }),
+                    );
                     assert_eq!(
                         severities.len(),
-                        unsettled.len(),
+                        unsettled().count(),
                         "one entry per unsettled declaration"
                     );
-                    for malformed in &unsettled {
+                    for malformed in unsettled() {
                         if !matches!(
                             malformed.produced().refusal(),
                             Maybe::Present(Refusal::Lowering(LoweringRefusal::MalformedForm {
@@ -1986,28 +2002,31 @@ mod sweeps
                             continue;
                         }
                         repaired = repaired.saturating_add(1_usize);
-                        let named: Vec<_> = unsettled
-                            .iter()
+                        let mut errors = 0_usize;
+                        let mut unsupported = false;
+                        for (declaration, &severity) in unsettled()
                             .zip(&severities)
                             .filter(|&(declaration, _)| declaration.name() == malformed.name())
-                            .collect();
+                        {
+                            if severity == Severity::Error {
+                                errors = errors.saturating_add(1_usize);
+                            }
+                            unsupported |= matches!(
+                                declaration.produced().refusal(),
+                                Maybe::Present(Refusal::Lowering(
+                                    LoweringRefusal::OutOfFragment { .. }
+                                ))
+                            );
+                        }
                         assert_eq!(
-                            named
-                                .iter()
-                                .filter(|&&(_, &severity)| severity == Severity::Error)
-                                .count(),
+                            errors,
                             1_usize,
                             "{} cut at {cut}: `{}` reports its parse error alone",
                             path.display(),
                             malformed.name()
                         );
                         assert!(
-                            named.iter().all(|&(declaration, _)| !matches!(
-                                declaration.produced().refusal(),
-                                Maybe::Present(Refusal::Lowering(
-                                    LoweringRefusal::OutOfFragment { .. }
-                                ))
-                            )),
+                            !unsupported,
                             "{} cut at {cut}: `{}` is malformed, never unsupported",
                             path.display(),
                             malformed.name()

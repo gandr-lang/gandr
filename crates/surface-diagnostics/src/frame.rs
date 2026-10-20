@@ -578,12 +578,13 @@ mod tests
         ];
         let mut sentences: Vec<super::Sentence> =
             roles.iter().map(|&role| sentence(role)).collect();
+        let mut written = String::new();
         assert!(sentences.iter().all(|said| {
             let text: &str = said.as_ref();
-            text == said.to_string()
-                && !text.is_empty()
-                && !text.contains('\n')
-                && text.contains("this")
+            written.clear();
+            core::fmt::Write::write_fmt(&mut written, format_args!("{said}"))
+                .expect("a sentence writes");
+            text == written && !text.is_empty() && !text.contains('\n') && text.contains("this")
         }));
         sentences.sort_unstable();
         sentences.dedup();
