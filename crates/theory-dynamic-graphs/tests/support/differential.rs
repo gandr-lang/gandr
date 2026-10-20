@@ -149,15 +149,11 @@ pub fn run(
                         ));
                     }
                 }
-                let walked: Vec<EdgeId> = witness
-                    .nodes
-                    .windows(2)
-                    .filter_map(|pair| match *pair {
-                        [source, target] => Some(EdgeId::new(source, target)),
-                        _ => None,
-                    })
-                    .collect();
-                if walked != witness.edges {
+                let walked = witness.nodes.windows(2).filter_map(|pair| match *pair {
+                    [source, target] => Some(EdgeId::new(source, target)),
+                    _ => None,
+                });
+                if !walked.eq(witness.edges.iter().copied()) {
                     return Err(format!(
                         "offer {here}: the witness edges do not follow its own walk"
                     ));
