@@ -1106,6 +1106,48 @@ where
     .value_or(subject)
 }
 
+/// The value `subject` with the binder `depth` binders out instantiated at
+/// `replacement`, the `depth` innermost binders kept; see
+/// [`substitute_value_type_at`].
+///
+/// # Specification
+/// - requires: as [`substitute_value_type_at`].
+/// - ensures: as [`substitute_value_type_at`], over the value family; at depth
+///   zero, as [`substitute_value`].
+/// - provides: an indexed constructor's stated result index with its parameters
+///   instantiated beneath its field binders.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Cons`'s `S(n)` keeps its field binder while its
+///   parameters are instantiated.
+/// - witness: `tests::native_formers::an_indexed_constructor_stands_at_its_stated_index`
+#[spec(ensures: |ret| arena.value(subject).map_or(ret == subject, |source|
+    matches!(source, &Value::Variable(_)) || arena.value(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[must_use]
+pub(crate) fn substitute_value_at<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    (subject, replacement): (ValueId, ValueId),
+    depth: BinderDepth,
+) -> ValueId
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Substitute { replacement },
+        AnyNode::Value(subject),
+        depth,
+    )
+    .value_or(subject)
+}
+
 /// The computation `subject` with its innermost binder instantiated at
 /// `replacement`; see [`substitute_comp_type`].
 ///

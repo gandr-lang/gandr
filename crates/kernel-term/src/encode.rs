@@ -367,9 +367,11 @@ fn encode_minted_atom_table(
 ///   closes with the rule count and each rule's two sides; a type of words
 ///   writes [`tags::KIND_DATA_WORDS`] and closes with the rule block, its count
 ///   possibly zero, then the sort's position, the cell count and each cell's
-///   two endpoints as rule sides; abstract types write their kind and
-///   representation roots and the extent of their scope, an open scope as
-///   `remaining`, and an interfaced one writes
+///   two endpoints as rule sides; an indexed data declaration writes
+///   [`tags::KIND_DATA_INDEXED`] and closes with the index count, each index
+///   classifier's root and each constructor's result roots, and no rules;
+///   abstract types write their kind and representation roots and the extent of
+///   their scope, an open scope as `remaining`, and an interfaced one writes
 ///   [`tags::KIND_ABSTRACT_INTERFACED`] and closes with its relation's and its
 ///   reflexivity's roots; the other kinds write one root and no slots.
 /// - provides: one segment with cross-declaration sharing. The predicate checks
@@ -394,12 +396,13 @@ fn encode_minted_atom_table(
 /// - witness: `encode::tests::a_presented_data_declaration_closes_its_segment_with_its_rules`
 /// - witness: `encode::tests::a_type_of_words_closes_its_segment_with_its_cells`
 /// - witness: `encode::tests::an_interfaced_atom_closes_its_segment_with_its_interface`
+/// - witness: `encode::tests::an_indexed_data_declaration_closes_its_segment_with_its_indices`
 #[spec(
     captures: entry = (out.as_image().as_ref().len(), interner.by_content.len(), interner.next),
     ensures: |ret| { let image = out.as_image();
         let bytes = image.as_ref();
         bytes.get(entry.0).copied() == Some(u8::from(match marked.mark() { AdmissionMark::Checked => tags::ADMISSION_CHECKED, AdmissionMark::UncheckedBypass => tags::ADMISSION_UNCHECKED }))
-            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { .. } if marked.declaration().presentation().cells().is_some() => tags::KIND_DATA_WORDS, DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Def { .. } if !marked.declaration().laws().is_empty() => tags::KIND_DEF_LAWFUL, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { interface: Maybe::Present(_), .. } => tags::KIND_ABSTRACT_INTERFACED, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
+            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { ref indices, .. } if !indices.is_empty() => tags::KIND_DATA_INDEXED, DeclarationContent::Data { .. } if marked.declaration().presentation().cells().is_some() => tags::KIND_DATA_WORDS, DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Def { .. } if !marked.declaration().laws().is_empty() => tags::KIND_DEF_LAWFUL, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { interface: Maybe::Present(_), .. } => tags::KIND_ABSTRACT_INTERFACED, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
             && interner.by_node.contains_key(&AnyNode::ValueType(marked.declaration().declared_id()))
             && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => interner.by_node.contains_key(&AnyNode::Value(body)), DeclarationContent::AbstractType { interface: Maybe::Present(interface), .. } => interner.by_node.contains_key(&AnyNode::Value(interface.relation())) && interner.by_node.contains_key(&AnyNode::Value(interface.reflexivity())), DeclarationContent::Data { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true }
             && marked.declaration().related().iter().all(|related| interner.by_node.contains_key(&AnyNode::Value(related.left)) && interner.by_node.contains_key(&AnyNode::Value(related.right)))
@@ -421,6 +424,9 @@ fn encode_declaration(
     let declaration = marked.declaration();
     let content = declaration.content();
     out.put_tag(match *content {
+        DeclarationContent::Data { ref indices, .. } if !indices.is_empty() => {
+            tags::KIND_DATA_INDEXED
+        },
         DeclarationContent::Data { .. } if declaration.presentation().cells().is_some() => {
             tags::KIND_DATA_WORDS
         },
@@ -443,13 +449,16 @@ fn encode_declaration(
 
     let mut segment: Vec<EncodedEntry> = Vec::new();
     let mut data_roots = Vec::new();
+    let mut index_roots = Vec::new();
     let mut related_roots = Vec::new();
     let mut interface_roots = None;
     let (root_declared, root_body, root_sealed) = match *content {
         DeclarationContent::Data {
             kind,
             ref parameters,
+            ref indices,
             ref constructors,
+            ref results,
         } => {
             let declared = intern(arena, interner, &mut segment, AnyNode::ValueType(kind));
             for group in core::iter::once(parameters).chain(constructors.iter()) {
@@ -458,6 +467,21 @@ fn encode_declaration(
                     .map(|id| intern(arena, interner, &mut segment, AnyNode::ValueType(*id)))
                     .collect::<Vec<_>>();
                 data_roots.push(roots);
+            }
+            // The indices after the constructors, so a family indexed by
+            // nothing interns exactly what it did before the kind existed.
+            index_roots.extend(
+                indices
+                    .iter()
+                    .map(|id| intern(arena, interner, &mut segment, AnyNode::ValueType(*id))),
+            );
+            for result in results.iter().flatten() {
+                index_roots.push(intern(
+                    arena,
+                    interner,
+                    &mut segment,
+                    AnyNode::Value(*result),
+                ));
             }
             (declared, None, None)
         },
@@ -533,7 +557,9 @@ fn encode_declaration(
         out.put_uvarint(WireU64::from(u64::from(u32::from(reflexivity))));
     }
     if let DeclarationContent::Data {
-        ref constructors, ..
+        ref indices,
+        ref constructors,
+        ..
     } = *(content)
     {
         for (index, group) in data_roots.iter().enumerate() {
@@ -547,6 +573,12 @@ fn encode_declaration(
         }
         if constructors.is_empty() {
             out.put_uvarint(WireU64::from(0_u64));
+        }
+        if !indices.is_empty() {
+            out.put_uvarint(WireU64::from(WireUsize::from(indices.len())));
+            for root in &index_roots {
+                out.put_uvarint(WireU64::from(u64::from(u32::from(*root))));
+            }
         }
     }
     if let Some(root_body) = root_body {
@@ -588,10 +620,16 @@ fn encode_declaration(
     // count of at least one, since a free type wrote the plain kind, then each
     // rule's left and right sides, a node count and the nodes in pre-order. A
     // type of words writes the block whatever its count, then its sort's
-    // position and its cells, each endpoint a side as a rule's are.
+    // position and its cells, each endpoint a side as a rule's are. An indexed
+    // type presents no rules, which admission refuses, and writes none.
     let presentation = declaration.presentation();
     let rules = presentation.rules();
     let cells = presentation.cells();
+    let indexed =
+        matches!(*content, DeclarationContent::Data { ref indices, .. } if !indices.is_empty());
+    if indexed {
+        return;
+    }
     if !rules.is_empty() || cells.is_some() {
         out.put_uvarint(WireU64::from(WireUsize::from(rules.len())));
         for rule in rules {
@@ -2716,6 +2754,70 @@ mod tests
         let mut plain = image.as_ref().to_vec();
         if let Some(kind) = plain.get_mut(kind_at) {
             *kind = u8::from(crate::tags::KIND_ABSTRACT_TYPE);
+        }
+        assert_eq!(
+            crate::decode::decode(ArtifactImage::from(plain.as_slice())),
+            Err(crate::error::DecodeError::Malformed {
+                site: crate::error::MalformedSite::TrailingBytes,
+            })
+        );
+    }
+
+    #[test]
+    fn an_indexed_data_declaration_closes_its_segment_with_its_indices()
+    {
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let kind = builder
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let index = builder.arena().value_type_unit();
+        let at = builder.arena().value_unit();
+        let data = builder.indexed(
+            LevelSignature::monomorphic(),
+            alloc::vec![],
+            (alloc::vec![index], alloc::vec![alloc::vec![]], alloc::vec![
+                alloc::vec![at]
+            ]),
+            kind,
+        );
+        let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, data)];
+        let bytes = super::encode(&arena, &declarations);
+        let image = bytes.as_image();
+        assert_eq!(
+            image.as_ref().get(9).copied(),
+            Some(u8::from(crate::tags::KIND_DATA_INDEXED))
+        );
+        let decoded = crate::decode::decode(ArtifactImage::from(image.as_ref()))
+            .expect("an indexed declaration decodes");
+        let declaration = decoded
+            .declarations()
+            .first()
+            .expect("one data declaration");
+        let crate::decl::DeclarationContent::Data {
+            ref indices,
+            ref results,
+            ..
+        } = *declaration.declaration().content()
+        else {
+            panic!("a data declaration decodes as data");
+        };
+        assert_eq!(indices.len(), 1, "the index classifier is read back");
+        assert_eq!(
+            results.iter().map(Vec::len).collect::<Vec<_>>(),
+            [1],
+            "the constructor's result index is read back"
+        );
+        assert_eq!(
+            super::encode(decoded.arena(), decoded.declarations())
+                .as_image()
+                .as_ref(),
+            image.as_ref()
+        );
+        // The plain kind over the same bytes leaves the indices unread.
+        let mut plain = image.as_ref().to_vec();
+        if let Some(kind) = plain.get_mut(9) {
+            *kind = u8::from(crate::tags::KIND_DATA);
         }
         assert_eq!(
             crate::decode::decode(ArtifactImage::from(plain.as_slice())),

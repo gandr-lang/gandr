@@ -278,6 +278,158 @@ fn a_data_type_s_arguments_check_at_its_parameters()
     );
 }
 
+/// The index a vector's `Cons` states for itself.
+#[derive(Clone, Copy, Debug)]
+enum Stated
+{
+    /// `S(n)`: one more than its tail's length.
+    Successor,
+    /// `x`: its element, which is no length.
+    Element,
+    /// `S(n)` and `Z`: two indices for a family of one.
+    Twice,
+}
+
+/// Admit `Nat`, with `Z` and `S(Nat)`, then `Vec(a : Type) : Nat -> Type`
+/// whose `Nil` stands at `Z` and whose `Cons(n, x, xs : Vec(a, n))` stands at
+/// the index `stated` names.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Nat`'s position, and the vector declaration's admission at the
+///   position after it.
+/// - panics: if `Nat` is refused.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the length index admits at `S(n)` and refuses at an
+///   element or at a second index.
+/// - witness: `tests::native_formers::an_indexed_family_states_its_result_indices`
+#[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.0) == position)]
+fn vector(
+    environment: &mut Environment,
+    stated: Stated,
+) -> (ConstantIndex, Result<CheckedId, KernelError>)
+{
+    let nat = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let own = arena.value_type_data(nat, vec![]);
+    let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        vec![],
+        vec![vec![], vec![own]],
+        universe,
+    );
+    let _nat = environment.add_decl(declaration).expect("Nat is admitted");
+    let position = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let length = arena.value_type_data(nat, vec![]);
+    let zero = arena.value_constructor(length, ConstructorTag::from(0), vec![]);
+    // Past `n`, the parameter is one out; past `n` and `x`, two.
+    let code = arena.value_variable(DeBruijnIndex::from(1));
+    let element = arena.value_type_element(code, Level::zero());
+    let code = arena.value_variable(DeBruijnIndex::from(2));
+    let tail_length = arena.value_variable(DeBruijnIndex::from(1));
+    let tail = arena.value_type_data(position, vec![code, tail_length]);
+    // Past all three fields, `n` is two out and `x` one.
+    let field = arena.value_variable(DeBruijnIndex::from(2));
+    let successor = arena.value_constructor(length, ConstructorTag::from(1), vec![field]);
+    let element_value = arena.value_variable(DeBruijnIndex::from(1));
+    let cons = match stated {
+        Stated::Successor => vec![successor],
+        Stated::Element => vec![element_value],
+        Stated::Twice => vec![successor, zero],
+    };
+    let declaration = staging.indexed(
+        LevelSignature::monomorphic(),
+        vec![universe],
+        (
+            vec![length],
+            vec![vec![], vec![length, element, tail]],
+            vec![vec![zero], cons],
+        ),
+        universe,
+    );
+    (nat, environment.add_decl(declaration))
+}
+
+#[test]
+fn an_indexed_family_states_its_result_indices()
+{
+    let mut environment = Environment::new();
+    let (_nat, admitted) = vector(&mut environment, Stated::Successor);
+    assert!(admitted.is_ok(), "a vector over its length: {admitted:?}");
+    let mut environment = Environment::new();
+    let (_nat, refused) = vector(&mut environment, Stated::Element);
+    assert!(
+        matches!(refused, Err(KernelError::ValueTypeMismatch(_))),
+        "an element is no length: {refused:?}"
+    );
+    let mut environment = Environment::new();
+    let (_nat, refused) = vector(&mut environment, Stated::Twice);
+    assert_eq!(
+        refused.map(|_admitted| ()),
+        Err(KernelError::IndexedSignature)
+    );
+}
+
+#[test]
+fn an_indexed_constructor_stands_at_its_stated_index()
+{
+    let mut environment = Environment::new();
+    let (nat, admitted) = vector(&mut environment, Stated::Successor);
+    let family = admitted.expect("a vector over its length").position();
+    // `Cons(Z, unit, Nil)` at `Vec(Unit, at)`.
+    let at = |environment: &mut Environment, successor: bool| {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let unit = arena.value_type_unit();
+        let code = arena.value_quote(unit);
+        let length = arena.value_type_data(nat, vec![]);
+        let zero = arena.value_constructor(length, ConstructorTag::from(0), vec![]);
+        let one = arena.value_constructor(length, ConstructorTag::from(1), vec![zero]);
+        let empty = arena.value_type_data(family, vec![code, zero]);
+        let nil = arena.value_constructor(empty, ConstructorTag::from(0), vec![]);
+        let index = if successor { one } else { zero };
+        let datatype = arena.value_type_data(family, vec![code, index]);
+        let element = arena.value_unit();
+        let cons =
+            arena.value_constructor(datatype, ConstructorTag::from(1), vec![zero, element, nil]);
+        let declaration = staging.def(LevelSignature::monomorphic(), datatype, cons);
+        environment.add_decl(declaration).map(|_admitted| ())
+    };
+    assert_eq!(at(&mut environment, true), Ok(()));
+    assert_eq!(
+        at(&mut environment, false),
+        Err(KernelError::ConstructorIndex {
+            tag: ConstructorTag::from(1),
+        })
+    );
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let unit = arena.value_type_unit();
+    let code = arena.value_quote(unit);
+    let length = arena.value_type_data(nat, vec![]);
+    let zero = arena.value_constructor(length, ConstructorTag::from(0), vec![]);
+    let empty = arena.value_type_data(family, vec![code, zero]);
+    let nil = arena.value_constructor(empty, ConstructorTag::from(0), vec![]);
+    let motive = arena.comp_type_returner(unit);
+    let answer = arena.value_unit();
+    let body = arena.computation_return(answer);
+    let nil_branch = arena.computation_lambda(body);
+    let case = arena.computation_data_case(nil, motive, vec![nil_branch, nil_branch]);
+    let body = arena.value_thunk(case);
+    let declared = arena.value_type_thunk(motive);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+    assert_eq!(
+        environment.add_decl(declaration).map(|_admitted| ()),
+        Err(KernelError::IndexedCase)
+    );
+}
+
 #[test]
 fn data_case_checks_coverage_and_motive()
 {
@@ -1077,13 +1229,16 @@ fn native_declarations_and_eliminators_survive_canonical_decode()
     assert_eq!(encode(decoded.arena(), decoded.declarations()), bytes);
     let DeclarationContent::Data {
         ref parameters,
+        ref indices,
         ref constructors,
+        ref results,
         ref kind,
     } = *(decoded.declarations()[0].declaration().content())
     else {
         panic!("nominal signature was not decoded");
     };
     assert!(parameters.is_empty());
+    assert!(indices.is_empty() && results.is_empty());
     assert_eq!(constructors.len(), 1);
     assert_eq!(
         decoded.arena().value_type(constructors[0][0]),

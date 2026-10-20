@@ -2741,12 +2741,12 @@ fn a_reserved_declaration_kind_is_refused_distinctly()
     }
 
     let mut unknown = RawDeclaration::axiom(vec![entry_unit_type()], TableIndex(0));
-    unknown.kind = RawByte(11);
+    unknown.kind = RawByte(0xFF);
     let bytes = raw_artifact(current_version(), &[], &[unknown]);
     assert_eq!(
         Err(DecodeError::UnknownTag {
             site: TagSite::DeclarationKind,
-            tag: WireTag::from(11),
+            tag: WireTag::from(0xFF),
         }),
         decode(ArtifactImage::from(bytes.as_ref())),
         "a kind byte outside the reserved block is an unknown tag"

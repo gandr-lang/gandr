@@ -2313,3 +2313,108 @@ fn a_split_crosses_as_its_projection_binds()
     }
     assert!(crossed.audit().axioms().is_empty());
 }
+
+#[test]
+fn an_indexed_family_stands_at_its_indices_in_both_checkers()
+{
+    let (zeroth, first) = (ConstructorTag::from(0_usize), ConstructorTag::from(1_usize));
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let (natural, count) = (ConstantIndex::from(0_usize), ConstantIndex::from(1_usize));
+    let nat = arena.value_type_data(natural, vec![]);
+    let naturals = Declaration::data(
+        natural,
+        DataSignature::new(vec![], vec![vec![], vec![nat]], kind).into(),
+        OriginToken::from(0_usize),
+    );
+    // `Count : Nat -> Type { None : Count(Z); More : (n : Nat, c : Count(n))
+    // --> Count(S(n)); }`: `n` is the variable 0 under the first field and 1
+    // under both.
+    let zero = arena.value_constructor(nat, zeroth, vec![]);
+    let under_one = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let counted = arena.value_type_data(count, vec![under_one]);
+    let under_both = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let stated = arena.value_constructor(nat, first, vec![under_both]);
+    let counts = Declaration::data(
+        count,
+        DataSignature::new(vec![], vec![vec![], vec![nat, counted]], kind)
+            .indexed(vec![nat], vec![vec![zero], vec![stated]])
+            .into(),
+        OriginToken::from(1_usize),
+    );
+    let one = arena.value_constructor(nat, first, vec![zero]);
+    let two = arena.value_constructor(nat, first, vec![one]);
+    let at_zero = arena.value_type_data(count, vec![zero]);
+    let at_one = arena.value_type_data(count, vec![one]);
+    let at_two = arena.value_type_data(count, vec![two]);
+    let none = arena.value_constructor(at_zero, zeroth, vec![]);
+    let more = arena.value_constructor(at_one, first, vec![zero, none]);
+    let overstated = arena.value_constructor(at_two, first, vec![zero, none]);
+    let answer = arena.comp_type_returner(nat);
+    let returned = arena.computation_return(zero);
+    let inner = arena.computation_lambda(returned);
+    let both = arena.computation_lambda(inner);
+    let case = arena.computation_data_case(more, answer, vec![returned, both]);
+    let cased = arena.value_thunk(case);
+    let thunked = arena.value_type_thunk(answer);
+    let declarations = [
+        naturals,
+        counts,
+        definition(ConstantIndex::from(2_usize), at_one, more),
+        definition(ConstantIndex::from(3_usize), at_two, overstated),
+        definition(ConstantIndex::from(4_usize), thunked, cased),
+    ];
+    let (report, crossed) = run(&mut arena, &declarations);
+    assert_eq!(report.judged()[1].verdict(), Verdict::Data);
+    assert!(
+        matches!(report.judged()[2].verdict(), Verdict::Checked { .. }),
+        "`More(Z, None)` stands at one: {:?}",
+        report.judged()[2].verdict()
+    );
+    assert!(
+        matches!(
+            report.judged()[3].verdict(),
+            Verdict::Refused(CheckRefusal::TypeMismatch(_))
+        ),
+        "`More(Z, None)` stands at no two: {:?}",
+        report.judged()[3].verdict()
+    );
+    assert_eq!(
+        report.judged()[4].verdict(),
+        Verdict::Refused(CheckRefusal::IndexedCase(case)),
+        "a case on an indexed family is refused by name (#391)"
+    );
+    assert!(
+        matches!(crossed.readmitted()[1].outcome(), Outcome::Data { .. }),
+        "{:?}",
+        crossed.readmitted()[1].outcome()
+    );
+    assert!(
+        matches!(crossed.readmitted()[2].outcome(), Outcome::Defined { .. }),
+        "the kernel admits the value at its stated index: {:?}",
+        crossed.readmitted()[2].outcome()
+    );
+    assert!(crossed.audit().axioms().is_empty());
+    let family = gandr_kernel_term::StructuredName::from(vec![
+        gandr_kernel_term::NameSegment::from_text(String::from("Count")).unwrap(),
+    ]);
+    let artifact =
+        gandr_kernel_term::decode(crossed.export(BTreeMap::from([(count, family)])).as_image())
+            .unwrap();
+    let gandr_kernel_term::DeclarationContent::Data {
+        ref indices,
+        ref results,
+        ..
+    } = *artifact.declarations()[1].declaration().content()
+    else {
+        panic!("the family crosses as data");
+    };
+    assert_eq!(
+        (
+            indices.len(),
+            results.iter().map(Vec::len).collect::<Vec<_>>()
+        ),
+        (1_usize, vec![1_usize, 1]),
+        "the family crosses with its index and each constructor's"
+    );
+}

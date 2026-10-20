@@ -548,24 +548,28 @@ impl From<Telescope> for Scope
     }
 }
 
-/// Whether `arguments` are the parameter variables in telescope order, seen
-/// from under `depth` binders past the root's scope.
+/// Whether `arguments` begin with the parameter variables in telescope order,
+/// seen from under `depth` binders past the root's scope. The arguments past
+/// the telescope are an indexed family's indices, which any term may fill;
+/// formation checks their number.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `Uniform` exactly when there is one argument per parameter and
-///   the `i`th is the variable at distance `depth + earlier + parameters - 1 -
-///   i`, `earlier` the field binders the scope holds past the telescope.
+/// - ensures: `Uniform` exactly when there is at least one argument per
+///   parameter and the `i`th, for each parameter `i`, is the variable at
+///   distance `depth + earlier + parameters - 1 - i`, `earlier` the field
+///   binders the scope holds past the telescope.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a family applied to a constant or to the parameters out
 ///   of order is non-uniform; `List A` applied to `A`, directly and under a
 ///   function field's binder, is uniform, and so is its tail past the head's
-///   binder.
+///   binder; `Vec A` applied to `A` and a length field is uniform.
 /// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
 /// - witness: `tests::recursive_data::recursive_blocks_are_admitted`
-#[spec(ensures: |ret| ret == Uniformity::NonUniform || arguments.len() == scope.telescope.0)]
+/// - witness: `tests::native_formers::an_indexed_family_states_its_result_indices`
+#[spec(ensures: |ret| ret == Uniformity::NonUniform || arguments.len() >= scope.telescope.0)]
 fn uniform(
     arena: &TermArena,
     arguments: &[ValueId],
@@ -574,22 +578,26 @@ fn uniform(
 ) -> Uniformity
 {
     let Telescope(parameters) = scope.telescope;
-    let all = arguments.len() == parameters
-        && arguments.iter().enumerate().all(|(position, &argument)| {
-            let expected = usize::try_from(u32::from(depth))
-                .ok()
-                .zip(usize::try_from(u32::from(scope.earlier)).ok())
-                .and_then(|(depth, earlier)| depth.checked_add(earlier))
-                .and_then(|depth| depth.checked_add(parameters))
-                .and_then(|scope| scope.checked_sub(position))
-                .and_then(|scope| scope.checked_sub(1))
-                .and_then(|distance| u32::try_from(distance).ok())
-                .map(DeBruijnIndex::from);
-            matches!(
-                (arena.value(argument), expected),
-                (Some(&Value::Variable(found)), Some(wanted)) if found == wanted
-            )
-        });
+    let all = arguments.len() >= parameters
+        && arguments
+            .iter()
+            .take(parameters)
+            .enumerate()
+            .all(|(position, &argument)| {
+                let expected = usize::try_from(u32::from(depth))
+                    .ok()
+                    .zip(usize::try_from(u32::from(scope.earlier)).ok())
+                    .and_then(|(depth, earlier)| depth.checked_add(earlier))
+                    .and_then(|depth| depth.checked_add(parameters))
+                    .and_then(|scope| scope.checked_sub(position))
+                    .and_then(|scope| scope.checked_sub(1))
+                    .and_then(|distance| u32::try_from(distance).ok())
+                    .map(DeBruijnIndex::from);
+                matches!(
+                    (arena.value(argument), expected),
+                    (Some(&Value::Variable(found)), Some(wanted)) if found == wanted
+                )
+            });
     if all {
         Uniformity::Uniform
     }

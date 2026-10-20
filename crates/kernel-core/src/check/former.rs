@@ -67,17 +67,45 @@ pub(super) struct ParameterPrefix(
     pub usize,
 );
 
+/// How many arguments an application of a family takes: its parameters, then
+/// its indices.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(super) struct FamilyArity(
+    /// The number of arguments.
+    pub usize,
+);
+
 /// A declaration's borrowed constructor table and telescope.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Signature<'signature>
 {
     /// Classifiers scoped under their preceding parameters.
     pub parameters: &'signature [ValueTypeId],
+    /// Index classifiers scoped under the parameters and the indices before
+    /// them; empty for a family indexed by nothing.
+    pub indices: &'signature [ValueTypeId],
     /// Field types scoped under the entire parameter telescope, then the
     /// fields before them in their constructor.
     pub constructors: &'signature [Vec<ValueTypeId>],
+    /// Each constructor's result index, scoped under the parameters and its
+    /// fields; empty when `indices` is.
+    pub results: &'signature [Vec<ValueId>],
     /// The positive universe bounding the fields.
     pub kind: ValueTypeId,
+}
+
+impl Signature<'_>
+{
+    /// The arguments an application of the family takes: its parameters, then
+    /// its indices.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) const fn arity(&self) -> FamilyArity
+    {
+        FamilyArity(self.parameters.len().saturating_add(self.indices.len()))
+    }
 }
 
 /// Resolve a nominal identity without unfolding its carrier.
@@ -107,11 +135,15 @@ pub(super) fn signature(
     {
         Some(&DeclarationContent::Data {
             ref parameters,
+            ref indices,
             ref constructors,
+            ref results,
             ref kind,
         }) => Ok(Signature {
             parameters,
+            indices,
             constructors,
+            results,
             kind: *kind,
         }),
         _ => Err(KernelError::NotADataType { index }),
@@ -159,11 +191,15 @@ pub(super) fn resolve<'session>(
                 match *member.content() {
                     DeclarationContent::Data {
                         ref parameters,
+                        ref indices,
                         ref constructors,
+                        ref results,
                         kind,
                     } => Ok(Signature {
                         parameters,
+                        indices,
                         constructors,
+                        results,
                         kind,
                     }),
                     DeclarationContent::Def { .. }
@@ -268,6 +304,51 @@ pub(super) fn instantiate(
     )
 }
 
+/// The classifier a constructor's result index at `position` checks against:
+/// the index classifier carried past the constructor's `fields` binders, the
+/// indices before it replaced by the results the constructor states for them.
+///
+/// # Specification
+/// - requires: `index` is scoped under the parameters and the `position`
+///   indices before it; `stated` under the parameters and the `fields` binders
+///   of the constructor.
+/// - ensures: the classifier scoped under the parameters and those binders; at
+///   position zero, `index` carried past the fields alone.
+/// - fails: a telescope exceeding the representable binder space.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `ConstructorArity` for an unrepresentable telescope, and
+/// `IndexedSignature` for a position past the stated results.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Cons`'s `S(n)` checks at `Nat` past its three fields.
+/// - witness: `tests::native_formers::an_indexed_family_states_its_result_indices`
+#[spec(ensures: |ret| ret.is_err() || usize::from(position) <= stated.len())]
+pub(super) fn index_at(
+    arena: &mut TermArena,
+    session: &mut SupportContext,
+    index: ValueTypeId,
+    (stated, position): (&[ValueId], BinderDepth),
+    fields: BinderDepth,
+) -> Result<ValueTypeId, KernelError>
+{
+    let (table, memo) = session.rewrite_parts();
+    let mut result = rewrite::shift_value_type(arena, table, memo, index, position, fields);
+    for before in (0 .. usize::from(position)).rev() {
+        let value = stated
+            .get(before)
+            .copied()
+            .ok_or(KernelError::IndexedSignature)?;
+        let depth = BinderDepth::from(
+            u32::try_from(before).map_err(|_cause| KernelError::ConstructorArity)?,
+        );
+        let value = rewrite::shift_value(arena, table, memo, value, BinderDepth::NONE, depth);
+        result = rewrite::substitute_value_type(arena, table, memo, result, value);
+    }
+    Ok(result)
+}
+
 /// A constructor field's type at a nominal application: the parameters
 /// instantiated beneath the `earlier` field binders the field stands under.
 ///
@@ -321,22 +402,27 @@ pub(super) fn field_type(
 /// - requires: the value id belongs to the current arena.
 /// - ensures: every supplied field checks against its declaration-instantiated
 ///   type, the fields before it in the constructor substituted by the values
-///   the constructor gives them.
+///   the constructor gives them; an indexed family's constructor stands at the
+///   index its classifier names, each stated result index instantiated at the
+///   parameters and the fields α-equal to the classifier's index argument.
 /// - fails: non-data classifiers, unknown tags, wrong argument or field
-///   arities.
+///   arities, and a classifier at another index than the constructor states.
 /// - panics: none.
 /// Returned goals are executable field-check obligations, not synthesized
 /// claims.
 ///
 /// # Errors
-/// Returns a native former refusal or an arena fault.
+/// Returns a native former refusal, `ConstructorIndex` for a classifier at
+/// another index, or an arena fault.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — equal carriers do not erase identity, arity or payload
 ///   typing, and a field naming the code before it checks at that code's
-///   decode.
+///   decode; a vector's empty and cons constructors stand at their own lengths
+///   and are refused at another.
 /// - witness: `tests::native_formers::nominal_identity_and_constructor_refusals`
 /// - witness: `tests::recursive_data::dependent_fields_are_admitted`
+/// - witness: `tests::native_formers::an_indexed_constructor_stands_at_its_stated_index`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|result| result.1.iter().all(|goal| matches!(goal, &Goal::CheckValue(..)))))]
 pub(super) fn constructor(
     arena: &mut TermArena,
@@ -414,9 +500,10 @@ pub(super) fn constructor(
             },
         };
     let signature = signature(entries, declaration)?;
-    if signature.parameters.len() != argument_count {
+    if signature.arity() != FamilyArity(argument_count) {
         return Err(KernelError::DataArgumentArity);
     }
+    let parameters = ParameterPrefix(signature.parameters.len());
     let expected = signature
         .constructors
         .get(usize::from(tag))
@@ -429,13 +516,7 @@ pub(super) fn constructor(
         let earlier = BinderDepth::from(
             u32::try_from(index).map_err(|_cause| KernelError::ConstructorArity)?,
         );
-        let mut ty = field_type(
-            arena,
-            session,
-            (ty, datatype),
-            ParameterPrefix(argument_count),
-            earlier,
-        )?;
+        let mut ty = field_type(arena, session, (ty, datatype), parameters, earlier)?;
         // The fields before it stand at the values the constructor gives
         // them, the innermost first.
         for before in (0 .. index).rev() {
@@ -460,7 +541,92 @@ pub(super) fn constructor(
         };
         goals.push(Goal::CheckValue(field, ty));
     }
+    if let Some(stated) = signature.results.get(usize::from(tag)) {
+        for (position, &stated) in stated.iter().enumerate() {
+            let stated = result_index(arena, session, (stated, datatype, value), parameters)?;
+            let argument = match arena.value_type(datatype) {
+                Some(&ValueType::Data { ref arguments, .. }) => parameters
+                    .0
+                    .checked_add(position)
+                    .and_then(|at| arguments.get(at))
+                    .copied()
+                    .ok_or(KernelError::DataArgumentArity)?,
+                _ => return Err(KernelError::ArenaFault),
+            };
+            if crate::conv::equal_values(arena, stated, argument)
+                != crate::conv::Convertibility::Convertible
+            {
+                return Err(KernelError::ConstructorIndex { tag });
+            }
+        }
+    }
     Ok((datatype, goals))
+}
+
+/// A constructor's stated result index at its application: the parameters
+/// instantiated beneath its field binders, then each field at the value the
+/// constructor gives it.
+///
+/// # Specification
+/// - requires: `stated` is scoped under the family's `parameters`, then the
+///   constructor's fields; `value` is a constructor of `datatype`.
+/// - ensures: the same value under the ambient context, each parameter replaced
+///   by its argument and each field by the constructor's, the innermost first.
+/// - fails: a telescope exceeding the representable binder space, or a
+///   constructor shorter than its binders.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `ConstructorArity` for an unrepresentable field telescope and
+/// `DataArgumentArity` for an unrepresentable parameter one.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Cons`'s `S(n)` reads its length field.
+/// - witness: `tests::native_formers::an_indexed_constructor_stands_at_its_stated_index`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |id| arena.value(*id).is_some() || arena.value(stated).is_none()))]
+fn result_index(
+    arena: &mut TermArena,
+    session: &mut SupportContext,
+    (stated, datatype, value): (ValueId, ValueTypeId, ValueId),
+    parameters: ParameterPrefix,
+) -> Result<ValueId, KernelError>
+{
+    let count = match arena.value(value) {
+        Some(&Value::Constructor { ref fields, .. }) => fields.len(),
+        _ => return Err(KernelError::ArenaFault),
+    };
+    let fields =
+        BinderDepth::from(u32::try_from(count).map_err(|_cause| KernelError::ConstructorArity)?);
+    let (table, memo) = session.rewrite_parts();
+    let mut result = stated;
+    for index in (0 .. parameters.0).rev() {
+        let argument = match arena.value_type(datatype) {
+            Some(&ValueType::Data { ref arguments, .. }) => arguments
+                .get(index)
+                .copied()
+                .ok_or(KernelError::DataArgumentArity)?,
+            _ => return Err(KernelError::ArenaFault),
+        };
+        let depth = BinderDepth::from(
+            u32::try_from(index).map_err(|_cause| KernelError::DataArgumentArity)?,
+        );
+        let argument = rewrite::shift_value(arena, table, memo, argument, BinderDepth::NONE, depth);
+        result = rewrite::substitute_value_at(arena, table, memo, (result, argument), fields);
+    }
+    for before in (0 .. count).rev() {
+        let field = match arena.value(value) {
+            Some(&Value::Constructor { ref fields, .. }) => {
+                fields.get(before).copied().ok_or(KernelError::ArenaFault)?
+            },
+            _ => return Err(KernelError::ArenaFault),
+        };
+        let depth = BinderDepth::from(
+            u32::try_from(before).map_err(|_cause| KernelError::ConstructorArity)?,
+        );
+        let field = rewrite::shift_value(arena, table, memo, field, BinderDepth::NONE, depth);
+        result = rewrite::substitute_value(arena, table, memo, result, field);
+    }
+    Ok(result)
 }
 
 /// Build one branch classifier by substituting its constructor into the motive.
@@ -657,8 +823,13 @@ pub(super) fn case(
             },
         };
     let signature = signature(entries, declaration)?;
-    if signature.parameters.len() != argument_count {
+    if signature.arity() != FamilyArity(argument_count) {
         return Err(KernelError::DataArgumentArity);
+    }
+    // A branch of an indexed family's case would check under the index its
+    // constructor stands at, which the motive does not yet abstract.
+    if !signature.indices.is_empty() {
+        return Err(KernelError::IndexedCase);
     }
     let owed = super::loops::loops(arena, presentations, datatype);
     let constructors = signature.constructors.len();

@@ -634,6 +634,38 @@ impl<'env> Staging<'env>
             declaration: self.builder.data(levels, parameters, constructors, kind),
         }
     }
+
+    /// Finalize a nominal data signature indexed by `indices`, each
+    /// constructor's fields beside the index it states, while retaining its
+    /// staging claim.
+    ///
+    /// # Specification
+    /// - requires: this session owns the last outstanding staging mark.
+    /// - ensures: the mark remains outstanding and the signature is preserved.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a vector admits at its stated lengths and refuses a
+    ///   constructor stating an index of the wrong kind.
+    /// - witness: `tests::native_formers::an_indexed_family_states_its_result_indices`
+    #[spec(requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()), captures: start = self.builder.content_start(), ensures: |ret| ret.content_start == start && matches!(ret.declaration.content(), DeclarationContent::Data { kind: actual, .. } if *actual == kind))]
+    #[inline]
+    #[must_use]
+    pub fn indexed(
+        self,
+        levels: LevelSignature,
+        parameters: Vec<ValueTypeId>,
+        table: (Vec<ValueTypeId>, Vec<Vec<ValueTypeId>>, Vec<Vec<ValueId>>),
+        kind: ValueTypeId,
+    ) -> StagedDeclaration
+    {
+        let content_start = self.builder.content_start();
+        let _kept = core::mem::ManuallyDrop::new(self.claim);
+        StagedDeclaration {
+            content_start,
+            declaration: self.builder.indexed(levels, parameters, table, kind),
+        }
+    }
     /// Begin staging into `arena`, registering the content-start mark.
     ///
     /// # Specification

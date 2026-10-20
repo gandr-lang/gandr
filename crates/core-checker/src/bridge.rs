@@ -513,6 +513,7 @@ fn fault(refusal: CheckRefusal) -> Refusal
         | CheckRefusal::DataArgumentArity(_)
         | CheckRefusal::UnknownConstructor { .. }
         | CheckRefusal::ConstructorArity(_)
+        | CheckRefusal::IndexedCase(_)
         | CheckRefusal::NonExhaustiveDataCase(_)
         | CheckRefusal::UndecidedCoverage(_)
         | CheckRefusal::AbsentRecordField(_)
@@ -2097,8 +2098,13 @@ enum Erased
     {
         /// The parameter telescope.
         parameters: Vec<gandr_kernel_term::ValueTypeId>,
+        /// The index telescope, under the parameters.
+        indices: Vec<gandr_kernel_term::ValueTypeId>,
         /// Constructor fields under the parameter telescope.
         constructors: Vec<Vec<gandr_kernel_term::ValueTypeId>>,
+        /// Each constructor's stated indices, under the parameters and its
+        /// fields.
+        results: Vec<Vec<gandr_kernel_term::ValueId>>,
         /// The positive universe.
         kind: gandr_kernel_term::ValueTypeId,
     },
@@ -2310,13 +2316,15 @@ where
     let declaration = match erased {
         Erased::Data {
             parameters,
+            indices,
             constructors,
+            results,
             kind,
         } => {
-            let staged = staging.data(
+            let staged = staging.indexed(
                 LevelSignature::monomorphic(),
                 parameters,
-                constructors,
+                (indices, constructors, results),
                 kind,
             );
             // The rules name constructor tags and pattern variables only, so
@@ -3764,7 +3772,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
     /// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
     #[spec(ensures: |ret| { let (matched_left_value, matched_right_value) = (offer, &ret);
-if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref parameters,ref constructors,ref kind }) = *matched_right_value { parameters.len() == signature.parameters().len() && constructors.iter().map(Vec::len).eq(signature.constructors().iter().map(Vec::len)) && target.value_type(*kind).is_some() && parameters.iter().chain(constructors.iter().flatten()).all(|&field| target.value_type(field).is_some()) }
+if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref parameters,ref constructors,ref kind, .. }) = *matched_right_value { parameters.len() == signature.parameters().len() && constructors.iter().map(Vec::len).eq(signature.constructors().iter().map(Vec::len)) && target.value_type(*kind).is_some() && parameters.iter().chain(constructors.iter().flatten()).all(|&field| target.value_type(field).is_some()) }
  else if matches!(matched_left_value, Offer::Definition { .. }) && let Ok(Erased::Definition { ref declared, ref body, ref related, ref laws }) = *matched_right_value { target.value_type(*declared).is_some() && target.value(*body).is_some()
     && matches!(matched_left_value, Offer::Definition { relations, laws: named, .. } if relations.len() == related.len() && named.len() == laws.len())
     && related.iter().all(|pair| target.value(pair.left).is_some() && target.value(pair.right).is_some()) }
@@ -3795,10 +3803,27 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                             .collect()
                     })
                     .collect::<Result<_, _>>()?;
+                let indices = signature
+                    .indices()
+                    .iter()
+                    .map(|&index| self.value_type(target, index))
+                    .collect::<Result<_, _>>()?;
+                let results = signature
+                    .results()
+                    .iter()
+                    .map(|stated| {
+                        stated
+                            .iter()
+                            .map(|&value| self.value(target, value))
+                            .collect()
+                    })
+                    .collect::<Result<_, _>>()?;
                 let kind = self.value_type(target, signature.kind())?;
                 Ok(Erased::Data {
                     parameters,
+                    indices,
                     constructors,
+                    results,
                     kind,
                 })
             },

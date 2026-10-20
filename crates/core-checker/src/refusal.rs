@@ -539,6 +539,9 @@ pub enum CheckRefusal
     },
     /// A constructor supplies the wrong number of fields.
     ConstructorArity(ValueId),
+    /// A case scrutinises a value of an indexed family, whose branches would
+    /// each learn the index their constructor stands at.
+    IndexedCase(ComputationId),
     /// A case omits or adds constructor branches.
     NonExhaustiveDataCase(ComputationId),
     /// A leaf of a match's tree is one of its pattern holes: which arm runs
@@ -1096,12 +1099,12 @@ impl CheckRefusal
     ///   subtyping, an operand that is no session code, a ride whose motive is
     ///   not covariant, a run its session does not admit and a function flow's
     ///   boundary against its variance are malformed source; a former outside
-    ///   the fragment, a stratum the checker does not certify, a ride the
-    ///   checker does not move and a translator `forward` cannot image are
-    ///   unrepresentable; an unbound index, an exhausted allowance, a dangling
-    ///   id, an admission out of order, a repeated sealing site, a machine
-    ///   invariant and an undecided unfolding are engine faults; nothing is a
-    ///   user absence.
+    ///   the fragment, a case on an indexed family, a stratum the checker does
+    ///   not certify, a ride the checker does not move and a translator
+    ///   `forward` cannot image are unrepresentable; an unbound index, an
+    ///   exhausted allowance, a dangling id, an admission out of order, a
+    ///   repeated sealing site, a machine invariant and an undecided unfolding
+    ///   are engine faults; nothing is a user absence.
     /// - provides: the fact a report groups by and an exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -1112,6 +1115,7 @@ impl CheckRefusal
     ///   than turning the rejection into an obligation.
     /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
     #[spec(ensures: |ret| match *self {
+        | Self::IndexedCase(_)
         | Self::OutOfFragment { .. } | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } | Self::UaUncertified { .. } | Self::RideUnsupported { .. } | Self::ForwardUnsupported { .. } => matches!(ret, FailureClass::Unrepresentable),
         | Self::UnboundIndex { .. }
         | Self::BudgetExceeded { .. }
@@ -1211,7 +1215,8 @@ impl CheckRefusal
             | Self::NonCovariantMotive { .. }
             | Self::RunNotAdmitted { .. }
             | Self::Boundary { .. } => FailureClass::MalformedSource,
-            Self::OutOfFragment { .. }
+            Self::IndexedCase(_)
+            | Self::OutOfFragment { .. }
             | Self::FunextUnsupported { .. }
             | Self::EquivUnsupported { .. }
             | Self::UncertifiedStratum { .. }
@@ -1372,6 +1377,7 @@ impl CheckRefusal
             | Self::DataArgumentArity(_)
             | Self::UnknownConstructor { .. }
             | Self::ConstructorArity(_)
+            | Self::IndexedCase(_)
             | Self::NonExhaustiveDataCase(_)
             | Self::UndecidedCoverage(_)
             | Self::AbsentRecordField(_)

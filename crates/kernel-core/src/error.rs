@@ -531,6 +531,19 @@ pub enum KernelError
     },
     /// A constructor supplies the wrong number of fields.
     ConstructorArity,
+    /// A constructor of an indexed family is classified at another index than
+    /// the one it states.
+    ConstructorIndex
+    {
+        /// The constructor's tag.
+        tag: gandr_kernel_term::ConstructorTag,
+    },
+    /// A case scrutinises an indexed family, whose branches would check under
+    /// the index each constructor stands at.
+    IndexedCase,
+    /// An indexed family's constructor states a result index of another
+    /// length than its family's index telescope, or presents rules.
+    IndexedSignature,
     /// A case does not provide exactly one branch per constructor.
     NonExhaustiveDataCase,
     /// A data declaration's own family stands under a function's domain where
@@ -839,6 +852,14 @@ impl core::fmt::Display for KernelError
                 f.write_str("a constructor tag was absent from its declaration")
             },
             Self::ConstructorArity => f.write_str("a constructor had the wrong field arity"),
+            Self::ConstructorIndex { .. } => {
+                f.write_str("a constructor was classified at another index than it states")
+            },
+            Self::IndexedCase => f.write_str("a data case scrutinised an indexed family"),
+            Self::IndexedSignature => f.write_str(
+                "an indexed family's constructor stated another index arity, or the family \
+                 presented rules",
+            ),
             Self::NonExhaustiveDataCase => {
                 f.write_str("a data case did not cover exactly its constructor table")
             },

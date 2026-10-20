@@ -244,9 +244,10 @@ pub enum FragmentBoundary
     /// The form is a former of this sort, offered a number of operands it does
     /// not take.
     Arity(OperandCount),
-    /// The form is a generator whose result applies its family to something
-    /// other than the family's own parameters, in order: an indexed family,
-    /// which the fragment does not read.
+    /// The form reads a family at an index where the fragment does not: a
+    /// generator whose result applies its family to anything but its own
+    /// parameters, in order, then one term per index its kind states; a cell
+    /// on an indexed family; univalence at an indexed sort.
     Indexed,
     /// The form needs a type the source does not state: a match over nominal
     /// data with no answer type written or known from its function, a

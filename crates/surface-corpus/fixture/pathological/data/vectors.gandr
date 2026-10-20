@@ -1,0 +1,32 @@
+// What the vectors refuse: a vector at a length its constructor does not
+// state, a family stating an element where its length goes, and a case on a
+// vector, which waits for the eliminator of an indexed family (#391).
+
+// The naturals the lengths count in.
+import "../../model/data/data-base.gandr" ;
+
+// The vectors.
+import "../../model/data/vectors.gandr" ;
+
+/// One integer said to be two long: `VCons` stands one past its tail, which
+/// is empty.
+@[ refuses("TypeMismatch") ]
+def overstated() -> -F Vec(Integer, Succ(Succ(Zero))) {
+  return VCons(Zero, 3, (VNil : Vec(Integer, Zero)))
+}
+
+/// A family whose constructor states its element where its length goes.
+@[ refuses("TypeMismatch") ]
+data Misindexed(a : Type) : Nat -> Type {
+  Wrong : (x : a) --> Misindexed(a, x);
+}
+
+/// The length a vector holds, read by a case: a case on an indexed family
+/// waits for its eliminator (#391).
+@[ refuses("IndexedCase") ]
+def size(v : Vec(Integer, Succ(Zero))) -> -F Nat {
+  case v {
+    VNil => return Zero,
+    VCons(n, head, tail) => return Succ(n)
+  }
+}

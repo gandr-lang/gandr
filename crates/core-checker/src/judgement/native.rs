@@ -50,7 +50,9 @@ impl Machine<'_, '_>
     /// - requires: `term` is a constructor node.
     /// - ensures: the annotation forms before the declaration-ordered field
     ///   checks; their success synthesizes that same nominal annotation.
-    /// - fails: wrong nominal shape, unknown tag, or wrong field arity.
+    /// - fails: wrong nominal shape, unknown tag, or wrong field arity; an
+    ///   annotation at other indices than the constructor states
+    ///   ([`Self::stands_at`]).
     /// - panics: none.
     ///
     /// # Errors
@@ -58,8 +60,9 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — distinct heads, arities, tags and field types
-    ///   separate the nominal introduction rule.
+    ///   separate the nominal introduction rule; so do a vector's indices.
     /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
+    /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Value(_))))))]
     pub(super) fn native_constructor(
         &mut self,
@@ -127,6 +130,7 @@ impl Machine<'_, '_>
         if declared.len() != count {
             return Err(CheckRefusal::ConstructorArity(term));
         }
+        self.stands_at(term, datatype, tag)?;
         self.wait(Frame::NativeYield(Produced::ValueType(datatype.into())));
         for (index, &field_type) in declared.iter().enumerate().rev() {
             let expected = former::field_at(
@@ -258,6 +262,7 @@ impl Machine<'_, '_>
         if declared.len() != count {
             return Err(CheckRefusal::ConstructorArity(term));
         }
+        self.stands_at(term, datatype, tag)?;
         self.wait(Frame::NativeYield(Produced::Checked));
         let block = crate::recursion::families(self.context, datatype)?;
         let mut holding = 0_usize;
@@ -304,11 +309,13 @@ impl Machine<'_, '_>
         Ok(Step::Descend(Goal::Form(TypeNode::Value(datatype))))
     }
 
-    /// Queue each genuine parameter argument at its instantiated classifier.
+    /// Queue each genuine parameter and index argument at its instantiated
+    /// classifier.
     ///
     /// # Specification
     /// - requires: `datatype` is a Data application.
-    /// - ensures: every supplied argument checks against its telescope entry.
+    /// - ensures: every supplied argument checks against its telescope entry,
+    ///   the indices' after the parameters'.
     /// - fails: absent declaration, wrong arity or malformed internal nodes.
     /// - panics: none.
     ///
@@ -317,8 +324,10 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — dependent arguments separate first-order indices from
-    ///   type atoms and expose capture in simultaneous substitution.
+    ///   type atoms and expose capture in simultaneous substitution; a vector's
+    ///   length checks at `Nat`.
     /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
+    /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
     #[spec(ensures: |ret| ret.is_err() || ret == Ok(Step::Ascend(Produced::Checked)))]
     pub(super) fn native_data(
         &mut self,
@@ -326,7 +335,18 @@ impl Machine<'_, '_>
     ) -> Result<Step, CheckRefusal>
     {
         let signature = former::signature(self.context, datatype)?;
-        for (index, &parameter) in signature.parameters().iter().enumerate().rev() {
+        // The indices follow the parameters, each scoped under every argument
+        // before it.
+        let parameters = signature.parameters().len();
+        for index in (0 .. signature.arity().0).rev() {
+            let parameter = index
+                .checked_sub(parameters)
+                .map_or_else(
+                    || signature.parameters().get(index),
+                    |position| signature.indices().get(position),
+                )
+                .copied()
+                .ok_or(CheckRefusal::MachineInvariant)?;
             let expected = former::instantiate(
                 self.context,
                 datatype,
@@ -346,6 +366,50 @@ impl Machine<'_, '_>
             }));
         }
         Ok(Step::Ascend(Produced::Checked))
+    }
+
+    /// Refuse a constructor of an indexed family whose annotation names other
+    /// indices than the ones the constructor states.
+    ///
+    /// # Specification
+    /// - requires: `term` is a constructor value of `datatype` tagged `tag`, at
+    ///   its declared field count.
+    /// - ensures: success exactly when the family has no index or the
+    ///   annotation converts with the application [`former::stated_at`] reads.
+    /// - fails: [`CheckRefusal::TypeMismatch`] with the stated application as
+    ///   found and the annotation as expected; otherwise as
+    ///   [`former::stated_at`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Nil` annotated at `Vec(a, S(Z))` is refused and at
+    ///   `Vec(a, Z)` admitted.
+    /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
+    #[spec(captures: depth = self.context.depth(Zone::Intuitionistic), ensures: self.context.depth(Zone::Intuitionistic) == depth)]
+    fn stands_at(
+        &mut self,
+        term: ValueId,
+        datatype: ValueTypeId,
+        tag: ConstructorTag,
+    ) -> Result<(), CheckRefusal>
+    {
+        let stated = former::stated_at(self.context, (datatype, term), tag)?;
+        if stated == datatype
+            || crate::conversion::equivalent(self.context, stated, datatype)?
+                == crate::conversion::Agreement::Convertible
+        {
+            return Ok(());
+        }
+        Err(CheckRefusal::TypeMismatch(
+            crate::refusal::Mismatch::Value {
+                at: term,
+                synthesised: stated,
+                expected: datatype,
+            },
+        ))
     }
 
     /// Synthesize all record field types without making the host stack
@@ -495,7 +559,8 @@ impl Machine<'_, '_>
     ///   marked is taken whichever case this is; over a presented type with
     ///   rules the case is read as that fixpoint when it is the marked case,
     ///   and as itself otherwise.
-    /// - fails: non-data scrutinee, wrong coverage or absent declaration.
+    /// - fails: non-data scrutinee, wrong coverage or absent declaration;
+    ///   [`CheckRefusal::IndexedCase`] for a scrutinee of an indexed family.
     /// - panics: none.
     ///
     /// # Errors
@@ -504,10 +569,12 @@ impl Machine<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — empty, missing and surplus branches distinguish exact
     ///   coverage; a dependent motive distinguishes its binder's scope; over
-    ///   the circle a fixpoint's root case and a bare case are read apart.
+    ///   the circle a fixpoint's root case and a bare case are read apart; a
+    ///   vector scrutinee is refused by name.
     /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
     /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
     /// - witness: `tests::native_formers::a_case_over_the_circle_takes_its_constructors_and_loops_only`
+    /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
     #[spec(ensures: |ret| matches!(self.root, Maybe::Absent(root::Absent::Unmarked)) && (ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Computation(_)))))))]
     pub(super) fn native_case(
         &mut self,
@@ -597,6 +664,9 @@ impl Machine<'_, '_>
             | &Computation::Memory(_)
             | &Computation::World(_) => return Err(CheckRefusal::MachineInvariant),
         };
+        if !signature.indices().is_empty() {
+            return Err(CheckRefusal::IndexedCase(term));
+        }
         let constructors = signature.constructors().len();
         // A case carries one branch per constructor, and then either no loop
         // arm or one per loop of its sort.

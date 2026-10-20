@@ -14,6 +14,13 @@
 //! one scrutinee binder. Branches are ambient functions over their constructor
 //! fields, not syntax under implicit field binders.
 //!
+//! An indexed family adds an index telescope after its parameters and states,
+//! for each constructor, the indices it stands at, scoped under the parameters
+//! and the constructor's fields. An application carries the parameters then
+//! the indices; fields read the parameters alone; a constructor's annotation
+//! converts with the application [`stated_at`] reads off its fields. A case
+//! on an indexed family is refused as [`CheckRefusal::IndexedCase`].
+//!
 //! **Choice.** Nominal identity stays separate from structural records; neither
 //! is an abstract atom or a product encoding. Type parameters are quoted codes
 //! and value indices are ordinary terms in one typed telescope. All arguments
@@ -160,7 +167,8 @@ pub fn kind_level(
     }
 }
 
-/// Check a parameter telescope and every constructor field before admission.
+/// Check a parameter telescope, an index telescope and every constructor
+/// field and stated index before admission.
 ///
 /// Fields see the complete parameter telescope, the fields before them in
 /// their constructor and the declaration's own family, at its admission
@@ -175,13 +183,17 @@ pub fn kind_level(
 /// - requires: the nominal entry has not been installed in the context, and
 ///   `position` is the admission position the declaration takes.
 /// - ensures: every occurrence of the family is accessible under the stage
-///   order and uniform; every parameter and field forms in its declared scope,
-///   a field under the parameters and its constructor's fields before it;
-///   fields fit the declared value universe; the original binder depth is
-///   restored and the block closed, unless the family is one of an open mutual
-///   block; on success the walk's accessibility is held at `position`.
-/// - fails: occurrence, kind, formation and field-universe refusals are
-///   retained.
+///   order and uniform; every parameter, index and field forms in its declared
+///   scope, an index under the parameters and the indices before it, a field
+///   under the parameters and its constructor's fields before it; each stated
+///   index checks at its index classifier past its constructor's fields
+///   ([`index_at`]); fields fit the declared value universe; the original
+///   binder depth is restored and the block closed, unless the family is one of
+///   an open mutual block; on success the walk's accessibility is held at
+///   `position`.
+/// - fails: occurrence, kind, formation, field-universe and stated-index
+///   refusals are retained; [`CheckRefusal::MachineInvariant`] for an indexed
+///   family stating another number of indices, or presenting rules.
 /// - panics: none.
 ///
 /// # Errors
@@ -190,11 +202,13 @@ pub fn kind_level(
 /// # Adequacy
 /// - hypothesis: L3 — dependent parameters, an invalid field, an excessive
 ///   field universe, admitted self references and refused occurrences
-///   distinguish the admission premises.
+///   distinguish the admission premises; a vector stating an element as its
+///   length is refused.
 /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
 /// - witness: `tests::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
 /// - witness: `tests::recursive_data::readmission_agrees_with_the_checker_on_every_occurrence_class`
 /// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole_in_both_checkers`
+/// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
 #[spec(captures: depth = context.depth(Zone::Intuitionistic), ensures: context.depth(Zone::Intuitionistic) == depth
     && (matches!(context.data_in_scope(position), Maybe::Absent(_))
         || context.data_signatures().contains_key(&position)
@@ -226,7 +240,30 @@ pub fn form_signature(
             let _formed = form_value_type(context, parameter)?;
             context.binders().open(Zone::Intuitionistic, parameter);
         }
-        for fields in signature.constructors() {
+        let stated = signature.results().len() == signature.constructors().len()
+            && signature
+                .results()
+                .iter()
+                .all(|results| results.len() == signature.indices().len());
+        let presented = !signature.presentation().rules().is_empty()
+            || signature.presentation().cells().is_some();
+        if !signature.indices().is_empty() && (!stated || presented)
+            || signature.indices().is_empty() && !signature.results().is_empty()
+        {
+            return Err(CheckRefusal::MachineInvariant);
+        }
+        let below = context.depth(Zone::Intuitionistic);
+        for &index in signature.indices() {
+            let _formed = form_value_type(context, index)?;
+            context.binders().open(Zone::Intuitionistic, index);
+        }
+        while context.depth(Zone::Intuitionistic) != below {
+            let _closed = context
+                .binders()
+                .close(Zone::Intuitionistic)
+                .map_err(|_cause| CheckRefusal::MachineInvariant)?;
+        }
+        for (tag, fields) in signature.constructors().iter().enumerate() {
             let below = context.depth(Zone::Intuitionistic);
             for &field in fields {
                 let _formed = form_value_type(context, field)?;
@@ -237,6 +274,22 @@ pub fn form_signature(
                     });
                 }
                 context.binders().open(Zone::Intuitionistic, field);
+            }
+            let stated = signature.results().get(tag).map_or(&[][..], Vec::as_slice);
+            for (position, (&value, &index)) in stated.iter().zip(signature.indices()).enumerate() {
+                let binders = |count: usize| {
+                    u32::try_from(count)
+                        .map(Binders::from)
+                        .map_err(|_cause| CheckRefusal::MachineInvariant)
+                };
+                let expected = index_at(
+                    context,
+                    index,
+                    (stated, binders(position)?),
+                    binders(fields.len())?,
+                )?;
+                let formed = form_value_type(context, expected)?;
+                let _checked = crate::judgement::check_value(context, value, formed)?;
             }
             while context.depth(Zone::Intuitionistic) != below {
                 let _closed = context
@@ -538,7 +591,8 @@ pub fn form_abstract(
     Ok(level)
 }
 
-/// Resolve the signature and check a nominal application's parameter count.
+/// Resolve the signature and check a nominal application's argument count:
+/// one per parameter, then one per index.
 ///
 /// # Specification
 /// - requires: `datatype` is a native Data node.
@@ -553,7 +607,7 @@ pub fn form_abstract(
 /// # Adequacy
 /// - hypothesis: L3 — equal carriers at distinct positions stay nominal.
 /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
-#[spec(ensures: |ret| ret.as_ref().is_ok_and(|signature| matches!(context.arena().value_type(datatype), Some(ValueType::Data { declaration, arguments }) if matches!(context.data_in_scope(*declaration), Maybe::Present(ref held) if held == signature) && signature.parameters().len() == arguments.len())) == ret.is_ok())]
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|signature| matches!(context.arena().value_type(datatype), Some(ValueType::Data { declaration, arguments }) if matches!(context.data_in_scope(*declaration), Maybe::Present(ref held) if held == signature) && signature.arity().0 == arguments.len())) == ret.is_ok())]
 pub fn signature(
     context: &mut CheckingContext<'_>,
     datatype: ValueTypeId,
@@ -569,7 +623,7 @@ pub fn signature(
     let signature = context
         .consult_data(declaration)
         .ok_or(CheckRefusal::NotADataType(declaration))?;
-    if signature.parameters().len() != count {
+    if signature.arity().0 != count {
         return Err(CheckRefusal::DataArgumentArity(datatype));
     }
     Ok(signature)
@@ -645,9 +699,18 @@ pub fn field_type(
     earlier: Binders,
 ) -> Result<ValueTypeId, CheckRefusal>
 {
-    let count = match context.arena().value_type(datatype) {
-        Some(&ValueType::Data { ref arguments, .. }) => arguments.len(),
+    // The fields are scoped under the parameters alone: an indexed family's
+    // indices stand after them in the application and bind nothing.
+    let (declaration, count) = match context.arena().value_type(datatype) {
+        Some(&ValueType::Data {
+            ref declaration,
+            ref arguments,
+        }) => (*declaration, arguments.len()),
         _ => return Err(CheckRefusal::MachineInvariant),
+    };
+    let count = match context.data_in_scope(declaration) {
+        Maybe::Present(signature) => count.min(signature.parameters().len()),
+        Maybe::Absent(_) => count,
     };
     let mut subject = field;
     for index in (0 .. count).rev() {
@@ -773,6 +836,124 @@ pub fn field_outside(
             Maybe::Present(lowered) => Maybe::Present(lowered.settle(context.arena_mut())),
             Maybe::Absent(_) => Maybe::Absent(outside::Absent::Dependent),
         },
+    )
+}
+
+/// The classifier a constructor's stated index at `position` checks against,
+/// read under the parameters and the constructor's `fields`: the index
+/// classifier carried past the fields, the indices before it replaced by the
+/// results the constructor states for them.
+///
+/// # Specification
+/// - requires: `index` is scoped under the parameters and the `position`
+///   indices before it; `stated` under the parameters and `fields` binders.
+/// - ensures: the classifier scoped under the parameters and those binders; at
+///   position zero, `index` carried past the fields alone.
+/// - fails: [`CheckRefusal::MachineInvariant`] for a position past the stated
+///   results or an unrepresentable binder count.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Cons`'s `S(n)` checks at `Nat` past its three fields,
+///   and its element is refused there.
+/// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
+#[spec(ensures: |ret| ret.is_err() || usize::try_from(u32::from(position)).is_ok_and(|position| position <= stated.len()))]
+pub fn index_at(
+    context: &mut CheckingContext<'_>,
+    index: ValueTypeId,
+    (stated, position): (&[ValueId], Binders),
+    fields: Binders,
+) -> Result<ValueTypeId, CheckRefusal>
+{
+    let arena = context.arena_mut();
+    let mut subject =
+        gandr_core_term::shift_value_type_under(arena, index, position, fields).settle(arena);
+    for before in (0 .. u32::from(position)).rev() {
+        let value = usize::try_from(before)
+            .ok()
+            .and_then(|before| stated.get(before))
+            .copied()
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        let value = gandr_core_term::shift_value(arena, value, Binders::from(before)).settle(arena);
+        subject = gandr_core_term::instantiate_value_type(arena, subject, value);
+    }
+    Ok(subject)
+}
+
+/// The application a constructor value stands at: its family at the
+/// annotation's parameter arguments, then at the indices its constructor
+/// states, each read at the constructor's field values.
+///
+/// # Specification
+/// - requires: `constructor` is a constructor value of `datatype` tagged `tag`,
+///   holding one field per declared field.
+/// - ensures: `datatype` itself for a family with no index; otherwise the
+///   family applied to `datatype`'s parameter arguments and the indices the
+///   constructor states.
+/// - provides: the application a constructor's annotation must convert with.
+/// - fails: as [`field_at`]; [`CheckRefusal::MachineInvariant`] for a tag past
+///   the declaration's table.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Cons(Z, x, Nil)` stands at `Vec(a, S(Z))`, and `Nil` at
+///   `Vec(a, Z)` whatever its annotation says.
+/// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|&id| context.arena().value_type(id).is_some()) == ret.is_ok())]
+pub fn stated_at(
+    context: &mut CheckingContext<'_>,
+    (datatype, constructor): (ValueTypeId, ValueId),
+    tag: ConstructorTag,
+) -> Result<ValueTypeId, CheckRefusal>
+{
+    let signature = signature(context, datatype)?;
+    if signature.indices().is_empty() {
+        return Ok(datatype);
+    }
+    let Some(&ValueType::Data { declaration, .. }) = context.arena().value_type(datatype)
+    else {
+        return Err(CheckRefusal::MachineInvariant);
+    };
+    let (Some(fields), Some(results)) = (
+        signature.constructors().get(usize::from(tag)),
+        signature.results().get(usize::from(tag)),
+    )
+    else {
+        return Err(CheckRefusal::MachineInvariant);
+    };
+    // Past the constructor's fields, the parameters read as the variables
+    // its stated indices name them by.
+    let parameters = signature.parameters().len();
+    let past = fields
+        .len()
+        .checked_add(parameters)
+        .ok_or(CheckRefusal::MachineInvariant)?;
+    let mut arguments = Vec::with_capacity(signature.arity().0);
+    for position in 0 .. parameters {
+        let distance = past
+            .checked_sub(position)
+            .and_then(|distance| distance.checked_sub(1))
+            .and_then(|distance| u32::try_from(distance).ok())
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        arguments.push(
+            context
+                .arena_mut()
+                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(distance)),
+        );
+    }
+    arguments.extend(results.iter().copied());
+    let stated = context.arena_mut().value_type_data(declaration, arguments);
+    field_at(
+        context,
+        (datatype, constructor),
+        stated,
+        FieldPosition::from(fields.len()),
     )
 }
 

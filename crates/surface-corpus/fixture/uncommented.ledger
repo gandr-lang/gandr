@@ -633,12 +633,6 @@ pending/surface/codata-declarations.gandr:Fun:8f9fd9b9d0bbac80
 pending/surface/codata-declarations.gandr:Iter:544949b5c10d933b
 pending/surface/codata-declarations.gandr:Session:94bd2f84bcc4126a
 pending/surface/codata-declarations.gandr:Stream:9102eba9d42e3c70
-pending/surface/data-declarations.gandr:<file>
-pending/surface/data-declarations.gandr:Color:55408d867f9d41c2
-pending/surface/data-declarations.gandr:Empty:98d73e84613aabef
-pending/surface/data-declarations.gandr:Maybe:2e4d55fe7067da64
-pending/surface/data-declarations.gandr:Tree:098dce5f6a78adbe
-pending/surface/data-declarations.gandr:Vec:a00831343624ffc0
 pending/surface/data-field-decorations.gandr:<file>
 pending/surface/data-field-decorations.gandr:Expr:32662b6c31605c2f
 pending/surface/data-field-decorations.gandr:Vec:f56938920f12c850

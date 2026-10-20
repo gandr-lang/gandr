@@ -2120,8 +2120,12 @@ pub struct DataRoots
 {
     /// Parameter classifiers in telescope order.
     pub parameters: Vec<NodeIndex>,
+    /// Index classifiers in telescope order; none for a parameterised type.
+    pub indices: Vec<NodeIndex>,
     /// Constructor field classifiers in constructor and field order.
     pub constructors: Vec<Vec<NodeIndex>>,
+    /// Each constructor's stated indices; none for a parameterised type.
+    pub results: Vec<Vec<NodeIndex>>,
     /// The universe classifying the declared datatype.
     pub kind: NodeIndex,
     /// The rules rewriting the datatype's constructor terms; none for a free
@@ -2134,7 +2138,8 @@ impl DataRoots
     /// All roots in their canonical discovery order.
     ///
     /// # Specification
-    /// - ensures: parameters, then constructor fields, then the kind.
+    /// - ensures: parameters, then indices, then constructor fields, then
+    ///   stated indices, then the kind.
     /// - executable: none — the return is an opaque iterator.
     ///
     /// # Adequacy
@@ -2146,9 +2151,41 @@ impl DataRoots
     {
         self.parameters
             .iter()
+            .chain(&self.indices)
             .chain(self.constructors.iter().flatten())
+            .chain(self.results.iter().flatten())
             .copied()
             .chain(core::iter::once(self.kind))
+    }
+
+    /// All roots in their canonical discovery order, each with the sort its
+    /// node must have.
+    ///
+    /// # Specification
+    /// - ensures: [`Self::iter`]'s roots in its order, a stated index a value
+    ///   and every other root a value type.
+    /// - executable: none — the return is an opaque iterator.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a vector's stated lengths are values beside its
+    ///   classifiers, and its checkpoint round-trips.
+    /// - witness: `codec::tests::an_indexed_family_round_trips_its_indices`
+    pub(crate) fn sorted(&self) -> impl Iterator<Item = (NodeIndex, Sort)> + Clone + '_
+    {
+        let classifiers = self
+            .parameters
+            .iter()
+            .chain(&self.indices)
+            .chain(self.constructors.iter().flatten())
+            .map(|&root| (root, Sort::ValueType));
+        let stated = self
+            .results
+            .iter()
+            .flatten()
+            .map(|&root| (root, Sort::Value));
+        classifiers
+            .chain(stated)
+            .chain(core::iter::once((self.kind, Sort::ValueType)))
     }
 }
 
@@ -2201,9 +2238,9 @@ impl DeclarationRoots
     /// Each root and its required family, in discovery order.
     ///
     /// # Specification
-    /// - ensures: value signature before body, all nominal classifiers in
-    ///   order, an abstract type's kind before its representation, or none for
-    ///   a world.
+    /// - ensures: value signature before body, all nominal roots in order as
+    ///   [`DataRoots::sorted`] sorts them, an abstract type's kind before its
+    ///   representation, or none for a world.
     /// - executable: none — the return is an opaque iterator.
     ///
     /// # Adequacy
@@ -2240,11 +2277,10 @@ impl DeclarationRoots
                 None,
             ),
         };
-        values.into_iter().flatten().chain(
-            data.into_iter()
-                .flat_map(DataRoots::iter)
-                .map(|root| (root, Sort::ValueType)),
-        )
+        values
+            .into_iter()
+            .flatten()
+            .chain(data.into_iter().flat_map(DataRoots::sorted))
     }
 
     /// The roots with every root index replaced by its image under `image`,
@@ -2318,13 +2354,16 @@ impl DataRoots
     where
         Image: Fn(NodeIndex) -> NodeIndex,
     {
+        let rows = |rows: &[Vec<NodeIndex>]| {
+            rows.iter()
+                .map(|row| row.iter().map(|&root| image(root)).collect())
+                .collect()
+        };
         Self {
             parameters: self.parameters.iter().map(|&root| image(root)).collect(),
-            constructors: self
-                .constructors
-                .iter()
-                .map(|fields| fields.iter().map(|&root| image(root)).collect())
-                .collect(),
+            indices: self.indices.iter().map(|&root| image(root)).collect(),
+            constructors: rows(&self.constructors),
+            results: rows(&self.results),
             kind: image(self.kind),
             presentation: self.presentation.clone(),
         }
@@ -3353,8 +3392,8 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///
     /// # Specification
     /// - requires: nothing; unresolved source nodes are admissible.
-    /// - ensures: every parameter and constructor field is discovered once by
-    ///   identity.
+    /// - ensures: every parameter, index, constructor field and stated index is
+    ///   discovered once by identity.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3374,6 +3413,11 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             .iter()
             .map(|&ty| self.discover(ArenaNode::ValueType(ty)))
             .collect();
+        let indices = signature
+            .indices()
+            .iter()
+            .map(|&ty| self.discover(ArenaNode::ValueType(ty)))
+            .collect();
         let constructors = signature
             .constructors()
             .iter()
@@ -3384,10 +3428,22 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     .collect()
             })
             .collect();
+        let results = signature
+            .results()
+            .iter()
+            .map(|stated| {
+                stated
+                    .iter()
+                    .map(|&value| self.discover(ArenaNode::Value(value)))
+                    .collect()
+            })
+            .collect();
         let kind = self.discover(ArenaNode::ValueType(signature.kind()));
         DataRoots {
             parameters,
+            indices,
             constructors,
+            results,
             kind,
             presentation: signature.presentation().clone(),
         }

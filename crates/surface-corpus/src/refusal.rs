@@ -302,6 +302,8 @@ pub enum RefusalName
     UnknownConstructor,
     /// The checker reports `ConstructorArity`.
     ConstructorArity,
+    /// The checker reports `IndexedCase`.
+    IndexedCase,
     /// The checker reports `NonExhaustiveDataCase`.
     NonExhaustiveDataCase,
     /// The checker reports `UndecidedCoverage`.
@@ -622,7 +624,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 159_usize] = [
+    pub const VOCABULARY: [Self; 160_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -638,6 +640,7 @@ impl RefusalName
         Self::DataArgumentArity,
         Self::UnknownConstructor,
         Self::ConstructorArity,
+        Self::IndexedCase,
         Self::NonExhaustiveDataCase,
         Self::UndecidedCoverage,
         Self::AbsentRecordField,
@@ -866,6 +869,7 @@ impl RefusalName
         | (Self::DataArgumentArity, b"DataArgumentArity")
         | (Self::UnknownConstructor, b"UnknownConstructor")
         | (Self::ConstructorArity, b"ConstructorArity")
+        | (Self::IndexedCase, b"IndexedCase")
         | (Self::NonExhaustiveDataCase, b"NonExhaustiveDataCase")
         | (Self::UndecidedCoverage, b"UndecidedCoverage")
         | (Self::AbsentRecordField, b"AbsentRecordField")
@@ -968,6 +972,7 @@ impl RefusalName
             Self::DataArgumentArity => "DataArgumentArity",
             Self::UnknownConstructor => "UnknownConstructor",
             Self::ConstructorArity => "ConstructorArity",
+            Self::IndexedCase => "IndexedCase",
             Self::NonExhaustiveDataCase => "NonExhaustiveDataCase",
             Self::UndecidedCoverage => "UndecidedCoverage",
             Self::AbsentRecordField => "AbsentRecordField",
@@ -1349,6 +1354,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::DataArgumentArity(_)), RefusalName::DataArgumentArity)
         | (Self::Checking(CheckRefusal::UnknownConstructor { .. }), RefusalName::UnknownConstructor)
         | (Self::Checking(CheckRefusal::ConstructorArity(_)), RefusalName::ConstructorArity)
+        | (Self::Checking(CheckRefusal::IndexedCase(_)), RefusalName::IndexedCase)
         | (Self::Checking(CheckRefusal::NonExhaustiveDataCase(_)), RefusalName::NonExhaustiveDataCase)
         | (Self::Checking(CheckRefusal::UndecidedCoverage(_)), RefusalName::UndecidedCoverage)
         | (Self::Checking(CheckRefusal::AbsentRecordField(_)), RefusalName::AbsentRecordField)
@@ -1619,6 +1625,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::DataArgumentArity(_), RefusalName::DataArgumentArity)
         | (CheckRefusal::UnknownConstructor { .. }, RefusalName::UnknownConstructor)
         | (CheckRefusal::ConstructorArity(_), RefusalName::ConstructorArity)
+        | (CheckRefusal::IndexedCase(_), RefusalName::IndexedCase)
         | (CheckRefusal::NonExhaustiveDataCase(_), RefusalName::NonExhaustiveDataCase)
         | (CheckRefusal::UndecidedCoverage(_), RefusalName::UndecidedCoverage)
         | (CheckRefusal::AbsentRecordField(_), RefusalName::AbsentRecordField)
@@ -1721,6 +1728,7 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::DataArgumentArity(_) => RefusalName::DataArgumentArity,
         CheckRefusal::UnknownConstructor { .. } => RefusalName::UnknownConstructor,
         CheckRefusal::ConstructorArity(_) => RefusalName::ConstructorArity,
+        CheckRefusal::IndexedCase(_) => RefusalName::IndexedCase,
         CheckRefusal::NonExhaustiveDataCase(_) => RefusalName::NonExhaustiveDataCase,
         CheckRefusal::UndecidedCoverage(_) => RefusalName::UndecidedCoverage,
         CheckRefusal::AbsentRecordField(_) => RefusalName::AbsentRecordField,
