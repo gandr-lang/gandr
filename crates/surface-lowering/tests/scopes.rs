@@ -243,3 +243,19 @@ fn a_marked_call_head_keeps_its_name_s_referent_827()
         "a sibling's call names its declaration from its name"
     );
 }
+
+/// #843: a call typed up to its next argument without its `)` is refused,
+/// and its head keeps what it names.
+#[test]
+fn an_unclosed_call_keeps_its_head_s_referent_843()
+{
+    let typing = alloc::format!("{WRITTEN}def f : +U (-F Nat) ;\ndef f = thunk {{ plus(Zero, ");
+    assert_eq!(
+        resolved(
+            SourceText::from(typing.as_str()),
+            SourceText::from("plus(Zero")
+        ),
+        [(String::from("plus"), String::from("plus"))],
+        "the head names its declaration, though the call and `f` are refused"
+    );
+}

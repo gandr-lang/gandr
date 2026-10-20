@@ -530,10 +530,12 @@ use gandr_kernel_term::Summand;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::FormRank;
 use gandr_surface_syntax::NodeDigest;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeKey;
+use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
@@ -4368,6 +4370,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
         for (position, reading) in seeds {
             self.read(position, reading);
         }
+        let repaired: Vec<NodeIndex> = self
+            .collected
+            .slots
+            .iter()
+            .skip(from.slots)
+            .filter_map(|slot| match slot.refusal {
+                Maybe::Present((
+                    position,
+                    LoweringRefusal::MalformedForm {
+                        fault: FormFault::Repaired(_),
+                        ..
+                    },
+                )) => Some(position),
+                Maybe::Present(_) | Maybe::Absent(_) => None,
+            })
+            .collect();
+        for position in repaired {
+            self.repaired_calls(position);
+        }
         for position in payloads {
             if let Some(held) = self.payload.get_mut(usize::from(position)) {
                 *held = InPayload(true);
@@ -5042,6 +5063,101 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::WorldDeclaration
             | Former::Unadmitted => Err(site.out(FragmentBoundary::WrongSort)),
         }
+    }
+
+    /// Keep what the head of each call the parser closed for the source
+    /// names, inside the declaration at `declaration` that the repair
+    /// refuses: a call typed before its `)` keeps its head's referent.
+    ///
+    /// # Specification
+    /// - requires: the declaration at `declaration` was refused for a repair it
+    ///   holds.
+    /// - ensures: every form the walk reaches inside it takes the declaration
+    ///   as its owner where it had none; for every call inside it holding a `)`
+    ///   the source never wrote, whose head is a name that resolves where the
+    ///   module's declarations are read, the resolution is kept at the name;
+    ///   nothing else changes.
+    /// - provides: the head's use for an editor while the call is typed.
+    /// - fails: never; a head that does not resolve is passed over.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call written up to its next argument without its
+    ///   `)`, at the end of a definition the repair refuses; a head left
+    ///   unresolved, or kept at the whole call, changes the resolutions.
+    /// - witness: `tests::scopes::an_unclosed_call_keeps_its_head_s_referent_843`
+    #[spec(
+        captures: before = (
+            self.collected.owner.len(),
+            self.collected.owner_of(declaration),
+        ),
+        ensures: |_| self.collected.owner.len() == before.0
+            && self.collected.owner_of(declaration) == before.1,
+    )]
+    fn repaired_calls(
+        &mut self,
+        declaration: NodeIndex,
+    )
+    {
+        // economy: the walk runs only over a declaration the parser repaired,
+        // so a clean tree never pays for it.
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let mut forms = alloc::vec![declaration];
+        while let Some(form) = forms.pop() {
+            // The walk never visited this declaration, so its nodes take their
+            // owner here: a name resolves only where a declaration owns it.
+            self.inherit_owner(form);
+            let mut unclosed = false;
+            for child in self.tree.children(form) {
+                match self.tree.node(child).map(gandr_surface_syntax::Node::label) {
+                    Some(NodeLabel::Meld(_)) => forms.push(child),
+                    Some(NodeLabel::GhostClose {
+                        class: ClosingClass::Paren,
+                        ..
+                    }) => unclosed = true,
+                    Some(_) | None => {},
+                }
+            }
+            let call = unclosed
+                && self.tree.node(form).is_some_and(|node| {
+                    matches!(
+                        shape_of(self.pbg, node),
+                        Ok(Shape::Form {
+                            former: Former::Call,
+                            ..
+                        })
+                    )
+                });
+            if !call || read_pieces(self.pbg, self.tree, form, &mut scratch).is_err() {
+                continue;
+            }
+            let Some(&Piece::Operand(head)) = scratch.pieces.first()
+            else {
+                continue;
+            };
+            let named = self.tree.node(head.node).is_some_and(|node| {
+                matches!(
+                    shape_of(self.pbg, node),
+                    Ok(Shape::Form {
+                        former: Former::Name,
+                        ..
+                    })
+                )
+            });
+            if !named {
+                continue;
+            }
+            let name = self.name_at(head);
+            let site = Site {
+                at: head,
+                name: FormName::DECLARATION,
+                reading: Reading::Value(Frame::Outermost),
+            };
+            if let Ok(Maybe::Present(resolved)) = self.resolve_name(site, Frame::Outermost, name) {
+                self.resolved(head.span, resolved);
+            }
+        }
+        self.scratch = scratch;
     }
 
     /// The binder frame of a form whose position demands `produced`, with the
