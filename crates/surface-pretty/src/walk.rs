@@ -960,8 +960,11 @@ where
         && ret.get(1_usize).is_some_and(|slot| slot.admits == Admits::Computation(Tail::Continues)),
     | Former::Hold { .. } => ret.len() == 2_usize
         && ret.last().is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize }),
-    | Former::Access { mode, .. } => ret.len() == match mode { AccessMode::Exclusive { .. } => 2_usize, AccessMode::Shared => 1_usize }
-        && ret.first().is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize }),
+    | Former::Access { mode, place, .. } => {
+        let indexed = usize::from(matches!(place, gandr_core_term::memory::Place::At { .. }));
+        ret.len() == indexed.saturating_add(match mode { AccessMode::Exclusive { .. } => 2_usize, AccessMode::Shared => 1_usize })
+            && ret.get(indexed).is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize })
+    },
     | Former::BaseType(_) | Former::Universe { .. } | Former::Abstract(_) | Former::Capability { .. }
         | Former::Variable { .. } | Former::Constant(_) | Former::Unit | Former::ListNil | Former::Literal(_)
         | Former::Reify | Former::Receive(_) | Former::Select { .. } | Former::Close(_) | Former::AbortView(_) | Former::Unreadable(_) => ret.is_empty(),
@@ -1298,15 +1301,21 @@ where
                 count: 1_usize,
             }),
         ]),
-        Former::Access { body, mode, .. } => {
-            let body = ends(body, Binds {
+        Former::Access {
+            place, body, mode, ..
+        } => {
+            let mut slots = Vec::with_capacity(3_usize);
+            if let gandr_core_term::memory::Place::At { index } = place {
+                slots.push(value(index));
+            }
+            slots.push(ends(body, Binds {
                 zone: Zone::Linear,
                 count: 1_usize,
-            });
-            match mode {
-                AccessMode::Exclusive { unwind } => Vec::from([body, ends(unwind, Binds::NONE)]),
-                AccessMode::Shared => Vec::from([body]),
+            }));
+            if let AccessMode::Exclusive { unwind } = mode {
+                slots.push(ends(unwind, Binds::NONE));
             }
+            slots
         },
         Former::BaseType(_)
         | Former::Universe { .. }
@@ -6532,13 +6541,18 @@ impl Walk<'_, '_>
                     .piece(Binding::Sequence);
                 writes(Production("block"), Binding::Sequence)
             },
-            Former::Access { held, mode, .. } => {
+            Former::Access {
+                held, place, mode, ..
+            } => {
                 let _ = parts.text(match mode {
                     AccessMode::Exclusive { .. } => "access ",
                     AccessMode::Shared => "access shared ",
                 });
+                let _ = parts.part(Part::Endpoint(held));
+                if let gandr_core_term::memory::Place::At { .. } = place {
+                    let _ = parts.text("[").piece(Binding::Arrow).text("]");
+                }
                 let _ = parts
-                    .part(Part::Endpoint(held))
                     .text(" as ")
                     .part(Part::Binder(0_usize))
                     .text(" {")

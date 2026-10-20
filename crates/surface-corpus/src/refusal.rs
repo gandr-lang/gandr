@@ -604,6 +604,8 @@ pub enum RefusalName
     ViewReadOnly,
     /// An access's unwind performing an effect.
     UnwindEffect,
+    /// An access at a place naming a held value whose type is no list.
+    PlaceUnindexed,
     /// A codata application whose head names no admitted codata declaration.
     CodataUndeclared,
     /// A codata declaration whose kind is not a computation universe.
@@ -661,7 +663,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 174_usize] = [
+    pub const VOCABULARY: [Self; 175_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -818,6 +820,7 @@ impl RefusalName
         Self::NotAView,
         Self::ViewReadOnly,
         Self::UnwindEffect,
+        Self::PlaceUnindexed,
         Self::CodataUndeclared,
         Self::CodataKindNotUniverse,
         Self::CodataWithoutObservations,
@@ -982,6 +985,7 @@ impl RefusalName
         | (Self::NotAView, b"NotAView")
         | (Self::ViewReadOnly, b"ViewReadOnly")
         | (Self::UnwindEffect, b"UnwindEffect")
+        | (Self::PlaceUnindexed, b"PlaceUnindexed")
         | (Self::CodataUndeclared, b"CodataUndeclared")
         | (Self::CodataKindNotUniverse, b"CodataKindNotUniverse")
         | (Self::CodataWithoutObservations, b"CodataWithoutObservations")
@@ -1105,6 +1109,7 @@ impl RefusalName
             Self::NotAView => "NotAView",
             Self::ViewReadOnly => "ViewReadOnly",
             Self::UnwindEffect => "UnwindEffect",
+            Self::PlaceUnindexed => "PlaceUnindexed",
             Self::CodataUndeclared => "CodataUndeclared",
             Self::CodataKindNotUniverse => "CodataKindNotUniverse",
             Self::CodataWithoutObservations => "CodataWithoutObservations",
@@ -1478,7 +1483,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::UnenclosedRun { .. }), RefusalName::UnenclosedRun)
         | (Self::Checking(CheckRefusal::SessionMismatch { .. }), RefusalName::SessionMismatch | RefusalName::UnofferedLabel | RefusalName::OfferArms)
         | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::Delegation | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint)
-        | (Self::Checking(CheckRefusal::Access { .. }), RefusalName::NotHeld | RefusalName::HeldLent | RefusalName::HeldCaptured | RefusalName::ViewEscaped | RefusalName::ViewUnended | RefusalName::ViewSpent | RefusalName::NotAView | RefusalName::ViewReadOnly | RefusalName::UnwindEffect)
+        | (Self::Checking(CheckRefusal::Access { .. }), RefusalName::NotHeld | RefusalName::HeldLent | RefusalName::HeldCaptured | RefusalName::ViewEscaped | RefusalName::ViewUnended | RefusalName::ViewSpent | RefusalName::NotAView | RefusalName::ViewReadOnly | RefusalName::UnwindEffect | RefusalName::PlaceUnindexed)
         | (Self::Checking(CheckRefusal::Codata { .. }), RefusalName::CodataUndeclared | RefusalName::CodataKindNotUniverse | RefusalName::CodataWithoutObservations | RefusalName::CodataOccurrence | RefusalName::CodataObservationLevel | RefusalName::CodataArity)
         | (Self::Checking(CheckRefusal::Located { .. }), RefusalName::Immobile | RefusalName::CapabilityMissing | RefusalName::CapabilityCaptured | RefusalName::Elsewhere | RefusalName::HoldElsewhere | RefusalName::Unlocated | RefusalName::UndeclaredWorld | RefusalName::HostWorldUndeclared | RefusalName::MarkUnfounded | RefusalName::EntryNamed | RefusalName::EntryUngranted | RefusalName::NotAHandle)
         | (Self::Checking(CheckRefusal::CapabilityForged { .. }), RefusalName::CapabilityForged)
@@ -1789,6 +1794,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::Access { defect: AccessDefect::NotAView, .. }, RefusalName::NotAView)
         | (CheckRefusal::Access { defect: AccessDefect::ReadOnly, .. }, RefusalName::ViewReadOnly)
         | (CheckRefusal::Access { defect: AccessDefect::UnwindEffect, .. }, RefusalName::UnwindEffect)
+        | (CheckRefusal::Access { defect: AccessDefect::Unindexed, .. }, RefusalName::PlaceUnindexed)
         | (CheckRefusal::Codata { fault: CodataFault::Undeclared, .. }, RefusalName::CodataUndeclared)
         | (CheckRefusal::Codata { fault: CodataFault::KindNotUniverse, .. }, RefusalName::CodataKindNotUniverse)
         | (CheckRefusal::Codata { fault: CodataFault::WithoutObservations, .. }, RefusalName::CodataWithoutObservations)
@@ -1906,6 +1912,7 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
             AccessDefect::NotAView => RefusalName::NotAView,
             AccessDefect::ReadOnly => RefusalName::ViewReadOnly,
             AccessDefect::UnwindEffect => RefusalName::UnwindEffect,
+            AccessDefect::Unindexed => RefusalName::PlaceUnindexed,
         },
         CheckRefusal::Codata { fault, .. } => match fault {
             CodataFault::Undeclared => RefusalName::CodataUndeclared,

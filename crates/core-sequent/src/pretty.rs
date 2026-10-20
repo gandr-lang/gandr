@@ -22,6 +22,7 @@ use anodized::spec;
 use gandr_core_term::Zone;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::memory::Place;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Literal;
@@ -428,27 +429,27 @@ fn command(
                     Piece::Command(body, depth),
                 ],
                 MemoryForm::Access {
-                    mode: AccessMode::Exclusive { unwind },
+                    mode,
                     held,
+                    place,
                     body,
-                } => alloc::vec![
-                    text!("access("),
-                    linear(held),
-                    text!("; (l; α) ⇒ "),
-                    Piece::Command(body, depth),
-                    text!(" | unwind(α) ⇒ "),
-                    Piece::Command(unwind, depth),
-                ],
-                MemoryForm::Access {
-                    mode: AccessMode::Shared,
-                    held,
-                    body,
-                } => alloc::vec![
-                    text!("access_shared("),
-                    linear(held),
-                    text!("; (l; α) ⇒ "),
-                    Piece::Command(body, depth),
-                ],
+                } => {
+                    let mut access = alloc::vec![
+                        match mode {
+                            AccessMode::Exclusive { .. } => text!("access("),
+                            AccessMode::Shared => text!("access_shared("),
+                        },
+                        linear(held),
+                    ];
+                    if let Place::At { index } = place {
+                        access.extend([text!("["), Piece::Producer(index, depth), text!("]")]);
+                    }
+                    access.extend([text!("; (l; α) ⇒ "), Piece::Command(body, depth)]);
+                    if let AccessMode::Exclusive { unwind } = mode {
+                        access.extend([text!(" | unwind(α) ⇒ "), Piece::Command(unwind, depth)]);
+                    }
+                    access
+                },
                 MemoryForm::Resume { view, value } => alloc::vec![
                     text!("writeback("),
                     linear(view),

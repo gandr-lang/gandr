@@ -844,6 +844,7 @@ fn run(
                 Some(Refused::Primitive(error)) => Stuck::Primitive(error),
                 Some(Refused::NonScalar(value)) => Stuck::NonScalar(moved(value)?),
                 Some(Refused::Unended(at)) => Stuck::Unended(at),
+                Some(Refused::Outside(at)) => Stuck::Outside(at),
                 Some(Refused::UndefinedConstant(constant)) => Stuck::UndefinedConstant(constant),
                 Some(Refused::CyclicConstant(constant)) => Stuck::CyclicConstant(constant),
                 Some(Refused::Aborted) => return Ok(Ran::Aborted),

@@ -904,6 +904,9 @@ fn checked(
             AccessDefect::UnwindEffect => {
                 f.write_str("an `unwind` runs under the empty row and cannot perform an effect")
             },
+            AccessDefect::Unindexed => f.write_str(
+                "an access at a place reads an element at an index; the held value is no list",
+            ),
         },
         CheckRefusal::Codata { fault, .. } => match fault {
             CodataFault::Undeclared => f.write_str("this names no codata declaration"),
@@ -1599,6 +1602,10 @@ mod tests
             CheckRefusal::Access {
                 at: node,
                 defect: AccessDefect::UnwindEffect,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Unindexed,
             },
             CheckRefusal::Codata {
                 at: node,

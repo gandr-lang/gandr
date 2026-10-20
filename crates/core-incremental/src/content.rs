@@ -271,6 +271,7 @@ use gandr_core_term::hole::HoleId;
 use gandr_core_term::hole::MarkIndex;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::memory::Place;
 use gandr_core_term::session::SessionAction;
 use gandr_core_term::support::Crossing;
 use gandr_core_term::support::PlacementError;
@@ -1639,14 +1640,29 @@ impl ContentNode
                 },
                 MemoryForm::Access {
                     mode: AccessMode::Exclusive { unwind },
+                    place: Place::Whole,
                     body,
                     ..
                 } => Children::of(&[(body, M), (unwind, M)]).binding(ChildSlot(0), linear),
                 MemoryForm::Access {
                     mode: AccessMode::Shared,
+                    place: Place::Whole,
                     body,
                     ..
                 } => Children::of(&[(body, M)]).binding(ChildSlot(0), linear),
+                MemoryForm::Access {
+                    mode: AccessMode::Exclusive { unwind },
+                    place: Place::At { index },
+                    body,
+                    ..
+                } => Children::of(&[(index, V), (body, M), (unwind, M)])
+                    .binding(ChildSlot(1), linear),
+                MemoryForm::Access {
+                    mode: AccessMode::Shared,
+                    place: Place::At { index },
+                    body,
+                    ..
+                } => Children::of(&[(index, V), (body, M)]).binding(ChildSlot(1), linear),
                 MemoryForm::Resume { value, .. } => Children::of(&[(value, V)]),
                 MemoryForm::Abort { .. } => Children::default(),
             },

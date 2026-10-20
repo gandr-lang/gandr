@@ -251,7 +251,8 @@ fn fingerprint(run: &Result<Ran, Declined>) -> String
                 | Stuck::Primitive(_)
                 | Stuck::UndefinedConstant(_)
                 | Stuck::CyclicConstant(_)
-                | Stuck::Unended(_) => String::new(),
+                | Stuck::Unended(_)
+                | Stuck::Outside(_) => String::new(),
             };
             format!("stuck {stuck:?}: {held}")
         },
@@ -524,6 +525,8 @@ enum ControlExpectation
     Perform(&'static str, &'static str),
     /// A shift with no reachable reset.
     Shift,
+    /// An access at an index that names no element of its held list.
+    Outside,
 }
 
 /// Focus `program`, check it is closed, run it on the tiers, and check its
@@ -571,6 +574,18 @@ fn assert_control(
         },
         (Outcome::Stuck(Stuck::ShiftNoReset(at)), ControlExpectation::Shift) => {
             assert!(matches!(arena.command(at), Some(CommandNode::Shift { .. })));
+        },
+        (Outcome::Stuck(Stuck::Outside(at)), ControlExpectation::Outside) => {
+            assert!(
+                matches!(
+                    arena.command(at),
+                    Some(CommandNode::Memory {
+                        form: MemoryForm::Access { .. },
+                        ..
+                    })
+                ),
+                "blame names the access"
+            );
         },
         (outcome, _) => panic!("unexpected control outcome: {outcome:?}"),
     }
@@ -878,6 +893,7 @@ fn a_counter_observes_write_back_on_resume_and_none_on_abort()
         core.computation_memory(MemoryForm::Access {
             mode: AccessMode::Exclusive { unwind },
             held: view,
+            place: gandr_core_term::memory::Place::Whole,
             body,
         })
     };
@@ -927,6 +943,99 @@ fn a_counter_observes_write_back_on_resume_and_none_on_abort()
     let clause = core.computation_bind(raised, replayed);
     let handled = handler(&mut core, signature, held, ret_innermost, clause);
     assert_control(&mut core, handled, ControlExpectation::Value(ten));
+}
+
+#[test]
+fn an_access_at_a_place_views_the_element_at_its_index()
+{
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Digits("1"));
+    let two = integer(&mut core, Digits("2"));
+    let three = integer(&mut core, Digits("3"));
+    let zero = integer(&mut core, Digits("0"));
+    let nil = core.value_list_nil();
+    let tail = core.value_list_cons(two, nil);
+    let listed = core.value_list_cons(one, tail);
+    let view = DeBruijnIndex::from(0_u32);
+    let resident = core.value_variable(Zone::Linear, view);
+    let innermost = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+    let unit = core.value_unit();
+    let ret_unit = core.computation_return(unit);
+    let ret_resident = core.computation_return(resident);
+    let add = gandr_core_term::primitive::PRELUDE
+        .iter()
+        .copied()
+        .find(|primitive| primitive.name().as_ref() == "add")
+        .expect("native add");
+    let at = |core: &mut CoreArena, mode, index, body| {
+        core.computation_memory(MemoryForm::Access {
+            mode,
+            held: view,
+            place: gandr_core_term::memory::Place::At { index },
+            body,
+        })
+    };
+    // hold xs = [1, 2]; access shared xs[1] as v { return v }
+    let read = at(&mut core, AccessMode::Shared, one, ret_resident);
+    let held = core.computation_memory(MemoryForm::Hold {
+        value: listed,
+        body: read,
+    });
+    assert_control(&mut core, held, ControlExpectation::Value(two));
+
+    // hold xs = [1, 2] or [1, 2, 3]; access xs[i] as v { n <- v + 1 ;
+    // resume(v, n) } unwind {} ; return xs
+    let successor = core.computation_primitive(
+        add,
+        gandr_core_term::primitive::Arguments::Binary([resident, one]),
+    );
+    let resume = core.computation_memory(MemoryForm::Resume {
+        view,
+        value: innermost,
+    });
+    let resuming = core.computation_bind(successor, resume);
+    let rebuilt_tail = core.value_list_cons(three, nil);
+    let second_bumped = core.value_list_cons(one, rebuilt_tail);
+    let first_bumped = core.value_list_cons(two, tail);
+    let four = integer(&mut core, Digits("4"));
+    let two_three = core.value_list_cons(two, rebuilt_tail);
+    let triple = core.value_list_cons(one, two_three);
+    let four_alone = core.value_list_cons(four, nil);
+    let two_four = core.value_list_cons(two, four_alone);
+    let third_bumped = core.value_list_cons(one, two_four);
+    for (list, index, expected) in [
+        (listed, zero, first_bumped),
+        (listed, one, second_bumped),
+        (triple, two, third_bumped),
+    ] {
+        let exclusive = AccessMode::Exclusive { unwind: ret_unit };
+        let written = at(&mut core, exclusive, index, resuming);
+        let then = core.computation_bind(written, ret_resident);
+        let held = core.computation_memory(MemoryForm::Hold {
+            value: list,
+            body: then,
+        });
+        assert_control(&mut core, held, ControlExpectation::Value(expected));
+    }
+
+    // hold xs = [1, 2]; access xs[1] as v { abort(v) } unwind {} ; return xs
+    let abort = core.computation_memory(MemoryForm::Abort { view });
+    let exclusive = AccessMode::Exclusive { unwind: ret_unit };
+    let aborted = at(&mut core, exclusive, one, abort);
+    let then = core.computation_bind(aborted, ret_resident);
+    let kept = core.computation_memory(MemoryForm::Hold {
+        value: listed,
+        body: then,
+    });
+    assert_control(&mut core, kept, ControlExpectation::Value(listed));
+
+    // hold xs = [2]; access shared xs[1] as v { return v }
+    let past = at(&mut core, AccessMode::Shared, one, ret_resident);
+    let short = core.computation_memory(MemoryForm::Hold {
+        value: tail,
+        body: past,
+    });
+    assert_control(&mut core, short, ControlExpectation::Outside);
 }
 
 #[test]

@@ -29,6 +29,7 @@
 //! |hold|`hold x = v; t`|`v` synthesises `A`; `t` runs with `x`, a slot of `Σ` at `A`|
 //! |access|`access x as w { t } unwind { u }`|`x` is lent exclusively; `t` runs with `w`, a slot of `Σ` at `A`|
 //! |shared access|`access shared x as w { t }`|`x` is lent shared; `t` runs with `w`, a slot of `Σ` at `A`|
+//! |access at a place|`access x[i] as w { t } unwind { u }`, `access shared x[i] as w { t }`|`A` is `List E`; `i` checks against the integer type; `x` is lent in the mode; `t` runs with `w`, a slot of `Σ` at `E`|
 //! |resume|`resume(w, v)`|`w` is exclusive; `v` checks against `A`; `w` is spent; synthesises `F 1`|
 //! |abort|`abort(w)`|`w` is exclusive; `w` is spent; synthesises `F 1`|
 //!
@@ -38,6 +39,7 @@
 //! |---|---|---|
 //! |hold|`HoldValue`|the held value's synthesis, then opens the slot|
 //! |hold|`HoldBody`|the scope's judgement, then drops the slot|
+//! |access|`AccessIndex`|an access at a place's index, checked against the integer type, then lends the place|
 //! |access|`AccessBody`|the body's judgement, then requires an exclusive view spent|
 //! |access|`AccessUnwind`|an exclusive access's unwind, checked against the pure `F 1`|
 //! |resume|`ResumeValue`|the written value's check, then spends the view|
@@ -78,6 +80,19 @@
 //! [`AccessDefect::ReadOnly`]. The machine runs a shared access as no
 //! access at all — the view is the held cell itself, and no frame waits on
 //! the body.
+//!
+//! # Places
+//!
+//! An access lends a place of its held slot: the held value whole, or the
+//! element at an index, `x[i]`. The index is a value checked against the
+//! integer type where the access stands; a linear index is lent shared with
+//! the place for the body and never consumed. A place needs a list
+//! ([`AccessDefect::Unindexed`] otherwise), and the view is declared at the
+//! list's element type. The lending is the held slot's whatever the index, so
+//! an exclusive view of one element excludes a view of any other. A resume
+//! writes the element back at its index and the rest of the list stands as it
+//! was; an index that names no element stops the machine where the access
+//! runs.
 //!
 //! # Two eliminators, one shot
 //!
@@ -177,4 +192,7 @@ pub enum AccessDefect
     /// An access's unwind performs an effect: an unwind runs under the empty
     /// row.
     UnwindEffect,
+    /// An access at a place names a held value with no elements an index
+    /// reads: its type is no list.
+    Unindexed,
 }

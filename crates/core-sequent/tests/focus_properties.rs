@@ -132,12 +132,14 @@ fn hand_built_control_cases_cover_every_former()
     let accessed = core.computation_memory(MemoryForm::Access {
         mode: AccessMode::Exclusive { unwind: returned },
         held: view,
+        place: gandr_core_term::memory::Place::Whole,
         body: ended,
     });
     let aborted_view = core.computation_memory(MemoryForm::Abort { view });
     let aborting = core.computation_memory(MemoryForm::Access {
         mode: AccessMode::Exclusive { unwind: identity },
         held: view,
+        place: gandr_core_term::memory::Place::Whole,
         body: aborted_view,
     });
     let both = core.computation_bind(accessed, aborting);

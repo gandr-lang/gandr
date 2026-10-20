@@ -320,11 +320,25 @@ fn every_node_former_round_trips_under_its_own_frame()
             MemoryForm::Access {
                 mode: AccessMode::Exclusive { unwind: b },
                 held: slot,
+                place: gandr_core_term::memory::Place::Whole,
                 body: a,
             },
             MemoryForm::Access {
                 mode: AccessMode::Shared,
                 held: slot,
+                place: gandr_core_term::memory::Place::Whole,
+                body: a,
+            },
+            MemoryForm::Access {
+                mode: AccessMode::Exclusive { unwind: b },
+                held: slot,
+                place: gandr_core_term::memory::Place::At { index: b },
+                body: a,
+            },
+            MemoryForm::Access {
+                mode: AccessMode::Shared,
+                held: slot,
+                place: gandr_core_term::memory::Place::At { index: b },
                 body: a,
             },
             MemoryForm::Resume {
@@ -2513,6 +2527,7 @@ fn every_refusal() -> Vec<Refusal>
             AccessDefect::NotAView,
             AccessDefect::ReadOnly,
             AccessDefect::UnwindEffect,
+            AccessDefect::Unindexed,
         ]
         .map(|defect| Refusal::Access { at, defect }),
     );

@@ -862,11 +862,14 @@ pub enum Former<'source, Node>
         body: Node,
     },
     /// An access, `access x as w { t } unwind { u }` or
-    /// `access shared x as w { t }`: the body under the view's linear binder.
+    /// `access shared x as w { t }`, either at a place `x[i]`: the body under
+    /// the view's linear binder.
     Access
     {
         /// The held slot lent, a linear index.
         held: DeBruijnIndex,
+        /// The place lent, with its index.
+        place: gandr_core_term::memory::Place<Node>,
         /// The body.
         body: Node,
         /// The mode, and an exclusive access's unwind.

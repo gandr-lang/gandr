@@ -68,6 +68,7 @@ use gandr_core_term::hole::HoleId;
 use gandr_core_term::hole::MarkIndex;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::memory::Place as AccessPlace;
 use gandr_core_term::session::ActionKind;
 use gandr_core_term::session::PayloadCount;
 use gandr_core_term::session::PayloadSlot;
@@ -1403,23 +1404,25 @@ where
                     write_index(writer, body)?;
                 },
                 MemoryForm::Access {
-                    mode: AccessMode::Exclusive { unwind },
+                    mode,
                     held,
+                    place,
                     body,
                 } => {
-                    writer.tag(Tag(1));
+                    writer.tag(Tag(match (mode, place) {
+                        (AccessMode::Exclusive { .. }, AccessPlace::Whole) => 1,
+                        (AccessMode::Shared, AccessPlace::Whole) => 4,
+                        (AccessMode::Exclusive { .. }, AccessPlace::At { .. }) => 5,
+                        (AccessMode::Shared, AccessPlace::At { .. }) => 6,
+                    }));
                     slot(writer, held);
+                    if let AccessPlace::At { index } = place {
+                        write_index(writer, index)?;
+                    }
                     write_index(writer, body)?;
-                    write_index(writer, unwind)?;
-                },
-                MemoryForm::Access {
-                    mode: AccessMode::Shared,
-                    held,
-                    body,
-                } => {
-                    writer.tag(Tag(4));
-                    slot(writer, held);
-                    write_index(writer, body)?;
+                    if let AccessMode::Exclusive { unwind } = mode {
+                        write_index(writer, unwind)?;
+                    }
                 },
                 MemoryForm::Resume { view, value } => {
                     writer.tag(Tag(2));
@@ -3579,12 +3582,31 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                     value: read_index(reader)?,
                     body: read_index(reader)?,
                 },
-                1 => MemoryForm::Access {
-                    held: slot(reader)?,
-                    body: read_index(reader)?,
-                    mode: AccessMode::Exclusive {
-                        unwind: read_index(reader)?,
-                    },
+                1 | 4 | 5 | 6 => {
+                    let held = slot(reader)?;
+                    let place = if kind >= 5 {
+                        AccessPlace::At {
+                            index: read_index(reader)?,
+                        }
+                    }
+                    else {
+                        AccessPlace::Whole
+                    };
+                    let body = read_index(reader)?;
+                    let mode = if kind == 1 || kind == 5 {
+                        AccessMode::Exclusive {
+                            unwind: read_index(reader)?,
+                        }
+                    }
+                    else {
+                        AccessMode::Shared
+                    };
+                    MemoryForm::Access {
+                        mode,
+                        held,
+                        place,
+                        body,
+                    }
                 },
                 2 => MemoryForm::Resume {
                     view: slot(reader)?,
@@ -3592,11 +3614,6 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 },
                 3 => MemoryForm::Abort {
                     view: slot(reader)?,
-                },
-                4 => MemoryForm::Access {
-                    held: slot(reader)?,
-                    body: read_index(reader)?,
-                    mode: AccessMode::Shared,
                 },
                 _ => return Err(CodecError::Corrupt),
             })
@@ -6445,6 +6462,7 @@ where
                 AccessDefect::NotAView => (6, None),
                 AccessDefect::UnwindEffect => (7, None),
                 AccessDefect::ReadOnly => (8, None),
+                AccessDefect::Unindexed => (9, None),
             };
             writer.tag(Tag(kind));
             if let Some(by) = by {
@@ -6958,6 +6976,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 6 => AccessDefect::NotAView,
                 7 => AccessDefect::UnwindEffect,
                 8 => AccessDefect::ReadOnly,
+                9 => AccessDefect::Unindexed,
                 _ => return Err(CodecError::NonCanonical),
             };
             Refusal::Access { at, defect }

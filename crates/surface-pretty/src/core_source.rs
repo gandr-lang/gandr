@@ -19,6 +19,7 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::memory::Place;
 use gandr_core_term::session::SessionAction;
 use gandr_core_term::world::World;
 use gandr_core_term::world::WorldForm;
@@ -1374,11 +1375,15 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Computation::Memory(ref form)), _) => match (form, ret) {
             | (&MemoryForm::Hold { value, body }, Former::Hold { value: held, body: scope }) =>
                 held == CoreNode::Value(value) && scope == CoreNode::Computation(body),
-            | (&MemoryForm::Access { held, body, mode }, Former::Access { held: actual, body: lent, mode: printed }) =>
+            | (&MemoryForm::Access { held, place, body, mode }, Former::Access { held: actual, place: printed_place, body: lent, mode: printed }) =>
                 held == actual && lent == CoreNode::Computation(body) && match (mode, printed) {
                     | (AccessMode::Exclusive { unwind }, AccessMode::Exclusive { unwind: unwound }) =>
                         unwound == CoreNode::Computation(unwind),
                     | (AccessMode::Shared, AccessMode::Shared) => true,
+                    | _ => false,
+                } && match (place, printed_place) {
+                    | (Place::Whole, Place::Whole) => true,
+                    | (Place::At { index }, Place::At { index: printed_index }) => printed_index == CoreNode::Value(index),
                     | _ => false,
                 },
             | (&MemoryForm::Resume { view, value }, Former::ResumeView { view: actual, value: written }) =>
@@ -1621,8 +1626,19 @@ impl<'arena> CoreSource<'arena>
                     value: value(held),
                     body: computation(body),
                 },
-                MemoryForm::Access { held, body, mode } => Former::Access {
+                MemoryForm::Access {
                     held,
+                    place,
+                    body,
+                    mode,
+                } => Former::Access {
+                    held,
+                    place: match place {
+                        Place::Whole => Place::Whole,
+                        Place::At { index } => Place::At {
+                            index: value(index),
+                        },
+                    },
                     body: computation(body),
                     mode: match mode {
                         AccessMode::Exclusive { unwind } => AccessMode::Exclusive {

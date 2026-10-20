@@ -340,6 +340,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
             AccessDefect::NotAView => "no view here",
             AccessDefect::ReadOnly => "a shared view, which is read-only",
             AccessDefect::UnwindEffect => "an effect in an unwind",
+            AccessDefect::Unindexed => "a held value with no elements to index",
         },
         CheckRefusal::Codata { fault, .. } => match fault {
             CodataFault::Undeclared => "no codata declaration here",

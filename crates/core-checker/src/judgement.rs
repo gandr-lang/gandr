@@ -2070,6 +2070,15 @@ enum Frame
         /// The hold's own direction.
         direction: Direction<CompTypeId>,
     },
+    /// An access at a place waits on its index's check against the integer
+    /// type; the place is then lent and the view opens at its element type.
+    AccessIndex
+    {
+        /// The access.
+        at: ComputationId,
+        /// The access's own direction, which its body takes.
+        direction: Direction<CompTypeId>,
+    },
     /// An access's body is being judged with its view bound and its held
     /// slot lent.
     AccessBody
@@ -2303,6 +2312,7 @@ impl Frame
             Self::StayEndpoints { .. } => FrameRole::StayEndpoints,
             Self::HoldValue { .. } => FrameRole::HoldValue,
             Self::HoldBody { .. } => FrameRole::HoldBody,
+            Self::AccessIndex { .. } => FrameRole::AccessIndex,
             Self::AccessBody { .. } => FrameRole::AccessBody,
             Self::AccessUnwind { .. } => FrameRole::AccessUnwind,
             Self::ResumeValue { .. } => FrameRole::ResumeValue,
@@ -2441,6 +2451,7 @@ impl Frame
             | Self::StayEndpoints { .. }
             | Self::HoldValue { .. }
             | Self::HoldBody { .. }
+            | Self::AccessIndex { .. }
             | Self::AccessBody { .. }
             | Self::AccessUnwind { .. }
             | Self::ResumeValue { .. }
@@ -2890,6 +2901,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::ForkParent { .. }
                 | Frame::HoldValue { .. }
                 | Frame::HoldBody { .. }
+                | Frame::AccessIndex { .. }
                 | Frame::AccessBody { .. }
                 | Frame::AccessUnwind { .. }
                 | Frame::ResumeValue { .. }
@@ -8139,6 +8151,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.held(at, direction, held)
             },
             (Frame::HoldBody { at, direction }, produced) => self.dropped(at, direction, produced),
+            (Frame::AccessIndex { at, direction }, Produced::Checked) => self.placed(at, direction),
             (Frame::AccessBody { at, .. }, produced) => self.accessed(at, produced),
             (Frame::AccessUnwind { produced, .. }, Produced::Checked) => Ok(Step::Ascend(produced)),
             (Frame::ResumeValue { at, view }, Produced::Checked) => self.resumed(at, view),
@@ -8260,6 +8273,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::RideValue { .. }
                 | Frame::StayEndpoints { .. }
                 | Frame::AccessUnwind { .. }
+                | Frame::AccessIndex { .. }
                 | Frame::ResumeValue { .. },
                 Produced::ValueType(_) | Produced::CompType(_),
             )
