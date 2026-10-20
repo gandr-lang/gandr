@@ -7,8 +7,8 @@
 // writes them (#765). The syntax model's carriers are de Bruijn terms and
 // two substitution data: a substitution shifts, conses a term onto another
 // or lifts one under a binder, and a renaming shifts or lifts. Lifting is a
-// constructor and every lookup a tail call, so the substitution laws reach
-// their inductive steps by conversion (#761).
+// constructor, so the substitution laws reach their inductive steps by
+// conversion; lifting written as a definition does not yet (#879).
 //
 // The argument, file by file: this base; the laws that hold by computation
 // (`sub-q-single`, `sub-q-lift`, `sub-lam`, `sub-app`); the congruences and

@@ -1,7 +1,7 @@
 0..74 Comment "// Two composites of substitutions act alike on every term when they agree"
 75..149 Comment "// at every index. At an abstraction both composites unfold by conversion,"
 150..218 Comment "// lifting being a constructor (`substTwiceUnderLam`; with lifting a"
-219..295 Comment "// definition the step is refused, #761, `pathological/desc/lc`). The lifted"
+219..295 Comment "// definition the step is refused, #879, `pathological/desc/lc`). The lifted"
 296..358 Comment "// step reads a lookup under one binder as the weakened lookup"
 359..431 Comment "// (`lookWeakens`), pushes the weakening through the lifted substitution"
 432..479 Comment "// (`substWeaken`), and weakens the hypothesis."

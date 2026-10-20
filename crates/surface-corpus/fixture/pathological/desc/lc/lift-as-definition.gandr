@@ -2,7 +2,7 @@
 // substitution whose lifting is a definition rather than the constructor
 // `Lift`. Two such substitutions at an abstraction unfold the outer one at
 // the inner one's stuck call beside the lifting call, and conversion refuses
-// the step (#761); with lifting a constructor it converts, and
+// the step (#879); with lifting a constructor it converts, and
 // `substSquare`'s abstraction case rests on it.
 
 // The naturals; the terms and the lookup.
@@ -25,7 +25,7 @@ def rec substLifting(t : Term, s : Env) -> -F Term {
   }
 }
 
-/// Two substitutions at an abstraction, both unfolded once: refused (#761).
+/// Two substitutions at an abstraction, both unfolded once: refused (#879).
 @[ refuses("EndpointMismatch") ]
 def substLiftingTwiceUnderLam(b : Term, s1 : Env, s2 : Env) -> -F Path(
   Term,

@@ -3565,6 +3565,67 @@ fn a_continuation_casing_on_a_stuck_call_stays_whole()
 }
 
 #[test]
+fn a_continuation_handing_its_stuck_call_to_a_definition_reads_as_that_call_761()
+{
+    // `⟨S to n. pair n⟩` for the stuck call `S` and the definition
+    // `pair = λx. return (x, ())`: `double(S(m))`'s arm `twice(double(m))`
+    // in miniature. Held, the continuation stops at `pair`'s call, so the
+    // endpoint reads as that call over the held call: against the pair
+    // over the call it unfolds `pair` by a recorded step, against `pair`
+    // applied to the call as written it meets the same call, and the kernel
+    // replays both. Before, the reading kept the bind whole and the first
+    // pair declined.
+    let mut core = CoreArena::new();
+    let stuck = stuck_call(&mut core);
+    let occurrence = innermost(&mut core);
+    let unit = core.value_unit();
+    let paired = core.value_tuple(&[occurrence, unit]);
+    let returned = core.computation_return(paired);
+    let pairing = core.computation_lambda(returned);
+    let pairing = core.value_thunk(pairing);
+    let pair = core.value_constant(Name::Zero.constant());
+    let continuation = call(&mut core, pair, &[occurrence]);
+    let bound = core.computation_bind(stuck, continuation);
+    let endpoint = core.value_returned(bound);
+    let held_call = core.value_returned(stuck);
+    let expected = core.value_tuple(&[held_call, unit]);
+    let written = call(&mut core, pair, &[held_call]);
+    let written = core.value_returned(written);
+    let held = World::new(core, &[(Name::Zero, pairing)]).holding();
+
+    let unfolding = Sides::Values(endpoint, expected);
+    let (verdict, decisions) = held.traced(unfolding);
+    assert_eq!(
+        MachineVerdict::Convertible,
+        verdict,
+        "the endpoint reads as `pair`'s call over the held call: {decisions:?}"
+    );
+    assert!(
+        decisions.contains(&ConversionDecision::Unfold {
+            constant: TraceNode::Constant(Name::Zero.constant()),
+        }),
+        "the conversion unfolds `pair` by a recorded step: {decisions:?}"
+    );
+    assert_eq!(
+        KernelVerdict::Convertible,
+        held.replayed(unfolding, verdict, &decisions),
+        "the kernel reads the endpoint as the same call: {decisions:?}"
+    );
+    let as_written = Sides::Values(endpoint, written);
+    let (verdict, decisions) = held.traced(as_written);
+    assert_eq!(
+        MachineVerdict::Convertible,
+        verdict,
+        "the endpoint meets `pair` applied to the call: {decisions:?}"
+    );
+    assert_eq!(
+        KernelVerdict::Convertible,
+        held.replayed(as_written, verdict, &decisions),
+        "and the kernel replays it: {decisions:?}"
+    );
+}
+
+#[test]
 fn two_held_transports_convert_by_their_computations()
 {
     // `⟨comp(R)⟩` against `⟨other((), R)⟩` for the rigid path `R`, where

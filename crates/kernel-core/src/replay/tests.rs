@@ -1587,6 +1587,60 @@ fn an_endpoint_reads_a_bind_through_its_stuck_call()
 }
 
 #[test]
+fn an_endpoint_reads_a_bind_handing_its_stuck_call_to_a_definition_761()
+{
+    // `⟨pred x to n. succ n⟩` against `S(⟨pred x⟩)`, `succ = λy. return
+    // S(y)` a definition: `double(S(m))`'s arm `twice(double(m))` in
+    // miniature. The continuation stops at `succ`'s call over the held
+    // call, so the endpoint reads as that call, and the conversion unfolds
+    // `succ` to meet the constructor. Before, the reading kept the bind
+    // whole and the sides stood apart.
+    let mut arena = TermArena::new();
+    let nat = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let motive = arena.comp_type_returner(nat);
+    let on_zero = arena.computation_return(zero);
+    let field = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let on_successor = arena.computation_return(field);
+    let on_successor = arena.computation_lambda(on_successor);
+    let cases = arena.computation_data_case(field, motive, alloc::vec![on_zero, on_successor]);
+    let body = arena.computation_lambda(cases);
+    let pred = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
+    let stuck = arena.computation_application(pred, field);
+    let successor = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![field]);
+    let wrapped = arena.computation_return(successor);
+    let wrapping = arena.computation_lambda(wrapped);
+    let wrapping = arena.value_thunk(wrapping);
+    let unfoldings = Unfoldings::new(alloc::vec![Unfoldable::Opaque, Unfoldable::Body(wrapping)]);
+    let succ = arena.value_constant(ConstantIndex::from(1_usize));
+    let forced = arena.computation_force(succ);
+    let continuation = arena.computation_application(forced, field);
+    let bound = arena.computation_bind(stuck, continuation);
+    let endpoint = arena.value_returned(bound);
+    let call = arena.value_returned(stuck);
+    let expected = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![call]);
+    let unfold = [
+        ConversionDecision::Unfold {
+            constant: ReplayNode::Constant(ConstantIndex::from(1_usize)),
+        },
+        ConversionDecision::ReduceLeft {
+            redex: ReplayNode::Constant(ConstantIndex::from(1_usize)),
+        },
+    ];
+
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Values(endpoint, expected),
+            EngineClaim::Convertible,
+            &unfold
+        ),
+        KernelVerdict::Convertible
+    );
+}
+
+#[test]
 fn an_endpoint_passes_over_a_bind_its_own_elimination_built()
 {
     // `⟨pred ⟨pred x⟩ to n. return S(n)⟩` against `S(⟨pred ⟨pred x⟩⟩)`:
