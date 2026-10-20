@@ -1207,7 +1207,6 @@
 1796 Other while_expression : L[identifier] R[<type>]
 1797 Other while_expression ) L[<type>] R[<expression>]
 1798 Other while_expression ; L[<expression>] R[<expression> }]
-1799 Other while_expression ; L[<expression>] R[<expression> }]
 1803 Keyword loop_expression val L[{] R[<pattern>]
 1804 Other loop_expression = L[<pattern>] R[<expression>]
 1805 Other loop_expression ; L[<expression>] R[<expression> }]

@@ -2870,6 +2870,20 @@ struct Lowerer<'run, 'source>
     /// The conditions of `while` loops, read where a computation is: a value
     /// written there is returned, so the loop binds what it tests.
     tested: BTreeSet<NodeIndex>,
+    /// The linear binders that hold a slot: each `hold` statement's, and each
+    /// slot a threading loop holds again for its passes and for what follows
+    /// it.
+    held: BTreeSet<ScopeId>,
+    /// The loops that thread held slots, by the loop's node: each slot's
+    /// linear index where the loop stands, and its name, outermost first.
+    threading: BTreeMap<NodeIndex, Vec<(DeBruijnIndex, SurfaceName<'source>)>>,
+    /// The slots each threading loop holds again for its passes, by the
+    /// loop's own binder, outermost first.
+    reheld: BTreeMap<ScopeId, Vec<ScopeId>>,
+    /// The slots each threading loop's first pass takes, by the loop body's
+    /// last computation: their linear indices where the loop stands,
+    /// outermost first.
+    carries: BTreeMap<NodeIndex, Vec<DeBruijnIndex>>,
     /// The computation positions where a path through a handled subject
     /// ends: the subject's last computation, and what stands in tail position
     /// of one. A value there is returned to the handler's return clause, as
@@ -3958,6 +3972,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             breaking: BTreeSet::new(),
             reentered: BTreeMap::new(),
             tested: BTreeSet::new(),
+            held: BTreeSet::new(),
+            threading: BTreeMap::new(),
+            reheld: BTreeMap::new(),
+            carries: BTreeMap::new(),
             results: BTreeSet::new(),
             framed: BTreeSet::new(),
             looped_past: BTreeSet::new(),
@@ -7290,6 +7308,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             let _leads = self.leading.insert(written.span.start());
                             closed(site, cursor, TileName::BRACE_CLOSE)?;
                             exhausted(site, cursor)?;
+                            let _rest = self.threads(site, written.node, (frame, frame))?;
                             self.read(written.node, Reading::Computation(frame));
                             return Ok(Block {
                                 statements: Stretch {
@@ -7309,16 +7328,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             binding: StatementBinding::Discarded,
                             rest: exits::Rest::Bound,
                         });
-                        frame = Frame::Inner(self.scope.extend(
+                        let after = Frame::Inner(self.scope.extend(
                             frame,
                             SurfaceName::from(""),
                             Maybe::Absent(binder_site::Absent::Unwritten),
                         ));
+                        frame = self.threads(site, discarded.node, (frame, after))?;
                         continue;
                     }
                     let last = site.one(run)?;
                     closed(site, cursor, TileName::BRACE_CLOSE)?;
                     exhausted(site, cursor)?;
+                    let _rest = self.threads(site, last.node, (frame, frame))?;
                     self.read(last.node, Reading::Computation(frame));
                     let _leads = self.leading.insert(last.span.start());
                     return Ok(Block {
@@ -7359,7 +7380,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     }
                     let _keyword = cursor.read();
                     frame = if label == TileName::RUN {
-                        self.statement(cursor, at, frame)?
+                        let after = self.statement(cursor, at, frame)?;
+                        match self.statements.last() {
+                            Some(&Statement { bound, .. }) => {
+                                self.threads(site, bound, (frame, after))?
+                            },
+                            None => after,
+                        }
                     }
                     else if label == TileName::RECV {
                         self.receive(cursor, at, frame)?

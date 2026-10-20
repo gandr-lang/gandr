@@ -59,18 +59,39 @@
 //!
 //! # Loop-carried state
 //!
-//! The fragment has no mutation: a loop's body sees the binders around the
-//! loop, unchanged on every pass. State a loop carries is a recursive
-//! function's parameter, or an effect's.
+//! State a loop carries lives in held slots (the `lower::access` module). A
+//! `loop` or a `while` that names a slot held around it threads the slot
+//! through its passes as the fixpoint's accumulator. With one slot:
+//!
+//! ```text
+//! (fix k. λ s. hold c = s; b) c
+//! ```
+//!
+//! - The first pass takes the slot's content. Each pass holds it again under
+//!   the slot's own name, so the body reads and writes its own copy.
+//! - A pass's end runs `(force k) c`, handing the next pass the content as the
+//!   pass left it.
+//! - Several slots travel as a tuple: `λ p. split p (s₁, …, sₙ)`, each held
+//!   again in turn.
+//!
+//! What follows the loop runs at its `break`s, inside the passes, so it is
+//! read under the slots held again and sees what the last pass left there.
+//! A loop threads only as a statement or the last computation of a block
+//! whose ends continue no enclosing block; a loop elsewhere sees the binders
+//! around it unchanged on every pass, as a `for` always does.
 
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
+use core::cmp::Reverse;
 
 use anodized::spec;
 use gandr_core_term::ComponentCount;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
+use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
 use gandr_core_term::instantiate_computation_traced;
+use gandr_core_term::memory::MemoryForm;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_surface_syntax::NodeIndex;
@@ -97,10 +118,16 @@ use crate::error::FragmentBoundary;
 use crate::error::LoopExit;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
+use crate::form::Former;
+use crate::form::Placed;
+use crate::form::Shape;
 use crate::form::TileName;
+use crate::form::shape_of;
+use crate::form::tile_label;
 use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::resolve::Frame;
+use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::binder_site;
 
@@ -139,6 +166,8 @@ pub(super) struct Reentry
     /// The index a `for` loop's remaining tail has, which the next pass steps
     /// through.
     tail: Maybe<DeBruijnIndex, passed::Absent>,
+    /// The held slots the next pass takes, when the loop threads any.
+    carried: Maybe<Carried, carried::Absent>,
 }
 
 quenchant_shape::reason_enum! {
@@ -153,21 +182,113 @@ quenchant_shape::reason_enum! {
     }
 }
 
+/// The held slots a pass hands the loop's next pass, where the pass stands:
+/// the innermost slot's linear index and how many slots there are, each next
+/// one a linear index further out.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct Carried
+{
+    /// The linear index the innermost slot has.
+    innermost: DeBruijnIndex,
+    /// How many slots the loop threads.
+    count: ComponentCount,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a loop's next pass takes no held slot.
+    pub(super) mod carried {
+        /// The loop threads none.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No slot held around the loop is named inside it, or the loop
+            /// stands where it cannot thread one.
+            Unthreaded,
+        }
+    }
+}
+
+/// The value a threading loop's pass takes: the one slot read, or the tuple
+/// of the slots read in the order `indices` names them, outermost first.
+///
+/// # Specification
+/// - requires: `indices` names at least one linear index in scope where the
+///   value is minted.
+/// - ensures: the linear variable at the one index; otherwise the tuple of the
+///   linear variables at `indices`, in order; every node minted at `origin`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `while` threading one slot passes it, and one threading
+///   two passes both, in order.
+/// - witness: `lower::loops::tests::a_loop_threads_the_slots_it_names_through_its_passes`
+#[spec(ensures: |ret| sink.arena.value(ret).is_some())]
+fn slots(
+    indices: impl ExactSizeIterator<Item = DeBruijnIndex>,
+    sink: &mut Sink<'_>,
+    origin: Origin,
+) -> ValueId
+{
+    let mut read = Vec::with_capacity(indices.len());
+    for index in indices {
+        let slot = sink.arena.value_variable(Zone::Linear, index);
+        sink.origins.record_value(slot, origin);
+        read.push(slot);
+    }
+    if let &[one] = read.as_slice() {
+        return one;
+    }
+    let tuple = sink.arena.value_tuple(&read);
+    sink.origins.record_value(tuple, origin);
+    tuple
+}
+
+/// The linear indices of `carried`'s slots, outermost first.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one index per slot, from `innermost + count - 1` down to
+///   `innermost`, each saturating at the index width.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the specification facade wraps the body in a closure,
+///   which cannot return the opaque iterator; the witness reads the pass it
+///   builds.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a pass of a `while` threading two slots hands both on,
+///   the outer first.
+/// - witness: `lower::loops::tests::a_loop_threads_the_slots_it_names_through_its_passes`
+fn outermost_first(carried: Carried) -> impl ExactSizeIterator<Item = DeBruijnIndex>
+{
+    (0 .. usize::from(carried.count)).rev().map(move |outward| {
+        u32::try_from(outward)
+            .ok()
+            .and_then(|outward| u32::from(carried.innermost).checked_add(outward))
+            .map_or_else(|| DeBruijnIndex::from(u32::MAX), DeBruijnIndex::from)
+    })
+}
+
 /// The pass `reentry` runs: the force of the loop's own binder, applied to the
-/// remaining tail when the loop is a `for`.
+/// remaining tail when the loop is a `for`, or to the slots it threads.
 ///
 /// # Specification
 /// - requires: `reentry`'s indices are in scope where the pass is minted.
-/// - ensures: `force k`, or `(force k) t`, every node below the pass at
-///   `origin`; the caller records the pass itself.
+/// - ensures: `force k`, `(force k) t` or `(force k) c`, every node below the
+///   pass at `origin`; the caller records the pass itself.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a `continue` in a `while` and one in a `for` each run
-///   their loop again, the second on its tail.
+///   their loop again, the second on its tail; a pass of a threading loop hands
+///   the next its slots.
 /// - witness: `lower::loops::tests::a_continue_runs_its_own_loop_again`
 /// - witness: `lower::loops::tests::a_for_steps_through_its_list`
+/// - witness: `lower::loops::tests::a_loop_threads_the_slots_it_names_through_its_passes`
 #[spec(ensures: |ret| sink.arena.computation(ret).is_some())]
 pub(super) fn again(
     reentry: Reentry,
@@ -178,14 +299,19 @@ pub(super) fn again(
     let itself = sink.arena.value_variable(Zone::Intuitionistic, reentry.own);
     sink.origins.record_value(itself, origin);
     let forced = sink.arena.computation_force(itself);
-    let Maybe::Present(tail) = reentry.tail
-    else {
-        return forced;
+    let argument = match (reentry.tail, reentry.carried) {
+        (Maybe::Present(tail), _) => {
+            let tail = sink.arena.value_variable(Zone::Intuitionistic, tail);
+            sink.origins.record_value(tail, origin);
+            tail
+        },
+        (Maybe::Absent(_), Maybe::Present(carried)) => {
+            slots(outermost_first(carried), sink, origin)
+        },
+        (Maybe::Absent(_), Maybe::Absent(_)) => return forced,
     };
     sink.origins.record_computation(forced, origin);
-    let tail = sink.arena.value_variable(Zone::Intuitionistic, tail);
-    sink.origins.record_value(tail, origin);
-    sink.arena.computation_application(forced, tail)
+    sink.arena.computation_application(forced, argument)
 }
 
 impl<'source> Lowerer<'_, 'source>
@@ -195,8 +321,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `site` is a `loop` in term position.
     /// - ensures: a loop standing as a computation where a path through a body
-    ///   passes binds itself in a frame extending its own, reads its block
-    ///   under that frame as a loop's body, and is planned over it.
+    ///   passes binds itself in a frame extending its own, then the slots it
+    ///   threads, reads its block under that frame as a loop's body, and is
+    ///   planned over it.
     /// - provides: the unconditional loop.
     /// - fails: yields the wrong-sort refusal outside computation position, the
     ///   not-in-tail refusal where no path passes, the block's own refusal, and
@@ -232,12 +359,14 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.out(FragmentBoundary::NotInTail));
         }
         let _keyword = cursor.tile(TileName::LOOP);
-        let own = Frame::Inner(self.scope.extend(
+        let own = self.scope.extend(
             frame,
             iteration(),
             Maybe::Absent(binder_site::Absent::Unwritten),
-        ));
-        let body = self.block(site, &mut cursor, own)?;
+        );
+        let (passes, carries) = self.passes(site, own);
+        let body = self.block(site, &mut cursor, passes)?;
+        self.carry(body, carries);
         self.iterate(site, body)?;
         self.plan(site, Plan::Loop(body));
 
@@ -249,10 +378,11 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `site` is a `while` in term position.
     /// - ensures: a `while` standing as a computation where a path through a
-    ///   body passes binds itself in a frame extending its own, reads its
-    ///   condition as a tested computation under that frame, reads its block as
-    ///   a loop's body under two more, nameless binders, the bound condition
-    ///   and the case's payload, and is planned over both.
+    ///   body passes binds itself in a frame extending its own, then the slots
+    ///   it threads, reads its condition as a tested computation under that
+    ///   frame, reads its block as a loop's body under two more, nameless
+    ///   binders, the bound condition and the case's payload, and is planned
+    ///   over both.
     /// - provides: the conditional loop.
     /// - fails: as [`Self::looped`], and the condition's own refusal.
     /// - panics: none.
@@ -287,14 +417,15 @@ impl<'source> Lowerer<'_, 'source>
         }
         let _keyword = cursor.tile(TileName::WHILE);
         let condition = site.one(cursor.operands())?;
-        let own = Frame::Inner(self.scope.extend(
+        let own = self.scope.extend(
             frame,
             iteration(),
             Maybe::Absent(binder_site::Absent::Unwritten),
-        ));
+        );
+        let (passes, carries) = self.passes(site, own);
         let _tested = self.tested.insert(condition.node);
-        self.read(condition.node, Reading::Computation(own));
-        let mut held = own;
+        self.read(condition.node, Reading::Computation(passes));
+        let mut held = passes;
         for _binder in 0_u8 .. 2_u8 {
             held = Frame::Inner(self.scope.extend(
                 held,
@@ -303,10 +434,198 @@ impl<'source> Lowerer<'_, 'source>
             ));
         }
         let body = self.block(site, &mut cursor, held)?;
+        self.carry(body, carries);
         self.iterate(site, body)?;
         self.plan(site, Plan::While(condition.node, body));
 
         Ok(())
+    }
+
+    /// The frame what follows the computation `written` reads under, a
+    /// statement or the last computation of the block `site` reads, standing
+    /// under `frame`: `after` extended by the slots the computation threads,
+    /// when it is a `loop` or a `while` that threads any. What follows the
+    /// loop runs inside its passes, so a slot named there is threaded too.
+    ///
+    /// # Specification
+    /// - requires: `written` is a computation of the block `site` reads, read
+    ///   under `frame`; `after` is the frame what follows it reads under when
+    ///   it threads nothing.
+    /// - ensures: for a `loop` or a `while` in a block whose ends continue no
+    ///   other's, each held slot an identifier of the block from the loop on
+    ///   resolves to at `frame`, once, is recorded for the loop with its linear
+    ///   index there and its name, outermost first, and `after` is extended by
+    ///   one linear binder per slot under the slot's name, each recorded as
+    ///   held; anything else threads nothing and answers `after`.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] from a name's walk.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `while` naming one slot in its condition and its
+    ///   body threads it, one naming two threads both, a slot named only after
+    ///   the loop is threaded, and one naming none threads nothing.
+    /// - witness: `lower::loops::tests::a_loop_threads_the_slots_it_names_through_its_passes`
+    #[spec(ensures: |ret| match ret {
+        | Ok(rest) => rest == after || self.threading.contains_key(&written),
+        | Err(LoweringRefusal::BudgetExceeded { .. }) => true,
+        | Err(_) => false,
+    })]
+    pub(super) fn threads(
+        &mut self,
+        site: Site,
+        written: NodeIndex,
+        (frame, after): (Frame, Frame),
+    ) -> Result<Frame, LoweringRefusal<'source>>
+    {
+        let Some(from) = self.tree.node(written).map(|node| node.span().start())
+        else {
+            return Ok(after);
+        };
+        let looping = self.tree.node(written).is_some_and(|node| {
+            matches!(
+                shape_of(self.pbg, node),
+                Ok(Shape::Form {
+                    former: Former::Loop | Former::While,
+                    ..
+                })
+            )
+        });
+        if !looping
+            || self.joined.contains(&site.at.node)
+            || !self
+                .scope
+                .chain(frame)
+                .any(|binder| self.held.contains(&binder))
+        {
+            return Ok(after);
+        }
+        // Keyed outermost first: distinct slots on one chain stand at distinct
+        // linear indices.
+        let mut slots: BTreeMap<Reverse<DeBruijnIndex>, SurfaceName<'source>> = BTreeMap::new();
+        let mut pending = Vec::from([site.at.node]);
+        while let Some(position) = pending.pop() {
+            let Some(node) = self.tree.node(position)
+            else {
+                continue;
+            };
+            if node.span().end() <= from {
+                continue;
+            }
+            pending.extend(self.tree.children(position));
+            if node.span().start() < from
+                || tile_label(self.pbg, node) != Maybe::Present(TileName::IDENTIFIER)
+            {
+                continue;
+            }
+            let name = self.name_at(Placed::of(position, node));
+            if let Maybe::Present(bound) = self.scope.resolve(frame, name, &mut self.fuel)?
+                && self.held.contains(&bound.binder)
+            {
+                let _first = slots.entry(Reverse(bound.index)).or_insert(name);
+            }
+        }
+        if slots.is_empty() {
+            return Ok(after);
+        }
+        let mut rest = after;
+        for &name in slots.values() {
+            let again =
+                self.scope
+                    .extend_linear(rest, name, Maybe::Absent(binder_site::Absent::Unwritten));
+            let _held = self.held.insert(again);
+            rest = Frame::Inner(again);
+        }
+        let _first = self.threading.insert(
+            written,
+            slots
+                .into_iter()
+                .map(|(Reverse(index), name)| (index, name))
+                .collect(),
+        );
+
+        Ok(rest)
+    }
+
+    /// The frame the passes of the loop at `site` read under, past its own
+    /// binder `own`, and the slots its first pass takes.
+    ///
+    /// # Specification
+    /// - requires: `own` is the loop's own binder.
+    /// - ensures: for a loop [`Self::threads`] recorded, the pass's argument —
+    ///   one binder, or one for the tuple and one per slot it splits into —
+    ///   then each slot held again under its own name, recorded as held and as
+    ///   the loop's, with the linear indices the slots have where the loop
+    ///   stands, outermost first; `own` and nothing otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::threads`].
+    /// - witness: `lower::loops::tests::a_loop_threads_the_slots_it_names_through_its_passes`
+    #[spec(ensures: |ret| ret.1.is_empty() != self.reheld.contains_key(&own))]
+    fn passes(
+        &mut self,
+        site: Site,
+        own: ScopeId,
+    ) -> (Frame, Vec<DeBruijnIndex>)
+    {
+        let Some(slots) = self.threading.remove(&site.at.node)
+        else {
+            return (Frame::Inner(own), Vec::new());
+        };
+        let unwritten = || Maybe::Absent(binder_site::Absent::Unwritten);
+        let mut pass = Frame::Inner(self.scope.extend(
+            Frame::Inner(own),
+            SurfaceName::from(""),
+            unwritten(),
+        ));
+        if slots.len() > 1 {
+            for _component in &slots {
+                pass = Frame::Inner(self.scope.extend(pass, SurfaceName::from(""), unwritten()));
+            }
+        }
+        let mut reheld = Vec::with_capacity(slots.len());
+        let mut carries = Vec::with_capacity(slots.len());
+        for (index, name) in slots {
+            let again = self.scope.extend_linear(pass, name, unwritten());
+            let _held = self.held.insert(again);
+            reheld.push(again);
+            carries.push(index);
+            pass = Frame::Inner(again);
+        }
+        let _first = self.reheld.insert(own, reheld);
+
+        (pass, carries)
+    }
+
+    /// Record `carries` as the slots the first pass of the loop over `body`
+    /// takes.
+    ///
+    /// # Specification
+    /// - requires: `carries` is what [`Self::passes`] answered for the loop.
+    /// - ensures: recorded under the body's last computation unless empty.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::threads`].
+    /// - witness: `lower::loops::tests::a_loop_threads_the_slots_it_names_through_its_passes`
+    #[spec(
+        captures: empty = carries.is_empty(),
+        ensures: empty || self.carries.contains_key(&body.last),
+    )]
+    fn carry(
+        &mut self,
+        body: Block,
+        carries: Vec<DeBruijnIndex>,
+    )
+    {
+        if !carries.is_empty() {
+            let _first = self.carries.insert(body.last, carries);
+        }
     }
 
     /// Classify a list loop, `for x in xs { … }`.
@@ -534,9 +853,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `site` is the node the pass is read at, under `frame`.
-    /// - ensures: the index the nearest loop's own binder has at `frame`, and
-    ///   the index of its remaining tail when that loop is a `for`, whose tail
-    ///   stands inside the loop's own binder.
+    /// - ensures: the index the nearest loop's own binder has at `frame`, the
+    ///   index of its remaining tail when that loop is a `for`, whose tail
+    ///   stands inside the loop's own binder, and where the slots it holds
+    ///   again stand at `frame` when that loop threads any.
     /// - fails: [`LoweringRefusal::OutsideLoop`] where no loop's binder is in
     ///   scope; [`LoweringRefusal::BudgetExceeded`] from the binder walk.
     /// - panics: none.
@@ -546,8 +866,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a `continue` in a `for` passes its tail, and one in a
-    ///   `while` inside a `for` passes nothing.
+    ///   `while` inside a `for` passes nothing; a pass of a threading `while`
+    ///   passes its slots.
     /// - witness: `lower::loops::tests::a_for_steps_through_its_list`
+    /// - witness: `lower::loops::tests::a_loop_threads_the_slots_it_names_through_its_passes`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |reentry| match reentry.tail {
         | Maybe::Present(tail) => u32::from(tail) < u32::from(reentry.own),
         | Maybe::Absent(_) => true,
@@ -558,7 +880,7 @@ impl<'source> Lowerer<'_, 'source>
         site: Site,
     ) -> Result<Reentry, LoweringRefusal<'source>>
     {
-        let Maybe::Present(own) = self.scope.index_of(frame, iteration(), &mut self.fuel)?
+        let Maybe::Present(own) = self.scope.resolve(frame, iteration(), &mut self.fuel)?
         else {
             return Err(LoweringRefusal::OutsideLoop {
                 span: site.at.span,
@@ -566,11 +888,28 @@ impl<'source> Lowerer<'_, 'source>
             });
         };
         let tail = match self.scope.index_of(frame, remaining(), &mut self.fuel)? {
-            Maybe::Present(tail) if u32::from(tail) < u32::from(own) => Maybe::Present(tail),
+            Maybe::Present(tail) if u32::from(tail) < u32::from(own.index) => Maybe::Present(tail),
             Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(passed::Absent::Unlisted),
         };
+        let carried = self.reheld.get(&own.binder).map_or(
+            Maybe::Absent(carried::Absent::Unthreaded),
+            |held| match held
+                .last()
+                .map(|&innermost| self.scope.linear_index(frame, innermost))
+            {
+                Some(Maybe::Present(innermost)) => Maybe::Present(Carried {
+                    innermost,
+                    count: ComponentCount::from(held.len()),
+                }),
+                Some(Maybe::Absent(_)) | None => Maybe::Absent(carried::Absent::Unthreaded),
+            },
+        );
 
-        Ok(Reentry { own, tail })
+        Ok(Reentry {
+            own: own.index,
+            tail,
+            carried,
+        })
     }
 
     /// Admit the loop exit `exit` at `site` only on a path through a loop's
@@ -694,6 +1033,7 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Present(tail) => Maybe::Present(past(tail)?),
                 Maybe::Absent(reason) => Maybe::Absent(reason),
             },
+            carried: reentry.carried,
         };
         let _first = self.reentered.insert(site.at.node, under);
         if leaves == Leaves::Never {
@@ -759,8 +1099,9 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: every node of `body` is already minted or absent.
-    /// - ensures: `fix k. b`, partial, at `origin`, recorded as a loop; nothing
-    ///   when the body did not lower.
+    /// - ensures: `fix k. b`, partial, at `origin`, recorded as a loop, and
+    ///   threading its slots as [`Self::passing`] does; nothing when the body
+    ///   did not lower.
     /// - provides: the minting half of [`Self::looped`].
     /// - fails: never.
     /// - panics: none.
@@ -769,7 +1110,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::looped`].
     /// - witness: `lower::loops::tests::a_loop_lowers_to_a_partial_fixpoint_over_its_body`
     #[spec(ensures: |ret| match ret {
-        | Maybe::Present(Lowered::Computation(id)) => sink.loops.contains(&id),
+        | Maybe::Present(Lowered::Computation(id)) => sink.loops.contains(&id)
+            || matches!(sink.arena.computation(id), Some(&Computation::Application(head, _)) if sink.loops.contains(&head)),
         | Maybe::Present(_) => false,
         | Maybe::Absent(_) => true,
     })]
@@ -784,10 +1126,7 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(under) => under,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let id = sink
-            .arena
-            .computation_fixpoint(under, FixpointEvidence::Partial);
-        let _first = sink.loops.insert(id);
+        let id = self.passing(body, under, sink, origin);
 
         Maybe::Present(sink.computation(id, origin))
     }
@@ -802,8 +1141,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   the case and the false branch at `origin` marked as the loop's
     ///   insertion, the false branch recorded as a break; a condition that is a
     ///   returner `return v` takes the beta step instead, the case instantiated
-    ///   at `v` with every copy it makes marked as its source is; nothing when
-    ///   the condition or the body did not lower.
+    ///   at `v` with every copy it makes marked as its source is; the slots
+    ///   threaded as [`Self::passing`] does; nothing when the condition or the
+    ///   body did not lower.
     /// - provides: the minting half of [`Self::repeated`].
     /// - fails: never.
     /// - panics: none.
@@ -812,7 +1152,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::repeated`].
     /// - witness: `lower::loops::tests::a_while_tests_its_condition_on_every_pass`
     #[spec(ensures: |ret| match ret {
-        | Maybe::Present(Lowered::Computation(id)) => sink.loops.contains(&id),
+        | Maybe::Present(Lowered::Computation(id)) => sink.loops.contains(&id)
+            || matches!(sink.arena.computation(id), Some(&Computation::Application(head, _)) if sink.loops.contains(&head)),
         | Maybe::Present(_) => false,
         | Maybe::Absent(_) => true,
     })]
@@ -858,12 +1199,84 @@ impl<'source> Lowerer<'_, 'source>
             sink.origins.record_computation(bound, inserted);
             bound
         };
-        let id = sink
-            .arena
-            .computation_fixpoint(tested, FixpointEvidence::Partial);
-        let _first = sink.loops.insert(id);
+        let id = self.passing(body, tested, sink, origin);
 
         Maybe::Present(sink.computation(id, origin))
+    }
+
+    /// The loop whose passes run `under`, the body of the loop whose block is
+    /// `body`: `fix k. under` when the loop threads no slot; when it threads
+    /// one, `(fix k. λ s. hold c = s; under) c`, and when it threads several,
+    /// `(fix k. λ p. split p (s₁, …, sₙ); hold c₁ = s₁; …; hold cₙ = sₙ;
+    /// under) (c₁, …, cₙ)`.
+    ///
+    /// # Specification
+    /// - requires: `under` is minted under the frames [`Self::passes`] built
+    ///   for the loop.
+    /// - ensures: the fixpoint, partial and recorded as a loop, alone, or
+    ///   applied to the slots recorded for `body`'s last computation, read
+    ///   where the loop stands; the fixpoint at `origin` and every node the
+    ///   threading adds marked as the loop's insertion; the caller records the
+    ///   answer at `origin`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `while` threading one slot and one threading two.
+    /// - witness: `lower::loops::tests::a_loop_threads_the_slots_it_names_through_its_passes`
+    #[spec(ensures: |ret| sink.loops.contains(&ret)
+        || matches!(sink.arena.computation(ret), Some(&Computation::Application(head, _)) if sink.loops.contains(&head)))]
+    fn passing(
+        &self,
+        body: Block,
+        under: ComputationId,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> ComputationId
+    {
+        let Some(carries) = self.carries.get(&body.last)
+        else {
+            let id = sink
+                .arena
+                .computation_fixpoint(under, FixpointEvidence::Partial);
+            let _first = sink.loops.insert(id);
+            return id;
+        };
+        let inserted = origin.inserted(Insertion::Loop);
+        let count = carries.len();
+        let mut held = under;
+        for component in (0 .. count).rev() {
+            let index = count.saturating_sub(1).saturating_sub(component);
+            let content = sink.arena.value_variable(
+                Zone::Intuitionistic,
+                DeBruijnIndex::from(u32::try_from(index).unwrap_or(u32::MAX)),
+            );
+            sink.origins.record_value(content, inserted);
+            held = sink.arena.computation_memory(MemoryForm::Hold {
+                value: content,
+                body: held,
+            });
+            sink.origins.record_computation(held, inserted);
+        }
+        if count > 1 {
+            let passed = sink
+                .arena
+                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            sink.origins.record_value(passed, inserted);
+            held = sink
+                .arena
+                .computation_split(passed, ComponentCount::from(count), held);
+            sink.origins.record_computation(held, inserted);
+        }
+        let each = sink.arena.computation_lambda(held);
+        sink.origins.record_computation(each, inserted);
+        let id = sink
+            .arena
+            .computation_fixpoint(each, FixpointEvidence::Partial);
+        sink.origins.record_computation(id, origin);
+        let _first = sink.loops.insert(id);
+        let first = slots(carries.iter().copied(), sink, inserted);
+        sink.arena.computation_application(id, first)
     }
 
     /// Mint a list loop stepping through `list` over `body`.

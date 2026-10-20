@@ -126,7 +126,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: `e` is read as a value under `frame`; the statement is
     ///   recorded as the hold of `e` over the rest of the block, and the frame
     ///   binding `x` linearly over `frame`, which the rest of the block reads
-    ///   under, is returned.
+    ///   under, is returned, its binder recorded as a held slot.
     /// - fails: a fault naming the hold statement for a tile out of shape, the
     ///   value hole's own fault and the binder's own refusal.
     /// - panics: none.
@@ -172,11 +172,12 @@ impl<'source> Lowerer<'_, 'source>
             rest: exits::Rest::Bound,
         });
 
-        Ok(Frame::Inner(self.scope.extend_linear(
-            frame,
-            name,
-            Maybe::Present(binder.span),
-        )))
+        let slot = self
+            .scope
+            .extend_linear(frame, name, Maybe::Present(binder.span));
+        let _held = self.held.insert(slot);
+
+        Ok(Frame::Inner(slot))
     }
 
     /// The linear index of the name written at `written`, read under

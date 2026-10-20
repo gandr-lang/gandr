@@ -1048,6 +1048,45 @@ impl<'source> Scope<'source>
             })
     }
 
+    /// The linear index the binder `binder` has in the chain rooted at `from`.
+    ///
+    /// # Specification
+    /// - requires: nothing — an out-of-range coordinate is admissible.
+    /// - ensures: when `binder` is on the chain, the number of linear frames
+    ///   strictly between `from` and it; the unbound absence otherwise.
+    /// - provides: where a slot a loop holds again stands at a pass's end,
+    ///   whatever name binds closer.
+    /// - fails: never.
+    /// - panics: none. Parent links name an earlier frame, so the walk ends.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an outer slot found past a shadow of its name and a
+    ///   view, an intuitionistic frame between counting nothing, and a binder
+    ///   off the chain answered absent.
+    /// - witness: `resolve::tests::a_linear_binder_is_found_by_its_coordinate`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(index) => usize::try_from(u32::from(index)).is_ok_and(|depth| depth < self.frames.len()),
+        | Maybe::Absent(binder::Absent::Unbound) => true,
+    })]
+    #[inline]
+    pub fn linear_index(
+        &self,
+        from: Frame,
+        binder: ScopeId,
+    ) -> Maybe<DeBruijnIndex, binder::Absent>
+    {
+        let mut linear = 0_u32;
+        for here in self.chain(from) {
+            if here == binder {
+                return Maybe::Present(DeBruijnIndex::from(linear));
+            }
+            if self.zone(here) == Zone::Linear {
+                linear = linear.saturating_add(1_u32);
+            }
+        }
+        Maybe::Absent(binder::Absent::Unbound)
+    }
+
     /// The de Bruijn index `name` has in the chain rooted at `frame`.
     ///
     /// # Specification
@@ -2375,6 +2414,33 @@ mod tests
         assert_eq!(
             scope.telescope_index(Frame::Inner(y), a),
             DeBruijnIndex::from(2_u32)
+        );
+    }
+
+    #[test]
+    fn a_linear_binder_is_found_by_its_coordinate()
+    {
+        let mut scope = Scope::new();
+        let held = scope.extend_linear(Frame::Outermost, SurfaceName::from("n"), UNWRITTEN);
+        let pass = scope.extend(Frame::Inner(held), SurfaceName::from("s"), UNWRITTEN);
+        let shadow = scope.extend_linear(Frame::Inner(pass), SurfaceName::from("n"), UNWRITTEN);
+        let view = scope.extend_linear(Frame::Inner(shadow), SurfaceName::from("v"), UNWRITTEN);
+        let elsewhere = scope.extend_linear(Frame::Outermost, SurfaceName::from("m"), UNWRITTEN);
+
+        assert_eq!(
+            scope.linear_index(Frame::Inner(view), held),
+            Maybe::Present(DeBruijnIndex::from(2_u32)),
+            "the outer slot is reached past the shadow and the view, whatever the name"
+        );
+        assert_eq!(
+            scope.linear_index(Frame::Inner(view), shadow),
+            Maybe::Present(DeBruijnIndex::from(1_u32)),
+            "the intuitionistic frame between counts nothing"
+        );
+        assert_eq!(
+            scope.linear_index(Frame::Inner(view), elsewhere),
+            Maybe::Absent(binder::Absent::Unbound),
+            "a binder off the chain is not found"
         );
     }
 }

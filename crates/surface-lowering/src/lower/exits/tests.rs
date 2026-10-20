@@ -7,6 +7,7 @@ use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::equal_certificate_syntax;
+use gandr_core_term::memory::MemoryForm;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
@@ -118,7 +119,7 @@ pub(in crate::lower) fn assert_surveyed(
 }
 
 /// Every computation reachable from `root` through binds, lambdas, matches,
-/// list cases, splits, fixpoints and the heads of applications.
+/// list cases, splits, fixpoints, holds and the heads of applications.
 ///
 /// # Specification
 /// trivial.
@@ -137,7 +138,8 @@ pub(in crate::lower) fn reachable(
                 &Computation::Lambda(under)
                 | &Computation::Split { body: under, .. }
                 | &Computation::Fixpoint { body: under, .. }
-                | &Computation::Application(under, _),
+                | &Computation::Application(under, _)
+                | &Computation::Memory(MemoryForm::Hold { body: under, .. }),
             ) => {
                 pending.push(under);
             },

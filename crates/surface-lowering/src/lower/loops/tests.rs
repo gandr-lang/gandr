@@ -5,7 +5,9 @@ use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
+use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
+use gandr_core_term::memory::MemoryForm;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_surface_syntax::SourceText;
@@ -277,6 +279,124 @@ fn a_while_tests_its_condition_on_every_pass()
             arena.computation(body)
         );
     }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+/// The linear indices a value reads: one for a linear variable, one per
+/// component for a tuple of them.
+///
+/// # Specification
+/// trivial.
+fn linear(
+    arena: &CoreArena,
+    value: ValueId,
+) -> Vec<DeBruijnIndex>
+{
+    let read = |value| match arena.value(value) {
+        Some(&Value::Variable {
+            zone: Zone::Linear,
+            index,
+        }) => Some(index),
+        _ => None,
+    };
+    match arena.value(value) {
+        Some(&Value::Tuple(ref components)) => components
+            .iter()
+            .filter_map(|&component| read(component))
+            .collect(),
+        _ => read(value).into_iter().collect(),
+    }
+}
+
+#[test]
+fn a_loop_threads_the_slots_it_names_through_its_passes()
+{
+    let source = "def one() -> -F Integer { hold n = 3; while n > 0 { access n as v { resume(v, v - 1) } }; pure n }\n\
+                  def two() -> -F Integer { hold a = 10; hold b = 1; while b < 4 { access b as v { resume(v, v + 1) }; access a as w { resume(w, w - 1) } }; pure a * 100 + b }\n\
+                  def after() -> -F Integer { hold a = 4; hold b = 3; while b > 0 { access b as v { resume(v, v - 1) } }; pure a + 3 }\n\
+                  def none() -> -F Integer { hold a = 4; while 1 > 2 { return 1 }; pure 5 }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    // Each name: the slots the first pass takes, where the loop stands, and
+    // the slots each pass end hands on, where it stands.
+    for (name, first, again) in [
+        ("one", [0_u32].as_slice(), [0_u32].as_slice()),
+        ("two", [1, 0].as_slice(), [1, 0].as_slice()),
+        ("after", [1, 0].as_slice(), [1, 0].as_slice()),
+        ("none", [].as_slice(), [].as_slice()),
+    ] {
+        let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
+        let nodes = reachable(&arena, tail);
+        let entered: Vec<Vec<DeBruijnIndex>> = nodes
+            .iter()
+            .filter_map(|&node| match arena.computation(node) {
+                Some(&Computation::Application(head, first))
+                    if matches!(arena.computation(head), Some(Computation::Fixpoint { .. })) =>
+                {
+                    Some(linear(&arena, first))
+                },
+                _ => None,
+            })
+            .collect();
+        let passed: Vec<Vec<DeBruijnIndex>> = nodes
+            .iter()
+            .filter_map(|&node| match arena.computation(node) {
+                Some(&Computation::Application(head, next))
+                    if matches!(arena.computation(head), Some(Computation::Force(_))) =>
+                {
+                    Some(linear(&arena, next))
+                },
+                _ => None,
+            })
+            .collect();
+        let expected = |slots: &[u32]| -> Vec<Vec<DeBruijnIndex>> {
+            if slots.is_empty() {
+                Vec::new()
+            }
+            else {
+                Vec::from([slots.iter().copied().map(DeBruijnIndex::from).collect()])
+            }
+        };
+        assert_eq!(
+            entered,
+            expected(first),
+            "`{name}`'s first pass takes the slots where the loop stands, outermost first"
+        );
+        assert_eq!(
+            passed,
+            expected(again),
+            "each pass of `{name}` hands the next the slots it holds again"
+        );
+    }
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("two")));
+    let split =
+        reachable(&arena, tail)
+            .into_iter()
+            .find_map(|node| match arena.computation(node) {
+                Some(&Computation::Split { arity, body, .. }) => Some((usize::from(arity), body)),
+                _ => None,
+            });
+    let held = |hold: ComputationId| match arena.computation(hold) {
+        Some(&Computation::Memory(MemoryForm::Hold { value, body })) => match arena.value(value) {
+            Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index,
+            }) => Some((u32::from(index), body)),
+            _ => None,
+        },
+        _ => None,
+    };
+    let (arity, outer) =
+        split.unwrap_or_else(|| panic!("`two`'s passes split the tuple they take"));
+    let (first, inner) =
+        held(outer).unwrap_or_else(|| panic!("`two` holds the first component again"));
+    let (second, _) =
+        held(inner).unwrap_or_else(|| panic!("`two` holds the second component again"));
+    assert_eq!(
+        (arity, first, second),
+        (2, 1, 0),
+        "the outer slot is held again from the first component, the inner from the second"
+    );
     assert_accepted(&judged(&module, &mut arena));
 }
 
