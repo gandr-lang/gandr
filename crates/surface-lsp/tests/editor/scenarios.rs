@@ -1207,6 +1207,7 @@ fn typing_a_declaration_holds_its_diagnostics_until_its_terminator()
     // first character to its last.
     let mut unheld = Typist::opened(Quiet::Unheld);
     let today = unheld.type_at(at(seed_lines, 0), Text(QUIET_DECLARATION));
+    let mut text = String::new();
     for (cut, publications) in QUIET_DECLARATION
         .char_indices()
         .map(|(offset, typed)| offset.saturating_add(typed.len_utf8()))
@@ -1214,11 +1215,13 @@ fn typing_a_declaration_holds_its_diagnostics_until_its_terminator()
     {
         let mut fresh = Client::initialized(Record::Dropped, Quiet::Default);
         let typed = QUIET_DECLARATION.get(.. cut).unwrap_or_default();
-        let text = format!("{QUIET_SEED}{typed}");
+        text.clear();
+        text.push_str(QUIET_SEED);
+        text.push_str(typed);
         let opened = fresh.notify(
             Method("textDocument/didOpen"),
             &json!({ "textDocument": {
-                "uri": QUIET_URI, "languageId": "gandr", "version": 1_i32, "text": text,
+                "uri": QUIET_URI, "languageId": "gandr", "version": 1_i32, "text": text.as_str(),
             } }),
         );
         assert_eq!(

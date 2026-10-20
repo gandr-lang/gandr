@@ -633,9 +633,9 @@ impl Buffer
     ///   different text, which that comparison and the differential answers
     ///   reveal.
     /// - witness: `tests::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
-    #[spec(captures: [restored = self.history.last().map(|snapshot| snapshot.text.clone())],
+    #[spec(captures: [restored = self.history.last().map(|snapshot| (snapshot.text.as_ptr(), snapshot.text.len()))],
         ensures: |ret| ret.len() <= 1
-            && restored.as_ref().is_none_or(|text| *text == self.text))]
+            && restored.is_none_or(|(at, length)| self.text.as_ptr() == at && self.text.len() == length))]
     pub fn undo(&mut self) -> Vec<Change>
     {
         let Some(snapshot) = self.history.pop()

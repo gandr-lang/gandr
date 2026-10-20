@@ -104,6 +104,9 @@ pub struct ErrorCode(i64);
 
 impl ErrorCode
 {
+    /// A request whose document changed again before the server read it,
+    /// answered without being run.
+    pub const CONTENT_MODIFIED: Self = Self(-32_801);
     /// The method exists, but its parameters are not the shape it reads.
     pub const INVALID_PARAMS: Self = Self(-32_602);
     /// The message is JSON but not a request, a notification or a response,
@@ -113,6 +116,8 @@ impl ErrorCode
     pub const METHOD_NOT_FOUND: Self = Self(-32_601);
     /// The body is not JSON.
     pub const PARSE_ERROR: Self = Self(-32_700);
+    /// A request the client cancelled before the server read it.
+    pub const REQUEST_CANCELLED: Self = Self(-32_800);
     /// The request was valid, but the server could not answer it.
     pub const REQUEST_FAILED: Self = Self(-32_803);
     /// A request arrived before `initialize` was answered.
@@ -157,6 +162,117 @@ pub enum Malformed
     /// identifier other than a number or a string, or parameters other than
     /// an object, an array or null.
     Invalid(RequestId),
+}
+
+/// A body as [`classify()`] reads it.
+pub type Classified = Result<Incoming, Malformed>;
+
+/// Whether a message is the last a client sends that the server reads: the
+/// `exit` notification.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Last(pub bool);
+
+/// Whether `message` is the `exit` notification, after which a client sends
+/// nothing the server reads.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn ends(message: &Classified) -> Last
+{
+    Last(
+        matches!(*message, Ok(Incoming::Notification { ref method, .. }) if method.as_ref() == "exit"),
+    )
+}
+
+/// Why a request is answered without being run.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Withdrawn
+{
+    /// The client cancelled it: a `$/cancelRequest` naming it was read
+    /// before it was answered.
+    Cancelled,
+    /// Its document changed again: a `textDocument/didChange` of the
+    /// document it names was read before it was answered.
+    Modified,
+}
+
+impl Withdrawn
+{
+    /// Why the request `id`, carrying `params`, is answered without being
+    /// run, given the messages `later` read after it.
+    ///
+    /// # Specification
+    /// - requires: `later` is what the client sent after the request, in order.
+    /// - ensures: [`Withdrawn::Cancelled`] when a `$/cancelRequest` in `later`
+    ///   names `id`; otherwise [`Withdrawn::Modified`] when `params` names a
+    ///   `textDocument.uri` that a `textDocument/didChange` in `later` names
+    ///   too; none otherwise.
+    /// - provides: the answer a superseded request owes, read off messages the
+    ///   server has in hand, never by waiting for more.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a cancellation naming the request and one naming
+    ///   another, a change of the request's document and one of another, and a
+    ///   cancellation beside a change are each asserted at their answer.
+    /// - witness: `rpc::tests::a_request_is_withdrawn_by_what_the_client_sent_after_it`
+    #[spec(ensures: |ret| ret.is_none() || !later.is_empty())]
+    #[inline]
+    #[must_use]
+    pub fn of(
+        id: &RequestId,
+        params: &Value,
+        later: &[Classified],
+    ) -> Option<Self>
+    {
+        let notified = |name: &'static str| {
+            later.iter().filter_map(move |message| match *message {
+                Ok(Incoming::Notification {
+                    ref method,
+                    ref params,
+                }) if method.as_ref() == name => Some(params),
+                Ok(_) | Err(_) => None,
+            })
+        };
+        if notified("$/cancelRequest").any(|cancel| cancel.get("id") == Some(&id.0)) {
+            return Some(Self::Cancelled);
+        }
+        let uri = params
+            .pointer("/textDocument/uri")
+            .and_then(Value::as_str)?;
+        notified("textDocument/didChange")
+            .any(|change| change.pointer("/textDocument/uri").and_then(Value::as_str) == Some(uri))
+            .then_some(Self::Modified)
+    }
+
+    /// The response refusing the request `id` for this reason.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn response(
+        self,
+        id: RequestId,
+    ) -> Outgoing
+    {
+        match self {
+            Self::Cancelled => failure(
+                id,
+                ErrorCode::REQUEST_CANCELLED,
+                "the client cancelled the request".to_owned(),
+            ),
+            Self::Modified => failure(
+                id,
+                ErrorCode::CONTENT_MODIFIED,
+                "the document changed before the request was read".to_owned(),
+            ),
+        }
+    }
 }
 
 impl Malformed
@@ -572,6 +688,8 @@ mod tests
             (super::ErrorCode::METHOD_NOT_FOUND, -32_601_i64),
             (super::ErrorCode::INVALID_PARAMS, -32_602_i64),
             (super::ErrorCode::SERVER_NOT_INITIALIZED, -32_002_i64),
+            (super::ErrorCode::REQUEST_CANCELLED, -32_800_i64),
+            (super::ErrorCode::CONTENT_MODIFIED, -32_801_i64),
             (super::ErrorCode::REQUEST_FAILED, -32_803_i64),
         ] {
             assert_eq!(
@@ -580,5 +698,60 @@ mod tests
                 "{code:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_request_is_withdrawn_by_what_the_client_sent_after_it()
+    {
+        let hover = json!({"textDocument": {"uri": "file:///tmp/a.gandr"}, "position": {"line": 0_u32, "character": 0_u32}});
+        let id = RequestId(json!(7_u32));
+        let cancel = |named: u32| {
+            alloc::format!(
+                r#"{{"jsonrpc":"2.0","method":"$/cancelRequest","params":{{"id":{named}}}}}"#
+            )
+        };
+        let changed = |uri: &str| {
+            alloc::format!(
+                r#"{{"jsonrpc":"2.0","method":"textDocument/didChange","params":{{"textDocument":{{"uri":"{uri}","version":2}},"contentChanges":[]}}}}"#
+            )
+        };
+        let of = |params: &Value, later: &[String]| {
+            let later: Vec<super::Classified> = later
+                .iter()
+                .map(|message| super::classify(&Body::from(message.as_bytes().to_vec())))
+                .collect();
+            super::Withdrawn::of(&id, params, &later)
+        };
+        assert_eq!(
+            of(&hover, &[]),
+            None,
+            "nothing after it, nothing withdraws it"
+        );
+        assert_eq!(
+            of(&hover, &[cancel(7)]),
+            Some(super::Withdrawn::Cancelled),
+            "a cancellation naming it"
+        );
+        assert_eq!(of(&hover, &[cancel(8)]), None, "one naming another request");
+        assert_eq!(
+            of(&hover, &[changed("file:///tmp/a.gandr")]),
+            Some(super::Withdrawn::Modified),
+            "a change of its document"
+        );
+        assert_eq!(
+            of(&hover, &[changed("file:///tmp/b.gandr")]),
+            None,
+            "a change of another document"
+        );
+        assert_eq!(
+            of(&hover, &[changed("file:///tmp/a.gandr"), cancel(7)]),
+            Some(super::Withdrawn::Cancelled),
+            "a cancellation answers before a change"
+        );
+        assert_eq!(
+            of(&json!({"query": "plus"}), &[changed("file:///tmp/a.gandr")]),
+            None,
+            "a request naming no document is never modified"
+        );
     }
 }

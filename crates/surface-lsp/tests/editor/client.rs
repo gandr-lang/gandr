@@ -97,32 +97,41 @@ struct Streams
 {
     /// Each frame the loop is to read, whole.
     frames: mpsc::Sender<Stream>,
-    /// A signal each time the loop asks for a frame it has not been sent: by
-    /// then it has written everything it owes the frames before.
-    waiting: mpsc::Receiver<()>,
+    /// A signal each time the loop flushes a frame it wrote.
+    flushed: mpsc::Receiver<()>,
     /// What the loop wrote that the client has not read yet.
     written: Arc<Mutex<Stream>>,
     /// The loop, which ends at `exit` or when the client drops the frames.
     serving: JoinHandle<Result<Served, TransportFault>>,
 }
 
-/// The loop's end of the client's frames: each handed over whole, and a
-/// signal sent each time the loop asks for one it does not have.
+/// The loop's end of the client's frames: each handed over whole.
 struct Inbox
 {
     /// The frames the client sends.
     frames: mpsc::Receiver<Stream>,
-    /// Where the loop's requests for a frame are signalled.
-    waiting: mpsc::Sender<()>,
     /// The frame being read.
     frame: Stream,
     /// How many of its bytes the loop has consumed.
     read: usize,
 }
 
-/// The loop's output stream, read by the client after each frame.
-#[repr(transparent)]
-struct Outbox(Arc<Mutex<Stream>>);
+/// The loop's output stream: what it writes is held until it flushes, then
+/// handed to the client whole, with a signal.
+struct Outbox
+{
+    /// What the client reads, whole frames only.
+    shared: Arc<Mutex<Stream>>,
+    /// What the loop wrote since it last flushed.
+    pending: Stream,
+    /// Where each flush is signalled.
+    flushed: mpsc::Sender<()>,
+}
+
+/// The request each exchange over streams ends with: the loop handles what it
+/// reads in order and answers every request once, so its answer follows
+/// everything the message before it owed.
+const SYNC: &str = "sync";
 
 /// A connection driven in process over a workspace other connections may
 /// join, as the hub's are.
@@ -149,7 +158,7 @@ impl Client
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the loop answered `initialize`, naming a quiet interval of
-    ///   zero, without an error and waits for the next frame.
+    ///   zero, without an error.
     /// - provides: a single editor's connection, whose every answer is a frame
     ///   the transport wrote.
     /// - panics: the loop stops, or the initialization is refused.
@@ -165,27 +174,8 @@ impl Client
     #[spec(ensures: |ret| ret.requests == 1 && matches!(ret.connection, Connection::Served(_)))]
     pub fn served() -> Self
     {
-        let (frames, inbox_frames) = mpsc::channel();
-        let (inbox_waiting, waiting) = mpsc::channel();
-        let written = Arc::new(Mutex::new(Stream::default()));
-        let mut inbox = Inbox {
-            frames: inbox_frames,
-            waiting: inbox_waiting,
-            frame: Stream::default(),
-            read: 0_usize,
-        };
-        let mut outbox = Outbox(Arc::clone(&written));
-        let serving = std::thread::spawn(move || {
-            serve(&mut inbox, &mut outbox, &mut io::sink(), Spelling::Unicode)
-        });
-        waiting.recv().expect("the loop asks for its first frame");
         Self {
-            connection: Connection::Served(Streams {
-                frames,
-                waiting,
-                written,
-                serving,
-            }),
+            connection: Connection::Served(Streams::spawn()),
             requests: 0_i64,
         }
         .initialize(Quiet::Unheld)
@@ -450,9 +440,10 @@ impl Client
     ///
     /// # Specification
     /// - requires: the client is joined and was built with [`Record::Kept`].
-    /// - ensures: `serve`, reading every kept message as a frame followed by
-    ///   `shutdown` and `exit`, writes every kept received message in order,
-    ///   then the answer to `shutdown`, and ends cleanly.
+    /// - ensures: `serve`, sent every kept message as a frame one exchange at a
+    ///   time as an editor that awaits each answer sends them, then `shutdown`
+    ///   and `exit`, writes every kept received message in order, then the
+    ///   answer to `shutdown`, and ends cleanly.
     /// - provides: the check that the in-process drive of a shared workspace is
     ///   the transport's.
     /// - panics: the client is served or keeps nothing, the replay writes
@@ -472,28 +463,28 @@ impl Client
             panic!("a served connection is the transport already");
         };
         assert_eq!(joined.record, Record::Kept, "only a kept exchange replays");
-        let mut input = Stream::default();
-        let closing = [
-            json!({ "jsonrpc": "2.0", "id": "end", "method": "shutdown" }),
-            json!({ "jsonrpc": "2.0", "method": "exit" }),
-        ];
-        for message in joined.sent.iter().chain(&closing) {
-            input.frame(message);
+        let streams = Streams::spawn();
+        let mut written: Vec<Value> = Vec::new();
+        for message in &joined.sent {
+            written.extend(streams.exchange(message));
         }
-        let mut output = Stream::default();
-        let served = serve(
-            &mut input.0.as_slice(),
-            &mut output.0,
-            &mut Vec::new(),
-            Spelling::Unicode,
-        )
-        .expect("the replay serves");
+        written.extend(
+            streams.exchange(&json!({ "jsonrpc": "2.0", "id": "end", "method": "shutdown" })),
+        );
+        streams
+            .frames
+            .send(Stream::of(&json!({ "jsonrpc": "2.0", "method": "exit" })))
+            .expect("the loop reads the exit");
+        let served = streams
+            .serving
+            .join()
+            .expect("the loop ends without a panic")
+            .expect("the loop's streams carry every frame");
         assert_eq!(served, Served::Clean, "the replay ends cleanly");
         let mut expected = joined.received.clone();
         expected.push(json!({ "jsonrpc": "2.0", "id": "end", "result": null }));
         assert_eq!(
-            output.messages(),
-            expected,
+            written, expected,
             "the framed replay writes what the in-process drive received"
         );
     }
@@ -517,16 +508,48 @@ impl Client
 
 impl Streams
 {
-    /// Send `message` to the loop as one frame, wait until it asks for the
-    /// next, and read every frame it wrote meanwhile.
+    /// `serve` on a thread of its own over fresh in-memory framed streams.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spawn() -> Self
+    {
+        let (frames, inbox_frames) = mpsc::channel();
+        let (signal, flushed) = mpsc::channel();
+        let written = Arc::new(Mutex::new(Stream::default()));
+        let mut inbox = Inbox {
+            frames: inbox_frames,
+            frame: Stream::default(),
+            read: 0_usize,
+        };
+        let mut outbox = Outbox {
+            shared: Arc::clone(&written),
+            pending: Stream::default(),
+            flushed: signal,
+        };
+        let serving = std::thread::spawn(move || {
+            serve(&mut inbox, &mut outbox, &mut io::sink(), Spelling::Unicode)
+        });
+        Self {
+            frames,
+            flushed,
+            written,
+            serving,
+        }
+    }
+
+    /// Send `message` to the loop as one frame, then [`SYNC`], and read every
+    /// frame it wrote until it answered [`SYNC`].
     ///
     /// # Specification
     /// - requires: the loop is running.
-    /// - ensures: returns, in order, every message the loop wrote between
-    ///   reading `message` and asking for its next frame: the frame's answers
-    ///   and notifications, then the admissions its log left.
-    /// - provides: one lockstep step over the transport.
-    /// - panics: the loop stopped, or wrote a frame that does not read as JSON.
+    /// - ensures: returns, in order, every message the loop wrote for
+    ///   `message`: the frame's answers and notifications, then the admissions
+    ///   its log left; [`SYNC`]'s own answer is read and dropped.
+    /// - provides: one lockstep step over the transport, whatever the loop
+    ///   reads ahead.
+    /// - panics: the loop stopped, wrote a frame that does not read as JSON, or
+    ///   wrote anything after [`SYNC`]'s answer.
     /// - executable: none — the messages are the loop's writes on its own
     ///   thread; no predicate over the return alone tells them from others.
     ///
@@ -541,13 +564,28 @@ impl Streams
         message: &Value,
     ) -> Vec<Value>
     {
-        self.frames
-            .send(Stream::of(message))
-            .expect("the loop reads the frame");
-        self.waiting
-            .recv()
-            .expect("the loop answers the frame, unless it stopped: its panic is reported above");
-        core::mem::take(&mut *lock(&self.written)).messages()
+        let sync = json!({ "jsonrpc": "2.0", "id": SYNC, "method": "gandr/sync" });
+        for frame in [message, &sync] {
+            self.frames
+                .send(Stream::of(frame))
+                .expect("the loop reads the frame");
+        }
+        let synced = |message: &Value| message.get("id") == Some(&json!(SYNC));
+        loop {
+            self.flushed.recv().expect(
+                "the loop answers the frame, unless it stopped: its panic is reported above",
+            );
+            let mut messages = lock(&self.written).messages();
+            if messages.last().is_some_and(synced) {
+                *lock(&self.written) = Stream::default();
+                let _sync = messages.pop();
+                assert!(
+                    !messages.iter().any(synced),
+                    "the loop answers the sync once"
+                );
+                return messages;
+            }
+        }
     }
 }
 
@@ -613,17 +651,15 @@ impl io::Read for Inbox
 
 impl io::BufRead for Inbox
 {
-    /// What is left of the current frame; once it is spent, the loop's ask
-    /// for more is signalled and the next frame awaited, and a client that
-    /// dropped its frames leaves the stream closed.
+    /// What is left of the current frame; once it is spent, the next frame
+    /// awaited, and a client that dropped its frames leaves the stream
+    /// closed.
     ///
     /// # Specification
     /// trivial.
     fn fill_buf(&mut self) -> io::Result<&[u8]>
     {
         if self.read >= self.frame.0.len() {
-            // A client that has gone away is not waiting for the signal.
-            let _signalled = self.waiting.send(());
             self.frame = self.frames.recv().unwrap_or_default();
             self.read = 0_usize;
         }
@@ -645,7 +681,7 @@ impl io::BufRead for Inbox
 
 impl io::Write for Outbox
 {
-    /// Keep `buf` for the client to read.
+    /// Hold `buf` until the next flush.
     ///
     /// # Specification
     /// trivial.
@@ -654,16 +690,19 @@ impl io::Write for Outbox
         buf: &[u8],
     ) -> io::Result<usize>
     {
-        lock(&self.0).0.extend_from_slice(buf);
+        self.pending.0.extend_from_slice(buf);
         Ok(buf.len())
     }
 
-    /// Nothing is buffered on this side.
+    /// Hand what was held to the client, and tell it a frame ended.
     ///
     /// # Specification
     /// trivial.
     fn flush(&mut self) -> io::Result<()>
     {
+        lock(&self.shared).0.append(&mut self.pending.0);
+        // A client that has gone away is not waiting for the signal.
+        let _signalled = self.flushed.send(());
         Ok(())
     }
 }
