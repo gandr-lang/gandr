@@ -277,8 +277,8 @@ fn kind(
 /// kind: inside an attribute or documentation, inside a declaration the
 /// lowering refused, as the head of a former's call, as a count of the
 /// stratum a head's annotation writes, as the module a path qualifies, as
-/// a run literal's move, as an inner link of a product or a sum chain, or
-/// as the value a discarded bind drops.
+/// a run literal's move, as an inner link of a product or a sum chain, as
+/// the value a discarded bind drops, or as an arrow of a data family's kind.
 ///
 /// # Specification
 /// trivial.
@@ -316,6 +316,12 @@ enum Placed
     /// lowering's result is the term the program means, and the case
     /// around the value answers.
     Discarded,
+    /// An arrow of the kind a data family writes after its parameters,
+    /// `Nat -> Type` in `data Vec(a : Type) : Nat -> Type { … }`, and each
+    /// arrow down its codomain: the lowering reads the kind as the family's
+    /// index classifiers before its universe, never as a type it forms, so
+    /// each classifier and the universe answer.
+    Kind,
 }
 
 /// Every gated node of `tree` with its kind, its span and where it stands.
@@ -333,7 +339,7 @@ fn gated(
     let mut stack = vec![(
         tree.root(),
         None::<Placed>,
-        None::<(MoldId, &str, bool, bool)>,
+        None::<(MoldId, &str, bool, bool, bool)>,
         Run::Outside,
         false,
     )];
@@ -423,6 +429,13 @@ fn gated(
             }
             binds.push(discarded);
         }
+        let last = children.last().copied();
+        // An arrow of a data family's kind: the operand the declaration writes
+        // after its colon, or the codomain of such an arrow.
+        let kinded = melded
+            && def.label == "->"
+            && def.sort == Sort::Type
+            && parent.is_some_and(|(_, label, .., spine)| label == "data" || spine);
         stack.extend(
             children
                 .iter()
@@ -435,7 +448,13 @@ fn gated(
                     (
                         child,
                         placed,
-                        Some((mold, def.label, headed, qualifying)),
+                        Some((
+                            mold,
+                            def.label,
+                            headed,
+                            qualifying,
+                            kinded && Some(child) == last,
+                        )),
                         within,
                         discards,
                     )
@@ -445,11 +464,11 @@ fn gated(
             continue;
         }
         let head = !melded
-            && parent.is_some_and(|(_, label, headed, _)| {
+            && parent.is_some_and(|(_, label, headed, ..)| {
                 headed && (label == "[" || def.label == "constructor" || FORMERS.contains(&text))
             });
         let qualifier = !melded
-            && parent.is_some_and(|(.., qualifying)| qualifying)
+            && parent.is_some_and(|(_, _, _, qualifying, _)| qualifying)
             && (def.label == "constructor" || def.label == "type_identifier");
         let moved = match run {
             Run::Outside => false,
@@ -468,14 +487,15 @@ fn gated(
             && parent.is_some_and(|(_, label, ..)| label == "pure");
         let counted = !melded
             && def.label == "number"
-            && parent.is_some_and(|(_, label, headed, _)| label == "[" && !headed);
+            && parent.is_some_and(|(_, label, headed, ..)| label == "[" && !headed);
         let placed = placed
             .or_else(|| head.then_some(Placed::Head))
             .or_else(|| counted.then_some(Placed::Stratum))
             .or_else(|| qualifier.then_some(Placed::Qualifier))
             .or_else(|| moved.then_some(Placed::Move))
             .or_else(|| chained.then_some(Placed::Chained))
-            .or_else(|| dropped.then_some(Placed::Discarded));
+            .or_else(|| dropped.then_some(Placed::Discarded))
+            .or_else(|| kinded.then_some(Placed::Kind));
         gated.push((kind(grammar, tree, position, *def), span, placed));
     }
     gated

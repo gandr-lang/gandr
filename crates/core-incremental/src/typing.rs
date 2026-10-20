@@ -429,6 +429,8 @@ pub enum Refusal
     },
     /// A constructor has the wrong field count.
     ConstructorArity(Site),
+    /// A case scrutinises a value of an indexed family.
+    IndexedCase(Site),
     /// A case has the wrong branch count.
     NonExhaustiveDataCase(Site),
     /// A leaf of a match's tree is one of its pattern holes.
@@ -1273,6 +1275,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::LoopUndecided {at,cell} = matched_left_value && let Refusal::LoopUndecided {at:projected,cell:stored} = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && stored == cell }
  else if let CheckRefusal::UnknownConstructor {at,tag} = matched_left_value && let Refusal::UnknownConstructor {at:projected,tag:stored} = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == tag }
  else if let CheckRefusal::ConstructorArity(at) = matched_left_value && let Refusal::ConstructorArity(projected) = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::IndexedCase(at) = matched_left_value && let Refusal::IndexedCase(projected) = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::NonExhaustiveDataCase(at) = matched_left_value && let Refusal::NonExhaustiveDataCase(projected) = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::UndecidedCoverage(at) = matched_left_value && let Refusal::UndecidedCoverage(projected) = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::AbsentRecordField(at) = matched_left_value && let Refusal::AbsentRecordField(projected) = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
@@ -1477,6 +1480,9 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             },
             CheckRefusal::ConstructorArity(at) => {
                 Refusal::ConstructorArity(self.site(ArenaNode::Value(at)))
+            },
+            CheckRefusal::IndexedCase(at) => {
+                Refusal::IndexedCase(self.site(ArenaNode::Computation(at)))
             },
             CheckRefusal::NonExhaustiveDataCase(at) => {
                 Refusal::NonExhaustiveDataCase(self.site(ArenaNode::Computation(at)))

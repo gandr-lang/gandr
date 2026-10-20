@@ -807,6 +807,17 @@ pub const KIND_DATA_WORDS: WireTag = WireTag(0x0A);
 /// declaration kind rather than misreading it, which is why the format
 /// version holds.
 pub const KIND_ABSTRACT_INTERFACED: WireTag = WireTag(0x0C);
+/// Declaration tag: an indexed datatype, whose segment closes with its index
+/// classifiers and the index each constructor's value stands at.
+///
+/// After the [`KIND_DATA`] fields comes an index count, at least one, and each
+/// index classifier's root, then per constructor in tag order that many value
+/// roots, its result index. An indexed datatype presents no rules. A datatype
+/// indexed by nothing writes [`KIND_DATA`], so every other artifact keeps its
+/// bytes, and a reader predating this kind refuses it as an unknown
+/// declaration kind rather than misreading it, which is why the format
+/// version holds.
+pub const KIND_DATA_INDEXED: WireTag = WireTag(0x0B);
 /// Rule node tag: a constructor of the declaration's own table.
 pub const RULE_CONSTRUCTOR: WireTag = WireTag(0);
 /// Rule node tag: a pattern variable.

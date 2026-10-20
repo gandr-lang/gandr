@@ -1231,6 +1231,122 @@ fn an_indexed_generator_is_declined()
 }
 
 #[test]
+fn an_indexed_family_lowers_its_indices()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "data Nat : Type { Z : Nat; S : (n : Nat) --> Nat; }\ndata Vec(a : Type) : Nat -> Type { Nil : Vec(a, Z); Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, S(n)); }\ndef one() -> -F Vec(Integer, S(Z)) { return Cons(Z, 3, (Nil : Vec(Integer, Z))) }\ndef two() -> -F Vec(Integer, S(S(Z))) { return Cons(Z, 3, (Nil : Vec(Integer, Z))) }\ndata Pt : Nat -> Type { P : Pt(Z); loop : P <-> P; }\n",
+        ),
+        &mut arena,
+    );
+    let DeclarationOutcome::Data(vector) = outcome_of(&module, SurfaceName::from("Vec"))
+    else {
+        panic!("the family lowers to its signature");
+    };
+    let Maybe::Present(vector) = module.data(vector)
+    else {
+        panic!("the index names a signature");
+    };
+    assert_eq!(vector.parameters().len(), 1_usize);
+    assert_eq!(
+        vector.indices().len(),
+        1_usize,
+        "`Nat -> Type` reads one index"
+    );
+    let [ref empty, ref consed] = *vector.results()
+    else {
+        panic!("one stated length per constructor");
+    };
+    let (&[zero], &[successor]) = (&**empty, &**consed)
+    else {
+        panic!("each constructor states its one index");
+    };
+    assert!(
+        matches!(arena.value(zero), Some(&Value::Constructor { tag, ref fields, .. })
+            if tag == ConstructorTag::from(0_usize) && fields.is_empty()),
+        "`Nil` stands at `Z`"
+    );
+    let Some(&Value::Constructor {
+        tag, ref fields, ..
+    }) = arena.value(successor)
+    else {
+        panic!("`Cons` stands at a successor");
+    };
+    assert_eq!(tag, ConstructorTag::from(1_usize));
+    let [length] = **fields
+    else {
+        panic!("`S` takes one field");
+    };
+    assert_eq!(
+        arena.value(length),
+        Some(&variable(DeBruijnIndex::from(2_u32))),
+        "`Cons` stands at the successor of its first field, under its three"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("Pt")),
+            LoweringRefusal::OutOfFragment {
+                form: FormName::CELL_MEMBER,
+                boundary: FragmentBoundary::Indexed,
+                ..
+            }
+        ),
+        "an indexed family presents no cell"
+    );
+    let report = judged(&module, &mut arena);
+    let verdicts: Vec<Verdict> = report
+        .judged()
+        .iter()
+        .map(gandr_core_checker::Judged::verdict)
+        .collect();
+    let [
+        Verdict::Data,
+        Verdict::Data,
+        Verdict::Checked { .. },
+        Verdict::Refused(ref stated),
+    ] = *verdicts
+    else {
+        panic!("the family and the vector at its length check: {report:?}");
+    };
+    assert!(
+        matches!(stated, gandr_core_checker::CheckRefusal::TypeMismatch(_)),
+        "a vector one long is no vector two long: {stated:?}"
+    );
+}
+
+#[test]
+fn each_stated_index_is_framed_under_its_family_s_telescope_931()
+{
+    let source = "data Nat : Type { Z : Nat; S : (n : Nat) --> Nat; }\ndata Vec(a : Type) : Nat -> \
+                  Type { Nil : Vec(a, Z); Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, \
+                  S(n)); }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let framed: Vec<(&str, Vec<&str>)> = module
+        .origins()
+        .framed()
+        .iter()
+        .map(|&(span, ref names)| {
+            (
+                source
+                    .get(usize::from(span.start()) .. usize::from(span.end()))
+                    .unwrap_or(""),
+                names.iter().map(String::as_str).collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        framed,
+        [
+            ("Z", Vec::from(["a"])),
+            ("S(n)", Vec::from(["a", "n", "x", "xs"]))
+        ],
+        "each index is read under the family's parameters, then its constructor's fields"
+    );
+}
+
+#[test]
 fn operation_and_rule_members_are_left_to_the_description_route()
 {
     let source = "data NatOp : Type { Zero : NatOp; One : NatOp; oper add(m : NatOp, n : NatOp) -> NatOp; rule add(Zero, n) ==> n; }\ndata NatRetired : Type { Only : NatRetired; op stale(x : NatRetired) -> NatRetired; }\n";

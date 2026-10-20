@@ -4686,12 +4686,15 @@ mod tests
     }
 }
 
-/// A nominal declaration's parameter telescope, constructor table, universe
-/// and the rules presenting its terms.
+/// A nominal declaration's parameter telescope, index telescope, constructor
+/// table with the index each constructor stands at, universe and the rules
+/// presenting its terms.
 ///
-/// Parameter classifiers are scoped under their predecessors. Constructor
+/// Parameter classifiers are scoped under their predecessors, and index
+/// classifiers under the parameters and the indices before them. Constructor
 /// fields are scoped under all parameters and then the fields before them in
-/// their constructor, which a later field may name.
+/// their constructor, which a later field may name; a constructor's result
+/// indices under the parameters and all its fields.
 /// Admission, not this container, verifies those scopes, the universe bound
 /// and that every rule is constructor-headed over the table.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -4699,8 +4702,13 @@ pub struct DataSignature
 {
     /// Parameter classifiers in telescope order.
     parameters: Vec<ValueTypeId>,
+    /// Index classifiers in telescope order; none for a parameterised type.
+    indices: Vec<ValueTypeId>,
     /// Constructor fields in tag order.
     constructors: Vec<Vec<ValueTypeId>>,
+    /// Each constructor's result indices in tag order; none for a
+    /// parameterised type.
+    results: Vec<Vec<ValueId>>,
     /// The positive universe bounding every constructor field.
     kind: ValueTypeId,
     /// The rules rewriting the type's constructor terms; none for a free type.
@@ -4710,7 +4718,8 @@ pub struct DataSignature
 impl DataSignature
 {
     /// Construct a free signature whose formation remains the checker's
-    /// obligation; [`Self::presented`] attaches rules.
+    /// obligation; [`Self::presented`] attaches rules and [`Self::indexed`]
+    /// indices.
     ///
     /// # Specification
     /// trivial.
@@ -4724,10 +4733,66 @@ impl DataSignature
     {
         Self {
             parameters,
+            indices: Vec::new(),
             constructors,
+            results: Vec::new(),
             kind,
             presentation: gandr_kernel_term::Presentation::default(),
         }
+    }
+
+    /// This signature indexed by `indices`, each constructor standing at its
+    /// row of `results`; its parameters, constructors and universe unchanged.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn indexed(
+        self,
+        indices: Vec<ValueTypeId>,
+        results: Vec<Vec<ValueId>>,
+    ) -> Self
+    {
+        Self {
+            indices,
+            results,
+            ..self
+        }
+    }
+
+    /// Index classifiers in telescope order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn indices(&self) -> &[ValueTypeId]
+    {
+        &self.indices
+    }
+
+    /// Each constructor's result indices in tag order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn results(&self) -> &[Vec<ValueId>]
+    {
+        &self.results
+    }
+
+    /// The arguments an application of the family carries: its parameters,
+    /// then its indices.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn arity(&self) -> crate::description::TypeArity
+    {
+        crate::description::TypeArity(self.parameters.len().saturating_add(self.indices.len()))
     }
 
     /// Parameter classifiers in telescope order.

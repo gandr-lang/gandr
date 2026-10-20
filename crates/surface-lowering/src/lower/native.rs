@@ -205,9 +205,14 @@
 //! holds its tail; whether every such occurrence is strictly positive is the
 //! checker's judgment, not the lowering's. `DeclarationOutcome::Data` carries a
 //! `DataIndex` into `LoweredModule::data`, so the outcome stays `Copy` and the
-//! signature is shared, not cloned, with the checker's declaration. A generator
-//! whose result applies the family to anything but its own parameters is an
-//! indexed family and is declined as `OutOfFragment` with the `Indexed`
+//! signature is shared, not cloned, with the checker's declaration. A kind
+//! written as an arrow, `data V(a : A) : I -> Type { … }`, indexes the family:
+//! each domain is an index classifier read under the parameters, and each
+//! generator's result applies the family to its own parameters and then one
+//! term per index, the index its value stands at, read under the parameters
+//! and the generator's fields (`tests::an_indexed_family_lowers_its_indices`).
+//! A generator whose result applies the family to anything else, and a cell on
+//! an indexed family, are declined as `OutOfFragment` with the `Indexed`
 //! boundary; the constructor-block spelling and a field's attributes or grade
 //! are declined by name
 //! (`tests::members_outside_the_fragment_are_declined_by_name`); a constructor
@@ -217,8 +222,6 @@
 //! Operation and rule members, `oper`, `op` and `rule`, are passed over: the
 //! description route (the `description` module) reads them and holds any
 //! refusal among them at the member, so the family keeps its generators.
-//! Reversal: the indexed boundary lifts when the core's data former carries
-//! indices.
 //!
 //! A constructor `C(e, …)` is a native constructor value, which names its whole
 //! classifier, taken from the type its position states as the opening section
@@ -1605,16 +1608,21 @@ impl Compiling
 impl<'source> Lowerer<'_, 'source>
 {
     /// Seed every data declaration's types: each parameter's type under the
-    /// parameters before it, the universe at the outermost frame, and each
-    /// field's type under all the parameters and the fields before it in its
-    /// constructor.
+    /// parameters before it, each index classifier under the parameters, the
+    /// universe at the outermost frame, each field's type under all the
+    /// parameters and the fields before it in its constructor, and each index
+    /// a constructor states, as a value, under the parameters and all its
+    /// fields.
     ///
     /// # Specification
     /// - requires: the collection pass has run.
     /// - ensures: one frame per parameter, typed with its written type and
     ///   mentioned, so a type naming it counts it; one frame per field but its
-    ///   constructor's last, bound to the field's written name or to none; and
-    ///   one seed per type the declarations write, appended to `seeds`.
+    ///   constructor's last, and the last too where the constructor states an
+    ///   index, bound to the field's written name or to none; one seed per type
+    ///   and stated index the declarations write, appended to `seeds`; and each
+    ///   stated index kept with the frame it is read under, for the names an
+    ///   editor spells its type in.
     /// - provides: the data half of [`Self::seed`].
     /// - fails: never.
     /// - panics: none.
@@ -1622,8 +1630,10 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a two-parameter family whose field names its first
     ///   parameter lowers with the field scoped under both, and a field naming
-    ///   the field before it reads that field's binder.
+    ///   the field before it reads that field's binder; `Cons`'s `S(n)` reads
+    ///   its first field.
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
+    /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
     #[spec(
         captures: before = seeds.len(),
         ensures: seeds.len() >= before,
@@ -1650,14 +1660,19 @@ impl<'source> Lowerer<'_, 'source>
             if let Maybe::Present(kind) = form.kind {
                 seeds.push((kind.node, Reading::ValueType(Frame::Outermost)));
             }
+            for index in &form.indices {
+                seeds.push((index.node, Reading::ValueType(frame)));
+            }
             for generator in &form.generators {
-                let Some((last, earlier)) = generator.fields.split_last()
-                else {
-                    continue;
-                };
+                let last = generator.fields.len().checked_sub(1);
                 let mut inner = frame;
-                for field in earlier {
+                for (position, field) in generator.fields.iter().enumerate() {
                     seeds.push((field.ty.node, Reading::ValueType(inner)));
+                    // The last field binds only for the indices the result
+                    // states.
+                    if Some(position) == last && generator.indices.is_empty() {
+                        break;
+                    }
                     let bound = match field.named {
                         Maybe::Present(named) => {
                             let name = SurfaceName::from(self.text_at(named));
@@ -1678,7 +1693,10 @@ impl<'source> Lowerer<'_, 'source>
                     };
                     inner = Frame::Inner(bound);
                 }
-                seeds.push((last.ty.node, Reading::ValueType(inner)));
+                for index in &generator.indices {
+                    seeds.push((index.node, Reading::Value(inner)));
+                    self.index_frames.push((index.node, inner));
+                }
             }
         }
     }
@@ -1830,12 +1848,15 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.out(FragmentBoundary::Arity(OperandCount::from(count))));
         }
         let frame = self.require(site, Produced::Value)?;
-        let parameters = match constructor.form {
-            Generators::Written(form) => self
-                .collected
-                .data
-                .get(form)
-                .map_or(0_usize, |written| written.parameters.len()),
+        // A family of neither parameters nor indices classifies its
+        // constructors alone.
+        let arguments = match constructor.form {
+            Generators::Written(form) => self.collected.data.get(form).map_or(0_usize, |written| {
+                written
+                    .parameters
+                    .len()
+                    .saturating_add(written.indices.len())
+            }),
             Generators::Presentation | Generators::Words(_) => 0_usize,
         };
         // A constructor standing where a body ends is the value the body
@@ -1851,7 +1872,7 @@ impl<'source> Lowerer<'_, 'source>
             self.inherited.get(&site.at.node),
         ) {
             (Some(&written), ..) => Classifier::Written(written),
-            (None, ..) if parameters == 0 => Classifier::Inserted,
+            (None, ..) if arguments == 0 => Classifier::Inserted,
             (None, Some(&answer), ..) => Classifier::Answered { answer, frame },
             (None, None, Some(&argued), _) => {
                 let _first = self.awaiting.insert(site.at.node);
@@ -2609,13 +2630,17 @@ impl<'source> Lowerer<'_, 'source>
             Some(Maybe::Present(Half {
                 operand: Operand::Data(form),
                 ..
-            })) => self
-                .collected
-                .data
-                .get(form)
-                .map_or(Maybe::Absent(family::Absent::Undeclared), |written| {
-                    Maybe::Present(OperandCount::from(written.parameters.len()))
-                }),
+            })) => self.collected.data.get(form).map_or(
+                Maybe::Absent(family::Absent::Undeclared),
+                |written| {
+                    Maybe::Present(OperandCount::from(
+                        written
+                            .parameters
+                            .len()
+                            .saturating_add(written.indices.len()),
+                    ))
+                },
+            ),
             Some(Maybe::Present(Half {
                 operand: Operand::Code,
                 ..
@@ -5127,11 +5152,13 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: the mint sweep has run.
     /// - ensures: each unrefused data declaration's signature over its minted
-    ///   parameter types, field types and universe — `Type` at the fuss-free
-    ///   level when none is written, its origin the declaration form — and the
-    ///   rules of its presented reading ([`Self::presentation`]), pushed onto
-    ///   the module's list, its index recorded by the declaration's position in
-    ///   the collection's data list.
+    ///   parameter types, index classifiers — the one at position `i` carried
+    ///   past the `i` indices before it, which it does not name — field types,
+    ///   stated indices and universe — `Type` at the fuss-free level when none
+    ///   is written, its origin the declaration form — and the rules of its
+    ///   presented reading ([`Self::presentation`]), pushed onto the module's
+    ///   list, its index recorded by the declaration's position in the
+    ///   collection's data list.
     /// - provides: the
     ///   [`DeclarationOutcome::Data`](crate::DeclarationOutcome::Data)
     ///   outcome's signature.
@@ -5140,8 +5167,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two declarations, one with parameters and one without
-    ///   a written universe, lower to their own signatures.
+    ///   a written universe, lower to their own signatures; a vector lowers its
+    ///   length index and the length each constructor states.
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
+    /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
     #[spec(captures: [data = self.data.len(), signed = self.signatures.len()], ensures: self.data.len() >= data && self.signatures.len() >= signed)]
     pub(super) fn mint_data(
         &mut self,
@@ -5181,11 +5210,46 @@ impl<'source> Lowerer<'_, 'source>
                     .collect();
                 constructors.push(fields);
             }
+            let mut indices = Vec::with_capacity(form.indices.len());
+            for (earlier, index) in form.indices.iter().enumerate() {
+                let (Maybe::Present(classifier), Ok(earlier)) =
+                    (self.value_type_at(index.node), u32::try_from(earlier))
+                else {
+                    continue;
+                };
+                indices.push(
+                    gandr_core_term::shift_value_type(
+                        sink.arena,
+                        classifier,
+                        gandr_core_term::Binders::from(earlier),
+                    )
+                    .settle(sink.arena),
+                );
+            }
+            let results: Vec<Vec<ValueId>> = form
+                .generators
+                .iter()
+                .map(|generator| {
+                    generator
+                        .indices
+                        .iter()
+                        .filter_map(|index| match self.value_at(index.node) {
+                            Maybe::Present(id) => Some(id),
+                            Maybe::Absent(_) => None,
+                        })
+                        .collect()
+                })
+                .collect();
             let complete = parameters.len() == form.parameters.len()
+                && indices.len() == form.indices.len()
                 && constructors
                     .iter()
                     .zip(&form.generators)
-                    .all(|(fields, generator)| fields.len() == generator.fields.len());
+                    .all(|(fields, generator)| fields.len() == generator.fields.len())
+                && results
+                    .iter()
+                    .zip(&form.generators)
+                    .all(|(stated, generator)| stated.len() == generator.indices.len());
             let kind = match form.kind {
                 Maybe::Present(written) => self.value_type_at(written.node),
                 Maybe::Absent(_) => match self.origin_at(form.declaration.node) {
@@ -5210,6 +5274,12 @@ impl<'source> Lowerer<'_, 'source>
             let index = DataIndex::from(self.data.len());
             let signature = DataSignature::new(parameters, constructors, kind)
                 .presented(self.presentation(form));
+            let signature = if form.indices.is_empty() {
+                signature
+            }
+            else {
+                signature.indexed(indices, results)
+            };
             self.data.push(Arc::new(signature));
             self.constructors.push(
                 form.generators
@@ -5726,13 +5796,12 @@ impl<'source> Lowerer<'_, 'source>
     /// place.
     ///
     /// # Specification
-    /// - requires: the family's parameter types and the arguments before the
-    ///   place are minted or absent.
-    /// - ensures: the family's parameter at the place, read under the
-    ///   parameters before it, with each of those replaced by the argument
+    /// - requires: the family's parameter and index types and the arguments
+    ///   before the place are minted or absent.
+    /// - ensures: the family's parameter, or index, at the place, read under
+    ///   the parameters before it, with each of those replaced by the argument
     ///   written for it, every node the substitution mints recorded at
-    ///   `origin`; nothing when the parameter's type or an argument did not
-    ///   lower.
+    ///   `origin`; nothing when the classifier or an argument did not lower.
     /// - provides: the classifier of a constructor written as a family's
     ///   argument (#421).
     /// - fails: never.
@@ -5741,8 +5810,10 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — `Inl(a)` written for the third parameter `s :
     ///   SumOb(l, r)` of a family applied to `Integer` and `String` is
-    ///   classified `SumOb(Integer, String)`.
+    ///   classified `SumOb(Integer, String)`; `S(Z)` written for a vector's
+    ///   length is classified `Nat`.
     /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
+    /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
     fn slot_type(
         &self,
@@ -5751,23 +5822,31 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<ValueTypeId, lowered::Absent>
     {
-        let Some(parameter) = self
-            .collected
-            .data
-            .get(argued.form)
-            .and_then(|form| form.parameters.get(argued.place))
+        let Some(form) = self.collected.data.get(argued.form)
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
         };
-        let declared = match self.value_type_at(parameter.classifier.node) {
+        // An index reads under the parameters alone.
+        let parameters = form.parameters.len();
+        let classifier = argued.place.checked_sub(parameters).map_or_else(
+            || {
+                form.parameters
+                    .get(argued.place)
+                    .map(|parameter| parameter.classifier)
+            },
+            |index| form.indices.get(index).copied(),
+        );
+        let Some(classifier) = classifier
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let declared = match self.value_type_at(classifier.node) {
             Maybe::Present(declared) => declared,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let mut environment = Vec::with_capacity(argued.place);
-        for &argument in stretch(&self.operands, argued.applied)
-            .iter()
-            .take(argued.place)
-        {
+        let bound = argued.place.min(parameters);
+        let mut environment = Vec::with_capacity(bound);
+        for &argument in stretch(&self.operands, argued.applied).iter().take(bound) {
             match self.value_at(argument) {
                 Maybe::Present(value) => environment.push(value),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),

@@ -1982,6 +1982,8 @@ fn a_type_of_words_round_trips_its_cells()
             Reference::Unoccupied,
             &crate::content::DeclarationRoots::Data(crate::content::DataRoots {
                 parameters: Vec::new(),
+                indices: Vec::new(),
+                results: Vec::new(),
                 constructors: vec![Vec::new(), vec![NodeIndex::from(0_usize)], vec![
                     NodeIndex::from(0_usize),
                 ]],
@@ -2033,6 +2035,68 @@ fn a_type_of_words_round_trips_its_cells()
         bare.as_ref(),
         "and so is whether the rules were minted from cells"
     );
+}
+
+#[test]
+fn an_indexed_family_round_trips_its_indices()
+{
+    // A family over one index whose two constructors state the nodes at
+    // `stated`.
+    let checkpoints = |indices: Vec<NodeIndex>, stated: [usize; 2]| {
+        let results = if indices.is_empty() {
+            Vec::new()
+        }
+        else {
+            stated
+                .iter()
+                .map(|&node| vec![NodeIndex::from(node)])
+                .collect()
+        };
+        let content = crate::fixture::item_content(
+            Reference::Unoccupied,
+            &crate::content::DeclarationRoots::Data(crate::content::DataRoots {
+                parameters: Vec::new(),
+                indices,
+                constructors: vec![Vec::new(), vec![NodeIndex::from(0_usize)]],
+                results,
+                kind: NodeIndex::from(0_usize),
+                presentation: gandr_core_term::Presentation::new(Vec::new()),
+            }),
+            &[
+                ContentNode::Product(Vec::new()),
+                ContentNode::Tuple(Vec::new()),
+            ],
+        );
+        let item = ItemCheckpoint::new(
+            content,
+            Footprint::from_parts(
+                BTreeSet::new(),
+                BTreeSet::new(),
+                Opacity::Transparent,
+                HoleMark::Filled,
+            ),
+            vec![Answered::new(Reference::Unoccupied, Answer::Untyped)],
+            Typing::Owed,
+        );
+        Checkpoints::new(CheckBudget::DEFAULT, vec![item])
+    };
+    let indexed = checkpoints(vec![NodeIndex::from(0_usize)], [1, 1]);
+    let bytes = encode_checkpoints(&indexed).expect("an indexed family encodes");
+    assert_eq!(
+        decode_checkpoints(Bytes(bytes.as_ref())),
+        Ok(indexed),
+        "and decodes to itself, its indices beside its constructors"
+    );
+    let restated = encode_checkpoints(&checkpoints(vec![NodeIndex::from(0_usize)], [1, 0]))
+        .expect("other stated indices encode");
+    assert_ne!(
+        bytes.as_ref(),
+        restated.as_ref(),
+        "the index a constructor states is content"
+    );
+    let free = encode_checkpoints(&checkpoints(Vec::new(), [1, 1]))
+        .expect("the same table with no index encodes");
+    assert_ne!(bytes.as_ref(), free.as_ref(), "and so is the index itself");
 }
 
 /// One refusal of every kind, and of every nested reason a kind carries:
@@ -2112,6 +2176,7 @@ fn every_refusal() -> Vec<Refusal>
             tag: ConstructorTag::from(2_usize),
         },
         Refusal::ConstructorArity(at),
+        Refusal::IndexedCase(at),
         Refusal::NonExhaustiveDataCase(at),
         Refusal::AbsentRecordField(at),
         Refusal::AbsentTupleComponent(at),
@@ -2505,6 +2570,8 @@ fn supported_tables_round_trip_and_reject_forged_support()
     let data = crate::content::DataContent::tabulated(
         &crate::content::DataRoots {
             parameters: vec![index(1_usize)],
+            indices: Vec::new(),
+            results: Vec::new(),
             constructors: vec![vec![index(2_usize)]],
             kind: index(4_usize),
             presentation: gandr_core_term::Presentation::new(Vec::new()),

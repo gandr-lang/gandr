@@ -182,18 +182,22 @@ pub struct FieldForm
     pub ty: Placed,
 }
 
-/// One generator of a data declaration: its name's tile and its fields.
+/// One generator of a data declaration: its name's tile, its fields and the
+/// indices its result states.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
 /// - ensures: the fields keep source order, which is the constructor's field
-///   order; a generator with none is a nullary constructor.
+///   order; a generator with none is a nullary constructor; the indices keep
+///   the result's argument order past the parameters, one per index the
+///   family's kind writes.
 /// - executable: none — the coordinates hold no tree to check them against.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — nullary, unary and three-field generators keep their
-///   field counts and order.
+///   field counts and order; a vector's `Cons` states its length.
 /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
+/// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct GeneratorForm
 {
@@ -201,21 +205,27 @@ pub struct GeneratorForm
     pub named: Placed,
     /// Each field, in order.
     pub fields: Vec<FieldForm>,
+    /// Each index the result states, in order; none for a parameterised
+    /// family.
+    pub indices: Vec<Placed>,
 }
 
 /// One data declaration, as the collection pass read it.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: the parameters keep telescope order and the generators tag order;
-///   every result was the family over its parameters.
+/// - ensures: the parameters keep telescope order, the indices the kind's order
+///   and the generators tag order; every result was the family over its
+///   parameters, then one index per index the kind writes.
 /// - executable: none — the coordinates hold no tree to check them against.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — parameterless and parameterized families, and an indexed
-///   generator declined, separate the read form from the refusal.
+///   generator declined, separate the read form from the refusal; a vector's
+///   kind reads one index before its universe.
 /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
 /// - witness: `lower::native::tests::an_indexed_generator_is_declined`
+/// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DataForm
 {
@@ -225,7 +235,10 @@ pub struct DataForm
     pub slot: SlotIndex,
     /// The parameters, in telescope order.
     pub parameters: Vec<DataParameter>,
-    /// The universe written after the parameters.
+    /// The index classifiers the kind writes before its universe, `Nat` of
+    /// `Nat -> Type`, in order.
+    pub indices: Vec<Placed>,
+    /// The universe written after the parameters and the indices.
     pub kind: Maybe<Placed, data_kind::Absent>,
     /// The generators, in tag order.
     pub generators: Vec<GeneratorForm>,
@@ -777,18 +790,22 @@ impl<'source> Collector<'_, 'source>
         }
     }
 
-    /// Read a data declaration's parameters, universe, generators and cells,
-    /// the cursor standing just past the family's name.
+    /// Read a data declaration's parameters, index classifiers, universe,
+    /// generators and cells, the cursor standing just past the family's name.
     ///
     /// # Specification
     /// - requires: `cursor` stands past the name tile of the declaration at
     ///   `declaration`.
-    /// - ensures: the parameters in order, the universe when one is written,
-    ///   every generator and every loop, the cursor exhausted; the first cell
-    ///   member's fault, as [`cell`] and [`Self::loops`] state them, kept
-    ///   beside a form with no cell, the member passed over.
+    /// - ensures: the parameters in order, the universe when one is written — a
+    ///   kind `A -> B -> Type` read as the index classifiers `A` and `B` before
+    ///   the universe ([`Self::telescope`]) — every generator with the indices
+    ///   its result states, and every loop, the cursor exhausted; the first
+    ///   cell member's fault, as [`cell`] and [`Self::loops`] state them, kept
+    ///   beside a form with no cell, the member passed over; a cell on an
+    ///   indexed family kept as its fault the same way.
     /// - fails: a tile out of place or an operand missing or extra; a generator
-    ///   whose result is not the family over its parameters.
+    ///   whose result is not the family over its parameters and as many indices
+    ///   as the kind states.
     /// - panics: none.
     ///
     /// # Errors
@@ -798,9 +815,11 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — the witnesses below read each member shape the
     ///   pending corpus writes, pass over the description route's members,
-    ///   decline an indexed generator and keep a cell's fault beside the form.
+    ///   decline a generator off its family's parameters, read a vector's
+    ///   length index and keep a cell's fault beside the form.
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
     /// - witness: `lower::native::tests::an_indexed_generator_is_declined`
+    /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
     /// - witness: `lower::native::tests::operation_and_rule_members_are_left_to_the_description_route`
     /// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |formed| formed.form.declaration == declaration
@@ -843,9 +862,13 @@ impl<'source> Collector<'_, 'source>
                 return Err(misplaced_in(FormName::PARAMETERS, cursor.here()));
             }
         }
-        let kind = match cursor.tile(TileName::COLON) {
-            Maybe::Present(_) => Maybe::Present(one_in(FormName::DATA, cursor.operands())?),
-            Maybe::Absent(_) => Maybe::Absent(data_kind::Absent::Unwritten),
+        let (indices, kind) = match cursor.tile(TileName::COLON) {
+            Maybe::Present(_) => {
+                let (indices, universe) =
+                    self.telescope(one_in(FormName::DATA, cursor.operands())?)?;
+                (indices, Maybe::Present(universe))
+            },
+            Maybe::Absent(_) => (Vec::new(), Maybe::Absent(data_kind::Absent::Unwritten)),
         };
         if let Maybe::Absent(_) = cursor.tile(TileName::BRACE_OPEN) {
             return Err(misplaced_in(FormName::DATA, cursor.here()));
@@ -860,7 +883,7 @@ impl<'source> Collector<'_, 'source>
                     break;
                 },
                 Maybe::Present(Piece::Tile { label, at }) if label == TileName::CONSTRUCTOR => {
-                    generators.push(self.generator(at, cursor, &parameters)?);
+                    generators.push(self.generator(at, cursor, (&parameters, &indices))?);
                 },
                 Maybe::Present(Piece::Tile { label, .. }) if label == TileName::OPER => {
                     if let Maybe::Present(named) = cursor.tile(TileName::IDENTIFIER) {
@@ -902,6 +925,19 @@ impl<'source> Collector<'_, 'source>
         if let Maybe::Present(piece) = cursor.peek() {
             return Err(misplaced_in(FormName::DATA, piece.placed().span));
         }
+        // An indexed family presents no loops: its cells are declined by the
+        // first one's name.
+        let faulted = match written.first() {
+            Some(first) if !indices.is_empty() => {
+                faulted.and(Err(LoweringRefusal::OutOfFragment {
+                    span: first.at.span,
+                    form: FormName::CELL_MEMBER,
+                    sort: FragmentSort::Declaration,
+                    boundary: FragmentBoundary::Indexed,
+                }))
+            },
+            Some(_) | None => faulted,
+        };
         let (cells, faulted) =
             match faulted.and_then(|()| self.loops(&written, &generators, &parameters)) {
                 Ok(cells) => (cells, Ok(())),
@@ -912,6 +948,7 @@ impl<'source> Collector<'_, 'source>
                 declaration,
                 slot,
                 parameters,
+                indices,
                 kind,
                 generators,
                 operations,
@@ -1011,15 +1048,17 @@ impl<'source> Collector<'_, 'source>
     }
 
     /// Read one generator, `C : (x : B, …) --> T(a, …)` or `C : T(a, …)`, its
-    /// name tile `named` already read.
+    /// name tile `named` already read, of a family over `parameters` and
+    /// indexed by `kinds`.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the generator's name tile.
-    /// - ensures: the generator's fields, named or bare, in order; the cursor
-    ///   stands past its result.
+    /// - ensures: the generator's fields, named or bare, in order, and the
+    ///   indices its result states; the cursor stands past its result.
     /// - fails: the declined constructor-block spelling and an attribute slot
     ///   by name; a grade prefix by name; a telescope with no result; a result
-    ///   other than the family over its parameters, as an indexed family.
+    ///   other than the family over its parameters then one index per entry of
+    ///   `kinds`, as an indexed family.
     /// - panics: none.
     ///
     /// # Errors
@@ -1029,15 +1068,16 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — nullary, single-port and telescoped generators read
     ///   their fields; an indexed result, a declined spelling and a missing
-    ///   result each refuse.
+    ///   result each refuse; a vector's generators state their lengths.
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
     /// - witness: `lower::native::tests::an_indexed_generator_is_declined`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |generator| generator.named == named))]
+    /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |generator| generator.named == named && generator.indices.len() == kinds.len()))]
     fn generator(
         &self,
         named: Placed,
         cursor: &mut Cursor<'_>,
-        parameters: &[DataParameter],
+        (parameters, kinds): (&[DataParameter], &[Placed]),
     ) -> Result<GeneratorForm, LoweringRefusal<'source>>
     {
         if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
@@ -1097,20 +1137,27 @@ impl<'source> Collector<'_, 'source>
         if let Maybe::Present(attributes) = cursor.tile(TileName::ATTRIBUTES) {
             return Err(declined(attributes, FormName::ATTRIBUTE));
         }
-        self.uniform(result, parameters)?;
+        let indices = self.uniform(result, (parameters, kinds))?;
 
-        Ok(GeneratorForm { named, fields })
+        Ok(GeneratorForm {
+            named,
+            fields,
+            indices,
+        })
     }
 
-    /// Require `result` to be the family over `parameters`: the family's name
-    /// alone for a family without parameters, and otherwise the family's name
-    /// applied to each parameter's name, in order.
+    /// Require `result` to be the family over `parameters` and then one index
+    /// per entry of `kinds`, the index classifiers its kind states: the
+    /// family's name alone for a family with neither, and otherwise the
+    /// family's name applied to each parameter's name, in order, then to one
+    /// term per index.
     ///
     /// # Specification
     /// - requires: `result` is a generator's result operand.
-    /// - ensures: succeeds exactly for the uniform spellings above, the family
-    ///   named by the declaration whose generator this is; the head's name is
-    ///   not compared, a foreign head failing later as the type it names.
+    /// - ensures: succeeds exactly for the spellings above, the family named by
+    ///   the declaration whose generator this is, with the index terms in
+    ///   order; the head's name is not compared, a foreign head failing later
+    ///   as the type it names.
     /// - fails: any other result as an indexed family, declined at the result;
     ///   [`LoweringRefusal::UnknownMold`].
     /// - panics: none.
@@ -1121,9 +1168,11 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the family over its parameters, over a literal type
-    ///   and over its parameters reordered separate uniform from indexed.
+    ///   and over its parameters reordered separate uniform from indexed; a
+    ///   vector's `Cons` states one index past its parameter.
     /// - witness: `lower::native::tests::an_indexed_generator_is_declined`
-    #[spec(ensures: |ret| ret.is_ok()
+    /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
+    #[spec(ensures: |ret| ret.as_ref().is_ok_and(|indices| indices.len() == kinds.len())
         || matches!(ret, Err(LoweringRefusal::UnknownMold { .. }))
         || matches!(ret, Err(LoweringRefusal::OutOfFragment {
             form: FormName::DATA_GENERATOR,
@@ -1133,10 +1182,10 @@ impl<'source> Collector<'_, 'source>
     fn uniform(
         &self,
         result: Placed,
-        parameters: &[DataParameter],
-    ) -> Result<(), LoweringRefusal<'source>>
+        (parameters, kinds): (&[DataParameter], &[Placed]),
+    ) -> Result<Vec<Placed>, LoweringRefusal<'source>>
     {
-        let indexed = LoweringRefusal::OutOfFragment {
+        let refused = LoweringRefusal::OutOfFragment {
             span: result.span,
             form: FormName::DATA_GENERATOR,
             sort: FragmentSort::Declaration,
@@ -1151,18 +1200,63 @@ impl<'source> Collector<'_, 'source>
         for parameter in parameters {
             let Some(argument) = arguments.next()
             else {
-                return Err(indexed);
+                return Err(refused);
             };
             if self.name_of(argument) != self.name_of(parameter.named) {
-                return Err(indexed);
+                return Err(refused);
             }
         }
+        let indices: Vec<Placed> = arguments.collect();
         let headed = matches!(pieces.pieces.first(), Some(&Piece::Tile { label, .. }) if label == TileName::TYPE_IDENTIFIER);
-        if arguments.next().is_some() || !headed {
-            return Err(indexed);
+        if indices.len() != kinds.len() || !headed {
+            return Err(refused);
         }
 
-        Ok(())
+        Ok(indices)
+    }
+
+    /// The index classifiers a kind `A -> B -> Type` writes before its
+    /// universe, in order, and the universe: `kind` alone, with none, when it
+    /// is no arrow.
+    ///
+    /// # Specification
+    /// - requires: `kind` is the operand a data declaration writes after its
+    ///   parameters.
+    /// - ensures: one classifier per arrow on the kind's right spine, each its
+    ///   domain, and the spine's last codomain.
+    /// - fails: [`LoweringRefusal::UnknownMold`] for a node with no mold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Nat -> Type` reads `Nat` before `Type`, and `Type`
+    ///   reads none.
+    /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |telescoped| telescoped.0.is_empty() || telescoped.1 != kind))]
+    fn telescope(
+        &self,
+        kind: Placed,
+    ) -> Result<(Vec<Placed>, Placed), LoweringRefusal<'source>>
+    {
+        let mut indices = Vec::new();
+        let mut at = kind;
+        loop {
+            let mut pieces = Pieces::new();
+            read_pieces(self.pbg, self.tree, at.node, &mut pieces)?;
+            match *pieces.pieces.as_slice() {
+                [
+                    Piece::Operand(domain),
+                    Piece::Tile { label, .. },
+                    Piece::Operand(codomain),
+                ] if label == TileName::ARROW => {
+                    indices.push(domain);
+                    at = codomain;
+                },
+                _ => return Ok((indices, at)),
+            }
+        }
     }
 
     /// Plan each operation the data declaration at `declaration` writes, and

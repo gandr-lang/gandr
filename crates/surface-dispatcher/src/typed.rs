@@ -1533,6 +1533,22 @@ impl TypeTable
                     .collect()
             })
             .collect();
+        // An index a data constructor's result states is judged under the
+        // family's parameters and the constructor's fields, which no term of
+        // the declaration binds: every term written in it answers under the
+        // names the lowering framed it with.
+        for &(framed, ref names) in origins.framed() {
+            let named = NamedContext(contexts.len());
+            contexts.push(names.clone());
+            for entry in &mut entries {
+                if matches!(entry.standing, Standing::Judged(_))
+                    && entry.span.start() >= framed.start()
+                    && entry.span.end() <= framed.end()
+                {
+                    entry.standing = Standing::Named(named);
+                }
+            }
+        }
         // A part whose type names the parts before it answers under them, by
         // the names its pattern writes for them.
         let text = <&str>::from(source);

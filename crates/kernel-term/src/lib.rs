@@ -263,6 +263,7 @@ pub use crate::tags::KIND_ABSTRACT_INTERFACED;
 pub use crate::tags::KIND_ABSTRACT_TYPE;
 pub use crate::tags::KIND_AXIOM;
 pub use crate::tags::KIND_DATA;
+pub use crate::tags::KIND_DATA_INDEXED;
 pub use crate::tags::KIND_DATA_PRESENTED;
 pub use crate::tags::KIND_DATA_WORDS;
 pub use crate::tags::KIND_DEF;

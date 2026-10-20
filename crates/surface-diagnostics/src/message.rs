@@ -263,9 +263,10 @@ fn lowered(
                 FragmentBoundary::Arity(operands) => {
                     write!(f, "the {spoken} cannot take {operands} operands")
                 },
-                FragmentBoundary::Indexed => {
-                    f.write_str("indexed datatype families are not supported yet")
-                },
+                FragmentBoundary::Indexed => write!(
+                    f,
+                    "the {spoken} reads a family at an index, which the fragment does not read here"
+                ),
                 FragmentBoundary::Unannotated => write!(f, "the {spoken} needs a type annotation"),
                 FragmentBoundary::NonUniform => f.write_str(
                     "a recursive call must pass the parameters before the one it descends on \
@@ -565,6 +566,9 @@ fn checked(
         },
         CheckRefusal::ConstructorArity(_) => {
             f.write_str("the constructor is given the wrong number of fields")
+        },
+        CheckRefusal::IndexedCase(_) => {
+            f.write_str("a case cannot yet scrutinise a value of an indexed family")
         },
         CheckRefusal::NonExhaustiveDataCase(_) => {
             f.write_str("the case must handle every constructor exactly once")
@@ -1218,6 +1222,7 @@ mod tests
                 tag: ConstructorTag::from(0_usize),
             },
             CheckRefusal::ConstructorArity(value),
+            CheckRefusal::IndexedCase(computation),
             CheckRefusal::NonExhaustiveDataCase(computation),
             CheckRefusal::UndecidedCoverage(computation),
             CheckRefusal::AbsentRecordField(computation),

@@ -480,13 +480,23 @@ impl LevelSignature
 pub enum DeclarationContent
 {
     /// A nominal data declaration, identified by its admission position.
+    ///
+    /// An indexed family applies to its parameters and then its indices, and
+    /// each constructor states the index its value stands at.
     Data
     {
         /// Classifier telescope, each entry scoped under earlier parameters.
         parameters: Vec<ValueTypeId>,
+        /// Index classifiers, each scoped under the parameters and the indices
+        /// before it; none for a family indexed by nothing.
+        indices: Vec<ValueTypeId>,
         /// Field types per constructor, each scoped under the whole parameter
         /// telescope and then its constructor's fields before it.
         constructors: Vec<Vec<ValueTypeId>>,
+        /// The index each constructor's value stands at, one value per index,
+        /// scoped under the parameters and that constructor's fields; empty
+        /// when `indices` is.
+        results: Vec<Vec<ValueId>>,
         /// Universe classifier bounding every constructor field.
         kind: ValueTypeId,
     },
@@ -1715,12 +1725,41 @@ impl DeclarationBuilder<'_>
         kind: ValueTypeId,
     ) -> Declaration
     {
+        self.indexed(
+            levels,
+            parameters,
+            (Vec::new(), constructors, Vec::new()),
+            kind,
+        )
+    }
+
+    /// Finish a nominal declaration indexed by `indices`, each constructor's
+    /// fields beside the index its value stands at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn indexed(
+        self,
+        levels: LevelSignature,
+        parameters: Vec<ValueTypeId>,
+        (indices, constructors, results): (
+            Vec<ValueTypeId>,
+            Vec<Vec<ValueTypeId>>,
+            Vec<Vec<ValueId>>,
+        ),
+        kind: ValueTypeId,
+    ) -> Declaration
+    {
         let _kept = ManuallyDrop::new(self);
         Declaration {
             levels,
             content: DeclarationContent::Data {
                 parameters,
+                indices,
                 constructors,
+                results,
                 kind,
             },
             provenance: Vec::new(),

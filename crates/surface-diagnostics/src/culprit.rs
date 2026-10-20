@@ -237,6 +237,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::DataArgumentArity(_) => "the wrong number of parameters",
         CheckRefusal::UnknownConstructor { .. } => "no constructor of the datatype",
         CheckRefusal::ConstructorArity(_) => "the wrong number of fields",
+        CheckRefusal::IndexedCase(_) => "a case over an indexed family",
         CheckRefusal::NonExhaustiveDataCase(_) => "not every constructor once",
         CheckRefusal::UndecidedCoverage(_) => "an arm left to a pattern hole",
         CheckRefusal::AbsentRecordField(_) => "no field of the record type",

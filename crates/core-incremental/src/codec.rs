@@ -2954,17 +2954,20 @@ fn read_located(reader: &mut Reader<'_>) -> Result<Located, CodecError>
 /// # Specification
 /// - ensures: parameters, constructor rows, kind, rules and cells retain their
 ///   order; a rule side writes its node count, then per node a tag and either a
-///   constructor ordinal or a variable word; the cells write tag `0` when the
-///   signature carries none, and otherwise tag `1`, the sort's position, the
-///   cell count and each cell's two endpoints as rule sides.
+///   constructor ordinal or a variable word; the trailing tag is `0` when the
+///   signature carries no cells and no index, `1` followed by the sort's
+///   position, the cell count and each cell's two endpoints as rule sides when
+///   it carries cells, and `2` followed by the index roots and one row of
+///   stated-index roots per constructor when it is indexed.
 /// - fails: an unrepresentable count or index.
 /// - executable: none — a generic sink exposes no byte observer.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — signatures with equal kinds but unequal constructors stay
-///   distinct, and a type of words round-trips its cells.
+///   distinct, a type of words round-trips its cells, and a vector its indices.
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
 /// - witness: `codec::tests::a_type_of_words_round_trips_its_cells`
+/// - witness: `codec::tests::an_indexed_family_round_trips_its_indices`
 fn write_data_roots<Out>(
     writer: &mut Writer<'_, Out>,
     roots: &crate::content::DataRoots,
@@ -2984,15 +2987,23 @@ where
         write_rule_side(writer, rule.left())?;
         write_rule_side(writer, rule.right())?;
     }
-    match roots.presentation.cells() {
-        None => writer.tag(Tag(0)),
-        Some(cells) => {
+    match (roots.presentation.cells(), roots.indices.is_empty()) {
+        (None, true) => writer.tag(Tag(0)),
+        (Some(cells), _) => {
             writer.tag(Tag(1));
             writer.count(Count(usize::from(cells.sort())))?;
             writer.count(Count(cells.cells().len()))?;
             for cell in cells.cells() {
                 write_rule_side(writer, cell.source())?;
                 write_rule_side(writer, cell.target())?;
+            }
+        },
+        (None, false) => {
+            writer.tag(Tag(2));
+            write_indices(writer, &roots.indices)?;
+            writer.count(Count(roots.results.len()))?;
+            for stated in &roots.results {
+                write_indices(writer, stated)?;
             }
         },
     }
@@ -3034,21 +3045,22 @@ where
     Ok(())
 }
 
-/// Read all nominal roots, rules and cells without allocating from untrusted
-/// counts.
+/// Read all nominal roots, rules, cells and indices without allocating from
+/// untrusted counts.
 ///
 /// # Specification
 /// - ensures: successful reads consume parameters, constructor rows, kind,
-///   rules and the cells' frame.
+///   rules and the trailing frame: the cells', or the indices'.
 /// - fails: truncated or malformed root frames, an unknown rule-node tag, a
-///   variable past `u32` and a cells tag other than `0` or `1`.
+///   variable past `u32` and a trailing tag other than `0`, `1` or `2`.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — nominal round trips retain the complete constructor
-///   table, and a type of words its cells.
+///   table, a type of words its cells, and a vector its indices.
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
 /// - witness: `codec::tests::a_type_of_words_round_trips_its_cells`
+/// - witness: `codec::tests::an_indexed_family_round_trips_its_indices`
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(32))]
 fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots, CodecError>
 {
@@ -3067,8 +3079,8 @@ fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots,
         rules.push(gandr_core_term::PresentedRule::new(left, right));
     }
     let presentation = gandr_core_term::Presentation::new(rules);
-    let presentation = match reader.tag()?.0 {
-        0 => presentation,
+    let (presentation, indices, results) = match reader.tag()?.0 {
+        0 => (presentation, Vec::new(), Vec::new()),
         1 => {
             let sort = gandr_kernel_term::ConstantIndex::from(reader.count()?.0);
             let count = reader.count()?;
@@ -3078,13 +3090,28 @@ fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots,
                 let target = read_rule_side(reader)?;
                 cells.push(gandr_kernel_term::FreeCell::new(source, target));
             }
-            presentation.carrying(gandr_kernel_term::FreeCells::new(sort, cells))
+            (
+                presentation.carrying(gandr_kernel_term::FreeCells::new(sort, cells)),
+                Vec::new(),
+                Vec::new(),
+            )
+        },
+        2 => {
+            let indices = read_indices(reader)?;
+            let count = reader.count()?;
+            let mut results = Vec::new();
+            for _ in 0 .. count.0 {
+                results.push(read_indices(reader)?);
+            }
+            (presentation, indices, results)
         },
         _ => return Err(CodecError::Corrupt),
     };
     Ok(crate::content::DataRoots {
         parameters,
+        indices,
         constructors,
+        results,
         kind,
         presentation,
     })
@@ -3152,8 +3179,10 @@ where
 /// Read and validate a complete nominal signature table.
 ///
 /// # Specification
-/// - ensures: every signature root is a value type in a discovery-numbered
-///   supported table, with one support of its widths per root.
+/// - ensures: every signature root has the sort [`DataRoots::sorted`] gives it
+///   — a stated index a value, every other root a value type — in a
+///   discovery-numbered supported table, with one support of its widths per
+///   root.
 /// - fails: malformed, ill-sorted or noncanonical content.
 /// - panics: none.
 ///
@@ -3161,13 +3190,15 @@ where
 /// - hypothesis: L3 — native checkpoints preserve signatures and reject
 ///   malformed roots.
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
-#[spec(ensures: |ret| ret.as_ref().map_or(true,|content| content.roots().iter().all(|root| content.nodes().get(usize::from(root)).is_some_and(|node| node.sort() == Sort::ValueType))))]
+///
+/// [`DataRoots::sorted`]: crate::content::DataRoots::sorted
+#[spec(ensures: |ret| ret.as_ref().map_or(true,|content| content.roots().sorted().all(|(root, sort)| content.nodes().get(usize::from(root)).is_some_and(|node| node.sort() == sort))))]
 fn read_data_content(reader: &mut Reader<'_>) -> Result<crate::content::DataContent, CodecError>
 {
     let roots = read_data_roots(reader)?;
     let nodes = read_nodes(reader)?;
-    for root in roots.iter() {
-        root_of_sort(&nodes, root, Sort::ValueType)?;
+    for (root, sort) in roots.sorted() {
+        root_of_sort(&nodes, root, sort)?;
     }
     check_discovery(&nodes, roots.iter())?;
     let placements = read_placements(reader, &nodes, roots.iter())?;
@@ -5766,6 +5797,10 @@ where
             writer.tag(Tag(24));
             write_site(writer, at)?;
         },
+        Refusal::IndexedCase(at) => {
+            writer.tag(Tag(81));
+            write_site(writer, at)?;
+        },
         Refusal::NonExhaustiveDataCase(at) => {
             writer.tag(Tag(25));
             write_site(writer, at)?;
@@ -6314,6 +6349,7 @@ where
                     Refusal::DataArgumentArity(_) => 22,
                     Refusal::UnknownConstructor {..} => 23,
                     Refusal::ConstructorArity(_) => 24,
+                    Refusal::IndexedCase(_) => 81,
                     Refusal::NonExhaustiveDataCase(_) => 25,
                     Refusal::UndecidedCoverage(_) => 80,
                     Refusal::AbsentRecordField(_) => 26,
@@ -6437,6 +6473,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             tag: gandr_core_term::ConstructorTag::from(reader.count()?.0),
         },
         24 => Refusal::ConstructorArity(read_site(reader)?),
+        81 => Refusal::IndexedCase(read_site(reader)?),
         25 => Refusal::NonExhaustiveDataCase(read_site(reader)?),
         80 => Refusal::UndecidedCoverage(read_site(reader)?),
         26 => Refusal::AbsentRecordField(read_site(reader)?),
@@ -7330,6 +7367,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::DataArgumentArity(_)
             | Refusal::UnknownConstructor { .. }
             | Refusal::ConstructorArity(_)
+            | Refusal::IndexedCase(_)
             | Refusal::NonExhaustiveDataCase(_)
             | Refusal::UndecidedCoverage(_)
             | Refusal::AbsentRecordField(_)

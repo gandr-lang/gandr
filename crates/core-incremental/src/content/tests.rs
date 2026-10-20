@@ -1730,6 +1730,8 @@ fn open_roots_project_under_their_own_supports()
     ];
     let data = DataRoots {
         parameters: vec![index(3_usize)],
+        indices: Vec::new(),
+        results: Vec::new(),
         constructors: vec![vec![index(1_usize), index(2_usize)]],
         kind: index(4_usize),
         presentation: gandr_core_term::Presentation::new(Vec::new()),

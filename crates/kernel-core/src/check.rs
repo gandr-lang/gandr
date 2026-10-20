@@ -1241,7 +1241,7 @@ where
                             ref arguments,
                         } => {
                             let signature = former::resolve(judgement, declaration)?;
-                            if signature.parameters.len() != arguments.len() {
+                            if signature.arity() != former::FamilyArity(arguments.len()) {
                                 return Err(KernelError::DataArgumentArity);
                             }
                             let level = former::level(arena, signature.kind)?;
@@ -5634,7 +5634,9 @@ where
         DeclarationContent::Data {
             kind,
             ref parameters,
+            ref indices,
             ref constructors,
+            ref results,
         } => match judgement.block {
             Block::Mutual { block, members } => {
                 let first = usize::from(block.first());
@@ -5669,7 +5671,9 @@ where
                 (
                     judgement.within_block(position, former::Signature {
                         parameters,
+                        indices,
                         constructors,
+                        results,
                         kind,
                     }),
                     accessibility,
@@ -5700,8 +5704,22 @@ where
         DeclarationContent::Data {
             kind,
             ref parameters,
+            ref indices,
             ref constructors,
+            ref results,
         } => {
+            // An indexed family states one result index per index for each
+            // constructor, and presents no rules.
+            let stated = results.len() == constructors.len()
+                && results.iter().all(|result| result.len() == indices.len());
+            let presented = !declaration.presentation().rules().is_empty()
+                || declaration.presentation().cells().is_some();
+            if !indices.is_empty() && (!stated || presented) {
+                return Err(KernelError::IndexedSignature);
+            }
+            if indices.is_empty() && !results.is_empty() {
+                return Err(KernelError::IndexedSignature);
+            }
             let level = former::level(arena, kind)?;
             let upper = level.succ()?;
             let mut context = Vec::new();
@@ -5720,9 +5738,27 @@ where
                 )?;
                 context.push(*parameter);
             }
+            // An index forms under the parameters and the indices before it.
+            let mut indexed = context.clone();
+            for index in indices {
+                let _formed = type_level(
+                    arena,
+                    judgement,
+                    TypeLevelGoal::Value(*index),
+                    indexed.clone(),
+                    Recording {
+                        memo,
+                        session,
+                        census,
+                        owed: &mut owed,
+                    },
+                )?;
+                indexed.push(*index);
+            }
             // A field forms under the parameters and the fields before it in
-            // its constructor, which a later field's type may name.
-            for fields in constructors {
+            // its constructor, which a later field's type may name; the
+            // constructor's result index checks under all of them.
+            for (tag, fields) in constructors.iter().enumerate() {
                 let mut scope = context.clone();
                 for field in fields {
                     let formed = type_level(
@@ -5739,6 +5775,34 @@ where
                     )?;
                     judgement.levels.check_universe_below(&formed, &upper)?;
                     scope.push(*field);
+                }
+                let stated = results.get(tag).map_or(&[][..], Vec::as_slice);
+                for (position, (&value, &index)) in stated.iter().zip(indices).enumerate() {
+                    let depth = |count: usize| {
+                        u32::try_from(count)
+                            .map(BinderDepth::from)
+                            .map_err(|_cause| KernelError::ConstructorArity)
+                    };
+                    let expected = former::index_at(
+                        arena,
+                        session,
+                        index,
+                        (stated, depth(position)?),
+                        depth(fields.len())?,
+                    )?;
+                    let _checked = run(
+                        arena,
+                        judgement,
+                        scope.clone(),
+                        Goal::CheckValue(value, expected),
+                        StageOrder::default(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed: &mut owed,
+                        },
+                    )?;
                 }
             }
             // A presented type's rules are checked against the table its
@@ -6050,10 +6114,18 @@ where
                 };
                 let judgement = scope.reading(judgement);
                 let signature = former::resolve(judgement, *declaration)?;
-                if signature.parameters.len() != arguments.len() {
+                if signature.arity() != former::FamilyArity(arguments.len()) {
                     return Err(KernelError::DataArgumentArity);
                 }
-                for (index, &parameter) in signature.parameters.iter().enumerate() {
+                // Each index classifier is scoped under the parameters and the
+                // indices before it, so it instantiates at every argument
+                // before its own place, as a parameter does.
+                let telescope = signature
+                    .parameters
+                    .iter()
+                    .chain(signature.indices)
+                    .copied();
+                for (index, parameter) in telescope.enumerate() {
                     let expected = former::instantiate(
                         arena,
                         session,
