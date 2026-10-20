@@ -281,9 +281,14 @@ mod scope;
 mod walk;
 
 use alloc::collections::BTreeSet;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
 pub use gandr_surface_grammar::Spelling;
 use gandr_surface_layout::ComputationWidth;
 use gandr_surface_layout::LayoutOptions;
@@ -297,6 +302,7 @@ use gandr_surface_layout::limits::BuildLimits;
 use gandr_surface_layout::limits::BuildMeter;
 use gandr_surface_layout::render::RenderedText;
 use gandr_surface_layout::render::render;
+use quenchant_shape::shape::Maybe;
 
 use crate::compose::Compose;
 use crate::compose::Glyphs;
@@ -315,6 +321,7 @@ pub use crate::former::Former;
 pub use crate::former::Name;
 pub use crate::former::Notation;
 pub use crate::former::Placement;
+pub use crate::former::Recursion;
 pub use crate::former::Source;
 pub use crate::former::Unreadable;
 pub use crate::former::Unspelled;
@@ -780,6 +787,198 @@ where
         style,
         Layout::Line,
     )
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a definition is not written as a recursive definition.
+    pub mod recursive {
+        /// The reason no `def rec` is written.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Its type is no suspended function.
+            NotAFunction,
+            /// Its body is no suspended fixpoint that abstracts a parameter.
+            NotAFixpoint,
+            /// No names for its parameters avoid every name the definition
+            /// mentions.
+            Unnamed,
+        }
+    }
+}
+
+/// The definition `name` of `source`, its stated type and body `(ty, body)`,
+/// laid out at `page` as the recursive definition `def rec name(x₁ : A₁, …, xₙ
+/// : Aₙ) -> C { b }` that declares it whole.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: when `ty` is `+U (A₁ -> … -> Aₙ -> C)`, any arrow dependent, and
+///   `body` is `thunk { rec f { fn (x₁) { … fn (xₙ) { b } … } } }`, `n` the
+///   abstractions the arrows run through, at least one: the header `def rec
+///   name(x₁ : A₁, …, xₙ : Aₙ) -> C {`, each type under the binders of the
+///   dependent arrows before it, then `b` as [`present_computation`] writes it
+///   at a page two columns narrower under the context binding `name` and then
+///   `x₁` to `xₙ`, each of its lines two columns in, then `}`. Each occurrence
+///   of the fixpoint's own binder is written with its claim: `name[<]` where
+///   the fixpoint claims structural recursion on a parameter, `name[>]` where
+///   it claims nothing. `xᵢ` is its dependent arrow's binder where the source
+///   names it and neither the definition nor an earlier parameter takes it,
+///   otherwise the next generated name that neither `name`, the definition nor
+///   an earlier parameter takes. The presentation is approximate, its unspelled
+///   reasons collected, when a header type or the body is. Absent for any other
+///   shape, and when no names for the parameters are found.
+/// - provides: the declaration a recursive definition reads back as, written
+///   whole where `def name = body` would write a fixpoint the surface spells
+///   only in its declaration.
+/// - fails: as [`present_type`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`present_type`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a descending fixpoint over a case, of one parameter and
+///   of two, a staged fixpoint and one claiming nothing distinguish a lost or
+///   wrong claim, a parameter left in the body, a lost header, a lost indent
+///   and a body under the wrong context; a body mentioning the first candidate
+///   name distinguishes a captured parameter, and a body that is no fixpoint
+///   and a type that is no function are absent.
+/// - witness: `tests::goldens::a_recursive_definition_spells_as_written_941`
+/// - witness: `tests::goldens::a_recursive_parameter_skips_the_names_its_body_mentions_941`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(Maybe::Present(ref presentation)) => presentation.as_ref().starts_with("def rec ")
+        && presentation.as_ref().ends_with('}')
+        && !presentation.as_ref().contains(['\r', '\t']),
+    Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
+    Ok(Maybe::Absent(_)) | Err(_) => true,
+})]
+#[inline]
+pub fn present_recursive(
+    source: &CoreSource<'_>,
+    name: Name<'_>,
+    (ty, body): (ValueTypeId, ValueId),
+    page: PageWidth,
+    style: Style,
+) -> Result<Maybe<Presentation, recursive::Absent>, PresentationError>
+{
+    let Former::ThunkType(function) = source.read(CoreNode::ValueType(ty))
+    else {
+        return Ok(Maybe::Absent(recursive::Absent::NotAFunction));
+    };
+    let Former::Thunk(fixpoint) = source.read(CoreNode::Value(body))
+    else {
+        return Ok(Maybe::Absent(recursive::Absent::NotAFixpoint));
+    };
+    let (Former::Fixpoint(abstraction), Some(recursion)) =
+        (source.read(fixpoint), source.recursion(fixpoint))
+    else {
+        return Ok(Maybe::Absent(recursive::Absent::NotAFixpoint));
+    };
+    // Each parameter: its arrow, its domain, and whether the arrow binds it
+    // in what follows; then the codomain and the body under them all.
+    let mut arrows: Vec<(CoreNode, CoreNode, bool)> = Vec::new();
+    let (mut codomain, mut inner) = (function, abstraction);
+    loop {
+        let former = source.read(codomain);
+        let (domain, rest, dependent) = if let Former::Arrow { domain, codomain } = former {
+            (domain, codomain, false)
+        }
+        else if let Former::Pi { domain, codomain } = former {
+            (domain, codomain, true)
+        }
+        else {
+            break;
+        };
+        let Former::Lambda(under) = source.read(inner)
+        else {
+            break;
+        };
+        arrows.push((codomain, domain, dependent));
+        (codomain, inner) = (rest, under);
+    }
+    if arrows.is_empty() {
+        return Ok(Maybe::Absent(
+            if matches!(
+                source.read(function),
+                Former::Arrow { .. } | Former::Pi { .. }
+            ) {
+                recursive::Absent::NotAFixpoint
+            }
+            else {
+                recursive::Absent::NotAFunction
+            },
+        ));
+    }
+    let mut roots: Vec<(CoreNode, Admits)> = arrows
+        .iter()
+        .map(|&(_, domain, _)| (domain, Admits::Type))
+        .collect();
+    roots.push((codomain, Admits::Type));
+    roots.push((inner, Admits::Computation(Tail::Ends)));
+    let preferred: Vec<Option<Name<'_>>> = arrows
+        .iter()
+        .map(|&(arrow, _, dependent)| {
+            if dependent {
+                source.arrow_binder(arrow)
+            }
+            else {
+                None
+            }
+        })
+        .collect();
+    let Some(names) = walk::parameters(source, &roots, &[name], &preferred)
+    else {
+        return Ok(Maybe::Absent(recursive::Absent::Unnamed));
+    };
+    // A type stands under the binders of the dependent arrows before it;
+    // the body under the definition's own binder and every parameter.
+    let mut header: Vec<String> = Vec::with_capacity(arrows.len());
+    let mut bound: Vec<Option<Name<'_>>> = Vec::new();
+    let mut parts: Vec<Presentation> = Vec::with_capacity(arrows.len().saturating_add(2_usize));
+    for (&(_, domain, dependent), parameter) in arrows.iter().zip(&names) {
+        let typed = present_type(&source.within(&bound), domain, page, style)?;
+        header.push(format!("{parameter} : {typed}"));
+        parts.push(typed);
+        if dependent {
+            bound.push(Some(Name::from(parameter.as_str())));
+        }
+    }
+    let header = header.join(", ");
+    let returned = present_type(&source.within(&bound), codomain, page, style)?;
+    let context: Vec<Option<Name<'_>>> = core::iter::once(Some(name))
+        .chain(
+            names
+                .iter()
+                .map(|parameter| Some(Name::from(parameter.as_str()))),
+        )
+        .collect();
+    let under = source.within(&context).recursing(recursion);
+    let narrower = PageWidth::from(u32::from(page).saturating_sub(2_u32).max(1_u32));
+    let spelled = present_computation(&under, inner, narrower, style)?;
+    let mut text = format!("def rec {}({header}) -> {returned} {{", name.as_ref());
+    for line in spelled.as_ref().lines() {
+        text.push('\n');
+        if !line.is_empty() {
+            text.push_str("  ");
+            text.push_str(line);
+        }
+    }
+    text.push_str("\n}");
+    parts.push(returned);
+    parts.push(spelled);
+    Ok(Maybe::Present(Presentation {
+        text: RenderedText::from(text),
+        fidelity: if parts.iter().all(|part| part.fidelity == Fidelity::Faithful) {
+            Fidelity::Faithful
+        }
+        else {
+            Fidelity::Approximate
+        },
+        unspelled: parts
+            .iter()
+            .flat_map(|part| part.unspelled.iter().copied())
+            .collect(),
+    }))
 }
 
 /// Where a presentation is written: laid out at a page, or on as few lines

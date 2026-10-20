@@ -46,11 +46,13 @@ use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::Notation;
 use gandr_surface_pretty::PageWidth;
+use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_pretty::Style;
 use gandr_surface_pretty::Unspelled;
 use gandr_surface_pretty::present_computation;
 use gandr_surface_pretty::present_definition;
+use gandr_surface_pretty::present_recursive;
 use gandr_surface_pretty::present_type;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
@@ -544,10 +546,47 @@ struct Printed
     name: String,
     /// The spans, in the source, of the top-level forms that hold it.
     forms: Vec<ByteSpan>,
-    /// Its type in both forms.
-    ty: Spellings,
-    /// Its definition's body in both forms.
-    body: Spellings,
+    /// How the printer writes it back.
+    shape: Shape,
+}
+
+/// How the printer writes a declaration back.
+#[derive(Clone, Debug)]
+enum Shape
+{
+    /// A signature and a definition: its type and its body in both forms.
+    Halves
+    {
+        /// Its type.
+        ty: Spellings,
+        /// Its definition's body.
+        body: Spellings,
+    },
+    /// One form that declares it whole, as a `def rec` does.
+    Whole(Spellings),
+}
+
+impl Printed
+{
+    /// The declaration as the printer writes it in `form`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn written(
+        &self,
+        form: Form,
+    ) -> String
+    {
+        match self.shape {
+            Shape::Halves { ref ty, ref body } => format!(
+                "def {name} : {ty} ;\ndef {name} = {body} ;",
+                name = self.name,
+                ty = ty.of(form),
+                body = body.of(form),
+            ),
+            Shape::Whole(ref whole) => whole.of(form).clone(),
+        }
+    }
 }
 
 /// One printing in the sugared and the explicit form.
@@ -584,21 +623,25 @@ enum Spelt
 {
     /// Both, faithfully: the type and the body.
     Whole(String, String),
+    /// The one form that declares it, faithfully.
+    Declared(String),
     /// Not faithfully, for a reason an issue holds.
     Held(Held),
     /// Not faithfully, for another reason: what the printer wrote.
     Unfaithful(String),
 }
 
-/// The type `ty` and body `body` of a declaration, lowered into `arena`, as
-/// `source` spells them in `form`: a thunked body as `thunk { … }` around its
-/// computation, every other as its value.
+/// The declaration `name`, its type `ty` and body `body` lowered into
+/// `arena`, as `source` spells it in `form`: a recursive definition whole as
+/// its `def rec`, otherwise a thunked body as `thunk { … }` around its
+/// computation and every other as its value.
 ///
 /// # Specification
 /// trivial.
 fn spelt(
     source: &CoreSource<'_>,
     arena: &CoreArena,
+    name: Name<'_>,
     (ty, body): (ValueTypeId, ValueId),
     form: Form,
 ) -> Spelt
@@ -608,6 +651,15 @@ fn spelt(
         spelling: Spelling::Ascii,
     };
     let page = PageWidth::from(BODY_PAGE);
+    let faithful = |printed: &Presentation| {
+        printed.fidelity() == Fidelity::Faithful && printed.unspelled().is_empty()
+    };
+    if let Ok(Maybe::Present(whole)) = present_recursive(source, name, (ty, body), page, style) {
+        if faithful(&whole) {
+            return Spelt::Declared(String::from(whole.as_ref()));
+        }
+        return unfaithful(whole.unspelled(), SourceFragment::from(whole.as_ref()));
+    }
     let typed = present_type(source, CoreNode::ValueType(ty), page, style);
     let bodied = match arena.value(body) {
         Some(&Value::Thunk(computation)) => {
@@ -621,12 +673,7 @@ fn spelt(
     else {
         return Spelt::Unfaithful(String::from("the printer refused it"));
     };
-    let faithful = |fidelity: Fidelity, unspelled: &BTreeSet<Unspelled>| {
-        fidelity == Fidelity::Faithful && unspelled.is_empty()
-    };
-    if faithful(typed.fidelity(), typed.unspelled())
-        && faithful(bodied.fidelity(), bodied.unspelled())
-    {
+    if faithful(&typed) && faithful(&bodied) {
         return Spelt::Whole(String::from(typed.as_ref()), text);
     }
     let unspelled: BTreeSet<Unspelled> = typed
@@ -635,6 +682,20 @@ fn spelt(
         .chain(bodied.unspelled())
         .copied()
         .collect();
+    unfaithful(&unspelled, SourceFragment::from(text.as_str()))
+}
+
+/// A printing `text` the printer wrote approximately for the reasons
+/// `unspelled`: held when an issue holds every reason, otherwise unfaithful.
+///
+/// # Specification
+/// trivial.
+fn unfaithful(
+    unspelled: &BTreeSet<Unspelled>,
+    text: SourceFragment<'_>,
+) -> Spelt
+{
+    let text = <&str>::from(text);
     if unspelled.is_empty() {
         Spelt::Unfaithful(format!("approximate, naming no reason (#820): {text}"))
     }
@@ -700,8 +761,8 @@ struct Read
 
 /// Each completed declaration `written` writes as a `def`, read by the
 /// printer in both forms; nothing when the source does not lower. A
-/// `theory` block is left out: the parity writes a declaration back as
-/// `def name : T ; def name = …`, a form its name cannot take.
+/// `theory` block is left out: the parity writes a declaration back as a
+/// `def`, a form its name cannot take.
 ///
 /// # Specification
 /// trivial.
@@ -788,18 +849,39 @@ fn read(
         let name = format!("{}", declaration.name());
         let node = (declared_type, body);
         match (
-            spelt(&source, &arena, node, Form::Sugared),
-            spelt(&source, &arena, node, Form::Explicit),
+            spelt(
+                &source,
+                &arena,
+                Name::from(name.as_str()),
+                node,
+                Form::Sugared,
+            ),
+            spelt(
+                &source,
+                &arena,
+                Name::from(name.as_str()),
+                node,
+                Form::Explicit,
+            ),
         ) {
             (Spelt::Whole(sugared_type, sugared), Spelt::Whole(explicit_type, explicit)) => {
                 read.printed.push(Printed {
                     name,
                     forms,
-                    ty: Spellings {
-                        sugared: sugared_type,
-                        explicit: explicit_type,
+                    shape: Shape::Halves {
+                        ty: Spellings {
+                            sugared: sugared_type,
+                            explicit: explicit_type,
+                        },
+                        body: Spellings { sugared, explicit },
                     },
-                    body: Spellings { sugared, explicit },
+                });
+            },
+            (Spelt::Declared(sugared), Spelt::Declared(explicit)) => {
+                read.printed.push(Printed {
+                    name,
+                    forms,
+                    shape: Shape::Whole(Spellings { sugared, explicit }),
                 });
             },
             (Spelt::Unfaithful(text), _) | (_, Spelt::Unfaithful(text)) => {
@@ -810,14 +892,18 @@ fn read(
             (Spelt::Held(held), _) | (_, Spelt::Held(held)) => {
                 let _previous = read.held.insert(name, held);
             },
+            (Spelt::Whole(..), Spelt::Declared(_)) | (Spelt::Declared(_), Spelt::Whole(..)) => {
+                read.unfaithful.push(format!(
+                    "`{name}`: the printer writes it whole in one form and in halves in the other"
+                ));
+            },
         }
     }
     Some(read)
 }
 
 /// `own` with each of `printed`'s declarations written as the printer spells
-/// it in `form`: its signature and its definition in place of the forms
-/// that held it.
+/// it in `form` in place of the forms that held it.
 ///
 /// # Specification
 /// trivial.
@@ -837,20 +923,10 @@ fn substituted(
     }
     edits.sort_by_key(|&(span, _)| core::cmp::Reverse(span.start()));
     let mut out = String::from(<&str>::from(own));
-    let mut whole = String::new();
     for (span, declaration) in edits {
-        whole.clear();
-        if let Some(declaration) = declaration {
-            let (ty, body) = (declaration.ty.of(form), declaration.body.of(form));
-            core::fmt::Write::write_fmt(
-                &mut whole,
-                format_args!(
-                    "def {name} : {ty} ;\ndef {name} = {body} ;",
-                    name = declaration.name
-                ),
-            )
-            .expect("a string accepts every write");
-        }
+        let whole = declaration
+            .map(|declaration| declaration.written(form))
+            .unwrap_or_default();
         out.replace_range(usize::from(span.start()) .. usize::from(span.end()), &whole);
     }
     out
@@ -877,9 +953,7 @@ fn reading_back(
         .iter()
         .filter(|declaration| {
             again.printed.iter().any(|back| {
-                back.name == declaration.name
-                    && back.ty.of(form) == declaration.ty.of(form)
-                    && back.body.of(form) == declaration.body.of(form)
+                back.name == declaration.name && back.written(form) == declaration.written(form)
             })
         })
         .map(|declaration| declaration.name.clone())
@@ -1007,6 +1081,43 @@ fn defined(
             && end == ";"
         {
             let _previous = found.insert(name.clone(), body.to_vec());
+        }
+    }
+    found
+}
+
+/// Each top-level `def rec name(…) …` of `text`: the whole form's tokens, by
+/// name.
+///
+/// # Specification
+/// trivial.
+fn recursed(
+    grammar: &Pbg,
+    text: SourceText<'_>,
+) -> BTreeMap<String, Vec<String>>
+{
+    let mut found = BTreeMap::new();
+    let Ok(parsed) = parse(grammar, text)
+    else {
+        return found;
+    };
+    let text = <&str>::from(text);
+    let tree = parsed.tree();
+    for form in tree.children(tree.root()) {
+        let Some(span) = tree.node(form).map(gandr_surface_syntax::Node::span)
+        else {
+            continue;
+        };
+        let Some(written) = text.get(usize::from(span.start()) .. usize::from(span.end()))
+        else {
+            continue;
+        };
+        let whole = tokens(SourceFragment::from(written));
+        if let &[ref def, ref rec, ref name, ..] = whole.as_slice()
+            && def == "def"
+            && rec == "rec"
+        {
+            let _previous = found.insert(name.clone(), whole.clone());
         }
     }
     found
@@ -1159,37 +1270,50 @@ fn bodies(
             }
         }
         let definitions = defined(grammar, SourceText::from(out.as_str()));
+        let recursions = recursed(grammar, SourceText::from(out.as_str()));
         for declaration in &held {
             let want = |spelled: &Spellings| {
                 Some(tokens(SourceFragment::from(spelled.of(expected).as_str())))
             };
-            let (want_type, want_body) = (want(&declaration.ty), want(&declaration.body));
-            let (got_type, got_body) = (
-                signatures.get(&declaration.name).cloned(),
-                definitions.get(&declaration.name).cloned(),
-            );
-            if (got_type.clone(), got_body.clone()) == (want_type.clone(), want_body.clone()) {
-                continue;
-            }
             let shown = |tokens: Option<Vec<String>>| {
                 tokens.map_or_else(|| String::from("(none)"), |tokens| tokens.join(" "))
+            };
+            let compared = match declaration.shape {
+                Shape::Halves { ref ty, ref body } => {
+                    let (want_type, want_body) = (want(ty), want(body));
+                    let (got_type, got_body) = (
+                        signatures.get(&declaration.name).cloned(),
+                        definitions.get(&declaration.name).cloned(),
+                    );
+                    ((got_type.clone(), got_body.clone()) != (want_type.clone(), want_body.clone()))
+                        .then(|| {
+                            format!(
+                                "formatter: {} = {}\n  printer:   {} = {}",
+                                shown(got_type),
+                                shown(got_body),
+                                shown(want_type),
+                                shown(want_body),
+                            )
+                        })
+                },
+                Shape::Whole(ref whole) => {
+                    let (wanted, got) = (want(whole), recursions.get(&declaration.name).cloned());
+                    (got != wanted).then(|| {
+                        format!("formatter: {}\n  printer:   {}", shown(got), shown(wanted))
+                    })
+                },
+            };
+            let Some(compared) = compared
+            else {
+                continue;
             };
             let mut miss = format!("{name}: `{}` from {from:?} into {into}", declaration.name);
             if let Some(reason) = withdrawn.get(declaration.name.as_str()) {
                 core::fmt::Write::write_fmt(&mut miss, format_args!(", withdrawn: {reason}"))
                     .expect("a string accepts every write");
             }
-            core::fmt::Write::write_fmt(
-                &mut miss,
-                format_args!(
-                    ":\n  formatter: {} = {}\n  printer:   {} = {}",
-                    shown(got_type),
-                    shown(got_body),
-                    shown(want_type),
-                    shown(want_body),
-                ),
-            )
-            .expect("a string accepts every write");
+            core::fmt::Write::write_fmt(&mut miss, format_args!(":\n  {compared}"))
+                .expect("a string accepts every write");
             found.misses.push(miss);
         }
     }

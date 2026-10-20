@@ -23,6 +23,7 @@ use gandr_core_term::world::World;
 use gandr_core_term::world::WorldForm;
 use gandr_core_term::world::WorldType;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Side;
 use quenchant_shape::shape::Maybe;
 
@@ -30,6 +31,7 @@ use crate::former::Arity;
 use crate::former::Component;
 use crate::former::Former;
 use crate::former::Name;
+use crate::former::Recursion;
 use crate::former::Source;
 use crate::former::Unreadable;
 
@@ -430,6 +432,9 @@ pub struct CoreSource<'arena>
     constructors: &'arena Constructors<'arena>,
     /// The names of the binders the root stands under, outermost first.
     context: &'arena [Option<Name<'arena>>],
+    /// The claim the calls of the outermost binder in `context` write, where
+    /// it is a recursive definition's own.
+    recursive: Option<Recursion>,
     /// The names of the capability scopes the root stands in, outermost
     /// first.
     regions: &'arena [Option<Name<'arena>>],
@@ -460,6 +465,7 @@ impl<'arena> CoreSource<'arena>
             restoration: UNRESTORED,
             constructors: UNNAMED,
             context: &[],
+            recursive: None,
             regions: &[],
             arrows: &[],
             relations: &[],
@@ -514,6 +520,51 @@ impl<'arena> CoreSource<'arena>
     ) -> Self
     {
         Self { context, ..self }
+    }
+
+    /// This source, the outermost binder of its context a recursive
+    /// definition's own, each call of which writes `recursion`'s claim.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn recursing(
+        self,
+        recursion: Recursion,
+    ) -> Self
+    {
+        Self {
+            recursive: Some(recursion),
+            ..self
+        }
+    }
+
+    /// The claim the calls of the fixpoint at `node` write: a descent where
+    /// it claims structural recursion on any parameter, productive where it
+    /// claims nothing; none for a node that is no fixpoint.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn recursion(
+        &self,
+        node: CoreNode,
+    ) -> Option<Recursion>
+    {
+        let CoreNode::Computation(id) = node
+        else {
+            return None;
+        };
+        let &Computation::Fixpoint { evidence, .. } = self.arena.computation(id)?
+        else {
+            return None;
+        };
+        Some(match evidence {
+            FixpointEvidence::StructuralDescent | FixpointEvidence::Staged { .. } => {
+                Recursion::Descends
+            },
+            FixpointEvidence::Partial => Recursion::Productive,
+        })
     }
 
     /// This source, its roots standing in capability scopes named by
@@ -2072,6 +2123,16 @@ impl Source for CoreSource<'_>
     fn context(&self) -> &[Option<Name<'_>>]
     {
         self.context
+    }
+
+    /// The position of the recursive definition's own binder in the context.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn recursive(&self) -> Option<Recursion>
+    {
+        self.recursive
     }
 
     /// The names of the capability scopes the root stands in.

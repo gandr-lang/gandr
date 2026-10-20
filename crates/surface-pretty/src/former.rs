@@ -123,6 +123,19 @@ pub enum Placement
     Consed,
 }
 
+/// The claim a recursive definition's calls of itself write.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Recursion
+{
+    /// `f[<](…)`: each call descends below a parameter's stage.
+    Descends,
+    /// `f[>](…)`: each call stands behind an observation.
+    Productive,
+}
+
 /// The moves of a recorded run, as the printer spells them.
 pub trait Moves: core::fmt::Debug
 {
@@ -1202,6 +1215,34 @@ pub trait Source
     fn context(&self) -> &[Option<Name<'_>>]
     {
         &[]
+    }
+
+    /// The claim each occurrence of the outermost binder of
+    /// [`Self::context`] writes, where that binder is a recursive
+    /// definition's own; none when it is not.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: where present and the context holds a binder, the walk writes
+    ///   the outermost one's name `name[<]` or `name[>]` at each occurrence as
+    ///   [`Recursion`] says, as a claimed call of the definition writes its
+    ///   head. The default is none.
+    /// - provides: the head of a claimed call in the body of a `def rec`.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a recursive definition's body spells a descending
+    ///   call of itself `name[<](p)` and a productive one `name[>](p)`; the
+    ///   same body with no such binder spells the bare name.
+    /// - witness: `tests::goldens::a_recursive_definition_spells_as_written_941`
+    #[inline]
+    fn recursive(&self) -> Option<Recursion>
+    {
+        None
     }
 
     /// The names of the capability scopes the presented root stands in,
