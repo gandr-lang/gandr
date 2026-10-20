@@ -563,6 +563,27 @@ impl InitializeParams
         )
     }
 
+    /// Whether folds are answered to this client with the text a folded range
+    /// shows: when it declares `textDocument.foldingRange.foldingRange.
+    /// collapsedText`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn collapsed_folds(&self) -> FoldsCollapsed
+    {
+        FoldsCollapsed(
+            self.capabilities
+                .as_ref()
+                .and_then(|capabilities| capabilities.text_document.as_ref())
+                .and_then(|text_document| text_document.folding_range.as_ref())
+                .and_then(|folding| folding.folding_range.as_ref())
+                .and_then(|range| range.collapsed_text)
+                .unwrap_or(false),
+        )
+    }
+
     /// Whether this client watches files for the server once asked: when it
     /// declares `workspace.didChangeWatchedFiles.dynamicRegistration`.
     ///
@@ -867,6 +888,11 @@ pub struct LabelOffsets(pub bool);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct LabelsDetailed(pub bool);
+
+/// Whether a client shows the text a fold names in place of the folded lines.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct FoldsCollapsed(pub bool);
 
 /// Whether a client watches files for the server once asked to.
 #[repr(transparent)]
@@ -1290,6 +1316,32 @@ pub struct TextDocumentCapabilities
     /// `textDocument.completion`.
     #[serde(default)]
     pub completion: Option<CompletionCapabilities>,
+    /// `textDocument.foldingRange`.
+    #[serde(default)]
+    pub folding_range: Option<FoldingCapabilities>,
+}
+
+/// What the client takes in answer to a folding-range request.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct FoldingCapabilities
+{
+    /// `textDocument.foldingRange.foldingRange`.
+    #[serde(default)]
+    pub folding_range: Option<FoldingRangeCapabilities>,
+}
+
+/// What the client takes of one folding range.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct FoldingRangeCapabilities
+{
+    /// `…foldingRange.collapsedText`: whether it shows a range's collapsed
+    /// text.
+    #[serde(default)]
+    pub collapsed_text: Option<bool>,
 }
 
 /// What the client takes in answer to a completion request.
@@ -2808,6 +2860,35 @@ pub struct FoldingRange
     /// `comment` for documentation and a block comment; absent for a form.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<&'static str>,
+    /// What a client shows in place of the folded lines: the first line's
+    /// text before the range, then what the form writes before its body, the
+    /// body elided; absent for a comment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collapsed_text: Option<String>,
+}
+
+impl FoldingRange
+{
+    /// This range as answered to a client that `collapsed` says shows a
+    /// fold's text or not: the same lines and kind, the text kept only when
+    /// it does.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn answered(
+        &self,
+        collapsed: FoldsCollapsed,
+    ) -> Self
+    {
+        Self {
+            start_line: self.start_line,
+            end_line: self.end_line,
+            kind: self.kind,
+            collapsed_text: collapsed.0.then(|| self.collapsed_text.clone()).flatten(),
+        }
+    }
 }
 
 /// The ranges around a position, innermost first, written as the protocol's

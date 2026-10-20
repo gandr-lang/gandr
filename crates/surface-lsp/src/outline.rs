@@ -301,14 +301,77 @@ fn detail(
     let written = written.strip_prefix(':').unwrap_or(written);
     let written = written.strip_suffix(';').unwrap_or(written);
     let mut collapsed = String::new();
-    for word in written.split_whitespace() {
+    laid_out(SourceFragment::from(written), &mut collapsed);
+    (!collapsed.is_empty()).then_some(collapsed)
+}
+
+/// Appends `written` to `collapsed` with each run of layout one space, none
+/// after an opening bracket or before a closing one.
+///
+/// # Specification
+/// trivial.
+fn laid_out(
+    written: SourceFragment<'_>,
+    collapsed: &mut String,
+)
+{
+    let start = collapsed.len();
+    for word in <&str>::from(written).split_whitespace() {
         let glued = collapsed.ends_with(['(', '[', '{']) || word.starts_with([')', ']', '}']);
-        if !collapsed.is_empty() && !glued {
+        if collapsed.len() > start && !glued {
             collapsed.push(' ');
         }
         collapsed.push_str(word);
     }
-    (!collapsed.is_empty()).then_some(collapsed)
+}
+
+/// What a client shows in place of the lines `span` folds, written by the
+/// form at `holder` among its own tiles: the text before `span` on its first
+/// line, then what the form writes up to its first own `{`, `=` or `;` inside
+/// `span`, its layout collapsed, the body after a `{` elided as `{ … }` and
+/// the definition after an `=` as `= …` with a final `;` kept; none when no
+/// such tile is inside `span`.
+///
+/// # Specification
+/// trivial.
+fn folded(
+    tree: &SyntaxTree<'_>,
+    holder: NodeIndex,
+    span: ByteSpan,
+) -> Option<String>
+{
+    let (opener, spelled) = tree.children(holder).find_map(|child| {
+        let start = body_start(tree, child)?;
+        let inside = span.start() <= start && start < span.end();
+        inside.then_some((start, tree.fragment(child)?))
+    })?;
+    let source = <&str>::from(tree.source());
+    let before = source.get(.. usize::from(span.start()))?;
+    let line = before
+        .rfind('\n')
+        .map_or(0_usize, |newline| newline.saturating_add(1));
+    let mut shown = String::from(before.get(line ..)?);
+    let lead = shown.len();
+    laid_out(
+        tree.source()
+            .fragment(ByteSpan::new(span.start(), opener).ok()?)
+            .ok()?,
+        &mut shown,
+    );
+    let ended = source
+        .get(usize::from(span.start()) .. usize::from(span.end()))
+        .is_some_and(|written| written.trim_end().ends_with(';'));
+    let elided = match <&str>::from(spelled) {
+        "{" => "{ … }",
+        "=" if ended => "= …;",
+        "=" => "= …",
+        _ => ";",
+    };
+    if shown.len() > lead && elided != ";" {
+        shown.push(' ');
+    }
+    shown.push_str(elided);
+    Some(shown)
 }
 
 /// What a declaration named by a tile of `role` declares, after its first
@@ -572,19 +635,22 @@ fn member_kind(
 ///   node or a block comment starts that ends on a later line, from its first
 ///   line to its last; at a line where several start, the one reaching
 ///   furthest, the outermost of those nested there. Documentation and block
-///   comments carry the `comment` kind, forms and members none. Ascending by
-///   first line.
+///   comments carry the `comment` kind and no collapsed text; forms and members
+///   no kind and, when one of their own `{`, `=` or `;` tiles is inside them,
+///   the text the first line holds before them followed by what they write up
+///   to that tile, layout collapsed, the rest elided. Ascending by first line.
 /// - provides: the answer to `textDocument/foldingRange`.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a multi-line function with a block inside it, a one-line
-///   declaration, a documentation run, a block comment, and a theory with a
-///   multi-line member and a one-line one are asserted at the exact ranges.
-///   Folding a one-line form or member, keeping the inner of two ranges
-///   starting on one line, dropping a member or losing the comment kind changes
-///   them.
+///   declaration, a documentation run, a block comment, a theory with a
+///   multi-line member and a one-line one, a definition after `=` and a member
+///   ending at `;` are asserted at the exact ranges and texts. Folding a
+///   one-line form or member, keeping the inner of two ranges starting on one
+///   line, dropping a member, losing the comment kind, giving a comment a text
+///   or eliding at the wrong tile changes them.
 /// - witness: `outline::tests::multi_line_forms_and_documentation_fold`
 #[spec(ensures: |ret| ret.iter().all(|fold| fold.start_line < fold.end_line)
     && ret.windows(2).all(|pair| matches!(pair, [first, second] if first.start_line < second.start_line)))]
@@ -595,14 +661,16 @@ pub fn folds(
 ) -> Vec<FoldingRange>
 {
     let mut folds: Vec<FoldingRange> = Vec::new();
-    let mut fold = |span: ByteSpan, kind: Option<&'static str>| {
+    // A form or a member names the form whose tiles write it; a comment none.
+    let mut fold = |span: ByteSpan, holder: Option<NodeIndex>| {
         if let Some(range) = range_of(index, span)
             && range.start.line < range.end.line
         {
             folds.push(FoldingRange {
                 start_line: range.start.line,
                 end_line: range.end.line,
-                kind,
+                kind: holder.is_none().then_some(COMMENT),
+                collapsed_text: holder.and_then(|holder| folded(tree, holder, span)),
             });
         }
     };
@@ -611,15 +679,15 @@ pub fn folds(
         else {
             continue;
         };
-        let kind = match node.label() {
-            NodeLabel::Meld(_) => None,
-            NodeLabel::Doc => Some(COMMENT),
+        let holder = match node.label() {
+            NodeLabel::Meld(_) => Some(position),
+            NodeLabel::Doc => None,
             NodeLabel::Space
                 if tree
                     .fragment(position)
                     .is_some_and(|text| <&str>::from(text).starts_with(BLOCK_COMMENT)) =>
             {
-                Some(COMMENT)
+                None
             },
             NodeLabel::Wald
             | NodeLabel::Space
@@ -627,10 +695,10 @@ pub fn folds(
             | NodeLabel::Grout { .. }
             | NodeLabel::GhostClose { .. } => continue,
         };
-        fold(node.span(), kind);
+        fold(node.span(), holder);
     }
-    for &(_, span) in members {
-        fold(span, None);
+    for &(holder, span) in members {
+        fold(span, Some(holder));
     }
     folds.sort_by_key(|fold| (fold.start_line, core::cmp::Reverse(fold.end_line)));
     folds.dedup_by_key(|fold| fold.start_line);
@@ -1013,27 +1081,36 @@ mod tests
         let source = "/// One.\n/// Two.\ndef f(x: Integer) -> -F Integer {\n  return x\n}\n\
                       def g = 1 ;\n/* a\n   block */\ndef h = 2 ;\n\
                       theory T {\n  sort M : Type;\n  shape Square : 4 {\n    left = {0, 2};\n  \
-                      };\n}\n";
-        let answered: Vec<(u64, u64, Option<&str>)> = Reading::of(SourceText::from(source))
-            .folds()
-            .iter()
-            .map(|fold| {
-                let value = serde_json::to_value(fold).expect("a fold encodes");
-                let line = |field| value.get(field).and_then(Value::as_u64).unwrap_or(u64::MAX);
-                (line("startLine"), line("endLine"), fold.kind)
-            })
-            .collect();
+                      };\n  oper mul :\n    (M, M) => M;\n}\ndef k =\n  1 ;\n";
+        let answered: Vec<(u64, u64, Option<&str>, Option<String>)> =
+            Reading::of(SourceText::from(source))
+                .folds()
+                .iter()
+                .map(|fold| {
+                    let value = serde_json::to_value(fold).expect("a fold encodes");
+                    let line = |field| value.get(field).and_then(Value::as_u64).unwrap_or(u64::MAX);
+                    let text = value
+                        .get("collapsedText")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned);
+                    (line("startLine"), line("endLine"), fold.kind, text)
+                })
+                .collect();
+        let shown = |text: &str| Some(text.to_owned());
         assert_eq!(
             answered,
             [
-                (0, 1, Some("comment")),
-                (2, 4, None),
-                (6, 7, Some("comment")),
-                (9, 14, None),
-                (11, 13, None)
+                (0, 1, Some("comment"), None),
+                (2, 4, None, shown("def f(x: Integer) -> -F Integer { … }")),
+                (6, 7, Some("comment"), None),
+                (9, 16, None, shown("theory T { … }")),
+                (11, 13, None, shown("  shape Square : 4 { … }")),
+                (14, 15, None, shown("  oper mul : (M, M) => M;")),
+                (17, 18, None, shown("def k = …;")),
             ],
-            "documentation, the function, the block comment, the theory and its multi-line \
-             member fold; the one-line forms and members do not"
+            "documentation, the function, the block comment, the theory, its multi-line \
+             members and a definition after `=` fold, each form showing what it writes \
+             before its body; the one-line forms and members do not"
         );
     }
 
