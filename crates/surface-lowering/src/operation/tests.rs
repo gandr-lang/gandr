@@ -206,6 +206,73 @@ fn a_many_out_operation_lowers_to_a_function_the_checker_accepts()
 }
 
 #[test]
+fn an_operations_rules_read_in_pre_order_over_module_positions()
+{
+    use gandr_kernel_term::ConstructorTag;
+    use gandr_kernel_term::FieldCount;
+    use gandr_kernel_term::OperationNode;
+    use gandr_kernel_term::OperationRule;
+    use gandr_kernel_term::OperationRules;
+    use gandr_kernel_term::RuleVariable;
+    let mut arena = CoreArena::new();
+    let module = lowered(NAT_DIV, &mut arena);
+    let named = |name: &str| {
+        module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name().as_ref() == name)
+            .unwrap()
+    };
+    let family = named("NatDiv").constant();
+    let call = |name: &str, arity: usize| OperationNode::Operation {
+        constant: named(name).constant(),
+        arity: FieldCount::from(arity),
+    };
+    let zero = OperationNode::Constructor {
+        family,
+        tag: ConstructorTag::from(0_usize),
+    };
+    let succ = OperationNode::Constructor {
+        family,
+        tag: ConstructorTag::from(1_usize),
+    };
+    let m = OperationNode::Variable(RuleVariable::from(0_u32));
+    let d = OperationNode::Variable(RuleVariable::from(1_u32));
+    let rule = |left: &[OperationNode], right: &[OperationNode]| {
+        OperationRule::new(
+            alloc::boxed::Box::from(left),
+            alloc::boxed::Box::from(right),
+        )
+    };
+    // `divmod(m, Zero) ==> (Zero, m)` and
+    // `divmod(m, Succ(d)) ==> walk(m, d, d, Zero, Zero)`: variables numbered by
+    // first occurrence on the left, a callee at its own position.
+    assert_eq!(
+        module.operation_rules(named("divmod")),
+        OperationRules::new(alloc::vec![
+            rule(&[call("divmod", 2), m, zero], &[
+                OperationNode::Results(FieldCount::from(2_usize)),
+                zero,
+                m
+            ]),
+            rule(&[call("divmod", 2), m, succ, d], &[
+                call("walk", 5),
+                m,
+                d,
+                d,
+                zero,
+                zero
+            ]),
+        ]),
+        "each rule reads as the kernel decides it"
+    );
+    assert!(
+        module.operation_rules(named("NatDiv")).rules().is_empty(),
+        "a declaration no operation lowered to carries no rules"
+    );
+}
+
+#[test]
 fn a_call_reaches_the_operation_before_a_builtin_of_its_name()
 {
     let source = "data NatAdd : Type {

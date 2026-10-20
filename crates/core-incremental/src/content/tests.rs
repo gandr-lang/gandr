@@ -80,6 +80,73 @@ fn single(
 }
 
 #[test]
+fn an_operation_rule_is_content()
+{
+    use gandr_kernel_term::OperationNode;
+    use gandr_kernel_term::OperationRule;
+    use gandr_kernel_term::OperationRules;
+    // `f(x) ==> x` and its twin `f(x) ==> f(x)`, `f` the item at position 0.
+    let content = |right: &[OperationNode]| {
+        let mut arena = CoreArena::new();
+        let ty = arena.value_type_base(BaseType::Integer);
+        let literal = arena.value_literal(Literal::Integer(IntegerLiteral::new(
+            Sign::NonNegative,
+            Magnitude::zero(),
+        )));
+        let call = OperationNode::Operation {
+            constant: ConstantIndex::from(0_usize),
+            arity: gandr_kernel_term::FieldCount::from(1_usize),
+        };
+        let x = OperationNode::Variable(gandr_kernel_term::RuleVariable::from(0_u32));
+        let rules = OperationRules::new(vec![OperationRule::new([call, x].into(), right.into())]);
+        let program = Program::new(arena, vec![Item::new(
+            ItemKey::from("it"),
+            Declaration::new(
+                ConstantIndex::from(0_usize),
+                Maybe::Present(ty),
+                Maybe::Present(literal),
+                OriginToken::from(0_usize),
+            )
+            .ruled(rules),
+        )])
+        .expect("one item ascends");
+        encode_item(
+            program.arena(),
+            program.layout(),
+            ItemOrdinal::from(0_usize),
+        )
+        .content
+    };
+    let x = OperationNode::Variable(gandr_kernel_term::RuleVariable::from(0_u32));
+    let projection = content(&[x]);
+    let super::DeclarationRoots::Value { ref rules, .. } = *projection.declaration()
+    else {
+        panic!("a ruled definition is a value");
+    };
+    let own = Reference::Item {
+        key: ItemKey::from("it"),
+        occurrence: Occurrence::from(0_usize),
+    };
+    assert_eq!(
+        rules.first().and_then(|rule| rule.left.first()),
+        Some(&super::RuleRoot::Operation {
+            callee: own,
+            arity: gandr_kernel_term::FieldCount::from(1_usize),
+        }),
+        "the operation's own call reads as the item's own reference"
+    );
+    let call = OperationNode::Operation {
+        constant: ConstantIndex::from(0_usize),
+        arity: gandr_kernel_term::FieldCount::from(1_usize),
+    };
+    assert_ne!(
+        projection,
+        content(&[call, x]),
+        "a changed right side is changed content"
+    );
+}
+
+#[test]
 fn control_graphs_preserve_scopes_and_signature_edges()
 {
     use gandr_core_term::Zone;

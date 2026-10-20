@@ -832,10 +832,30 @@ pub const KIND_CODATA: WireTag = WireTag(0x0D);
 /// declaration kind rather than misreading it, which is why the format
 /// version holds.
 pub const KIND_DATA_INDEXED: WireTag = WireTag(0x0B);
+/// Declaration tag: a typed definition whose segment closes with the rules of
+/// the operation it lowered from.
+///
+/// After the [`KIND_DEF`] fields comes the related block as
+/// [`KIND_DEF_RELATING`] writes it and the law block as [`KIND_DEF_LAWFUL`]
+/// writes it, both counts here possibly zero, then a rule count, at least
+/// one, and per rule its left and its right side, each a node count and that
+/// many nodes in pre-order: [`RULE_OPERATION`], a definition's position and
+/// its arity; [`RULE_CONSTRUCTOR`], a data declaration's position and a
+/// constructor ordinal; [`RULE_RESULTS`] and a count; or [`RULE_VARIABLE`] and
+/// a pattern variable's ordinal. The kernel decides at admission that the
+/// rules terminate and converge. A definition with no rule writes one of the
+/// other definition kinds, so every other artifact keeps its bytes, and a
+/// reader predating this kind refuses it as an unknown declaration kind rather
+/// than misreading it, which is why the format version holds.
+pub const KIND_DEF_RULED: WireTag = WireTag(0x0E);
 /// Rule node tag: a constructor of the declaration's own table.
 pub const RULE_CONSTRUCTOR: WireTag = WireTag(0);
 /// Rule node tag: a pattern variable.
 pub const RULE_VARIABLE: WireTag = WireTag(1);
+/// Rule node tag: an operation applied to its arguments.
+pub const RULE_OPERATION: WireTag = WireTag(2);
+/// Rule node tag: the results of a many-output operation.
+pub const RULE_RESULTS: WireTag = WireTag(3);
 /// Node tag: nominal application with a counted argument vector.
 pub const NODE_VT_DATA: WireTag = WireTag(0x5d);
 /// Node tag: structural record classifier with counted labels and children.

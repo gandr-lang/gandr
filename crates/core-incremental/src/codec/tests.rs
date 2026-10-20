@@ -1553,6 +1553,7 @@ fn checkpoint_encoding_reports_the_first_unresolved_plane()
                 signature: Maybe::Absent(signature::Absent::Unsigned),
                 body: Maybe::Present(NodeIndex::from(0_usize)),
                 laws: Vec::new(),
+                rules: Vec::new(),
             },
             &nodes,
         );
@@ -1790,6 +1791,7 @@ fn encoding_bounds_levels_in_every_node_family_and_plane()
                 signature: Maybe::Absent(signature::Absent::Unsigned),
                 body: Maybe::Present(NodeIndex::from(0_usize)),
                 laws: Vec::new(),
+                rules: Vec::new(),
             },
             &nodes,
         );
@@ -1899,6 +1901,7 @@ fn encoding_bounds_levels_in_every_auxiliary_type_table()
                 signature: Maybe::Absent(signature::Absent::Unsigned),
                 body: Maybe::Present(NodeIndex::from(0_usize)),
                 laws: Vec::new(),
+                rules: Vec::new(),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -1937,6 +1940,7 @@ fn a_lawful_value_root_round_trips_and_its_law_order_is_content()
                 signature: Maybe::Absent(signature::Absent::Unsigned),
                 body: Maybe::Present(NodeIndex::from(0_usize)),
                 laws,
+                rules: Vec::new(),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -1972,6 +1976,82 @@ fn a_lawful_value_root_round_trips_and_its_law_order_is_content()
         bytes.as_ref(),
         lawless.as_ref(),
         "and so does dropping them"
+    );
+}
+
+#[test]
+fn a_ruled_value_root_round_trips_and_its_rules_are_content()
+{
+    use crate::content::RuleRoot;
+    use crate::content::RuleRoots;
+    let item = |key: u8| Reference::Item {
+        key: ItemKey::from([key].as_slice()),
+        occurrence: Occurrence::from(0_usize),
+    };
+    // `f(Zero) ==> Zero`, `f` at item 1 and `Zero` constructor 0 of item 2;
+    // the twin's right side is constructor 1 instead.
+    let rule = |tag: usize| RuleRoots {
+        left: vec![
+            RuleRoot::Operation {
+                callee: item(1),
+                arity: gandr_kernel_term::FieldCount::from(1_usize),
+            },
+            RuleRoot::Constructor {
+                family: item(2),
+                tag: gandr_kernel_term::ConstructorTag::from(0_usize),
+            },
+        ],
+        right: vec![
+            RuleRoot::Constructor {
+                family: item(2),
+                tag: gandr_kernel_term::ConstructorTag::from(tag),
+            },
+            RuleRoot::Results(gandr_kernel_term::FieldCount::from(0_usize)),
+            RuleRoot::Variable(gandr_kernel_term::RuleVariable::from(7_u32)),
+        ],
+    };
+    let checkpoints = |rules: Vec<RuleRoots>| {
+        let content = crate::fixture::item_content(
+            Reference::Unoccupied,
+            &crate::content::DeclarationRoots::Value {
+                signature: Maybe::Absent(signature::Absent::Unsigned),
+                body: Maybe::Present(NodeIndex::from(0_usize)),
+                laws: Vec::new(),
+                rules,
+            },
+            &[ContentNode::Tuple(Vec::new())],
+        );
+        let item = ItemCheckpoint::new(
+            content,
+            Footprint::from_parts(
+                BTreeSet::new(),
+                BTreeSet::new(),
+                Opacity::Transparent,
+                HoleMark::Filled,
+            ),
+            vec![Answered::new(Reference::Unoccupied, Answer::Untyped)],
+            Typing::Owed,
+        );
+        Checkpoints::new(CheckBudget::DEFAULT, vec![item])
+    };
+    let ruled = checkpoints(vec![rule(0)]);
+    let bytes = encode_checkpoints(&ruled).expect("a ruled root encodes");
+    assert_eq!(
+        decode_checkpoints(Bytes(bytes.as_ref())),
+        Ok(ruled),
+        "and decodes to itself, every node of both sides in order"
+    );
+    let changed = encode_checkpoints(&checkpoints(vec![rule(1)])).expect("a changed rule encodes");
+    assert_ne!(
+        bytes.as_ref(),
+        changed.as_ref(),
+        "changing a rule's right side changes the content"
+    );
+    let unruled = encode_checkpoints(&checkpoints(Vec::new())).expect("an unruled root encodes");
+    assert_ne!(
+        bytes.as_ref(),
+        unruled.as_ref(),
+        "and so does dropping the rules"
     );
 }
 

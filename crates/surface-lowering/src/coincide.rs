@@ -117,22 +117,16 @@
 //! run of the same call to. Only a block the check admitted is read; a call
 //! into any other is [`NormalFormFault::Incoherent`].
 //!
-//! # What the kernel would need
+//! # Boundaries
 //!
-//! The verdict is the lowering's. The kernel admits the function an operation
-//! lowers to and the paths a model carries, and never sees the rules as
-//! rewrites, so it trusts the verdict rather than replaying it. Replaying it
-//! needs the rewriting store as data; the critical-pair enumeration as a
-//! certificate — every overlapping cell pair with its unifier, and the check
-//! that no other pair's left-hand sides unify, which for the root-only
-//! overlaps of linear left-hand sides the cell gate admits is first-order
-//! unification over the pairs left out, and for a presented type the same over
-//! every subterm of a left-hand side; one join certificate per pair, which
-//! exists and replays by ground rewriting (`Tracelet::replay`); and the path
-//! order's precedence with a checker for it. The certificates are kept on
-//! [`Coincidence::Joined`]; the enumeration's completeness, the order and the
-//! link from the confluent normal form to the lowered function are what the
-//! kernel still owes (#322).
+//! The verdict here is the lowering's. An operation a `data` block routes
+//! carries its oriented rules to the kernel on the definition it lowers to
+//! ([`crate::operation::OperationPlan::rules`]), and the kernel decides them
+//! itself (`gandr_kernel_term::OperationRules::converge`): the path order with
+//! the admission order as its precedence, every critical pair by unification
+//! of the linear patterns, and each join by normalizing both reducts. That a
+//! lowered function computes what its rules state, and a `theory` block's
+//! sequent reading, are decided here only.
 
 use alloc::borrow::Cow;
 use alloc::boxed::Box;

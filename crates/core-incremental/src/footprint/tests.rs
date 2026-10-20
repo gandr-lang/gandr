@@ -279,6 +279,7 @@ fn bounded_tables_separate_reachability_opacity_and_holes()
         signature: Maybe::Absent(signature::Absent::Unsigned),
         body: Maybe::Present(crate::boundary::NodeIndex::from(0_usize)),
         laws: Vec::new(),
+        rules: Vec::new(),
     };
     let cyclic = crate::fixture::item_content(Reference::Unoccupied, &filled, &[
         crate::content::ContentNode::Tuple(vec![
@@ -307,6 +308,7 @@ fn bounded_tables_separate_reachability_opacity_and_holes()
             signature: Maybe::Absent(signature::Absent::Unsigned),
             body: Maybe::Absent(body::Absent::Hole),
             laws: Vec::new(),
+            rules: Vec::new(),
         },
         &[],
     );

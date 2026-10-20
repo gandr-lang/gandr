@@ -229,7 +229,7 @@ fn decoded(bytes: &CheckpointBytes) -> Result<Checkpoints, CheckpointStoreError>
                 && ret.items().first().is_some_and(|checkpoint| {
                     let content = checkpoint.content();
                     content.nodes().len() == count
-                        && matches!(content.declaration(), crate::DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Present(root),laws} if *root == NodeIndex::from(0_usize) && laws.is_empty())
+                        && matches!(content.declaration(), crate::DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Present(root),laws,rules} if *root == NodeIndex::from(0_usize) && laws.is_empty() && rules.is_empty())
                         && checkpoint.support().is_empty()
                         && matches!(checkpoint.typing(), &Typing::Owed)
                         && match *content.reference() {
@@ -265,6 +265,7 @@ fn hand_made(nodes: Vec<ContentNode>) -> Checkpoints
             signature: Maybe::Absent(signature::Absent::Unsigned),
             body: Maybe::Present(NodeIndex::from(0_usize)),
             laws: Vec::new(),
+            rules: Vec::new(),
         },
         nodes,
         vec![gandr_core_term::support::Thinning::empty()],

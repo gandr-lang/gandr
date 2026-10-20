@@ -384,6 +384,23 @@
 //! `kernel_export::kernel_presented_readmission::an_absurd_case_readmits_by_apartness_and_forged_twins_are_refused_by_name`
 //! in the surface corpus.
 //!
+//! A definition an operation lowered to carries the rules the operation was
+//! written as (kernel-term's `OperationRules`, the additive declaration kind
+//! `0x0E`), and admission decides them itself (`ruled`): each left side is the
+//! definition's own call over linear constructor patterns; every constructor
+//! names an admitted data declaration and every call the definition itself or
+//! a ruled definition admitted before it; the lexicographic path order, its
+//! precedence the admission order, puts each left side above its right; and
+//! every critical pair — two rules overlapping at the root, or a presented
+//! type's rule overlapping a pattern below it — normalizes to one term under
+//! the rules of every operation reached and every presented type built. A
+//! system that fails is refused `OperationRulesRefused`, naming the rule and
+//! its fault. The witnesses are
+//! `ruled::tests::rules_over_the_environment_admit_and_a_forged_pair_is_refused`
+//! and, on readmission,
+//! `kernel_export::kernel_presented_readmission::forged_operation_rules_are_refused_by_the_kernel_322`
+//! in the surface corpus.
+//!
 //! # Accessibility
 //!
 //! A data declaration's fields may place its family anywhere the stage order
@@ -629,6 +646,7 @@ pub mod path_universe;
 pub mod presented;
 pub mod replay;
 pub mod rewrite;
+mod ruled;
 pub mod seal;
 pub mod stage;
 pub mod stage_order;

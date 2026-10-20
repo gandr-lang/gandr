@@ -2012,7 +2012,7 @@ impl RewriteFuel
         Ok(()) => before > 0 && self.0 == before.saturating_sub(1),
         Err(Exhausted) => before == 0 && self.0 == 0,
     })]
-    fn charge(&mut self) -> Result<(), Exhausted>
+    pub(crate) fn charge(&mut self) -> Result<(), Exhausted>
     {
         self.0 = self.0.checked_sub(1).ok_or(Exhausted)?;
         Ok(())

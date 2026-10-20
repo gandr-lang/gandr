@@ -787,6 +787,9 @@ pub struct Declaration
     /// respected by its law instead. Empty for every declaration that rests
     /// on none.
     laws: Vec<ConstantIndex>,
+    /// The rules of the operation a definition lowered from, which the kernel
+    /// decides converge; none for every other declaration.
+    operation_rules: crate::operation_rules::OperationRules,
 }
 
 impl Declaration
@@ -881,6 +884,18 @@ impl Declaration
     pub fn laws(&self) -> &[ConstantIndex]
     {
         &self.laws
+    }
+
+    /// The rules of the operation the definition lowered from, in written
+    /// order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn operation_rules(&self) -> &crate::operation_rules::OperationRules
+    {
+        &self.operation_rules
     }
 
     /// This declaration under `name`, its levels, content and provenance
@@ -1014,6 +1029,48 @@ impl Declaration
     {
         match self.content {
             DeclarationContent::Def { .. } => Self { laws, ..self },
+            DeclarationContent::Data { .. }
+            | DeclarationContent::Codata { .. }
+            | DeclarationContent::Axiom { .. }
+            | DeclarationContent::AbstractType { .. } => self,
+        }
+    }
+
+    /// This definition carrying `rules` as the rules of the operation it
+    /// lowered from, everything else unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — the kernel decides at admission that the rules are
+    ///   well formed, terminate and converge.
+    /// - ensures: a definition comes back carrying exactly `rules`; any other
+    ///   declaration comes back unchanged. Content, levels, provenance, name,
+    ///   related pairs and laws are untouched either way.
+    /// - provides: the one way a producer attaches an operation's rules, after
+    ///   whichever finisher built the definition.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition keeps the rules through the wire, and
+    ///   the kernel's admission decides them where it runs.
+    /// - witness: `encode::tests::a_ruled_definition_closes_its_segment_with_its_rules`
+    #[spec(
+        captures: entry = (matches!(self.content, DeclarationContent::Def { .. }), self.operation_rules.rules().len(), rules.rules().len(), self.laws.len(), self.name.0.len()),
+        ensures: |ret| ret.operation_rules.rules().len() == if entry.0 { entry.2 } else { entry.1 }
+            && ret.laws.len() == entry.3 && ret.name.0.len() == entry.4,
+    )]
+    #[inline]
+    #[must_use]
+    pub fn ruled(
+        self,
+        rules: crate::operation_rules::OperationRules,
+    ) -> Self
+    {
+        match self.content {
+            DeclarationContent::Def { .. } => Self {
+                operation_rules: rules,
+                ..self
+            },
             DeclarationContent::Data { .. }
             | DeclarationContent::Codata { .. }
             | DeclarationContent::Axiom { .. }
@@ -1523,6 +1580,7 @@ impl<'arena> DeclarationBuilder<'arena>
             related: Vec::new(),
             presentation: crate::presented::Presentation::default(),
             laws: Vec::new(),
+            operation_rules: crate::operation_rules::OperationRules::default(),
         }
     }
 
@@ -1578,6 +1636,7 @@ impl<'arena> DeclarationBuilder<'arena>
             related: Vec::new(),
             presentation: crate::presented::Presentation::default(),
             laws: Vec::new(),
+            operation_rules: crate::operation_rules::OperationRules::default(),
         }
     }
 
@@ -1630,6 +1689,7 @@ impl<'arena> DeclarationBuilder<'arena>
             related: Vec::new(),
             presentation: crate::presented::Presentation::default(),
             laws: Vec::new(),
+            operation_rules: crate::operation_rules::OperationRules::default(),
         }
     }
 
@@ -1690,6 +1750,7 @@ impl<'arena> DeclarationBuilder<'arena>
             related: Vec::new(),
             presentation: crate::presented::Presentation::default(),
             laws: Vec::new(),
+            operation_rules: crate::operation_rules::OperationRules::default(),
         }
     }
 }
@@ -1786,6 +1847,7 @@ impl DeclarationBuilder<'_>
             related: Vec::new(),
             presentation: crate::presented::Presentation::default(),
             laws: Vec::new(),
+            operation_rules: crate::operation_rules::OperationRules::default(),
         }
     }
 
@@ -1817,6 +1879,7 @@ impl DeclarationBuilder<'_>
             related: Vec::new(),
             presentation: crate::presented::Presentation::default(),
             laws: Vec::new(),
+            operation_rules: crate::operation_rules::OperationRules::default(),
         }
     }
 }

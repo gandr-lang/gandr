@@ -356,6 +356,9 @@ pub struct CheckingContext<'arena>
     /// The laws each lawful declaration's folds rest on, by position, in its
     /// folded type's rule order.
     laws: BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
+    /// The rules of the operation each ruled declaration lowered from, by
+    /// position; the judgement carries them to the kernel unread.
+    operation_rules: BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
     /// The native universe path each univalence statement the judgement
     /// decided derives, and each path product it judged elaborates to, by
     /// node.
@@ -542,6 +545,7 @@ impl<'arena> CheckingContext<'arena>
             relating: BTreeMap::new(),
             relations: BTreeMap::new(),
             laws: BTreeMap::new(),
+            operation_rules: BTreeMap::new(),
             sealed: BTreeMap::new(),
             seals: SealTable::new(),
             budget,
@@ -2451,6 +2455,44 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     pub const fn laws(&self) -> &BTreeMap<ConstantIndex, Vec<ConstantIndex>>
     {
         &self.laws
+    }
+
+    /// Keep `rules` as the rules of the operation the declaration at
+    /// `constant` lowered from.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `constant` has `rules` when any is written; otherwise nothing
+    ///   changes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the rules cross to the kernel with their declaration.
+    /// - witness: `bridge::tests::an_operations_rules_cross_at_kernel_positions_and_the_kernel_decides_them`
+    #[spec(captures: entry = rules.rules().len(), ensures: entry == 0 || self.operation_rules.get(&constant).map(|kept| kept.rules().len()) == Some(entry))]
+    pub(crate) fn keep_operation_rules(
+        &mut self,
+        constant: ConstantIndex,
+        rules: gandr_kernel_term::OperationRules,
+    )
+    {
+        if !rules.rules().is_empty() {
+            self.operation_rules.insert(constant, rules);
+        }
+    }
+
+    /// The rules of the operation each ruled declaration lowered from, by
+    /// position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn operation_rules(
+        &self
+    ) -> &BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>
+    {
+        &self.operation_rules
     }
 
     /// The native universe path each univalence statement the judgement

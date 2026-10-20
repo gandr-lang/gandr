@@ -362,18 +362,21 @@ fn encode_minted_atom_table(
 ///   endpoints writes [`tags::KIND_DEF_RELATING`] and closes with the pair
 ///   count and each pair's roots and dialogue; a definition resting on laws
 ///   writes [`tags::KIND_DEF_LAWFUL`] and closes with the pair block, its count
-///   possibly zero, then the law count and each law's position; a data
-///   declaration presenting rules writes [`tags::KIND_DATA_PRESENTED`] and
-///   closes with the rule count and each rule's two sides; a type of words
-///   writes [`tags::KIND_DATA_WORDS`] and closes with the rule block, its count
-///   possibly zero, then the sort's position, the cell count and each cell's
-///   two endpoints as rule sides; an indexed data declaration writes
-///   [`tags::KIND_DATA_INDEXED`] and closes with the index count, each index
-///   classifier's root and each constructor's result roots, and no rules; a
-///   codata declaration writes [`tags::KIND_CODATA`] and closes with its
-///   parameter count and roots, then its observation count and roots; abstract
-///   types write their kind and representation roots and the extent of their
-///   scope, an open scope as `remaining`, and an interfaced one writes
+///   possibly zero, then the law count and each law's position; a definition
+///   carrying an operation's rules writes [`tags::KIND_DEF_RULED`] and closes
+///   with the pair block and the law block, both counts possibly zero, then the
+///   rule count and each rule's two sides; a data declaration presenting rules
+///   writes [`tags::KIND_DATA_PRESENTED`] and closes with the rule count and
+///   each rule's two sides; a type of words writes [`tags::KIND_DATA_WORDS`]
+///   and closes with the rule block, its count possibly zero, then the sort's
+///   position, the cell count and each cell's two endpoints as rule sides; an
+///   indexed data declaration writes [`tags::KIND_DATA_INDEXED`] and closes
+///   with the index count, each index classifier's root and each constructor's
+///   result roots, and no rules; a codata declaration writes
+///   [`tags::KIND_CODATA`] and closes with its parameter count and roots, then
+///   its observation count and roots; abstract types write their kind and
+///   representation roots and the extent of their scope, an open scope as
+///   `remaining`, and an interfaced one writes
 ///   [`tags::KIND_ABSTRACT_INTERFACED`] and closes with its relation's and its
 ///   reflexivity's roots; the other kinds write one root and no slots.
 /// - provides: one segment with cross-declaration sharing. The predicate checks
@@ -395,6 +398,7 @@ fn encode_minted_atom_table(
 /// - witness: `encode::tests::atom_positions_and_provenance_preserve_sequence_identity`
 /// - witness: `encode::tests::a_relating_definition_closes_its_segment_with_its_pairs`
 /// - witness: `encode::tests::a_lawful_definition_closes_its_segment_with_its_laws`
+/// - witness: `encode::tests::a_ruled_definition_closes_its_segment_with_its_rules`
 /// - witness: `encode::tests::a_presented_data_declaration_closes_its_segment_with_its_rules`
 /// - witness: `encode::tests::a_type_of_words_closes_its_segment_with_its_cells`
 /// - witness: `encode::tests::an_interfaced_atom_closes_its_segment_with_its_interface`
@@ -405,7 +409,7 @@ fn encode_minted_atom_table(
     ensures: |ret| { let image = out.as_image();
         let bytes = image.as_ref();
         bytes.get(entry.0).copied() == Some(u8::from(match marked.mark() { AdmissionMark::Checked => tags::ADMISSION_CHECKED, AdmissionMark::UncheckedBypass => tags::ADMISSION_UNCHECKED }))
-            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { ref indices, .. } if !indices.is_empty() => tags::KIND_DATA_INDEXED, DeclarationContent::Data { .. } if marked.declaration().presentation().cells().is_some() => tags::KIND_DATA_WORDS, DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Codata { .. } => tags::KIND_CODATA, DeclarationContent::Def { .. } if !marked.declaration().laws().is_empty() => tags::KIND_DEF_LAWFUL, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { interface: Maybe::Present(_), .. } => tags::KIND_ABSTRACT_INTERFACED, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
+            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { ref indices, .. } if !indices.is_empty() => tags::KIND_DATA_INDEXED, DeclarationContent::Data { .. } if marked.declaration().presentation().cells().is_some() => tags::KIND_DATA_WORDS, DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Codata { .. } => tags::KIND_CODATA, DeclarationContent::Def { .. } if !marked.declaration().operation_rules().rules().is_empty() => tags::KIND_DEF_RULED, DeclarationContent::Def { .. } if !marked.declaration().laws().is_empty() => tags::KIND_DEF_LAWFUL, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { interface: Maybe::Present(_), .. } => tags::KIND_ABSTRACT_INTERFACED, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
             && interner.by_node.contains_key(&AnyNode::ValueType(marked.declaration().declared_id()))
             && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => interner.by_node.contains_key(&AnyNode::Value(body)), DeclarationContent::Codata { ref observations, .. } => observations.iter().all(|id| interner.by_node.contains_key(&AnyNode::CompType(*id))), DeclarationContent::AbstractType { interface: Maybe::Present(interface), .. } => interner.by_node.contains_key(&AnyNode::Value(interface.relation())) && interner.by_node.contains_key(&AnyNode::Value(interface.reflexivity())), DeclarationContent::Data { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true }
             && marked.declaration().related().iter().all(|related| interner.by_node.contains_key(&AnyNode::Value(related.left)) && interner.by_node.contains_key(&AnyNode::Value(related.right)))
@@ -438,6 +442,9 @@ fn encode_declaration(
         },
         DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED,
         DeclarationContent::Codata { .. } => tags::KIND_CODATA,
+        DeclarationContent::Def { .. } if !declaration.operation_rules().rules().is_empty() => {
+            tags::KIND_DEF_RULED
+        },
         DeclarationContent::Def { .. } if !declaration.laws().is_empty() => tags::KIND_DEF_LAWFUL,
         DeclarationContent::Def { .. } if declaration.related().is_empty() => tags::KIND_DEF,
         DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING,
@@ -634,9 +641,12 @@ fn encode_declaration(
     // least one, since a definition relating none wrote the plain kind, then
     // each pair's roots and its dialogue. A lawful definition writes the block
     // whatever its count, and its laws after it: a count of at least one and
-    // each law's position.
+    // each law's position. A ruled definition writes both blocks whatever
+    // their counts, then its rules: a count of at least one and each rule's
+    // two sides.
     let laws = declaration.laws();
-    if !related_roots.is_empty() || !laws.is_empty() {
+    let operation_rules = declaration.operation_rules().rules();
+    if !related_roots.is_empty() || !laws.is_empty() || !operation_rules.is_empty() {
         out.put_uvarint(WireU64::from(WireUsize::from(related_roots.len())));
         for (&(left, right), related) in related_roots.iter().zip(declaration.related()) {
             out.put_uvarint(WireU64::from(u64::from(u32::from(left))));
@@ -647,10 +657,17 @@ fn encode_declaration(
             }
         }
     }
-    if !laws.is_empty() {
+    if !laws.is_empty() || !operation_rules.is_empty() {
         out.put_uvarint(WireU64::from(WireUsize::from(laws.len())));
         for &law in laws {
             out.put_uvarint(WireU64::from(WireUsize::from(usize::from(law))));
+        }
+    }
+    if !operation_rules.is_empty() {
+        out.put_uvarint(WireU64::from(WireUsize::from(operation_rules.len())));
+        for rule in operation_rules {
+            encode_operation_side(out, rule.left());
+            encode_operation_side(out, rule.right());
         }
     }
     // The rule block closes a presented data declaration's segment: a rule
@@ -720,6 +737,54 @@ fn encode_rule_side(
         };
         out.put_tag(tag);
         out.put_uvarint(ordinal);
+    }
+}
+
+/// Write one side of an operation's rule: its node count, then each node's
+/// tag and payload in pre-order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the count and every node are written, in order, and nothing else:
+///   an operation as its position and arity, a constructor as its data
+///   declaration's position and its ordinal, a results tuple as its count, a
+///   variable as its ordinal.
+/// - provides: the one spelling of an operation's side, which
+///   `decode_operation_side` reads back.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a ruled definition round-trips every side.
+/// - witness: `encode::tests::a_ruled_definition_closes_its_segment_with_its_rules`
+#[spec(captures: before = out.as_image().as_ref().len(), ensures: out.as_image().as_ref().len() > before)]
+fn encode_operation_side(
+    out: &mut EncodedArtifact,
+    side: &[crate::operation_rules::OperationNode],
+)
+{
+    out.put_uvarint(WireU64::from(WireUsize::from(side.len())));
+    for &node in side {
+        match node {
+            crate::operation_rules::OperationNode::Operation { constant, arity } => {
+                out.put_tag(tags::RULE_OPERATION);
+                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(constant))));
+                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(arity))));
+            },
+            crate::operation_rules::OperationNode::Constructor { family, tag } => {
+                out.put_tag(tags::RULE_CONSTRUCTOR);
+                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(family))));
+                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(tag))));
+            },
+            crate::operation_rules::OperationNode::Results(count) => {
+                out.put_tag(tags::RULE_RESULTS);
+                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(count))));
+            },
+            crate::operation_rules::OperationNode::Variable(variable) => {
+                out.put_tag(tags::RULE_VARIABLE);
+                out.put_uvarint(WireU64::from(u64::from(u32::from(variable))));
+            },
+        }
     }
 }
 
@@ -2555,6 +2620,97 @@ mod tests
             Err(crate::error::DecodeError::Malformed {
                 site: crate::error::MalformedSite::TrailingBytes,
             })
+        );
+    }
+
+    #[test]
+    fn a_ruled_definition_closes_its_segment_with_its_rules()
+    {
+        use crate::operation_rules::OperationNode;
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let unit_type = builder.arena().value_type_unit();
+        let unit = builder.arena().value_unit();
+        // `f(x) ==> S(x)`, f at position 0 and S constructor 1 of the data
+        // declaration at position 3.
+        let rules = crate::operation_rules::OperationRules::new(alloc::vec![
+            crate::operation_rules::OperationRule::new(
+                alloc::boxed::Box::from([
+                    OperationNode::Operation {
+                        constant: ConstantIndex::from(0_usize),
+                        arity: crate::presented::FieldCount::from(1_usize),
+                    },
+                    OperationNode::Variable(crate::presented::RuleVariable::from(0_u32)),
+                ]),
+                alloc::boxed::Box::from([
+                    OperationNode::Constructor {
+                        family: ConstantIndex::from(3_usize),
+                        tag: crate::term::ConstructorTag::from(1_usize),
+                    },
+                    OperationNode::Results(crate::presented::FieldCount::from(4_usize)),
+                ]),
+            ),
+        ]);
+        let definition = builder
+            .def(LevelSignature::monomorphic(), unit_type, unit)
+            .ruled(rules.clone());
+        let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, definition)];
+        // The ruled kind, then the plain definition's fields; then no related
+        // pair, no law, and the one rule: its left side, an operation at 0 of
+        // arity 1 and variable 0, and its right side, constructor 1 of the
+        // declaration at 3 and a results tuple of 4.
+        let expected = [
+            b'G', b'K', b'X', b'1', 6, 0, 0, 1, 0, 0x0E, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0,
+            0, 0, 0, 0, 1, 2, 2, 0, 1, 1, 0, 2, 0, 3, 1, 3, 4,
+        ];
+        let bytes = super::encode(&arena, &declarations);
+        assert_eq!(
+            bytes.as_image().as_ref(),
+            expected,
+            "the ruled segment's literal bytes"
+        );
+        let decoded = crate::decode::decode(ArtifactImage::from(expected.as_slice()))
+            .expect("the literal artifact is structurally admissible");
+        let declaration = decoded.declarations().first().expect("one definition");
+        assert_eq!(
+            declaration.declaration().operation_rules(),
+            &rules,
+            "the rules decode in written order"
+        );
+        assert_eq!(
+            super::encode(decoded.arena(), decoded.declarations())
+                .as_image()
+                .as_ref(),
+            expected,
+            "and re-encode to the same bytes"
+        );
+        // A ruled kind closing with no rule decodes to a plain definition,
+        // whose canonical bytes carry the plain kind.
+        let empty = [
+            b'G', b'K', b'X', b'1', 6, 0, 0, 1, 0, 0x0E, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0,
+            0, 0, 0, 0, 0,
+        ];
+        assert_eq!(
+            crate::decode::decode(ArtifactImage::from(empty.as_slice())),
+            Err(crate::error::DecodeError::Malformed {
+                site: crate::error::MalformedSite::NonCanonical,
+            }),
+            "an empty rule block is not canonical"
+        );
+        // A node tag outside the alphabet refuses at its own site.
+        let mut unknown = expected;
+        if let Some(tag) = unknown.get_mut(28) {
+            *tag = 9;
+        }
+        assert!(
+            matches!(
+                crate::decode::decode(ArtifactImage::from(unknown.as_slice())),
+                Err(crate::error::DecodeError::UnknownTag {
+                    site: crate::error::TagSite::RuleNode,
+                    ..
+                })
+            ),
+            "an unknown rule node tag is refused"
         );
     }
 
