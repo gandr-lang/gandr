@@ -114,11 +114,11 @@ jobs:
       - &setup-rust
         id: setup-rust
         name: setup rust
-        if: ${{ github.event_name != 'push' || env.CI_ON_MAIN == 'true' || hashFiles('build-state-*.tar.zst') != '' }}
+        if: ${{ github.event_name != 'push' || env.CI_ON_MAIN == 'true' || env.CI_BUILD_STATE_FOUND == 'true' }}
         uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
         with:
           install-toolchain: ${{ env.CI_INSTALL_TOOLCHAIN || needs.ci-image-ref.outputs.ref == '' }}
-          cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && (hashFiles('build-state-*.tar.zst') != '' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test')) || (github.event_name == 'push' && env.CI_ON_MAIN == 'true' && (env.CI_SHARDS != '' || env.CI_ENFORCING != 'true'))) }}
+          cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && (env.CI_BUILD_STATE_FOUND == 'true' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test')) || (github.event_name == 'push' && env.CI_ON_MAIN == 'true' && (env.CI_SHARDS != '' || env.CI_ENFORCING != 'true'))) }}
       # Cache installed tools by locked pins, including source-built sizelint
       # and macOS Dylint tools. Install the complete CI subset inside the cache.
       # A hosted runner carries rustup and the setup step installs the pinned
@@ -192,14 +192,14 @@ jobs:
       - &save-policy-state
         name: save the policy state
         id: save-policy-state
-        if: ${{ !cancelled() && env.ACT != 'true' && ((github.event_name == 'push' && hashFiles('build-state-cargo-dylint-crate.tar.zst') != '') || (github.event_name == 'workflow_dispatch' && steps.policy-library.outcome == 'success' && steps.invocation-state.outcome == 'success')) && steps.policy-state-restore.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && env.ACT != 'true' && ((github.event_name == 'push' && env.CI_BUILD_STATE_FOUND == 'true') || (github.event_name == 'workflow_dispatch' && steps.policy-library.outcome == 'success' && steps.invocation-state.outcome == 'success')) && steps.policy-state-restore.outputs.cache-hit != 'true' }}
         uses: *cache-save
         with:
           path: *policy-state
           key: ${{ steps.policy-state-restore.outputs.cache-primary-key }}
       - &save-dylint-drivers
         name: save Dylint drivers
-        if: &promote-drivers ${{ hashFiles('dylint-drivers.tar') != '' && steps.dylint-drivers-restore.outputs.cache-hit != 'true' }}
+        if: &promote-drivers ${{ env.CI_DYLINT_DRIVERS_FOUND == 'true' && steps.dylint-drivers-restore.outputs.cache-hit != 'true' }}
         uses: *cache-save
         with:
           path: *dylint-drivers
@@ -269,7 +269,7 @@ jobs:
       - &save-test-state
         name: cache complete test state
         id: save-test-state
-        if: ${{ !cancelled() && env.ACT != 'true' && env.CI_SHARD == '' && (github.event_name == 'push' && (env.CI_ON_MAIN != 'true' || steps.build-state-archive.outcome == 'success') || github.event_name == 'workflow_dispatch' && steps.build-state-archive.outcome == 'success') && steps.test-state-restore.outputs.cache-hit != 'true' && hashFiles(format('build-state-{0}.tar.zst', env.CI_BUILD_STATE)) != '' }}
+        if: ${{ !cancelled() && env.ACT != 'true' && env.CI_SHARD == '' && (github.event_name == 'push' && (env.CI_ON_MAIN != 'true' || steps.build-state-archive.outcome == 'success') || github.event_name == 'workflow_dispatch' && steps.build-state-archive.outcome == 'success') && steps.test-state-restore.outputs.cache-hit != 'true' && env.CI_BUILD_STATE_FOUND == 'true' }}
         uses: *cache-save
         with:
           path: build-state-${{ env.CI_BUILD_STATE }}.tar.zst
@@ -309,7 +309,9 @@ jobs:
         shell: bash
         env:
           CI_BUILD_TARGET: ${{ env.CI_ENFORCING == 'true' && 'target/enforcing/debug' || 'target/debug' }}
-        run: tar -cf - "$CI_BUILD_TARGET" | zstd -T0 -3 -f -o "build-state-$GITHUB_JOB.tar.zst"
+        run: |
+          tar -cf - "$CI_BUILD_TARGET" | zstd -T0 -3 -f -o "build-state-$GITHUB_JOB.tar.zst"
+          echo CI_BUILD_STATE_FOUND=true >> "$GITHUB_ENV"
       - &upload-build-state
         name: upload build state
         if: ${{ !cancelled() && env.ACT != 'true' && github.event_name != 'push' && steps.build-state-archive.outcome == 'success' }}
@@ -336,9 +338,19 @@ jobs:
           name: build-state-${{ env.CI_BUILD_STATE }}--${{ env.CI_BUILD_GENERATION }}
           run-id: ${{ needs.build-state.outputs.run-id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+      # Whether a build state or the Dylint drivers came down, tested once in
+      # the shell and read as a flag after: `hashFiles` over a tarball reads
+      # the whole archive inside the expression engine, whose 120 s budget a
+      # large state exceeds. The archive steps raise the same flag.
+      - &find-build-state
+        name: find the restored build state
+        shell: bash
+        run: |
+          if [[ -e "build-state-$CI_BUILD_STATE.tar.zst" ]]; then echo CI_BUILD_STATE_FOUND=true >> "$GITHUB_ENV"; fi
+          if [[ -e dylint-drivers.tar ]]; then echo CI_DYLINT_DRIVERS_FOUND=true >> "$GITHUB_ENV"; fi
       - &unpack-build-state
         name: unpack build state
-        if: &state-found ${{ hashFiles('build-state-*.tar.zst') != '' }}
+        if: &state-found ${{ env.CI_BUILD_STATE_FOUND == 'true' }}
         shell: bash
         run: zstd -dc "build-state-$CI_BUILD_STATE.tar.zst" | tar -xf -
       # The dependency cache also holds Cargo's registry; this fills it.
@@ -489,6 +501,7 @@ jobs:
       - *setup-rust
       - *restore-test-state
       - *download-build-state
+      - *find-build-state
       - *unpack-build-state
       # A shard names its packages; the rest shard takes every package no
       # named shard does, so a new crate is tested before anyone places it.
@@ -572,13 +585,14 @@ jobs:
       # A shard hands the join what it built over the restored state; the
       # join overlays every shard's on that state and hands the whole on.
       - name: archive the shard's build
+        id: shard-archive
         if: ${{ !cancelled() && env.CI_SHARD != '' && steps.build-workspace.outcome == 'success' }}
         shell: bash
         run: |
           find target/enforcing/debug -newer target/shard-base \( -type f -o -type l \) -print > target/shard-files
           tar -cf - -T target/shard-files | zstd -T0 -3 -f -o "build-shard-$CI_SHARD.tar.zst"
       - name: upload the shard's build
-        if: ${{ !cancelled() && env.ACT != 'true' && hashFiles('build-shard-*.tar.zst') != '' }}
+        if: ${{ !cancelled() && env.ACT != 'true' && steps.shard-archive.outcome == 'success' }}
         uses: *upload-artifact
         with:
           path: build-shard-${{ env.CI_SHARD }}.tar.zst
@@ -692,6 +706,7 @@ jobs:
       - *setup-rust
       - *restore-test-state
       - *download-build-state
+      - *find-build-state
       - *unpack-build-state
       # Under act no shard uploads, and the join builds what it lists.
       - name: download the shards' builds
@@ -926,15 +941,18 @@ jobs:
         id: build-state-archive
         if: ${{ !cancelled() && github.event_name == 'merge_group' && steps.policy-library.outcome == 'success' && steps.invocation-state.outcome == 'success' }}
         shell: bash
-        run: tar -cf - target/dylint target/evidence target/workflow-tools | zstd -T0 -3 -o "build-state-$GITHUB_JOB.tar.zst"
+        run: |
+          tar -cf - target/dylint target/evidence target/workflow-tools | zstd -T0 -3 -o "build-state-$GITHUB_JOB.tar.zst"
+          echo CI_BUILD_STATE_FOUND=true >> "$GITHUB_ENV"
       - *upload-build-state
       - *save-policy-state
       - *save-gate-binary
       - name: archive Dylint drivers
+        id: dylint-drivers-archive
         if: ${{ !cancelled() && github.event_name == 'merge_group' && steps.policy-library.outcome == 'success' && needs.ci-image-ref.outputs.ref == '' && steps.dylint-drivers-restore.outputs.cache-hit != 'true' }}
         run: tar -cf dylint-drivers.tar -C "$HOME" .dylint_drivers
       - name: upload Dylint drivers
-        if: ${{ !cancelled() && env.ACT != 'true' && hashFiles('dylint-drivers.tar') != '' }}
+        if: ${{ !cancelled() && env.ACT != 'true' && steps.dylint-drivers-archive.outcome == 'success' }}
         uses: *upload-artifact
         with:
           path: dylint-drivers.tar
@@ -1011,6 +1029,7 @@ jobs:
       - *restore-gate-binary
       - *restore-policy-state
       - *restore-test-state
+      - *find-build-state
       - *unpack-build-state
       # The body as it reads when the job runs, never the event's copy: a
       # rerun after the boxes are ticked reads the ticks.
@@ -1141,6 +1160,7 @@ jobs:
       - *install-policy-tools
       - *setup-rust
       - *restore-test-state
+      - *find-build-state
       - *unpack-build-state
       - *fetch-dependencies
       - name: run the gandr series
@@ -1212,6 +1232,8 @@ jobs:
         run: mise run check:markdown
       - name: merge residue check
         run: mise run check:merge-residue
+      - name: workflow hashing check
+        run: mise run check:workflow-hashing
       - name: validate npm lock sidecars
         run: mise run check:lockfile
       - name: keep workflow tools outside the package graph
@@ -1337,6 +1359,7 @@ jobs:
       - *install-policy-tools
       - *restore-test-state
       - *download-build-state
+      - *find-build-state
       - *setup-rust
       - *unpack-build-state
       - *fetch-dependencies
@@ -1376,6 +1399,7 @@ jobs:
           name: dylint-drivers
           run-id: ${{ needs.build-state.outputs.run-id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+      - *find-build-state
       - *identify-policy
       - *restore-dylint-drivers
       - *restore-gate-binary
