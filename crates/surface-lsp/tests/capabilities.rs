@@ -31,7 +31,10 @@ fn advertised_capabilities_name_the_token_legend()
                     "full": {"delta": true},
                     "range": true,
                 },
-                "completionProvider": {"resolveProvider": true},
+                "completionProvider": {
+                    "resolveProvider": true,
+                    "completionItem": {"labelDetailsSupport": true},
+                },
                 "inlineCompletionProvider": true,
                 "documentSymbolProvider": true,
                 "executeCommandProvider": {"commands": ["gandr.applyFill"]},

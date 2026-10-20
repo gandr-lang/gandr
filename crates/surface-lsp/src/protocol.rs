@@ -502,6 +502,27 @@ impl InitializeParams
         )
     }
 
+    /// Whether completions are answered to this client with label details:
+    /// when it declares `textDocument.completion.completionItem.
+    /// labelDetailsSupport`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn label_details(&self) -> LabelsDetailed
+    {
+        LabelsDetailed(
+            self.capabilities
+                .as_ref()
+                .and_then(|capabilities| capabilities.text_document.as_ref())
+                .and_then(|text_document| text_document.completion.as_ref())
+                .and_then(|completion| completion.completion_item.as_ref())
+                .and_then(|item| item.label_details_support)
+                .unwrap_or(false),
+        )
+    }
+
     /// Whether this client watches files for the server once asked: when it
     /// declares `workspace.didChangeWatchedFiles.dynamicRegistration`.
     ///
@@ -777,6 +798,11 @@ pub struct Linked(pub bool);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct LabelOffsets(pub bool);
+
+/// Whether a client shows a completion's label details.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LabelsDetailed(pub bool);
 
 /// Whether a client watches files for the server once asked to.
 #[repr(transparent)]
@@ -1182,6 +1208,32 @@ pub struct TextDocumentCapabilities
     /// `textDocument.signatureHelp`.
     #[serde(default)]
     pub signature_help: Option<SignatureHelpCapabilities>,
+    /// `textDocument.completion`.
+    #[serde(default)]
+    pub completion: Option<CompletionCapabilities>,
+}
+
+/// What the client takes in answer to a completion request.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct CompletionCapabilities
+{
+    /// `textDocument.completion.completionItem`.
+    #[serde(default)]
+    pub completion_item: Option<CompletionItemCapabilities>,
+}
+
+/// What the client takes of one completion item.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct CompletionItemCapabilities
+{
+    /// `…completionItem.labelDetailsSupport`: whether it shows an item's
+    /// label details.
+    #[serde(default)]
+    pub label_details_support: Option<bool>,
 }
 
 /// What the client takes in answer to a signature-help request.
@@ -1676,7 +1728,8 @@ impl InitializeResult
                     && matches!(folder.pattern.matches.as_bytes(), b"folder"))
             && ret.capabilities.linked_editing_range_provider.0
             && ret.capabilities.code_lens_provider.resolve_provider
-            && ret.capabilities.completion_provider.resolve_provider)]
+            && ret.capabilities.completion_provider.resolve_provider
+            && ret.capabilities.completion_provider.completion_item.label_details_support)]
     #[inline]
     #[must_use]
     pub const fn advertised() -> Self
@@ -1696,8 +1749,11 @@ impl InitializeResult
                     full: FullOptions { delta: true },
                     range: true,
                 },
-                completion_provider: ResolveOptions {
+                completion_provider: CompletionOptions {
                     resolve_provider: true,
+                    completion_item: CompletionItemOptions {
+                        label_details_support: true,
+                    },
                 },
                 inline_completion_provider: Provider::ANSWERED,
                 document_symbol_provider: Provider::ANSWERED,
@@ -1769,8 +1825,9 @@ pub struct ServerCapabilities
     pub text_document_sync: TextDocumentSync,
     /// The semantic tokens the server answers.
     pub semantic_tokens_provider: SemanticTokensProvider,
-    /// Completion is answered, each item resolved by a second request.
-    pub completion_provider: ResolveOptions,
+    /// Completion is answered, each item with its label details, and resolved
+    /// by a second request.
+    pub completion_provider: CompletionOptions,
     /// Inline completion is answered.
     pub inline_completion_provider: Provider,
     /// Document symbols are answered.
@@ -1857,6 +1914,27 @@ pub struct ResolveOptions
 {
     /// Whether an answer is resolved by a second request.
     pub resolve_provider: bool,
+}
+
+/// The completion provider, as advertised.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionOptions
+{
+    /// Whether an item is resolved by a second request.
+    pub resolve_provider: bool,
+    /// What the items carry.
+    pub completion_item: CompletionItemOptions,
+}
+
+/// What the completion items carry, as advertised.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct CompletionItemOptions
+{
+    /// Whether an item carries label details to a client that shows them.
+    pub label_details_support: bool,
 }
 
 /// The commands the server runs, as advertised.
@@ -2299,9 +2377,9 @@ pub struct CompletionList
 }
 
 /// One completion: the name or keyword offered, what it is, the edit that
-/// writes it over the word at the cursor, and, for a declared name, the
-/// document it was offered in, where a resolution reads its head and
-/// documentation.
+/// writes it over the word at the cursor, what it is typed or declared as, and,
+/// for a declared name, the document it was offered in, where a resolution
+/// reads its documentation.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompletionItem
@@ -2314,9 +2392,12 @@ pub struct CompletionItem
     pub sort_text: String,
     /// The edit writing it over the word at the cursor.
     pub text_edit: TextEdit,
-    /// The head written for a declared name, once resolved.
+    /// What a declared name's head writes, or a binder's name and type.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// The same, beside the label, to a client that shows label details.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_details: Option<LabelDetails>,
     /// The documentation written for a declared name, once resolved.
     #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub documentation: Option<MarkupContent>,
@@ -2324,6 +2405,20 @@ pub struct CompletionItem
     /// which resolve to themselves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<CompletionData>,
+}
+
+/// What a client shows beside a completion's label: the rest of its head,
+/// right after the label, or what it is, apart from it.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct LabelDetails
+{
+    /// The head after the name: its parameters and result, or ` : ` and its
+    /// type.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// A head that does not start with the name, whole.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// Where a declared name was offered: the document whose names it was read

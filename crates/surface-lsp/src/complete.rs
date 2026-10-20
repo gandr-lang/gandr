@@ -26,6 +26,14 @@
 //! The list is complete for the prefix: a longer prefix offers a subset of
 //! it, so a client filtering as the author types never asks again.
 //!
+//! Each item carries what it is in the list itself, so a reader sees the types
+//! before choosing: a binder its type, read off the table at its written name,
+//! and a declared name its head ([`Signatures`]), as the item's detail and, to
+//! a client that shows them, beside its label. A resolution adds the
+//! documentation.
+//!
+//! [`Signatures`]: crate::signature::Signatures
+//!
 //! [`TypeTable::binders_at`]: gandr_surface_dispatcher::TypeTable::binders_at
 
 use alloc::collections::BTreeSet;
@@ -35,11 +43,15 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_surface_dispatcher::NameKind;
 use gandr_surface_dispatcher::Referent;
+use gandr_surface_dispatcher::Subject;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_pretty::PageWidth;
+use gandr_surface_pretty::Style;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
 
 use crate::hover::Hovering;
 use crate::inline::Category;
@@ -53,8 +65,14 @@ use crate::protocol::CompletionItem;
 use crate::protocol::CompletionItemKind;
 use crate::protocol::CompletionList;
 use crate::protocol::DocumentUri;
+use crate::protocol::LabelDetails;
+use crate::protocol::LabelsDetailed;
 use crate::protocol::MarkupContent;
 use crate::protocol::TextEdit;
+
+/// The page width a binder's type is laid out at in a completion: wide enough
+/// that a type a reader would write on one line stays on it.
+const DETAIL_WIDTH: u32 = 1_000;
 
 /// The names a text's import closure declares, a family's constructors
 /// included, each with where it is declared, sorted by name: what a completion
@@ -236,7 +254,9 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
 }
 
 /// The completions at `position` of `text`, the document at `uri` whose copy
-/// keeps `hovering`, under `grammar` whose forms are `forms`.
+/// keeps `hovering`, under `grammar` whose forms are `forms`, each type spelled
+/// in `printer`'s style and label details given when `labels` says the client
+/// shows them.
 ///
 /// # Specification
 /// - requires: `hovering` was read off `text`; `forms` is [`Forms::new`] of
@@ -250,25 +270,37 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
 ///   the declared names the slot admits, by name, then the keywords, in mold
 ///   order; a name a binder already offers is not offered again. Each item's
 ///   sort text is its position, so the client keeps this order, and each
-///   declared name carries `uri` for its resolution. No item for a filled slot.
+///   declared name carries `uri` for its resolution. A binder the table types
+///   at its written name carries `name : type` as its detail; a declared name
+///   whose head [`Signatures`] keeps carries that head's label, unless it is
+///   the name alone; a keyword carries none. When `labels` holds, an item with
+///   a detail carries it beside its label too: the rest after the name when the
+///   detail starts with it, the detail whole as the description otherwise. No
+///   item for a filled slot.
 /// - provides: the answer to `textDocument/completion` for a held document.
 /// - fails: never.
 /// - panics: none.
 /// - intension: one relabeling and one molding of the form the word's start
-///   ends, a walk of the binders in scope, and two binary searches of the
-///   names.
+///   ends, a walk of the binders in scope with one table lookup each, two
+///   binary searches of the names and one of the heads per declared name.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a value, a computation, a type, a pattern, an item and a
 ///   binding name's slot each offer their exact names; a prefix offers only
 ///   what starts with it; a binder offers in its arm and not in its sibling,
 ///   inside a declaration the lowering refused; a sibling's declaration offers
-///   in an importer.
+///   in an importer; a binder, a function, a constructor, a family and a value
+///   whose head is its name alone carry their exact details, with and without
+///   label details.
 /// - witness: `complete::tests::each_slot_offers_its_own_names`
 /// - witness: `complete::tests::a_prefix_offers_only_what_starts_with_it`
 /// - witness: `complete::tests::a_binder_offers_only_where_it_is_in_scope_806`
+/// - witness: `complete::tests::each_item_carries_its_type_in_the_list`
 /// - witness: `tests::session::a_completion_offers_what_a_sibling_declares_806`
-#[spec(ensures: |ret| !ret.is_incomplete && ret.items.iter().all(|item| item.text_edit.range.end == position))]
+///
+/// [`Signatures`]: crate::signature::Signatures
+#[spec(ensures: |ret| !ret.is_incomplete && ret.items.iter().all(|item| item.text_edit.range.end == position
+    && item.label_details.is_some() == (labels.0 && item.detail.is_some())))]
 #[must_use]
 pub fn completions(
     grammar: &Pbg,
@@ -276,6 +308,7 @@ pub fn completions(
     text: SourceText<'_>,
     hovering: &Hovering,
     (uri, position): (&DocumentUri, Position),
+    (printer, labels): (Style, LabelsDetailed),
 ) -> CompletionList
 {
     let index = LineIndex::new(<&str>::from(text).into());
@@ -298,28 +331,42 @@ pub fn completions(
     };
     let table = hovering.table();
     let mut seen: BTreeSet<&str> = BTreeSet::new();
-    let mut offered: Vec<(&str, CompletionItemKind)> = Vec::new();
+    let mut offered: Vec<(&str, CompletionItemKind, Option<String>)> = Vec::new();
     if matches!(
         category,
         Category::Value | Category::Computation | Category::Type
     ) {
-        for binder in table.binders_at(ByteOffset::from(usize::from(start))) {
+        for (binder, site) in table.binders_at(ByteOffset::from(usize::from(start))) {
             let name = <&str>::from(binder);
             if name.starts_with(prefix) && seen.insert(name) {
-                offered.push((name, CompletionItemKind::VARIABLE));
+                let typed = match table.at(site.start(), PageWidth::from(DETAIL_WIDTH), printer) {
+                    Maybe::Present(entry)
+                        if entry.span() == site && entry.subject() == Subject::Binder =>
+                    {
+                        Some(format!("{name} : {}", entry.ty().as_ref()))
+                    },
+                    Maybe::Present(_) | Maybe::Absent(_) => None,
+                };
+                offered.push((name, CompletionItemKind::VARIABLE, typed));
             }
         }
     }
-    for &(ref name, kind, _) in hovering.names().starting(SourceText::from(prefix)) {
+    for &(ref name, kind, ref referent) in hovering.names().starting(SourceText::from(prefix)) {
         if let Some(as_kind) = offered_as(category, kind)
             && seen.insert(name.as_str())
         {
-            offered.push((name.as_str(), as_kind));
+            let head = hovering
+                .signatures()
+                .declared(referent)
+                .map(|signature| <&str>::from(signature.label()))
+                .filter(|head| *head != name.as_str())
+                .map(String::from);
+            offered.push((name.as_str(), as_kind, head));
         }
     }
     for keyword in forms.keywords(category) {
         if keyword.starts_with(prefix) && seen.insert(keyword) {
-            offered.push((keyword, CompletionItemKind::KEYWORD));
+            offered.push((keyword, CompletionItemKind::KEYWORD, None));
         }
     }
     let width = offered.len().to_string().len();
@@ -328,7 +375,7 @@ pub fn completions(
         items: offered
             .into_iter()
             .enumerate()
-            .map(|(rank, (name, kind))| CompletionItem {
+            .map(|(rank, (name, kind, head))| CompletionItem {
                 label: String::from(name),
                 kind,
                 sort_text: format!("{rank:0width$}"),
@@ -336,12 +383,41 @@ pub fn completions(
                     range,
                     new_text: String::from(name),
                 },
-                detail: None,
+                label_details: head
+                    .as_deref()
+                    .filter(|_| labels.0)
+                    .map(|head| beside(SourceText::from(name), SourceText::from(head))),
+                detail: head,
                 documentation: None,
                 data: declared_as(kind).map(|_| CompletionData { uri: uri.clone() }),
             })
             .collect(),
     }
+}
+
+/// What a client shows beside the label `name` of an item whose detail is
+/// `head`: the rest of the head right after the label when the head starts with
+/// the name, the head whole apart from it otherwise.
+///
+/// # Specification
+/// trivial.
+fn beside(
+    name: SourceText<'_>,
+    head: SourceText<'_>,
+) -> LabelDetails
+{
+    <&str>::from(head)
+        .strip_prefix(<&str>::from(name))
+        .map_or_else(
+            || LabelDetails {
+                detail: None,
+                description: Some(String::from(<&str>::from(head))),
+            },
+            |rest| LabelDetails {
+                detail: Some(String::from(rest)),
+                description: None,
+            },
+        )
 }
 
 /// `item`, offered off the text whose copy keeps `hovering`, resolved: a
@@ -422,6 +498,7 @@ mod tests
     use crate::protocol::CompletionItem;
     use crate::protocol::CompletionItemKind;
     use crate::protocol::DocumentUri;
+    use crate::protocol::LabelsDetailed;
     use crate::protocol::TextEdit;
     use crate::recheck::forms;
     use crate::recheck::grammar;
@@ -466,6 +543,40 @@ mod tests
         )
     }
 
+    /// The list a completion answers in `before` followed by `after`, at the
+    /// end of `before`, to a client that shows label details when `labels`
+    /// holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn listed(
+        before: SourceText<'_>,
+        after: SourceText<'_>,
+        labels: LabelsDetailed,
+    ) -> Vec<CompletionItem>
+    {
+        let text = format!("{}{}", <&str>::from(before), <&str>::from(after));
+        let source = SourceText::from(text.as_str());
+        let index = LineIndex::new(text.as_str().into());
+        let position = Position::of_byte(&index, RenderOffset::from(<&str>::from(before).len()))
+            .expect("the cursor is in the text");
+        completions(
+            grammar().expect("the grammar builds"),
+            forms().expect("the forms build"),
+            source,
+            &hovered(source),
+            (&DocumentUri::from("file:///complete.gandr"), position),
+            (
+                gandr_surface_pretty::Style {
+                    form: gandr_surface_pretty::Form::Sugared,
+                    spelling: gandr_surface_pretty::Spelling::Unicode,
+                },
+                labels,
+            ),
+        )
+        .items
+    }
+
     /// What a completion offers in `before` followed by `after`, at the end
     /// of `before`.
     ///
@@ -476,20 +587,8 @@ mod tests
         after: SourceText<'_>,
     ) -> Offered
     {
-        let text = format!("{}{}", <&str>::from(before), <&str>::from(after));
-        let source = SourceText::from(text.as_str());
-        let index = LineIndex::new(text.as_str().into());
-        let position = Position::of_byte(&index, RenderOffset::from(<&str>::from(before).len()))
-            .expect("the cursor is in the text");
-        let list = completions(
-            grammar().expect("the grammar builds"),
-            forms().expect("the forms build"),
-            source,
-            &hovered(source),
-            (&DocumentUri::from("file:///complete.gandr"), position),
-        );
         let mut offered = Offered::default();
-        for item in list.items {
+        for item in listed(before, after, LabelsDetailed(false)) {
             if item.kind == CompletionItemKind::KEYWORD {
                 offered.keywords.push(item.label);
             }
@@ -666,6 +765,83 @@ mod tests
     }
 
     #[test]
+    fn each_item_carries_its_type_in_the_list()
+    {
+        let details = |before: &str, after: &str, labels: LabelsDetailed| {
+            listed(SourceText::from(before), SourceText::from(after), labels)
+                .into_iter()
+                .filter(|item| item.kind != CompletionItemKind::KEYWORD)
+                .map(|item| {
+                    (
+                        item.label,
+                        item.detail,
+                        item.label_details
+                            .map(|beside| (beside.detail, beside.description)),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let at = |marker: &str, labels: LabelsDetailed| {
+            let (before, after) = cut(SourceText::from(marker));
+            details(<&str>::from(before), <&str>::from(after), labels)
+        };
+        let shown = |text: &str| Some(String::from(text));
+        assert_eq!(
+            at("))\n  }\n}", LabelsDetailed(true)),
+            [
+                (
+                    String::from("p"),
+                    shown("p : Nat"),
+                    Some((shown(" : Nat"), None))
+                ),
+                (
+                    String::from("plus"),
+                    shown("plus : Nat => Nat"),
+                    Some((shown(" : Nat => Nat"), None))
+                ),
+            ],
+            "a binder carries its type, in the list and beside its label"
+        );
+        assert_eq!(
+            at("cc(plus", LabelsDetailed(true)),
+            [(
+                String::from("Succ"),
+                shown("Succ : (n : Nat) --> Nat"),
+                Some((shown(" : (n : Nat) --> Nat"), None))
+            )],
+            "a constructor carries its fields"
+        );
+        assert_eq!(
+            details(
+                format!("{BASE}def three : -F Nat ;\ndef three = pl").as_str(),
+                " ;\n",
+                LabelsDetailed(true)
+            ),
+            [(
+                String::from("plus"),
+                shown("plus(n : Nat, m : Nat) -> -F Nat"),
+                Some((shown("(n : Nat, m : Nat) -> -F Nat"), None))
+            )],
+            "a function's parameters and result run on after its name"
+        );
+        assert_eq!(
+            details(
+                format!("{BASE}def answer = 42 ;\ndef three = ans").as_str(),
+                " ;\n",
+                LabelsDetailed(true)
+            ),
+            [(String::from("answer"), None, None)],
+            "a value whose head is its name alone carries nothing beside it"
+        );
+        assert!(
+            at("))\n  }\n}", LabelsDetailed(false))
+                .iter()
+                .all(|&(_, ref detail, ref beside)| detail.is_some() && beside.is_none()),
+            "a client that shows no label details is given the detail alone"
+        );
+    }
+
+    #[test]
     fn a_resolved_name_reads_its_head_and_documentation()
     {
         use CompletionItemKind as Kind;
@@ -687,6 +863,7 @@ mod tests
                         new_text: String::from(label),
                     },
                     detail: None,
+                    label_details: None,
                     documentation: None,
                     data: None,
                 },
