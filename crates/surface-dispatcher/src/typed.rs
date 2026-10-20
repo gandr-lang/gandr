@@ -92,6 +92,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
+use gandr_core_checker::CodeDefinitions;
 use gandr_core_checker::Formations;
 use gandr_core_checker::Formed;
 use gandr_core_checker::HostGrant;
@@ -920,6 +921,7 @@ impl TypeTable
         context.keep_formations(Formations::Firsts(wanted));
         let typed = type_module(&mut context, &declarations);
         let signatures = context.data_signatures().clone();
+        let definitions = context.definitions().clone();
         // Each wanted type is formed at most once, so the formations sorted by
         // type find a written type's own by search; the stable sort keeps the
         // first should a type appear twice.
@@ -1179,9 +1181,13 @@ impl TypeTable
         // the names its pattern writes for them.
         let text = <&str>::from(source);
         let mut constructed = Vec::new();
-        for (span, ty, within, earlier) in
-            matched(&module, &mut arena, &scrutinised, &mut constructed)
-        {
+        for (span, ty, within, earlier) in matched(
+            &module,
+            &mut arena,
+            &definitions,
+            &scrutinised,
+            &mut constructed,
+        ) {
             if binders.contains(&span) {
                 continue;
             }
@@ -3112,15 +3118,18 @@ quenchant_shape::reason_enum! {
 ///   constructor's name at the constructor's type, which takes the fields to
 ///   the family as a thunked function and is the family itself for a
 ///   constructor of no field. A scrutinee the recursion staged is read at the
-///   type its stage refines, as the surface writes no stage. A part whose type
-///   names a part before it — a data constructor's field, a dependent pair's
-///   second — is read under those parts, each written as a binder, and so is
-///   every part inside it; a span carries the spans of every binder its type
-///   stands under, outermost first. A span under an earlier part not written as
-///   a binder answers nothing. A part whose place no rule above types, and
-///   every span inside it, answers nothing. Each constructor name read at a
-///   data family's type is pushed onto `constructed` with the family's constant
-///   and the constructor's tag.
+///   type its stage refines, as the surface writes no stage. A pattern's parts
+///   are read off its type's head: a decode of a defined code or a static redex
+///   is read as the decode of what it reduces to, as the checker read it, while
+///   the pattern itself answers at its type as judged. A part whose type names
+///   a part before it — a data constructor's field, a dependent pair's second —
+///   is read under those parts, each written as a binder, and so is every part
+///   inside it; a span carries the spans of every binder its type stands under,
+///   outermost first. A span under an earlier part not written as a binder
+///   answers nothing. A part whose place no rule above types, and every span
+///   inside it, answers nothing. Each constructor name read at a data family's
+///   type is pushed onto `constructed` with the family's constant and the
+///   constructor's tag.
 /// - provides: the pattern half of [`TypeTable::of`], and the constructor names
 ///   its referents read.
 /// - fails: never; an untyped pattern answers nothing.
@@ -3136,11 +3145,13 @@ quenchant_shape::reason_enum! {
 /// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match_385`
 /// - witness: `typed::tests::an_unused_dependent_part_answers_in_its_arms_context`
 /// - witness: `typed::tests::a_pattern_inside_a_dependent_pair_s_second_component_answers_558`
+/// - witness: `typed::tests::an_unused_part_of_a_static_application_answers_1080`
 /// - witness: `typed::tests::a_use_refers_to_its_binder_and_its_declaration_795`
 #[spec(ensures: |ret| ret.iter().all(|&(_, ty, _, _)| arena.value_type(ty).is_some()))]
 fn matched(
     module: &LoweredModule<'_>,
     arena: &mut CoreArena,
+    definitions: &CodeDefinitions,
     scrutinised: &BTreeMap<NodeIndex, Scrutinised>,
     constructed: &mut Vec<(ByteSpan, ConstantIndex, ConstructorTag)>,
 ) -> Vec<(ByteSpan, ValueTypeId, Within, Vec<ByteSpan>)>
@@ -3180,8 +3191,9 @@ fn matched(
                 continue;
             }
             if let Some(shape) = case.patterns.pattern(pattern) {
+                let head = exposed(arena, definitions, ty);
                 pending.extend(
-                    parts(arena, &signatures, shape, ty)
+                    parts(arena, &signatures, shape, head)
                         .into_iter()
                         .map(|(part, part_ty, before)| (part, part_ty, Some((pattern, before)))),
                 );
@@ -3241,6 +3253,52 @@ fn matched(
         }
     }
     matched
+}
+
+/// The head `ty` reads at once the codes it decodes are reduced: a decode
+/// of a defined code or of a static redex read as the decode of its reduct,
+/// again, until its code takes no step.
+///
+/// # Specification
+/// - requires: `ty` is a type of `arena`, and `definitions` the bodies the
+///   typed run unfolded codes by.
+/// - ensures: `ty` itself unless it decodes a code [`CodeDefinitions::reduce`]
+///   takes a step at; otherwise the decode of the step's reduct at the same
+///   level, read again. A code whose step faults is read as it stands.
+/// - provides: the former a pattern's parts are read off, as the checker's weak
+///   head reads it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `loop` below takes one step per turn, not recursion.
+/// - measure: the static normal form's distance: each step reduces a δ- or
+///   β-redex of a code the typed run formed, as the checker's weak head does.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a pattern on a scrutinee at a static application of a
+///   defined family reads its parts at the product the application reduces to.
+/// - witness: `typed::tests::an_unused_part_of_a_static_application_answers_1080`
+#[spec(ensures: |ret| arena.value_type(ret).is_some() || ret == ty)]
+fn exposed(
+    arena: &mut CoreArena,
+    definitions: &CodeDefinitions,
+    ty: ValueTypeId,
+) -> ValueTypeId
+{
+    let mut head = ty;
+    loop {
+        let Some(&ValueType::Element { code, ref target }) = arena.value_type(head)
+        else {
+            return head;
+        };
+        let target = target.clone();
+        let Ok(Maybe::Present(step)) = definitions.reduce(arena, code)
+        else {
+            return head;
+        };
+        head = arena.value_type_element(step.reduct(), target);
+    }
 }
 
 /// The parts of `pattern`, matched at `ty`, each at the type its place gives
@@ -4608,6 +4666,27 @@ mod tests
                 expected: Maybe::Absent(checked_against::Absent::Agreed),
             }),
             "the part names the pattern's own `a`, though the arm never uses it (#537)"
+        );
+    }
+
+    #[test]
+    fn an_unused_part_of_a_static_application_answers_1080()
+    {
+        let source = SourceText::from(concat!(
+            "def twice : Type -> Type ;\ndef twice = \\Y. Y * Y ;\n\n",
+            "def twiceFirst(p : twice(Integer)) -> -F Integer {\n",
+            "  case p {\n    #{c, d} => return c\n  }\n}\n",
+        ));
+        let table = table(source);
+        assert_eq!(
+            answer(&table, source, SourceText::from("d} =>")),
+            Maybe::Present(Answer {
+                subject: Subject::Binder,
+                ty: String::from("Integer"),
+                expected: Maybe::Absent(checked_against::Absent::Agreed),
+            }),
+            "a part the arm never uses answers at the type the scrutinee's static application \
+             reduces to"
         );
     }
 
