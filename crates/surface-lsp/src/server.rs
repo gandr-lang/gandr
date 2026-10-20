@@ -82,6 +82,7 @@ use serde::Deserialize as _;
 use serde_json::Value;
 
 use crate::complete::completions;
+use crate::complete::resolved;
 use crate::files::Files;
 use crate::format::edits;
 use crate::goto::Goto;
@@ -102,6 +103,7 @@ use crate::proposal::ghosts;
 use crate::proposal::lenses;
 use crate::proposal::notes;
 use crate::protocol::Answer;
+use crate::protocol::CompletionItem;
 use crate::protocol::ConfigurationParams;
 use crate::protocol::ContentChange;
 use crate::protocol::Diagnostic;
@@ -2257,6 +2259,12 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
+            (Phase::Running, "completionItem/resolve") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Resolved(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
             (Phase::Running, "textDocument/signatureHelp") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Signatures(_), .. } => true,
@@ -2414,6 +2422,12 @@ impl Server
                         id,
                         workspace.completion(&params.text_document.uri, self.peer, params.position),
                     ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "completionItem/resolve") => {
+                match serde_json::from_value::<CompletionItem>(params) {
+                    Ok(item) => success(id, workspace.resolve_completion(item, self.peer)),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
@@ -3044,7 +3058,7 @@ impl Workspace
         Answer::Tokens(ref tokens) => self.documents.contains_key(uri)
             && tokens.data.as_ref().len().is_multiple_of(5)
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), Window::Whole | Window::Within(_) => true },
-        Answer::Initialize(_) | Answer::Completions(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
+        Answer::Initialize(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) => false,
@@ -3099,7 +3113,7 @@ impl Workspace
         Answer::Inline(ref list) => self.documents.get(uri).is_some_and(|held|
             list.items.len() <= held.view(peer).proposals.len().saturating_add(8))
             && list.items.iter().all(|item| item.range.start <= position && position <= item.range.end),
-        Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Signatures(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
+        Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) => false,
@@ -3277,8 +3291,51 @@ impl Workspace
             document
                 .text
                 .hovering(&uri.path(), session, &self.shadowing(peer)),
-            position,
+            (uri, position),
         ))
+    }
+
+    /// `item`, offered by a completion request, resolved off the copy of the
+    /// document it names that `peer` is answered from.
+    ///
+    /// # Specification
+    /// - requires: nothing; any item is admissible input.
+    /// - ensures: an item naming no document, one naming a document no
+    ///   connection holds, and one whose copy's session or grammar did not
+    ///   build, answered as it came; otherwise [`resolved`] off the copy's text
+    ///   and what it keeps for its hovers, made now when no request has asked
+    ///   since the text last changed.
+    /// - provides: the answer to `completionItem/resolve`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`resolved`], and an item offered in a document
+    ///   since closed answers as it came.
+    /// - witness: `server::tests::a_resolved_completion_reads_the_declared_head`
+    #[spec(ensures: |ret| matches!(ret, Answer::Resolved(_)))]
+    fn resolve_completion(
+        &self,
+        item: CompletionItem,
+        peer: Peer,
+    ) -> Answer
+    {
+        let held = item.data.as_ref().map(|data| data.uri.clone());
+        let viewed = held.as_ref().map(|uri| (uri, self.view(uri, peer)));
+        let Some((uri, Maybe::Present(document))) = viewed
+        else {
+            return Answer::Resolved(Box::new(item));
+        };
+        let Ok(session) = document.session.as_ref()
+        else {
+            return Answer::Resolved(Box::new(item));
+        };
+        Answer::Resolved(Box::new(resolved(
+            item,
+            document
+                .text
+                .hovering(&uri.path(), session, &self.shadowing(peer)),
+        )))
     }
 
     /// What a workspace-symbol request for `query` answers `peer`: the names
@@ -4707,7 +4764,7 @@ mod tests
                                 "tokenModifiers":["declaration","defaultLibrary"]},
                             "full":true,
                             "range":true},
-                        "completionProvider":{"resolveProvider":false},
+                        "completionProvider":{"resolveProvider":true},
                         "inlineCompletionProvider":true,
                         "documentSymbolProvider":true,
                         "foldingRangeProvider":true,
@@ -4781,7 +4838,7 @@ mod tests
                 r#"[{"jsonrpc":"2.0","id":8,"result":{"isIncomplete":false,"items":[
                     {"label":"one","kind":3,"sortText":"0","textEdit":{
                         "range":{"start":{"line":3,"character":10},"end":{"line":3,"character":12}},
-                        "newText":"one"}}]}}]"#
+                        "newText":"one"},"data":{"uri":"file:///tmp/typing.gandr"}}]}}]"#
             )),
             "`on` in a value: the declaration starting with it, written over the word"
         );
@@ -4789,6 +4846,57 @@ mod tests
             ask(&mut server, "file:///tmp/unknown.gandr"),
             wire(Json(r#"[{"jsonrpc":"2.0","id":8,"result":null}]"#)),
             "a document the server does not hold: null"
+        );
+    }
+
+    #[test]
+    fn a_resolved_completion_reads_the_declared_head()
+    {
+        let mut server = initialized();
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/typing.gandr","languageId":"gandr","version":1,
+                     "text":"/// The first.\ndef one : Integer ;\ndef one = 1 ;\ndef two : Integer ;\ndef two = on"}}}"#,
+            ),
+        );
+        let offered = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","id":8,"method":"textDocument/completion","params":{
+                    "textDocument":{"uri":"file:///tmp/typing.gandr"},
+                    "position":{"line":4,"character":12}}}"#,
+            ),
+        );
+        let item = offered
+            .pointer("/0/result/items/0")
+            .cloned()
+            .expect("`on` offers `one`");
+        let resolve = |server: &mut Connected, item: &Value| {
+            let request = serde_json::json!({"jsonrpc": "2.0", "id": 9_i32,
+                "method": "completionItem/resolve", "params": item});
+            send(server, Json(&request.to_string()))
+        };
+        let mut expected = item.clone();
+        expected["detail"] = serde_json::json!("one : Integer");
+        expected["documentation"] = serde_json::json!({"kind": "markdown", "value": "The first."});
+        assert_eq!(
+            resolve(&mut server, &item),
+            serde_json::json!([{"jsonrpc": "2.0", "id": 9_i32, "result": expected}]),
+            "a declared name resolves to its head and its documentation, the rest as offered"
+        );
+        let mut elsewhere = item;
+        elsewhere["data"]["uri"] = serde_json::json!("file:///tmp/unknown.gandr");
+        assert_eq!(
+            resolve(&mut server, &elsewhere),
+            serde_json::json!([{"jsonrpc": "2.0", "id": 9_i32, "result": elsewhere}]),
+            "an item naming a document the server does not hold: as it came"
+        );
+        assert_eq!(
+            resolve(&mut server, &serde_json::json!({"label": "one"})).pointer("/0/error/code"),
+            Some(&serde_json::json!(-32_602_i32)),
+            "an item that does not read: invalid parameters"
         );
     }
 

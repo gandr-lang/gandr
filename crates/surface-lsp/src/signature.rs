@@ -316,6 +316,27 @@ pub struct Signature
     documentation: Option<String>,
 }
 
+impl Signature
+{
+    /// The name through its parameters and its result, on one line.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn label(&self) -> SourceText<'_>
+    {
+        SourceText::from(self.label.as_str())
+    }
+
+    /// The documentation written for the declaration or constructor.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn documentation(&self) -> Option<SourceText<'_>>
+    {
+        self.documentation.as_deref().map(SourceText::from)
+    }
+}
+
 /// The heads an import closure writes, by the source and the name tile of
 /// each declaration, constructor and binder typed by a function.
 ///

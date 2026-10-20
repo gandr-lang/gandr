@@ -1176,7 +1176,7 @@ fn a_completion_offers_what_a_sibling_declares_806()
                 "end": {"line": 2_i32, "character": 11_i32},
             },
             "newText": "one",
-        }}),
+        }, "data": {"uri": address}}),
         "`o` in the importer offers the sibling's `one` first: {answer}"
     );
 }

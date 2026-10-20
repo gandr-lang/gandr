@@ -1193,14 +1193,15 @@ impl InitializeResult
     /// - ensures: positions counted in UTF-16 code units; incremental document
     ///   synchronisation with open and close notifications; semantic tokens
     ///   over the whole document and over a range, under the legend of
-    ///   [`TOKEN_TYPES`] and [`TOKEN_MODIFIERS`]; completion, resolved in the
-    ///   answer, and inline completion; document symbols, folding ranges and
-    ///   selection ranges; hover; signature help, asked for as a call's `(` or
-    ///   a `,` is typed and again at a `)`; definition and type definition;
-    ///   formatting over the whole document and over a range; code lenses,
-    ///   resolved in the answer, and code actions; document links, resolved in
-    ///   the answer; linked editing; workspace folders, with a notification as
-    ///   they change; the server named `gandr` at this crate's version.
+    ///   [`TOKEN_TYPES`] and [`TOKEN_MODIFIERS`]; completion, each item
+    ///   resolved by a second request, and inline completion; document symbols,
+    ///   folding ranges and selection ranges; hover; signature help, asked for
+    ///   as a call's `(` or a `,` is typed and again at a `)`; definition and
+    ///   type definition; formatting over the whole document and over a range;
+    ///   code lenses, resolved in the answer, and code actions; document links,
+    ///   resolved in the answer; linked editing; workspace folders, with a
+    ///   notification as they change; the server named `gandr` at this crate's
+    ///   version.
     /// - provides: the one capabilities answer, written by `initialize` and by
     ///   the driver's `gandr lsp --capabilities` alike.
     /// - fails: never.
@@ -1239,7 +1240,7 @@ impl InitializeResult
             && ret.capabilities.workspace.workspace_folders.change_notifications
             && ret.capabilities.linked_editing_range_provider.0
             && !ret.capabilities.code_lens_provider.resolve_provider
-            && !ret.capabilities.completion_provider.resolve_provider)]
+            && ret.capabilities.completion_provider.resolve_provider)]
     #[inline]
     #[must_use]
     pub const fn advertised() -> Self
@@ -1260,7 +1261,7 @@ impl InitializeResult
                     range: true,
                 },
                 completion_provider: CompletionOptions {
-                    resolve_provider: false,
+                    resolve_provider: true,
                 },
                 inline_completion_provider: Provider::ANSWERED,
                 document_symbol_provider: Provider::ANSWERED,
@@ -1315,7 +1316,7 @@ pub struct ServerCapabilities
     pub text_document_sync: TextDocumentSync,
     /// The semantic tokens the server answers.
     pub semantic_tokens_provider: SemanticTokensProvider,
-    /// Completion is answered, each item resolved in the answer.
+    /// Completion is answered, each item resolved by a second request.
     pub completion_provider: CompletionOptions,
     /// Inline completion is answered.
     pub inline_completion_provider: Provider,
@@ -1488,6 +1489,10 @@ pub enum Answer
     Tokens(SemanticTokens),
     /// What a completion request answers at a position of an open document.
     Completions(CompletionList),
+    /// What a completion-item resolution answers: the item, with a declared
+    /// name's head and documentation; boxed, one item outweighing a list's
+    /// handle.
+    Resolved(Box<CompletionItem>),
     /// What a signature-help request answers at a position of an open
     /// document: the declared head of the call the position stands in.
     Signatures(SignatureHelp),
@@ -1596,9 +1601,11 @@ pub struct CompletionList
     pub items: Vec<CompletionItem>,
 }
 
-/// One completion: the name or keyword offered, what it is, and the edit that
-/// writes it over the word at the cursor.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+/// One completion: the name or keyword offered, what it is, the edit that
+/// writes it over the word at the cursor, and, for a declared name, the
+/// document it was offered in, where a resolution reads its head and
+/// documentation.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompletionItem
 {
@@ -1610,11 +1617,31 @@ pub struct CompletionItem
     pub sort_text: String,
     /// The edit writing it over the word at the cursor.
     pub text_edit: TextEdit,
+    /// The head written for a declared name, once resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// The documentation written for a declared name, once resolved.
+    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<MarkupContent>,
+    /// Where a declared name was offered; none for a binder or a keyword,
+    /// which resolve to themselves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<CompletionData>,
+}
+
+/// Where a declared name was offered: the document whose names it was read
+/// from.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct CompletionData
+{
+    /// The document.
+    pub uri: DocumentUri,
 }
 
 /// What a completion item is, as the protocol numbers it.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct CompletionItemKind(u8);
 
@@ -1638,7 +1665,8 @@ impl CompletionItemKind
 #[repr(transparent)]
 pub struct CompletionOptions
 {
-    /// Whether an item is resolved by a second request: never.
+    /// Whether an item is resolved by a second request: always, a declared
+    /// name's head and documentation read then.
     pub resolve_provider: bool,
 }
 
@@ -1901,7 +1929,7 @@ pub struct Hover
 }
 
 /// One edit: the text replacing a range of the document.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextEdit
 {

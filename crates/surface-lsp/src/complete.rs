@@ -34,6 +34,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_surface_dispatcher::NameKind;
+use gandr_surface_dispatcher::Referent;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_render_remote::LineIndex;
@@ -47,17 +48,21 @@ use crate::inline::Labeled;
 use crate::inline::Slot;
 use crate::position::Position;
 use crate::position::Range;
+use crate::protocol::CompletionData;
 use crate::protocol::CompletionItem;
 use crate::protocol::CompletionItemKind;
 use crate::protocol::CompletionList;
+use crate::protocol::DocumentUri;
+use crate::protocol::MarkupContent;
 use crate::protocol::TextEdit;
 
 /// The names a text's import closure declares, a family's constructors
-/// included, sorted by name: what a completion cuts a prefix from.
+/// included, each with where it is declared, sorted by name: what a completion
+/// cuts a prefix from and what a resolution looks an offered name up in.
 ///
 /// # Specification
 /// - requires: built by [`Names::of`].
-/// - ensures: ascending by name, then by kind; no entry twice.
+/// - ensures: ascending by name, then by kind; no name and kind twice.
 /// - panics: none.
 /// - executable: none — a carrier; [`Names::of`] and [`Names::starting`] carry
 ///   the predicates.
@@ -67,7 +72,7 @@ use crate::protocol::TextEdit;
 /// - witness: `complete::tests::a_prefix_offers_only_what_starts_with_it`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Names(Vec<(String, NameKind)>);
+pub struct Names(Vec<(String, NameKind, Referent)>);
 
 impl Names
 {
@@ -76,8 +81,10 @@ impl Names
     /// # Specification
     /// - requires: nothing.
     /// - ensures: each of [`TypeTable::declared_names`] spelled from its
-    ///   source's text, with its kind, ascending by name then kind, once; a
-    ///   name its source's text does not hold is dropped.
+    ///   source's text, with its kind and its referent, ascending by name then
+    ///   kind, a name and kind declared twice kept once, at the referent
+    ///   [`TypeTable::declared_names`] orders first; a name its source's text
+    ///   does not hold is dropped.
     /// - provides: the index a completion request reads, built once per text.
     /// - fails: never.
     /// - panics: none.
@@ -88,23 +95,60 @@ impl Names
     ///   prefix cuts exactly the names starting with it.
     /// - witness: `complete::tests::a_prefix_offers_only_what_starts_with_it`
     /// - witness: `tests::session::a_completion_offers_what_a_sibling_declares_806`
-    #[spec(ensures: |ret| ret.0.windows(2).all(|pair| matches!(pair, [first, second] if first < second)))]
+    #[spec(ensures: |ret| ret.0.windows(2).all(|pair| matches!(pair, [first, second] if (&first.0, first.1) < (&second.0, second.1))))]
     #[must_use]
     pub fn of(table: &TypeTable) -> Self
     {
-        let mut names: Vec<(String, NameKind)> = table
+        let mut names: Vec<(String, NameKind, Referent)> = table
             .declared_names()
             .iter()
             .filter_map(|&(referent, kind)| {
                 let named = referent.named();
                 let text = <&str>::from(table.source_text(referent.source())?);
                 let name = text.get(usize::from(named.start()) .. usize::from(named.end()))?;
-                Some((String::from(name), kind))
+                Some((String::from(name), kind, referent))
             })
             .collect();
         names.sort_unstable();
-        names.dedup();
+        names.dedup_by(|second, first| first.0 == second.0 && first.1 == second.1);
         Self(names)
+    }
+
+    /// Where `name`, offered as `kind`, is declared.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the referent kept for `name` and `kind`, none when the
+    ///   closure declares no such name.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one binary search.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a resolved function, constructor and family each read
+    ///   their own head; a name the text no longer declares resolves to
+    ///   nothing.
+    /// - witness: `complete::tests::a_resolved_name_reads_its_head_and_documentation`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check walks the names once, as building them cost"
+        )
+    )]
+    #[spec(ensures: |ret| ret.is_none_or(|found| self.0.iter().any(|&(ref held, as_kind, referent)| held.as_str() == <&str>::from(name) && as_kind == kind && referent == found)))]
+    fn declared(
+        &self,
+        name: SourceText<'_>,
+        kind: NameKind,
+    ) -> Option<Referent>
+    {
+        let key = (<&str>::from(name), kind);
+        self.0
+            .binary_search_by(|&(ref held, as_kind, _)| (held.as_str(), as_kind).cmp(&key))
+            .ok()
+            .and_then(|at| self.0.get(at))
+            .map(|&(_, _, referent)| referent)
     }
 
     /// The names starting with `prefix`, ascending.
@@ -128,19 +172,19 @@ impl Names
             reason = "parity: the check walks the names once, as building them cost"
         )
     )]
-    #[spec(ensures: |ret| ret.len() == self.0.iter().filter(|&&(ref name, _)| name.starts_with(<&str>::from(prefix))).count()
-        && ret.iter().all(|&(ref name, _)| name.starts_with(<&str>::from(prefix))))]
+    #[spec(ensures: |ret| ret.len() == self.0.iter().filter(|&&(ref name, _, _)| name.starts_with(<&str>::from(prefix))).count()
+        && ret.iter().all(|&(ref name, _, _)| name.starts_with(<&str>::from(prefix))))]
     fn starting(
         &self,
         prefix: SourceText<'_>,
-    ) -> &[(String, NameKind)]
+    ) -> &[(String, NameKind, Referent)]
     {
         let prefix = <&str>::from(prefix);
         let first = self
             .0
-            .partition_point(|&(ref name, _)| name.as_str() < prefix);
+            .partition_point(|&(ref name, ..)| name.as_str() < prefix);
         let rest = self.0.get(first ..).unwrap_or_default();
-        let taken = rest.partition_point(|&(ref name, _)| name.starts_with(prefix));
+        let taken = rest.partition_point(|&(ref name, ..)| name.starts_with(prefix));
         rest.get(.. taken).unwrap_or_default()
     }
 }
@@ -176,8 +220,23 @@ const fn offered_as(
     }
 }
 
-/// The completions at `position` of `text`, the document whose copy keeps
-/// `hovering`, under `grammar` whose forms are `forms`.
+/// What a declared name offered as `kind` names: the inverse of
+/// [`offered_as`].
+///
+/// # Specification
+/// trivial.
+const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
+{
+    match kind {
+        CompletionItemKind::FUNCTION => Some(NameKind::Value),
+        CompletionItemKind::CONSTRUCTOR => Some(NameKind::Constructor),
+        CompletionItemKind::ENUM => Some(NameKind::Family),
+        _ => None,
+    }
+}
+
+/// The completions at `position` of `text`, the document at `uri` whose copy
+/// keeps `hovering`, under `grammar` whose forms are `forms`.
 ///
 /// # Specification
 /// - requires: `hovering` was read off `text`; `forms` is [`Forms::new`] of
@@ -190,8 +249,8 @@ const fn offered_as(
 ///   text: the binders in scope where the word starts, innermost first, then
 ///   the declared names the slot admits, by name, then the keywords, in mold
 ///   order; a name a binder already offers is not offered again. Each item's
-///   sort text is its position, so the client keeps this order. No item for a
-///   filled slot.
+///   sort text is its position, so the client keeps this order, and each
+///   declared name carries `uri` for its resolution. No item for a filled slot.
 /// - provides: the answer to `textDocument/completion` for a held document.
 /// - fails: never.
 /// - panics: none.
@@ -216,7 +275,7 @@ pub fn completions(
     forms: &Forms,
     text: SourceText<'_>,
     hovering: &Hovering,
-    position: Position,
+    (uri, position): (&DocumentUri, Position),
 ) -> CompletionList
 {
     let index = LineIndex::new(<&str>::from(text).into());
@@ -251,7 +310,7 @@ pub fn completions(
             }
         }
     }
-    for &(ref name, kind) in hovering.names().starting(SourceText::from(prefix)) {
+    for &(ref name, kind, _) in hovering.names().starting(SourceText::from(prefix)) {
         if let Some(as_kind) = offered_as(category, kind)
             && seen.insert(name.as_str())
         {
@@ -277,9 +336,70 @@ pub fn completions(
                     range,
                     new_text: String::from(name),
                 },
+                detail: None,
+                documentation: None,
+                data: declared_as(kind).map(|_| CompletionData { uri: uri.clone() }),
             })
             .collect(),
     }
+}
+
+/// `item`, offered off the text whose copy keeps `hovering`, resolved: a
+/// declared name's head, when it writes more than the name, as its detail, and
+/// the documentation written for it, as markdown.
+///
+/// # Specification
+/// - requires: `hovering` was read off the text `item` was offered in, or a
+///   later text of the same document.
+/// - ensures: for a function, a constructor or a family whose name and kind the
+///   closure still declares and whose head [`Signatures`] keeps, the item with
+///   that head's label as its detail unless it is the name alone, and that
+///   head's documentation as markdown; every other item, a binder's and a
+///   keyword's among them, unchanged. The label, kind, sort text, edit and data
+///   are unchanged.
+/// - provides: the answer to `completionItem/resolve`.
+/// - fails: never.
+/// - panics: none.
+/// - intension: one binary search of the names and one of the heads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a documented function with parameters, a constructor with
+///   fields, a family, a value whose head is its name alone, a binder, a
+///   keyword and a name no longer declared are each resolved to their exact
+///   detail and documentation.
+/// - witness: `complete::tests::a_resolved_name_reads_its_head_and_documentation`
+///
+/// [`Signatures`]: crate::signature::Signatures
+#[spec(
+    captures: before = item.clone(),
+    ensures: |ret| ret.label == before.label && ret.kind == before.kind
+        && ret.sort_text == before.sort_text && ret.text_edit == before.text_edit && ret.data == before.data,
+)]
+#[must_use]
+pub fn resolved(
+    mut item: CompletionItem,
+    hovering: &Hovering,
+) -> CompletionItem
+{
+    let Some(signature) = declared_as(item.kind)
+        .and_then(|kind| {
+            hovering
+                .names()
+                .declared(SourceText::from(item.label.as_str()), kind)
+        })
+        .and_then(|referent| hovering.signatures().declared(&referent))
+    else {
+        return item;
+    };
+    let label = <&str>::from(signature.label());
+    if label != item.label {
+        item.detail = Some(String::from(label));
+    }
+    item.documentation = signature.documentation().map(|written| MarkupContent {
+        kind: "markdown",
+        value: String::from(<&str>::from(written)),
+    });
+    item
 }
 
 #[cfg(test)]
@@ -295,9 +415,14 @@ mod tests
     use gandr_surface_syntax::SourceText;
 
     use super::completions;
+    use super::resolved;
+    use crate::hover::Hovering;
     use crate::hover::hovering;
     use crate::position::Position;
+    use crate::protocol::CompletionItem;
     use crate::protocol::CompletionItemKind;
+    use crate::protocol::DocumentUri;
+    use crate::protocol::TextEdit;
     use crate::recheck::forms;
     use crate::recheck::grammar;
 
@@ -319,6 +444,28 @@ mod tests
         keywords: Vec<String>,
     }
 
+    /// What a session judging `source` keeps for its hovers.
+    ///
+    /// # Specification
+    /// trivial.
+    fn hovered(source: SourceText<'_>) -> Hovering
+    {
+        let mut session = Session::new(
+            grammar().expect("the grammar builds").clone(),
+            SourceRoot::Strict,
+            MemoryCheckpointStore::default(),
+            InMemoryBlockStore::default(),
+            BackendArtifact::from(b"complete".as_slice()),
+        );
+        let _judged = session.judge(source).expect("the session does not fault");
+        hovering(
+            source,
+            std::path::Path::new(""),
+            &session,
+            &gandr_surface_dispatcher::Unshadowed,
+        )
+    }
+
     /// What a completion offers in `before` followed by `after`, at the end
     /// of `before`.
     ///
@@ -331,14 +478,6 @@ mod tests
     {
         let text = format!("{}{}", <&str>::from(before), <&str>::from(after));
         let source = SourceText::from(text.as_str());
-        let mut session = Session::new(
-            grammar().expect("the grammar builds").clone(),
-            SourceRoot::Strict,
-            MemoryCheckpointStore::default(),
-            InMemoryBlockStore::default(),
-            BackendArtifact::from(b"complete".as_slice()),
-        );
-        let _judged = session.judge(source).expect("the session does not fault");
         let index = LineIndex::new(text.as_str().into());
         let position = Position::of_byte(&index, RenderOffset::from(<&str>::from(before).len()))
             .expect("the cursor is in the text");
@@ -346,13 +485,8 @@ mod tests
             grammar().expect("the grammar builds"),
             forms().expect("the forms build"),
             source,
-            &hovering(
-                source,
-                std::path::Path::new(""),
-                &session,
-                &gandr_surface_dispatcher::Unshadowed,
-            ),
-            position,
+            &hovered(source),
+            (&DocumentUri::from("file:///complete.gandr"), position),
         );
         let mut offered = Offered::default();
         for item in list.items {
@@ -528,6 +662,85 @@ mod tests
             sibling.names,
             named!([("plus", Kind::VARIABLE)]),
             "in the sibling arm: the recursion alone"
+        );
+    }
+
+    #[test]
+    fn a_resolved_name_reads_its_head_and_documentation()
+    {
+        use CompletionItemKind as Kind;
+
+        let hovering = hovered(SourceText::from(
+            "/// Natural numbers.\ndata Nat : Type {\n  Zero : Nat;\n  /// One more.\n  Succ : (n \
+             : Nat) --> Nat;\n}\n/// Addition.\ndef rec plus(n : Nat, m : Nat) -> -F Nat {\n  \
+             case m {\n    Zero => n,\n    Succ(p) => Succ(plus[<](n, p))\n  }\n}\n/// The \
+             answer.\ndef answer = 42 ;\n",
+        ));
+        let resolve = |label: &str, kind: CompletionItemKind| {
+            let item = resolved(
+                CompletionItem {
+                    label: String::from(label),
+                    kind,
+                    sort_text: String::from("0"),
+                    text_edit: TextEdit {
+                        range: crate::position::Range::default(),
+                        new_text: String::from(label),
+                    },
+                    detail: None,
+                    documentation: None,
+                    data: None,
+                },
+                &hovering,
+            );
+            (item.detail, item.documentation.map(|written| written.value))
+        };
+        let read = |detail: Option<&str>, documentation: Option<&str>| {
+            (detail.map(String::from), documentation.map(String::from))
+        };
+        assert_eq!(
+            resolve("plus", Kind::FUNCTION),
+            read(Some("plus(n : Nat, m : Nat) -> -F Nat"), Some("Addition.")),
+            "a function: its head and its documentation"
+        );
+        assert_eq!(
+            resolve("Succ", Kind::CONSTRUCTOR),
+            read(Some("Succ : (n : Nat) --> Nat"), Some("One more.")),
+            "a constructor: its fields"
+        );
+        assert_eq!(
+            resolve("Zero", Kind::CONSTRUCTOR),
+            read(Some("Zero : Nat"), None),
+            "an undocumented constructor: its head alone"
+        );
+        assert_eq!(
+            resolve("Nat", Kind::ENUM),
+            read(Some("Nat : Type"), Some("Natural numbers.")),
+            "a family"
+        );
+        assert_eq!(
+            resolve("answer", Kind::FUNCTION),
+            read(None, Some("The answer.")),
+            "a value whose head is its name alone: its documentation"
+        );
+        assert_eq!(
+            resolve("Nat", Kind::FUNCTION),
+            read(None, None),
+            "a name offered as what it does not name: unchanged"
+        );
+        assert_eq!(
+            resolve("gone", Kind::FUNCTION),
+            read(None, None),
+            "a name the text does not declare: unchanged"
+        );
+        assert_eq!(
+            resolve("n", Kind::VARIABLE),
+            read(None, None),
+            "a binder: unchanged"
+        );
+        assert_eq!(
+            resolve("case", Kind::KEYWORD),
+            read(None, None),
+            "a keyword: unchanged"
         );
     }
 }
