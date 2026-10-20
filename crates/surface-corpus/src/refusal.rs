@@ -476,6 +476,13 @@ pub enum RefusalName
     LowercaseModuleName,
     /// A declaration binding parameters in an implicit telescope `@[…]`.
     ImplicitTelescope,
+    /// A function's merged telescope with two parameters each mentioning the
+    /// other.
+    TelescopeCycle,
+    /// A use of a function leaving one of its implicits unsupplied.
+    ImplicitUnsupplied,
+    /// A call writing a function's implicit arguments among its parentheses.
+    ImplicitInParentheses,
     /// A match some scrutinee value reaches no arm of.
     NonExhaustiveMatch,
     /// A recursive definition's own name written without a descent claim.
@@ -654,7 +661,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 171_usize] = [
+    pub const VOCABULARY: [Self; 174_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -747,6 +754,9 @@ impl RefusalName
         Self::FamilyTelescope,
         Self::LowercaseModuleName,
         Self::ImplicitTelescope,
+        Self::TelescopeCycle,
+        Self::ImplicitUnsupplied,
+        Self::ImplicitInParentheses,
         Self::NonExhaustiveMatch,
         Self::UnmarkedSelfReference,
         Self::UnguardedCorecursion,
@@ -871,6 +881,9 @@ impl RefusalName
         (Self::FamilyTelescope, b"FamilyTelescope") | (Self::LowercaseModuleName,
         b"LowercaseModuleName") |
         (Self::ImplicitTelescope, b"ImplicitTelescope") |
+        (Self::TelescopeCycle, b"TelescopeCycle") |
+        (Self::ImplicitUnsupplied, b"ImplicitUnsupplied") |
+        (Self::ImplicitInParentheses, b"ImplicitInParentheses") |
         (Self::NonExhaustiveMatch, b"NonExhaustiveMatch") |
         (Self::UnmarkedSelfReference, b"UnmarkedSelfReference") |
         (Self::UnguardedCorecursion, b"UnguardedCorecursion") |
@@ -1145,6 +1158,9 @@ impl RefusalName
             Self::FamilyTelescope => "FamilyTelescope",
             Self::LowercaseModuleName => "LowercaseModuleName",
             Self::ImplicitTelescope => "ImplicitTelescope",
+            Self::TelescopeCycle => "TelescopeCycle",
+            Self::ImplicitUnsupplied => "ImplicitUnsupplied",
+            Self::ImplicitInParentheses => "ImplicitInParentheses",
             Self::NonExhaustiveMatch => "NonExhaustiveMatch",
             Self::UnmarkedSelfReference => "UnmarkedSelfReference",
             Self::UnguardedCorecursion => "UnguardedCorecursion",
@@ -1355,6 +1371,12 @@ impl Refusal<'_>
         RefusalName::LowercaseModuleName) |
         (Self::Lowering(LoweringRefusal::ImplicitTelescope { .. }),
         RefusalName::ImplicitTelescope) |
+        (Self::Lowering(LoweringRefusal::TelescopeCycle { .. }),
+        RefusalName::TelescopeCycle) |
+        (Self::Lowering(LoweringRefusal::ImplicitUnsupplied { .. }),
+        RefusalName::ImplicitUnsupplied) |
+        (Self::Lowering(LoweringRefusal::ImplicitInParentheses { .. }),
+        RefusalName::ImplicitInParentheses) |
         (Self::Lowering(LoweringRefusal::NonExhaustiveMatch { .. }),
         RefusalName::NonExhaustiveMatch) |
         (Self::Lowering(LoweringRefusal::UnmarkedSelfReference { .. }),
@@ -1576,7 +1598,10 @@ impl Refusal<'_>
         RefusalName::UnstatedComponent) | (LoweringRefusal::FamilyTelescope { .. },
         RefusalName::FamilyTelescope) | (LoweringRefusal::LowercaseModuleName { .. },
         RefusalName::LowercaseModuleName) | (LoweringRefusal::ImplicitTelescope { .. },
-        RefusalName::ImplicitTelescope) | (LoweringRefusal::NonExhaustiveMatch { .. },
+        RefusalName::ImplicitTelescope) | (LoweringRefusal::TelescopeCycle { .. },
+        RefusalName::TelescopeCycle) | (LoweringRefusal::ImplicitUnsupplied { .. },
+        RefusalName::ImplicitUnsupplied) | (LoweringRefusal::ImplicitInParentheses { .. },
+        RefusalName::ImplicitInParentheses) | (LoweringRefusal::NonExhaustiveMatch { .. },
         RefusalName::NonExhaustiveMatch) | (LoweringRefusal::UnmarkedSelfReference { .. },
         RefusalName::UnmarkedSelfReference) | (LoweringRefusal::UnguardedCorecursion { .. },
         RefusalName::UnguardedCorecursion) | (LoweringRefusal::DescentOnSeveralParameters { .. },
@@ -1632,6 +1657,9 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::FamilyTelescope { .. } => RefusalName::FamilyTelescope,
         LoweringRefusal::LowercaseModuleName { .. } => RefusalName::LowercaseModuleName,
         LoweringRefusal::ImplicitTelescope { .. } => RefusalName::ImplicitTelescope,
+        LoweringRefusal::TelescopeCycle { .. } => RefusalName::TelescopeCycle,
+        LoweringRefusal::ImplicitUnsupplied { .. } => RefusalName::ImplicitUnsupplied,
+        LoweringRefusal::ImplicitInParentheses { .. } => RefusalName::ImplicitInParentheses,
         LoweringRefusal::NonExhaustiveMatch { .. } => RefusalName::NonExhaustiveMatch,
         LoweringRefusal::UnmarkedSelfReference { .. } => RefusalName::UnmarkedSelfReference,
         LoweringRefusal::UnguardedCorecursion { .. } => RefusalName::UnguardedCorecursion,

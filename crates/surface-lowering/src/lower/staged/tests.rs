@@ -130,20 +130,13 @@ fn a_call_handing_the_scrutinee_is_refused()
 }
 
 #[test]
-fn a_telescope_out_of_shape_is_refused_by_name()
+fn a_bound_or_stage_naming_no_binder_is_refused_by_name()
 {
     let source = format!(
-        "{NAT}def typed @[a : Type] (x : a) -> -F a {{\n  return x\n}}\ndef later @[i : Size, i < n, n : Size] (x : Nat[i]) -> -F Nat {{\n  return x\n}}\ndef stray @[i : Size] (x : Nat[j]) -> -F Nat {{\n  return x\n}}\n"
+        "{NAT}def later @[i : Size, i < n, n : Size] (x : Nat[i]) -> -F Nat {{\n  return x\n}}\ndef stray @[i : Size] (x : Nat[j]) -> -F Nat {{\n  return x\n}}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
-    assert!(
-        matches!(
-            refusal_of(&module, SurfaceName::from("typed")),
-            LoweringRefusal::ImplicitTelescope { .. }
-        ),
-        "an implicit over a type is no stage binder"
-    );
     assert!(
         matches!(
             refusal_of(&module, SurfaceName::from("later")),

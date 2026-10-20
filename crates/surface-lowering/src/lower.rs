@@ -684,6 +684,8 @@ pub use runs::RunSpelling;
 
 mod identity;
 
+mod implicit;
+
 mod model;
 
 mod native;
@@ -3016,6 +3018,10 @@ struct Lowerer<'run, 'source>
     /// Each head of a call of no arguments, beside the call: such a call is
     /// its head's force, so the force carries the call's origin.
     nullary: BTreeMap<NodeIndex, NodeIndex>,
+    /// The head of each call that supplies its callee's implicits by name,
+    /// `f[a = T](…)`: the one place a function with implicits is named
+    /// without refusal.
+    supplied: BTreeSet<NodeIndex>,
     /// Each callable operation's minted type and body, by slot.
     operated: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
     /// Each `theory` block's definition, `S : Theory`, as its minted type and
@@ -4042,6 +4048,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             reader: Reading::Unread,
             type_read: BTreeSet::new(),
             nullary: BTreeMap::new(),
+            supplied: BTreeSet::new(),
             operated: BTreeMap::new(),
             presented: BTreeMap::new(),
             renamings: Vec::new(),
@@ -6264,7 +6271,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the one place a term name inside a type reads the type's
     ///   telescope rather than the term context.
     /// - fails: [`LoweringRefusal::PhaseDependence`] for a declaration the
-    ///   member `site` belongs to may not read, as [`Self::phased`] decides.
+    ///   member `site` belongs to may not read, as [`Self::phased`] decides;
+    ///   [`LoweringRefusal::ImplicitUnsupplied`] for a declaration with
+    ///   implicits named anywhere but a call supplying them.
     /// - panics: none.
     ///
     /// # Errors
@@ -6280,7 +6289,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| match ret {
             | Err(ref refusal) => {
                 matches!(resolved, Resolved::Declaration { .. })
-                    && matches!(*refusal, LoweringRefusal::PhaseDependence { .. })
+                    && matches!(*refusal, LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::ImplicitUnsupplied { .. })
             },
             | Ok(ref plan) => match (resolved, self.in_type.contains(&site.at.node)) {
                 | (Resolved::Binder(bound), true) => {
@@ -6317,6 +6326,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Resolved::Binder(_) => Ok(resolved.term()),
             Resolved::Declaration { constant, .. } => {
                 self.phased(site, SlotIndex::from(usize::from(constant)))?;
+                self.supplied_or_refused(site, constant)?;
                 Ok(resolved.term())
             },
         }
@@ -7145,10 +7155,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let recursive = cursor.tile(TileName::REC);
         let named = cursor.tile(TileName::IDENTIFIER);
+        self.merge_refusal(site.at.node)?;
         self.stage_telescope(site, &mut cursor)?;
         closed(function, &mut cursor, TileName::PAREN_OPEN)?;
         let start = self.parameters.len();
-        let mut frame = Frame::Outermost;
+        let mut frame = self.merged_parameters(site, function, &mut cursor, Frame::Outermost)?;
         let mut recursion = Maybe::Absent(recursion::Absent::Plain);
         // A recursive tail stages the parameter its body's matches take
         // apart, read off the syntax ahead before anything binds.
@@ -8134,6 +8145,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Ok(());
         }
         let frame = self.require(site, Produced::Computation)?;
+        if self.supplied_call(site, frame, &cursor)? == arity::Planned(true) {
+            return Ok(());
+        }
         let head = site.one(cursor.operands())?;
         let start = self.operands.len();
         arguments(site, &mut cursor, &mut self.operands)?;
@@ -19711,26 +19725,18 @@ mod tests
     }
 
     #[test]
-    fn an_implicit_telescope_is_declined_by_name()
+    fn an_implicit_telescope_on_no_function_is_refused_by_name()
     {
-        use alloc::string::ToString as _;
-
-        let refused = refusal(SourceText::from("def f @[a : Type] (x) { return x }"));
-        assert_eq!(
-            refused,
-            LoweringRefusal::ImplicitTelescope {
-                span: span(ByteOffset::from(0_usize), ByteOffset::from(34_usize)),
-            },
-            "an implicit telescope is refused by its own name, at the declaration"
+        let refused = refusal(SourceText::from("def f @[a : Type] = 1 ;"));
+        assert!(
+            matches!(refused, LoweringRefusal::ImplicitTelescope { span } if span.start() == ByteOffset::from(0_usize)),
+            "a telescope binds a function's parameters, and is refused at any other \
+             declaration: {refused:?}"
         );
         assert_eq!(
             refused.classify(),
             FailureClass::Unrepresentable,
             "it is outside the fragment, not malformed"
-        );
-        assert!(
-            refused.to_string().contains("implicit telescope"),
-            "the message names the telescope: {refused}"
         );
     }
 

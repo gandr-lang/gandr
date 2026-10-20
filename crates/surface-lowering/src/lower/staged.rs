@@ -16,8 +16,10 @@
 //!
 //! # Boundaries
 //!
-//! - A telescope entry other than `i : Size` or `i < n` is
-//!   [`LoweringRefusal::ImplicitTelescope`]: no other implicit is elaborated.
+//! - A telescope entry `a : T` of a sort other than `Size` is an implicit
+//!   parameter, which the function's merged telescope binds
+//!   ([`crate::module::Plicity`]); an entry out of shape is
+//!   [`LoweringRefusal::ImplicitTelescope`].
 //! - A bound `i < n` names a binder `i` and a binder `n` written before it;
 //!   either name otherwise is [`LoweringRefusal::UnresolvedName`], and so is a
 //!   staged type naming no binder of its function's telescope.
@@ -115,16 +117,19 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `cursor` stands just past the function's name; `site` is the
     ///   function's declaration form.
-    /// - ensures: past a telescope, `cursor` stands after its `]`, the
-    ///   declaration's bounds are filed under its key, one per binder in
-    ///   written order, and every staged type under the parameter and result
-    ///   types is marked with the stage its binder's ordinal names; without one
-    ///   nothing changes.
+    /// - ensures: past a telescope, `cursor` stands after its `]`; when the
+    ///   telescope binds a stage, the declaration's bounds are filed under its
+    ///   key, one per binder in written order, and every staged type under the
+    ///   parameter and result types is marked with the stage its binder's
+    ///   ordinal names; an entry `a : T` of another sort is passed over, the
+    ///   function's merged telescope binding it; without a telescope nothing
+    ///   changes.
     /// - fails: [`LoweringRefusal::ImplicitTelescope`] at the declaration for
-    ///   an entry other than `i : Size` or `i < n`;
-    ///   [`LoweringRefusal::UnresolvedName`] for a bound naming no binder, or
-    ///   none written before the one it bounds, and for a staged type naming no
-    ///   binder; a fault naming the function for a tile out of place.
+    ///   an entry out of shape, or one of another sort where the function has
+    ///   no merged telescope; [`LoweringRefusal::UnresolvedName`] for a bound
+    ///   naming no binder, or none written before the one it bounds, and for a
+    ///   staged type naming no binder; a fault naming the function for a tile
+    ///   out of place.
     /// - panics: none.
     ///
     /// # Errors
@@ -132,10 +137,12 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a telescope of one binder and of a bounded pair files
-    ///   its bounds and marks its staged types; a typed implicit, a bound on a
-    ///   later binder and a stage naming no binder are refused, each exactly.
+    ///   its bounds and marks its staged types; a bound on a later binder and a
+    ///   stage naming no binder are refused, each exactly; a stage beside an
+    ///   implicit is filed as alone.
+    /// - witness: `lower::implicit::tests::a_stage_telescope_merges_nothing`
     /// - witness: `lower::staged::tests::a_telescope_files_its_bounds_and_marks_its_stages`
-    /// - witness: `lower::staged::tests::a_telescope_out_of_shape_is_refused_by_name`
+    /// - witness: `lower::staged::tests::a_bound_or_stage_naming_no_binder_is_refused_by_name`
     #[spec(captures: before = self.stage_bounds.len(), ensures: |ret| ret.is_err() || self.stage_bounds.len() >= before)]
     pub(super) fn stage_telescope(
         &mut self,
@@ -161,13 +168,15 @@ impl<'source> Lowerer<'_, 'source>
             let name = self.name_at(written);
             if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
                 let sort = site.one(cursor.operands())?;
-                if !matches!(self.form_at(sort)?, Some((_, Former::TypeHead)))
-                    || self.name_at(sort).as_ref() != "Size"
+                if matches!(self.form_at(sort)?, Some((_, Former::TypeHead)))
+                    && self.name_at(sort).as_ref() == "Size"
                 {
+                    let _shadowed = names.insert(name, StageBinder::from(bounds.len()));
+                    bounds.push(StageBound::Unbounded);
+                }
+                else if let Maybe::Absent(_) = self.merged_at(site.at.node) {
                     return Err(implicit);
                 }
-                let _shadowed = names.insert(name, StageBinder::from(bounds.len()));
-                bounds.push(StageBound::Unbounded);
             }
             else if let Maybe::Present(_) = cursor.tile(TileName::LESS_THAN) {
                 let Maybe::Present(over) = cursor.tile(TileName::IDENTIFIER)
@@ -209,6 +218,9 @@ impl<'source> Lowerer<'_, 'source>
             {
                 return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
             }
+        }
+        if bounds.is_empty() {
+            return Ok(());
         }
         let mut ahead = cursor.clone();
         let mut pending = Vec::new();

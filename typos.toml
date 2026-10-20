@@ -25,3 +25,5 @@ ratatui = "ratatui"
 yau = "yau"
 # ELF vocabulary: `.rela` sections hold relocations with explicit addends.
 rela = "rela"
+# Type-theory vocabulary: a function's implicit parameters, "its implicits".
+implicits = "implicits"
