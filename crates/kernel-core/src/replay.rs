@@ -5117,10 +5117,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   [`crate::element_identity`], and under [`Reduction::Endpoint`] a bind
     ///   over a call stuck at a variable or an opaque head read through: the
     ///   innermost such bind whose continuation, run with the call as a
-    ///   returned endpoint for its value, returns — a continuation stuck at
-    ///   such a bind of its own read the same way first, a bind whose
+    ///   returned endpoint for its value, returns or stops at a call a
+    ///   definition heads, which then stands as the reading — a continuation
+    ///   stuck at such a bind of its own read the same way first, a bind whose
     ///   continuation eliminates its own variable at its head passed over, and
-    ///   the next bind out tried over both when it does not return — until none
+    ///   the next bind out tried over both when it does neither — until none
     ///   fires at its head, and the original id when none fired at all.
     /// - provides: the search-free reductions the trace never records.
     /// - fails: [`Stop::Budget`] on a term that reduces past the budget;
@@ -5160,6 +5161,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `replay::tests::native_list_fold_reduces_without_capturing_outer_variables`
     /// - witness: `replay::tests::a_projection_runs_its_side_of_a_pairing`
     /// - witness: `replay::tests::an_endpoint_reads_a_bind_through_its_stuck_call`
+    /// - witness: `replay::tests::an_endpoint_reads_a_bind_handing_its_stuck_call_to_a_definition_761`
     /// - witness: `replay::tests::an_endpoint_passes_over_a_bind_its_own_elimination_built`
     /// - witness: `replay::tests::a_decode_reads_as_the_quote_its_code_returns`
     /// - witness: `replay::tests::an_endpoint_continuation_is_spent_only_with_its_frames`
@@ -5718,6 +5720,24 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             progress = before;
                             break 'reading;
                         };
+                        // The enclosing continuation stopped at a call a
+                        // definition heads: the reading is that call, under
+                        // the eliminations outside the bind, and the
+                        // conversion unfolds it by a recorded step.
+                        if matches!(
+                            self.shape(
+                                Term::Computation(call),
+                                &Frozen::default(),
+                                ConversionSide::Left
+                            ),
+                            Ok(Shape::Neutral(Head::Constant(_, Status::Defined), _))
+                        ) {
+                            frames = tried.outer;
+                            frames.append(&mut outer);
+                            focus = call;
+                            progress = Progress::Reduced;
+                            continue 'reading;
+                        }
                         // The enclosing continuation did not return: its bind
                         // stays over its call, and the next bind out is tried
                         // over both.

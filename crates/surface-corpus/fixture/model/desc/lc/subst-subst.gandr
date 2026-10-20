@@ -1,7 +1,7 @@
 // Two composites of substitutions act alike on every term when they agree
 // at every index. At an abstraction both composites unfold by conversion,
 // lifting being a constructor (`substTwiceUnderLam`; with lifting a
-// definition the step is refused, #761, `pathological/desc/lc`). The lifted
+// definition the step is refused, #879, `pathological/desc/lc`). The lifted
 // step reads a lookup under one binder as the weakened lookup
 // (`lookWeakens`), pushes the weakening through the lifted substitution
 // (`substWeaken`), and weakens the hypothesis.
