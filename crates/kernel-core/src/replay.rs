@@ -305,6 +305,7 @@
 //! existing strategy API cannot express.
 
 use alloc::vec::Vec;
+use core::fmt;
 use core::iter::Peekable;
 
 use anodized::spec;
@@ -708,6 +709,141 @@ pub enum ReplayRefusal
     Unreadable,
 }
 
+impl ReplayRefusal
+{
+    /// What the refusal says of the dialogue: a question with no answer, an
+    /// answer outside its question's answers, or a well-posed dialogue that
+    /// reaches no verdict or the wrong one.
+    ///
+    /// # Specification
+    /// - ensures: [`RefusalClass::IllFormedQuery`] for
+    ///   [`ReplayRefusal::Unreadable`]; [`RefusalClass::ForeignAnswer`] for
+    ///   [`ReplayRefusal::Inapplicable`] and
+    ///   [`ReplayRefusal::NonAuthoritative`];
+    ///   [`RefusalClass::PathDisagreement`] for
+    ///   [`ReplayRefusal::Contradicted`], [`ReplayRefusal::Exhausted`] and
+    ///   [`ReplayRefusal::Leftover`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one replay input per refusal variant, each reaching
+    ///   its variant through the public replay, is classed as the table on
+    ///   [`KernelVerdict`] states; moving any variant to another class changes
+    ///   a row.
+    /// - witness: `tests::replay_laws::every_replay_refusal_carries_its_pinned_class`
+    #[spec(ensures: |ret| match self {
+        Self::Unreadable => matches!(ret, RefusalClass::IllFormedQuery),
+        Self::Inapplicable { .. } | Self::NonAuthoritative { .. } => matches!(ret, RefusalClass::ForeignAnswer),
+        Self::Contradicted { .. } | Self::Exhausted | Self::Leftover { .. } => matches!(ret, RefusalClass::PathDisagreement),
+    })]
+    #[inline]
+    #[must_use]
+    pub const fn class(self) -> RefusalClass
+    {
+        match self {
+            Self::Unreadable => RefusalClass::IllFormedQuery,
+            Self::Inapplicable { .. } | Self::NonAuthoritative { .. } => {
+                RefusalClass::ForeignAnswer
+            },
+            Self::Contradicted { .. } | Self::Exhausted | Self::Leftover { .. } => {
+                RefusalClass::PathDisagreement
+            },
+        }
+    }
+}
+
+impl fmt::Display for ReplayRefusal
+{
+    /// The refusal's class, then what the replay met.
+    ///
+    /// # Specification
+    /// - ensures: writes [`ReplayRefusal::class`] first, then the refusal's own
+    ///   account, naming the decision's position where the refusal has one.
+    /// - fails: propagates the formatter's write failure.
+    /// - panics: none.
+    /// - executable: none — the formatter owns the emitted text.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an ill-formed query and a path disagreement write
+    ///   different diagnostics, each led by its class.
+    /// - witness: `tests::replay_laws::an_ill_formed_query_and_a_path_disagreement_are_two_diagnostics`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(f, "{}: ", self.class())?;
+        match *self {
+            Self::Unreadable => {
+                f.write_str("the replay reached a term the arena does not resolve or no rule reads")
+            },
+            Self::Inapplicable { at } => write!(
+                f,
+                "decision {} names a rule the goal it is read at does not admit",
+                usize::from(at)
+            ),
+            Self::NonAuthoritative { at } => write!(
+                f,
+                "decision {} refutes through a frozen constant or a shortcut, which proves \
+                 nothing",
+                usize::from(at)
+            ),
+            Self::Contradicted { at } => write!(
+                f,
+                "a goal closed against the verdict its derivation owes, before decision {}",
+                usize::from(at)
+            ),
+            Self::Exhausted => f.write_str("the trace ended while a goal still needed a decision"),
+            Self::Leftover { at } => write!(
+                f,
+                "every goal closed with decision {} still unread",
+                usize::from(at)
+            ),
+        }
+    }
+}
+
+/// What a refused trace's refusal says of its dialogue.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RefusalClass
+{
+    /// A question with no answer: the replay reached a term it cannot read.
+    /// Asked, such a query would certify anything, so the replay refuses it
+    /// before reading another decision.
+    IllFormedQuery,
+    /// A recorded answer outside the answers its question admits: a decision
+    /// naming a rule the goal does not admit, or a refutation through a frozen
+    /// constant or a shortcut.
+    ForeignAnswer,
+    /// A well-posed dialogue that reaches no verdict or the wrong one: the
+    /// trace ran out, ran over, or closed a goal against the verdict it owes.
+    PathDisagreement,
+}
+
+impl fmt::Display for RefusalClass
+{
+    /// The class's name.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            Self::IllFormedQuery => "an ill-formed query",
+            Self::ForeignAnswer => "a foreign answer",
+            Self::PathDisagreement => "a path disagreement",
+        })
+    }
+}
+
 /// Why the kernel declined a claim.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ReplayDecline
@@ -722,6 +858,39 @@ pub enum ReplayDecline
     PartialFixpoint,
     /// The trace did not replay.
     Refused(ReplayRefusal),
+}
+
+impl fmt::Display for ReplayDecline
+{
+    /// Why the kernel declined: no dialogue, the budget, a partial fixpoint,
+    /// or the trace's refusal.
+    ///
+    /// # Specification
+    /// - ensures: a refused trace writes its [`ReplayRefusal`]; every other
+    ///   decline writes its own account.
+    /// - fails: propagates the formatter's write failure.
+    /// - panics: none.
+    /// - executable: none — the formatter owns the emitted text.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ReplayRefusal`]'s display, reached through the
+    ///   decline that carries it.
+    /// - witness: `tests::replay_laws::an_ill_formed_query_and_a_path_disagreement_are_two_diagnostics`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::EngineDeclined => f.write_str("no dialogue: the engine claimed no verdict"),
+            Self::Budget => f.write_str("the replay's step budget ran out before a verdict"),
+            Self::PartialFixpoint => {
+                f.write_str("a fixpoint without termination evidence stood at its unfolding gate")
+            },
+            Self::Refused(refusal) => refusal.fmt(f),
+        }
+    }
 }
 
 /// The kernel's verdict on a replayed claim.
@@ -748,7 +917,8 @@ pub enum ReplayDecline
 /// | Certified negative | `NotConvertible`: an element, never a refusal |
 ///
 /// Refused reasons are [`ReplayRefusal`] variants inside
-/// [`ReplayDecline::Refused`]; every decline is inside [`Self::Declined`].
+/// [`ReplayDecline::Refused`], their class [`ReplayRefusal::class`]; every
+/// decline is inside [`Self::Declined`].
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a pinned table of replay inputs separates every refusal
@@ -771,11 +941,11 @@ pub enum KernelVerdict
 /// Replay `trace` against `claim` for the two `sides`, firing every step in
 /// `arena` and unfolding only what `unfoldings` defines.
 ///
-/// Composition has the shape of goal refinement: decisions rewriting a goal
-/// precede the rewritten goal's dialogue. A decomposed pair visits its first
-/// component before its second; a leading `ComparedShared` can instead close
-/// an alpha-equal pair whole. There is no certificate-composition operation,
-/// and traces for `a = b` and `b = c` do not supply a trace for `a = c`.
+/// A trace composes by goal refinement: decisions rewriting a goal precede the
+/// rewritten goal's dialogue, and a decomposed pair's dialogue is its first
+/// component's then its second's. A leading `ComparedShared` instead closes an
+/// alpha-equal pair whole. There is no transitive composite: traces for
+/// `a = b` and `b = c` do not supply a trace for `a = c`.
 ///
 /// # Specification
 /// - requires: the two sides and every body in `unfoldings` live in `arena`.
@@ -796,6 +966,13 @@ pub enum KernelVerdict
 ///   unfoldings, claim, trace and budget. Replaying twice or in a cloned arena
 ///   gives the same verdict and restores the entry watermark on every return.
 ///   No verdict adds data to the classified object.
+/// - ensures: composition — a pair whose components each replay `Convertible`
+///   on their own traces replays `Convertible` on the first component's trace
+///   followed by the second's; read the other way round, the second's trace
+///   answers the first component's goal and is refused as
+///   [`ReplayRefusal::Inapplicable`] at its first decision that does not apply
+///   there. An alpha-equal pair also closes whole on `[ComparedShared]`,
+///   leaving any further decision [`ReplayRefusal::Leftover`].
 /// - provides: the certified recheck of an untrusted engine's conversion
 ///   verdict, search-free and sequential.
 /// - fails: never — a refusal is a verdict.
@@ -820,6 +997,7 @@ pub enum KernelVerdict
 /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
 /// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
 /// - witness: `tests::replay_laws::replay_is_pure_across_repeated_and_cloned_arenas`
+/// - witness: `tests::replay_laws::a_pair_replays_as_its_components_traces_in_order`
 /// - witness: `replay::tests::engine_decline_and_zero_budget_do_not_read_the_trace`
 /// - witness: `replay::tests::reduced_heads_retain_application_and_bind_frames`
 // Unit and cross-run purity are witnessed relations, not predicates over one

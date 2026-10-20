@@ -738,7 +738,8 @@ impl fmt::Display for ComposeFault<'_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: writes the fault's context and payload; a readmission fault
-    ///   includes the declaration's admission position.
+    ///   includes the declaration's admission position, and a declined
+    ///   certificate the kernel's decline, a refused trace led by its class.
     /// - fails: propagates the formatter's write failure.
     /// - panics: none.
     /// - executable: none — the formatter owns the emitted text and exposes
@@ -770,6 +771,13 @@ impl fmt::Display for ComposeFault<'_>
                     bridge::Outcome::Rejected(ref error) => {
                         write!(f, "the kernel rejected it: {error}")
                     },
+                    bridge::Outcome::Refused(bridge::Refusal::CertificateDeclined {
+                        reason,
+                        ..
+                    }) => write!(
+                        f,
+                        "the kernel declined the certificate of a step it unfolded: {reason}"
+                    ),
                     bridge::Outcome::Refused(refusal) => {
                         write!(f, "the bridge refused to offer it ({})", refusal.classify())
                     },

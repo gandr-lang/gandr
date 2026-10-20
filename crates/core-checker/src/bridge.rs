@@ -114,11 +114,11 @@
 //! alias's own body among them, crosses as the constant, so the certificate for
 //! an alias of an alias still compares the constant it names. A declined
 //! certificate is `Refusal::CertificateDeclined { unfolded, reason }`, which
-//! keeps the kernel's `ReplayDecline` and stays an engine fault; a
-//! certification that produces no dialogue records
-//! `ReplayDecline::EngineDeclined`. The kernel admits a code constant's lifted,
-//! elaborated body, read back to normal form, so the constant it unfolds is the
-//! constant the judgement unfolded.
+//! keeps the kernel's `ReplayDecline` and stays an engine fault, a refused
+//! trace classed by `ReplayRefusal::class`; a certification that produces no
+//! dialogue records `ReplayDecline::EngineDeclined`. The kernel admits a code
+//! constant's lifted, elaborated body, read back to normal form, so the
+//! constant it unfolds is the constant the judgement unfolded.
 //! `every_checked_universe_declaration_is_readmitted` and
 //! `every_readmission_certificate_replays` ask this of generated modules of
 //! universe declarations, codes, aliases and lifts;
