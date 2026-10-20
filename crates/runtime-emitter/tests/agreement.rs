@@ -16,6 +16,10 @@ use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::evaluate;
 use gandr_runtime_emitter::evaluate_on;
+use gandr_runtime_emitter::evaluate_unfused_on;
+use gandr_runtime_emitter::lower;
+use gandr_runtime_emitter::lower_unfused;
+use gandr_runtime_emitter::replay;
 
 use crate::support::BUDGET;
 use crate::support::Label;
@@ -47,6 +51,43 @@ fn the_named_programs_agree_on_both_executors()
             evaluate(&commands, &definitions, root, Fuel::from(BUDGET), store)
         });
         assert_eq!(shows, policy, "{name} under the policy");
+    }
+}
+
+/// The named programs answer fused what their unfused lowering answers on
+/// the executor, with the answer each states, and each fused function is the
+/// replay of its trace over the unfused one.
+#[test]
+fn a_fused_program_answers_what_its_unfused_lowering_answers()
+{
+    for named in named() {
+        let name = named.program.name;
+        let shows = Verdict::Halted(Some(String::from(named.shows)));
+        let (commands, root) = focus(&named.program);
+        let definitions = Definitions::new();
+        let (Ok(fused), Ok(unfused)) = (
+            lower(&commands, &definitions, root),
+            lower_unfused(&commands, &definitions, root),
+        )
+        else {
+            panic!("{name} lowers");
+        };
+        assert_eq!(
+            replay(&unfused.function, &fused.fused).as_ref(),
+            Ok(&fused.function),
+            "{name}: the trace replays to the fused function"
+        );
+        let unfused = agree_with(Label(name), &commands, &definitions, root, |store| {
+            evaluate_unfused_on(
+                Tier::Executor,
+                &commands,
+                &definitions,
+                root,
+                Fuel::from(BUDGET),
+                store,
+            )
+        });
+        assert_eq!(shows, unfused, "{name} unfused");
     }
 }
 

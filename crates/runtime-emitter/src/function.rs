@@ -404,6 +404,96 @@ impl Function
     {
         self.slots
     }
+
+    /// The positions a label is bound to, ascending, each once: the
+    /// instructions a jump, a branch or a resumed frame enters.
+    ///
+    /// # Specification
+    /// - ensures: ascending and without repeats; a position is present exactly
+    ///   when some bound label names it.
+    /// - panics: none.
+    /// - executable: none — the clause would scan the label table again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pair whose second instruction a label enters is
+    ///   kept apart, and one no label enters is fused.
+    /// - witness: `fuse::tests::a_pair_a_label_enters_is_kept_apart`
+    #[inline]
+    pub(crate) fn entries(&self) -> Vec<Position>
+    {
+        let mut entries: Vec<Position> = self
+            .labels
+            .iter()
+            .filter(|&&at| at != usize::MAX)
+            .map(|&at| Position(at))
+            .collect();
+        entries.sort_unstable();
+        entries.dedup();
+        entries
+    }
+
+    /// The function with each pair `merges` names run as one instruction:
+    /// the pair's first position, ascending, and the instruction that runs
+    /// the pair. Each label keeps the instruction it named, so a label bound
+    /// past a pair is bound one position lower for each pair before it.
+    ///
+    /// # Specification
+    /// - requires: the positions ascend, each pair lies inside the function, no
+    ///   two pairs overlap, and no label is bound to a pair's second
+    ///   instruction.
+    /// - ensures: one instruction fewer per pair; every other instruction, the
+    ///   constants and the slot count kept.
+    /// - panics: none.
+    /// - executable: none — the clause would compare the rebuilt function with
+    ///   the one it was built from, which the fusion's replay already does.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a label bound past a fused pair still names the
+    ///   instruction it named.
+    /// - witness: `fuse::tests::a_label_past_a_fused_pair_names_its_instruction`
+    #[inline]
+    #[must_use]
+    pub(crate) fn merged(
+        &self,
+        merges: &[(Position, Instruction)],
+    ) -> Self
+    {
+        let mut instructions =
+            Vec::with_capacity(self.instructions.len().saturating_sub(merges.len()));
+        // Each old position's new one, and one past the end for a label
+        // bound after the last instruction.
+        let mut moved = Vec::with_capacity(self.instructions.len().saturating_add(1));
+        let mut pending = merges.iter().peekable();
+        let mut index = 0_usize;
+        while let Some(&instruction) = self.instructions.get(index) {
+            let at = instructions.len();
+            moved.push(at);
+            match pending.peek() {
+                Some(&&(Position(first), fused)) if first == index => {
+                    let _merged = pending.next();
+                    instructions.push(fused);
+                    moved.push(at);
+                    index = index.saturating_add(2);
+                },
+                Some(_) | None => {
+                    instructions.push(instruction);
+                    index = index.saturating_add(1);
+                },
+            }
+        }
+        moved.push(instructions.len());
+        let labels = self
+            .labels
+            .iter()
+            .map(|&at| moved.get(at).copied().unwrap_or(at))
+            .collect();
+        Self {
+            instructions,
+            labels,
+            constants: self.constants.clone(),
+            slots: self.slots,
+        }
+    }
 }
 
 /// An instruction's index in its function.

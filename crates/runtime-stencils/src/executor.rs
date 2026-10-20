@@ -90,6 +90,8 @@ stencils! {
     Var => stencil_var,
     /// `stencil_bind`.
     Bind => stencil_bind,
+    /// `stencil_const_bind`: `const` then `bind`, fused.
+    ConstBind => stencil_const_bind,
     /// `stencil_push`.
     Push => stencil_push,
     /// `stencil_ctor1`.

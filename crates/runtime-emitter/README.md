@@ -29,7 +29,8 @@ Copy-and-patch emission of the L machine's lowered commands: native code under a
 ## Provided features
 
 - `lower`, `Lowered`, `Function`, `Form`: the lowering, its closure sites and reified frames, the function it builds and the form it refuses.
-- `evaluate`, `evaluate_on`, `Tier`, `Declined`, `TransferRefusal`: a run under the policy or on one tier, its outcome moved into the caller's store, or why it gave none.
+- `lower_unfused`, `Rule`, `Fused`, `replay`, `FusionRefusal`, `dispatches`: the lowering before its adjacent pairs run as superinstructions, the rules that fuse them, the trace a fused function carries, the replay that re-derives it and its cost in dispatches.
+- `evaluate`, `evaluate_on`, `evaluate_unfused_on`, `Tier`, `Declined`, `TransferRefusal`: a run under the policy or on one tier, fused or unfused, its outcome moved into the caller's store, or why it gave none.
 - `evaluate_with_host`, `evaluate_on_with_host`, `HostHandler`, `HostRequest`, `HostReply`, `HostOutcome`, `HostValues`: a run whose unhandled operations are offered to the caller, who answers, declines or aborts each.
 - `Policy` and `POLICY_VARIABLE`: `GANDR_NATIVE=always` (the default) emits on first run, `never` takes the executor, `cached` serves only what the cache holds.
 - `PATCHER`: whether this host emits native code.
@@ -52,7 +53,7 @@ GANDR_NATIVE=never cargo run -p gandr-lang -- test crates/surface-corpus/fixture
 
 ## Where the detail lives
 
-`src/lib.rs` states the tiers, the policy, the patchers, the runtime support, the retired interpreter and compile host and the call-by-name thunks, each with its alternatives and reversal; `src/lower.rs` the linear form; `src/run.rs` the regions and their bounds; `src/seam.rs` the host seam; `src/native.rs` and its `table`, `memory`, `aarch64` and `x86_64` modules emission, regions and patching; `src/transfer.rs` how an outcome reaches the store; `build.rs` the stencil table and every refusal it makes.
+`src/lib.rs` states the tiers, the policy, the patchers, the runtime support, the retired interpreter and compile host and the call-by-name thunks, each with its alternatives and reversal; `src/lower.rs` the linear form; `src/fuse.rs` the superinstructions, their replay and their cost; `src/run.rs` the regions and their bounds; `src/seam.rs` the host seam; `src/native.rs` and its `table`, `memory`, `aarch64` and `x86_64` modules emission, regions and patching; `src/transfer.rs` how an outcome reaches the store; `build.rs` the stencil table and every refusal it makes.
 
 ## Mutation backlog
 
