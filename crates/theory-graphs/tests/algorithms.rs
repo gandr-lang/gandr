@@ -2,6 +2,7 @@
 //! a deep chain that recursion would overflow, and generated graphs checked
 //! against a closure-matrix oracle computed here, independently of the crate.
 
+use alloc::collections::BTreeSet;
 use core::error::Error;
 
 use anodized::spec;
@@ -184,8 +185,10 @@ fn closure_matrix(graph: &TestGraph) -> Vec<Vec<Reach>>
             closure[source][usize::try_from(u32::from(target)).expect("fits")] = Reach::Reached;
         }
     }
+    let mut through: Vec<Reach> = Vec::with_capacity(size);
     for middle in 0 .. size {
-        let through = closure[middle].clone();
+        through.clear();
+        through.extend_from_slice(&closure[middle]);
         for row in &mut closure {
             if row[middle] == Reach::Reached {
                 for (reach, &onward) in row.iter_mut().zip(&through) {
@@ -408,11 +411,17 @@ proptest! {
             prop_assert!(witness.nodes.len() >= 2);
             prop_assert_eq!(witness.nodes.first(), witness.nodes.last());
             prop_assert_eq!(witness.edges.len().checked_add(1), Some(witness.nodes.len()));
+            let edges: BTreeSet<(usize, NodeId)> = graph
+                .rows
+                .iter()
+                .enumerate()
+                .flat_map(|(source, row)| row.iter().map(move |&target| (source, target)))
+                .collect();
             let successors = witness.nodes.iter().skip(1);
             for ((&from, &to), edge) in witness.nodes.iter().zip(successors).zip(&witness.edges) {
                 prop_assert_eq!((from, to), (edge.source, edge.target));
                 let source = usize::try_from(u32::from(edge.source)).expect("fits");
-                prop_assert!(graph.rows[source].contains(&edge.target));
+                prop_assert!(edges.contains(&(source, edge.target)));
             }
         }
     }
