@@ -69,3 +69,21 @@ def chained(t : (Integer + Integer) * Integer) -> -F Integer {
 @[ runs("8") ]
 def outer : +U (-F Integer) ;
 def outer = thunk { become chained(#{+{.1 = 8}, 9}) } ;
+
+/// A pattern variable holds the type its position states: `s`, bound at the
+/// first component of `#{+{Integer, Integer}, Integer}`, is matched as the sum
+/// that component states, the shape the printer writes `nested` in (#815).
+@[ checks ]
+def split(t : #{+{Integer, Integer}, Integer}) -> -F Integer {
+  case t {
+    #{s, y} => case s {
+      +{.0 = x} => return y,
+      +{.1 = x} => return x
+    }
+  }
+}
+
+/// `split` matches the second summand of its product's first component.
+@[ runs("8") ]
+def split_inner : +U (-F Integer) ;
+def split_inner = thunk { become split(#{+{.1 = 8}, 9}) } ;

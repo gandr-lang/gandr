@@ -2929,6 +2929,10 @@ struct Lowerer<'run, 'source>
     /// Every hole of the tree, by where its text starts, read once the first
     /// hole is lowered: a hole is named by its place here.
     holes: Vec<(ByteOffset, NodeIndex)>,
+    /// Each pattern variable whose position a written type states, by the
+    /// name's syntax node: the node of that type, which the arm binds the
+    /// variable at.
+    pattern_stated: BTreeMap<NodeIndex, NodeIndex>,
     /// Each node under an arm of a match on a recursive function's
     /// parameter: the innermost such match's function and position.
     scrutinised: BTreeMap<NodeIndex, native::Scrutiny>,
@@ -3654,6 +3658,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             staged_parameters: BTreeMap::new(),
             ran: BTreeMap::new(),
             holes: Vec::new(),
+            pattern_stated: BTreeMap::new(),
             scrutinised: BTreeMap::new(),
             descents: BTreeMap::new(),
             injected: BTreeMap::new(),

@@ -2905,7 +2905,11 @@ impl<'source> Lowerer<'_, 'source>
             for &binder in bound {
                 let name = SurfaceName::from(self.text_at(binder));
                 self.note_binder(binder, name)?;
-                inner = Frame::Inner(self.scope.extend(inner, name, Maybe::Present(binder.span)));
+                let site = Maybe::Present(binder.span);
+                inner = Frame::Inner(match self.pattern_stated.get(&binder.node) {
+                    Some(&stated) => self.scope.extend_typed(inner, name, stated, site),
+                    None => self.scope.extend(inner, name, site),
+                });
             }
             self.read(body.node, Reading::Computation(inner));
             if let Maybe::Present(stated) = answer {
@@ -3644,6 +3648,9 @@ impl<'source> Lowerer<'_, 'source>
             // loop is matched only as an arm's whole pattern.
             if let Maybe::Present(_) = self.loop_named(site, at)? {
                 return Err(here.out(FragmentBoundary::Unadmitted));
+            }
+            if let Maybe::Present(stated) = queued.stated {
+                let _first = self.pattern_stated.insert(at.node, stated);
             }
             return self.binder(at, named);
         }
