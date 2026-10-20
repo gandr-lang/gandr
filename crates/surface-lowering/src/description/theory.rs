@@ -135,10 +135,12 @@
 //! `description::theory::tests::a_top_level_operation_declines_its_filler_by_name`.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::format;
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::Attrs;
 use gandr_theory_levitation::BridgeArity;
@@ -208,8 +210,10 @@ use super::written::port_name;
 use crate::circuit::ArrowRow;
 use crate::circuit::OutputCount;
 use crate::circuit::SignatureFault;
+use crate::description::DescribedDeclaration as Earlier;
 use crate::form::Piece;
 use crate::form::Placed;
+use crate::model::Included;
 use crate::model::Placement;
 use crate::model::Presentation;
 use crate::model::PresentationFault;
@@ -297,6 +301,19 @@ impl HeadKind
     }
 }
 
+/// How many members of each kind a presentation held before an inclusion
+/// extended it.
+#[derive(Clone, Copy)]
+struct Held
+{
+    /// The sorts held.
+    sorts: usize,
+    /// The operations held.
+    operations: usize,
+    /// The rules held.
+    rules: usize,
+}
+
 /// A theory block's rule member: a face it writes or a circuit it wires, each
 /// with what it presents and where it is written.
 enum RuleMember
@@ -312,13 +329,20 @@ impl Reader<'_, '_>
 {
     /// Read each theory member independently, preserving its declared sort set,
     /// into the block's `Theory` value and the description that value reads as.
+    /// Each `include` member first extends the presentation by the members of
+    /// the block it names, read before this one in `earlier`.
     ///
     /// # Specification
     /// - ensures: an unreadable member does not consume a following member;
     ///   every member read enters the presentation's value, its circuits beside
     ///   it, and the description is [`described`] of that value with the
-    ///   circuits added.
-    /// - fails: a malformed signature head refuses the whole declaration.
+    ///   circuits added. The included presentations come first, in written
+    ///   order, each by [`TheoryParts::include`], with the inclusion kept
+    ///   beside the value and each included member's provenance its own
+    ///   block's.
+    /// - fails: a malformed signature head refuses the whole declaration; an
+    ///   `include` that names no earlier block or whose members clash with the
+    ///   presentation's is that member's own diagnostic.
     /// - panics: none.
     /// - executable: none — a member's independence is a relation between the
     ///   source's members and the report, which the call does not retain.
@@ -328,15 +352,20 @@ impl Reader<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a declined rule member between readable ones leaves
-    ///   both neighbours read, and an unreadable member keeps its own report.
+    ///   both neighbours read, and an unreadable member keeps its own report; a
+    ///   block that includes another restricts along the inclusion to it, and
+    ///   an include of an unknown or clashing block is refused at the member.
     /// - witness: `description::theory::tests::a_declined_rule_member_leaves_the_members_after_it_intact`
     /// - witness: `description::theory::tests::an_unreadable_member_keeps_its_own_report`
     /// - witness: `description::theory::tests::the_description_is_read_off_the_value`
+    /// - witness: `description::theory::tests::an_included_theory_is_the_extension_restricted`
+    /// - witness: `description::theory::tests::an_include_is_refused_at_its_member`
     pub(super) fn signature(
         &self,
         at: Placed,
         run: &mut Run<'_>,
         serial: NominalSerial,
+        earlier: &[Earlier],
         diagnostics: &mut Vec<DescriptionDiagnostic>,
     ) -> Result<DescribedDeclaration, DescriptionDiagnostic>
     {
@@ -349,6 +378,92 @@ impl Reader<'_, '_>
         let mut placement = Placement::default();
         let mut scope = BTreeMap::new();
         let mut written = WrittenMembers::default();
+        let mut operation_spans = Vec::new();
+        let mut circuits = Vec::new();
+        let mut presented_circuits = Vec::new();
+        let mut inclusions = Vec::new();
+        let mut included_circuits = BTreeSet::new();
+        for member in &members {
+            let span = member_span(member, at.span);
+            let mut reading = Run::new(member, span);
+            if !reading.eat(Spelling("include")).0 {
+                continue;
+            }
+            let (declaration, presented, included) = match self.included(&mut reading, earlier) {
+                Ok(found) => found,
+                Err(diagnostic) => {
+                    diagnostics.push(diagnostic);
+                    continue;
+                },
+            };
+            let read = Held {
+                sorts: parts.sorts.len(),
+                operations: parts.operations.len(),
+                rules: parts.rules.len(),
+            };
+            let inclusion = match parts.include(&included) {
+                Ok(inclusion) => inclusion,
+                Err(clash) => {
+                    diagnostics.push(reading.signature_fault(SignatureFault::IncludeClash(clash)));
+                    continue;
+                },
+            };
+            for ((position, &tile), member) in inclusion
+                .sorts
+                .iter()
+                .zip(&presented.placement.sorts)
+                .zip(&declaration.written.sorts)
+            {
+                if usize::from(*position) >= read.sorts {
+                    placement.sorts.push(tile);
+                    written.sorts.push(member.clone());
+                }
+            }
+            for (((position, &tile), &whole), member) in inclusion
+                .operations
+                .iter()
+                .zip(&presented.placement.operations)
+                .zip(&declaration.operation_spans)
+                .zip(&declaration.written.operations)
+            {
+                if usize::from(*position) >= read.operations {
+                    scope.insert(self.text(tile), HeadKind::Operation);
+                    placement.operations.push(tile);
+                    operation_spans.push(whole);
+                    written.operations.push(member.clone());
+                }
+            }
+            for (((position, &tile), &whole), sides) in inclusion
+                .rules
+                .iter()
+                .zip(&presented.placement.laws)
+                .zip(&presented.placement.faces)
+                .zip(&declaration.written.faces)
+            {
+                if usize::from(*position) >= read.rules {
+                    scope.insert(self.text(tile), HeadKind::Rewrite);
+                    placement.laws.push(tile);
+                    placement.faces.push(whole);
+                    written.faces.push(sides.clone());
+                }
+            }
+            for ((presented_circuit, rule), wired) in presented
+                .circuits
+                .iter()
+                .zip(&declaration.description.circuits)
+                .zip(&declaration.written.circuits)
+            {
+                if included_circuits.insert(&presented_circuit.name) {
+                    presented_circuits.push(presented_circuit.clone());
+                    circuits.push(rule.clone());
+                    written.circuits.push(wired.clone());
+                }
+            }
+            inclusions.push(Included {
+                theory: declaration.description.id.clone(),
+                inclusion,
+            });
+        }
         for member in &members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
@@ -395,9 +510,6 @@ impl Reader<'_, '_>
                 Err(diagnostic) => diagnostics.push(diagnostic),
             }
         }
-        let mut operation_spans = Vec::new();
-        let mut circuits = Vec::new();
-        let mut presented_circuits = Vec::new();
         for member in members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
@@ -438,6 +550,9 @@ impl Reader<'_, '_>
                         },
                     })
             }
+            else if reading.eat(Spelling("include")).0 {
+                continue;
+            }
             else {
                 Err(reading.signature_fault(SignatureFault::MissingJudgment))
             };
@@ -449,6 +564,7 @@ impl Reader<'_, '_>
             value: TheoryValue::encode(&parts),
             placement,
             circuits: presented_circuits,
+            inclusions,
         };
         let description = described(&presentation, NominalId::new(serial, self.text(named).0))
             .map_err(|_unread| DescriptionDiagnostic {
@@ -465,6 +581,61 @@ impl Reader<'_, '_>
             presentation: Maybe::Present(presentation),
             written,
         })
+    }
+
+    /// The `theory` block an `include` member names, the last of `earlier`
+    /// that presents under that name, and its presentation's members.
+    ///
+    /// # Specification
+    /// - requires: `run` stands just past the member's `include` keyword.
+    /// - ensures: the block, its presentation, and the parts its value decodes
+    ///   to.
+    /// - fails: a missing name is malformed; a name no block of `earlier`
+    ///   presents is [`SignatureFault::UnknownInclude`]; a value that does not
+    ///   decode is malformed.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns the located diagnostic of the first failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::signature`].
+    /// - witness: `description::theory::tests::an_include_is_refused_at_its_member`
+    /// - witness: `description::theory::tests::an_included_theory_is_the_extension_restricted`
+    #[spec(ensures: |ret| match ret {
+        | Ok((found, presented, _)) => {
+            matches!(found.presentation, Maybe::Present(ref own) if own == presented)
+        },
+        | Err(_) => true,
+    })]
+    fn included<'earlier>(
+        &self,
+        run: &mut Run<'_>,
+        earlier: &'earlier [Earlier],
+    ) -> Result<(&'earlier Earlier, &'earlier Presentation, TheoryParts), DescriptionDiagnostic>
+    {
+        let named = run.take()?;
+        let Written(name) = self.text(named);
+        let found = earlier
+            .iter()
+            .rev()
+            .find_map(|declaration| match declaration.presentation {
+                Maybe::Present(ref presented)
+                    if declaration.description.id.name.as_ref() == name =>
+                {
+                    Some((declaration, presented))
+                },
+                Maybe::Present(_) | Maybe::Absent(_) => None,
+            });
+        let Some((declaration, presented)) = found
+        else {
+            return Err(run.signature_fault(SignatureFault::UnknownInclude(Name::from(name))));
+        };
+        let parts = presented
+            .value
+            .decode()
+            .map_err(|_fault| run.fault(DescriptionFault::Malformed))?;
+        Ok((declaration, presented, parts))
     }
 
     /// Read a top-level `oper` declaration as the one operation it declares,

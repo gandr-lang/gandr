@@ -534,11 +534,13 @@ fn top_level_judgment() -> Regex
 /// boundary-only; `oper` and `rule` may carry a filler, and `obs` rides
 /// `oper`'s form. A sixth, `shape`, states the finite shape the signature's
 /// cells are stated over and its named faces, each the subshape of the points
-/// it lists; its spelling is provisional.
+/// it lists; its spelling is provisional. A sixth, `include`, names a theory
+/// whose members the block extends.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the sort, data, circuit-judgment and shape member alternatives.
+/// - ensures: the sort, data, circuit-judgment, shape and include member
+///   alternatives.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -550,7 +552,7 @@ fn top_level_judgment() -> Regex
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "sort")))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "data")))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "shape"))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 5 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "sort")))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "data")))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "shape")))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "include"))))))]
 fn theory_member() -> Regex
 {
     alt([
@@ -597,6 +599,9 @@ fn theory_member() -> Regex
             ])),
             t(TileLabel("}")),
         ]),
+        // `include Semigroup` — the members of a theory written before this
+        // block, extended by the members after it.
+        seq([t(TileLabel("include")), t(TileLabel("type_identifier"))]),
     ])
 }
 

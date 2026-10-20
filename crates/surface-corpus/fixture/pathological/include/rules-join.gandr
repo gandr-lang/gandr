@@ -1,0 +1,31 @@
+// The obligation `include` creates (#738): the included theory's rules join
+// the including block's, and the union is completed as one block. Each block
+// below completes alone; the union leaves a critical pair whose two normal
+// forms are one call with its arguments swapped, which the path order
+// orients neither way, so the including block is refused by name.
+
+/// Choosing is combining, left to right.
+@[ checks ]
+theory Choice {
+  sort M : Type;
+  oper plus : (x : M, y : M) --> M;
+  oper pick : (x : M, y : M) --> M;
+  rule first : pick(x, y) ==> plus(x, y);
+}
+
+/// Choosing against the unit combines the other way round: with the
+/// included rule, `pick(one(), y)` reads `plus(one(), y)` and `plus(y,
+/// one())`.
+@[ refuses("RulesUncompleted") ]
+theory Swapped {
+  include Choice;
+  oper one : () --> M;
+  rule flip : pick(one(), y) ==> plus(y, one());
+}
+
+/// An include of a theory no earlier block of the source presents.
+@[ refuses("MalformedForm") ]
+theory Orphan {
+  include Unwritten;
+  oper one : () --> M;
+}

@@ -91,8 +91,10 @@ use anodized::spec;
 use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
+use gandr_theory_levitation::NominalId;
 use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::TheoryFault;
+use gandr_theory_levitation::TheoryInclusion;
 use gandr_theory_levitation::TheoryPort;
 use gandr_theory_levitation::TheoryValue;
 use quenchant_shape::shape::Maybe;
@@ -261,19 +263,23 @@ pub struct PresentedCircuit
 }
 
 /// What a `theory` block presents: its `Theory` value, where each member the
-/// value codes is written, and the circuit rules `Theory` does not code yet.
+/// value codes is written, the circuit rules `Theory` does not code yet, and
+/// the inclusion of each theory the block includes.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
 /// - ensures: the value is the one source of the presented sorts, operations
 ///   and faces; the placement holds one name tile per member it codes, in the
-///   value's order.
+///   value's order; the value restricts along each inclusion to the value of
+///   the theory it includes.
 /// - executable: none — a presentation is data the derivation reads.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the `CatShape` presentation derives the `CatShape` model.
+/// - hypothesis: L3 — the `CatShape` presentation derives the `CatShape` model;
+///   a block that includes another restricts to it.
 /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
 /// - witness: `model::tests::a_presentation_reads_its_members_off_its_value`
+/// - witness: `description::theory::tests::an_included_theory_is_the_extension_restricted`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Presentation
 {
@@ -283,6 +289,30 @@ pub struct Presentation
     pub placement: Placement,
     /// The rules wired as circuits, kept beside the value.
     pub circuits: Vec<PresentedCircuit>,
+    /// The theories the block includes, each with its inclusion, in written
+    /// order.
+    pub inclusions: Vec<Included>,
+}
+
+/// One theory a block includes: the included declaration's identity and the
+/// inclusion of its presentation in the block's, the theory morphism the
+/// block's models restrict along.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: nothing beyond its fields.
+/// - executable: none — a morphism is data the derivation reads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentation`].
+/// - witness: `description::theory::tests::an_included_theory_is_the_extension_restricted`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Included
+{
+    /// The included theory's declaration.
+    pub theory: NominalId,
+    /// Where each of its members stands in the including presentation.
+    pub inclusion: TheoryInclusion,
 }
 
 /// Where the members a presentation's value codes are written: one name tile
