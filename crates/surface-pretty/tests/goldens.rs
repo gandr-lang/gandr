@@ -32,6 +32,7 @@ use gandr_core_term::SortParameter;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::hole::HoleId;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::primitive::Arguments;
 use gandr_core_term::primitive::PRELUDE;
@@ -2983,6 +2984,28 @@ fn a_constructor_at_the_depth_limit_binds_every_field()
         text.contains("case a {\n    Wide(b, c, ") && text.contains(", f1, g1) => g1\n"),
         "the branch binds its fields under the constructor: {text}"
     );
+}
+
+/// A hole is written `?` faithfully, as a value and as a computation: it
+/// reads back as the same hole, named by its place among its source's holes
+/// (#893). Before, each was marked approximate.
+#[test]
+fn a_hole_is_written_faithfully_893()
+{
+    let mut core = CoreArena::new();
+    let value = core.value_hole(HoleId::from(0_u32));
+    let computation = core.computation_hole(HoleId::from(1_u32));
+    let source = CoreSource::new(&core, &[]);
+    for root in [
+        Root::Value(CoreNode::Value(value)),
+        Root::Computation(CoreNode::Computation(computation)),
+    ] {
+        assert_eq!(
+            spelled(&source, root),
+            ("?".to_owned(), Fidelity::Faithful),
+            "{root:?}"
+        );
+    }
 }
 
 /// Arms that share one body bind distinct fields: the body walks once,

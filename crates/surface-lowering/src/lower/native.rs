@@ -3592,12 +3592,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Matcher::Wild);
         }
         if name == FormName::HOLE {
-            let identity = u32::try_from(usize::from(at.node)).map_err(|_overflow| {
-                LoweringRefusal::BudgetExceeded {
-                    budget: self.fuel.budget,
-                }
-            })?;
-            return Ok(Matcher::Hole(HoleId::from(identity)));
+            return Ok(Matcher::Hole(self.hole(at)?));
         }
         if name == FormName::UNIT {
             // `unit` is the empty product's pattern, `#{}` spelled as the

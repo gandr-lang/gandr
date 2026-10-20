@@ -1178,8 +1178,6 @@ impl TypeTable
     ///   bytes, so the table answers offsets into the last source's own text;
     ///   the last source's declarations are keyed by their forms' keys in that
     ///   source's own tree, which no offset moves, and a sibling's — even one
-    // refused_by: container_member · collision: none (1 contested hunk(s), neither side deleted the
-    // other's lines)
     ///   writing the same form byte for byte (#596) — are not kept. A
     ///   declaration refused for binding again a name an unqualified import
     ///   binds answers at none of its sites (#677). The table keeps the unit,

@@ -884,7 +884,9 @@ pub enum Unreadable
     /// The unknown value or computation type, what a hole or a mark
     /// synthesises: the checker knows no more.
     UnknownType,
-    /// A hole: a term the author has not written.
+    /// A hole: a term the author has not written. Its `?` reads back as the
+    /// same hole, named by its place among its source's holes, so it is the
+    /// one member the walk writes faithfully.
     Hole,
     /// A mark: a term the elaborator could not type, kept as written.
     Mark,

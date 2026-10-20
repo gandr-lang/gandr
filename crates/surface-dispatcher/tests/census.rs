@@ -54,10 +54,10 @@ fn root(name: &Path) -> PathBuf
         .join(name)
 }
 
-/// The honest set: the reasons whose `?` says what the checker knows.
-const HONEST: [Unspelled; 5] = [
+/// The honest set: the reasons whose `?` says what the checker knows. A hole
+/// is not among them: its `?` is written faithfully.
+const HONEST: [Unspelled; 4] = [
     Unspelled::Unreadable(Unreadable::UnknownType),
-    Unspelled::Unreadable(Unreadable::Hole),
     Unspelled::Unreadable(Unreadable::Mark),
     Unspelled::Unreadable(Unreadable::Lift),
     Unspelled::Unreadable(Unreadable::NumericAtom),

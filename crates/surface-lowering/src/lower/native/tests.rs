@@ -2126,8 +2126,8 @@ fn a_match_keeps_its_patterns_beside_its_tree()
     };
     assert_eq!(
         identity,
-        HoleId::from(u32::try_from(usize::from(hole.written)).unwrap()),
-        "a pattern hole is named by its syntax node"
+        HoleId::from(0_u32),
+        "a pattern hole is named by its place among the holes the text writes"
     );
     assert!(
         reachable(&arena, root)

@@ -583,7 +583,7 @@ fn an_or_pattern_entails_a_later_repeat_of_either_alternative()
 }
 
 #[test]
-fn a_pattern_hole_carries_the_pattern_position_mark()
+fn a_pattern_hole_is_named_by_its_place_among_the_holes()
 {
     let mut written = color_pick("Red => return 0, ? => return 1");
     let Some(&hole) = written.rows().get(1)
@@ -596,8 +596,8 @@ fn a_pattern_hole_carries_the_pattern_position_mark()
     };
     assert_eq!(
         identity,
-        HoleId::from(u32::try_from(usize::from(hole.written)).unwrap()),
-        "the hole is named by its pattern position"
+        HoleId::from(0_u32),
+        "the source's only hole is named by its place among the holes it writes"
     );
     let green = written.construct("Color", 1, Vec::new());
     let analysis = written.analyze("Color", green);
