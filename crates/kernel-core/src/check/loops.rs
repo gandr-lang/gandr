@@ -51,6 +51,7 @@
 //! order; a case's loop arms follow its constructors' branches in the same
 //! order.
 
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -435,15 +436,16 @@ pub(super) fn respected(
         // past it, never one inside it.
         held.sort_unstable_by_key(|variable| core::cmp::Reverse(variable.index));
         let mut table = ContentTable::default();
+        // The odometer over the held variables' constructors, reset per loop:
+        // one obligation per combination.
+        let mut tags = alloc::vec![0_usize; held.len()];
         for owed_loop in owed {
             let Sides {
                 transported,
                 stayed,
                 ..
             } = sides(arena, presentations, (case, datatype), (family, owed_loop))?;
-            // An odometer over the held variables' constructors: one
-            // obligation per combination.
-            let mut tags = alloc::vec![0_usize; held.len()];
+            tags.fill(0);
             loop {
                 let (mut left, mut right) = (transported, stayed);
                 for (variable, &tag) in held.iter().zip(&tags) {
@@ -550,13 +552,14 @@ fn scrutinees(
 ) -> Result<Vec<Held>, KernelError>
 {
     let mut found: Vec<Held> = Vec::new();
-    let own = match arena.computation(case) {
-        Some(&Computation::DataCase { scrutinee, .. }) => match arena.value(scrutinee) {
-            Some(&Value::Variable(index)) => Some(index),
-            Some(_) | None => None,
-        },
-        Some(_) | None => None,
-    };
+    // The case's own scrutinee and every variable found so far, so a variable
+    // met again ends the descent in one lookup.
+    let mut seen: BTreeSet<DeBruijnIndex> = BTreeSet::new();
+    if let Some(&Computation::DataCase { scrutinee, .. }) = arena.computation(case)
+        && let Some(&Value::Variable(index)) = arena.value(scrutinee)
+    {
+        seen.insert(index);
+    }
     let (mut focus, mut sort) = (case, datatype);
     while let Some(&first) = loops(arena, presentations, sort).first() {
         let at = point(arena, presentations, (sort, first))?;
@@ -585,7 +588,7 @@ fn scrutinees(
         else {
             break;
         };
-        if own == Some(index) || found.iter().any(|held| held.index == index) {
+        if !seen.insert(index) {
             break;
         }
         // A parameterless sort is closed: the slot's type is the variable's,

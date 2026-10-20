@@ -149,6 +149,8 @@ fn translate(
         (AnyNode::Computation(right), false),
         (AnyNode::Computation(left), false),
     ];
+    // One buffer per operand kind, refilled for each tuple and case.
+    let (mut operands, mut branch_ids) = (Vec::new(), Vec::new());
     while let Some((node, expanded)) = pending.pop() {
         if !expanded {
             pending.push((node, true));
@@ -161,12 +163,11 @@ fn translate(
             AnyNode::Value(id) => {
                 let value = match arena.value(id).expect("value resolves") {
                     &Value::Variable(index) => core.value_variable(Zone::Intuitionistic, index),
-                    &Value::Tuple(ref components) => core.value_tuple(
-                        &components
-                            .iter()
-                            .map(|component| values[component])
-                            .collect::<Vec<_>>(),
-                    ),
+                    &Value::Tuple(ref components) => {
+                        operands.clear();
+                        operands.extend(components.iter().map(|component| values[component]));
+                        core.value_tuple(&operands)
+                    },
                     &Value::Injection(summand, value) => {
                         core.value_injection(summand, values[&value])
                     },
@@ -214,13 +215,11 @@ fn translate(
                     Computation::Case {
                         scrutinee,
                         ref branches,
-                    } => core.computation_case(
-                        values[&scrutinee],
-                        &branches
-                            .iter()
-                            .map(|branch| computations[branch])
-                            .collect::<Vec<_>>(),
-                    ),
+                    } => {
+                        branch_ids.clear();
+                        branch_ids.extend(branches.iter().map(|branch| computations[branch]));
+                        core.computation_case(values[&scrutinee], &branch_ids)
+                    },
                     Computation::ListFold { .. }
                     | Computation::Transport(..)
                     | Computation::PathTransport { .. }

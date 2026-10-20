@@ -732,8 +732,8 @@ pub(crate) fn normal_form(
                 arity,
                 payload: (datatype, origin),
             } => {
-                let mut fields = built.split_off(built.len().saturating_sub(usize::from(arity)));
-                fields.reverse();
+                let start = built.len().saturating_sub(usize::from(arity));
+                let fields: Vec<ValueId> = built.drain(start ..).rev().collect();
                 let kept = match origin {
                     Origin::Written(id) => match arena.value(id) {
                         Some(&Value::Constructor {
