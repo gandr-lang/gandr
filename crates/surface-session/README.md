@@ -29,7 +29,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 - **The step a face renders.** `Submission::into_step`: the submission as the dispatcher's `Step::Source`.
 - **The parser's repairs.** `Submission::obligations`: the parse's completion obligations, in source order.
 - **Checkpoints across processes.** `Session::reopen`, `Reopened`, `reopened::Absent`.
-- **The kernel checkpoint.** `KernelCheckpoint`, `Submission::kernel`, `Session::read_kernel`, `Session::blocks`.
+- **The kernel checkpoint.** `KernelCheckpoint`, `Submission::kernel`, `Session::read_kernel`, `Session::blocks`. A document laid after an import closure the process readmitted is exported and committed after the closure's declarations, whose encoding and decode the closure's record keeps.
 - **The import scope.** `Session::resolve_import`, `ImportRow`, `import::Absent`.
 - **The item source.** `program`, `SurfaceItems` (an `ItemSource`), `Revision`, `RevisionFault`, `fault_span::Absent`.
 - **Evaluation.** `Submission::evaluate`, `evaluate`, `evaluation::Absent`: a hole-free item run on the dispatcher's run stage.

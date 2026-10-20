@@ -363,6 +363,7 @@ use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::closures;
+use crate::closures::ClosureAdmission;
 use crate::edit::EditScript;
 use crate::edit::Snapshot;
 use crate::edit::diff;
@@ -2582,19 +2583,27 @@ impl<Store, Blocks> Session<Store, Blocks>
             Maybe::Present(resume) => resume.checkpoints().items().get(.. boundary),
             Maybe::Absent(_) => None,
         };
-        let held = checkpoints.and_then(|checkpoints| {
+        let found = checkpoints.and_then(|checkpoints| {
             closures::find(SourceText::from(closure.as_str()), checkpoints)
         });
         let resumption = admission.admit_resuming(
             LeadingCount::from(boundary),
-            held.as_deref()
-                .map_or(Maybe::Absent(crossed::Absent::Unasked), Maybe::Present),
+            found
+                .as_deref()
+                .map_or(Maybe::Absent(crossed::Absent::Unasked), |found| {
+                    Maybe::Present(found.crossed())
+                }),
         );
-        if let (Maybe::Present(crossed), Some(checkpoints)) = (resumption.crossed, checkpoints) {
-            closures::keep(closure, checkpoints.to_vec(), crossed);
-        }
+        let held = match (resumption.crossed, checkpoints) {
+            (Maybe::Present(crossed), Some(checkpoints)) => {
+                Some(closures::keep(closure, checkpoints.to_vec(), crossed))
+            },
+            _ => found.filter(|found| {
+                usize::from(resumption.resumed) == usize::from(found.crossed().boundary())
+            }),
+        };
         let kernel = resumption.artifact?;
-        let checkpoint = checkpoint_kernel(&kernel, &mut self.blocks);
+        let checkpoint = checkpoint_kernel(&kernel, &mut self.blocks, held.as_deref());
         Ok(Maybe::Present(Admitted {
             kernel,
             checkpoint,
@@ -3004,14 +3013,18 @@ impl<Store, Blocks> Session<Store, Blocks>
 }
 
 /// Commits `kernel` into `blocks` as artifact records under the current tree
-/// parameters.
+/// parameters, resuming the decode that cuts them after the closure's kernel
+/// declarations `held` keeps, or keeping it there.
 ///
 /// # Specification
-/// - requires: nothing.
+/// - requires: `held`, when given, holds the readmission of the declarations
+///   `kernel` leads with.
 /// - ensures: [`KernelCheckpoint::Stored`] with the manifest [`build`] mints
 ///   over the records [`ArtifactRecordSet::from_artifact`] cuts from `kernel`,
 ///   every node of their tree then in `blocks`; otherwise
-///   [`KernelCheckpoint::Failed`] with the first refusal.
+///   [`KernelCheckpoint::Failed`] with the first refusal. The records are cut
+///   after the decode `held` keeps when it keeps one; otherwise `held`, when
+///   given, keeps the decode of the declarations its readmission admitted.
 /// - provides: the kernel checkpoint an accepted submission carries.
 /// - fails: never; a refusal is the checkpoint's own variant.
 /// - panics: none.
@@ -3037,12 +3050,30 @@ impl<Store, Blocks> Session<Store, Blocks>
 fn checkpoint_kernel<Blocks>(
     kernel: &EncodedArtifact,
     blocks: &mut Blocks,
+    held: Option<&ClosureAdmission>,
 ) -> KernelCheckpoint
 where
     Blocks: BlockStore,
 {
-    let committed = ArtifactRecordSet::from_artifact(kernel.as_image())
-        .and_then(|records| build(&records, TreeParams::current(), blocks));
+    let image = kernel.as_image();
+    let records = held.map_or_else(
+        || ArtifactRecordSet::from_artifact(image),
+        |held| {
+            held.decoded().map_or_else(
+                || {
+                    ArtifactRecordSet::from_artifact_keeping(image, held.crossed().kernel_end())
+                        .map(|(records, decoded)| {
+                            if let Maybe::Present(decoded) = decoded {
+                                held.keep_decoded(decoded);
+                            }
+                            records
+                        })
+                },
+                |decoded| ArtifactRecordSet::from_artifact_after(decoded, image),
+            )
+        },
+    );
+    let committed = records.and_then(|records| build(&records, TreeParams::current(), blocks));
     match committed {
         Ok(manifest) => KernelCheckpoint::Stored(manifest),
         Err(refusal) => KernelCheckpoint::Failed(refusal),

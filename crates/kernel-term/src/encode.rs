@@ -44,6 +44,7 @@
 //! independent wire fixtures to expose them.
 
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -103,6 +104,32 @@ use crate::wire::WireUsize;
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct EncodedEntry(EncodedArtifact);
 
+/// What an encoding of a sequence's leading declarations assigned, frozen for
+/// every encoding that resumes after them.
+///
+/// # Specification
+/// - requires: built from an interner that continued none, once its
+///   declarations are written.
+/// - ensures: holds that interner's node memo, its content deduplication and
+///   its next free global index.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary;
+///   [`encode_prefix`] builds it and [`Interner::after`] reads it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`encode_after`].
+/// - witness: `encode::tests::an_encoding_resumed_after_its_prefix_writes_the_whole_encoding_776`
+#[derive(Debug)]
+struct Assigned
+{
+    /// Arena node to its assigned global index.
+    by_node: BTreeMap<AnyNode, GlobalIndex>,
+    /// Encoded entry bytes to their global index.
+    by_content: BTreeMap<EncodedEntry, GlobalIndex>,
+    /// The next free global index.
+    next: GlobalIndex,
+}
+
 /// The content-keyed subterm interner, carrying the global index counter and
 /// both memos across declaration segments.
 ///
@@ -111,7 +138,8 @@ struct EncodedEntry(EncodedArtifact);
 ///   operations.
 /// - ensures: retains node memoization and byte-content deduplication across
 ///   segments with a saturating global counter; it belongs to one unchanged
-///   arena.
+///   arena. An interner that continues the frozen assignments of a leading run
+///   answers from both, and records only what it assigns itself.
 /// - panics: none.
 /// - executable: none — data declaration, not a callable boundary; new and
 ///   interning or entry-encoding operations carry the predicates.
@@ -125,10 +153,15 @@ struct EncodedEntry(EncodedArtifact);
 ///   transitions; a shared encode/decode round trip is not an independent
 ///   format oracle.
 /// - witness: `encode::tests::interning_reuses_content_across_segments_without_losing_order`
+/// - witness: `encode::tests::an_encoding_resumed_after_its_prefix_writes_the_whole_encoding_776`
 /// - witness: `tests::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
 /// - witness: `tests::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
+#[derive(Debug)]
 struct Interner
 {
+    /// The frozen assignments of an encoding of the sequence's leading
+    /// declarations, which this one continues; none for a whole encoding.
+    base: Option<Arc<Assigned>>,
     /// Arena node to its assigned global index: the sharing-aware memo, so an
     /// in-arena shared node is walked once.
     by_node: BTreeMap<AnyNode, GlobalIndex>,
@@ -145,8 +178,8 @@ impl Interner
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: returns an interner holding no node and no content, with the
-    ///   next free global index at zero.
+    /// - ensures: returns an interner holding no node and no content and
+    ///   continuing none, with the next free global index at zero.
     /// - provides: the empty index space one artifact's encoding fills, so no
     ///   index from an earlier encoding can be reused.
     /// - panics: none.
@@ -163,7 +196,8 @@ impl Interner
     /// - witness: `tests::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
     /// - witness: `tests::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
     #[spec(
-        ensures: |ret| ret.by_node.is_empty()
+        ensures: |ret| ret.base.is_none()
+                && ret.by_node.is_empty()
                 && ret.by_content.is_empty()
                 && u32::from(ret.next) == 0,
     )]
@@ -171,10 +205,107 @@ impl Interner
     fn new() -> Self
     {
         Self {
+            base: None,
             by_node: BTreeMap::new(),
             by_content: BTreeMap::new(),
             next: GlobalIndex::default(),
         }
+    }
+
+    /// An interner continuing `base`, the frozen assignments of an encoding of
+    /// the sequence's leading declarations.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: answers every node and content `base` assigned as `base`
+    ///   does, holds nothing of its own, and assigns from `base`'s next free
+    ///   index.
+    /// - provides: the resumed encoding's index space, shared rather than
+    ///   copied, so resuming costs nothing in the prefix's size.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every split of mixed and shared sequences, resumed
+    ///   after its prefix, writes the whole encoding's bytes.
+    /// - witness: `encode::tests::an_encoding_resumed_after_its_prefix_writes_the_whole_encoding_776`
+    #[spec(
+        captures: [kept = Arc::as_ptr(&base), next = base.next],
+        ensures: |ret| ret.by_node.is_empty()
+                && ret.by_content.is_empty()
+                && ret.base.as_ref().is_some_and(|held| Arc::as_ptr(held) == kept)
+                && ret.next == next,
+    )]
+    #[inline]
+    fn after(base: Arc<Assigned>) -> Self
+    {
+        Self {
+            next: base.next,
+            base: Some(base),
+            by_node: BTreeMap::new(),
+            by_content: BTreeMap::new(),
+        }
+    }
+
+    /// The assignments this interner made, frozen for an encoding that
+    /// resumes after them.
+    ///
+    /// # Specification
+    /// - requires: the interner continues none.
+    /// - ensures: its node memo, content deduplication and next free index,
+    ///   moved rather than copied.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`encode_after`].
+    /// - witness: `encode::tests::an_encoding_resumed_after_its_prefix_writes_the_whole_encoding_776`
+    #[spec(
+        requires: self.base.is_none(),
+        captures: [nodes = self.by_node.len(), contents = self.by_content.len(), next = self.next],
+        ensures: |ret| ret.by_node.len() == nodes
+                && ret.by_content.len() == contents
+                && ret.next == next,
+    )]
+    #[inline]
+    fn freeze(self) -> Assigned
+    {
+        Assigned {
+            by_node: self.by_node,
+            by_content: self.by_content,
+            next: self.next,
+        }
+    }
+
+    /// The global index an earlier root assigned `node`, here or in the base.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn node(
+        &self,
+        node: AnyNode,
+    ) -> Option<GlobalIndex>
+    {
+        self.by_node
+            .get(&node)
+            .copied()
+            .or_else(|| self.base.as_ref()?.by_node.get(&node).copied())
+    }
+
+    /// The global index the entry with `entry`'s bytes took, here or in the
+    /// base.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn content(
+        &self,
+        entry: &EncodedEntry,
+    ) -> Option<GlobalIndex>
+    {
+        self.by_content
+            .get(entry)
+            .copied()
+            .or_else(|| self.base.as_ref()?.by_content.get(entry).copied())
     }
 }
 
@@ -241,6 +372,183 @@ pub fn encode(
                 .saturating_sub(position)
                 .saturating_sub(1),
         );
+        encode_declaration(&mut out, arena, &mut interner, declaration, remaining);
+    }
+    out
+}
+
+/// The encoding of an admission-ordered sequence's leading declarations, which
+/// an encoding of any sequence leading with them resumes.
+///
+/// # Specification
+/// - requires: constructed by [`encode_prefix`].
+/// - ensures: holds the leading declarations' segments as [`encode`] writes
+///   them, the minted atoms among them, and the interner their encoding left,
+///   frozen.
+/// - panics: none.
+/// - executable: none — the fields are private and set only by
+///   [`encode_prefix`], whose specification states them.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`encode_after`].
+/// - witness: `encode::tests::an_encoding_resumed_after_its_prefix_writes_the_whole_encoding_776`
+#[derive(Clone, Debug)]
+pub struct EncodedPrefix
+{
+    /// The leading declarations' segments, in admission order.
+    segments: EncodedArtifact,
+    /// The admission positions of the abstract types among them.
+    atoms: Vec<MintedAtom>,
+    /// How many declarations lead.
+    count: usize,
+    /// What their encoding assigned, shared by every encoding resumed after it.
+    assigned: Arc<Assigned>,
+}
+
+impl EncodedPrefix
+{
+    /// The admission position the first declaration after the prefix takes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn end(&self) -> ConstantIndex
+    {
+        ConstantIndex::from(self.count)
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a sequence's leading declarations have no encoding to resume.
+    pub mod encoded_prefix {
+        /// The reason no prefix is encoded.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// An abstract type among them is sealed to the end of the
+            /// sequence, so its segment depends on what follows.
+            OpenSeal,
+        }
+    }
+}
+
+/// The encoding of `declarations`, the leading declarations of a sequence over
+/// `arena`, for [`encode_after`] to resume.
+///
+/// # Specification
+/// - requires: as [`encode`].
+/// - ensures: absent as [`encoded_prefix::Absent::OpenSeal`] when an abstract
+///   type among `declarations` has an open seal; otherwise the segments
+///   [`encode`] writes for `declarations` after its header, ending at
+///   `declarations`' length, and the interner those segments left.
+/// - provides: what an editor's admission encodes once for a document's import
+///   closure, so that each revision of the document encodes its own
+///   declarations alone.
+/// - fails: never within [`encode`]'s domain.
+/// - panics: none within that domain.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every split of mixed and shared sequences, resumed after
+///   its prefix, writes the whole encoding's bytes; a prefix with an open seal
+///   is refused.
+/// - witness: `encode::tests::an_encoding_resumed_after_its_prefix_writes_the_whole_encoding_776`
+/// - witness: `encode::tests::a_prefix_with_an_open_seal_is_not_encoded_776`
+#[inline]
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(ref prefix) => usize::from(prefix.end()) == declarations.len()
+        && prefix.atoms == minted_atoms(declarations),
+    Maybe::Absent(encoded_prefix::Absent::OpenSeal) => declarations.iter().any(|marked| matches!(
+        *marked.declaration().content(),
+        DeclarationContent::AbstractType { scope: SealScope::Open, .. }
+    )),
+})]
+pub fn encode_prefix(
+    arena: &TermArena,
+    declarations: &[MarkedDeclaration],
+) -> Maybe<EncodedPrefix, encoded_prefix::Absent>
+{
+    if declarations.iter().any(|marked| {
+        matches!(
+            *marked.declaration().content(),
+            DeclarationContent::AbstractType {
+                scope: SealScope::Open,
+                ..
+            }
+        )
+    }) {
+        return Maybe::Absent(encoded_prefix::Absent::OpenSeal);
+    }
+    let mut segments = EncodedArtifact::new();
+    let mut interner = Interner::new();
+    for declaration in declarations {
+        // No seal is open, so no segment reads how many declarations follow.
+        encode_declaration(
+            &mut segments,
+            arena,
+            &mut interner,
+            declaration,
+            SealExtent::from(0_usize),
+        );
+    }
+    Maybe::Present(EncodedPrefix {
+        segments,
+        atoms: minted_atoms(declarations),
+        count: declarations.len(),
+        assigned: Arc::new(interner.freeze()),
+    })
+}
+
+/// [`encode`] of the sequence `prefix`'s declarations lead and `after`
+/// follows, writing `prefix`'s segments as they were encoded and encoding
+/// `after`'s alone.
+///
+/// # Specification
+/// - requires: `prefix` was encoded by [`encode_prefix`] over an arena whose
+///   nodes `arena` holds at the same ids, and `after` follows the declarations
+///   it encoded; the sequence is in [`encode`]'s domain.
+/// - ensures: [`encode`]'s bytes for the whole sequence: its header, then
+///   `prefix`'s segments, then `after`'s.
+/// - provides: an encoding whose cost is `after`'s, and a copy of `prefix`'s
+///   bytes.
+/// - fails: never within [`encode`]'s domain.
+/// - panics: none within that domain.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every split of mixed and shared sequences, resumed after
+///   its prefix, writes the whole encoding's bytes.
+/// - witness: `encode::tests::an_encoding_resumed_after_its_prefix_writes_the_whole_encoding_776`
+#[inline]
+#[must_use]
+#[spec(ensures: |ret| ret.as_image().as_ref().starts_with(tags::MAGIC.as_slice())
+    && ret.as_image().as_ref().len() > prefix.segments.as_image().as_ref().len())]
+pub fn encode_after(
+    prefix: &EncodedPrefix,
+    arena: &TermArena,
+    after: &[MarkedDeclaration],
+) -> EncodedArtifact
+{
+    let mut out = EncodedArtifact::new();
+    out.put_image(ArtifactImage::from(tags::MAGIC.as_slice()));
+    out.put_version(tags::FORMAT_VERSION);
+    let minted = minted_atoms(after);
+    out.put_uvarint(WireU64::from(WireUsize::from(
+        prefix.atoms.len().saturating_add(minted.len()),
+    )));
+    for atom in &prefix.atoms {
+        out.put_uvarint(WireU64::from(WireUsize::from(usize::from(*atom))));
+    }
+    for atom in minted {
+        out.put_uvarint(WireU64::from(WireUsize::from(
+            prefix.count.saturating_add(usize::from(atom)),
+        )));
+    }
+    out.put_uvarint(WireU64::from(WireUsize::from(
+        prefix.count.saturating_add(after.len()),
+    )));
+    out.put_image(prefix.segments.as_image());
+    let mut interner = Interner::after(Arc::clone(&prefix.assigned));
+    for (position, declaration) in after.iter().enumerate() {
+        let remaining = SealExtent::from(after.len().saturating_sub(position).saturating_sub(1));
         encode_declaration(&mut out, arena, &mut interner, declaration, remaining);
     }
     out
@@ -412,9 +720,9 @@ fn encode_minted_atom_table(
         let bytes = image.as_ref();
         bytes.get(entry.0).copied() == Some(u8::from(match marked.mark() { AdmissionMark::Checked => tags::ADMISSION_CHECKED, AdmissionMark::UncheckedBypass => tags::ADMISSION_UNCHECKED }))
             && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { ref indices, .. } if !indices.is_empty() => tags::KIND_DATA_INDEXED, DeclarationContent::Data { .. } if marked.declaration().presentation().cells().is_some() => tags::KIND_DATA_WORDS, DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Codata { .. } => tags::KIND_CODATA, DeclarationContent::Def { .. } if !marked.declaration().operation_rules().rules().is_empty() => tags::KIND_DEF_RULED, DeclarationContent::Def { .. } if !marked.declaration().laws().is_empty() => tags::KIND_DEF_LAWFUL, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { interface: Maybe::Present(ref interface), .. } if matches!(interface.law(), Maybe::Present(_)) => tags::KIND_ABSTRACT_LAWFUL, DeclarationContent::AbstractType { interface: Maybe::Present(_), .. } => tags::KIND_ABSTRACT_INTERFACED, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
-            && interner.by_node.contains_key(&AnyNode::ValueType(marked.declaration().declared_id()))
-            && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => interner.by_node.contains_key(&AnyNode::Value(body)), DeclarationContent::Codata { ref observations, .. } => observations.iter().all(|id| interner.by_node.contains_key(&AnyNode::CompType(*id))), DeclarationContent::AbstractType { interface: Maybe::Present(interface), .. } => interner.by_node.contains_key(&AnyNode::Value(interface.relation())) && interner.by_node.contains_key(&AnyNode::Value(interface.reflexivity())) && match interface.law() { Maybe::Present(law) => interner.by_node.contains_key(&AnyNode::Value(law)), Maybe::Absent(_) => true }, DeclarationContent::Data { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true }
-            && marked.declaration().related().iter().all(|related| interner.by_node.contains_key(&AnyNode::Value(related.left)) && interner.by_node.contains_key(&AnyNode::Value(related.right)))
+            && interner.node(AnyNode::ValueType(marked.declaration().declared_id())).is_some()
+            && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => interner.node(AnyNode::Value(body)).is_some(), DeclarationContent::Codata { ref observations, .. } => observations.iter().all(|id| interner.node(AnyNode::CompType(*id)).is_some()), DeclarationContent::AbstractType { interface: Maybe::Present(interface), .. } => interner.node(AnyNode::Value(interface.relation())).is_some() && interner.node(AnyNode::Value(interface.reflexivity())).is_some() && match interface.law() { Maybe::Present(law) => interner.node(AnyNode::Value(law)).is_some(), Maybe::Absent(_) => true }, DeclarationContent::Data { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true }
+            && marked.declaration().related().iter().all(|related| interner.node(AnyNode::Value(related.left)).is_some() && interner.node(AnyNode::Value(related.right)).is_some())
             && interner.by_content.len() >= entry.1
             && u32::from(interner.next) == u32::from(entry.2).saturating_add(u32::try_from(interner.by_content.len().saturating_sub(entry.1)).unwrap_or(u32::MAX)) },
 )]
@@ -942,8 +1250,8 @@ fn encode_sealing_provenance(
 /// - witness: `tests::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
 #[spec(requires: match root { AnyNode::ValueType(id) => arena.value_type(id).is_some(), AnyNode::CompType(id) => arena.comp_type(id).is_some(), AnyNode::Value(id) => arena.value(id).is_some(), AnyNode::Computation(id) => arena.computation(id).is_some() },
 
-    captures: entry = (interner.by_node.get(&root).copied(), interner.by_node.len(), interner.by_content.len(), segment.len(), interner.next),
-    ensures: |ret| interner.by_node.get(&root) == Some(&ret)
+    captures: entry = (interner.node(root), interner.by_node.len(), interner.by_content.len(), segment.len(), interner.next),
+    ensures: |ret| interner.node(root) == Some(ret)
             && interner.by_node.len() >= entry.1
             && interner.by_content.len() >= entry.2
             && segment.len() == entry.3.saturating_add(interner.by_content.len().saturating_sub(entry.2))
@@ -965,14 +1273,14 @@ fn intern(
     // The children's indices of the node being written, refilled per node.
     let mut child_globals: Vec<GlobalIndex> = Vec::new();
     while let Some((node, cursor)) = stack.pop() {
-        if interner.by_node.contains_key(&node) {
+        if interner.node(node).is_some() {
             continue;
         }
         let children = arena.children_of(node);
         let mut next = cursor;
         let mut descended = false;
         while let Some(&child) = children.get(next) {
-            if interner.by_node.contains_key(&child) {
+            if interner.node(child).is_some() {
                 next = next.saturating_add(1);
             }
             else {
@@ -990,24 +1298,18 @@ fn intern(
         if let AnyNode::ValueType(id) = node
             && let Some(&ValueType::Staged { base, .. }) = arena.value_type(id)
         {
-            let global = interner
-                .by_node
-                .get(&AnyNode::ValueType(base))
-                .copied()
-                .unwrap_or_else(GlobalIndex::default);
+            let global = interner.node(AnyNode::ValueType(base)).unwrap_or_default();
             let _prior = interner.by_node.insert(node, global);
             continue;
         }
         child_globals.clear();
-        child_globals.extend(children.iter().map(|child| {
-            interner
-                .by_node
-                .get(child)
-                .copied()
-                .unwrap_or_else(GlobalIndex::default)
-        }));
+        child_globals.extend(
+            children
+                .iter()
+                .map(|&child| interner.node(child).unwrap_or_default()),
+        );
         let encoded = encode_entry(arena, node, &child_globals);
-        let deduplicated = interner.by_content.get(&encoded).copied();
+        let deduplicated = interner.content(&encoded);
         let global = if let Some(global) = deduplicated {
             global
         }
@@ -1020,11 +1322,7 @@ fn intern(
         };
         let _prior = interner.by_node.insert(node, global);
     }
-    interner
-        .by_node
-        .get(&root)
-        .copied()
-        .unwrap_or_else(GlobalIndex::default)
+    interner.node(root).unwrap_or_default()
 }
 
 /// Write one subterm-table entry: its node tag, its inline payload, then its
@@ -3261,5 +3559,105 @@ mod tests
             bytes.extend(expected);
             assert_eq!(out.as_image().as_ref(), bytes.as_slice());
         }
+    }
+
+    #[test]
+    fn an_encoding_resumed_after_its_prefix_writes_the_whole_encoding_776()
+    {
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let universe = builder
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let integer = builder.arena().value_type_base(BaseType::Integer);
+        let atom = builder.abstract_type(
+            LevelSignature::monomorphic(),
+            universe,
+            integer,
+            super::SealScope::Closed(super::SealExtent::from(2_usize)),
+        );
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let abstract_type = builder
+            .arena()
+            .value_type_abstract(ConstantIndex::from(0_usize));
+        let quote = builder.arena().value_quote(abstract_type);
+        let definition = builder
+            .def(LevelSignature::monomorphic(), universe, quote)
+            .named(StructuredName::from(alloc::vec![
+                NameSegment::from_text(String::from("a")).expect("segment"),
+            ]));
+        let axiom =
+            DeclarationBuilder::new(&mut arena).axiom(LevelSignature::monomorphic(), abstract_type);
+        let leading = [
+            MarkedDeclaration::new(AdmissionMark::Checked, atom),
+            MarkedDeclaration::new(AdmissionMark::UncheckedBypass, definition),
+            MarkedDeclaration::new(AdmissionMark::Checked, axiom),
+        ];
+        let prefixes: Vec<_> = (0 ..= leading.len())
+            .map(|split| {
+                match super::encode_prefix(&arena, leading.get(.. split).expect("a split")) {
+                    super::Maybe::Present(prefix) => prefix,
+                    super::Maybe::Absent(absent) => panic!("no seal is open: {absent:?}"),
+                }
+            })
+            .collect();
+        // Built after the prefixes were encoded, as an editor's admission
+        // builds a document's declarations after its closure's: one body is
+        // the leading definition's own node, one is built anew to the same
+        // content, and the last atom's seal is open to the end.
+        let shared =
+            DeclarationBuilder::new(&mut arena).def(LevelSignature::monomorphic(), universe, quote);
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let rebuilt_type = builder
+            .arena()
+            .value_type_abstract(ConstantIndex::from(0_usize));
+        let rebuilt = builder.arena().value_quote(rebuilt_type);
+        let anew = builder.def(LevelSignature::monomorphic(), universe, rebuilt);
+        let open = DeclarationBuilder::new(&mut arena).abstract_type(
+            LevelSignature::monomorphic(),
+            universe,
+            integer,
+            super::SealScope::Open,
+        );
+        let whole: Vec<_> = leading
+            .iter()
+            .cloned()
+            .chain([
+                MarkedDeclaration::new(AdmissionMark::Checked, shared),
+                MarkedDeclaration::new(AdmissionMark::Checked, anew),
+                MarkedDeclaration::new(AdmissionMark::Checked, open),
+            ])
+            .collect();
+        let expected = super::encode(&arena, &whole);
+        for prefix in &prefixes {
+            let end = usize::from(prefix.end());
+            assert_eq!(
+                super::encode_after(prefix, &arena, whole.get(end ..).expect("a split")),
+                expected,
+                "resumed after {end} declarations"
+            );
+        }
+    }
+
+    #[test]
+    fn a_prefix_with_an_open_seal_is_not_encoded_776()
+    {
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let universe = builder
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let integer = builder.arena().value_type_base(BaseType::Integer);
+        let open = builder.abstract_type(
+            LevelSignature::monomorphic(),
+            universe,
+            integer,
+            super::SealScope::Open,
+        );
+        let leading = [MarkedDeclaration::new(AdmissionMark::Checked, open)];
+        assert!(matches!(
+            super::encode_prefix(&arena, &leading),
+            super::Maybe::Absent(super::encoded_prefix::Absent::OpenSeal)
+        ));
     }
 }

@@ -21,7 +21,7 @@ Kernel artifacts on the authenticated record plane: one record per declaration s
 
 ## Provided features
 
-- `ArtifactRecordSet`: `from_artifact` cuts a kernel artifact at the decoder's segment boundaries; `from_records` builds a set from records in any order and refuses a repeated admission index; `from_stored` reads a stored tree's records back and refuses a misplaced key; `record_refs`, `reassemble` and `ensure_cut_at` give the tree input, the image and the boundary check.
+- `ArtifactRecordSet`: `from_artifact` cuts a kernel artifact at the decoder's segment boundaries, and `from_artifact_keeping` and `from_artifact_after` cut it through a decode resumed after a kept prefix; `from_records` builds a set from records in any order and refuses a repeated admission index; `from_stored` reads a stored tree's records back and refuses a misplaced key; `record_refs`, `reassemble` and `ensure_cut_at` give the tree input, the image and the boundary check.
 - `ArtifactRecord`, `AdmissionKey`, `SegmentBytes`, `ReassembledArtifact` and `HEADER_KEY`: one declaration record, its fixed-width big-endian key, the segment bytes, the reassembled image and the header's key.
 - `build`: the commit path, writing the record tree into a `BlockStore` and returning its `ArtifactManifest`.
 - `ArtifactManifest`: `encode`, `decode` and `identity` give a manifest one byte image under `MANIFEST_DOMAIN` and one `ArtifactIdentity` over it; `read_under` reads the artifact back through the kernel's decoder.

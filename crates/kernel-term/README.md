@@ -29,7 +29,7 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 
 - **A flat arena in four typed id families** (`ValueId`, `ComputationId`, `ValueTypeId`, `CompTypeId`) where a node's children are `Copy` ids, minted only by constructors over already-allocated children.
 - **The admission watermark** (`ArenaWatermark`) and `DeclarationBuilder`, which ties content minting to it so an abandoned declaration truncates itself.
-- **The unified subterm table**: `encode` and `decode` over `EncodedArtifact` and `ArtifactImage`, with `DecodedArtifact` holding the arena and its `MarkedDeclaration` sequence, and `SegmentLayout` reporting each declaration segment's boundaries.
+- **The unified subterm table**: `encode` and `decode` over `EncodedArtifact` and `ArtifactImage`, with `DecodedArtifact` holding the arena and its `MarkedDeclaration` sequence, and `SegmentLayout` reporting each declaration segment's boundaries. `encode_prefix` and `encode_after` resume an encoding after a leading run of declarations (`EncodedPrefix`), and `decode_keeping` and `decode_after` a decode (`DecodedPrefix`), each answering as the whole one does.
 - **Structured names** (`StructuredName`, `NameSegment`) on every declaration.
 - **Canonical form enforced by re-encoding**, and **the amplification defence**: `MAX_TABLE_ENTRIES`, `MAX_EXPANDED_TERM_WORK`, `MAX_ARTIFACT_EXPANDED_WORK` and `MAX_DECODED_LEVEL_OFFSET`, with `DecodeMetrics` from the same scan.
 - **The node-tag table** (`NODE_TAG_TABLE`): one row per frozen tag, giving its child arity, its token bound and its two storage-boundary verdicts.

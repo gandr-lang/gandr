@@ -52,6 +52,7 @@ use proptest::prelude::Strategy;
 use proptest::prop_assert_eq;
 use proptest::prop_oneof;
 use proptest::proptest;
+use quenchant_shape::shape::Maybe;
 
 /// One declaration a generated environment holds.
 #[derive(Clone, Copy, Debug)]
@@ -381,6 +382,41 @@ fn records_round_trip_to_a_byte_identical_artifact()
         manifest.record_count(),
         "the manifest counts the header and the four declarations"
     );
+}
+
+/// #776: the set cut by a decode resumed after a kept prefix is the set cut
+/// whole, at every split of an artifact, and for an artifact that does not
+/// lead with the prefix.
+#[test]
+fn a_set_cut_after_a_kept_prefix_is_the_whole_cut_776()
+{
+    let artifact = long_artifact(Count(9));
+    let whole = records_of(&artifact);
+    let other = shared_artifact();
+    for split in 0 ..= 9_usize {
+        let (kept, prefix) = ArtifactRecordSet::from_artifact_keeping(
+            artifact.as_image(),
+            ConstantIndex::from(split),
+        )
+        .expect("the artifact decodes");
+        assert_eq!(kept, whole, "the keeping cut is the whole one");
+        let Maybe::Present(prefix) = prefix
+        else {
+            panic!("the first {split} declarations are kept");
+        };
+        assert_eq!(
+            ArtifactRecordSet::from_artifact_after(&prefix, artifact.as_image())
+                .expect("the artifact decodes"),
+            whole,
+            "resumed after {split}"
+        );
+        assert_eq!(
+            ArtifactRecordSet::from_artifact_after(&prefix, other.as_image())
+                .expect("the other artifact decodes"),
+            records_of(&other),
+            "another artifact, after {split}"
+        );
+    }
 }
 
 #[test]

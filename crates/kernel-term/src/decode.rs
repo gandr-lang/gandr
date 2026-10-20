@@ -76,7 +76,10 @@ use crate::decl::NameSegment;
 use crate::decl::SealExtent;
 use crate::decl::SealScope;
 use crate::decl::StructuredName;
+use crate::encode::EncodedPrefix;
 use crate::encode::encode;
+use crate::encode::encode_after;
+use crate::encode::encode_prefix;
 use crate::encode::minted_atoms;
 use crate::error::DecodeError;
 use crate::error::MalformedSite;
@@ -165,6 +168,7 @@ enum DecodedNode
 ///   resolved ids rather than assuming global indices equal arena ordinals.
 /// - witness: `decode::tests::reference_families_preserve_order_and_failure_precedence`
 /// - witness: `decode::tests::decoded_entries_preserve_every_former_and_child_position`
+#[derive(Clone, Debug)]
 struct Table
 {
     /// The arena every entry mints into, sharing retained.
@@ -562,6 +566,56 @@ impl DecodedArtifact
             .unwrap_or(artifact.segments.header_end) == image.length()))]
 pub fn decode(image: ArtifactImage<'_>) -> Result<DecodedArtifact, DecodeError>
 {
+    decode_splitting(image, None).map(|(artifact, _)| artifact)
+}
+
+/// What a decode kept of the table its first declarations filled.
+///
+/// # Specification
+/// - requires: constructed by [`decode_splitting`].
+/// - ensures: the table as the leading declarations left it, its entries'
+///   expanded work, and the largest and summed expanded work of their roots.
+/// - panics: none.
+/// - executable: none — a carrier set only by [`decode_splitting`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`decode_after`].
+/// - witness: `decode::tests::a_decode_resumed_after_its_prefix_answers_as_a_whole_one_776`
+struct Kept
+{
+    /// The table once the leading segments were decoded.
+    table: Table,
+    /// Each of its entries' expanded work.
+    expanded: Vec<ExpandedWork>,
+    /// The largest expanded work of a leading declaration's root.
+    largest: ExpandedWork,
+    /// The saturating sum of the leading declarations' roots' expanded work.
+    total: ExpandedWork,
+}
+
+/// [`decode`], keeping the table its first `keep` declarations filled when it
+/// holds that many.
+///
+/// # Specification
+/// - requires: nothing; image may be arbitrary or adversarial.
+/// - ensures: [`decode`]'s answer; on success, what decoding the first `keep`
+///   declarations left when `keep` is present and the artifact holds that many.
+/// - fails: as [`decode`].
+/// - panics: none.
+///
+/// # Errors
+/// Any [`DecodeError`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`decode`] and [`decode_after`].
+/// - witness: `decode::tests::a_decode_resumed_after_its_prefix_answers_as_a_whole_one_776`
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|&(ref artifact, ref kept)| (keep.is_some() || kept.is_none())
+    && artifact.segments.declaration_ends.len() == artifact.declarations.len()))]
+fn decode_splitting(
+    image: ArtifactImage<'_>,
+    keep: Option<ConstantIndex>,
+) -> Result<(DecodedArtifact, Option<Kept>), DecodeError>
+{
     let mut reader = ByteReader::new(image);
     reader.expect_magic()?;
     reader.expect_version()?;
@@ -571,8 +625,15 @@ pub fn decode(image: ArtifactImage<'_>) -> Result<DecodedArtifact, DecodeError>
     let mut table = Table::new();
     let mut metas: Vec<DeclMeta> = Vec::new();
     let mut declaration_ends: Vec<ByteOffset> = Vec::new();
+    let mut snapshot = None;
     let mut remaining = u64::from(count);
-    while remaining > 0_u64 {
+    loop {
+        if snapshot.is_none() && keep.is_some_and(|end| usize::from(end) == metas.len()) {
+            snapshot = Some(table.clone());
+        }
+        if remaining == 0_u64 {
+            break;
+        }
         let meta = decode_declaration(&mut reader, &mut table)?;
         metas.push(meta);
         declaration_ends.push(reader.position);
@@ -585,9 +646,305 @@ pub fn decode(image: ArtifactImage<'_>) -> Result<DecodedArtifact, DecodeError>
     }
     let metrics = budget_report(&table, &metas);
     check_budget(metrics)?;
-    let declarations = build_declarations(&mut table, &mut metas)?;
+    let kept = snapshot.map(|leading| {
+        let mut expanded = Vec::with_capacity(leading.children.len());
+        extend_expanded(&leading.children, &mut expanded);
+        let roots = keep.map_or(0_usize, usize::from);
+        let (largest, total) = root_work(&expanded, metas.get(.. roots).unwrap_or_default());
+        Kept {
+            table: leading,
+            expanded,
+            largest,
+            total,
+        }
+    });
+    let end = ConstantIndex::from(metas.len());
+    let declarations =
+        build_declarations(&mut table, &mut metas, (ConstantIndex::from(0_usize), end))?;
     check_minted_atom_table(&declared_atoms, &declarations)?;
     if encode(&table.arena, &declarations).as_image() != image {
+        return Err(DecodeError::Malformed {
+            site: MalformedSite::NonCanonical,
+        });
+    }
+    Ok((
+        DecodedArtifact {
+            arena: table.arena,
+            declarations,
+            metrics,
+            segments: SegmentLayout {
+                header_end,
+                declaration_ends,
+            },
+        },
+        kept,
+    ))
+}
+
+/// What decoding an artifact's leading declarations left, which a decode of an
+/// artifact leading with the same segments resumes.
+///
+/// # Specification
+/// - requires: constructed by [`decode_keeping`].
+/// - ensures: the leading declarations' segments as read and where each ended,
+///   the table they filled with each entry's expanded work and their roots'
+///   largest and summed work, the declarations they built, the fewest
+///   declarations an artifact holds for their seals' extents to fit, and their
+///   encoding over the table's arena.
+/// - panics: none.
+/// - executable: none — the fields are private and set only by
+///   [`decode_keeping`], whose specification states them.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`decode_after`].
+/// - witness: `decode::tests::a_decode_resumed_after_its_prefix_answers_as_a_whole_one_776`
+#[derive(Clone, Debug)]
+pub struct DecodedPrefix
+{
+    /// The leading segments' bytes.
+    segments: Vec<u8>,
+    /// Where each leading segment ends, counted from the first one's start.
+    ends: Vec<ByteOffset>,
+    /// What decoding them kept of the table.
+    table: Table,
+    /// Each of the table's entries' expanded work.
+    expanded: Vec<ExpandedWork>,
+    /// The largest expanded work of a leading declaration's root.
+    largest: ExpandedWork,
+    /// The saturating sum of the leading declarations' roots' expanded work.
+    total: ExpandedWork,
+    /// The leading declarations, as built.
+    declarations: Vec<MarkedDeclaration>,
+    /// The fewest declarations an artifact holds for every leading seal's
+    /// extent to fit.
+    sealed_through: usize,
+    /// The leading declarations encoded over the table's arena.
+    encoded: EncodedPrefix,
+}
+
+impl DecodedPrefix
+{
+    /// How many declarations lead.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn end(&self) -> ConstantIndex
+    {
+        ConstantIndex::from(self.declarations.len())
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a decode kept no prefix of the artifact it decoded.
+    pub mod decoded_prefix {
+        /// The reason no prefix is kept.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The artifact holds fewer declarations than the prefix asked for.
+            Short,
+            /// The leading declarations have no encoding to resume.
+            Unencoded,
+        }
+    }
+}
+
+/// [`decode`] of `image`, keeping what decoding its first `end` declarations
+/// left for [`decode_after`] to resume.
+///
+/// # Specification
+/// - requires: nothing; image may be arbitrary or adversarial.
+/// - ensures: [`decode`]'s answer. On success, absent as
+///   [`decoded_prefix::Absent::Short`] when the artifact holds fewer than `end`
+///   declarations, and as [`decoded_prefix::Absent::Unencoded`] when the
+///   encoder keeps no encoding of them; otherwise the prefix of the first `end`
+///   declarations.
+/// - provides: what a commit of an editor's export decodes once for its import
+///   closure, so that each later commit decodes the document's segments alone.
+/// - fails: as [`decode`].
+/// - panics: none.
+///
+/// # Errors
+/// Any [`DecodeError`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a decode resumed after a kept prefix answers, artifact or
+///   refusal, as a whole decode does.
+/// - witness: `decode::tests::a_decode_resumed_after_its_prefix_answers_as_a_whole_one_776`
+#[inline]
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|&(ref artifact, ref prefix)| match *prefix {
+    Maybe::Present(ref prefix) => prefix.end() == end
+        && prefix.declarations.as_slice() == artifact.declarations.get(.. usize::from(end)).unwrap_or_default(),
+    Maybe::Absent(decoded_prefix::Absent::Short) => artifact.declarations.len() < usize::from(end),
+    Maybe::Absent(decoded_prefix::Absent::Unencoded) => true,
+}))]
+pub fn decode_keeping(
+    image: ArtifactImage<'_>,
+    end: ConstantIndex,
+) -> Result<
+    (
+        DecodedArtifact,
+        Maybe<DecodedPrefix, decoded_prefix::Absent>,
+    ),
+    DecodeError,
+>
+{
+    let (artifact, kept) = decode_splitting(image, Some(end))?;
+    let leading = usize::from(end);
+    let (Some(kept), Some(declarations), Some(ends)) = (
+        kept,
+        artifact.declarations.get(.. leading),
+        artifact.segments.declaration_ends.get(.. leading),
+    )
+    else {
+        return Ok((artifact, Maybe::Absent(decoded_prefix::Absent::Short)));
+    };
+    let Maybe::Present(encoded) = encode_prefix(&kept.table.arena, declarations)
+    else {
+        return Ok((artifact, Maybe::Absent(decoded_prefix::Absent::Unencoded)));
+    };
+    let header_end = usize::from(artifact.segments.header_end);
+    let segments_end = ends.last().map_or(header_end, |&last| usize::from(last));
+    let sealed_through = declarations
+        .iter()
+        .enumerate()
+        .filter_map(|(position, marked)| {
+            if let DeclarationContent::AbstractType {
+                scope: SealScope::Closed(extent),
+                ..
+            } = *marked.declaration().content()
+            {
+                Some(
+                    position
+                        .saturating_add(1)
+                        .saturating_add(usize::from(extent)),
+                )
+            }
+            else {
+                None
+            }
+        })
+        .max()
+        .unwrap_or(0_usize);
+    let prefix = DecodedPrefix {
+        segments: image
+            .as_ref()
+            .get(header_end .. segments_end)
+            .unwrap_or_default()
+            .to_vec(),
+        ends: ends
+            .iter()
+            .map(|&end| ByteOffset::from(usize::from(end).saturating_sub(header_end)))
+            .collect(),
+        table: kept.table,
+        expanded: kept.expanded,
+        largest: kept.largest,
+        total: kept.total,
+        declarations: declarations.to_vec(),
+        sealed_through,
+        encoded,
+    };
+    Ok((artifact, Maybe::Present(prefix)))
+}
+
+/// [`decode`] of `image`, resuming after `prefix` when `image`'s declaration
+/// segments lead with `prefix`'s.
+///
+/// # Specification
+/// - requires: nothing; image may be arbitrary or adversarial, and `prefix` was
+///   kept by [`decode_keeping`].
+/// - ensures: [`decode`]'s answer for `image`, artifact or refusal. When the
+///   image holds at least `prefix`'s declarations and its segments begin with
+///   `prefix`'s bytes, only the segments after them are decoded, budgeted,
+///   built and encoded again; otherwise the whole image is decoded.
+/// - provides: a commit of an editor's export whose cost is the document's
+///   segments, and a copy of the import closure's decoded state.
+/// - fails: as [`decode`].
+/// - panics: none.
+///
+/// # Errors
+/// Any [`DecodeError`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a decode resumed after a kept prefix answers, artifact or
+///   refusal, as a whole decode does: for every split of a mixed and shared
+///   artifact, an artifact that does not lead with the prefix, a short one, a
+///   prefix seal reaching past a shorter artifact, and a non-canonical suffix.
+/// - witness: `decode::tests::a_decode_resumed_after_its_prefix_answers_as_a_whole_one_776`
+#[inline]
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|artifact|
+    artifact.segments.declaration_ends.len() == artifact.declarations.len()
+        && artifact.segments.declaration_ends.last().copied()
+            .unwrap_or(artifact.segments.header_end) == image.length()))]
+pub fn decode_after(
+    prefix: &DecodedPrefix,
+    image: ArtifactImage<'_>,
+) -> Result<DecodedArtifact, DecodeError>
+{
+    let mut reader = ByteReader::new(image);
+    reader.expect_magic()?;
+    reader.expect_version()?;
+    let declared_atoms = reader.read_minted_atom_table()?;
+    let count = reader.read_uvarint()?;
+    let header_end = reader.position;
+    let leading = prefix.declarations.len();
+    let total = usize::try_from(u64::from(count)).unwrap_or(usize::MAX);
+    let resumes = total >= leading
+        && image
+            .as_ref()
+            .get(usize::from(header_end) ..)
+            .is_some_and(|rest| rest.starts_with(&prefix.segments));
+    if !resumes {
+        return decode(image);
+    }
+    let mut table = prefix.table.clone();
+    reader.position =
+        ByteOffset::from(usize::from(header_end).saturating_add(prefix.segments.len()));
+    let mut declaration_ends: Vec<ByteOffset> = prefix
+        .ends
+        .iter()
+        .map(|&end| ByteOffset::from(usize::from(header_end).saturating_add(usize::from(end))))
+        .collect();
+    let mut metas: Vec<DeclMeta> = Vec::new();
+    for _ in leading .. total {
+        let meta = decode_declaration(&mut reader, &mut table)?;
+        metas.push(meta);
+        declaration_ends.push(reader.position);
+    }
+    if reader.position < image.length() {
+        return Err(DecodeError::Malformed {
+            site: MalformedSite::TrailingBytes,
+        });
+    }
+    let mut expanded = prefix.expanded.clone();
+    extend_expanded(&table.children, &mut expanded);
+    let (largest, sum) = root_work(&expanded, &metas);
+    let metrics = DecodeMetrics::new(
+        TableEntryCount::from(table.nodes.len()),
+        prefix.largest.max(largest),
+        prefix.total.saturating_add(sum),
+    );
+    check_budget(metrics)?;
+    if total < prefix.sealed_through {
+        return Err(DecodeError::Malformed {
+            site: MalformedSite::SealExtent,
+        });
+    }
+    let after = build_declarations(
+        &mut table,
+        &mut metas,
+        (ConstantIndex::from(leading), ConstantIndex::from(total)),
+    )?;
+    let mut declarations = prefix.declarations.clone();
+    declarations.extend(after);
+    check_minted_atom_table(&declared_atoms, &declarations)?;
+    let encoded = encode_after(
+        &prefix.encoded,
+        &table.arena,
+        declarations.get(leading ..).unwrap_or_default(),
+    );
+    if encoded.as_image() != image {
         return Err(DecodeError::Malformed {
             site: MalformedSite::NonCanonical,
         });
@@ -642,7 +999,40 @@ fn budget_report(
 ) -> DecodeMetrics
 {
     let mut expanded: Vec<ExpandedWork> = Vec::with_capacity(table.children.len());
-    for child_globals in &table.children {
+    extend_expanded(&table.children, &mut expanded);
+    let (largest, total) = root_work(&expanded, metas);
+    DecodeMetrics::new(TableEntryCount::from(table.nodes.len()), largest, total)
+}
+
+/// Extend `expanded`, the expanded work of the first entries of a table whose
+/// entries' children are `children`, to every entry.
+///
+/// # Specification
+/// - requires: `expanded` holds the expanded work of `children`'s first
+///   entries, and every entry's children are strictly earlier.
+/// - ensures: one expanded work per entry: one more than the saturating sum of
+///   its children's, an index that resolves to no entry counting the saturated
+///   ceiling.
+/// - provides: [`budget_report`]'s scan, and its resumption after a decoded
+///   prefix.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 compares a small topological graph with explicit path
+///   expansion rather than the memoized recurrence.
+/// - witness: `decode::tests::budget_scan_matches_explicit_expansion_and_saturating_boundaries`
+/// - witness: `decode::tests::a_decode_resumed_after_its_prefix_answers_as_a_whole_one_776`
+#[spec(
+    requires: expanded.len() <= children.len(),
+    ensures: expanded.len() == children.len(),
+)]
+fn extend_expanded(
+    children: &[Vec<GlobalIndex>],
+    expanded: &mut Vec<ExpandedWork>,
+)
+{
+    for child_globals in children.get(expanded.len() ..).unwrap_or_default() {
         let mut size = ExpandedWork::ONE;
         for &child in child_globals {
             let child_size = expanded
@@ -653,6 +1043,31 @@ fn budget_report(
         }
         expanded.push(size);
     }
+}
+
+/// The largest and the saturating sum of the expanded work of `metas`' roots.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the largest expanded work over every root of every declaration,
+///   and the saturating sum of them all; a root that resolves to no entry
+///   counts the saturated ceiling.
+/// - provides: [`budget_report`]'s root scan, and its resumption after a
+///   decoded prefix.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 checks repeated roots, missing roots and saturating
+///   diamonds.
+/// - witness: `decode::tests::budget_scan_matches_explicit_expansion_and_saturating_boundaries`
+/// - witness: `decode::tests::a_decode_resumed_after_its_prefix_answers_as_a_whole_one_776`
+#[spec(ensures: |ret| ret.0 <= ret.1)]
+fn root_work(
+    expanded: &[ExpandedWork],
+    metas: &[DeclMeta],
+) -> (ExpandedWork, ExpandedWork)
+{
     let size_of = |global: GlobalIndex| -> ExpandedWork {
         expanded
             .get(global.offset().0)
@@ -680,7 +1095,7 @@ fn budget_report(
             total = total.saturating_add(size);
         }
     }
-    DecodeMetrics::new(TableEntryCount::from(table.nodes.len()), largest, total)
+    (largest, total)
 }
 
 /// Refuse an artifact whose expanded work exceeds either work budget.
@@ -888,7 +1303,8 @@ fn comp_type_id_at(
     }
 }
 
-/// Resolve each declaration's roots to arena ids and build the sequence.
+/// Resolve each declaration's roots to arena ids and build the sequence, the
+/// first at admission position `first` of an artifact of `end` declarations.
 ///
 /// # Specification
 /// - requires: declared roots and all Data schema roots resolve to live value
@@ -903,8 +1319,8 @@ fn comp_type_id_at(
 /// - provides: assembly from already validated references, not recovery of
 ///   malformed root metadata or proof of producer claims.
 /// - fails: `DecodeError::Malformed` at `MalformedSite::SealExtent` when an
-///   abstract type's extent reaches past the last declaration; never otherwise
-///   within the validated-root domain.
+///   abstract type's extent reaches past the artifact's last declaration; never
+///   otherwise within the validated-root domain.
 /// - panics: none within that domain.
 ///
 /// # Adequacy
@@ -988,11 +1404,12 @@ fn comp_type_id_at(
 fn build_declarations(
     table: &mut Table,
     metas: &mut [DeclMeta],
+    (first, end): (ConstantIndex, ConstantIndex),
 ) -> Result<Vec<MarkedDeclaration>, DecodeError>
 {
     let mut declarations = Vec::new();
-    let count = metas.len();
-    for (position, meta) in metas.iter_mut().enumerate() {
+    for (offset, meta) in metas.iter_mut().enumerate() {
+        let position = usize::from(first).saturating_add(offset);
         let declared =
             value_type_id_at(&table.nodes, meta.root_declared).ok_or(DecodeError::Malformed {
                 site: MalformedSite::Polarity,
@@ -1108,7 +1525,7 @@ fn build_declarations(
                     value_type_id_at(&table.nodes, root).ok_or(DecodeError::Malformed {
                         site: MalformedSite::Polarity,
                     })?;
-                let following = count.saturating_sub(position).saturating_sub(1);
+                let following = usize::from(end).saturating_sub(position).saturating_sub(1);
                 if usize::from(extent) > following {
                     return Err(DecodeError::Malformed {
                         site: MalformedSite::SealExtent,
@@ -5851,8 +6268,13 @@ mod tests
             },
         ];
         let arena_before = table.arena.clone();
-        let declarations =
-            super::build_declarations(&mut table, &mut metas).expect("validated declaration roots");
+        let end = super::ConstantIndex::from(metas.len());
+        let declarations = super::build_declarations(
+            &mut table,
+            &mut metas,
+            (super::ConstantIndex::from(0_usize), end),
+        )
+        .expect("validated declaration roots");
         assert_eq!(table.arena, arena_before);
         let expected = [
             super::DeclarationContent::Def { declared, body },
@@ -5910,8 +6332,15 @@ mod tests
                 .skip(1)
                 .all(|marked| marked.declaration().related().is_empty())
         );
-        let empty =
-            super::build_declarations(&mut table, &mut []).expect("empty declaration sequence");
+        let empty = super::build_declarations(
+            &mut table,
+            &mut [],
+            (
+                super::ConstantIndex::from(0_usize),
+                super::ConstantIndex::from(0_usize),
+            ),
+        )
+        .expect("empty declaration sequence");
         assert_eq!(empty, []);
         assert_eq!(table.arena, arena_before);
     }
@@ -6625,5 +7054,91 @@ mod tests
             crate::encode(decoded.arena(), decoded.declarations()),
             bytes
         );
+    }
+
+    /// #776: a decode resumed after a kept prefix answers, artifact or refusal,
+    /// as a whole decode does — at every split of a mixed and shared artifact,
+    /// for an artifact that ends inside a leading seal, and for the artifact
+    /// with any one byte changed, before the prefix's end or after it.
+    #[test]
+    fn a_decode_resumed_after_its_prefix_answers_as_a_whole_one_776()
+    {
+        use alloc::string::String;
+        use alloc::vec::Vec;
+
+        let mut arena = crate::TermArena::new();
+        let mut builder = crate::DeclarationBuilder::new(&mut arena);
+        let universe = builder
+            .arena()
+            .value_type_universe(crate::GroundSort::Value, gandr_kernel_strata::Level::zero());
+        let integer = builder.arena().value_type_base(crate::BaseType::Integer);
+        let atom = builder.abstract_type(
+            crate::LevelSignature::monomorphic(),
+            universe,
+            integer,
+            crate::SealScope::Closed(crate::decl::SealExtent::from(2_usize)),
+        );
+        let mut builder = crate::DeclarationBuilder::new(&mut arena);
+        let abstract_type = builder
+            .arena()
+            .value_type_abstract(crate::ConstantIndex::from(0_usize));
+        let quote = builder.arena().value_quote(abstract_type);
+        let definition = builder
+            .def(crate::LevelSignature::monomorphic(), universe, quote)
+            .named(crate::StructuredName::from(vec![
+                crate::NameSegment::from_text(String::from("a")).expect("segment"),
+            ]));
+        let axiom = crate::DeclarationBuilder::new(&mut arena)
+            .axiom(crate::LevelSignature::monomorphic(), abstract_type);
+        let shared = crate::DeclarationBuilder::new(&mut arena).def(
+            crate::LevelSignature::monomorphic(),
+            universe,
+            quote,
+        );
+        let open = crate::DeclarationBuilder::new(&mut arena).abstract_type(
+            crate::LevelSignature::monomorphic(),
+            universe,
+            integer,
+            crate::SealScope::Open,
+        );
+        let whole = [atom, definition, axiom, shared, open].map(|declaration| {
+            crate::MarkedDeclaration::new(crate::AdmissionMark::Checked, declaration)
+        });
+        let bytes = crate::encode(&arena, &whole);
+        // The atom's seal reaches past an artifact of the first two alone.
+        let short = crate::encode(&arena, whole.get(.. 2).expect("two declarations"));
+        for split in 0 ..= whole.len() {
+            let (artifact, prefix) =
+                super::decode_keeping(bytes.as_image(), crate::ConstantIndex::from(split))
+                    .expect("the artifact decodes");
+            assert_eq!(Ok(&artifact), super::decode(bytes.as_image()).as_ref());
+            let super::Maybe::Present(prefix) = prefix
+            else {
+                panic!("the first {split} declarations are kept");
+            };
+            assert_eq!(
+                super::decode_after(&prefix, bytes.as_image()),
+                Ok(artifact),
+                "resumed after {split}"
+            );
+            assert_eq!(
+                super::decode_after(&prefix, short.as_image()),
+                super::decode(short.as_image()),
+                "an artifact ending inside the leading seal, after {split}"
+            );
+            let mut changed = Vec::from(bytes.as_ref());
+            for position in 0 .. changed.len() {
+                let byte = changed.get_mut(position).expect("a byte");
+                *byte ^= 1;
+                let image = ArtifactImage::from(changed.as_slice());
+                assert_eq!(
+                    super::decode_after(&prefix, image),
+                    super::decode(image),
+                    "byte {position} changed, after {split}"
+                );
+                let byte = changed.get_mut(position).expect("a byte");
+                *byte ^= 1;
+            }
+        }
     }
 }
