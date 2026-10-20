@@ -140,6 +140,7 @@ impl Naming
                     },
                     DeclarationOutcome::Bodied { body } => [Some(CoreNode::Value(body)), None],
                     DeclarationOutcome::Data(_)
+                    | DeclarationOutcome::Codata(_)
                     | DeclarationOutcome::Abstract(_)
                     | DeclarationOutcome::World
                     | DeclarationOutcome::Refused(_) => return None,

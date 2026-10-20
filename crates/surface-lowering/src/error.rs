@@ -217,7 +217,7 @@ impl fmt::Display for FragmentSort
 /// - hypothesis: L3 — reserved recursion claims, unadmitted forms, a wrong-sort
 ///   run operand and zero/two-operand refusals distinguish the four boundaries
 ///   by exact typed payloads. The fixtures do not enumerate every grammar form.
-/// - witness: `lower::native::tests::only_the_descent_claim_heads_a_recursive_call`
+/// - witness: `lower::native::tests::a_productive_call_is_the_whole_arm_of_a_copattern_block`
 /// - witness: `lower::native::tests::a_descent_claim_names_its_own_function_873`
 /// - witness: `lower::native::tests::an_indexed_generator_is_declined`
 /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
@@ -984,6 +984,16 @@ pub enum LoweringRefusal<'source>
         name: SurfaceName<'source>,
     },
 
+    /// A productivity claim `f[>](…)` standing anywhere but as the whole arm
+    /// of a copattern block.
+    UnguardedCorecursion
+    {
+        /// The bytes the claim covers.
+        span: ByteSpan,
+        /// The definition's name.
+        name: SurfaceName<'source>,
+    },
+
     /// A recursive definition whose claims descend on two parameters: one
     /// stands under a match on one parameter, another under a match on a
     /// different one, and a definition stages one.
@@ -1260,6 +1270,11 @@ impl fmt::Display for LoweringRefusal<'_>
                 "`{name}` names its own recursive definition without a claim; write \
                  `{name}[<](…)` to recurse on a field of the parameter its match scrutinises"
             ),
+            Self::UnguardedCorecursion { name, .. } => write!(
+                f,
+                "`{name}[>](…)` stands outside a copattern arm; a productive self-call is the \
+                 whole arm of a copattern block, so every observation yields before it recurses"
+            ),
             Self::DescentOnSeveralParameters {
                 staged, claimed, ..
             } => write!(
@@ -1397,6 +1412,7 @@ impl LoweringRefusal<'_>
             | Self::LowercaseModuleName { span, .. }
             | Self::NonExhaustiveMatch { span }
             | Self::UnmarkedSelfReference { span, .. }
+            | Self::UnguardedCorecursion { span, .. }
             | Self::DescentOnSeveralParameters { span, .. }
             | Self::Unreachable { span }
             | Self::OutsideLoop { span, .. }
@@ -1470,7 +1486,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 39_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 40_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -1583,6 +1599,10 @@ mod tests
                 span: s(41_usize, 42_usize),
                 name: SurfaceName::from("length"),
             },
+            LoweringRefusal::UnguardedCorecursion {
+                span: s(77_usize, 78_usize),
+                name: SurfaceName::from("nats"),
+            },
             LoweringRefusal::UnresolvedDocLink {
                 span: s(43_usize, 44_usize),
                 name: SurfaceName::from("gone"),
@@ -1687,6 +1707,7 @@ mod tests
             s(36_usize, 37_usize),
             s(38_usize, 39_usize),
             s(41_usize, 42_usize),
+            s(77_usize, 78_usize),
             s(43_usize, 44_usize),
             s(45_usize, 46_usize),
             s(47_usize, 48_usize),

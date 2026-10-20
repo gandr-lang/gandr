@@ -204,10 +204,10 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
                 let gandr_core_checker::DeclarationContent::Value { ref signature, body: ref held_body } = *declared.content() else {
                     return match *declared.content() {
                         gandr_core_checker::DeclarationContent::Data(ref held) => matches!(lowered.outcome(), DeclarationOutcome::Data(index) if module.data(index) == Maybe::Present(held)),
+                        gandr_core_checker::DeclarationContent::Codata(ref held) => matches!(lowered.outcome(), DeclarationOutcome::Codata(index) if module.codata(index) == Maybe::Present(held)),
                         gandr_core_checker::DeclarationContent::Abstract(sealed) => matches!(lowered.outcome(), DeclarationOutcome::Abstract(sealing) if sealed == abstract_type(sealing)),
                         gandr_core_checker::DeclarationContent::World => matches!(lowered.outcome(), DeclarationOutcome::World),
-                        gandr_core_checker::DeclarationContent::Codata(_)
-                        | gandr_core_checker::DeclarationContent::Value { .. } => false,
+                        gandr_core_checker::DeclarationContent::Value { .. } => false,
                     } && declared.constant() == lowered.constant()
                         && usize::from(declared.origin()) == usize::from(lowered.origin());
                 };
@@ -227,7 +227,7 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
                             *signature == Maybe::Absent(signature::Absent::Unsigned)
                                 && *held_body == Maybe::Present(value)
                         }
-                        DeclarationOutcome::Data(_) | DeclarationOutcome::Abstract(_) | DeclarationOutcome::World | DeclarationOutcome::Refused(_) => false,
+                        DeclarationOutcome::Data(_) | DeclarationOutcome::Codata(_) | DeclarationOutcome::Abstract(_) | DeclarationOutcome::World | DeclarationOutcome::Refused(_) => false,
                     }
             })
 },
@@ -254,6 +254,16 @@ pub fn declarations(module: &LoweredModule<'_>) -> Vec<Declaration>
                 DeclarationOutcome::Data(index) => {
                     return match module.data(index) {
                         Maybe::Present(signature) => Some(Declaration::data(
+                            lowered.constant(),
+                            Arc::clone(signature),
+                            OriginToken::from(usize::from(lowered.origin())),
+                        )),
+                        Maybe::Absent(_) => None,
+                    };
+                },
+                DeclarationOutcome::Codata(index) => {
+                    return match module.codata(index) {
+                        Maybe::Present(signature) => Some(Declaration::codata(
                             lowered.constant(),
                             Arc::clone(signature),
                             OriginToken::from(usize::from(lowered.origin())),

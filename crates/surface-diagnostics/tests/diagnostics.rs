@@ -559,6 +559,7 @@ fn a_body_names_its_match_arms_by_their_constructors_809()
             },
             DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::World
             | DeclarationOutcome::Refused(_) => None,
@@ -682,6 +683,7 @@ fn a_loop_arm_is_named_by_its_loop_823()
             },
             DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::World
             | DeclarationOutcome::Refused(_) => None,

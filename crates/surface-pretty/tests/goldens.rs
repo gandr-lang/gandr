@@ -757,6 +757,32 @@ fn nullary_declared_data_uses_its_bare_name()
     );
 }
 
+/// A codata family is its name applied to its arguments, and its bare name
+/// with none; a thunk of one is written `+U` before it.
+#[test]
+fn a_codata_family_spells_as_its_name_applied()
+{
+    let names = [Name::from("Stream"), Name::from("Spot")];
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    let code = core.value_quote(integer);
+    let stream = core.comp_type_codata(ConstantIndex::from(0_usize), Vec::from([code]));
+    let spot = core.comp_type_codata(ConstantIndex::from(1_usize), Vec::new());
+    let thunk = core.value_type_thunk(stream);
+    let source = CoreSource::new(&core, &names);
+    for (root, spelling) in [
+        (CoreNode::CompType(stream), "Stream(Integer)"),
+        (CoreNode::CompType(spot), "Spot"),
+        (CoreNode::ValueType(thunk), "+U Stream(Integer)"),
+    ] {
+        assert_eq!(
+            spelled(&source, Root::Type(root)),
+            faithful(Written(spelling)),
+            "{root:?} spells as its family applied"
+        );
+    }
+}
+
 /// A product or a sum of any arity from one spells its components between
 /// its braces, a nested product or sum one component among them; the
 /// 0-ary product and sum spell `Unit` and `Void`, and the sum of two units

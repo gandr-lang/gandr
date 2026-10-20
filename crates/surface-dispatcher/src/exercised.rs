@@ -684,6 +684,7 @@ fn is_whole_unsigned_body(
         | DeclarationOutcome::Completed { .. }
         | DeclarationOutcome::Uncompleted { .. }
         | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
         | DeclarationOutcome::Abstract(_)
         | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_) => WholeBody::Inner,
@@ -713,7 +714,7 @@ fn is_whole_unsigned_body(
             LoweringRefusal::UnresolvedName { .. } => Some(Row::UndefinedTermName),
             LoweringRefusal::UnresolvedTypeHead { .. } => Some(Row::UndefinedTypeHead),
             LoweringRefusal::OutOfFragment { boundary: FragmentBoundary::Reserved, .. } => Some(Row::ReservedForm),
-            LoweringRefusal::ImportUnresolved { .. } | LoweringRefusal::ImportCycle { .. } | LoweringRefusal::ImportShadows { .. } | LoweringRefusal::UnexportedName { .. } | LoweringRefusal::UnresolvedDocLink { .. } | LoweringRefusal::DuplicateSignature { .. } | LoweringRefusal::DuplicateDefinition { .. } | LoweringRefusal::DuplicateImportAlias { .. } | LoweringRefusal::ShadowedBuiltin { .. } | LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::GradedBridge { .. } | LoweringRefusal::MalformedLiteral { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownAttribute { .. } | LoweringRefusal::DuplicateAttribute { .. } | LoweringRefusal::MissingPayload { .. } | LoweringRefusal::NonValuePayload { .. } | LoweringRefusal::IllTypedPayload { .. } | LoweringRefusal::ForwardMemberReference { .. } | LoweringRefusal::UnknownMember { .. } | LoweringRefusal::NotAFunctor { .. } | LoweringRefusal::ProjectionFromApplication { .. } | LoweringRefusal::UnreadAscription { .. } | LoweringRefusal::UnstatedComponent { .. } | LoweringRefusal::FamilyTelescope { .. } | LoweringRefusal::LowercaseModuleName { .. } | LoweringRefusal::NonExhaustiveMatch { .. } | LoweringRefusal::UnmarkedSelfReference { .. } | LoweringRefusal::DescentOnSeveralParameters { .. } | LoweringRefusal::Unreachable { .. } | LoweringRefusal::OutsideLoop { .. } | LoweringRefusal::AcrossHandler { .. } | LoweringRefusal::WithoutK { .. } | LoweringRefusal::DirectedCell { .. } | LoweringRefusal::CellNotALoop { .. } | LoweringRefusal::RulesUnoriented { .. } | LoweringRefusal::RulesDiverge { .. } | LoweringRefusal::RulesUndecided { .. } | LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::GrammarMismatch { .. } | LoweringRefusal::UnknownMold { .. } | LoweringRefusal::Unminted { .. } => None,
+            LoweringRefusal::ImportUnresolved { .. } | LoweringRefusal::ImportCycle { .. } | LoweringRefusal::ImportShadows { .. } | LoweringRefusal::UnexportedName { .. } | LoweringRefusal::UnresolvedDocLink { .. } | LoweringRefusal::DuplicateSignature { .. } | LoweringRefusal::DuplicateDefinition { .. } | LoweringRefusal::DuplicateImportAlias { .. } | LoweringRefusal::ShadowedBuiltin { .. } | LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::GradedBridge { .. } | LoweringRefusal::MalformedLiteral { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownAttribute { .. } | LoweringRefusal::DuplicateAttribute { .. } | LoweringRefusal::MissingPayload { .. } | LoweringRefusal::NonValuePayload { .. } | LoweringRefusal::IllTypedPayload { .. } | LoweringRefusal::ForwardMemberReference { .. } | LoweringRefusal::UnknownMember { .. } | LoweringRefusal::NotAFunctor { .. } | LoweringRefusal::ProjectionFromApplication { .. } | LoweringRefusal::UnreadAscription { .. } | LoweringRefusal::UnstatedComponent { .. } | LoweringRefusal::FamilyTelescope { .. } | LoweringRefusal::LowercaseModuleName { .. } | LoweringRefusal::NonExhaustiveMatch { .. } | LoweringRefusal::UnmarkedSelfReference { .. } | LoweringRefusal::UnguardedCorecursion { .. } | LoweringRefusal::DescentOnSeveralParameters { .. } | LoweringRefusal::Unreachable { .. } | LoweringRefusal::OutsideLoop { .. } | LoweringRefusal::AcrossHandler { .. } | LoweringRefusal::WithoutK { .. } | LoweringRefusal::DirectedCell { .. } | LoweringRefusal::CellNotALoop { .. } | LoweringRefusal::RulesUnoriented { .. } | LoweringRefusal::RulesDiverge { .. } | LoweringRefusal::RulesUndecided { .. } | LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::GrammarMismatch { .. } | LoweringRefusal::UnknownMold { .. } | LoweringRefusal::Unminted { .. } => None,
         };
         Row::ALL.into_iter().all(|row| rows.count(row)
             == if selected == Some(row) { DeclarationCount::from(1_usize) } else { before.count(row) })
@@ -777,6 +778,7 @@ fn lowering_row(
         | LoweringRefusal::LowercaseModuleName { .. }
         | LoweringRefusal::NonExhaustiveMatch { .. }
         | LoweringRefusal::UnmarkedSelfReference { .. }
+        | LoweringRefusal::UnguardedCorecursion { .. }
         | LoweringRefusal::DescentOnSeveralParameters { .. }
         | LoweringRefusal::Unreachable { .. }
         | LoweringRefusal::OutsideLoop { .. }
@@ -1202,7 +1204,7 @@ def konst = thunk { fn (x) { fn (y) { return x } } } ;"#,
             ),
             (
                 r#"@[ checks ] data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }
-@[ refuses("OutOfFragment") ] def rec ahead(n : Nat) -> -F Nat { case n { Zero => return n, Succ(p) => become ahead[>](p) } }"#,
+@[ refuses("OutOfFragment") ] def rec both(n : Nat) -> -F Nat { case n { Zero => return n, Succ(p) => become both[<, >](p) } }"#,
                 &[(Row::ReservedForm, 1_usize)],
             ),
             (r#"@[ owes(1) ] def a : Integer ;"#, &[(

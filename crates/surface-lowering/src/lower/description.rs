@@ -4,10 +4,10 @@
 //!
 //! A data declaration form has one producer of its signature: the native
 //! reading, which also enters its constructors and compiles its matches. Its
-//! description is checked and elaborated to cells beside it. Every other
-//! described family — codata today — reaches the decoder here, whose refusal
-//! is reported at the family. Reversal: a description decode that agrees with
-//! the native reading on every data form can replace it as the producer.
+//! description is checked and elaborated to cells beside it. A codata family
+//! is decoded here into a codata signature: each observation the returner of
+//! its written value type, or the family itself at its parameters. A
+//! decoder's refusal is reported at the family.
 //!
 //! `Theory` reaches the same decoder from [`theory_desc`], and a `theory`
 //! block's definition is its presentation's value read node for node: each
@@ -22,6 +22,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::CodataSignature;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DataSignature;
 use gandr_core_term::Sort;
@@ -35,6 +36,7 @@ use gandr_core_term::description::ParameterDepth;
 use gandr_core_term::description::ParameterLevel;
 use gandr_core_term::description::TypeArity;
 use gandr_core_term::description::TypeBinding;
+use gandr_core_term::description::decode_codata;
 use gandr_core_term::description::decode_signature;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
@@ -44,6 +46,7 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::StringLiteral;
 use gandr_surface_syntax::NodeIndex;
 use gandr_theory_levitation::ConstructorTag;
+use gandr_theory_levitation::DeclPolarity;
 use gandr_theory_levitation::DescValue;
 use gandr_theory_levitation::LeafBytes;
 use gandr_theory_levitation::Name;
@@ -67,6 +70,7 @@ use crate::description::DescriptionFault;
 use crate::form::Former;
 use crate::form::Shape;
 use crate::form::shape_of;
+use crate::module::CodataIndex;
 use crate::module::DataIndex;
 use crate::module::Half;
 use crate::module::Operand;
@@ -94,10 +98,10 @@ impl<'source> Lowerer<'_, 'source>
     /// [`LoweringRefusal::UnknownMold`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a data family keeps its native signature while a
-    ///   codata family beside it reaches the decoder and is refused there.
+    /// - hypothesis: L3 — a data family keeps its native signature while the
+    ///   codata family beside it is left to the decoder.
     /// - witness: `description::tests::native_data_keeps_telescope_and_nominal_heads`
-    /// - witness: `description::tests::codata_is_refused_by_the_decoder_and_data_beside_it_is_native`
+    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
     fn natively_read(
         &self,
@@ -136,7 +140,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a parameterised codata family reaches the decoder
     ///   with its parameter types minted, and a data family beside it is seeded
     ///   once, natively.
-    /// - witness: `description::tests::codata_is_refused_by_the_decoder_and_data_beside_it_is_native`
+    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
     #[spec(
         captures: before = seeds.len(),
         ensures: |ret| ret.is_err() || seeds.len() >= before,
@@ -178,11 +182,12 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: the ordinary mint sweep has lowered the written classifiers.
-    /// - ensures: a decoded family's signature is pushed onto the module's list
-    ///   and its index recorded by its slot; decoding failures remain located
-    ///   diagnostics and refuse only their slot; a `theory` block or a
-    ///   top-level `oper`, which declares no family, is left alone. Newly
-    ///   allocated nodes receive provenance without replacing older origins.
+    /// - ensures: a decoded data family's signature is pushed onto the module's
+    ///   data list and a codata family's onto its codata list, each index
+    ///   recorded by its slot; decoding failures remain located diagnostics and
+    ///   refuse only their slot; a `theory` block or a top-level `oper`, which
+    ///   declares no family, is left alone. Newly allocated nodes receive
+    ///   provenance without replacing older origins.
     /// - fails: the existing fuel or molded-grammar refusal remains an engine
     ///   error.
     /// - panics: none.
@@ -192,9 +197,9 @@ impl<'source> Lowerer<'_, 'source>
     /// walk.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a codata family is refused at its own span by the
-    ///   decoder while the data family beside it keeps its native signature.
-    /// - witness: `description::tests::codata_is_refused_by_the_decoder_and_data_beside_it_is_native`
+    /// - hypothesis: L3 — a codata family decodes to its observations while the
+    ///   data family beside it keeps its native signature.
+    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -203,8 +208,8 @@ impl<'source> Lowerer<'_, 'source>
         )
     )]
     #[spec(
-        captures: before = self.data.len(),
-        ensures: |result| result.is_err() || (self.data.len() >= before && self.described.keys().all(|position| self.collected.slots.get(usize::from(*position)).is_some())),
+        captures: [before = self.data.len(), codata_before = self.codata.len()],
+        ensures: |result| result.is_err() || (self.data.len() >= before && self.codata.len() >= codata_before && self.described.keys().chain(self.codata_described.keys()).all(|position| self.collected.slots.get(usize::from(*position)).is_some())),
     )]
     pub(super) fn mint_descriptions(
         &mut self,
@@ -233,11 +238,15 @@ impl<'source> Lowerer<'_, 'source>
             }
             let at = entry.at;
             let constant = slot.constant;
-            types.insert(entry.description.id.name.clone(), TypeBinding::Nominal {
-                declaration: constant,
-                arity: TypeArity(entry.parameters.len()),
-            });
             let before = sink.arena.watermark();
+            // A codata family is a computation type: no later description
+            // reads it as a value type, so it binds no nominal name.
+            if entry.description.polarity == DeclPolarity::Data {
+                types.insert(entry.description.id.name.clone(), TypeBinding::Nominal {
+                    declaration: constant,
+                    arity: TypeArity(entry.parameters.len()),
+                });
+            }
             let result = self.decode_family(sink.arena, entry, constant, &types);
             if let Maybe::Present(origin) = self.origin_at(at.node) {
                 for id in sink.arena.values_since(before) {
@@ -246,9 +255,12 @@ impl<'source> Lowerer<'_, 'source>
                 for id in sink.arena.value_types_since(before) {
                     sink.origins.record_value_type(id, origin);
                 }
+                for id in sink.arena.comp_types_since(before) {
+                    sink.origins.record_comp_type(id, origin);
+                }
             }
             match result {
-                Ok(signature) => {
+                Ok(Decoded::Data(signature)) => {
                     let index = DataIndex::from(self.data.len());
                     self.constructors.push(
                         entry
@@ -260,6 +272,13 @@ impl<'source> Lowerer<'_, 'source>
                     );
                     self.data.push(Arc::new(signature));
                     let _first = self.described.insert(SlotIndex::from(position), index);
+                },
+                Ok(Decoded::Codata(signature)) => {
+                    let index = CodataIndex::from(self.codata.len());
+                    self.codata.push(Arc::new(signature));
+                    let _first = self
+                        .codata_described
+                        .insert(SlotIndex::from(position), index);
                 },
                 Err(error) => {
                     self.collected
@@ -457,14 +476,15 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Interpret a family under every explicit parameter, with no carrier
-    /// alias.
+    /// alias: a data family as its data signature, a codata family as its
+    /// codata signature.
     ///
     /// # Specification
     /// - requires: `entry` and its classifier nodes belong to this lowering
     ///   run.
     /// - ensures: parameter classifiers retain prefix scope and fields retain
     ///   full telescope scope; type arguments and ordinary indices remain
-    ///   distinct.
+    ///   distinct; a codata family names itself at its parameter variables.
     /// - fails: missing classifiers or unsupported description leaves return a
     ///   decoder refusal.
     /// - panics: none.
@@ -473,17 +493,21 @@ impl<'source> Lowerer<'_, 'source>
     /// Returns the exact refusal from the native description interpreter.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a parameterised codata family reaches the decoder
-    ///   under its telescope and is refused there, at the family.
-    /// - witness: `description::tests::codata_is_refused_by_the_decoder_and_data_beside_it_is_native`
-    #[spec(ensures: |result| result.as_ref().map_or(true, |signature| signature.parameters().len() == entry.parameters.len()))]
+    /// - hypothesis: L3 — a parameterised codata family decodes under its
+    ///   telescope to its observations, beside a data family read natively.
+    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+    #[spec(ensures: |result| match result.as_ref() {
+        Ok(&Decoded::Data(ref signature)) => signature.parameters().len() == entry.parameters.len(),
+        Ok(&Decoded::Codata(ref signature)) => signature.parameters().len() == entry.parameters.len(),
+        Err(_) => true,
+    })]
     fn decode_family(
         &self,
         arena: &mut CoreArena,
         entry: &DescribedDeclaration,
         constant: ConstantIndex,
         types: &BTreeMap<Name, TypeBinding>,
-    ) -> Result<DataSignature, DecodeError>
+    ) -> Result<Decoded, DecodeError>
     {
         let Maybe::Present(classifier) = entry.classifier
         else {
@@ -526,16 +550,47 @@ impl<'source> Lowerer<'_, 'source>
             })
             .collect();
         let arguments = arguments?;
+        let self_sort = NameRef::from(entry.description.id.name.as_ref());
+        let depth = ParameterDepth(parameters.len());
+        if entry.description.polarity == DeclPolarity::Codata {
+            let itself = arena.comp_type_codata(constant, arguments);
+            // An observation names the family by its code, read before any
+            // field type is interpreted, so no value type stands for it.
+            let context = DecodeContext {
+                self_sort,
+                self_type: kind,
+                types,
+                locals: &locals,
+                depth,
+            };
+            return decode_codata(
+                arena,
+                &entry.description,
+                (context, itself),
+                parameters,
+                kind,
+            )
+            .map(Decoded::Codata);
+        }
         let self_type = arena.value_type_data(constant, arguments);
         let context = DecodeContext {
-            self_sort: NameRef::from(entry.description.id.name.as_ref()),
+            self_sort,
             self_type,
             types,
             locals: &locals,
-            depth: ParameterDepth(parameters.len()),
+            depth,
         };
-        decode_signature(arena, &entry.description, context, parameters, kind)
+        decode_signature(arena, &entry.description, context, parameters, kind).map(Decoded::Data)
     }
+}
+
+/// A described family's decoded signature.
+enum Decoded
+{
+    /// A data family's.
+    Data(DataSignature),
+    /// A codata family's.
+    Codata(CodataSignature),
 }
 
 /// One step of [`presentation_term`]'s walk.

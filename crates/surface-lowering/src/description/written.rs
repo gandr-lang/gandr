@@ -373,11 +373,27 @@ pub struct WrittenConstructor
     pub arguments: Vec<ByteSpan>,
 }
 
+/// Where a codata observation is written: its name, and each node of the
+/// type it observes, in pre-order.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WrittenObservation
+{
+    /// The observation's name tile.
+    pub named: ByteSpan,
+    /// The nodes of its type: the whole type, then each argument of an
+    /// application in written order, each read the same way.
+    pub ty: WrittenTerm,
+}
+
 /// Where a described declaration's members are written.
 ///
 /// Each list is parallel to the one the description reads its members into:
 /// for a `theory`, the presentation's sorts, operations, laws and circuits; for
-/// a `data` family, the description's constructors, operations and rules.
+/// a `data` family, the description's constructors, operations and rules; for
+/// a `codata` family, the description's observations.
 ///
 /// # Specification
 /// trivial.
@@ -386,6 +402,8 @@ pub struct WrittenMembers
 {
     /// A `data` family's constructors.
     pub constructors: Vec<WrittenConstructor>,
+    /// A `codata` family's observations.
+    pub observations: Vec<WrittenObservation>,
     /// The sorts.
     pub sorts: Vec<WrittenSortMember>,
     /// The operations.

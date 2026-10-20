@@ -1442,6 +1442,10 @@ impl TypeTable
                     Maybe::Present(signature) => Held::Typed(TypeNode::Value(signature.kind())),
                     Maybe::Absent(_) => continue,
                 },
+                DeclarationOutcome::Codata(index) => match module.codata(index) {
+                    Maybe::Present(signature) => Held::Typed(TypeNode::Value(signature.kind())),
+                    Maybe::Absent(_) => continue,
+                },
                 DeclarationOutcome::Abstract(sealing) => Held::Typed(TypeNode::Value(sealing.kind)),
                 DeclarationOutcome::World => continue,
                 DeclarationOutcome::Refused(refusal) => Held::Refused(refusal.to_string()),
@@ -2543,6 +2547,7 @@ impl TypeTable
                         DeclarationOutcome::Refused(refusal) => Err(refusal.to_string()),
                         other @ (DeclarationOutcome::Bodied { .. }
                         | DeclarationOutcome::Data(_)
+                        | DeclarationOutcome::Codata(_)
                         | DeclarationOutcome::Abstract(_)
                         | DeclarationOutcome::World) => Err(format!("{other:?}")),
                     };
@@ -2932,6 +2937,7 @@ impl TypeTable
                 | DeclarationOutcome::Completed { body, .. } => Some(body),
                 DeclarationOutcome::Uncompleted { .. }
                 | DeclarationOutcome::Data(_)
+                | DeclarationOutcome::Codata(_)
                 | DeclarationOutcome::Abstract(_)
                 | DeclarationOutcome::World
                 | DeclarationOutcome::Refused(_) => None,

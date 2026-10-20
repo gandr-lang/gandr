@@ -1097,6 +1097,7 @@ pub fn settle<'source>(
             | DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::World => {
                 let constant = lowered.constant();

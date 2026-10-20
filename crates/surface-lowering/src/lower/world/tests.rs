@@ -212,6 +212,7 @@ fn a_mobile_component_marks_its_sealing()
             | DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
             | DeclarationOutcome::World
             | DeclarationOutcome::Refused(_) => None,
         })

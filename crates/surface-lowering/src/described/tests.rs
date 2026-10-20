@@ -4,7 +4,9 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use gandr_core_term::CoreArena;
+use gandr_core_term::Sort;
 use gandr_core_term::ValueType;
+use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
@@ -530,4 +532,54 @@ fn a_family_the_native_reading_owns_answers_at_its_signature()
         matches!(ty(result), Some(ValueType::Universe { .. })),
         "the result at the family's universe"
     );
+}
+
+#[test]
+fn a_codata_observation_s_type_answers_at_its_universe()
+{
+    let source = SourceText::from(
+        "codata Stream(a : Type) : Type[-] {\n  head : a;\n  tail : Stream(a);\n}\ncodata Spot : Type[-] {\n  x : Integer;\n  depth : Integer;\n}\n",
+    );
+    let span = |around: &'static str, inner: &'static str| {
+        at(source, SourceText::from(around), SourceText::from(inner))
+    };
+    let (types, arena) = described(source);
+    let ty = |entry: DescribedType| arena.value_type(entry.ty).cloned();
+    let value = |ty: Option<ValueType>| {
+        matches!(
+            ty,
+            Some(ValueType::Universe {
+                sort: Sort::Ground(GroundSort::Value),
+                ..
+            })
+        )
+    };
+
+    let head = entry(&types, span(": a;", "a"), DescribedRole::Type);
+    assert!(value(ty(head)), "a parameter read as a type at `Type`");
+    assert_eq!(context(&types, head), ["a"], "under the parameters");
+    let tail = entry(
+        &types,
+        span("tail : Stream(a)", "Stream(a)"),
+        DescribedRole::Type,
+    );
+    assert!(
+        matches!(
+            ty(tail),
+            Some(ValueType::Universe {
+                sort: Sort::Ground(GroundSort::Computation),
+                ..
+            })
+        ),
+        "the family itself at its kind, `Type[-]`"
+    );
+    let argument = entry(&types, span("(a);", "a"), DescribedRole::Type);
+    assert_eq!(
+        ty(argument),
+        ty(head),
+        "the family's argument at its parameter's classifier"
+    );
+    let integer = entry(&types, span("x : Integer", "Integer"), DescribedRole::Type);
+    assert!(value(ty(integer)), "a base type at `Type`");
+    assert_eq!(context(&types, integer), Vec::<String>::new());
 }

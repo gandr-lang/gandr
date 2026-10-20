@@ -306,6 +306,7 @@ where
         },
         other @ (DeclarationOutcome::Bodied { .. }
         | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
         | DeclarationOutcome::Abstract(_)
         | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a signature, not {other:?}"),
@@ -339,6 +340,7 @@ where
         },
         other @ (DeclarationOutcome::Uncompleted { .. }
         | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
         | DeclarationOutcome::Abstract(_)
         | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a body, not {other:?}"),
@@ -1027,6 +1029,63 @@ fn a_copattern_block_orders_its_clauses_by_its_answer()
 }
 
 #[test]
+fn a_copattern_block_orders_its_clauses_by_its_codata_answer()
+{
+    let pair = "codata Duo : Type[-] { fst : Integer; snd : String; }\n";
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{pair}def ordered(n : Integer) -> Duo {{ &{{.fst => return n, .snd => return \"s\"}} \
+         }}\ndef swapped(n : Integer) -> Duo {{ &{{.snd => return \"s\", .fst => return n}} }}\n"
+    );
+    let module = lowered(source.as_str(), &mut arena);
+    let with = |name: &str| -> Vec<String> {
+        let tokens = body(&arena, &module, name);
+        tokens
+            .iter()
+            .position(|token| token == "with")
+            .map(|start| tokens.get(start ..).unwrap_or_default().to_vec())
+            .unwrap_or_default()
+    };
+
+    assert_eq!(
+        with("ordered").get(.. 3_usize),
+        Some(
+            &[
+                String::from("with"),
+                String::from("return"),
+                String::from("#0")
+            ][..]
+        ),
+        "a block answering a codata family is the lazy pairing of its observations, `.fst` first"
+    );
+    assert_eq!(
+        with("swapped"),
+        with("ordered"),
+        "clauses written out of order take the order the declaration states"
+    );
+    let source = alloc::format!(
+        "{pair}def stray(n : Integer) -> Duo {{ &{{.fst => return n, .third => return \"s\"}} }}\n"
+    );
+    assert!(
+        matches!(refused(source.as_str()), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("third")),
+        "a label the codata family does not observe is unresolved: {:?}",
+        refused(source.as_str())
+    );
+    let source = String::from(
+        "codata Trio : Type[-] { a : Integer; b : Integer; c : Integer; }\ndef short(n : Integer) \
+         -> Trio { &{.a => return n, .b => return n} }\n",
+    );
+    assert!(
+        matches!(refused(source.as_str()), LoweringRefusal::MalformedForm {
+            fault: FormFault::MissingOperand,
+            ..
+        }),
+        "an observation the block leaves out is a missing clause: {:?}",
+        refused(source.as_str())
+    );
+}
+
+#[test]
 fn an_observation_reads_through_one_thunk_only()
 {
     let source = "def obs(m : +U (+U &{get : -F Integer, put : -F String})) -> -F Integer { become \
@@ -1147,6 +1206,7 @@ fn a_dependent_arrow_is_the_telescope_the_alias_abbreviates()
         other @ (DeclarationOutcome::Completed { .. }
         | DeclarationOutcome::Bodied { .. }
         | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
         | DeclarationOutcome::Abstract(_)
         | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a signature, not {other:?}"),

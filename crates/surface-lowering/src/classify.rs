@@ -90,7 +90,8 @@ impl LoweringRefusal<'_>
             | Self::WithoutK { .. }
             | Self::DirectedCell { .. }
             | Self::CellNotALoop { .. }
-            | Self::DescentOnSeveralParameters { .. } => matches!(ret, FailureClass::Unrepresentable),
+            | Self::DescentOnSeveralParameters { .. }
+            | Self::UnguardedCorecursion { .. } => matches!(ret, FailureClass::Unrepresentable),
             | Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::RulesUndecided { .. }
@@ -174,7 +175,8 @@ impl LoweringRefusal<'_>
             | Self::WithoutK { .. }
             | Self::DirectedCell { .. }
             | Self::CellNotALoop { .. }
-            | Self::DescentOnSeveralParameters { .. } => FailureClass::Unrepresentable,
+            | Self::DescentOnSeveralParameters { .. }
+            | Self::UnguardedCorecursion { .. } => FailureClass::Unrepresentable,
             Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::RulesUndecided { .. }

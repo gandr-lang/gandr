@@ -148,9 +148,13 @@
 //! `f[<]` is the fixpoint's own thunk, a value a call may pass on; written
 //! bare, it is `UnmarkedSelfReference`, whose message spells the claim. A
 //! parameter of the same name shadows it. A function with no parameter has
-//! nothing to recurse on and is declined. Every resident of the instantiation
-//! other than a lone `<` — `>` for productivity, a measure, a size, a cost —
-//! is reserved until its termination rung lands. The fixpoint is marked
+//! nothing to recurse on and is declined. `>` is the productivity claim: a
+//! call `f[>](…)` that is the whole arm of a copattern block, so every
+//! observation of a codata result yields before the function runs again; it
+//! leaves the fixpoint partial, which unfolds only under an observation, and
+//! anywhere else it is `UnguardedCorecursion`. Every other resident of the
+//! instantiation — a measure, a size, a cost — is reserved until its
+//! termination rung lands. The fixpoint is marked
 //! `Insertion::Fixpoint` at the function form's origin, since the source
 //! writes no `fix`. A block stands as a match arm, so the programs the corpus
 //! carries in `fixture/model/data/recursive-addition.gandr`,
@@ -314,6 +318,7 @@ use gandr_kernel_term::Summand;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceFragment;
+use gandr_theory_levitation::DeclPolarity;
 use quenchant_shape::shape::Maybe;
 
 use super::Code;
@@ -597,6 +602,16 @@ pub(super) struct CaseIndex(usize);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct Claimed(pub bool);
+
+/// What an instantiation's resident claims of the self-call it heads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Claim
+{
+    /// `<`: the call descends structurally on the staged parameter.
+    Descent,
+    /// `>`: the call is productive, the whole arm of a copattern block.
+    Productive,
+}
 
 /// A recursive function's parameter, by its position in the function's
 /// parameter list.
@@ -2732,6 +2747,76 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         self.plan(site, Plan::Data(constant, applied));
+
+        Ok(())
+    }
+
+    /// The number of parameters of the codata family declared at `constant`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the parameter count of the codata declaration whose slot
+    ///   takes `constant`; the undeclared absence for any other declaration.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a codata family and a data family beside it separate
+    ///   the hit from the miss.
+    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || self.collected.slots.get(usize::from(constant)).is_some())]
+    pub(super) fn codata_family(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<OperandCount, family::Absent>
+    {
+        self.collected
+            .slots
+            .get(usize::from(constant))
+            .and_then(|slot| self.collected.descriptions.get(&slot.introduced_by.node))
+            .filter(|entry| entry.description.polarity == DeclPolarity::Codata)
+            .map_or(Maybe::Absent(family::Absent::Undeclared), |entry| {
+                Maybe::Present(OperandCount::from(entry.parameters.len()))
+            })
+    }
+
+    /// Classify the codata family at `constant`, of `arity` parameters,
+    /// applied to the arguments `applied` holds in the operand store.
+    ///
+    /// # Specification
+    /// - ensures: the family stands as a computation type over its arguments,
+    ///   each read as a value under the site's frame.
+    /// - fails: the arity refusal for an argument count other than `arity`; the
+    ///   wrong-sort refusal where no computation type is read or reached.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The family's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a codata family read as a function's answer lowers to
+    ///   the nominal computation type over its argument.
+    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+    #[spec(ensures: |ret| ret.is_err() || self.plans.get(usize::from(site.at.node)) == Some(&Plan::Codata(constant, applied)))]
+    pub(super) fn codata_type(
+        &mut self,
+        site: Site,
+        constant: ConstantIndex,
+        arity: OperandCount,
+        applied: Stretch,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let count = applied.end.saturating_sub(applied.start);
+        if OperandCount::from(count) != arity {
+            return Err(site.out(FragmentBoundary::Arity(OperandCount::from(count))));
+        }
+        let frame = self.require(site, Produced::CompType)?;
+        for position in applied.start .. applied.end {
+            if let Some(&argument) = self.operands.get(position) {
+                self.read(argument, Reading::Value(frame));
+            }
+        }
+        self.plan(site, Plan::Codata(constant, applied));
 
         Ok(())
     }
@@ -5716,6 +5801,45 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(Lowered::ValueType(id))
     }
 
+    /// Mint the nominal computation type of the codata family at `constant`
+    /// over the arguments `arguments` names in the operand store.
+    ///
+    /// # Specification
+    /// - requires: every argument is already minted or absent.
+    /// - ensures: the family over its arguments, left to right, with the
+    ///   written origin; nothing when an argument did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::codata_type`].
+    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
+    pub(super) fn mint_codata(
+        &self,
+        constant: ConstantIndex,
+        arguments: Stretch,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let mut passed = Vec::with_capacity(arguments.end.saturating_sub(arguments.start));
+        for position in arguments.start .. arguments.end {
+            let Some(&argument) = self.operands.get(position)
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            match self.value_at(argument) {
+                Maybe::Present(value) => passed.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let id = sink.arena.comp_type_codata(constant, passed);
+        sink.origins.record_comp_type(id, origin);
+
+        Maybe::Present(Lowered::CompType(id))
+    }
+
     /// Mint a constructor over its fields and its classifier.
     ///
     /// # Specification
@@ -7726,23 +7850,28 @@ impl<'source> Lowerer<'_, 'source>
     ///   sibling member stands as the function's own fixpoint binder, and
     ///   either head's call injects its argument at the called member's
     ///   summand. The head's name, its marker aside, keeps what it names: the
-    ///   fixpoint binder, or the sibling member's declaration.
+    ///   fixpoint binder, or the sibling member's declaration. A call whose one
+    ///   resident is `>` and which is the whole arm of a copattern block stands
+    ///   as the same variable, passes its arguments as a descent call does, and
+    ///   claims nothing: the fixpoint stays partial.
     /// - provides: the head of a recursive call, and the self reference a value
     ///   position passes on.
     /// - fails: the reserved refusal for any other resident, a termination
-    ///   claim the grammar reserves; the foreign-claim refusal for an
-    ///   instantiation whose head names a function other than a recursive one
-    ///   in scope; the unresolved-name refusal, at the head, for a head that
-    ///   names nothing; the unadmitted refusal for a call through a joint
-    ///   member over a parameter after its staged one and for a joint member's
-    ///   claim standing unapplied, whose thunk is the joint's at the sum of the
-    ///   block's domains; the arity refusal, at the call, for a call passing
-    ///   other than one argument per parameter; the non-uniform refusal, at the
-    ///   argument, for a parameter before the staged one passed as anything but
-    ///   itself, and at the call for a joint member over leading parameters;
-    ///   the several-parameters refusal [`Self::claim`] raises; the wrong-sort
-    ///   refusal outside a head or value position; and the allowance refusal
-    ///   from the binder walk.
+    ///   claim the grammar reserves; the unguarded-corecursion refusal for a
+    ///   `>` call that is not the whole arm of a copattern block; the
+    ///   foreign-claim refusal for an instantiation whose head names a function
+    ///   other than a recursive one in scope; the unresolved-name refusal, at
+    ///   the head, for a head that names nothing; the unadmitted refusal for a
+    ///   call through a joint member over a parameter after its staged one, for
+    ///   a joint member's claim standing unapplied, whose thunk is the joint's
+    ///   at the sum of the block's domains, and for a `>` claim standing
+    ///   unapplied or naming a joint member; the arity refusal, at the call,
+    ///   for a call passing other than one argument per parameter; the
+    ///   non-uniform refusal, at the argument, for a parameter before the
+    ///   staged one passed as anything but itself, and at the call for a joint
+    ///   member over leading parameters; the several-parameters refusal
+    ///   [`Self::claim`] raises; the wrong-sort refusal outside a head or value
+    ///   position; and the allowance refusal from the binder walk.
     /// - panics: none.
     ///
     /// # Errors
@@ -7750,14 +7879,15 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a descent call over one parameter, over a uniform
-    ///   leading one and over a varying later one, and a claim standing
-    ///   unapplied, lower to their variable; a productivity claim, a claim on a
-    ///   function that is not recursive, a wrong argument count and a varied
-    ///   leading parameter each refuse by their own boundary.
+    ///   leading one and over a varying later one, a claim standing unapplied
+    ///   and a productive call as a copattern arm lower to their variable; a
+    ///   productive call elsewhere, combined claims, a claim on a function that
+    ///   is not recursive, a wrong argument count and a varied leading
+    ///   parameter each refuse by their own boundary.
     /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
     /// - witness: `lower::native::tests::a_recursive_call_passes_its_leading_parameters_unchanged`
     /// - witness: `lower::native::tests::an_unapplied_claim_lowers_to_the_self_binder`
-    /// - witness: `lower::native::tests::only_the_descent_claim_heads_a_recursive_call`
+    /// - witness: `lower::native::tests::a_productive_call_is_the_whole_arm_of_a_copattern_block`
     /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Variable(..))))]
     pub(super) fn instantiation(
@@ -7777,19 +7907,23 @@ impl<'source> Lowerer<'_, 'source>
         exhausted(site, &cursor)?;
         let mut scratch = core::mem::take(&mut self.scratch);
         let read = read_pieces(self.pbg, self.tree, resident.node, &mut scratch);
-        let descends = matches!(
-            scratch.pieces.as_slice(),
-            &[Piece::Tile { label, .. }] if label == TileName::LESS_THAN
-        );
+        let claim = match *scratch.pieces.as_slice() {
+            [Piece::Tile { label, .. }] if label == TileName::LESS_THAN => Some(Claim::Descent),
+            [Piece::Tile { label, .. }] if label == TileName::GREATER_THAN => {
+                Some(Claim::Productive)
+            },
+            _ => None,
+        };
         self.scratch = scratch;
         read?;
-        if !descends {
+        let Some(claim) = claim
+        else {
             let claim = Site {
                 at: resident,
                 ..site
             };
             return Err(claim.out(FragmentBoundary::Reserved));
-        }
+        };
         let named = self.tree.node(head.node).is_some_and(|node| {
             matches!(
                 shape_of(self.pbg, node),
@@ -7853,6 +7987,28 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(site.out(FragmentBoundary::Unadmitted));
         };
+        if claim == Claim::Productive {
+            // A productive self-call is the whole arm of a copattern block,
+            // so each observation yields before the function runs again. It
+            // claims nothing of termination: the fixpoint stays partial and
+            // unfolds only under an observation of its result.
+            let Some(descent) = descent
+            else {
+                return Err(site.out(FragmentBoundary::Unadmitted));
+            };
+            if !self.cocased.contains(&descent.call.at.node) {
+                return Err(LoweringRefusal::UnguardedCorecursion {
+                    span: site.at.span,
+                    name,
+                });
+            }
+            if let Maybe::Present(_) = summand {
+                return Err(site.out(FragmentBoundary::Unadmitted));
+            }
+            self.uniform_descent(frame, recursion, descent.call, descent.arguments)?;
+            self.plan(site, Plan::Variable(bound.index, bound.binder));
+            return Ok(());
+        }
         // The position first: a claim under a match on another parameter
         // reads its arguments against the wrong split.
         self.claim(site, bound.binder)?;
@@ -8007,7 +8163,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::instantiation`], whose descent calls
     ///   observe each refusal.
     /// - witness: `lower::native::tests::a_recursive_call_passes_its_leading_parameters_unchanged`
-    /// - witness: `lower::native::tests::only_the_descent_claim_heads_a_recursive_call`
+    /// - witness: `lower::native::tests::a_productive_call_is_the_whole_arm_of_a_copattern_block`
     #[spec(ensures: |ret| ret.is_err() || stretch(&self.operands, arguments).len() == stretch(&self.parameters, recursion.parameters).len())]
     fn uniform_descent(
         &mut self,
@@ -8071,9 +8227,9 @@ impl<'source> Lowerer<'_, 'source>
 
     /// The position a recursive function named `own` stages, read off its
     /// body before the body is classified: the parameter the innermost match
-    /// above the body's first claim scrutinises, written bare, and the last
-    /// parameter where no match on a parameter stands above it or the body
-    /// claims nothing.
+    /// above the body's first claim scrutinises, written bare; the first
+    /// parameter when that claim is productive; and the last parameter where
+    /// no match on a parameter stands above it or the body claims nothing.
     ///
     /// **Choice.** The position is read off the body, where the match that
     /// takes the staged parameter apart already says it. **Alternatives.** A
@@ -8090,13 +8246,15 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: `staged` is the position, in `0 .. parameters.len()`, of the
     ///   parameter the innermost match above the first instantiation of `own`
     ///   in source order scrutinises, a scrutinee written as a bare name equal
-    ///   to that parameter's; the last position otherwise. `kept` is the
-    ///   longest run of parameters before `staged`, from the first, that every
-    ///   call of `own` under `roots` writes back bare in its own place
-    ///   ([`Self::kept_before`]). The classification sweep checks every claim
-    ///   against `staged` ([`Self::claim`]) and every kept argument against its
-    ///   parameter ([`Self::uniform_descent`]), so a name a binder between the
-    ///   match and the parameter shadows is refused there.
+    ///   to that parameter's; the first position when that instantiation claims
+    ///   productivity (`>`), so every call may vary every parameter; the last
+    ///   position otherwise. `kept` is the longest run of parameters before
+    ///   `staged`, from the first, that every call of `own` under `roots`
+    ///   writes back bare in its own place ([`Self::kept_before`]). The
+    ///   classification sweep checks every claim against `staged`
+    ///   ([`Self::claim`]) and every kept argument against its parameter
+    ///   ([`Self::uniform_descent`]), so a name a binder between the match and
+    ///   the parameter shadows is refused there.
     /// - provides: where the function binds its own name: after the kept
     ///   parameters, the ones from `kept` to `staged` its fixpoint's leading
     ///   binders.
@@ -8115,10 +8273,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — claims under a match on the first parameter, under
     ///   nested matches on one parameter's fields and under no match on a
     ///   parameter each stage their own position; an accumulator before the
-    ///   staged parameter that the calls change is not kept.
+    ///   staged parameter that the calls change is not kept; a productive call
+    ///   stages the first parameter.
     /// - witness: `lower::native::tests::a_definition_descends_on_the_parameter_its_cases_scrutinise`
     /// - witness: `lower::native::tests::a_definition_without_a_case_on_a_parameter_stages_its_last`
     /// - witness: `lower::native::tests::a_varying_parameter_before_the_staged_one_is_a_leading_binder_626`
+    /// - witness: `lower::native::tests::a_productive_call_is_the_whole_arm_of_a_copattern_block`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |staging| staging.kept <= staging.staged && staging.staged.0 < parameters.len().max(1)))]
     pub(super) fn staged_by_body(
         &mut self,
@@ -8253,8 +8413,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: as [`Self::staged_by_body`]; `scratch` is free for reading
     ///   pieces.
-    /// - ensures: `Some` of the scrutinised parameter's position, or of the
-    ///   last position where no match on a parameter stands above the first
+    /// - ensures: `Some` of the scrutinised parameter's position, of the first
+    ///   position when the instantiation's claim is `>`, or of the last
+    ///   position where no match on a parameter stands above the first
     ///   instantiation; `None` when no instantiation of `own` stands under
     ///   `roots`.
     /// - fails: as [`Self::staged_by_body`].
@@ -8328,6 +8489,15 @@ impl<'source> Lowerer<'_, 'source>
                 })
                 && self.name_at(head) == own
             {
+                // A productive claim varies every parameter: each call is a
+                // fresh observation's answer, so nothing stays fixed.
+                if let Some(resident) = operands.clone().nth(1) {
+                    read_pieces(self.pbg, self.tree, resident.node, scratch)?;
+                    if matches!(scratch.pieces.as_slice(), &[Piece::Tile { label, .. }] if label == TileName::GREATER_THAN)
+                    {
+                        return Ok(Some(ParameterAt(0)));
+                    }
+                }
                 return Ok(Some(scrutinised.unwrap_or(last)));
             }
             // A match on a parameter hands its position to its arm bodies,

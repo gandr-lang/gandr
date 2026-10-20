@@ -550,6 +550,17 @@ pub enum Former<'source, Node>
         /// How many arguments it is applied to.
         arity: Arity,
     },
+    /// A codata family applied to its arguments, which the source answers by
+    /// [`Source::component`]: `Stream(Integer)`, or the bare name at arity
+    /// zero. A computation type.
+    Codata
+    {
+        /// The family's name; none where the source cannot name it, spelled
+        /// `?` before arguments still spelled.
+        name: Option<Name<'source>>,
+        /// How many arguments it is applied to.
+        arity: Arity,
+    },
     /// A constructor applied to its fields, which the source answers by
     /// [`Source::component`]: `Succ(Zero)`, or the bare name with no fields;
     /// a word's letter before the rest of the word, `loop ∷ p`.
@@ -922,9 +933,6 @@ pub enum Unreadable
     /// A world's capability: the linear resource a migration spends, which
     /// the checker opens where a run enters and the surface never writes.
     WorldCapability,
-    /// A codata application: a computation type the surface grammar has no
-    /// syntax for yet.
-    Codata,
 }
 
 /// A former the printer writes in a notation of its own, which does not read
@@ -1065,14 +1073,14 @@ pub trait Source
     /// - ensures: the handle of the component at `index` when [`read`] answers
     ///   a [`Former::Product`], a [`Former::Sum`], a [`Former::Tuple`], a
     ///   [`Former::Record`], a [`Former::RecordType`], a [`Former::Session`], a
-    ///   [`Former::Data`], a [`Former::Constructor`], a [`Former::Primitive`],
-    ///   a [`Former::Case`], a [`Former::DataCase`], a [`Former::Handle`], a
-    ///   [`Former::Scope`] or a [`Former::Offer`] for `node` and `index` is
-    ///   below its arity: a record's fields in label order, a session type's
-    ///   payloads in slot order, a family's arguments and a constructor's
-    ///   fields in telescope order, a primitive's arguments, a case's branches,
-    ///   a handler's operation clauses and an offer's arms in order; none
-    ///   otherwise.
+    ///   [`Former::Data`], a [`Former::Codata`], a [`Former::Constructor`], a
+    ///   [`Former::Primitive`], a [`Former::Case`], a [`Former::DataCase`], a
+    ///   [`Former::Handle`], a [`Former::Scope`] or a [`Former::Offer`] for
+    ///   `node` and `index` is below its arity: a record's fields in label
+    ///   order, a session type's payloads in slot order, a family's arguments
+    ///   and a constructor's fields in telescope order, a primitive's
+    ///   arguments, a case's branches, a handler's operation clauses and an
+    ///   offer's arms in order; none otherwise.
     /// - provides: the children of an n-ary former, which a [`Former`] counts
     ///   but does not hold.
     /// - fails: never; a missing component is an absence, which the printer

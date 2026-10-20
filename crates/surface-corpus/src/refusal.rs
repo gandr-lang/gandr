@@ -473,6 +473,8 @@ pub enum RefusalName
     NonExhaustiveMatch,
     /// A recursive definition's own name written without a descent claim.
     UnmarkedSelfReference,
+    /// A productivity claim standing outside a copattern arm.
+    UnguardedCorecursion,
     /// A recursive definition whose claims descend on two parameters.
     DescentOnSeveralParameters,
     /// Code after a statement every path of which exits.
@@ -637,7 +639,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 165_usize] = [
+    pub const VOCABULARY: [Self; 166_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -729,6 +731,7 @@ impl RefusalName
         Self::LowercaseModuleName,
         Self::NonExhaustiveMatch,
         Self::UnmarkedSelfReference,
+        Self::UnguardedCorecursion,
         Self::DescentOnSeveralParameters,
         Self::Unreachable,
         Self::OutsideLoop,
@@ -847,6 +850,7 @@ impl RefusalName
         b"LowercaseModuleName") |
         (Self::NonExhaustiveMatch, b"NonExhaustiveMatch") |
         (Self::UnmarkedSelfReference, b"UnmarkedSelfReference") |
+        (Self::UnguardedCorecursion, b"UnguardedCorecursion") |
         (Self::DescentOnSeveralParameters, b"DescentOnSeveralParameters") |
         (Self::Unreachable, b"Unreachable") |
         (Self::OutsideLoop, b"OutsideLoop") |
@@ -1114,6 +1118,7 @@ impl RefusalName
             Self::LowercaseModuleName => "LowercaseModuleName",
             Self::NonExhaustiveMatch => "NonExhaustiveMatch",
             Self::UnmarkedSelfReference => "UnmarkedSelfReference",
+            Self::UnguardedCorecursion => "UnguardedCorecursion",
             Self::DescentOnSeveralParameters => "DescentOnSeveralParameters",
             Self::Unreachable => "Unreachable",
             Self::OutsideLoop => "OutsideLoop",
@@ -1319,6 +1324,8 @@ impl Refusal<'_>
         RefusalName::NonExhaustiveMatch) |
         (Self::Lowering(LoweringRefusal::UnmarkedSelfReference { .. }),
         RefusalName::UnmarkedSelfReference) |
+        (Self::Lowering(LoweringRefusal::UnguardedCorecursion { .. }),
+        RefusalName::UnguardedCorecursion) |
         (Self::Lowering(LoweringRefusal::DescentOnSeveralParameters { .. }),
         RefusalName::DescentOnSeveralParameters) |
         (Self::Lowering(LoweringRefusal::Unreachable { .. }),
@@ -1531,7 +1538,8 @@ impl Refusal<'_>
         RefusalName::FamilyTelescope) | (LoweringRefusal::LowercaseModuleName { .. },
         RefusalName::LowercaseModuleName) | (LoweringRefusal::NonExhaustiveMatch { .. },
         RefusalName::NonExhaustiveMatch) | (LoweringRefusal::UnmarkedSelfReference { .. },
-        RefusalName::UnmarkedSelfReference) | (LoweringRefusal::DescentOnSeveralParameters { .. },
+        RefusalName::UnmarkedSelfReference) | (LoweringRefusal::UnguardedCorecursion { .. },
+        RefusalName::UnguardedCorecursion) | (LoweringRefusal::DescentOnSeveralParameters { .. },
         RefusalName::DescentOnSeveralParameters) | (LoweringRefusal::Unreachable { .. },
         RefusalName::Unreachable) | (LoweringRefusal::OutsideLoop { .. },
         RefusalName::OutsideLoop) | (LoweringRefusal::AcrossHandler { .. },
@@ -1582,6 +1590,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::LowercaseModuleName { .. } => RefusalName::LowercaseModuleName,
         LoweringRefusal::NonExhaustiveMatch { .. } => RefusalName::NonExhaustiveMatch,
         LoweringRefusal::UnmarkedSelfReference { .. } => RefusalName::UnmarkedSelfReference,
+        LoweringRefusal::UnguardedCorecursion { .. } => RefusalName::UnguardedCorecursion,
         LoweringRefusal::DescentOnSeveralParameters { .. } => {
             RefusalName::DescentOnSeveralParameters
         },

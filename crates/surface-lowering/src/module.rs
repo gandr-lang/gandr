@@ -253,6 +253,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::CodataSignature;
 use gandr_core_term::DataSignature;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
@@ -380,6 +381,18 @@ quenchant_shape::reason_enum! {
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
             /// The module lowered fewer data declarations than the index.
+            Unlisted,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a module holds no codata signature at an index.
+    pub mod codata_signature {
+        /// The index is past the module's codata signature list.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The module lowered fewer codata declarations than the index.
             Unlisted,
         }
     }
@@ -2975,7 +2988,7 @@ impl<'source> Collector<'_, 'source>
     ///   reaches the decoder, which refuses it at its own span, and an
     ///   attribute written before a codata family is filed under it rather than
     ///   refusing the module as a stray block.
-    /// - witness: `description::tests::codata_is_refused_by_the_decoder_and_data_beside_it_is_native`
+    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
     /// - witness: `description::tests::an_attribute_block_decorates_the_codata_declaration_after_it`
     fn admit_described(
         &mut self,
@@ -7071,6 +7084,9 @@ pub enum DeclarationOutcome<'source>
     /// A data declaration: a nominal family whose signature the module holds
     /// at this index.
     Data(DataIndex),
+    /// A codata declaration: a nominal computation type whose signature the
+    /// module holds at this index.
+    Codata(CodataIndex),
     /// An abstract type an opaque ascription declares: the atom one of its
     /// abstract components mints, with its kind, its representation, the
     /// reach of its seal and its site.
@@ -7122,6 +7138,35 @@ impl From<DataIndex> for usize
     fn from(index: DataIndex) -> Self
     {
         index.0
+    }
+}
+
+/// The position of a codata declaration's signature in the module that
+/// lowered it.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the position is read against the module that produced it, by
+///   [`LoweredModule::codata`].
+/// - executable: none — the index holds no list to check its bound against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a codata declaration answers its own signature.
+/// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CodataIndex(usize);
+
+impl From<usize> for CodataIndex
+{
+    /// The codata signature at `position`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: usize) -> Self
+    {
+        Self(position)
     }
 }
 
@@ -7620,6 +7665,8 @@ pub struct LoweredModule<'source>
     /// The names of each data declaration's constructors in tag order, by
     /// [`DataIndex`].
     constructors: Vec<Vec<String>>,
+    /// The codata declarations' signatures, by [`CodataIndex`].
+    codata: Vec<Arc<CodataSignature>>,
     /// The modules, in pre-order: a module before every module nested in it.
     structures: Vec<LoweredStructure<'source>>,
     /// The attribute side table, keyed by declaration content identity.
@@ -7671,6 +7718,7 @@ impl<'source> LoweredModule<'source>
             declarations,
             data,
             constructors: Vec::new(),
+            codata: Vec::new(),
             structures,
             attributes,
             documentation: BTreeMap::new(),
@@ -7745,6 +7793,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.constructors = constructors;
+        self
+    }
+
+    /// This module, carrying the codata declarations' signatures, by
+    /// [`CodataIndex`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_codata(
+        mut self,
+        codata: Vec<Arc<CodataSignature>>,
+    ) -> Self
+    {
+        self.codata = codata;
         self
     }
 
@@ -7926,6 +7990,34 @@ impl<'source> LoweredModule<'source>
     {
         self.data.get(index.0).map_or(
             Maybe::Absent(data_signature::Absent::Unlisted),
+            Maybe::Present,
+        )
+    }
+
+    /// The signature of the codata declaration whose outcome holds `index`.
+    ///
+    /// # Specification
+    /// - requires: `index` comes from one of this module's outcomes.
+    /// - ensures: the signature at that position, which the declaration's
+    ///   checker input carries unchanged.
+    /// - fails: [`codata_signature::Absent::Unlisted`] past the end.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a codata declaration answers its own signature.
+    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(signature) => self.codata.get(index.0).is_some_and(|held| Arc::ptr_eq(held, signature)),
+        | Maybe::Absent(_) => index.0 >= self.codata.len(),
+    })]
+    #[inline]
+    pub fn codata(
+        &self,
+        index: CodataIndex,
+    ) -> Maybe<&Arc<CodataSignature>, codata_signature::Absent>
+    {
+        self.codata.get(index.0).map_or(
+            Maybe::Absent(codata_signature::Absent::Unlisted),
             Maybe::Present,
         )
     }

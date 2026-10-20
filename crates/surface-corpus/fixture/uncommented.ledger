@@ -146,7 +146,6 @@ fragment/undefined-type-head.gandr:<file>
 fragment/undefined-type-head.gandr:counted:ef17b2f3eb86de87
 fragment/unmarked-self-reference.gandr:<file>
 fragment/unmarked-self-reference.gandr:Nat:7c8cfc5b76d8efd9
-fragment/unmarked-self-reference.gandr:ahead:c97e48803af88efe
 fragment/unmarked-self-reference.gandr:bare:c78175776d973f53
 fragment/unmarked-self-reference.gandr:constant:468f169e12ee8af0
 fragment/unmarked-self-reference.gandr:idle:216962589726748c
@@ -176,9 +175,6 @@ pathological/codata/lazy-record-projection.gandr:missing_label:e98292149b62b2e1
 pathological/codata/lazy-record-projection.gandr:not_a_record:e76d21a7a799a78c
 pathological/codata/lazy-record-projection.gandr:swapped:29987fe8e559587c
 pathological/codata/lazy-record-projection.gandr:wrong_side:e351d9d075f4bdbb
-pathological/codata/missing-observation.gandr:<file>
-pathological/codata/missing-observation.gandr:Point:fc9fcb2a07a45a06
-pathological/codata/missing-observation.gandr:incomplete:a140a9f377c9c57d
 pathological/control/capability-amplify.gandr:<file>
 pathological/control/capability-amplify.gandr:save:62bb8d7e07139d05
 pathological/control/capability-amplify.gandr:widen:b765c68f2549f853

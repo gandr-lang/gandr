@@ -33,7 +33,9 @@ def rec varied(n : Nat, m : Nat) -> -F Nat {
   }
 }
 
-@[ refuses("OutOfFragment") ]
+/// A productive claim outside a copattern block: nothing is observed before
+/// the function runs again (#644).
+@[ refuses("UnguardedCorecursion") ]
 def rec ahead(n : Nat) -> -F Nat {
   case n {
     Zero => return n,

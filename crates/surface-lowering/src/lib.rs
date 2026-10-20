@@ -423,6 +423,7 @@ pub use crate::lower::RunSpelling;
 pub use crate::lower::lower_module;
 pub use crate::lower::lower_unit;
 pub use crate::module::Address;
+pub use crate::module::CodataIndex;
 pub use crate::module::Coerced;
 pub use crate::module::ComponentPlace;
 pub use crate::module::Container;
