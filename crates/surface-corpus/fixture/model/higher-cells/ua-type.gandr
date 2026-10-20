@@ -1,0 +1,37 @@
+// Univalence over the user universe at a stratum code: `ua[1, 4]` makes the
+// magma's degree telescope a path in `Type` (`ua-by-hand.gandr`), and the
+// statement `univalence` makes over any two types holds at it, as does the
+// packaging `idtoequiv` of that path. Transport along `ua` of a packaged path
+// is the path's transport at every path
+// (`../identity/univalence-transports.gandr`); the path between the two paths
+// is owed (`pathological/identity/univalence-owed.gandr`, #520).
+
+// The magma, the swap and the unit's identity.
+import "./magma-base.gandr" ;
+// Univalence over the user universe: `idtoequiv`, `univalence`.
+import "../identity/univalence.gandr" ;
+
+/// The magma's degree telescope at degree one, and the swap's path on it.
+module AtStratum {
+  type Tel = Unit * (+{Unit} * Bool);
+
+  /// The magma to itself by the swap, at degree one: a path in `Type`.
+  @[ checks ]
+  def opposite : Path(Type, Tel, Tel) ;
+  def opposite = ua[
+    1,
+    4
+  ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+
+  /// The statement over the user universe, at the stratum code.
+  @[ checks ]
+  def atTel() -> -F (Path(Type, Tel, Tel) ≃ (Tel ≃ Tel)) {
+    become univalence(Tel, Tel)
+  }
+
+  /// The stratum path packaged as an equivalence.
+  @[ checks ]
+  def swapped() -> -F (Tel ≃ Tel) {
+    become idtoequiv(Tel, Tel, opposite)
+  }
+}

@@ -1,0 +1,52 @@
+// What `univalence`'s two owed laws state, read through transport, holds by
+// conversion: `ua` after `idtoequiv` transports forward and back as the path
+// does, at every path between types, and `idtoequiv` after `ua` transports
+// forward as the record's map, at every record. The laws themselves stay
+// owed: two paths between types that transport alike are not one path, and a
+// record's inverses are not determined by its map without function
+// extensionality from a homotopy
+// (`pathological/identity/univalence-owed.gandr`, #520).
+
+// Univalence over the user universe: `fwdAlong`, `bwdAlong`, `idtoequiv`.
+import "./univalence.gandr" ;
+
+/// `ua` after `idtoequiv` transports forward as the path does: one function,
+/// at every path.
+@[ checks ]
+def uaEtaForward(a : Type, b : Type, p : Path(Type, a, b)) -> -F Path(
+  a => b,
+  thunk { fn (x) { fwdAlong(a, b, ua(idtoequiv(a, b, p)), x) } },
+  thunk { fn (x) { fwdAlong(a, b, p, x) } }
+) {
+  return here(thunk { fn (x) { fwdAlong(a, b, p, x) } })
+}
+
+/// `ua` after `idtoequiv` transports back as the path does: one function, at
+/// every path.
+@[ checks ]
+def uaEtaBackward(a : Type, b : Type, p : Path(Type, a, b)) -> -F Path(
+  b => a,
+  thunk { fn (y) { bwdAlong(a, b, ua(idtoequiv(a, b, p)), y) } },
+  thunk { fn (y) { bwdAlong(a, b, p, y) } }
+) {
+  return here(thunk { fn (y) { bwdAlong(a, b, p, y) } })
+}
+
+/// `idtoequiv` after `ua` transports forward as the record's map: one
+/// function, at every record.
+@[ checks ]
+def idtoequivUaForward(
+  a : Type,
+  b : Type,
+  t : a => b,
+  g : b => a,
+  s : (x : a) => Path(a, g(t(x)), x),
+  h : b => a,
+  r : (y : b) => Path(b, t(h(y)), y)
+) -> -F Path(
+  a => b,
+  thunk { fn (x) { fwdAlong(a, b, ua((t, ((g, s), (h, r)))), x) } },
+  t
+) {
+  return here(t)
+}
