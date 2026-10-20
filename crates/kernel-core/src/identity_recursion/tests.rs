@@ -73,10 +73,15 @@ fn relation(
     code: ValueId,
 ) -> Relation
 {
-    interpret(arena, mode, Domain::Elements(code))
-        .expect("code forms")
-        .elements()
-        .expect("element relation")
+    interpret(
+        arena,
+        crate::identity_recursion::Interfaces::NONE,
+        mode,
+        Domain::Elements(code),
+    )
+    .expect("code forms")
+    .elements()
+    .expect("element relation")
 }
 
 /// Compare a computed relation fibre against an independently written native
@@ -324,10 +329,15 @@ fn product_transport_composes_componentwise()
     let unit_type = arena.value_type_unit();
     let pair_type = arena.value_type_product(&[unit_type, unit_type]);
     let code = arena.value_quote(pair_type);
-    let family = interpret(&arena, Mode::Identity, Domain::Elements(code))
-        .expect("product interpretation")
-        .elements()
-        .expect("element relation");
+    let family = interpret(
+        &arena,
+        crate::identity_recursion::Interfaces::NONE,
+        Mode::Identity,
+        Domain::Elements(code),
+    )
+    .expect("product interpretation")
+    .elements()
+    .expect("element relation");
     let x = arena.value_variable(DeBruijnIndex::from(2_u32));
     let y = arena.value_variable(DeBruijnIndex::from(1_u32));
     let z = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -409,7 +419,13 @@ fn universe_bridge_is_an_indexed_relation()
     let left = arena.value_injection(Side::Left.into(), unit);
     let right = arena.value_injection(Side::Right.into(), unit);
     let empty = arena.value_type_empty();
-    let classifier = interpret(&arena, Mode::Bridge, Domain::Codes).expect("universe clause");
+    let classifier = interpret(
+        &arena,
+        crate::identity_recursion::Interfaces::NONE,
+        Mode::Bridge,
+        Domain::Codes,
+    )
+    .expect("universe clause");
     let yes = Relation::constant(&arena, unit_code, unit_code, Inhabitation::Unit)
         .expect("inhabited fibre");
     let no =
@@ -449,8 +465,13 @@ fn universe_identity_consumes_path_formation()
     let code = arena.value_quote(ty);
     let unit = arena.value_unit();
     let refl = arena.value_path_refl(code);
-    let identity =
-        interpret(&arena, Mode::Identity, Domain::Codes).expect("identity universe clause");
+    let identity = interpret(
+        &arena,
+        crate::identity_recursion::Interfaces::NONE,
+        Mode::Identity,
+        Domain::Codes,
+    )
+    .expect("identity universe clause");
     let formed = identity
         .path(&mut arena, refl, ReplayBudget::from(1000_u64))
         .expect("existing path formation");
@@ -481,11 +502,11 @@ fn abstract_is_an_interface_obstruction()
     for mode in [Mode::Identity, Mode::Bridge] {
         for code in [code, composite] {
             assert!(
-                matches!(interpret(&arena, mode, Domain::Elements(code)), Err(RelationError::AbstractInterface(found)) if found == atom)
+                matches!(interpret(&arena, crate::identity_recursion::Interfaces::NONE, mode, Domain::Elements(code)), Err(RelationError::AbstractInterface(found)) if found == atom)
             );
         }
         assert!(
-            matches!(interpret(&arena, mode, Domain::Elements(variable)), Err(RelationError::UnsupportedCode(found)) if found == variable)
+            matches!(interpret(&arena, crate::identity_recursion::Interfaces::NONE, mode, Domain::Elements(variable)), Err(RelationError::UnsupportedCode(found)) if found == variable)
         );
     }
 }
@@ -524,7 +545,7 @@ fn empty_elimination_is_native_and_has_no_introduction()
     check_value(&mut arena, &[], quote, universe).expect("empty type forms at zero");
     assert_eq!(arena.value_type(empty), Some(&ValueType::empty()));
     assert!(
-        matches!(interpret(&arena, Mode::Identity, Domain::Elements(quote)), Err(RelationError::UnsupportedType(found)) if found == empty)
+        matches!(interpret(&arena, crate::identity_recursion::Interfaces::NONE, Mode::Identity, Domain::Elements(quote)), Err(RelationError::UnsupportedType(found)) if found == empty)
     );
     let builder = gandr_kernel_term::DeclarationBuilder::new(&mut arena);
     let declaration = builder.def(gandr_kernel_term::LevelSignature::monomorphic(), ty, body);

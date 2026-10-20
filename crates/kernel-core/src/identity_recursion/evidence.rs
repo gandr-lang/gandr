@@ -580,7 +580,7 @@ impl Fibers
                         Fiber::Function { .. } => {
                             return Err(RelationError::HigherEvaluationRequired);
                         },
-                        Fiber::Relation { .. } | Fiber::Recursive { .. } => {
+                        Fiber::Relation { .. } | Fiber::Recursive { .. } | Fiber::Atom { .. } => {
                             return Err(RelationError::NonFibrant);
                         },
                         Fiber::Discrete(..) | Fiber::Suspended(..) => {

@@ -146,10 +146,15 @@ fn relation(
     code: ValueId,
 ) -> Relation
 {
-    interpret(arena, mode, Domain::Elements(code))
-        .expect("code")
-        .elements()
-        .expect("elements")
+    interpret(
+        arena,
+        crate::identity_recursion::Interfaces::NONE,
+        mode,
+        Domain::Elements(code),
+    )
+    .expect("code")
+    .elements()
+    .expect("elements")
 }
 
 /// The term graph's children, without reduction or relation interpretation.

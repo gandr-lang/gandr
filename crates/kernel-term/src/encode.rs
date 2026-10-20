@@ -49,6 +49,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_kernel_strata::ConstraintRelation;
 use gandr_kernel_strata::Level;
+use quenchant_shape::shape::Maybe;
 
 use crate::arena::AnyNode;
 use crate::arena::TermArena;
@@ -368,7 +369,9 @@ fn encode_minted_atom_table(
 ///   possibly zero, then the sort's position, the cell count and each cell's
 ///   two endpoints as rule sides; abstract types write their kind and
 ///   representation roots and the extent of their scope, an open scope as
-///   `remaining`; the other kinds write one root and no slots.
+///   `remaining`, and an interfaced one writes
+///   [`tags::KIND_ABSTRACT_INTERFACED`] and closes with its relation's and its
+///   reflexivity's roots; the other kinds write one root and no slots.
 /// - provides: one segment with cross-declaration sharing. The predicate checks
 ///   the mark/kind bytes, root memo presence and global-counter transition;
 ///   literal segment fixtures observe field order and slot framing.
@@ -390,14 +393,15 @@ fn encode_minted_atom_table(
 /// - witness: `encode::tests::a_lawful_definition_closes_its_segment_with_its_laws`
 /// - witness: `encode::tests::a_presented_data_declaration_closes_its_segment_with_its_rules`
 /// - witness: `encode::tests::a_type_of_words_closes_its_segment_with_its_cells`
+/// - witness: `encode::tests::an_interfaced_atom_closes_its_segment_with_its_interface`
 #[spec(
     captures: entry = (out.as_image().as_ref().len(), interner.by_content.len(), interner.next),
     ensures: |ret| { let image = out.as_image();
         let bytes = image.as_ref();
         bytes.get(entry.0).copied() == Some(u8::from(match marked.mark() { AdmissionMark::Checked => tags::ADMISSION_CHECKED, AdmissionMark::UncheckedBypass => tags::ADMISSION_UNCHECKED }))
-            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { .. } if marked.declaration().presentation().cells().is_some() => tags::KIND_DATA_WORDS, DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Def { .. } if !marked.declaration().laws().is_empty() => tags::KIND_DEF_LAWFUL, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
+            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { .. } if marked.declaration().presentation().cells().is_some() => tags::KIND_DATA_WORDS, DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Def { .. } if !marked.declaration().laws().is_empty() => tags::KIND_DEF_LAWFUL, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { interface: Maybe::Present(_), .. } => tags::KIND_ABSTRACT_INTERFACED, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
             && interner.by_node.contains_key(&AnyNode::ValueType(marked.declaration().declared_id()))
-            && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => interner.by_node.contains_key(&AnyNode::Value(body)), DeclarationContent::Data { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true }
+            && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => interner.by_node.contains_key(&AnyNode::Value(body)), DeclarationContent::AbstractType { interface: Maybe::Present(interface), .. } => interner.by_node.contains_key(&AnyNode::Value(interface.relation())) && interner.by_node.contains_key(&AnyNode::Value(interface.reflexivity())), DeclarationContent::Data { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true }
             && marked.declaration().related().iter().all(|related| interner.by_node.contains_key(&AnyNode::Value(related.left)) && interner.by_node.contains_key(&AnyNode::Value(related.right)))
             && interner.by_content.len() >= entry.1
             && u32::from(interner.next) == u32::from(entry.2).saturating_add(u32::try_from(interner.by_content.len().saturating_sub(entry.1)).unwrap_or(u32::MAX)) },
@@ -428,6 +432,10 @@ fn encode_declaration(
         DeclarationContent::Def { .. } if declaration.related().is_empty() => tags::KIND_DEF,
         DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING,
         DeclarationContent::Axiom { .. } => tags::KIND_AXIOM,
+        DeclarationContent::AbstractType {
+            interface: Maybe::Present(_),
+            ..
+        } => tags::KIND_ABSTRACT_INTERFACED,
         DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE,
     });
     encode_structured_name(out, declaration.name());
@@ -436,6 +444,7 @@ fn encode_declaration(
     let mut segment: Vec<EncodedEntry> = Vec::new();
     let mut data_roots = Vec::new();
     let mut related_roots = Vec::new();
+    let mut interface_roots = None;
     let (root_declared, root_body, root_sealed) = match *content {
         DeclarationContent::Data {
             kind,
@@ -472,11 +481,14 @@ fn encode_declaration(
         // representation as a second value-type root, and its scope's extent.
         // The representation is on the wire because the kernel re-reads it
         // inside the minting admission when it replays the artifact; outside
-        // that admission no rule reads it.
+        // that admission no rule reads it. An interface's two roots come after
+        // the representation, so an atom with none interns exactly what it
+        // did before the kind existed.
         DeclarationContent::AbstractType {
             kind,
             representation,
             scope,
+            interface,
         } => {
             let declared = intern(arena, interner, &mut segment, AnyNode::ValueType(kind));
             let representation = intern(
@@ -485,6 +497,21 @@ fn encode_declaration(
                 &mut segment,
                 AnyNode::ValueType(representation),
             );
+            if let Maybe::Present(interface) = interface {
+                let relation = intern(
+                    arena,
+                    interner,
+                    &mut segment,
+                    AnyNode::Value(interface.relation()),
+                );
+                let reflexivity = intern(
+                    arena,
+                    interner,
+                    &mut segment,
+                    AnyNode::Value(interface.reflexivity()),
+                );
+                interface_roots = Some((relation, reflexivity));
+            }
             let extent = match scope {
                 SealScope::Open => remaining,
                 SealScope::Closed(extent) => extent,
@@ -500,6 +527,10 @@ fn encode_declaration(
     if let Some((representation, extent)) = root_sealed {
         out.put_uvarint(WireU64::from(u64::from(u32::from(representation))));
         out.put_uvarint(WireU64::from(WireUsize::from(usize::from(extent))));
+    }
+    if let Some((relation, reflexivity)) = interface_roots {
+        out.put_uvarint(WireU64::from(u64::from(u32::from(relation))));
+        out.put_uvarint(WireU64::from(u64::from(u32::from(reflexivity))));
     }
     if let DeclarationContent::Data {
         ref constructors, ..
@@ -2620,6 +2651,77 @@ mod tests
                 .as_image()
                 .as_ref(),
             dropped
+        );
+    }
+
+    #[test]
+    fn an_interfaced_atom_closes_its_segment_with_its_interface()
+    {
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let kind = builder
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let integer = builder.arena().value_type_base(BaseType::Integer);
+        let relation = builder.arena().value_unit();
+        let reflexivity = builder.arena().value_tuple(&[relation]);
+        let interface = crate::decl::AtomInterface::new(relation, reflexivity);
+        let atom = builder
+            .abstract_type(
+                LevelSignature::monomorphic(),
+                kind,
+                integer,
+                super::SealScope::Open,
+            )
+            .interfaced(interface);
+        let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, atom)];
+        let bytes = super::encode(&arena, &declarations);
+        let image = bytes.as_image();
+        // The kind follows the header, the one-entry atom table and the
+        // admission mark.
+        let kind_at = 10;
+        assert_eq!(
+            image.as_ref().get(kind_at).copied(),
+            Some(u8::from(crate::tags::KIND_ABSTRACT_INTERFACED))
+        );
+        let decoded = crate::decode::decode(ArtifactImage::from(image.as_ref()))
+            .expect("an interfaced atom decodes");
+        let declaration = decoded.declarations().first().expect("one atom");
+        let crate::decl::DeclarationContent::AbstractType {
+            interface: super::Maybe::Present(read),
+            ..
+        } = *declaration.declaration().content()
+        else {
+            panic!("the atom decodes with its interface");
+        };
+        let arity = |value| {
+            decoded
+                .arena()
+                .value(value)
+                .and_then(crate::term::Value::components)
+                .map(<[_]>::len)
+        };
+        assert_eq!(
+            (arity(read.relation()), arity(read.reflexivity())),
+            (Some(0), Some(1)),
+            "the relation and the reflexivity are read back in order"
+        );
+        assert_eq!(
+            super::encode(decoded.arena(), decoded.declarations())
+                .as_image()
+                .as_ref(),
+            image.as_ref()
+        );
+        // The plain kind over the same bytes leaves the interface unread.
+        let mut plain = image.as_ref().to_vec();
+        if let Some(kind) = plain.get_mut(kind_at) {
+            *kind = u8::from(crate::tags::KIND_ABSTRACT_TYPE);
+        }
+        assert_eq!(
+            crate::decode::decode(ArtifactImage::from(plain.as_slice())),
+            Err(crate::error::DecodeError::Malformed {
+                site: crate::error::MalformedSite::TrailingBytes,
+            })
         );
     }
 

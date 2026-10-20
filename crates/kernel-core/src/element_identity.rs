@@ -268,7 +268,7 @@
 //! pointwise evaluation; the fold's own reading of that case is
 //! [`crate::identity_recursion::Application::Suspended`].
 //!
-//! **A bridge is the fold's relation, persisted, with no reflexivity.**
+//! **A bridge is the fold's relation, persisted.**
 //! `Bridge(A, a, b)` reads the fold in
 //! [`crate::identity_recursion::Mode::Bridge`] at the quoted `A`
 //! ([`bridge_fibre`]); the clause per code is the bridge
@@ -276,21 +276,19 @@
 //! does, at its domain's level with its endpoints owed, and an introduction
 //! form checked at it checks at its fibre; an open domain is a neutral fibre,
 //! and a function code's family is introduced only by a higher or quantified
-//! evaluation over the coverage the bridge fold generates. A domain reaching a
-//! sealed atom is refused at formation as
-//! [`IdentityError::BridgeAtSealedType`]: the relation between two elements of
-//! an abstract type is the abstraction's to choose, so no fold clause reads it.
-//! A bridge has no reflexivity, transport or eliminator: `here` checks only at
-//! an identity and is refused at a bridge by shape, and a bridge never converts
-//! with a path or a flow.
+//! evaluation over the coverage the bridge fold generates.
 //!
-//! - alternatives: bridges as an in-memory reading for producers only, which
-//!   left the relational reading unstatable in an admitted declaration. The
-//!   clauses' own alternatives, an interval and a name, are recorded with them
-//!   in [`crate::identity_recursion`] § Bridges.
-//! - reversal: a sealed atom whose interface declares its relation computes a
-//!   bridge where this refuses; a consumer needing a bridge's diagonal reverses
-//!   the clauses, not the node.
+//! A sealed atom's elements are related by the interface its declaration
+//! states: a relation `R : A → A → U` and its reflexivity
+//! `(x : A) → R x x`, both checked at the atom's admission over its
+//! representation. A bridge between two elements of an interfaced atom is
+//! `El(R a b)`, and `here a` checks at `Bridge(A, a, a)` by the reflexivity.
+//! A domain reaching an atom stating no interface is refused at formation as
+//! [`IdentityError::BridgeAtSealedType`]. An identity at an interfaced atom is
+//! refused as [`IdentityError::AtomTransport`]: the interface states no
+//! transport or coherence. Elsewhere a bridge has no reflexivity, transport or
+//! eliminator: `here` is refused at it by shape, and a bridge never converts
+//! with a path or a flow.
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -343,6 +341,7 @@ use crate::identity_recursion::Evaluation;
 use crate::identity_recursion::EvaluationSide;
 use crate::identity_recursion::Fibers;
 use crate::identity_recursion::HigherEvaluation;
+use crate::identity_recursion::Interfaces;
 use crate::identity_recursion::Interpretation;
 use crate::identity_recursion::Mode;
 use crate::identity_recursion::NormalForm;
@@ -486,10 +485,14 @@ pub enum IdentityError
         /// The identity the second component synthesizes.
         actual: ValueTypeWitness,
     },
-    /// A bridge's domain reaches a sealed atom: the relation between two
-    /// elements of an abstract type is the abstraction's to choose, so no fold
-    /// clause reads it.
+    /// A bridge's domain reaches a sealed atom whose declaration states no
+    /// interface: the relation between two elements of an abstract type is the
+    /// abstraction's to choose, so no fold clause reads it.
     BridgeAtSealedType(ValueTypeWitness),
+    /// An identity's domain reaches a sealed atom whose interface states a
+    /// relation and its reflexivity but no transport or coherence, so its
+    /// fibre is not an identity's.
+    AtomTransport(ValueTypeWitness),
 }
 
 impl fmt::Display for IdentityError
@@ -547,6 +550,9 @@ impl fmt::Display for IdentityError
             Self::ReturnedNonReturner(_) => f.write_str("a returned endpoint over a non-returner"),
             Self::NotOver { .. } => f.write_str("an identity that does not lie over its path"),
             Self::BridgeAtSealedType(_) => f.write_str("a bridge at a sealed type"),
+            Self::AtomTransport(_) => {
+                f.write_str("an identity at a sealed type whose interface states no transport")
+            },
         }
     }
 }
@@ -555,18 +561,21 @@ impl core::error::Error for IdentityError
 {
 }
 
-/// Require a domain the identity fold reads: closed and reaching no sealed
-/// atom.
+/// Require a domain the identity fold reads in `mode`: closed, and reaching a
+/// sealed atom only through the interface its declaration states.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: success exactly when the domain mentions no bound variable and
-///   reaches no sealed atom.
+/// - ensures: success exactly when the domain mentions no bound variable and,
+///   in identity mode, reaches no sealed atom; in bridge mode every atom it
+///   reaches states an interface, which [`require_unsealed`] has checked.
 /// - provides: the guard every reading of the fold shares; at an open domain
 ///   the identity is its own neutral fibre, which no fold introduction
 ///   inhabits.
-/// - fails: [`IdentityError::NeutralFibre`] at an open domain; `ArenaFault` for
-///   a domain the arena does not hold.
+/// - fails: [`IdentityError::NeutralFibre`] at an open domain or at an atom
+///   stating no interface; [`IdentityError::AtomTransport`] at an identity
+///   reaching an atom that states one; `ArenaFault` for a domain the arena does
+///   not hold.
 /// - panics: none.
 ///
 /// # Errors
@@ -574,14 +583,17 @@ impl core::error::Error for IdentityError
 ///
 /// # Adequacy
 /// - hypothesis: L3 — native evidence at the decode of a variable code and at a
-///   sealed atom refuses as a neutral fibre, while the same evidence at a
-///   closed Bool checks.
+///   sealed atom refuses as a neutral fibre, at an interfaced atom by its
+///   missing transport, while the same evidence at a closed Bool checks.
 /// - witness: `element_identity::tests::identity_at_an_open_type_is_a_neutral_fibre`
+/// - witness: `element_identity::bridge_tests::an_interfaced_atom_bears_its_relation_as_its_bridge`
 #[spec(ensures: |ret| ret.as_ref().map_or_else(
-    |error| matches!(error, &(KernelError::Identity(IdentityError::NeutralFibre) | KernelError::ArenaFault)),
+    |error| matches!(error, &(KernelError::Identity(IdentityError::NeutralFibre | IdentityError::AtomTransport(_)) | KernelError::ArenaFault)),
     |&()| arena.value_type(domain).is_some()))]
 fn require_folded(
     arena: &TermArena,
+    interfaces: Interfaces<'_>,
+    mode: Mode,
     domain: ValueTypeId,
 ) -> Result<(), KernelError>
 {
@@ -589,18 +601,29 @@ fn require_folded(
         return Err(KernelError::ArenaFault);
     }
     let reach = u32::from(LooseDepths::new().value_type_reach(arena, domain));
-    if reach != 0 || !crate::env::projected_atoms(arena, domain).is_empty() {
+    if reach != 0 {
         return Err(KernelError::Identity(IdentityError::NeutralFibre));
     }
-    Ok(())
+    let atoms = crate::env::projected_atoms(arena, domain);
+    match mode {
+        Mode::Bridge => Ok(()),
+        Mode::Identity if atoms.is_empty() => Ok(()),
+        Mode::Identity if atoms.iter().any(|&atom| interfaces.of_atom(atom).is_some()) => {
+            Err(KernelError::Identity(IdentityError::AtomTransport(
+                value_type_witness(arena, domain),
+            )))
+        },
+        Mode::Identity => Err(KernelError::Identity(IdentityError::NeutralFibre)),
+    }
 }
 
-/// Require a bridge's domain to reach no sealed atom.
+/// Require a bridge's domain to reach a sealed atom only where the atom's
+/// declaration states an interface.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: success exactly when `domain` resolves and reaches no sealed
-///   atom.
+/// - ensures: success exactly when `domain` resolves and every sealed atom it
+///   reaches states an interface in `interfaces`.
 /// - provides: the bridge's formation guard, and the first guard of every
 ///   bridge reading, so a sealed atom is refused by its own name before an open
 ///   domain is read as a neutral fibre.
@@ -613,20 +636,26 @@ fn require_folded(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a bridge at an atom, at a function into an atom and at a
-///   list of atoms refuses by name at formation, where a bridge at Bool forms.
+///   list of atoms refuses by name at formation where the atom states no
+///   interface, and forms where it states one, as a bridge at Bool forms.
 /// - witness: `element_identity::bridge_tests::a_bridge_at_a_sealed_type_is_refused`
+/// - witness: `element_identity::bridge_tests::an_interfaced_atom_bears_its_relation_as_its_bridge`
 #[spec(ensures: |ret| ret.as_ref().map_or_else(
     |error| matches!(error, &(KernelError::Identity(IdentityError::BridgeAtSealedType(_)) | KernelError::ArenaFault)),
     |&()| arena.value_type(domain).is_some()))]
 pub(crate) fn require_unsealed(
     arena: &TermArena,
+    interfaces: Interfaces<'_>,
     domain: ValueTypeId,
 ) -> Result<(), KernelError>
 {
     if arena.value_type(domain).is_none() {
         return Err(KernelError::ArenaFault);
     }
-    if !crate::env::projected_atoms(arena, domain).is_empty() {
+    if crate::env::projected_atoms(arena, domain)
+        .into_iter()
+        .any(|atom| interfaces.of_atom(atom).is_none())
+    {
         return Err(KernelError::Identity(IdentityError::BridgeAtSealedType(
             value_type_witness(arena, domain),
         )));
@@ -654,14 +683,82 @@ pub(crate) fn require_unsealed(
 #[spec(ensures: |ret| ret.is_err() || arena.value_type(domain).is_some())]
 fn require_read(
     arena: &TermArena,
+    interfaces: Interfaces<'_>,
     mode: Mode,
     domain: ValueTypeId,
 ) -> Result<(), KernelError>
 {
     if mode == Mode::Bridge {
-        require_unsealed(arena, domain)?;
+        require_unsealed(arena, interfaces, domain)?;
     }
-    require_folded(arena, domain)
+    require_folded(arena, interfaces, mode, domain)
+}
+
+/// The decode of `relation`'s code at two elements, `El(⟨force relation left
+/// right⟩)` at `level`: the fibre of a bridge at an interfaced atom.
+///
+/// # Specification
+/// - requires: `relation` is closed, and `left` and `right` stand in the
+///   context the type is read in.
+/// - ensures: the element type of the relation's returned code.
+/// - provides: the one spelling of an atom's relation applied, which the atom's
+///   admission checks reflexivity against and a bridge reading checks evidence
+///   against.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a relation returning the unit code reads as the unit type
+///   at any two elements.
+/// - witness: `element_identity::bridge_tests::an_interfaced_atom_bears_its_relation_as_its_bridge`
+#[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&ValueType::Element { .. })))]
+pub(crate) fn related_by(
+    arena: &mut TermArena,
+    relation: ValueId,
+    (left, right): (ValueId, ValueId),
+    level: Level,
+) -> ValueTypeId
+{
+    let forced = arena.computation_force(relation);
+    let applied = arena.computation_application(forced, left);
+    let applied = arena.computation_application(applied, right);
+    let code = arena.value_returned(applied);
+    arena.value_type_element(code, level)
+}
+
+/// The types an atom's interface is checked at: its relation's, `U(R → R → F
+/// kind)`, and its reflexivity's, `U(Π (x : R). F El(⟨relation x x⟩))`, over
+/// the atom's representation `R`.
+///
+/// # Specification
+/// - requires: `kind` is the value universe at `level`; `relation` is closed.
+/// - ensures: the two thunk types, in that order.
+/// - provides: the obligation the atom's admission discharges inside its seal,
+///   where the atom reads as its representation.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a relation of the wrong shape, and a reflexivity that
+///   does not inhabit the relation's diagonal, refuse at the atom's admission.
+/// - witness: `element_identity::bridge_tests::an_interface_is_checked_where_its_atom_is_admitted`
+#[spec(ensures: |ret| matches!(arena.value_type(ret.0), Some(&ValueType::Thunk(_))) && matches!(arena.value_type(ret.1), Some(&ValueType::Thunk(_))))]
+pub(crate) fn interface_types(
+    arena: &mut TermArena,
+    (kind, level): (ValueTypeId, Level),
+    representation: ValueTypeId,
+    relation: ValueId,
+) -> (ValueTypeId, ValueTypeId)
+{
+    let codes = arena.comp_type_returner(kind);
+    let inner = arena.comp_type_arrow(representation, codes);
+    let outer = arena.comp_type_arrow(representation, inner);
+    let relations = arena.value_type_thunk(outer);
+    let element = arena.value_variable(gandr_kernel_term::DeBruijnIndex::from(0_u32));
+    let diagonal = related_by(arena, relation, (element, element), level);
+    let witnessed = arena.comp_type_returner(diagonal);
+    let reflexive = arena.comp_type_pi(representation, witnessed);
+    (relations, arena.value_type_thunk(reflexive))
 }
 
 /// Relate a reflexivity's point to both endpoints of the identity it is
@@ -904,12 +1001,13 @@ pub(crate) fn related_endpoints(
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&fibre| arena.value_type(fibre).is_some()))]
 pub(crate) fn fibre(
     arena: &mut TermArena,
+    interfaces: Interfaces<'_>,
     domain: ValueTypeId,
     left: ValueId,
     right: ValueId,
 ) -> Result<ValueTypeId, KernelError>
 {
-    let (fibre, fibers) = native_fibre(arena, domain, left, right)?;
+    let (fibre, fibers) = native_fibre(arena, interfaces, domain, left, right)?;
     if let Ok(crate::identity_recursion::Fiber::Function { .. }) = fibers.get(fibers.root()) {
         return Err(KernelError::Identity(
             IdentityError::HigherEvaluationRequired,
@@ -950,14 +1048,15 @@ pub(crate) fn fibre(
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&fibre| arena.value_type(fibre).is_some()))]
 pub(crate) fn bridge_fibre(
     arena: &mut TermArena,
+    interfaces: Interfaces<'_>,
     domain: ValueTypeId,
     left: ValueId,
     right: ValueId,
 ) -> Result<ValueTypeId, KernelError>
 {
-    require_read(arena, Mode::Bridge, domain)?;
+    require_read(arena, interfaces, Mode::Bridge, domain)?;
     let code = arena.value_quote(domain);
-    let fibers = interpret(arena, Mode::Bridge, Domain::Elements(code))
+    let fibers = interpret(arena, interfaces, Mode::Bridge, Domain::Elements(code))
         .and_then(Interpretation::elements)
         .and_then(|relation| relation.evaluate(arena, left, right))
         .map_err(|error| read_refusal(arena, Mode::Bridge, error))?;
@@ -1096,6 +1195,7 @@ fn pair_components(
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(fibre, _)| arena.value_type(fibre).is_some()))]
 fn native_fibre(
     arena: &mut TermArena,
+    interfaces: Interfaces<'_>,
     domain: ValueTypeId,
     left: ValueId,
     right: ValueId,
@@ -1112,12 +1212,12 @@ fn native_fibre(
         enclosing.push((base.1, base.2));
         base = (domain, left, right);
     }
-    require_folded(arena, base.0)?;
-    let (mut fibre, mut fibers) = fold_fibre(arena, base)?;
+    require_folded(arena, interfaces, Mode::Identity, base.0)?;
+    let (mut fibre, mut fibers) = fold_fibre(arena, interfaces, base)?;
     while let Some((left, right)) = enclosing.pop() {
         let left = diagonal_endpoint(arena, &fibers, left)?;
         let right = diagonal_endpoint(arena, &fibers, right)?;
-        (fibre, fibers) = fold_fibre(arena, (fibre, left, right))?;
+        (fibre, fibers) = fold_fibre(arena, interfaces, (fibre, left, right))?;
     }
     Ok((fibre, fibers))
 }
@@ -1139,11 +1239,12 @@ fn native_fibre(
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(fibre, _)| arena.value_type(fibre).is_some()))]
 fn fold_fibre(
     arena: &mut TermArena,
+    interfaces: Interfaces<'_>,
     (domain, left, right): (ValueTypeId, ValueId, ValueId),
 ) -> Result<(ValueTypeId, Fibers), KernelError>
 {
     let code = arena.value_quote(domain);
-    let fibers = interpret(arena, Mode::Identity, Domain::Elements(code))
+    let fibers = interpret(arena, interfaces, Mode::Identity, Domain::Elements(code))
         .and_then(Interpretation::elements)
         .and_then(|relation| relation.evaluate(arena, left, right))
         .map_err(|error| relation_refusal(arena, error))?;
@@ -1212,6 +1313,7 @@ fn diagonal_endpoint(
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |owed| u64::try_from(owed.len()).is_ok_and(|owed| owed == u64::from(program.depth.0))))]
 pub(crate) fn higher_obligations(
     arena: &mut TermArena,
+    interfaces: Interfaces<'_>,
     expected: ValueTypeId,
     program: &HigherProgram,
     evidence: &[ValueId],
@@ -1219,7 +1321,7 @@ pub(crate) fn higher_obligations(
 {
     let (inner, left, right) = path_parts(arena, expected)?;
     let (base, base_left, base_right) = path_parts(arena, inner)?;
-    let (fibre, fibers) = native_fibre(arena, base, base_left, base_right)?;
+    let (fibre, fibers) = native_fibre(arena, interfaces, base, base_left, base_right)?;
     let left = diagonal_endpoint(arena, &fibers, left)?;
     let right = diagonal_endpoint(arena, &fibers, right)?;
     let codata = higher_codata(program, evidence)?;
@@ -1332,14 +1434,14 @@ fn higher_id(position: LayerPosition) -> Result<HigherId, KernelError>
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |owed| owed.len() == components.len()))]
 pub(crate) fn evaluation_obligations(
     arena: &mut TermArena,
-    unfoldings: &Unfoldings,
+    (unfoldings, interfaces): (&Unfoldings, Interfaces<'_>),
     expected: ValueTypeId,
     dialogues: &[EvaluationDialogues],
     components: &[EvaluationComponent],
 ) -> Result<Vec<ComponentObligation>, KernelError>
 {
     let (mode, domain, left, right) = related_parts(arena, expected)?;
-    require_read(arena, mode, domain)?;
+    require_read(arena, interfaces, mode, domain)?;
     let mut reach = LooseDepths::new();
     if u32::from(reach.value_reach(arena, left)) != 0
         || u32::from(reach.value_reach(arena, right)) != 0
@@ -1364,7 +1466,7 @@ pub(crate) fn evaluation_obligations(
         });
     }
     let code = arena.value_quote(domain);
-    interpret(arena, mode, Domain::Elements(code))
+    interpret(arena, interfaces, mode, Domain::Elements(code))
         .and_then(Interpretation::elements)
         .and_then(|relation| {
             relation.evaluation_obligations(
@@ -1405,14 +1507,14 @@ pub(crate) fn evaluation_obligations(
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |owed| !owed.is_empty()))]
 pub(crate) fn quantified_obligations(
     arena: &mut TermArena,
-    unfoldings: &Unfoldings,
+    (unfoldings, interfaces): (&Unfoldings, Interfaces<'_>),
     expected: ValueTypeId,
     steps: &[QuantifiedStep],
     children: &[ValueId],
 ) -> Result<Vec<ComponentObligation>, KernelError>
 {
     let (mode, domain, left, right) = related_parts(arena, expected)?;
-    require_read(arena, mode, domain)?;
+    require_read(arena, interfaces, mode, domain)?;
     let mut reach = LooseDepths::new();
     if u32::from(reach.value_reach(arena, left)) != 0
         || u32::from(reach.value_reach(arena, right)) != 0
@@ -1457,7 +1559,7 @@ pub(crate) fn quantified_obligations(
         return Err(coverage());
     }
     let code = arena.value_quote(domain);
-    interpret(arena, mode, Domain::Elements(code))
+    interpret(arena, interfaces, mode, Domain::Elements(code))
         .and_then(Interpretation::elements)
         .and_then(|relation| {
             relation.quantified_obligations(
@@ -1569,6 +1671,46 @@ pub(crate) fn path_parts(
     }
 }
 
+/// The domain and endpoints of a type `here` checks at: an identity, or a
+/// bridge at a sealed atom whose interface states reflexivity.
+///
+/// # Specification
+/// - ensures: the three parts of a `Path` type, or of a `Bridge` type whose
+///   domain is an atom stating an interface in `interfaces`.
+/// - provides: the `here` rule's reading of its type: the interface's
+///   reflexivity, checked at the atom's admission, is the evidence a bridge at
+///   the atom between a point and itself has.
+/// - fails: a value-shape mismatch naming the type otherwise.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `here` checks at a bridge at an interfaced atom, and is
+///   refused at a bridge at Bool by shape.
+/// - witness: `element_identity::bridge_tests::an_interfaced_atom_bears_its_relation_as_its_bridge`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&(domain, left, right)|
+    matches!(arena.value_type(ty), Some(&(ValueType::Path { domain: d, left: l, right: r } | ValueType::Bridge { domain: d, left: l, right: r })) if d == domain && l == left && r == right)))]
+pub(crate) fn reflexive_parts(
+    arena: &TermArena,
+    interfaces: Interfaces<'_>,
+    ty: ValueTypeId,
+) -> Result<(ValueTypeId, ValueId, ValueId), KernelError>
+{
+    if let Some(&ValueType::Bridge {
+        domain,
+        left,
+        right,
+    }) = arena.value_type(ty)
+        && let Some(&ValueType::Abstract(atom)) = arena.value_type(domain)
+        && interfaces.of_atom(atom).is_some()
+    {
+        return Ok((domain, left, right));
+    }
+    path_parts(arena, ty)
+}
+
 /// The reading, domain and endpoints of an identity or a bridge type.
 ///
 /// # Specification
@@ -1671,6 +1813,9 @@ fn relation_refusal(
         // its own neutral fibre.
         RelationError::AbstractInterface(_) | RelationError::NeutralFiber => {
             IdentityError::NeutralFibre
+        },
+        RelationError::AtomTransport(ty) => {
+            IdentityError::AtomTransport(value_type_witness(arena, ty))
         },
         RelationError::Typing(error) | RelationError::Pointwise(_, error) => return *error,
         RelationError::Path(error) => return KernelError::Path(*error),

@@ -47,6 +47,7 @@ use core::mem::ManuallyDrop;
 
 use anodized::spec;
 use gandr_kernel_strata::LandmarkConstraint;
+use quenchant_shape::shape::Maybe;
 
 use crate::arena::ArenaWatermark;
 use crate::arena::TermArena;
@@ -243,6 +244,90 @@ pub enum SealScope
     Open,
     /// The minting admission closed after this many further declarations.
     Closed(SealExtent),
+}
+
+/// A sealed atom's element interface: the relation two of its elements bear
+/// and that relation's reflexivity.
+///
+/// Both are closed values the atom's admission checks against its
+/// representation `R`, at the level `l` of its kind: `relation` at
+/// `U(R → R → F U_l)` and `reflexivity` at `U(Π (x : R). F El(⟨relation x
+/// x⟩))`. A bridge at the atom reads `relation` as its fibre and `reflexivity`
+/// as its diagonal; the interface carries no transport or coherence, so an
+/// identity at the atom stays refused.
+///
+/// # Specification
+/// - requires: nothing; liveness and typing are the admission's obligations.
+/// - ensures: retains both roots verbatim.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a related atom round-trips with both roots, and the plain
+///   abstract-type kind over the same bytes is refused.
+/// - witness: `encode::tests::an_interfaced_atom_closes_its_segment_with_its_interface`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct AtomInterface
+{
+    /// The relation between two elements, a code-valued binary function.
+    relation: ValueId,
+    /// The relation's reflexivity, one witness per element.
+    reflexivity: ValueId,
+}
+
+impl AtomInterface
+{
+    /// The interface relating elements by `relation`, reflexive by
+    /// `reflexivity`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        relation: ValueId,
+        reflexivity: ValueId,
+    ) -> Self
+    {
+        Self {
+            relation,
+            reflexivity,
+        }
+    }
+
+    /// The relation between two elements.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn relation(&self) -> ValueId
+    {
+        self.relation
+    }
+
+    /// The relation's reflexivity.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn reflexivity(&self) -> ValueId
+    {
+        self.reflexivity
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a sealed atom carries no element interface.
+    pub mod interface {
+        /// The reason an atom states no element relation.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The declaration states none: no fold clause reads the atom.
+            Unstated,
+        }
+    }
 }
 
 /// A declaration's prenex level interface: how many level parameters it binds
@@ -442,6 +527,8 @@ pub enum DeclarationContent
         representation: ValueTypeId,
         /// How far the minting admission reaches.
         scope: SealScope,
+        /// The relation and reflexivity a bridge at the atom reads.
+        interface: Maybe<AtomInterface, interface::Absent>,
     },
 }
 
@@ -974,13 +1061,13 @@ impl Declaration
     /// - witness: `decl::tests::closing_a_scope_touches_only_an_abstract_type`
     #[spec(
         captures: entry = (match self.content {
-            DeclarationContent::AbstractType { kind, representation, .. } => Some((kind, representation)),
+            DeclarationContent::AbstractType { kind, representation, interface, .. } => Some((kind, representation, interface)),
             DeclarationContent::Data { .. } | DeclarationContent::Def { .. } | DeclarationContent::Axiom { .. } => None,
         }, core::mem::discriminant(&self.content), self.provenance.len(), self.name.0.len()),
         ensures: |ret| ret.provenance.len() == entry.2 && ret.name.0.len() == entry.3
             && match entry.0 {
-                Some((kind, representation)) => ret.content
-                    == DeclarationContent::AbstractType { kind, representation, scope: SealScope::Closed(extent) },
+                Some((kind, representation, interface)) => ret.content
+                    == DeclarationContent::AbstractType { kind, representation, scope: SealScope::Closed(extent), interface },
                 None => core::mem::discriminant(&ret.content) == entry.1,
             },
     )]
@@ -995,12 +1082,70 @@ impl Declaration
             DeclarationContent::AbstractType {
                 kind,
                 representation,
+                interface,
                 ..
             } => Self {
                 content: DeclarationContent::AbstractType {
                     kind,
                     representation,
                     scope: SealScope::Closed(extent),
+                    interface,
+                },
+                ..self
+            },
+            DeclarationContent::Data { .. }
+            | DeclarationContent::Def { .. }
+            | DeclarationContent::Axiom { .. } => self,
+        }
+    }
+
+    /// This declaration with an abstract type's elements related by
+    /// `interface`, everything else unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing; the admission checks the interface.
+    /// - ensures: an abstract type comes back carrying `interface`; any other
+    ///   declaration, which has no elements to relate, comes back unchanged.
+    ///   Levels, provenance, name and scope are untouched either way.
+    /// - provides: the record of an atom whose bridges read a relation.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a related atom keeps its kind, representation and
+    ///   scope, and a definition passed through is unchanged.
+    /// - witness: `decl::tests::interfacing_touches_only_an_abstract_type`
+    #[spec(
+        captures: entry = (match self.content {
+            DeclarationContent::AbstractType { kind, representation, scope, .. } => Some((kind, representation, scope)),
+            DeclarationContent::Data { .. } | DeclarationContent::Def { .. } | DeclarationContent::Axiom { .. } => None,
+        }, core::mem::discriminant(&self.content), self.provenance.len(), self.name.0.len()),
+        ensures: |ret| ret.provenance.len() == entry.2 && ret.name.0.len() == entry.3
+            && match entry.0 {
+                Some((kind, representation, scope)) => ret.content
+                    == DeclarationContent::AbstractType { kind, representation, scope, interface: Maybe::Present(interface) },
+                None => core::mem::discriminant(&ret.content) == entry.1,
+            },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn interfaced(
+        self,
+        interface: AtomInterface,
+    ) -> Self
+    {
+        match self.content {
+            DeclarationContent::AbstractType {
+                kind,
+                representation,
+                scope,
+                ..
+            } => Self {
+                content: DeclarationContent::AbstractType {
+                    kind,
+                    representation,
+                    scope,
+                    interface: Maybe::Present(interface),
                 },
                 ..self
             },
@@ -1467,9 +1612,9 @@ impl<'arena> DeclarationBuilder<'arena>
     ///   not form below it is a rejection at a choke point, not a construction
     ///   error.
     /// - ensures: a declaration whose content is an abstract type carrying
-    ///   `kind`, `representation` and `scope`, and whose provenance is empty,
-    ///   an atom being what a projection produces rather than something
-    ///   carrying a projection of its own.
+    ///   `kind`, `representation` and `scope` and no element interface, and
+    ///   whose provenance is empty, an atom being what a projection produces
+    ///   rather than something carrying a projection of its own.
     /// - provides: the atom-minting construction surface.
     /// - fails: never.
     /// - panics: none.
@@ -1486,7 +1631,7 @@ impl<'arena> DeclarationBuilder<'arena>
     /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
     #[spec(
         captures: entry = (levels.params, levels.constraints.len()),
-        ensures: |ret| ret.content == DeclarationContent::AbstractType { kind, representation, scope }
+        ensures: |ret| ret.content == DeclarationContent::AbstractType { kind, representation, scope, interface: Maybe::Absent(interface::Absent::Unstated) }
                 && ret.levels.params == entry.0
                 && ret.levels.constraints.len() == entry.1
                 && ret.name.0.is_empty()
@@ -1509,6 +1654,7 @@ impl<'arena> DeclarationBuilder<'arena>
                 kind,
                 representation,
                 scope,
+                interface: Maybe::Absent(interface::Absent::Unstated),
             },
             provenance: Vec::new(),
             name: StructuredName::default(),
@@ -1767,6 +1913,7 @@ mod tests
                         kind: declared,
                         representation: unit_type,
                         scope: super::SealScope::Open,
+                        interface: super::Maybe::Absent(super::interface::Absent::Unstated),
                     },
                 };
                 let declaration = match shape {
@@ -1854,6 +2001,7 @@ mod tests
                 kind,
                 representation: integer,
                 scope: super::SealScope::Closed(super::SealExtent::from(2_usize)),
+                interface: super::Maybe::Absent(super::interface::Absent::Unstated),
             },
             "an open atom closes at the extent its environment drew"
         );
@@ -1865,6 +2013,51 @@ mod tests
             definition.clone().closed(super::SealExtent::from(2_usize)),
             definition,
             "a definition has no minting admission to close"
+        );
+    }
+
+    #[test]
+    fn interfacing_touches_only_an_abstract_type()
+    {
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let kind = builder.arena().value_type_universe(
+            crate::types::GroundSort::Value,
+            gandr_kernel_strata::Level::zero(),
+        );
+        let integer = builder
+            .arena()
+            .value_type_base(crate::base::BaseType::Integer);
+        let relation = builder.arena().value_unit();
+        let reflexivity = builder.arena().value_tuple(&[relation]);
+        let interface = super::AtomInterface::new(relation, reflexivity);
+        let atom = builder
+            .abstract_type(
+                LevelSignature::monomorphic(),
+                kind,
+                integer,
+                super::SealScope::Open,
+            )
+            .interfaced(interface)
+            .closed(super::SealExtent::from(1_usize));
+        assert_eq!(
+            atom.content(),
+            &super::DeclarationContent::AbstractType {
+                kind,
+                representation: integer,
+                scope: super::SealScope::Closed(super::SealExtent::from(1_usize)),
+                interface: super::Maybe::Present(interface),
+            },
+            "an interfaced atom keeps its interface when its scope closes"
+        );
+        let unit = arena.value_unit();
+        let unit_type = arena.value_type_unit();
+        let definition =
+            DeclarationBuilder::new(&mut arena).def(LevelSignature::monomorphic(), unit_type, unit);
+        assert_eq!(
+            definition.clone().interfaced(interface),
+            definition,
+            "a definition has no elements to relate"
         );
     }
 

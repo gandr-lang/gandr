@@ -404,6 +404,7 @@ impl Relation
             | Clause::Universe
             | Clause::Certificate
             | Clause::Relation
+            | Clause::Atom { .. }
             | Clause::Product(..)
             | Clause::Sum(..)
             | Clause::Function(..)

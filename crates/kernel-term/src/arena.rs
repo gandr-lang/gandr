@@ -3698,6 +3698,9 @@ mod tests
                     kind: super::ValueTypeId(17),
                     representation: super::ValueTypeId(19),
                     scope: crate::decl::SealScope::Open,
+                    interface: quenchant_shape::shape::Maybe::Absent(
+                        crate::decl::interface::Absent::Unstated,
+                    ),
                 }
                 .declared_id()
                 .0,

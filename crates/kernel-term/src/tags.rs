@@ -797,6 +797,16 @@ pub const KIND_DEF_LAWFUL: WireTag = WireTag(0x09);
 /// as an unknown declaration kind rather than misreading it, which is why the
 /// format version holds.
 pub const KIND_DATA_WORDS: WireTag = WireTag(0x0A);
+/// Declaration tag: a sealed abstract type whose segment closes with its
+/// element interface.
+///
+/// After the [`KIND_ABSTRACT_TYPE`] fields come two value roots, the relation
+/// between two of the atom's elements and its reflexivity. An atom with no
+/// interface writes [`KIND_ABSTRACT_TYPE`], so every other artifact keeps its
+/// bytes, and a reader predating this kind refuses it as an unknown
+/// declaration kind rather than misreading it, which is why the format
+/// version holds.
+pub const KIND_ABSTRACT_INTERFACED: WireTag = WireTag(0x0C);
 /// Rule node tag: a constructor of the declaration's own table.
 pub const RULE_CONSTRUCTOR: WireTag = WireTag(0);
 /// Rule node tag: a pattern variable.

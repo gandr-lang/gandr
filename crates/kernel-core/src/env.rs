@@ -309,6 +309,39 @@ impl StagedDeclaration
             ..self
         }
     }
+
+    /// This staged declaration with an abstract type's elements related by
+    /// `interface`.
+    ///
+    /// # Specification
+    /// - requires: nothing; the admission checks the interface.
+    /// - ensures: the content region is unchanged; an abstract type carries
+    ///   `interface`, any other declaration is unchanged.
+    /// - provides: how a producer states an atom's element relation and its
+    ///   reflexivity before offering the declaration.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an interfaced atom admits where its interface checks
+    ///   and its bridges read the relation.
+    /// - witness: `element_identity::bridge_tests::an_interfaced_atom_bears_its_relation_as_its_bridge`
+    #[spec(
+        captures: entry = self.content_start,
+        ensures: |ret| ret.content_start == entry,
+    )]
+    #[inline]
+    #[must_use]
+    pub fn interfaced(
+        self,
+        interface: gandr_kernel_term::AtomInterface,
+    ) -> Self
+    {
+        Self {
+            declaration: self.declaration.interfaced(interface),
+            ..self
+        }
+    }
 }
 
 /// Whether an environment holds staged, unresolved content above some mark.
@@ -830,7 +863,7 @@ impl<'env> Staging<'env>
         requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
         captures: [entry_start = self.builder.content_start()],
         ensures: |ret| ret.content_start == entry_start
-            && *ret.declaration.content() == DeclarationContent::AbstractType { kind, representation, scope }
+            && matches!(*ret.declaration.content(), DeclarationContent::AbstractType { kind: k, representation: r, scope: s, .. } if k == kind && r == representation && s == scope)
     )]
     #[inline]
     #[must_use]

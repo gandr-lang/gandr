@@ -81,10 +81,15 @@ fn list_identity_is_lazy()
     let boolean = arena.value_type_sum(&[unit, unit]);
     let list_type = arena.value_type_list(boolean);
     let code = arena.value_quote(list_type);
-    let relation = interpret(&arena, Mode::Identity, Domain::Elements(code))
-        .expect("one code fold")
-        .elements()
-        .expect("recursive relation");
+    let relation = interpret(
+        &arena,
+        crate::identity_recursion::Interfaces::NONE,
+        Mode::Identity,
+        Domain::Elements(code),
+    )
+    .expect("one code fold")
+    .elements()
+    .expect("recursive relation");
     let unit = arena.value_unit();
     let truth = arena.value_injection(Side::Left.into(), unit);
     let falsity = arena.value_injection(Side::Right.into(), unit);
@@ -150,10 +155,15 @@ fn list_identity_is_lazy()
     assert_eq!(observed.fiber, Inhabitation::Empty);
     assert_eq!(observed.progress.depth, Depth(1));
     let non_list = arena.value_quote(boolean);
-    let non_list = interpret(&arena, Mode::Identity, Domain::Elements(non_list))
-        .expect("Bool fold")
-        .elements()
-        .expect("relation");
+    let non_list = interpret(
+        &arena,
+        crate::identity_recursion::Interfaces::NONE,
+        Mode::Identity,
+        Domain::Elements(non_list),
+    )
+    .expect("Bool fold")
+    .elements()
+    .expect("relation");
     assert!(matches!(
         non_list
             .observe_lists(&mut arena, &left, &right, ReplayBudget::from(2_u64))
@@ -170,10 +180,15 @@ fn an_unbounded_spine_refuses_without_a_verdict()
     let unit_type = arena.value_type_unit();
     let list_type = arena.value_type_list(unit_type);
     let code = arena.value_quote(list_type);
-    let relation = interpret(&arena, Mode::Identity, Domain::Elements(code))
-        .expect("fold")
-        .elements()
-        .expect("list");
+    let relation = interpret(
+        &arena,
+        crate::identity_recursion::Interfaces::NONE,
+        Mode::Identity,
+        Domain::Elements(code),
+    )
+    .expect("fold")
+    .elements()
+    .expect("list");
     let unit = arena.value_unit();
     let head = arena.value_injection(Side::Right.into(), unit);
     let looped = Codata {
