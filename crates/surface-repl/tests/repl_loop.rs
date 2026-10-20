@@ -682,6 +682,13 @@ fn a_dependent_function_names_its_type_with_its_binder()
 /// One-line signatures in three selected strict corpus sources retain
 /// the type spelling written in those sources.
 #[test]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        linear_search_in_loop,
+        reason = "bounded: the lines one `:load` of a selected corpus source prints"
+    )
+)]
 fn corpus_types_spell_as_their_source_writes_them()
 {
     for path in CORPUS {
