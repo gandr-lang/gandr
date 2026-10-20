@@ -39,7 +39,8 @@ pub struct Position(pub usize);
 /// - hypothesis: L2 — generated chains of every class over generated modules of
 ///   both roots submit to the walk's compositions.
 /// - witness: `tests::forms::every_generated_edit_submits_as_the_walk_composes_it`
-/// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it`
+/// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_strict_root`
+/// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_fixture_root`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FormEdit
 {
@@ -74,7 +75,8 @@ impl core::fmt::Display for FormEdit
     /// # Adequacy
     /// - hypothesis: L3 — the measurement prints each class once per row; a
     ///   shared name would merge two rows.
-    /// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it`
+    /// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_strict_root`
+    /// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_fixture_root`
     fn fmt(
         &self,
         f: &mut core::fmt::Formatter<'_>,
@@ -167,7 +169,8 @@ impl Module
     /// - hypothesis: L2 — generated chains of every class submit to the walk's
     ///   compositions of each edited text.
     /// - witness: `tests::forms::every_generated_edit_submits_as_the_walk_composes_it`
-    /// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it`
+    /// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_strict_root`
+    /// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_fixture_root`
     #[spec(captures: before = self.forms.len(), ensures: |_| match *edit {
         FormEdit::Insert(_) | FormEdit::RefuseWhole(_) => self.forms.len() == before.saturating_add(1),
         FormEdit::Delete(_) => self.forms.len() == before.saturating_sub(1),
@@ -295,7 +298,8 @@ fn change(form: &mut String)
 /// - hypothesis: L2 — generated modules of both roots, edited, submit to the
 ///   walk's compositions.
 /// - witness: `tests::forms::every_generated_edit_submits_as_the_walk_composes_it`
-/// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it`
+/// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_strict_root`
+/// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_fixture_root`
 #[spec(ensures: |ret| ret.forms.len() == usize::from(forms))]
 #[must_use]
 pub fn module(
@@ -444,7 +448,8 @@ pub fn edits(longest: FormCount) -> impl Strategy<Value = Vec<FormEdit>>
 /// # Adequacy
 /// - hypothesis: L2 — the script submits to the walk's compositions over the
 ///   generated module of both roots.
-/// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it`
+/// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_strict_root`
+/// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_fixture_root`
 #[spec(ensures: |ret| ret.len() == 8)]
 #[must_use]
 pub fn script(forms: FormCount) -> Vec<FormEdit>
