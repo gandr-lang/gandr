@@ -1122,10 +1122,8 @@ fn cospan_verdict(
     for _ in 0 .. count {
         let mut grown: Vec<Vec<usize>> = Vec::new();
         for prefix in &bijections {
-            for candidate in 0 .. count {
-                if prefix.contains(&candidate) {
-                    continue;
-                }
+            let used: BTreeSet<usize> = prefix.iter().copied().collect();
+            for candidate in (0 .. count).filter(|candidate| !used.contains(candidate)) {
                 let mut extended = prefix.clone();
                 extended.push(candidate);
                 grown.push(extended);
