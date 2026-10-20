@@ -2088,7 +2088,7 @@ fn return_continuations(outputs: ContinuationCount) -> Vec<ConsPat>
     match usize::from(outputs) {
         1 => alloc::vec![ConsPat::meta(RETURN_CONT)],
         ports => (0 .. ports)
-            .map(|port| ConsPat::meta(alloc::format!("{RETURN_CONT}.{port}").as_str()))
+            .map(|port| ConsPat::meta(alloc::format!("{RETURN_CONT}.{port}")))
             .collect(),
     }
 }
