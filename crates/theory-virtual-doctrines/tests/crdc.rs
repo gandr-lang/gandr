@@ -29,6 +29,7 @@ mod tests
     use gandr_theory_cell_complexes::Sym;
     use gandr_theory_cell_complexes::frame_defining_cell;
     use gandr_theory_cell_complexes::match_cmd;
+    use gandr_theory_cell_complexes::reduction_cmp;
     use gandr_theory_cell_complexes::splice_at;
     use gandr_theory_cell_complexes::subterm_at;
     use gandr_theory_cell_complexes::unify_cmd;
@@ -2367,12 +2368,18 @@ mod tests
         /// Axiom (v): the pushed-forward derivation exists on every ground
         /// instance — fire the lifted cell, then normalize; the residue
         /// records the owed post-normalization (Def 2.8's `post`). The
-        /// budget is deliberately shallow: generated stores can loop-rewrite,
-        /// and a divergent generated system is outside the convergent
-        /// fragment, not an axiom failure.
+        /// convergent fragment is the cells the reduction order orients:
+        /// such a cell's instances never outgrow their redex, and so neither
+        /// does its lift's. A generated cell outside it can repeat a hole on
+        /// its right-hand side and fire at every root it builds: twelve steps
+        /// of `⟨x | α⟩ ~> ⟨Cons(Cons(x, x), Cons(x, x)) | Cons⁻(Cons⁻(★))⟩`
+        /// reach 67 million nodes before the step budget is spent.
         #[test]
         fn target_pushforward_exists_with_derivation_residue(
-            (cell, sigma, m) in pushforward_case(),
+            (cell, sigma, m) in pushforward_case().prop_filter(
+                "the reduction order orients the cell",
+                |&(ref cell, _, _)| reduction_cmp(cell.lhs(), cell.rhs()) == core::cmp::Ordering::Greater,
+            ),
         ) {
             let mut store = CellStore::new();
             store.insert(cell.clone());
@@ -2383,8 +2390,8 @@ mod tests
             let instance = m.apply_cmd(lift.0.lhs());
             let budget = NormalizationBudget::from(12_usize);
             let Maybe::Present((normal, residue)) = residue_of(&store, &lift, &instance, budget) else {
-                // Budget exhaustion is a divergent generated system — outside
-                // the convergent fragment, not an axiom failure.
+                // A derivation longer than the shallow budget is not an
+                // axiom failure.
                 return Ok(());
             };
             // The residue is the derivation the composite still owes:
