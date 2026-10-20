@@ -106,6 +106,20 @@
         reason = "module documentation that predates the shape lint"
     )
 )]
+#![cfg_attr(
+    all(not(test), dylint_lib = "quenchant_dylints"),
+    expect(
+        allocation_in_repeated_body,
+        reason = "2 cost-shape sites; #814 lists them"
+    )
+)]
+#![cfg_attr(
+    all(test, dylint_lib = "quenchant_dylints"),
+    expect(
+        allocation_in_repeated_body,
+        reason = "4 cost-shape sites (2 in test modules); #814 lists them"
+    )
+)]
 extern crate alloc;
 
 mod culprit;

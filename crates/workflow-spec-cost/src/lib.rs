@@ -23,6 +23,14 @@
 //!
 //! See [how a sample is charged](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-spec-cost/README.md#how-a-sample-is-charged).
 
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        allocation_in_repeated_body,
+        reason = "3 cost-shape sites; #814 lists them"
+    )
+)]
+
 pub mod error;
 pub mod ledger;
 pub mod profile;

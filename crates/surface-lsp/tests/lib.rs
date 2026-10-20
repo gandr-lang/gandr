@@ -7,6 +7,13 @@
         reason = "1 clause-cost site (1 spec_clause_traversal, a `String` comparison); #814 lists it"
     )
 )]
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        allocation_in_repeated_body,
+        reason = "10 cost-shape sites; #814 lists them"
+    )
+)]
 
 extern crate alloc;
 

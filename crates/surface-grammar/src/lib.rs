@@ -117,6 +117,20 @@
     )
 )]
 #![no_std]
+#![cfg_attr(
+    all(not(test), dylint_lib = "quenchant_dylints"),
+    expect(
+        allocation_in_repeated_body,
+        reason = "9 cost-shape sites; #814 lists them"
+    )
+)]
+#![cfg_attr(
+    all(test, dylint_lib = "quenchant_dylints"),
+    expect(
+        allocation_in_repeated_body,
+        reason = "13 cost-shape sites (4 in test modules); #814 lists them"
+    )
+)]
 
 extern crate alloc;
 
