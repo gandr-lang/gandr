@@ -545,6 +545,10 @@ pub struct OriginTable
     /// Each label written against an entry, with what it labels, in the
     /// order lowered.
     labels: Vec<Label>,
+    /// Each index a data constructor's result states, by its bytes, with the
+    /// names of the binders it is read under, outermost first, in the order
+    /// lowered: a data declaration has no term whose binders name them.
+    framed: Vec<(ByteSpan, Vec<String>)>,
     /// Each written type head standing for a type minted elsewhere, which it
     /// adopts, with the head's origin, in the order lowered.
     stand_ins: Vec<(ValueTypeId, Origin)>,
@@ -1762,6 +1766,46 @@ impl OriginTable
     pub fn labels(&self) -> &[Label]
     {
         &self.labels
+    }
+
+    /// Record that the index written at `span` is read under binders named
+    /// `names`, outermost first.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the pair is appended, so [`Self::framed`] holds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Cons`'s `S(n)` is framed under the family's
+    ///   parameter and the constructor's fields.
+    /// - witness: `lower::native::tests::each_stated_index_is_framed_under_its_family_s_telescope_931`
+    #[spec(
+        captures: before = self.framed.len(),
+        ensures: self.framed.len() == before.saturating_add(1),
+    )]
+    #[inline]
+    pub fn record_framed(
+        &mut self,
+        span: ByteSpan,
+        names: Vec<String>,
+    )
+    {
+        self.framed.push((span, names));
+    }
+
+    /// Each index a data constructor's result states, by its bytes, with the
+    /// names of the binders it is read under, outermost first, in the order
+    /// lowered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn framed(&self) -> &[(ByteSpan, Vec<String>)]
+    {
+        &self.framed
     }
 
     /// Record that the type head at `origin` stands for `ty`, a type minted

@@ -2780,6 +2780,9 @@ struct Lowerer<'run, 'source>
     inherited: BTreeMap<NodeIndex, native::Classifier>,
     /// Each label written against an entry, in the order planned.
     labels: Vec<LabelSite>,
+    /// Each index a data constructor's result states, with the frame of the
+    /// family's parameters and the constructor's fields it is read under.
+    index_frames: Vec<(NodeIndex, Frame)>,
     /// Each type head that stands for a type minted elsewhere: a manifest
     /// component's or a functor instance's, which the head adopts.
     stand_ins: BTreeSet<NodeIndex>,
@@ -3025,6 +3028,8 @@ struct Current
     synthesised: usize,
     /// Where its labels begin.
     labels: usize,
+    /// Where its stated indices begin.
+    index_frames: usize,
     /// Where its letters begin.
     lettered: usize,
     /// Where its empty words' points begin.
@@ -3605,6 +3610,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             thunked: BTreeMap::new(),
             inherited: BTreeMap::new(),
             labels: Vec::new(),
+            index_frames: Vec::new(),
             stand_ins: BTreeSet::new(),
             answers: BTreeMap::new(),
             synthesised: Vec::new(),
@@ -3711,6 +3717,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             scopes: self.collected.scopes.len(),
             synthesised: self.synthesised.len(),
             labels: self.labels.len(),
+            index_frames: self.index_frames.len(),
             lettered: self.lettered.len(),
             pointed: self.pointed.len(),
         };
@@ -10464,6 +10471,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
         self.record_labels(sink);
+        self.record_framed(sink);
 
         Ok(())
     }
@@ -10522,6 +10530,43 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 span: site.written,
                 labelled,
             });
+        }
+    }
+
+    /// Record every index a data constructor's result states with the names
+    /// of the binders it is read under.
+    ///
+    /// # Specification
+    /// - requires: every node is minted or absent.
+    /// - ensures: one framed span per index site of the current source whose
+    ///   node has a span, with the names of the frames its site is read under
+    ///   that bind in its telescope, outermost first: the family's parameters,
+    ///   then the constructor's fields.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Cons`'s `S(n)` is framed under the family's
+    ///   parameter and the constructor's fields.
+    /// - witness: `lower::native::tests::each_stated_index_is_framed_under_its_family_s_telescope_931`
+    #[spec(captures: before = sink.origins.framed().len(), ensures: sink.origins.framed().len() <= before.saturating_add(self.index_frames.len()))]
+    fn record_framed(
+        &self,
+        sink: &mut Sink<'_>,
+    )
+    {
+        for &(node, frame) in self.index_frames.iter().skip(self.current.index_frames) {
+            let Some(span) = self.tree.node(node).map(gandr_surface_syntax::Node::span)
+            else {
+                continue;
+            };
+            let names = self
+                .scope
+                .telescope_names(frame, self.telescope_at(node))
+                .into_iter()
+                .map(|name| String::from(name.as_ref()))
+                .collect();
+            sink.origins.record_framed(span, names);
         }
     }
 

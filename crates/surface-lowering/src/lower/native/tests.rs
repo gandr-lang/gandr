@@ -1316,6 +1316,37 @@ fn an_indexed_family_lowers_its_indices()
 }
 
 #[test]
+fn each_stated_index_is_framed_under_its_family_s_telescope_931()
+{
+    let source = "data Nat : Type { Z : Nat; S : (n : Nat) --> Nat; }\ndata Vec(a : Type) : Nat -> \
+                  Type { Nil : Vec(a, Z); Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, \
+                  S(n)); }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let framed: Vec<(&str, Vec<&str>)> = module
+        .origins()
+        .framed()
+        .iter()
+        .map(|&(span, ref names)| {
+            (
+                source
+                    .get(usize::from(span.start()) .. usize::from(span.end()))
+                    .unwrap_or(""),
+                names.iter().map(String::as_str).collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        framed,
+        [
+            ("Z", Vec::from(["a"])),
+            ("S(n)", Vec::from(["a", "n", "x", "xs"]))
+        ],
+        "each index is read under the family's parameters, then its constructor's fields"
+    );
+}
+
+#[test]
 fn operation_and_rule_members_are_left_to_the_description_route()
 {
     let source = "data NatOp : Type { Zero : NatOp; One : NatOp; oper add(m : NatOp, n : NatOp) -> NatOp; rule add(Zero, n) ==> n; }\ndata NatRetired : Type { Only : NatRetired; op stale(x : NatRetired) -> NatRetired; }\n";

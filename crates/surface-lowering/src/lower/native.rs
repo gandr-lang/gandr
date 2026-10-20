@@ -1619,8 +1619,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: one frame per parameter, typed with its written type and
     ///   mentioned, so a type naming it counts it; one frame per field but its
     ///   constructor's last, and the last too where the constructor states an
-    ///   index, bound to the field's written name or to none; and one seed per
-    ///   type and stated index the declarations write, appended to `seeds`.
+    ///   index, bound to the field's written name or to none; one seed per type
+    ///   and stated index the declarations write, appended to `seeds`; and each
+    ///   stated index kept with the frame it is read under, for the names an
+    ///   editor spells its type in.
     /// - provides: the data half of [`Self::seed`].
     /// - fails: never.
     /// - panics: none.
@@ -1693,6 +1695,7 @@ impl<'source> Lowerer<'_, 'source>
                 }
                 for index in &generator.indices {
                     seeds.push((index.node, Reading::Value(inner)));
+                    self.index_frames.push((index.node, inner));
                 }
             }
         }
