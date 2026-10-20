@@ -3161,6 +3161,37 @@ fn transport_back_along_univalence_applies_the_left_inverse()
 }
 
 #[test]
+fn a_function_moves_along_univalence_by_its_maps()
+{
+    // In `y. U(El(y) → F El(y))` along `ua(e)` with negation forward and the
+    // identity as left inverse, the identity function moves to `a. not(a)`,
+    // so `truth` goes to `falsity`. Moving the argument forward, back by the
+    // right inverse (constant `falsity`), or leaving the result unmoved each
+    // send `truth` to `truth`.
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let (truth, falsity) = (boolean.truth, boolean.falsity);
+    let path = boolean_univalence(&mut arena, [[falsity, truth], [truth, falsity], [
+        falsity, falsity,
+    ]]);
+    let binder = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let decode = arena.value_type_element(binder, Level::zero());
+    let returner = arena.comp_type_returner(decode);
+    let arrow = arena.comp_type_arrow(decode, returner);
+    let motive = arena.value_type_thunk(arrow);
+    let returned = arena.computation_return(binder);
+    let identity = arena.computation_lambda(returned);
+    let identity = arena.value_thunk(identity);
+    let transported = arena.computation_path_transport(motive, path, identity);
+    let forced = arena.computation_force(binder);
+    let applied = arena.computation_application(forced, truth);
+    let run = arena.computation_bind(transported, applied);
+    let [kept, moved] = [truth, falsity].map(|value| arena.computation_return(value));
+    assert_eq!(computes(&mut arena, run, moved), KernelVerdict::Convertible);
+    assert_ne!(computes(&mut arena, run, kept), KernelVerdict::Convertible);
+}
+
+#[test]
 fn transport_along_then_moves_along_both_paths()
 {
     // The first path sends every point to `falsity` and the second negates:

@@ -631,6 +631,239 @@ fn transport_back_along_univalence_applies_the_left_inverse()
 }
 
 #[test]
+fn transport_back_along_univalence_projects_a_held_record()
+{
+    // A record the evaluator holds as itself, as it holds a definition the
+    // conversion has not unfolded: back along `ua(e)` the left inverse is
+    // projected from it one component at a time and forced at the operand,
+    // each projection on the record's spine. The spine reads back with each
+    // projection bound in the next one's head,
+    // `g ← (l ← (x ← e.1; x.0); l.0); force g v`.
+    let mut core = CoreArena::new();
+    let record = stuck(&mut core, ConstantIndex::from(0_usize));
+    let forward = gandr_core_term::identity::univalence_forward(&mut core, record);
+    let path = core.value_univalence(record, forward);
+    let (universe, code, decode) = universe_parts(&mut core);
+    let reversed = back(&mut core, universe, code, path);
+    let reversed = core.value_returned(reversed);
+    let [truth, _] = booleans(&mut core);
+    let transported = core.computation_path_transport(decode, reversed, truth);
+    let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let [first, second] = [0_usize, 1_usize].map(gandr_kernel_term::Component::from);
+    let inverses = core.computation_tuple_projection(record, second);
+    let section = core.computation_tuple_projection(bound, first);
+    let inverse_pair = core.computation_bind(inverses, section);
+    let inverse = core.computation_bind(inverse_pair, section);
+    let forced = core.computation_force(bound);
+    let applied = core.computation_application(forced, truth);
+    let expected = core.computation_bind(inverse, applied);
+    assert_eq!(
+        normalises_to(&mut core, transported, expected),
+        CertificateEquality::Equal,
+        "the left inverse is projected from a held record"
+    );
+}
+
+/// `x ← tr(motive, path, function); force x truth`: the transported function
+/// applied to `truth`.
+///
+/// # Specification
+/// trivial.
+fn applied_after_transport(
+    core: &mut CoreArena,
+    (motive, path, function): (ValueTypeId, ValueId, ValueId),
+) -> gandr_core_term::ComputationId
+{
+    let [truth, _] = booleans(core);
+    let transported = core.computation_path_transport(motive, path, function);
+    let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let forced = core.computation_force(bound);
+    let applied = core.computation_application(forced, truth);
+    core.computation_bind(transported, applied)
+}
+
+#[test]
+fn a_function_moves_along_univalence_by_its_maps()
+{
+    // In `y. U(El(y) → F El(y))` along `ua(e)` with negation forward and the
+    // identity as left inverse, the identity function moves to `a. not(id(a))`,
+    // so `truth` goes to `falsity`. Moving the argument forward, moving it
+    // back by the right inverse (constant `falsity`), or leaving the result
+    // unmoved each send `truth` to `truth`.
+    let mut core = CoreArena::new();
+    let path = boolean_univalence(&mut core, [Map::Not, Map::Same, Map::False]);
+    let (_, _, decode) = universe_parts(&mut core);
+    let returner = core.comp_type_returner(decode);
+    let arrow = core.comp_type_arrow(decode, returner);
+    let motive = core.value_type_thunk(arrow);
+    let function = boolean_map(&mut core, Map::Same);
+    let run = applied_after_transport(&mut core, (motive, path, function));
+    let [truth, falsity] = booleans(&mut core);
+    let [kept, moved] = [truth, falsity].map(|value| core.computation_return(value));
+    assert_eq!(
+        normalises_to(&mut core, run, moved),
+        CertificateEquality::Equal,
+        "the argument moves back by the left inverse and the result forward"
+    );
+    assert_eq!(
+        normalises_to(&mut core, run, kept),
+        CertificateEquality::Different
+    );
+}
+
+#[test]
+fn a_function_with_a_constant_argument_moves_its_result_only()
+{
+    // In `y. U(Bool → F El(y))` the argument's type reads no binder, so the
+    // argument stays as it is and only the result moves: the identity
+    // function moves to `a. not(a)` and `truth` goes to `falsity`. Moving
+    // the argument back by the left inverse, constant `falsity` here, would
+    // send `truth` to `truth`.
+    let mut core = CoreArena::new();
+    let path = boolean_univalence(&mut core, [Map::Not, Map::False, Map::Same]);
+    let (_, _, decode) = universe_parts(&mut core);
+    let unit = core.value_type_unit();
+    let boolean = core.value_type_sum(&[unit, unit]);
+    let returner = core.comp_type_returner(decode);
+    let arrow = core.comp_type_arrow(boolean, returner);
+    let motive = core.value_type_thunk(arrow);
+    let function = boolean_map(&mut core, Map::Same);
+    let run = applied_after_transport(&mut core, (motive, path, function));
+    let [truth, falsity] = booleans(&mut core);
+    let [kept, moved] = [truth, falsity].map(|value| core.computation_return(value));
+    assert_eq!(
+        normalises_to(&mut core, run, moved),
+        CertificateEquality::Equal,
+        "only the result moves along the path"
+    );
+    assert_eq!(
+        normalises_to(&mut core, run, kept),
+        CertificateEquality::Different
+    );
+}
+
+#[test]
+fn a_transported_function_returns_a_stuck_result_as_its_value()
+{
+    // In `y. U(Bool → F El(y))` along `ua(e)` with negation forward, a
+    // function `f` no definition reaches moves to `b. not(⟨f b⟩)`: its stuck
+    // result is bound as the value it returns, so the endpoint the conversion
+    // holds converts with the forward map at the returned call, and not with
+    // the call left where it was.
+    let mut core = CoreArena::new();
+    let path = boolean_univalence(&mut core, [Map::Not, Map::False, Map::Same]);
+    let (_, _, decode) = universe_parts(&mut core);
+    let unit = core.value_type_unit();
+    let boolean = core.value_type_sum(&[unit, unit]);
+    let returner = core.comp_type_returner(decode);
+    let arrow = core.comp_type_arrow(boolean, returner);
+    let motive = core.value_type_thunk(arrow);
+    let function = stuck(&mut core, ConstantIndex::from(0_usize));
+    let transported = core.computation_path_transport(motive, path, function);
+    let endpoint = core.value_returned(transported);
+    let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let forced = core.computation_force(function);
+    let call = core.computation_application(forced, bound);
+    let result = core.value_returned(call);
+    let negation = boolean_map(&mut core, Map::Not);
+    let negate = core.computation_force(negation);
+    let moved = core.computation_application(negate, result);
+    let kept = core.computation_return(result);
+    let [moved, kept] = [moved, kept].map(|body| {
+        let lambda = core.computation_lambda(body);
+        core.value_thunk(lambda)
+    });
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root())
+        .reading_endpoints(crate::eval::Endpoints::Hold);
+    let mut domain = DomainArena::new();
+    let [endpoint, moved, kept] = [endpoint, moved, kept].map(|value| {
+        eval_value(&core, &mut domain, definitions, ample(), value).expect("closed values evaluate")
+    });
+    let mut decided = |point| {
+        decide::<NullSink, NullMemo>(
+            &core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            Problem::values(endpoint, point),
+            &mut NullSink,
+        )
+        .expect("the machine answers")
+        .verdict()
+    };
+    assert_eq!(
+        decided(moved),
+        MachineVerdict::Convertible,
+        "the result moves forward as the value the call returns"
+    );
+    assert_ne!(decided(kept), MachineVerdict::Convertible);
+}
+
+#[test]
+fn a_function_with_a_constant_result_leaves_its_call_unmoved()
+{
+    // In `y. U(El(y) → F Bool)` along `ua(e)` with negation as left inverse,
+    // a function `f` no definition reaches moves to `b. f(⟨not(b)⟩)`: the
+    // argument's stuck move is bound as the value it returns, and the
+    // result's type reads no binder, so the call stays as it is rather than
+    // returning the value it stands for.
+    let mut core = CoreArena::new();
+    let path = boolean_univalence(&mut core, [Map::Same, Map::Not, Map::Same]);
+    let (_, _, decode) = universe_parts(&mut core);
+    let unit = core.value_type_unit();
+    let boolean = core.value_type_sum(&[unit, unit]);
+    let returner = core.comp_type_returner(boolean);
+    let arrow = core.comp_type_arrow(decode, returner);
+    let motive = core.value_type_thunk(arrow);
+    let function = stuck(&mut core, ConstantIndex::from(0_usize));
+    let transported = core.computation_path_transport(motive, path, function);
+    let endpoint = core.value_returned(transported);
+    let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let negation = boolean_map(&mut core, Map::Not);
+    let negate = core.computation_force(negation);
+    let negated = core.computation_application(negate, bound);
+    let argument = core.value_returned(negated);
+    let forced = core.computation_force(function);
+    let call = core.computation_application(forced, argument);
+    let result = core.value_returned(call);
+    let returned = core.computation_return(result);
+    let unmoved = core.computation_application(forced, bound);
+    let [call, returned, unmoved] = [call, returned, unmoved].map(|body| {
+        let lambda = core.computation_lambda(body);
+        core.value_thunk(lambda)
+    });
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root())
+        .reading_endpoints(crate::eval::Endpoints::Hold);
+    let mut domain = DomainArena::new();
+    let [endpoint, call, returned, unmoved] = [endpoint, call, returned, unmoved].map(|value| {
+        eval_value(&core, &mut domain, definitions, ample(), value).expect("closed values evaluate")
+    });
+    let mut decided = |point| {
+        decide::<NullSink, NullMemo>(
+            &core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            Problem::values(endpoint, point),
+            &mut NullSink,
+        )
+        .expect("the machine answers")
+        .verdict()
+    };
+    assert_eq!(
+        decided(call),
+        MachineVerdict::Convertible,
+        "the argument moves back and the call stays as it is"
+    );
+    assert_ne!(decided(returned), MachineVerdict::Convertible);
+    assert_ne!(decided(unmoved), MachineVerdict::Convertible);
+}
+
+#[test]
 fn a_held_back_reads_back_as_its_transport()
 {
     // `back(ua(e))` returns the transport that formed it, held as a path:

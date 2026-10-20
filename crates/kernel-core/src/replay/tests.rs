@@ -2519,6 +2519,64 @@ fn a_ride_unfolds_its_flow_where_the_dialogue_names_it()
 }
 
 #[test]
+fn a_path_transport_unfolds_its_path_where_the_dialogue_names_it()
+{
+    // `tr(y. El(y), p, ())` along a defined `p = refl(⌜Unit⌝)`: the
+    // transport stands on its path, so the trace's unfolding reaches the
+    // reflexivity and the transport returns its value.
+    let mut arena = TermArena::new();
+    let unit_type = arena.value_type_unit();
+    let code = arena.value_quote(unit_type);
+    let reflexivity = arena.value_path_refl(code);
+    let unfoldings = Unfoldings::new(Vec::from([Unfoldable::Body(reflexivity)]));
+    let named = arena.value_constant(ConstantIndex::from(0_usize));
+    let decoded = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let motive = arena.value_type_element(decoded, Level::zero());
+    let unit = arena.value_unit();
+    let moved = arena.computation_path_transport(motive, named, unit);
+    let returned = arena.computation_return(unit);
+    let sides = ReplaySides::Computations(moved, returned);
+    let unfold = |reduce: fn(ReplayNode) -> ConversionDecision<ReplayNode>| {
+        [
+            ConversionDecision::Unfold {
+                constant: ReplayNode::Other,
+            },
+            reduce(ReplayNode::Other),
+        ]
+    };
+    let left = |redex| ConversionDecision::ReduceLeft { redex };
+    let right = |redex| ConversionDecision::ReduceRight { redex };
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            sides,
+            EngineClaim::Convertible,
+            &unfold(left)
+        ),
+        KernelVerdict::Convertible
+    );
+    // Read on the other side, or not at all, the unfolding is refused.
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            sides,
+            EngineClaim::Convertible,
+            &unfold(right)
+        ),
+        refused(ReplayRefusal::Inapplicable {
+            at: TracePosition::from(1)
+        })
+    );
+    assert_eq!(
+        run(&mut arena, &unfoldings, sides, EngineClaim::Convertible, &[
+        ]),
+        refused(ReplayRefusal::Exhausted)
+    );
+}
+
+#[test]
 fn two_stuck_path_transports_compare_by_motive_and_value()
 {
     // `tr(y. Path(Unit, (), y), q, v)` over one variable path `q`, as

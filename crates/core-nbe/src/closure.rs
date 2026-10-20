@@ -469,9 +469,59 @@ pub enum CompBody
         /// The function ridden.
         function: DomainValueId,
     },
+    /// The body of the thunk a function transport along a universe path
+    /// moves the function to: forced, it returns the lambda
+    /// [`Self::TransportArgument`] enters at the argument.
+    TransportFunction
+    {
+        /// The argument's motive, `y. A(y)`, when the argument type is the
+        /// decode of the binder; none when it reads no binder and the argument
+        /// moves back unchanged.
+        argument: Option<crate::arena::ValueClosureId>,
+        /// The result's motive, `y. B(y)`, closed over the motive's
+        /// environment; none when it reads no binder and the result stays
+        /// as the call returns it.
+        result: Option<crate::arena::ValueClosureId>,
+        /// The universe path transported along.
+        path: DomainValueId,
+        /// The function transported.
+        function: DomainValueId,
+    },
+    /// `a'. a ← tr(A, back(p), a'); b ← force f a; tr(B, p, b)`: the
+    /// transported function's body at the bound argument.
+    TransportArgument
+    {
+        /// The argument's motive, as [`Self::TransportFunction`] holds it.
+        argument: Option<crate::arena::ValueClosureId>,
+        /// The result's motive, as [`Self::TransportFunction`] holds it.
+        result: Option<crate::arena::ValueClosureId>,
+        /// The universe path transported along.
+        path: DomainValueId,
+        /// The function transported.
+        function: DomainValueId,
+    },
+    /// Transport the bound value along `path` in `motive`: the continuation
+    /// `b. tr(B, p, b)` a transported function's result binds into.
+    TransportAlong
+    {
+        /// The result's motive, closed over its environment.
+        motive: crate::arena::ValueClosureId,
+        /// The path the result moves along.
+        path: DomainValueId,
+    },
     /// Apply the held thunk, forced, to the bound value: the continuation `a.
     /// force f a`.
     ForceApplied(DomainValueId),
+    /// Apply the transported function, forced, to the argument moved back:
+    /// the continuation `a. force f a` of a function transport, where an
+    /// argument the move leaves stuck is bound as the value it returns.
+    TransportApplied(DomainValueId),
+    /// Select the bound tuple's component: the continuation `x. x.c` each
+    /// projection of a univalence record's left inverse binds into.
+    Projected(gandr_core_term::Component),
+    /// Apply the bound thunk, forced, to the held value: the continuation `g.
+    /// force g v` that applies a univalence record's left inverse.
+    AppliedTo(DomainValueId),
     /// After a flow product's left component rode, ride the right one along
     /// the second flow in the same motive and pair them: the continuation `x.
     /// y ← ride(P, g, b); return (x, y)` the product's reduct binds into.

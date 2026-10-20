@@ -4966,7 +4966,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - requires: `term`'s head is `constant`, defined.
     /// - ensures: a value its δ- or δβ-reduct, as [`Self::unfold_value`] gives
     ///   it; a computation its spine over the body, a ride's body standing as
-    ///   its flow; of `term`'s polarity either way.
+    ///   its flow and a path transport's path its δ-reduct; of `term`'s
+    ///   polarity either way.
     /// - provides: the term half of [`Self::unfold`], shared with
     ///   [`Self::normalize_returned`].
     /// - fails: as [`Self::unfold`].
@@ -4987,6 +4988,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   a returned endpoint's head, read at a mode switch.
     /// - witness: `replay::tests::an_unfolding_fires_only_where_the_trace_names_its_head`
     /// - witness: `replay::tests::a_ride_unfolds_its_flow_where_the_dialogue_names_it`
+    /// - witness: `replay::tests::a_path_transport_unfolds_its_path_where_the_dialogue_names_it`
     /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
     #[spec(ensures: |ret| match ret {
         Ok(reduct) => self.unfoldings.unfolding(constant) != Unfoldable::Opaque
@@ -5060,6 +5062,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 Some(&Computation::Ride { motive, value, .. }) => {
                     break self.arena.computation_ride(motive, body, value);
                 },
+                // A transport stands on its path, as [`Self::shape`] reads it.
+                Some(&Computation::PathTransport {
+                    motive,
+                    path,
+                    value,
+                }) => {
+                    let path = self.unfold_value(path, unfolding)?;
+                    break self.arena.computation_path_transport(motive, path, value);
+                },
                 Some(&Computation::Application(head, argument)) => {
                     frames.push(Frame::Apply(argument));
                     focus = head;
@@ -5090,7 +5101,6 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     &(Computation::Lambda(_)
                     | Computation::With(..)
                     | Computation::Return(_)
-                    | Computation::PathTransport { .. }
                     | Computation::TelescopeTransport { .. }
                     | Computation::TelescopeRide { .. }
                     | Computation::RelatedApplication { .. }),
