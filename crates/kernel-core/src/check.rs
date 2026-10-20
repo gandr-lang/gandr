@@ -2597,6 +2597,11 @@ where
     // its constant in a case's field types reads as that binder.
     let mut own_fixpoint: Maybe<(usize, ValueTypeId), recursion::Unowned> =
         Maybe::Absent(recursion::Unowned::Outside);
+    // The evidence values and evaluation components of the higher identity
+    // being checked, copied out of the arena the obligations then mint into;
+    // refilled per goal, so the walk allocates them once.
+    let mut owed_values: Vec<ValueId> = Vec::new();
+    let mut owed_components: Vec<gandr_kernel_term::EvaluationComponent> = Vec::new();
     'expand: loop {
         // Consult the memo for this goal's support before reading the node.
         // When the memo is inactive this whole block — the support
@@ -3406,13 +3411,14 @@ where
                         ref evidence,
                     } => {
                         let program = alloc::sync::Arc::clone(program);
-                        let evidence = evidence.clone();
+                        owed_values.clear();
+                        owed_values.extend_from_slice(evidence);
                         let mut goals = crate::element_identity::higher_obligations(
                             arena,
                             crate::identity_recursion::Interfaces::of(judgement.entries),
                             expected,
                             &program,
-                            &evidence,
+                            &owed_values,
                         )?
                         .into_iter()
                         .rev()
@@ -3434,7 +3440,8 @@ where
                         ref components,
                     } => {
                         let dialogues = alloc::sync::Arc::clone(dialogues);
-                        let components = components.clone();
+                        owed_components.clear();
+                        owed_components.extend_from_slice(components);
                         let mut remaining = crate::element_identity::evaluation_obligations(
                             arena,
                             (
@@ -3443,7 +3450,7 @@ where
                             ),
                             expected,
                             &dialogues,
-                            &components,
+                            &owed_components,
                         )?;
                         remaining.reverse();
                         frames.push(Frame::Components {
@@ -3461,7 +3468,8 @@ where
                         ref children,
                     } => {
                         let steps = alloc::sync::Arc::clone(steps);
-                        let children = children.clone();
+                        owed_values.clear();
+                        owed_values.extend_from_slice(children);
                         let mut remaining = crate::element_identity::quantified_obligations(
                             arena,
                             (
@@ -3470,7 +3478,7 @@ where
                             ),
                             expected,
                             &steps,
-                            &children,
+                            &owed_values,
                         )?;
                         remaining.reverse();
                         frames.push(Frame::Components {
@@ -5757,9 +5765,11 @@ where
             }
             // A field forms under the parameters and the fields before it in
             // its constructor, which a later field's type may name; the
-            // constructor's result index checks under all of them.
+            // constructor's result index checks under all of them. One scope,
+            // cut back to the parameters before each constructor.
+            let mut scope = context.clone();
             for (tag, fields) in constructors.iter().enumerate() {
-                let mut scope = context.clone();
+                scope.truncate(context.len());
                 for field in fields {
                     let formed = type_level(
                         arena,
