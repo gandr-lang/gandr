@@ -19418,15 +19418,6 @@ mod tests
                 ),
             ),
             (
-                "def f @[a : Type] (x) { return x }",
-                unadmitted(
-                    0_usize,
-                    34_usize,
-                    FormName::PARAMETERS,
-                    FragmentSort::Declaration,
-                ),
-            ),
-            (
                 "def rec f() { return 1 }",
                 unadmitted(
                     0_usize,
@@ -19467,6 +19458,30 @@ mod tests
                 "`{source}` is unrepresentable, not malformed"
             );
         }
+    }
+
+    #[test]
+    fn an_implicit_telescope_is_declined_by_name()
+    {
+        use alloc::string::ToString as _;
+
+        let refused = refusal(SourceText::from("def f @[a : Type] (x) { return x }"));
+        assert_eq!(
+            refused,
+            LoweringRefusal::ImplicitTelescope {
+                span: span(ByteOffset::from(0_usize), ByteOffset::from(34_usize)),
+            },
+            "an implicit telescope is refused by its own name, at the declaration"
+        );
+        assert_eq!(
+            refused.classify(),
+            FailureClass::Unrepresentable,
+            "it is outside the fragment, not malformed"
+        );
+        assert!(
+            refused.to_string().contains("implicit telescope"),
+            "the message names the telescope: {refused}"
+        );
     }
 
     #[test]

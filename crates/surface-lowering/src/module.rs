@@ -7046,22 +7046,23 @@ fn signing(mut header: Cursor<'_>) -> Signing
 /// # Specification
 /// - requires: `header` stands just past the form's name, at no `:`, `=` or
 ///   `(`.
-/// - ensures: an implicit telescope is declined as a form the fragment does not
-///   admit, by the folded form's own name; an operand is one the form does not
-///   take; every other piece is a misplaced tile.
+/// - ensures: an implicit telescope is declined by name at the declaration; an
+///   operand is one the form does not take; every other piece is a misplaced
+///   tile.
 /// - provides: the decline of the declaration tails the fragment does not read.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an implicit telescope is unadmitted at the declaration,
-///   while a closing tile without a tail is misplaced at its own span.
-/// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
+/// - hypothesis: L3 — an implicit telescope is declined by name at the
+///   declaration, while a closing tile without a tail is misplaced at its own
+///   span.
+/// - witness: `lower::tests::an_implicit_telescope_is_declined_by_name`
 /// - witness: `lower::tests::a_tile_out_of_place_is_refused`
 #[spec(
     ensures: |ret| {
         ret == if matches!(header.at(TileName::ATTRIBUTES), Maybe::Present(_)) {
-            unadmitted(declaration, FormName::PARAMETERS)
+            LoweringRefusal::ImplicitTelescope { span: declaration.span }
         }
         else if let Maybe::Present(Piece::Operand(stray)) = header.peek() {
             extra_operand(FormName::DECLARATION, stray)
@@ -7077,7 +7078,9 @@ fn unadmitted_tail<'source>(
 ) -> LoweringRefusal<'source>
 {
     if let Maybe::Present(_) = header.at(TileName::ATTRIBUTES) {
-        return unadmitted(declaration, FormName::PARAMETERS);
+        return LoweringRefusal::ImplicitTelescope {
+            span: declaration.span,
+        };
     }
     if let Maybe::Present(Piece::Operand(stray)) = header.peek() {
         return extra_operand(FormName::DECLARATION, stray);
@@ -7112,23 +7115,6 @@ const fn extra_operand<'source>(
         span: operand.span,
         form,
         fault: FormFault::ExtraOperand,
-    }
-}
-
-/// The refusal a declaration tail the fragment does not admit earns.
-///
-/// # Specification
-/// trivial.
-const fn unadmitted<'source>(
-    declaration: Placed,
-    form: FormName,
-) -> LoweringRefusal<'source>
-{
-    LoweringRefusal::OutOfFragment {
-        span: declaration.span,
-        form,
-        sort: FragmentSort::Declaration,
-        boundary: FragmentBoundary::Unadmitted,
     }
 }
 

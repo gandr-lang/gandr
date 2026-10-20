@@ -2980,7 +2980,7 @@ def wrong = "text" ;"#,
             &grammar,
             CorpusRoot::Fixture,
             SourceText::from(
-                r#"@[ refuses("OutOfFragment") ] def f @[a : Type] (x: a) -> -F a { return x }
+                r#"@[ refuses("ImplicitTelescope") ] def f @[a : Type] (x: a) -> -F a { return x }
 @[ refuses("UnresolvedName") ] def g = missing ;
 def h = 1 ;"#,
             ),
@@ -2993,10 +2993,9 @@ def h = 1 ;"#,
             panic!("the module lowers");
         };
         assert!(
-            matches!(unstatable.as_slice(), [LoweringRefusal::OutOfFragment {
-                boundary: FragmentBoundary::Unadmitted,
-                ..
-            }]),
+            matches!(unstatable.as_slice(), [
+                LoweringRefusal::ImplicitTelescope { .. }
+            ]),
             "the implicit telescope is refused at its own form, and only it"
         );
         let settlements: Vec<Settlement> = report

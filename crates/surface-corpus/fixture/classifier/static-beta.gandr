@@ -1,0 +1,43 @@
+// Static β at one classifier, the type operators `Type -> Type`: an operator
+// applied in a signature reduces before the kernel reads the declaration, and
+// the run never sees it. `sum` takes a pair whose type is `apply(twice,
+// Integer)`, two static applications deep; `doubled` returns one. Implicit
+// parameters `@[…]`, the telescope a use would supply by name, are refused by
+// name at their declaration (`ImplicitTelescope`), which no corpus
+// expectation can state (#526).
+
+/// Apply a type operator to a type.
+@[ checks ]
+def apply : (Type -> Type) -> Type -> Type ;
+def apply = \F. \X. F(X) ;
+
+/// The type of pairs of one type.
+@[ checks ]
+def twice : Type -> Type ;
+def twice = \Y. Y * Y ;
+
+/// The sum of a pair whose type is an operator applied twice over. Both
+/// binders are used: an unused one has no type entry under a static
+/// application (#1080).
+@[ checks ]
+def sum(p : apply(twice, Integer)) -> -F Integer {
+  case p {
+    #{a, b} => become a + b
+  }
+}
+
+/// `sum` at a pair of integers runs as at `Integer * Integer`.
+@[ runs("3") ]
+def sumRun : () => Integer ;
+def sumRun = thunk { become sum((1, 2)) } ;
+
+/// A pair returned at an operator's type.
+@[ checks ]
+def doubled(n : Integer) -> -F twice(Integer) {
+  return (n, n)
+}
+
+/// `doubled` runs to the pair the operator's reduct types.
+@[ runs("(4, 4)") ]
+def doubledRun : () => twice(Integer) ;
+def doubledRun = thunk { become doubled(4) } ;

@@ -472,6 +472,8 @@ pub enum RefusalName
     FamilyTelescope,
     /// A top-level module named with a lowercase initial.
     LowercaseModuleName,
+    /// A declaration binding parameters in an implicit telescope `@[…]`.
+    ImplicitTelescope,
     /// A match some scrutinee value reaches no arm of.
     NonExhaustiveMatch,
     /// A recursive definition's own name written without a descent claim.
@@ -646,7 +648,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 168_usize] = [
+    pub const VOCABULARY: [Self; 169_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -737,6 +739,7 @@ impl RefusalName
         Self::UnstatedComponent,
         Self::FamilyTelescope,
         Self::LowercaseModuleName,
+        Self::ImplicitTelescope,
         Self::NonExhaustiveMatch,
         Self::UnmarkedSelfReference,
         Self::UnguardedCorecursion,
@@ -858,6 +861,7 @@ impl RefusalName
         b"UnreadAscription") | (Self::UnstatedComponent, b"UnstatedComponent") |
         (Self::FamilyTelescope, b"FamilyTelescope") | (Self::LowercaseModuleName,
         b"LowercaseModuleName") |
+        (Self::ImplicitTelescope, b"ImplicitTelescope") |
         (Self::NonExhaustiveMatch, b"NonExhaustiveMatch") |
         (Self::UnmarkedSelfReference, b"UnmarkedSelfReference") |
         (Self::UnguardedCorecursion, b"UnguardedCorecursion") |
@@ -1128,6 +1132,7 @@ impl RefusalName
             Self::UnstatedComponent => "UnstatedComponent",
             Self::FamilyTelescope => "FamilyTelescope",
             Self::LowercaseModuleName => "LowercaseModuleName",
+            Self::ImplicitTelescope => "ImplicitTelescope",
             Self::NonExhaustiveMatch => "NonExhaustiveMatch",
             Self::UnmarkedSelfReference => "UnmarkedSelfReference",
             Self::UnguardedCorecursion => "UnguardedCorecursion",
@@ -1334,6 +1339,8 @@ impl Refusal<'_>
         RefusalName::FamilyTelescope) |
         (Self::Lowering(LoweringRefusal::LowercaseModuleName { .. }),
         RefusalName::LowercaseModuleName) |
+        (Self::Lowering(LoweringRefusal::ImplicitTelescope { .. }),
+        RefusalName::ImplicitTelescope) |
         (Self::Lowering(LoweringRefusal::NonExhaustiveMatch { .. }),
         RefusalName::NonExhaustiveMatch) |
         (Self::Lowering(LoweringRefusal::UnmarkedSelfReference { .. }),
@@ -1553,7 +1560,8 @@ impl Refusal<'_>
         RefusalName::UnreadAscription) | (LoweringRefusal::UnstatedComponent { .. },
         RefusalName::UnstatedComponent) | (LoweringRefusal::FamilyTelescope { .. },
         RefusalName::FamilyTelescope) | (LoweringRefusal::LowercaseModuleName { .. },
-        RefusalName::LowercaseModuleName) | (LoweringRefusal::NonExhaustiveMatch { .. },
+        RefusalName::LowercaseModuleName) | (LoweringRefusal::ImplicitTelescope { .. },
+        RefusalName::ImplicitTelescope) | (LoweringRefusal::NonExhaustiveMatch { .. },
         RefusalName::NonExhaustiveMatch) | (LoweringRefusal::UnmarkedSelfReference { .. },
         RefusalName::UnmarkedSelfReference) | (LoweringRefusal::UnguardedCorecursion { .. },
         RefusalName::UnguardedCorecursion) | (LoweringRefusal::DescentOnSeveralParameters { .. },
@@ -1607,6 +1615,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::UnstatedComponent { .. } => RefusalName::UnstatedComponent,
         LoweringRefusal::FamilyTelescope { .. } => RefusalName::FamilyTelescope,
         LoweringRefusal::LowercaseModuleName { .. } => RefusalName::LowercaseModuleName,
+        LoweringRefusal::ImplicitTelescope { .. } => RefusalName::ImplicitTelescope,
         LoweringRefusal::NonExhaustiveMatch { .. } => RefusalName::NonExhaustiveMatch,
         LoweringRefusal::UnmarkedSelfReference { .. } => RefusalName::UnmarkedSelfReference,
         LoweringRefusal::UnguardedCorecursion { .. } => RefusalName::UnguardedCorecursion,

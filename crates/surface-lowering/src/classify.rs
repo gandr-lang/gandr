@@ -91,6 +91,7 @@ impl LoweringRefusal<'_>
             | Self::DirectedCell { .. }
             | Self::CellNotALoop { .. }
             | Self::DescentOnSeveralParameters { .. }
+            | Self::ImplicitTelescope { .. }
             | Self::UnguardedCorecursion { .. }
             | Self::BareFeedback { .. } => matches!(ret, FailureClass::Unrepresentable),
             | Self::BudgetExceeded { .. }
@@ -179,6 +180,7 @@ impl LoweringRefusal<'_>
             | Self::DirectedCell { .. }
             | Self::CellNotALoop { .. }
             | Self::DescentOnSeveralParameters { .. }
+            | Self::ImplicitTelescope { .. }
             | Self::UnguardedCorecursion { .. }
             | Self::BareFeedback { .. } => FailureClass::Unrepresentable,
             Self::BudgetExceeded { .. }
@@ -221,7 +223,7 @@ mod tests
     ///
     /// # Specification
     /// - requires: the built-in attribute registry contains `owes`.
-    /// - ensures: the 39 listed refusal variants have distinct representatives;
+    /// - ensures: the listed refusal variants have distinct representatives;
     ///   payloads are fixtures rather than evidence of a real lowering failure.
     /// - provides: the domain of the finite classification checks.
     /// - fails: never.
@@ -243,7 +245,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 45_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 46_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -435,6 +437,7 @@ mod tests
                 span: empty,
                 rule: empty,
             },
+            LoweringRefusal::ImplicitTelescope { span: empty },
         ]
     }
 
