@@ -977,6 +977,15 @@ pub enum LoweringRefusal<'source>
         name: SurfaceName<'source>,
     },
 
+    /// A declaration whose header binds parameters in an implicit telescope
+    /// `@[…]`: the entries are static parameters a use supplies by name, which
+    /// the fragment does not elaborate.
+    ImplicitTelescope
+    {
+        /// The bytes the declaration covers.
+        span: ByteSpan,
+    },
+
     /// A match some scrutinee reaches no arm of: a constructor, or an integer
     /// or boolean value, that every arm's pattern refuses.
     NonExhaustiveMatch
@@ -1288,6 +1297,11 @@ impl fmt::Display for LoweringRefusal<'_>
                 "the module `{name}` is named with a lowercase initial; a top-level module's \
                  name starts with an uppercase letter"
             ),
+            Self::ImplicitTelescope { .. } => f.write_str(
+                "this declaration binds parameters in an implicit telescope `@[…]`, which the \
+                 fragment does not elaborate; write each entry as an explicit parameter, `(a : \
+                 Type, …)`",
+            ),
             Self::NonExhaustiveMatch { .. } => {
                 f.write_str("the match leaves a value of its scrutinee that no arm matches")
             },
@@ -1442,6 +1456,7 @@ impl LoweringRefusal<'_>
             | Self::UnstatedComponent { span, .. }
             | Self::FamilyTelescope { span, .. }
             | Self::LowercaseModuleName { span, .. }
+            | Self::ImplicitTelescope { span }
             | Self::NonExhaustiveMatch { span }
             | Self::UnmarkedSelfReference { span, .. }
             | Self::UnguardedCorecursion { span, .. }
@@ -1519,7 +1534,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 42_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 43_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -1713,6 +1728,9 @@ mod tests
             LoweringRefusal::BareFeedback {
                 span: s(79_usize, 80_usize),
                 rule: s(0_usize, 1_usize),
+            },
+            LoweringRefusal::ImplicitTelescope {
+                span: s(81_usize, 82_usize),
             },
         ]
     }
