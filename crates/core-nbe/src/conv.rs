@@ -1392,19 +1392,39 @@ impl<'run> Walk<'run>
                 Ok(Local::Agree)
             },
             // Two fixpoints compare by congruence: their own closed source
-            // nodes. A fixpoint never unfolds to meet anything else.
+            // nodes, then the leading arguments each has taken, pairwise. A
+            // fixpoint never unfolds to meet anything else.
             (
                 DomainComp::Fixpoint {
                     recursive: left_recursive,
+                    leading: left_leading,
                     ..
                 },
                 DomainComp::Fixpoint {
                     recursive: right_recursive,
+                    leading: right_leading,
                     ..
                 },
             ) => {
+                let left_leading = self
+                    .domain
+                    .fields(left_leading)
+                    .map_err(ConversionFault::Domain)?;
+                let right_leading = self
+                    .domain
+                    .fields(right_leading)
+                    .map_err(ConversionFault::Domain)?;
+                if left_leading.len() != right_leading.len() {
+                    return Ok(Local::Disagree);
+                }
                 self.goals
                     .push(Goal::Closures(left_recursive, right_recursive));
+                self.goals.extend(
+                    left_leading
+                        .iter()
+                        .zip(right_leading)
+                        .map(|(&one, &other)| Goal::Values(one, other, context)),
+                );
                 Ok(Local::Agree)
             },
             (DomainComp::Neutral { .. }, DomainComp::Lambda { .. })
@@ -1667,9 +1687,39 @@ impl<'run> Walk<'run>
                     queued.push(Goal::Values(left_argument, right_argument, beneath));
                 },
                 (Elimination::Force, Elimination::Force) => {},
-                (Elimination::Bind(left_body), Elimination::Bind(right_body))
-                | (Elimination::Fixpoint(left_body), Elimination::Fixpoint(right_body)) => {
+                (Elimination::Bind(left_body), Elimination::Bind(right_body)) => {
                     queued.push(Goal::Closures(left_body, right_body));
+                },
+                // Two stuck fixpoints convert when their fixpoints do and
+                // their leading arguments do, pairwise.
+                (
+                    Elimination::Fixpoint {
+                        recursive: left_body,
+                        leading: left_leading,
+                    },
+                    Elimination::Fixpoint {
+                        recursive: right_body,
+                        leading: right_leading,
+                    },
+                ) => {
+                    let left_leading = self
+                        .domain
+                        .fields(left_leading)
+                        .map_err(ConversionFault::Domain)?;
+                    let right_leading = self
+                        .domain
+                        .fields(right_leading)
+                        .map_err(ConversionFault::Domain)?;
+                    if left_leading.len() != right_leading.len() {
+                        return Ok(mismatch);
+                    }
+                    queued.push(Goal::Closures(left_body, right_body));
+                    queued.extend(
+                        left_leading
+                            .iter()
+                            .zip(right_leading)
+                            .map(|(&one, &other)| Goal::Values(one, other, beneath)),
+                    );
                 },
                 (
                     Elimination::ListFold {
@@ -1717,7 +1767,7 @@ impl<'run> Walk<'run>
                     | Elimination::Case(_)
                     | Elimination::ListFold { .. }
                     | Elimination::StaticApply(_)
-                    | Elimination::Fixpoint(_),
+                    | Elimination::Fixpoint { .. },
                     _,
                 ) => return Ok(mismatch),
             }

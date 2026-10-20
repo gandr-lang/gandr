@@ -783,6 +783,98 @@ fn a_definition_descends_on_the_parameter_its_cases_scrutinise()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// A sum whose recursive calls grow its first parameter while they take its
+/// second apart: the first is a leading binder of the fixpoint, which stages
+/// its second binder, and each call applies the self binder to both arguments
+/// (#626).
+#[test]
+fn a_varying_parameter_before_the_staged_one_is_a_leading_binder_626()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}def rec count(acc : Nat, b : Nat) -> -F Nat {{ case b {{ Zero => return acc, Succ(p) => count[<](Succ(acc), p) }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("count"));
+    assert_eq!(
+        outside,
+        ParameterAt(0),
+        "the accumulator varies, so nothing stands outside the fixpoint"
+    );
+    let Some(&Computation::Fixpoint {
+        body,
+        evidence: FixpointEvidence::Staged { position },
+    }) = arena.computation(fixpoint)
+    else {
+        panic!(
+            "the fixpoint stages a later binder: {:?}",
+            arena.computation(fixpoint)
+        );
+    };
+    assert_eq!(
+        usize::from(position),
+        1_usize,
+        "the second binder is staged"
+    );
+    let Some(&Computation::Lambda(staged)) = arena.computation(body)
+    else {
+        panic!("the accumulator's lambda opens the body");
+    };
+    let Some(&Computation::Lambda(cased)) = arena.computation(staged)
+    else {
+        panic!("the staged parameter's lambda stands under it");
+    };
+    let Some(&Computation::DataCase {
+        scrutinee,
+        ref branches,
+        ..
+    }) = arena.computation(cased)
+    else {
+        panic!("the body cases on the staged parameter");
+    };
+    assert_eq!(
+        arena.value(scrutinee),
+        Some(&variable(DeBruijnIndex::from(0_u32))),
+        "the innermost binder"
+    );
+    let [_, successor] = **branches
+    else {
+        panic!("one branch per constructor");
+    };
+    let calls: Vec<ComputationId> = reachable(&arena, successor)
+        .into_iter()
+        .filter(|&at| {
+            matches!(arena.computation(at), Some(&Computation::Application(head, _)) if matches!(arena.computation(head), Some(Computation::Application(..))))
+        })
+        .collect();
+    let [call] = *calls
+    else {
+        panic!("one recursive call over two arguments: {calls:?}");
+    };
+    let Some(&Computation::Application(inner, field)) = arena.computation(call)
+    else {
+        panic!("the call applies the field last");
+    };
+    let Some(&Computation::Application(head, accumulated)) = arena.computation(inner)
+    else {
+        panic!("and the grown accumulator first");
+    };
+    assert!(
+        matches!(arena.computation(head), Some(&Computation::Force(forced)) if arena.value(forced) == Some(&variable(DeBruijnIndex::from(3_u32)))),
+        "the head forces the fixpoint's binder, past the field and both parameters"
+    );
+    assert_eq!(
+        arena.value(field),
+        Some(&variable(DeBruijnIndex::from(0_u32)))
+    );
+    assert!(
+        matches!(arena.value(accumulated), Some(Value::Constructor { fields, .. }) if fields.as_slice().len() == 1),
+        "the accumulator grows: {:?}",
+        arena.value(accumulated)
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 #[test]
 fn a_rebuilt_argument_descends_on_the_same_position()
 {
@@ -1094,12 +1186,15 @@ fn an_unmarked_self_reference_is_refused_with_its_claim()
     );
 }
 
+/// A kept parameter is passed as itself: a name that spells it but resolves to
+/// an arm's binder varies it, and is refused. A parameter every call changes
+/// is no kept one: it is a leading binder of the fixpoint (#626).
 #[test]
 fn a_recursive_call_passes_its_leading_parameters_unchanged()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def rec varied(n : Nat, m : Nat) -> -F Nat {{ case m {{ Zero => return n, Succ(p) => become varied[<](p, p) }} }}\ndef rec short(n : Nat, m : Nat) -> -F Nat {{ case m {{ Zero => return n, Succ(p) => become short[<](p) }} }}\n"
+        "{NAT}def rec varied(n : Nat, m : Nat) -> -F Nat {{ case m {{ Zero => return n, Succ(p) => become varied[<](p, p) }} }}\ndef rec shadowed(n : Nat, m : Nat) -> -F Nat {{ case m {{ Zero => return n, Succ(n) => become shadowed[<](n, n) }} }}\ndef rec short(n : Nat, m : Nat) -> -F Nat {{ case m {{ Zero => return n, Succ(p) => become short[<](p) }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let at = |text: &str, length: usize| {
@@ -1110,15 +1205,27 @@ fn a_recursive_call_passes_its_leading_parameters_unchanged()
         )
     };
 
+    let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("varied"));
+    assert_eq!(outside, ParameterAt(0), "a varied parameter is not kept");
+    assert!(
+        matches!(
+            arena.computation(fixpoint),
+            Some(&Computation::Fixpoint {
+                evidence: FixpointEvidence::Staged { position },
+                ..
+            }) if usize::from(position) == 1_usize
+        ),
+        "the fixpoint stages its second binder past the varied one"
+    );
     assert_eq!(
-        refusal_of(&module, SurfaceName::from("varied")),
+        refusal_of(&module, SurfaceName::from("shadowed")),
         LoweringRefusal::OutOfFragment {
-            span: at("p, p)", 1_usize),
+            span: at("n, n)", 1_usize),
             form: FormName::from(gandr_surface_grammar::NamedKind("call_expression")),
             sort: FragmentSort::Computation,
             boundary: FragmentBoundary::NonUniform,
         },
-        "a leading parameter passed as anything else varies it"
+        "a kept parameter's spelling naming the arm's binder varies it"
     );
     assert_eq!(
         refusal_of(&module, SurfaceName::from("short")),

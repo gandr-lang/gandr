@@ -288,6 +288,7 @@ use crate::arena::DomainArena;
 use crate::arena::DomainCompId;
 use crate::arena::DomainFault;
 use crate::arena::DomainValueId;
+use crate::arena::FieldSpan;
 use crate::arena::NeutralId;
 use crate::closure::CompBody;
 use crate::closure::Environment;
@@ -1345,9 +1346,15 @@ enum Task
     /// Remember the weak head on the stack as the evaluation of a pending
     /// configuration.
     Remember(PendingId),
-    /// Apply an already-captured fixpoint to the value on the stack: a
-    /// spine's stuck fixpoint, re-applied.
-    FixpointClosure(CompClosureId),
+    /// Apply an already-captured fixpoint, past its leading arguments, to the
+    /// value on the stack: a spine's stuck fixpoint, re-applied.
+    FixpointClosure
+    {
+        /// The fixpoint's own source node, closed over its environment.
+        recursive: CompClosureId,
+        /// The arguments before its staged one, in order.
+        leading: crate::arena::FieldSpan,
+    },
     /// Finish reading a held computation through its bind at `bind`, once
     /// that bind's continuation has run with the call before it: what the
     /// continuation returned, under the eliminations past the bind; or, when
@@ -2770,7 +2777,7 @@ impl<'run> Evaluation<'run>
     /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
     #[spec(
-        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::TelescopeTransport { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
+        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::TelescopeTransport { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint { .. })),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32 && {
                 let mut tasks = ret.machine.tasks.iter().rev();
@@ -2806,7 +2813,7 @@ impl<'run> Evaluation<'run>
                         answer = Answer::Computation;
                         matches!(tasks.next(), Some(Task::CaseBranches(held)) if *held == branches)
                     },
-                    Elimination::Fixpoint(recursive) => { answer = Answer::Computation; matches!(tasks.next(), Some(Task::FixpointClosure(held)) if *held == recursive) },
+                    Elimination::Fixpoint { recursive, leading } => { answer = Answer::Computation; matches!(tasks.next(), Some(Task::FixpointClosure { recursive: held, leading: kept }) if (*held, *kept) == (recursive, leading)) },
                 });
                 ordered && tasks.next().is_none() && ret.answer == answer
             },
@@ -2858,7 +2865,7 @@ impl<'run> Evaluation<'run>
     /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
     /// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on_361`
     #[spec(
-        requires: matches!(inner.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_)))
+        requires: matches!(inner.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint { .. }))
             && !enclosing.is_empty(),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32
@@ -3188,7 +3195,7 @@ fn run(
         && (ret.is_err() || match task {
             Task::Constructor { .. } | Task::Record(_) => machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks && machine.values.last().is_some_and(|id| domain.value(*id).is_some()),
             Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::Split { .. } | Task::SplitClosure(_) | Task::Projection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
-            | Task::BindClosure(_) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure(_) | Task::ListFold { .. }
+            | Task::BindClosure(_) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure { .. } | Task::ListFold { .. }
             | Task::PathTransport(_) | Task::Ride(_) | Task::TelescopeTransport(_) => machine.tasks.len() >= entry_tasks,
             Task::Flow { .. } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && machine.values.len() <= entry_values
@@ -3960,10 +3967,10 @@ fn step(
         Task::BindClosure(body) => step_bind_closure(core, domain, machine, body),
         Task::CaseBranches(branches) => step_case_branches(domain, machine, branches),
         Task::Remember(pending) => machine.remember(pending),
-        Task::FixpointClosure(recursive) => {
+        Task::FixpointClosure { recursive, leading } => {
             machine
                 .comps
-                .push(domain.comp_fixpoint(recursive, CompTermFace::Reduced));
+                .push(domain.comp_fixpoint(recursive, leading, CompTermFace::Reduced));
             step_apply(core, domain, machine)
         },
         Task::ReadThrough {
@@ -4525,7 +4532,9 @@ fn step_comp(
             let closed = capture_keeps_source(&captured);
             let closure = domain.comp_closure_node(term, captured);
             let face = composite_comp_face(closed, term);
-            machine.comps.push(domain.comp_fixpoint(closure, face));
+            machine
+                .comps
+                .push(domain.comp_fixpoint(closure, FieldSpan::EMPTY, face));
             Ok(())
         },
         Computation::Ride {
@@ -4750,16 +4759,20 @@ fn step_force(
 /// - requires: nothing; a missing head or argument is admissible and refused.
 /// - ensures: a lambda pushes a task entering its closure with the argument
 ///   bound in the intuitionistic zone; a neutral grows its spine by one
-///   application; a fixpoint applied to a canonical value unfolds once, the
-///   argument kept beneath for the application that follows, and applied to a
-///   stuck value stacks itself on that value's neutral.
+///   application; a fixpoint staged at position `k` that holds fewer than `k`
+///   leading arguments takes the argument as its next one; holding `k`, applied
+///   to a canonical value it unfolds once, its leading arguments and the
+///   argument kept beneath for the applications that follow, and applied to a
+///   stuck value it stacks itself and its leading arguments on that value's
+///   neutral.
 /// - provides: the β rule and its stuck case, which are one arm apart, and the
-///   fixpoint's `<` gate. The clause states the consumed head and the three
-///   admissible outcomes — one task entering the closure, one computation
-///   result standing for the grown neutral, or the argument restored beneath
-///   two tasks unfolding the fixpoint and applying it; that a stuck outcome's
-///   spine grew by exactly one elimination is a judgement over the produced
-///   graph, and the witnesses below carry it.
+///   fixpoint's `<` gate at its staged position. The clause states the consumed
+///   head and the admissible outcomes — one task entering the closure, one
+///   computation result standing for the grown neutral or the fixpoint holding
+///   one more leading argument, or the argument and the `k` leading arguments
+///   restored beneath `k + 2` tasks unfolding the fixpoint and applying it;
+///   that a stuck outcome's spine grew by exactly one elimination is a
+///   judgement over the produced graph, and the witnesses below carry it.
 /// - fails: [`EvalFault::MachineInvariant`] for a missing head or argument,
 ///   [`EvalFault::Domain`] for a missing node, [`EvalFault::DanglingTerm`] for
 ///   a fixpoint closure over no source fixpoint, and
@@ -4769,9 +4782,10 @@ fn step_force(
 /// # Adequacy
 /// - hypothesis: L3 — the decision surface is the four-way match, separated by
 ///   applying a lambda, a neutral, a returner, and a fixpoint at a constructor
-///   and at a neutral.
+///   and at a neutral, at its first binder and past a leading one.
 /// - witness: `eval::tests::a_redex_fires_and_the_body_sees_the_argument`
 /// - witness: `eval::tests::a_fixpoint_unfolds_at_a_constructor_and_sticks_at_a_neutral`
+/// - witness: `eval::tests::a_fixpoint_staged_past_its_first_binder_carries_its_leading_arguments_626`
 /// - witness: `eval::tests::an_eliminator_on_a_neutral_grows_its_spine`
 /// - witness: `eval::tests::an_ill_shaped_elimination_is_refused`
 /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
@@ -4788,9 +4802,9 @@ fn step_force(
                 && machine.comps.len() == entry_comps.saturating_sub(1_usize))
                 || (machine.comps.len() == entry_comps
                     && machine.tasks.len() == entry_tasks)))
-        || (machine.values.len() == entry_values
+        || (machine.values.len() >= entry_values
             && machine.comps.len() == entry_comps.saturating_sub(1_usize)
-            && machine.tasks.len() == entry_tasks.saturating_add(2_usize))),
+            && machine.tasks.len() == entry_tasks.saturating_add(2_usize).saturating_add(machine.values.len().saturating_sub(entry_values)))),
 )]
 fn step_apply(
     core: &CoreArena,
@@ -4837,17 +4851,35 @@ fn step_apply(
             Ok(())
         },
         DomainComp::Return { .. } => Err(EvalFault::AppliedNonFunction),
-        // The `<` gate: a canonical argument unfolds the fixpoint once and
-        // the application follows; a stuck one carries the fixpoint on its
-        // spine until its head unfolds.
-        DomainComp::Fixpoint { recursive, .. } => {
+        // The `<` gate at the staged position: an argument before it is taken
+        // as a leading one; at it, a canonical argument unfolds the fixpoint
+        // once and the applications follow, and a stuck one carries the
+        // fixpoint and its leading arguments on its spine until its head
+        // unfolds.
+        DomainComp::Fixpoint {
+            recursive, leading, ..
+        } => {
+            let held = domain.fields(leading).map_err(EvalFault::Domain)?.len();
+            if held < usize::from(staged_position(core, domain, recursive)?) {
+                let mut taken = Vec::with_capacity(held.saturating_add(1));
+                taken.extend_from_slice(domain.fields(leading).map_err(EvalFault::Domain)?);
+                taken.push(argument);
+                let leading = domain.hold_fields(taken);
+                machine
+                    .comps
+                    .push(domain.comp_fixpoint(recursive, leading, CompTermFace::Reduced));
+                return Ok(());
+            }
             let Some(&argument_node) = domain.value(argument)
             else {
                 return Err(EvalFault::Domain(DomainFault::Dangling));
             };
             match argument_node {
                 DomainValue::Neutral { neutral, .. } => {
-                    let grown = extend_spine(domain, neutral, Elimination::Fixpoint(recursive))?;
+                    let grown = extend_spine(domain, neutral, Elimination::Fixpoint {
+                        recursive,
+                        leading,
+                    })?;
                     machine
                         .comps
                         .push(domain.comp_neutral(grown, CompTermFace::Reduced));
@@ -4872,11 +4904,101 @@ fn step_apply(
                 | DomainValue::ListCons { .. } => {
                     machine.values.push(argument);
                     machine.tasks.push(Task::Apply);
-                    unfold(core, domain, machine, recursive)
+                    unfold_applied(core, domain, machine, recursive, leading)
                 },
             }
         },
     }
+}
+
+/// The binder a fixpoint closure's evidence stages: its staged position, or
+/// the first for structural descent and a partial fixpoint, whose `<` gate
+/// stands at its first binder.
+///
+/// # Specification
+/// - requires: nothing; a closure over anything but a source fixpoint is
+///   admissible and refused.
+/// - ensures: the position the closed fixpoint's evidence names, zero unless it
+///   is staged past its first binder.
+/// - fails: [`EvalFault::Domain`] when the closure does not resolve, and
+///   [`EvalFault::DanglingTerm`] when it closes no source fixpoint.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a structural fixpoint gates at its first argument and one
+///   staged at its second takes its first as a leading argument.
+/// - witness: `eval::tests::a_fixpoint_unfolds_at_a_constructor_and_sticks_at_a_neutral`
+/// - witness: `eval::tests::a_fixpoint_staged_past_its_first_binder_carries_its_leading_arguments_626`
+#[spec(ensures: |ret| ret.is_err() || domain.comp_closure(recursive).is_some())]
+fn staged_position(
+    core: &CoreArena,
+    domain: &DomainArena,
+    recursive: CompClosureId,
+) -> Result<gandr_kernel_term::StagedPosition, EvalFault>
+{
+    let closure = domain
+        .comp_closure(recursive)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+    let CompBody::Source(term) = closure.body()
+    else {
+        return Err(EvalFault::DanglingTerm);
+    };
+    match core.computation(term) {
+        Some(&Computation::Fixpoint {
+            evidence: gandr_kernel_term::FixpointEvidence::Staged { position },
+            ..
+        }) => Ok(position),
+        Some(&Computation::Fixpoint { .. }) => Ok(gandr_kernel_term::StagedPosition::default()),
+        Some(_) | None => Err(EvalFault::DanglingTerm),
+    }
+}
+
+/// Unfold a fixpoint once and apply it to its `leading` arguments, which the
+/// application beneath on the stack follows.
+///
+/// # Specification
+/// - requires: `leading` resolves in `domain`.
+/// - ensures: the leading arguments pushed in reverse, the first on top, one
+///   application task per argument, then the unfolding's task: the body runs,
+///   then takes each leading argument in order.
+/// - provides: `(fix x. M) a₀ … aₖ₋₁ ⇝ M[thunk (fix x. M)/x] a₀ … aₖ₋₁`, the
+///   gate's step past leading binders; no leading argument is the plain
+///   unfolding.
+/// - fails: [`EvalFault::Domain`] when `leading` dangles; as [`unfold`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a fixpoint staged at its second binder unfolds at a
+///   constructor with its leading argument bound first.
+/// - witness: `eval::tests::a_fixpoint_staged_past_its_first_binder_carries_its_leading_arguments_626`
+#[spec(
+    captures: [entry_tasks = machine.tasks.len(), entry_values = machine.values.len()],
+    ensures: |ret| ret.is_err() || machine.tasks.len() == entry_tasks.saturating_add(1_usize).saturating_add(machine.values.len().saturating_sub(entry_values)),
+)]
+fn unfold_applied(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    recursive: CompClosureId,
+    leading: FieldSpan,
+) -> Result<(), EvalFault>
+{
+    for &argument in domain
+        .fields(leading)
+        .map_err(EvalFault::Domain)?
+        .iter()
+        .rev()
+    {
+        machine.values.push(argument);
+        machine.tasks.push(Task::Apply);
+    }
+    unfold(core, domain, machine, recursive)
 }
 
 /// Unfold a fixpoint once: push the task entering its body with a thunk of
@@ -5109,8 +5231,18 @@ fn step_bind(
         },
         DomainComp::Lambda { .. } => Err(EvalFault::BoundNonReturner),
         // The `>` gate: the observation stays, and the fixpoint beneath it
-        // unfolds once.
-        DomainComp::Fixpoint { recursive, .. } => {
+        // unfolds once. A fixpoint holding leading arguments still waits for
+        // its staged one: a function, which no bind observes.
+        DomainComp::Fixpoint {
+            recursive, leading, ..
+        } => {
+            if !domain
+                .fields(leading)
+                .map_err(EvalFault::Domain)?
+                .is_empty()
+            {
+                return Err(EvalFault::BoundNonReturner);
+            }
             machine.tasks.push(Task::Bind { body, env });
             unfold(core, domain, machine, recursive)
         },
@@ -5315,7 +5447,16 @@ fn step_bind_closure(
             }
         },
         DomainComp::Lambda { .. } => return Err(EvalFault::BoundNonReturner),
-        DomainComp::Fixpoint { recursive, .. } => {
+        DomainComp::Fixpoint {
+            recursive, leading, ..
+        } => {
+            if !domain
+                .fields(leading)
+                .map_err(EvalFault::Domain)?
+                .is_empty()
+            {
+                return Err(EvalFault::BoundNonReturner);
+            }
             machine.tasks.push(Task::BindClosure(body));
             return unfold(core, domain, machine, recursive);
         },
@@ -6879,9 +7020,11 @@ fn push_eliminations(
                 answer = Answer::Computation;
                 machine.tasks.push(Task::CaseBranches(branches));
             },
-            Elimination::Fixpoint(recursive) => {
+            Elimination::Fixpoint { recursive, leading } => {
                 answer = Answer::Computation;
-                machine.tasks.push(Task::FixpointClosure(recursive));
+                machine
+                    .tasks
+                    .push(Task::FixpointClosure { recursive, leading });
             },
         }
     }
@@ -7247,7 +7390,7 @@ fn read_through(
                 | Elimination::Case(_)
                 | Elimination::ListFold { .. }
                 | Elimination::StaticApply(_)
-                | Elimination::Fixpoint(_) => None,
+                | Elimination::Fixpoint { .. } => None,
             })
     else {
         return Ok(None);

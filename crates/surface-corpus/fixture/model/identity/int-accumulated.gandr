@@ -1,0 +1,25 @@
+// A sum by recursion on its second summand whose first grows from call to
+// call: the fixpoint stages its second parameter and carries the first, which
+// every recursive call changes, through the stuck form, readback, conversion
+// and the kernel's replay (#626).
+
+// The integers, one successor more and one predecessor more.
+import "./circle-base.gandr" ;
+
+/// The sum of two integers with the first as an accumulator: each step moves
+/// one successor or predecessor of `b` onto `acc`. It respects `Int`'s rules:
+/// at `S(P(x))` it computes `count(P(S(acc)), x)`, which the second rule reads
+/// as `count(acc, x)`.
+@[ checks ]
+def rec count(acc : Int, b : Int) -> -F Int {
+  case b {
+    Z => acc,
+    S(x) => count[<](S(acc), x),
+    P(x) => count[<](P(acc), x)
+  }
+}
+
+/// One and two by the accumulator: three.
+@[ runs("S(S(S(Z)))") ]
+def accumulated : +U (-F Int) ;
+def accumulated = thunk { count(S(Z), S(S(Z))) } ;

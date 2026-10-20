@@ -23,7 +23,9 @@ def rec marked(n : Nat) -> -F Nat {
 @[ checks ]
 def rec idle(n : Nat) -> -F Nat { return n }
 
-@[ refuses("OutOfFragment") ]
+/// A parameter written before the staged one may vary across the call: it is
+/// passed to the fixpoint as a leading argument (#626).
+@[ checks ]
 def rec varied(n : Nat, m : Nat) -> -F Nat {
   case m {
     Zero => return n,

@@ -1536,6 +1536,76 @@ fn a_fixpoint_at_a_returned_endpoint_runs_the_endpoint_first()
 }
 
 #[test]
+fn a_stuck_fixpoint_compares_its_leading_arguments_626()
+{
+    // `count = fix. λacc. λb. case b { Z ⇒ return acc; S(x) ⇒ count (S acc)
+    // x }`, staged at its second binder. At a free `x`, `count (S Z) x`
+    // meets `count Z (S x)` once the right side unfolds, both stuck on `x`
+    // past the accumulator `S Z`; with another accumulator they stand apart.
+    // Short of its staged argument, `count Z` stands at no gate and compares
+    // by its body and its leading argument.
+    let mut arena = TermArena::new();
+    let nat = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let one = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![zero]);
+    let motive = arena.comp_type_returner(nat);
+    let accumulated = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let on_zero = arena.computation_return(accumulated);
+    let recursive = arena.value_variable(DeBruijnIndex::from(3_u32));
+    let forced = arena.computation_force(recursive);
+    let accumulator = arena.value_variable(DeBruijnIndex::from(2_u32));
+    let grown =
+        arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![accumulator]);
+    let leading = arena.computation_application(forced, grown);
+    let field = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let call = arena.computation_application(leading, field);
+    let on_successor = arena.computation_lambda(call);
+    let cases = arena.computation_data_case(field, motive, alloc::vec![on_zero, on_successor]);
+    let staged = arena.computation_lambda(cases);
+    let body = arena.computation_lambda(staged);
+    let count = arena.computation_fixpoint(body, FixpointEvidence::Staged {
+        position: gandr_kernel_term::StagedPosition::from(1_usize),
+    });
+    let free = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let successor = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![free]);
+    let from_one = arena.computation_application(count, one);
+    let stuck = arena.computation_application(from_one, free);
+    let from_zero = arena.computation_application(count, zero);
+    let unfolding = arena.computation_application(from_zero, successor);
+    let apart = arena.computation_application(from_zero, free);
+    let again = arena.computation_application(count, zero);
+    let none = Unfoldings::default();
+
+    // The kernel's own conversion relates the first two pairs; a claim that
+    // the others convert closes against the leading arguments they differ in.
+    for (left, right) in [(stuck, unfolding), (from_zero, again)] {
+        assert_eq!(
+            convert(
+                &mut arena,
+                &none,
+                ReplaySides::Computations(left, right),
+                ReplayBudget::default()
+            ),
+            KernelVerdict::Convertible
+        );
+    }
+    for (left, right) in [(stuck, apart), (from_zero, from_one)] {
+        assert_eq!(
+            run(
+                &mut arena,
+                &none,
+                ReplaySides::Computations(left, right),
+                EngineClaim::Convertible,
+                &[]
+            ),
+            refused(ReplayRefusal::Contradicted {
+                at: TracePosition::from(0),
+            })
+        );
+    }
+}
+
+#[test]
 fn an_endpoint_reads_a_bind_through_its_stuck_call()
 {
     // `⟨pred x to n. return S(n)⟩` against `S(⟨pred x⟩)`, `pred` a

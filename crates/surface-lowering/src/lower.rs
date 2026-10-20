@@ -6735,8 +6735,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             let name = self.name_at(binder);
             self.note_binder(binder, name)?;
-            if let (Maybe::Present(own), Some(staged)) = (named, staged)
-                && self.parameters.len().saturating_sub(start) == staged.0
+            if let (Maybe::Present(own), Some(staging)) = (named, staged)
+                && self.parameters.len().saturating_sub(start) == staging.kept.0
             {
                 let own_site = Maybe::Present(own.span);
                 let named = own.node;
@@ -6748,6 +6748,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         start,
                         end: self.parameters.len(),
                     },
+                    staged: staging.staged,
                     claimed: native::Claimed(false),
                     named,
                 });

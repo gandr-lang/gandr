@@ -3830,7 +3830,8 @@ fn fresh_motive(
 ///   and pushes the body's task under one more binder; a fixpoint closed over
 ///   nothing that a manifest definition suspends pushes `force` of that
 ///   definition under [`crate::Recursion::Refolded`]; any other fixpoint opens
-///   its body under a fresh self variable the same way; a returner pushes its
+///   its body under a fresh self variable the same way; either fixpoint is then
+///   applied to its leading arguments, first to last; a returner pushes its
 ///   value's task; a stuck head starts the spine fold.
 /// - provides: the computation half of the transition relation. The clause
 ///   states that a success pushes at least one computation result or task and
@@ -3846,6 +3847,7 @@ fn fresh_motive(
 ///   four-arm match, separated by a retained face, a lambda, a fixpoint, a
 ///   returner and a stuck head.
 /// - witness: `readback::tests::an_unreduced_weak_head_reads_back_as_its_own_source`
+/// - witness: `eval::tests::a_fixpoint_staged_past_its_first_binder_carries_its_leading_arguments_626`
 /// - witness: `readback::tests::a_lambda_reads_back_with_its_binder_as_an_index`
 /// - witness: `readback::tests::a_fixpoint_reads_back_with_its_self_binder`
 /// - witness: `readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
@@ -3900,7 +3902,23 @@ fn step_comp(
             Polarity::Computation,
             binders,
         ),
-        DomainComp::Fixpoint { recursive, .. } => {
+        DomainComp::Fixpoint {
+            recursive, leading, ..
+        } => {
+            // The leading arguments apply to the fixpoint once it is read,
+            // first to last: `fix(M) a₀ … aₖ₋₁`.
+            for &argument in domain
+                .fields(leading)
+                .map_err(ReadbackFault::Domain)?
+                .iter()
+                .rev()
+            {
+                machine.tasks.push(Task::Apply);
+                machine.tasks.push(Task::Value {
+                    value: argument,
+                    binders,
+                });
+            }
             let (source, environment) = {
                 let held = domain
                     .comp_closure(recursive)
@@ -4106,7 +4124,7 @@ fn step_neutral(
                         | Elimination::DataCase(_)
                         | Elimination::Split(_)
                         | Elimination::Projection(_)
-                        | Elimination::Fixpoint(_) => None,
+                        | Elimination::Fixpoint { .. } => None,
                     })
                     .collect()
             };
@@ -4283,10 +4301,11 @@ fn step_spine(
             Ok(())
         },
         // The fold holds the stuck argument; the fixpoint reads back as
-        // itself and is applied to it.
-        Elimination::Fixpoint(recursive) => {
+        // itself applied to its leading arguments, `fix(M) a₀ … aₖ₋₁`, and is
+        // applied to it.
+        Elimination::Fixpoint { recursive, leading } => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
-            let fixpoint = domain.comp_fixpoint(recursive, CompTermFace::Reduced);
+            let fixpoint = domain.comp_fixpoint(recursive, leading, CompTermFace::Reduced);
             machine.tasks.push(onward);
             machine.tasks.push(Task::Apply);
             machine.tasks.push(Task::Comp {

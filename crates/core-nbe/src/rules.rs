@@ -421,6 +421,8 @@ enum EliminationShape<'core>
     Split(gandr_core_term::ComponentCount),
     /// An exact record label or tuple component.
     Projection(ProjectionKey<'core>),
+    /// A stuck fixpoint holding this many leading arguments.
+    Fixpoint(usize),
 }
 
 /// The selector a native projection retains: a record's exact label or a
@@ -632,7 +634,8 @@ pub fn projection_key(
     Elimination::Projection(source) => ret == projection_key(core,source).map(EliminationShape::Projection),
     Elimination::Split(closure) => ret == split_source(core,domain,closure).map(|(arity,_)| EliminationShape::Split(arity)),
     Elimination::Case(branches) => ret == domain.branches(branches).map(|held| EliminationShape::Case(held.len())).map_err(ConversionFault::Domain),
-    Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::TelescopeTransport { .. } | Elimination::Apply(_) | Elimination::Force | Elimination::Bind(_) | Elimination::ListFold { .. } | Elimination::StaticApply(_) | Elimination::Fixpoint(_) => ret == Ok(EliminationShape::Ordinary(core::mem::discriminant(&elimination))),
+    Elimination::Fixpoint { leading, .. } => ret == domain.fields(leading).map(|held| EliminationShape::Fixpoint(held.len())).map_err(ConversionFault::Domain),
+    Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::TelescopeTransport { .. } | Elimination::Apply(_) | Elimination::Force | Elimination::Bind(_) | Elimination::ListFold { .. } | Elimination::StaticApply(_) => ret == Ok(EliminationShape::Ordinary(core::mem::discriminant(&elimination))),
 })]
 fn elimination_shape<'core>(
     core: &'core CoreArena,
@@ -653,6 +656,10 @@ fn elimination_shape<'core>(
             .branches(branches)
             .map(|held| EliminationShape::Case(held.len()))
             .map_err(ConversionFault::Domain),
+        Elimination::Fixpoint { leading, .. } => domain
+            .fields(leading)
+            .map(|held| EliminationShape::Fixpoint(held.len()))
+            .map_err(ConversionFault::Domain),
         Elimination::Transport(_)
         | Elimination::ProductTransport(_)
         | Elimination::PathTransport { .. }
@@ -662,8 +669,7 @@ fn elimination_shape<'core>(
         | Elimination::Force
         | Elimination::Bind(_)
         | Elimination::ListFold { .. }
-        | Elimination::StaticApply(_)
-        | Elimination::Fixpoint(_) => Ok(EliminationShape::Ordinary(core::mem::discriminant(
+        | Elimination::StaticApply(_) => Ok(EliminationShape::Ordinary(core::mem::discriminant(
             &elimination,
         ))),
     }
@@ -936,7 +942,8 @@ pub enum Spines
                 EliminationShape::Projection(_) => 0_usize,
                 EliminationShape::Case(branches) => branches,
                 EliminationShape::Split(_) => 1_usize,
-                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::ListFold { .. } | Elimination::PathTransport { .. } | Elimination::Ride { .. } => 2_usize,Elimination::TelescopeTransport { .. } => 4_usize,Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Apply(_) | Elimination::Bind(_) | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_) => 1_usize },
+                EliminationShape::Fixpoint(leading) => leading.saturating_add(1_usize),
+                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::ListFold { .. } | Elimination::PathTransport { .. } | Elimination::Ride { .. } => 2_usize,Elimination::TelescopeTransport { .. } => 4_usize,Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Apply(_) | Elimination::Bind(_) | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint { .. } => 1_usize },
             };
             Ok((true,count.saturating_add(added)))
         });
@@ -1077,8 +1084,28 @@ fn eliminations_subgoals(
             (Elimination::Split(left_split), Elimination::Split(right_split)) => {
                 subgoals.push(Subgoal::SplitBodies(left_split, right_split));
             },
-            (Elimination::Fixpoint(left_fixpoint), Elimination::Fixpoint(right_fixpoint)) => {
+            (
+                Elimination::Fixpoint {
+                    recursive: left_fixpoint,
+                    leading: left_leading,
+                },
+                Elimination::Fixpoint {
+                    recursive: right_fixpoint,
+                    leading: right_leading,
+                },
+            ) => {
                 subgoals.push(Subgoal::Fixpoints(left_fixpoint, right_fixpoint));
+                let right_leading = domain
+                    .fields(right_leading)
+                    .map_err(ConversionFault::Domain)?;
+                subgoals.extend(
+                    domain
+                        .fields(left_leading)
+                        .map_err(ConversionFault::Domain)?
+                        .iter()
+                        .zip(right_leading)
+                        .map(|(&one, &other)| Subgoal::Values(one, other)),
+                );
             },
             (
                 Elimination::ListFold {
@@ -1125,7 +1152,7 @@ fn eliminations_subgoals(
                 | Elimination::Case(_)
                 | Elimination::ListFold { .. }
                 | Elimination::StaticApply(_)
-                | Elimination::Fixpoint(_),
+                | Elimination::Fixpoint { .. },
                 _,
             ) => return Ok(Spines::Disagree),
         }
@@ -1930,7 +1957,7 @@ fn held_elimination(
     if !matches!(
         node.spine().first(),
         Some(
-            Elimination::Fixpoint(_)
+            Elimination::Fixpoint { .. }
                 | Elimination::DataCase(_)
                 | Elimination::Case(_)
                 | Elimination::Split(_)
@@ -2666,20 +2693,41 @@ fn plan_comps(
             },
         ) => Plan::Decompose(Vec::from([Subgoal::Values(left_value, right_value)])),
         // Congruence only: two fixpoints compare by their bodies under one
-        // self variable, whatever claims they carry.
+        // self variable, whatever claims they carry, then by the leading
+        // arguments each holds, pairwise; a different count is apart.
         (
             DomainComp::Fixpoint {
                 recursive: left_recursive,
+                leading: left_leading,
                 ..
             },
             DomainComp::Fixpoint {
                 recursive: right_recursive,
+                leading: right_leading,
                 ..
             },
-        ) => Plan::Decompose(Vec::from([Subgoal::FixpointBodies(
-            left_recursive,
-            right_recursive,
-        )])),
+        ) => {
+            let left_leading = domain
+                .fields(left_leading)
+                .map_err(ConversionFault::Domain)?;
+            let right_leading = domain
+                .fields(right_leading)
+                .map_err(ConversionFault::Domain)?;
+            if left_leading.len() == right_leading.len() {
+                let mut subgoals = Vec::with_capacity(left_leading.len().saturating_add(1));
+                subgoals.push(Subgoal::FixpointBodies(left_recursive, right_recursive));
+                subgoals.extend(
+                    left_leading
+                        .iter()
+                        .zip(right_leading)
+                        .map(|(&one, &other)| Subgoal::Values(one, other)),
+                );
+                Plan::Decompose(subgoals)
+            }
+            else {
+                Plan::Leaf(Settled::NotConvertible)
+            }
+        },
         (DomainComp::Lambda { .. }, DomainComp::Neutral { .. }) => {
             Plan::Step(Step::Eta(ConversionSide::Right))
         },
