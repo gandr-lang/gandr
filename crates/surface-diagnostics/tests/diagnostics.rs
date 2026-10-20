@@ -61,6 +61,7 @@ use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
+use gandr_surface_pretty::Fidelity;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::Notation;
@@ -592,6 +593,76 @@ fn a_body_names_its_match_arms_by_their_constructors_809()
             vec![Unspelled::Notation(Notation::Fixpoint)]
         ),
         "each arm is written under the constructor it matches: {:?}",
+        presentation.unspelled()
+    );
+}
+
+/// A match over a family with a loop writes the loop's arm under the loop's
+/// name: the lowering appends a branch per loop after the constructors', and a
+/// table naming the constructors alone printed that arm `?` (#813, #823).
+#[test]
+fn a_loop_arm_is_named_by_its_loop_823()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let text = SourceText::from(
+        "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\ndef invLooper(x : \
+         Circle) -> -F Circle {\n  case x {\n    Base => Base,\n    loop => back(loop)\n  }\n}\n",
+    );
+    let Lowered::Module { module, arena } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is one module");
+    };
+    let body = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name().as_ref() == "invLooper")
+        .and_then(|declaration| match declaration.outcome() {
+            DeclarationOutcome::Bodied { body } | DeclarationOutcome::Completed { body, .. } => {
+                arena.value(body)
+            },
+            DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World
+            | DeclarationOutcome::Refused(_) => None,
+        });
+    let Some(&Value::Thunk(computation)) = body
+    else {
+        panic!("`invLooper` is defined by a thunk");
+    };
+    let spelled = constant_names(&module);
+    let names: Vec<Name<'_>> = spelled
+        .iter()
+        .map(|name| Name::from(name.as_str()))
+        .collect();
+    let families = Families::of(&module);
+    let constructors = families.naming(&names);
+    let source = CoreSource::new(&arena, &names).naming(&constructors);
+    let presentation = present_computation(
+        &source,
+        CoreNode::Computation(computation),
+        PageWidth::from(100_u32),
+        Form::Sugared.into(),
+    )
+    .expect("the body lays out");
+    assert_eq!(
+        (
+            presentation.to_string(),
+            presentation.fidelity(),
+            presentation.unspelled().is_empty()
+        ),
+        (
+            String::from(
+                "fn (a) { case a { Base => Base, loop => transport(\\b. Path(Circle, b, Base), \
+                 loop, here(Base)) } }"
+            ),
+            Fidelity::Faithful,
+            true
+        ),
+        "the loop arm is written under its loop: {:?}",
         presentation.unspelled()
     );
 }

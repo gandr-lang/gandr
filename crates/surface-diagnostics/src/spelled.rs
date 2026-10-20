@@ -693,6 +693,9 @@ struct Family
     /// The empty word as a value is written, `here(a)`, when the family is
     /// the words of a family's loops.
     empty: Option<String>,
+    /// The names of the family's loops, in the order a data case over the
+    /// family takes their branches after its constructors'.
+    loops: Vec<String>,
 }
 
 impl Families
@@ -742,9 +745,10 @@ impl Families
     /// - requires: nothing.
     /// - ensures: one family per data declaration whose signature the module
     ///   holds, at its constant's position, its constructors named as written
-    ///   in tag order with the field count the signature gives each; the words
-    ///   of a family's loops are consed, their empty word written `here(a)` as
-    ///   a value at their point `a`; no case.
+    ///   in tag order with the field count the signature gives each, then its
+    ///   loops named as written, the words declaring them in module order; the
+    ///   words of a family's loops are consed, their empty word written
+    ///   `here(a)` as a value at their point `a`; no case.
     /// - provides: the constructor names a [`CoreSource`] over any arena spells
     ///   a constructor value with.
     /// - fails: never.
@@ -756,11 +760,41 @@ impl Families
     ///   the test fails on.
     /// - witness: `tests::diagnostics::a_mismatch_spells_the_constructors_its_type_mentions`
     /// - witness: `tests::diagnostics::a_word_spells_by_its_letters`
+    /// - witness: `tests::diagnostics::a_loop_arm_is_named_by_its_loop_823`
     #[spec(ensures: |ret| ret.families.len() <= module.declarations().len() && ret.cases.is_empty())]
     #[inline]
     #[must_use]
     pub fn declared(module: &LoweredModule<'_>) -> Self
     {
+        let mut looped: BTreeMap<usize, Vec<String>> = BTreeMap::new();
+        for declaration in module.declarations() {
+            if declaration.role() != Role::Words {
+                continue;
+            }
+            let DeclarationOutcome::Data(index) = declaration.outcome()
+            else {
+                continue;
+            };
+            let Maybe::Present(Some(cells)) = module
+                .data(index)
+                .map(|signature| signature.presentation().cells())
+            else {
+                continue;
+            };
+            // A word's constructors are the empty word, then a letter and its
+            // inverse per loop: the letters, at the odd tags, name the loops.
+            let letters = module
+                .constructors(index)
+                .iter()
+                .skip(1)
+                .step_by(2)
+                .take(cells.cells().len())
+                .cloned();
+            looped
+                .entry(usize::from(cells.sort()))
+                .or_default()
+                .extend(letters);
+        }
         let families = module
             .declarations()
             .iter()
@@ -786,10 +820,12 @@ impl Families
                     },
                     Maybe::Absent(_) => None,
                 };
+                let constant = usize::from(declaration.constant());
                 Some(Family {
-                    constant: usize::from(declaration.constant()),
+                    constant,
                     constructors,
                     empty,
+                    loops: looped.remove(&constant).unwrap_or_default(),
                 })
             })
             .collect();
@@ -838,6 +874,12 @@ impl Families
                         constructors.words(named, members, Name::from(empty.as_str()));
                     },
                     None => constructors.family(named, members),
+                }
+                if !family.loops.is_empty() {
+                    constructors.loops(
+                        named,
+                        family.loops.iter().map(|name| Name::from(name.as_str())),
+                    );
                 }
             }
         }

@@ -48,7 +48,6 @@ use gandr_surface_pretty::Notation;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_pretty::Style;
-use gandr_surface_pretty::Unreadable;
 use gandr_surface_pretty::Unspelled;
 use gandr_surface_pretty::present_computation;
 use gandr_surface_pretty::present_definition;
@@ -519,8 +518,6 @@ const EXCLUDED_BODIES: [(&str, &str, &str); 14] = [
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Held
 {
-    /// A `case` arm on a path constructor printed `?` (#823).
-    Unnamed,
     /// A printing in the printer's own notation, which the grammar does not
     /// read back (#941).
     Notation,
@@ -548,7 +545,6 @@ impl fmt::Display for Held
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            Self::Unnamed => "#823, a path-constructor arm printed `?`",
             Self::Notation => "#941, written in the printer's own notation",
             Self::Unread => "#815, the printing does not lower back",
             Self::Apart => "#808, the two spellings lower apart",
@@ -659,16 +655,10 @@ fn spelt(
     if unspelled.is_empty() {
         Spelt::Unfaithful(format!("approximate, naming no reason (#820): {text}"))
     }
-    else if unspelled
-        .iter()
-        .all(|reason| *reason == Unspelled::Unreadable(Unreadable::Unnamed))
-    {
-        Spelt::Held(Held::Unnamed)
-    }
     // A handler written as `reset` and `shift` leaves the scope of each
     // capability it delimits unnamed, so its region is elided with it.
     else if unspelled.iter().all(|reason| match *reason {
-        Unspelled::Notation(_) | Unspelled::Unreadable(Unreadable::Unnamed) => true,
+        Unspelled::Notation(_) => true,
         Unspelled::Elided(Elided::Region) => {
             unspelled.contains(&Unspelled::Notation(Notation::Reset))
         },

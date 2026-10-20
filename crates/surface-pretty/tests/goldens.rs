@@ -3090,6 +3090,36 @@ fn a_case_over_words_writes_each_arm_as_the_surface_does_815()
     }
 }
 
+/// A case over a family with a loop writes the loop's arm under the loop's
+/// name, after the constructors' arms, as the surface spells it: the case's
+/// branches past the constructors are its loop arms, in the family's order,
+/// and a table naming the constructors alone left that arm `?` (#813).
+#[test]
+fn a_loop_arm_is_written_under_its_loop_813()
+{
+    let mut core = CoreArena::new();
+    let circle = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returns_circle = core.comp_type_returner(circle);
+    let scrutinee = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let unit = core.value_unit();
+    let returned = core.computation_return(unit);
+    let data_case = core.computation_data_case(scrutinee, returns_circle, vec![returned, returned]);
+    let matched = core.computation_lambda(data_case);
+    let names = [Name::from("Circle")];
+    let mut constructors = Constructors::default();
+    constructors.family(Name::from("Circle"), [(
+        Name::from("Base"),
+        Arity::from(0_usize),
+    )]);
+    constructors.loops(Name::from("Circle"), [Name::from("loop")]);
+    constructors.case(data_case, Name::from("Circle"));
+    let source = CoreSource::new(&core, &names).naming(&constructors);
+    assert_eq!(
+        spelled(&source, Root::Computation(CoreNode::Computation(matched))),
+        faithful(Written("fn (a) { case a { Base => unit, loop => unit } }"))
+    );
+}
+
 /// What an endpoint receives is bound as the surface reads a receive,
 /// `recv(e) as x ; rest`: under `run x <- …` a receive reads as a statement
 /// that cannot stand there, and the source does not parse (#815).

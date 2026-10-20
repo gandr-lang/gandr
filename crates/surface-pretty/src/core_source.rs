@@ -147,13 +147,17 @@ const UNRESTORED: &Restoration = &Restoration(BTreeMap::new());
 /// Two families of one name keep the first one recorded. A family of words
 /// is recorded consed: each of its one-field constructors is a letter, written
 /// before the rest of the word, and its nullary constructor, the empty word,
-/// is written as a value at its point, `here(a)`, and as a pattern bare.
+/// is written as a value at its point, `here(a)`, and as a pattern bare. A
+/// family with loops records them after its constructors: a data case over it
+/// takes one branch per constructor and then one per loop, each loop arm
+/// written under the loop's name.
 ///
 /// # Specification
 /// - requires: the families are named as the source names a family and the
 ///   cases are computations of the source's arena.
-/// - ensures: a recorded family answers its constructors by tag; a recorded
-///   case answers its family; everything else answers nothing.
+/// - ensures: a recorded family answers its constructors by tag, and its loops
+///   past them; a recorded case answers its family; everything else answers
+///   nothing.
 /// - provides: the patterns a data case is written in and the head a
 ///   constructor value is written under.
 /// - panics: none.
@@ -174,6 +178,9 @@ pub struct Constructors<'text>
     consed: BTreeMap<Name<'text>, Name<'text>>,
     /// The family each data case eliminates.
     cases: BTreeMap<ComputationId, Name<'text>>,
+    /// Each family's loops, in the order a data case's branches take them
+    /// after the constructors'.
+    loops: BTreeMap<Name<'text>, Vec<Name<'text>>>,
 }
 
 impl<'text> Constructors<'text>
@@ -260,6 +267,35 @@ impl<'text> Constructors<'text>
         let _first = self.cases.entry(case).or_insert(family);
     }
 
+    /// The family `family`'s loops, in the order a data case over it takes
+    /// their branches after its constructors', recorded unless the family's
+    /// loops already are.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the family answers the loops of its first record.
+    /// - provides: the names a data case's loop arms are written under.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a case over the circle names its loop arm.
+    /// - witness: `tests::goldens::a_loop_arm_is_written_under_its_loop_813`
+    #[spec(ensures: self.loops.contains_key(&family))]
+    #[inline]
+    pub fn loops<I>(
+        &mut self,
+        family: Name<'text>,
+        loops: I,
+    ) where
+        I: IntoIterator<Item = Name<'text>>,
+    {
+        let _first = self
+            .loops
+            .entry(family)
+            .or_insert_with(|| loops.into_iter().collect());
+    }
+
     /// The constructor of `family` at `tag` as a value is written under, and
     /// its field count: a word's empty word at its point.
     ///
@@ -299,6 +335,29 @@ impl<'text> Constructors<'text>
             .copied()
     }
 
+    /// The pattern a data case over `family` writes its branch at `index`
+    /// under, and the fields it binds: a constructor by its tag, and past the
+    /// constructors a loop, which binds none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn arm(
+        &self,
+        family: Name<'_>,
+        index: Component,
+    ) -> Option<(Name<'text>, Arity)>
+    {
+        let constructors = self.families.get(family.as_ref())?;
+        if let Some(&constructor) = constructors.get(usize::from(index)) {
+            return Some(constructor);
+        }
+        let looped = usize::from(index).checked_sub(constructors.len())?;
+        let &name = self.loops.get(family.as_ref())?.get(looped)?;
+        Some((name, Arity::from(0_usize)))
+    }
+
     /// How a constructor of `family` taking `arity` fields is laid out: consed
     /// when it is a letter of a word — one field, of a family registered by
     /// [`Self::words`] — and applied otherwise.
@@ -327,6 +386,7 @@ const UNNAMED: &Constructors<'static> = &Constructors {
     families: BTreeMap::new(),
     consed: BTreeMap::new(),
     cases: BTreeMap::new(),
+    loops: BTreeMap::new(),
 };
 
 /// A core arena read through the names of the constants it mentions.
@@ -1963,7 +2023,7 @@ impl Source for CoreSource<'_>
             return None;
         };
         let family = *self.constructors.cases.get(&id)?;
-        let (name, arity) = self.constructors.pattern(family, index)?;
+        let (name, arity) = self.constructors.arm(family, index)?;
         Some((name, arity, self.constructors.placement(family, arity)))
     }
 
