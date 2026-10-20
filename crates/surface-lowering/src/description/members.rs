@@ -104,7 +104,7 @@ impl Reader<'_, '_>
                 attrs,
             ),
             WrittenOperation {
-                named: named.span,
+                named: Maybe::Present(named.span),
                 inputs: written_inputs,
                 outputs: written_outputs,
             },
@@ -215,7 +215,7 @@ impl Reader<'_, '_>
             named: Maybe::Absent(member_name::Absent::Anonymous),
             left,
             right,
-            arrow,
+            arrow: Maybe::Present(arrow),
             orientation,
         }))
     }

@@ -1560,6 +1560,10 @@ impl TypeTable
         let mut orientations = Vec::new();
         for cells in &module.cells().declarations {
             for (&span, direction) in cells.rule_spans.iter().zip(&cells.directions) {
+                let Maybe::Present(span) = span
+                else {
+                    continue;
+                };
                 let note = match *direction {
                     gandr_surface_lowering::description::written::RuleDirection::LeftToRight => {
                         ChosenDirection::LeftToRight
@@ -3821,6 +3825,58 @@ mod tests
                             def rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero \
                             => n,\n    Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef two : Nat ;\n\
                             def two = Succ(Succ(Zero)) ;";
+
+    /// #1129: an `ext` member's keyword holds none of the members it
+    /// generates, neither a binder nor a law's orientation, and the face and
+    /// the boundary constant it writes refer to the face and the constant.
+    #[test]
+    fn an_ext_member_names_its_face_and_boundary_1129()
+    {
+        let source = SourceText::from(include_str!(
+            "../../surface-corpus/fixture/model/extension/generated.gandr"
+        ));
+        let table = table(source);
+        let keyword = found(source, SourceText::from("ext Cell = Val on left is zero;"));
+        assert!(
+            !matches!(
+                answer(
+                    &table,
+                    source,
+                    SourceText::from("ext Cell = Val on left is zero;")
+                ),
+                Maybe::Present(Answer {
+                    subject: Subject::Binder,
+                    ..
+                })
+            ),
+            "the keyword answers no generated operation"
+        );
+        assert!(
+            table
+                .orientations()
+                .iter()
+                .all(|&(span, _)| span.start() != keyword),
+            "the keyword notes no generated law's direction"
+        );
+        let at = |needle: &'static str| refers(&table, source, SourceText::from(needle));
+        let named = |needle: &'static str, name: &'static str| {
+            Some(site(
+                source,
+                SourceText::from(needle),
+                SourceText::from(name),
+            ))
+        };
+        assert_eq!(
+            at("left is zero;\n  oper c"),
+            named("left = {0}", "left"),
+            "the face names the shape's face"
+        );
+        assert_eq!(
+            at("zero;\n  oper c"),
+            named("zero : Val", "zero"),
+            "the boundary names the constant"
+        );
+    }
 
     /// #1128: in theory blocks and module ascriptions each name refers to its
     /// own declaration — an included theory, an ascribed one, a member its

@@ -57,6 +57,8 @@ use super::super::written::WrittenPort;
 use super::super::written::WrittenSort;
 use super::super::written::WrittenSortMember;
 use super::super::written::WrittenTerm;
+use super::super::written::WrittenUse;
+use super::super::written::arrow;
 use super::super::written::member_name;
 use super::super::written::port_name;
 use crate::circuit::ExtensionFault;
@@ -83,13 +85,15 @@ pub(super) struct Extension
 }
 
 /// The members an `ext` member generates, each with its tile and where it
-/// stands written.
+/// stands written, and the names the member writes for others.
 pub(super) struct Generated
 {
     /// The introduction and the readings, each with its tile and ports.
     pub operations: Vec<(TheoryOperation, Placed, WrittenOperation)>,
     /// The boundary, β and η laws, each with its tile and sides.
     pub laws: Vec<(TheoryRule, Placed, WrittenFace)>,
+    /// The face's and the boundary constant's names, as uses.
+    pub uses: Vec<WrittenUse>,
 }
 
 impl Extension
@@ -180,15 +184,20 @@ impl Reader<'_, '_>
     }
 
     /// The operations and laws the face theory generates for `extension`
-    /// over the block's members `parts`.
+    /// over the block's members `parts`, and the uses its face and boundary
+    /// names are.
     ///
     /// # Specification
     /// - requires: `parts` holds the block's shape, sorts and operations, the
-    ///   cell sort among them.
+    ///   cell sort among them; `tiles` holds the name tile of each of `parts`'
+    ///   operations, in order, and `faces` the name tile of each of its shape's
+    ///   faces the block writes, in order.
     /// - ensures: `inCell` over the points off the face, ascending; one
     ///   `outCellp` per point of the shape; one boundary law per point of the
     ///   face, one β law per point off it, and the η law — each named for the
-    ///   cell sort and the point, as the module states.
+    ///   cell sort and the point, as the module states, none with a written
+    ///   name or arrow; and the face's and the boundary's names as uses of the
+    ///   face's and the constant's name tiles, each where its tile is held.
     /// - fails: a block with no shape, a face the shape does not name, a face
     ///   holding every point, an extended type that is not an unindexed sort of
     ///   the block other than the cell sort, and a boundary that is not a
@@ -209,6 +218,8 @@ impl Reader<'_, '_>
         &self,
         extension: &Extension,
         parts: &TheoryParts,
+        tiles: &[Placed],
+        faces: &[Placed],
     ) -> Result<Generated, DescriptionDiagnostic>
     {
         let refused = |fault: ExtensionFault| DescriptionDiagnostic {
@@ -220,10 +231,11 @@ impl Reader<'_, '_>
             return Err(refused(ExtensionFault::Unshaped));
         };
         let Written(face_name) = self.text(extension.face);
-        let Some(face) = shape
+        let Some((face_at, face)) = shape
             .faces
             .iter()
-            .find(|face| face.name().as_ref() == face_name)
+            .enumerate()
+            .find(|&(_, face)| face.name().as_ref() == face_name)
         else {
             return Err(refused(ExtensionFault::UnknownFace(Name::from(face_name))));
         };
@@ -237,16 +249,16 @@ impl Reader<'_, '_>
             return Err(refused(ExtensionFault::Carrier(Name::from(carrier))));
         }
         let Written(boundary) = self.text(extension.boundary);
-        let constant = parts.operations.iter().any(|operation| {
+        let Some(constant) = parts.operations.iter().position(|operation| {
             operation.name.as_ref() == boundary
                 && operation.kind == OperationKind::Operation
                 && operation.inputs.is_empty()
                 && matches!(operation.outputs.as_slice(), [port]
                     if port.sort.as_ref() == carrier && port.indices.is_empty())
-        });
-        if !constant {
+        })
+        else {
             return Err(refused(ExtensionFault::Boundary(Name::from(boundary))));
-        }
+        };
         let points: Vec<ShapePoint> = (0 .. usize::from(shape.points))
             .map(ShapePoint::from)
             .collect();
@@ -289,7 +301,7 @@ impl Reader<'_, '_>
             },
             extension.keyword,
             WrittenOperation {
-                named: extension.keyword.span,
+                named: Maybe::Absent(member_name::Absent::Generated),
                 inputs: off
                     .iter()
                     .map(|_| written_port(extension.carrier))
@@ -307,7 +319,7 @@ impl Reader<'_, '_>
                 },
                 extension.keyword,
                 WrittenOperation {
-                    named: extension.keyword.span,
+                    named: Maybe::Absent(member_name::Absent::Generated),
                     inputs: vec![written_port(extension.cell)],
                     outputs: vec![written_port(extension.carrier)],
                 },
@@ -326,7 +338,7 @@ impl Reader<'_, '_>
                     named: Maybe::Absent(member_name::Absent::Generated),
                     left: WrittenTerm::default(),
                     right: WrittenTerm::default(),
-                    arrow: extension.keyword.span,
+                    arrow: Maybe::Absent(arrow::Absent::Generated),
                     orientation: RuleOrientation::Pinned(RuleDirection::LeftToRight),
                 },
             )
@@ -355,6 +367,23 @@ impl Reader<'_, '_>
             ),
             cell_variable(),
         ));
-        Ok(Generated { operations, laws })
+        let mut uses = Vec::with_capacity(2);
+        if let Some(&named) = faces.get(face_at) {
+            uses.push(WrittenUse {
+                span: extension.face.span,
+                named: named.span,
+            });
+        }
+        if let Some(&named) = tiles.get(constant) {
+            uses.push(WrittenUse {
+                span: extension.boundary.span,
+                named: named.span,
+            });
+        }
+        Ok(Generated {
+            operations,
+            laws,
+            uses,
+        })
     }
 }
