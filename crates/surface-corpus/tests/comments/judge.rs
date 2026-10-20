@@ -496,7 +496,10 @@ fn on_next_line(
     let from = before.trim_end().len();
     let to = source.0.len().saturating_sub(after.trim_start().len());
     Yes(source.0.get(from .. to).is_some_and(|stretch| {
-        stretch.chars().all(char::is_whitespace) && stretch.matches('\n').count() == 1
+        stretch.chars().all(char::is_whitespace)
+            && stretch
+                .split_once('\n')
+                .is_some_and(|(_, rest)| !rest.contains('\n'))
     }))
 }
 
