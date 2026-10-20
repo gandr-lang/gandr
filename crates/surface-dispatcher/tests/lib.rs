@@ -8,6 +8,10 @@
         reason = "12 cost-shape sites; #814 lists them"
     )
 )]
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(clone_in_loop, reason = "1 cost-shape site; #814 lists it")
+)]
 
 extern crate alloc;
 

@@ -18,6 +18,10 @@
         reason = "4 cost-shape sites; #814 lists them"
     )
 )]
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(clone_in_loop, reason = "3 cost-shape sites; #814 lists them")
+)]
 
 /// A toy position from child indices, read from the root outward.
 macro_rules! at {
