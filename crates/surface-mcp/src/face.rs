@@ -319,11 +319,25 @@ mod tests
         /// trivial.
         fn new(scratch: &Scratch) -> Self
         {
+            Self::declaring(scratch, &json!({}))
+        }
+
+        /// An editor connection to `scratch`'s hub, initialised declaring
+        /// `capabilities`.
+        ///
+        /// # Specification
+        /// trivial.
+        fn declaring(
+            scratch: &Scratch,
+            capabilities: &Value,
+        ) -> Self
+        {
             let writing = UnixStream::connect(scratch.socket()).expect("the hub accepts");
             let reading = BufReader::new(writing.try_clone().expect("the stream clones"));
             let mut editor = Self { writing, reading };
             editor.send(
-                &json!({ "jsonrpc": "2.0", "id": 1_i32, "method": "initialize", "params": {} }),
+                &json!({ "jsonrpc": "2.0", "id": 1_i32, "method": "initialize",
+                "params": { "capabilities": capabilities } }),
             );
             drop(editor.receive());
             editor
@@ -497,6 +511,44 @@ mod tests
                 .map(alloc::vec::Vec::len),
             Some(1_usize),
             "the model reads the editor's edit at its version"
+        );
+        drop(model);
+        drop(editor);
+        hub.join().expect("the hub exits");
+    }
+
+    #[test]
+    fn a_kept_fill_asks_its_editor_for_lenses_again()
+    {
+        let scratch = Scratch::new(&json!("refresh"));
+        let hub = hub(&scratch);
+        let mut editor = Editor::declaring(
+            &scratch,
+            &json!({ "workspace": { "codeLens": { "refreshSupport": true } } }),
+        );
+        let uri = json!("file:///tmp/refresh.gandr");
+        editor.edit(
+            &uri,
+            &json!(1_i32),
+            &json!("def f : Integer ;\ndef f = missing ;\n"),
+        );
+        let mut model = Model::new(&scratch);
+        let kept = model.ask(
+            &json!({ "jsonrpc": "2.0", "id": 1_i32, "method": "tools/call",
+            "params": { "name": "propose", "arguments": { "uri": uri, "version": 1_i32,
+                "range": { "start": { "line": 1_u32, "character": 8_u32 },
+                    "end": { "line": 1_u32, "character": 15_u32 } },
+                "text": "42" } } }),
+        );
+        assert_eq!(
+            kept.pointer("/result/structuredContent/kept"),
+            Some(&json!(true))
+        );
+        assert_eq!(
+            editor.receive(),
+            json!({ "jsonrpc": "2.0", "id": "workspace/codeLens/refresh/1",
+                "method": "workspace/codeLens/refresh" }),
+            "the editor holding the document is asked for its lenses again"
         );
         drop(model);
         drop(editor);

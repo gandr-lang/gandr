@@ -520,6 +520,25 @@ impl InitializeParams
                 .unwrap_or(false),
         )
     }
+
+    /// Whether this client requests its code lenses again when asked to:
+    /// when it declares `workspace.codeLens.refreshSupport`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn refreshes_lenses(&self) -> RefreshesLenses
+    {
+        RefreshesLenses(
+            self.capabilities
+                .as_ref()
+                .and_then(|capabilities| capabilities.workspace)
+                .and_then(|workspace| workspace.code_lens)
+                .and_then(|lenses| lenses.refresh_support)
+                .unwrap_or(false),
+        )
+    }
 }
 
 /// Whether a client takes a definition as links from the name asked about.
@@ -541,6 +560,11 @@ pub struct WatchesFiles(pub bool);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ShowsProgress(pub bool);
+
+/// Whether a client requests its code lenses again when the server asks.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RefreshesLenses(pub bool);
 
 /// The client capabilities the server reads.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
@@ -576,12 +600,26 @@ pub struct WindowCapabilities
 /// The workspace client capabilities the server reads.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
-#[repr(transparent)]
 pub struct WorkspaceCapabilities
 {
     /// `workspace.didChangeWatchedFiles`.
     #[serde(default)]
     pub did_change_watched_files: Option<WatchedFilesCapabilities>,
+    /// `workspace.codeLens`.
+    #[serde(default)]
+    pub code_lens: Option<RefreshCapabilities>,
+}
+
+/// What the client offers of requesting a feature's answers again.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct RefreshCapabilities
+{
+    /// `refreshSupport`: whether it requests the answers again when the
+    /// server asks.
+    #[serde(default)]
+    pub refresh_support: Option<bool>,
 }
 
 /// What the client offers of watching files.

@@ -393,6 +393,9 @@ pub enum Met<'later>
     /// Files another connection's editor changed in the copy it holds,
     /// sorted.
     Edited(Vec<PathBuf>),
+    /// Another connection kept a checked fill of a document this connection
+    /// holds a copy of.
+    Proposed,
     /// The client's stream closed at a frame boundary.
     Closed,
 }
@@ -407,6 +410,8 @@ enum Read
     Changed(Vec<PathBuf>),
     /// Files another connection's editor changed.
     Edited(Vec<PathBuf>),
+    /// A checked fill of a document the loop's connection holds was kept.
+    Proposed,
     /// The stream closed at a frame boundary.
     Closed,
     /// The stream failed.
@@ -431,8 +436,8 @@ enum End
 fn queue(
     read: Read,
     queued: &mut VecDeque<Classified>,
-    changed: &mut BTreeSet<PathBuf>,
-    edited: &mut BTreeSet<PathBuf>,
+    (changed, edited): (&mut BTreeSet<PathBuf>, &mut BTreeSet<PathBuf>),
+    proposed: &mut Proposed,
 ) -> Option<End>
 {
     match read {
@@ -448,10 +453,19 @@ fn queue(
             edited.extend(paths);
             None
         },
+        Read::Proposed => {
+            *proposed = Proposed(true);
+            None
+        },
         Read::Closed => Some(End::Closed),
         Read::Fault(fault) => Some(End::Fault(fault)),
     }
 }
+
+/// Whether a checked fill was kept since the loop last said so.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Proposed(bool);
 
 /// Where a paced loop takes what it meets: its reader's messages and a
 /// watch's changes.
@@ -526,6 +540,17 @@ impl Changes
     {
         let _sent = self.0.send(Read::Edited(paths));
     }
+
+    /// Tell the loop another connection kept a checked fill of a document its
+    /// connection holds; nothing once the loop ended.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn proposed(&self)
+    {
+        let _sent = self.0.send(Read::Proposed);
+    }
 }
 
 /// Serve `input` through `visit`: each message read, each deadline passed,
@@ -540,7 +565,9 @@ impl Changes
 ///   order, with every message already read after it; the files a watch hands
 ///   `inbox` through [`Inbox::changes`] are gathered, sorted and without
 ///   repeats, and handed to `visit` as [`Met::Changed`] before the next
-///   message; while nothing waits, each document whose deadline in the
+///   message, the files another connection's editor changed as [`Met::Edited`]
+///   after them, and the fills another connection kept as one [`Met::Proposed`]
+///   after those; while nothing waits, each document whose deadline in the
 ///   [`Deadlines`] `visit` arms passes is handed to `visit` as [`Met::Quiet`],
 ///   disarmed; a stream closed at a frame boundary, or ended by `exit`, is
 ///   [`Met::Closed`] once every message before it was handed over, whether or
@@ -611,9 +638,15 @@ where
         let mut queued: VecDeque<Classified> = VecDeque::new();
         let mut changed: BTreeSet<PathBuf> = BTreeSet::new();
         let mut edited: BTreeSet<PathBuf> = BTreeSet::new();
+        let mut proposed = Proposed::default();
         let mut end: Option<End> = None;
         loop {
-            if queued.is_empty() && changed.is_empty() && edited.is_empty() && end.is_none() {
+            if queued.is_empty()
+                && changed.is_empty()
+                && edited.is_empty()
+                && proposed == Proposed(false)
+                && end.is_none()
+            {
                 loop {
                     let received = deadlines.next().map_or_else(
                         || {
@@ -627,7 +660,12 @@ where
                     );
                     match received {
                         Ok(frame) => {
-                            end = queue(frame, &mut queued, &mut changed, &mut edited);
+                            end = queue(
+                                frame,
+                                &mut queued,
+                                (&mut changed, &mut edited),
+                                &mut proposed,
+                            );
                             break;
                         },
                         Err(RecvTimeoutError::Disconnected) => {
@@ -649,7 +687,12 @@ where
             while end.is_none()
                 && let Ok(frame) = frames.try_recv()
             {
-                end = queue(frame, &mut queued, &mut changed, &mut edited);
+                end = queue(
+                    frame,
+                    &mut queued,
+                    (&mut changed, &mut edited),
+                    &mut proposed,
+                );
             }
             if !changed.is_empty() {
                 let paths: Vec<PathBuf> = core::mem::take(&mut changed).into_iter().collect();
@@ -661,6 +704,13 @@ where
             if !edited.is_empty() {
                 let paths: Vec<PathBuf> = core::mem::take(&mut edited).into_iter().collect();
                 if let ControlFlow::Break(ended) = visit(Met::Edited(paths), &mut deadlines)? {
+                    return Ok(ended);
+                }
+                continue;
+            }
+            if proposed == Proposed(true) {
+                proposed = Proposed(false);
+                if let ControlFlow::Break(ended) = visit(Met::Proposed, &mut deadlines)? {
                     return Ok(ended);
                 }
                 continue;
@@ -908,9 +958,10 @@ mod tests
                         core::ops::ControlFlow::Continue(())
                     }
                 },
-                super::Met::Quiet(_) | super::Met::Changed(_) | super::Met::Edited(_) => {
-                    core::ops::ControlFlow::Continue(())
-                },
+                super::Met::Quiet(_)
+                | super::Met::Changed(_)
+                | super::Met::Edited(_)
+                | super::Met::Proposed => core::ops::ControlFlow::Continue(()),
                 super::Met::Closed => core::ops::ControlFlow::Break("closed"),
             })
         })
@@ -954,9 +1005,10 @@ mod tests
                     handed.push((method, later.len()));
                     core::ops::ControlFlow::Continue(())
                 },
-                super::Met::Quiet(_) | super::Met::Changed(_) | super::Met::Edited(_) => {
-                    core::ops::ControlFlow::Continue(())
-                },
+                super::Met::Quiet(_)
+                | super::Met::Changed(_)
+                | super::Met::Edited(_)
+                | super::Met::Proposed => core::ops::ControlFlow::Continue(()),
                 super::Met::Closed => core::ops::ControlFlow::Break(()),
             })
         })
