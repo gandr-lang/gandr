@@ -4207,8 +4207,8 @@ mod tests
         );
         assert_eq!(
             definition(&mut linked, 7, 21),
-            Value::Array(vec![link(range(7, 20, 27), plus, plus)]),
-            "a recursive call links to its declaration"
+            Value::Array(vec![link(range(7, 20, 24), plus, plus)]),
+            "a recursive call links to its declaration from its name, its marker aside (#827)"
         );
         assert_eq!(
             definition(&mut linked, 7, 31),
@@ -4228,6 +4228,11 @@ mod tests
             definition(&mut linked, 11, 18),
             Value::Array(vec![link(range(11, 15, 19), nat, succ)]),
             "a constructor nested in another's arguments answers itself, from its name"
+        );
+        assert_eq!(
+            definition(&mut linked, 11, 11),
+            Value::Array(vec![link(range(11, 10, 14), nat, succ)]),
+            "a constructor applied links from its name, not from its arguments (#827)"
         );
         assert_eq!(
             definition(&mut linked, 10, 10),
@@ -4289,7 +4294,7 @@ mod tests
             n,
             "a caret just past a name marks it"
         );
-        let plus = Value::Array(vec![mark(1, 4, 8, 12), mark(2, 7, 20, 27)]);
+        let plus = Value::Array(vec![mark(1, 4, 8, 12), mark(2, 7, 20, 24)]);
         assert_eq!(
             highlight(uri, 4, 9),
             plus,
