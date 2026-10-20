@@ -142,7 +142,7 @@
 //! | type hierarchy | `textDocument/prepareTypeHierarchy`, `typeHierarchy/*` | declined: the core has no subtyping to arrange types by |
 //! | formatting | `textDocument/formatting`, `rangeFormatting` | served |
 //! | on-type formatting | `textDocument/onTypeFormatting` | declined: a form's layout is decided once the form is whole, which range formatting at the cursor already serves on request |
-//! | code actions, code lenses | `textDocument/codeAction`, `codeLens` | served for model proposals: a quick fix applying each checked fill, a lens counting a range's checked fills |
+//! | code actions, code lenses | `textDocument/codeAction`, `codeLens`, `workspace/codeLens/refresh` | served for model proposals: a quick fix applying each checked fill, a lens counting a range's checked fills; once a fill is kept, the editor holding the document is asked for its lenses again when its client says it refreshes them |
 //! | commands | `workspace/executeCommand` | blocked: no command the pipeline produces |
 //! | document links | `textDocument/documentLink` | served: each path import's address, between its quotes, linked to the file the dispatcher reads for it, read off the document's held reading, as the `reading` module states; a scheme import links nowhere |
 //! | document colours | `textDocument/documentColor`, `colorPresentation` | declined: gandr has no colour literals |

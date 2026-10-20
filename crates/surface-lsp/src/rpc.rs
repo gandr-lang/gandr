@@ -30,6 +30,9 @@ const PUBLISH_DIAGNOSTICS: &str = "textDocument/publishDiagnostics";
 /// identifier of the one such request it sends.
 const REGISTER_CAPABILITY: &str = "client/registerCapability";
 
+/// The method a server asks the client to request its code lenses again with.
+const REFRESH_LENSES: &str = "workspace/codeLens/refresh";
+
 /// The method a server asks the client to show progress under a token with.
 const CREATE_PROGRESS: &str = "window/workDoneProgress/create";
 
@@ -374,8 +377,9 @@ pub enum Outgoing
         id: RequestId,
         /// The method called.
         method: &'static str,
-        /// Its parameters.
-        params: RegistrationParams,
+        /// Its parameters; none for a request that takes none.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        params: Option<RegistrationParams>,
     },
     /// A report of the progress of work the server started.
     Progress(Progress),
@@ -566,7 +570,30 @@ pub fn register(params: RegistrationParams) -> Outgoing
         jsonrpc: VERSION,
         id: RequestId(Value::from(REGISTER_CAPABILITY)),
         method: REGISTER_CAPABILITY,
-        params,
+        params: Some(params),
+    }
+}
+
+/// How many times a connection asked its client for its code lenses again.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Refreshes(pub u64);
+
+/// The request asking the client to request every code lens again, the
+/// `asked`th this connection sent, its identifier the method's own name and
+/// that count.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn refresh_lenses(Refreshes(asked): Refreshes) -> Outgoing
+{
+    Outgoing::Request {
+        jsonrpc: VERSION,
+        id: RequestId(Value::from(alloc::format!("{REFRESH_LENSES}/{asked}"))),
+        method: REFRESH_LENSES,
+        params: None,
     }
 }
 

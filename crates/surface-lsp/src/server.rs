@@ -127,6 +127,7 @@ use crate::protocol::PublishParams;
 use crate::protocol::RangeParams;
 use crate::protocol::ReferenceContext;
 use crate::protocol::ReferenceParams;
+use crate::protocol::RefreshesLenses;
 use crate::protocol::RegistrationParams;
 use crate::protocol::RenameParams;
 use crate::protocol::SelectionRangeParams;
@@ -170,6 +171,7 @@ use crate::rpc::ErrorCode;
 use crate::rpc::Incoming;
 use crate::rpc::Method;
 use crate::rpc::Outgoing;
+use crate::rpc::Refreshes;
 use crate::rpc::RequestId;
 use crate::rpc::Withdrawn;
 use crate::rpc::classify;
@@ -177,6 +179,7 @@ use crate::rpc::failure;
 use crate::rpc::progress_begun;
 use crate::rpc::progress_ended;
 use crate::rpc::publish;
+use crate::rpc::refresh_lenses;
 use crate::rpc::register;
 use crate::rpc::success;
 use crate::search::FOUND_HELD;
@@ -1136,10 +1139,11 @@ impl Workspace
     ///   version is not `version`, refuses the proposal and keeps nothing.
     ///   Otherwise that copy with the fill applied is tried as [`Self::trial`]
     ///   tries a change; a fill that passes [`check`] against the copy's
-    ///   published diagnostics is kept beside it, after those kept before, and
-    ///   its trial's diagnostics answered; one that does not is refused with
-    ///   them. Every copy's text, session and published diagnostics are
-    ///   unchanged.
+    ///   published diagnostics is kept beside it, after those kept before, its
+    ///   trial's diagnostics answered, and the connection holding that copy
+    ///   told, so its client may ask for its code lenses again; one that does
+    ///   not is refused with them. Every copy's text, session and published
+    ///   diagnostics are unchanged.
     /// - provides: the one way a model's output reaches an editor.
     /// - fails: as above, with the reason in the refusal.
     /// - panics: none.
@@ -1151,7 +1155,8 @@ impl Workspace
     /// # Adequacy
     /// - hypothesis: L3 — a fill settling a hole is kept, a fill leaving the
     ///   refusal and a fill refused whole are refused, a stale version is
-    ///   refused, and the next edit withdraws what was kept.
+    ///   refused, the connection holding the document hears of the kept fill
+    ///   once and of no refused one, and the next edit withdraws what was kept.
     /// - witness: `server::tests::a_proposal_is_kept_only_once_it_checks`
     #[spec(
         captures: kept = self.documents.get(uri).map_or(0_usize, |held| held.document.proposals.len()),
@@ -1183,13 +1188,15 @@ impl Workspace
             .trial(uri, core::slice::from_ref(&change))
             .and_then(|(_version, mut tried)| tried.pop())
             .ok_or(ProposalRefusal::NotHeld)?;
-        let document = &mut self
+        let holding = self
             .documents
             .get_mut(uri)
-            .ok_or(ProposalRefusal::NotHeld)?
-            .document;
-        let diagnostics = check(tried, &document.published)?;
-        document.proposals.push(proposal);
+            .ok_or(ProposalRefusal::NotHeld)?;
+        let diagnostics = check(tried, &holding.document.published)?;
+        holding.document.proposals.push(proposal);
+        if let Some(changes) = self.editors.get(&holding.latest) {
+            changes.proposed();
+        }
         Ok(diagnostics)
     }
 
@@ -1234,6 +1241,8 @@ impl Workspace
             watching: WatchesFiles(false),
             progress: ShowsProgress(false),
             reported: 0_u64,
+            refreshing: RefreshesLenses(false),
+            refreshed: Refreshes(0_u64),
         };
         let answer = match classify(request) {
             Err(malformed) => malformed.response(),
@@ -1415,8 +1424,10 @@ impl Workspace
 /// each report its diagnostics carry, how long a diagnostic of the form under
 /// the caret waits, how its hovers spell types and are written, whether its
 /// client takes a definition as links, whether it takes a signature's
-/// parameters as their places in the label, whether it watches files, and
-/// whether it shows progress, with how many pieces of work it was shown.
+/// parameters as their places in the label, whether it watches files,
+/// whether it shows progress, with how many pieces of work it was shown, and
+/// whether it requests its code lenses again when asked, with how many times
+/// it was asked.
 pub struct Server
 {
     /// Where the connection stands in the lifecycle.
@@ -1448,6 +1459,12 @@ pub struct Server
     /// How many pieces of work its progress was reported for; the next one's
     /// token is numbered after them.
     reported: u64,
+    /// Whether its client requests its code lenses again when asked, read at
+    /// `initialize`.
+    refreshing: RefreshesLenses,
+    /// How many times its client was asked to; the next request is numbered
+    /// after them.
+    refreshed: Refreshes,
 }
 
 /// The style a connection hovers in until `initialize` says otherwise: the
@@ -1492,7 +1509,26 @@ impl Server
             watching: WatchesFiles(false),
             progress: ShowsProgress(false),
             reported: 0_u64,
+            refreshing: RefreshesLenses(false),
+            refreshed: Refreshes(0_u64),
         }
+    }
+
+    /// The request asking this connection's client for its code lenses
+    /// again, once another connection kept a fill of a document it holds:
+    /// none when the connection is not running or its client did not say it
+    /// requests them again when asked.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn proposed_elsewhere(&mut self) -> Option<Outgoing>
+    {
+        if self.phase != Phase::Running || self.refreshing == RefreshesLenses(false) {
+            return None;
+        }
+        self.refreshed = Refreshes(self.refreshed.0.saturating_add(1_u64));
+        Some(refresh_lenses(self.refreshed))
     }
 
     /// How long a document goes without a change before the diagnostics held
@@ -2186,7 +2222,7 @@ impl Server
     #[spec(
         captures: [phase = self.phase, initial = initial_settings(&params), markup = initial_markup(&params),
             linked = initial_links(&params), offsets = initial_offsets(&params), watching = initial_watching(&params),
-            progress = initial_progress(&params)],
+            progress = initial_progress(&params), refreshing = initial_refreshing(&params)],
         ensures: |ret| match (phase, method.as_ref()) {
             (Phase::Waiting, "initialize") => self.phase == Phase::Running
                 && self.verbosity == initial.verbosity().unwrap_or_default()
@@ -2200,6 +2236,7 @@ impl Server
                 && self.offsets == offsets
                 && self.watching == watching
                 && self.progress == progress
+                && self.refreshing == refreshing
                 && matches!(ret, Outgoing::Success { result: Answer::Initialize(_), .. }),
             (Phase::Waiting, _) => self.phase == phase && matches!(ret,
                 Outgoing::Failure { ref error, .. } if error.code == ErrorCode::SERVER_NOT_INITIALIZED),
@@ -2321,6 +2358,7 @@ impl Server
                 self.offsets = initial_offsets(&params);
                 self.watching = initial_watching(&params);
                 self.progress = initial_progress(&params);
+                self.refreshing = initial_refreshing(&params);
                 workspace.rooted(self.peer, &initial_roots(&params));
                 success(
                     id,
@@ -4030,6 +4068,18 @@ fn initial_progress(params: &Value) -> ShowsProgress
         .unwrap_or_default()
 }
 
+/// Whether the client `initialize` names in `params` requests its code
+/// lenses again when asked; not when the parameters do not read.
+///
+/// # Specification
+/// trivial.
+fn initial_refreshing(params: &Value) -> RefreshesLenses
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.refreshes_lenses())
+        .unwrap_or_default()
+}
+
 /// The folders the client `initialize` names in `params` opened, each a
 /// `file` URI's path; none when the parameters do not read.
 ///
@@ -4272,7 +4322,9 @@ where
                 return Ok(ControlFlow::Continue(()));
             },
             // No watch and no other connection holds this loop's inbox.
-            Met::Changed(_) | Met::Edited(_) => return Ok(ControlFlow::Continue(())),
+            Met::Changed(_) | Met::Edited(_) | Met::Proposed => {
+                return Ok(ControlFlow::Continue(()));
+            },
             Met::Frame { message, later } => (message, later),
         };
         let reported = server.reported(&workspace, &message);
@@ -5298,6 +5350,44 @@ mod tests
             send(&mut started("false"), initialized),
             wire(Json("[]")),
             "a client that does not is asked nothing"
+        );
+    }
+
+    #[test]
+    fn a_refreshing_client_is_asked_for_its_lenses_once_a_fill_is_kept_elsewhere()
+    {
+        let started = |refreshing: &str| {
+            let mut server = Connected::default();
+            let initialize = format!(
+                r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
+                {{"workspace":{{"codeLens":{{"refreshSupport":{refreshing}}}}}}}}}}}"#
+            );
+            let _answered = send(&mut server, Json(&initialize));
+            server
+        };
+        let mut refreshing = started("true");
+        let asked = |number: u32| {
+            Some(wire(Json(&format!(
+                r#"{{"jsonrpc":"2.0","id":"workspace/codeLens/refresh/{number}",
+                    "method":"workspace/codeLens/refresh"}}"#
+            ))))
+        };
+        let mut proposed = || serde_json::to_value(refreshing.server.proposed_elsewhere()?).ok();
+        assert_eq!(proposed(), asked(1), "the first kept fill asks once");
+        assert_eq!(
+            proposed(),
+            asked(2),
+            "each later one under its own identifier"
+        );
+        assert_eq!(
+            started("false").server.proposed_elsewhere(),
+            None,
+            "a client that does not refresh is asked nothing"
+        );
+        assert_eq!(
+            Connected::default().server.proposed_elsewhere(),
+            None,
+            "nor is one not yet initialised"
         );
     }
 
@@ -7280,6 +7370,8 @@ mod tests
                 Json(r#","version":4,"text":"def f : Integer ;\ndef f = missing ;\n"}"#),
             ),
         ));
+        let inbox = crate::quiet::Inbox::default();
+        workspace.hear_edits(first.peer, inbox.changes());
         let held = version(&workspace);
         let stale = serde_json::from_value(serde_json::json!(3_i32)).expect("a version");
         assert_eq!(
@@ -7312,6 +7404,23 @@ mod tests
                 .map(|held| held.document.proposals.clone())
         };
         assert_eq!(kept(&workspace), Some(vec![fill(hole, Json("42"), None)]));
+        let mut met = Vec::new();
+        let mut nothing: &[u8] = &[];
+        let _ended = crate::quiet::paced(&mut nothing, inbox, |seen, _deadlines| {
+            let closed = matches!(seen, crate::quiet::Met::Closed);
+            met.push(format!("{seen:?}"));
+            Ok(if closed {
+                core::ops::ControlFlow::Break(())
+            }
+            else {
+                core::ops::ControlFlow::Continue(())
+            })
+        });
+        assert_eq!(
+            met,
+            ["Proposed", "Closed"],
+            "the connection holding the document hears of the kept fill once, and of no refused one"
+        );
         assert_eq!(
             workspace
                 .published(&uri)

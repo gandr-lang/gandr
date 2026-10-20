@@ -441,6 +441,12 @@ fn connection<Log>(
                     }
                     return Ok(ControlFlow::Continue(()));
                 },
+                Met::Proposed => {
+                    if let Some(message) = server.proposed_elsewhere() {
+                        drop(outbox.send(message));
+                    }
+                    return Ok(ControlFlow::Continue(()));
+                },
                 Met::Changed(paths) => {
                     let reported = server.reported_on_disk(&held, &paths);
                     for message in reported.begin {
