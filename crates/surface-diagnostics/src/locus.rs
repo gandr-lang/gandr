@@ -1414,6 +1414,15 @@ impl fmt::Display for Checked
                 | AccessDefect::Unindexed => f.write_str(
                     "the access at a place names a held value whose type is no list, so it has no element at an index",
                 ),
+                | AccessDefect::HeldShared => f.write_str(
+                    "a hold at grade one enters a value other than one made in place, which may have another holder",
+                ),
+                | AccessDefect::HeldCopied => f.write_str(
+                    "the value is held at grade one, and this read would copy it: a read of its held slot, of a shared view of it, or of its exclusive view after the first",
+                ),
+                | AccessDefect::Moved => f.write_str(
+                    "the abort ends a view whose value a read moved out, so the held slot would keep nothing",
+                ),
             },
             | CheckRefusal::Codata { fault, .. } => f.write_str(match fault {
                 | CodataFault::Undeclared => "the codata application names no admitted codata declaration",

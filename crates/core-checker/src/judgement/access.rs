@@ -15,6 +15,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::effect::Purity;
 use gandr_core_term::effect::RowInclusion;
 use gandr_core_term::memory::AccessMode;
+use gandr_core_term::memory::HoldGrade;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place;
 use gandr_kernel_term::DeBruijnIndex;
@@ -91,7 +92,10 @@ impl Machine<'_, '_>
             return Err(CheckRefusal::MachineInvariant);
         };
         match *form {
-            MemoryForm::Hold { value, .. } => {
+            MemoryForm::Hold { value, grade, .. } => {
+                if grade == HoldGrade::One {
+                    self.entered_in_place(value)?;
+                }
                 if let Direction::Check(expected) = direction {
                     self.pure_hold(term, expected)?;
                 }
@@ -140,7 +144,13 @@ impl Machine<'_, '_>
             },
             MemoryForm::Abort { view } => {
                 let node = CoreNode::Term(TermNode::Computation(term));
-                let _lent = self.live_view(node, view)?;
+                let lent = self.live_view(node, view)?;
+                if lent.use_state == LinearUse::Moved {
+                    return Err(CheckRefusal::Access {
+                        at: node,
+                        defect: AccessDefect::Moved,
+                    });
+                }
                 self.spend_view(node, view)
             },
         }
@@ -390,7 +400,7 @@ impl Machine<'_, '_>
         let node = CoreNode::Term(TermNode::Computation(at));
         let found = self.lendable(node, held, mode)?;
         let view = self.here(found.state, found.depth)?;
-        Ok(self.lend(at, &found, mode, view, body, direction))
+        self.lend(at, &found, mode, view, body, direction)
     }
 
     /// Continue the access `at` of a place, its index checked: lend the
@@ -486,25 +496,32 @@ impl Machine<'_, '_>
                 mode: AccessMode::Shared,
             });
         }
-        Ok(self.lend(at, &found, mode, element, body, direction))
+        self.lend(at, &found, mode, element, body, direction)
     }
 
     /// Lend the held slot `found` to the access `at` in `mode`, and descend
-    /// into its body with the view bound at `view`.
+    /// into its body with the view bound at `view`, at the grade its hold
+    /// holds the value.
     ///
     /// # Specification
     /// - requires: `found` is the held slot `at` lends, its lending checked.
     /// - ensures: the held slot is lent in `mode`; one linear slot more, the
     ///   view, at `view`; one `AccessBody` frame waits on the body.
+    /// - fails: [`CheckRefusal::MachineInvariant`] when `found` is no held
+    ///   slot.
     /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::access`] and [`Self::placed`].
     /// - witness: `judgement::access::tests::a_counter_observes_write_back_on_resume_and_none_on_abort`
     /// - witness: `judgement::access::tests::a_place_of_a_held_list_is_lent_at_its_index`
+    /// - witness: `judgement::access::tests::a_value_held_at_grade_one_is_never_copied`
     #[spec(
         captures: lent = self.sessions.lent.len(),
-        ensures: |ret| matches!(ret, Step::Descend(Goal::Computation { .. })) && self.sessions.lent.len() > lent,
+        ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(Goal::Computation { .. }))) && self.sessions.lent.len() > lent),
     )]
     fn lend(
         &mut self,
@@ -514,8 +531,13 @@ impl Machine<'_, '_>
         view: ValueTypeId,
         body: ComputationId,
         direction: Direction<CompTypeId>,
-    ) -> Step
+    ) -> Result<Step, CheckRefusal>
     {
+        let Resident::Held { at: hold } = found.resident
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let grade = self.hold_grade(hold)?;
         self.sessions.lent.push(Lent {
             position: found.position,
             mode,
@@ -523,14 +545,114 @@ impl Machine<'_, '_>
         let depth = self.context.depth(Zone::Intuitionistic);
         self.context.binders().open(Zone::Linear, view);
         self.sessions.opened.push(Opened {
-            resident: Resident::View { at },
+            resident: Resident::View { at, grade },
             depth,
         });
         self.wait(Frame::AccessBody { at, direction });
-        Step::Descend(Goal::Computation {
+        Ok(Step::Descend(Goal::Computation {
             term: body,
             direction,
-        })
+        }))
+    }
+
+    /// The grade the hold `hold` holds its value at.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the hold's grade.
+    /// - fails: [`CheckRefusal::MachineInvariant`] when `hold` is no hold.
+    /// - panics: none.
+    /// - executable: none — the clause is the projection the body is.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a hold at grade one is refused where a hold at grade
+    ///   `ω` reads, so a grade read wrongly changes a verdict.
+    /// - witness: `judgement::access::tests::a_value_held_at_grade_one_is_never_copied`
+    fn hold_grade(
+        &self,
+        hold: ComputationId,
+    ) -> Result<HoldGrade, CheckRefusal>
+    {
+        let Computation::Memory(MemoryForm::Hold { grade, .. }) = *self.computation(hold)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        Ok(grade)
+    }
+
+    /// Refuse a hold at grade one whose value `value` was not made in place.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: nothing changes.
+    /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::HeldShared`] at
+    ///   `value` unless it is a constructor, a literal, a tuple, an injection,
+    ///   a record or a list: any other value may have another holder.
+    /// - panics: none.
+    /// - executable: none — the clause is the case analysis the body is.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a list made in place enters, and the result of a
+    ///   bound computation is refused.
+    /// - witness: `judgement::access::tests::a_value_held_at_grade_one_is_never_copied`
+    fn entered_in_place(
+        &self,
+        value: ValueId,
+    ) -> Result<(), CheckRefusal>
+    {
+        match self.context.arena().value(value) {
+            Some(
+                &(Value::Constructor { .. }
+                | Value::Literal { .. }
+                | Value::Tuple { .. }
+                | Value::Injection { .. }
+                | Value::Record { .. }
+                | Value::ListNil
+                | Value::ListCons { .. }),
+            ) => Ok(()),
+            Some(
+                &(Value::Primitive { .. }
+                | Value::PathRefl { .. }
+                | Value::PathProduct { .. }
+                | Value::PathEquiv { .. }
+                | Value::Here { .. }
+                | Value::Funext { .. }
+                | Value::Equiv { .. }
+                | Value::Univalence { .. }
+                | Value::Ua { .. }
+                | Value::SessionRelated { .. }
+                | Value::Stay { .. }
+                | Value::Then { .. }
+                | Value::FlowProduct { .. }
+                | Value::Forward { .. }
+                | Value::FunctionFlow { .. }
+                | Value::Recorded { .. }
+                | Value::Returned { .. }
+                | Value::Nested { .. }
+                | Value::Run { .. }
+                | Value::Variable { .. }
+                | Value::Constant { .. }
+                | Value::Thunk { .. }
+                | Value::Lift { .. }
+                | Value::Quote { .. }
+                | Value::QuoteComputation { .. }
+                | Value::StaticLambda { .. }
+                | Value::StaticApplication { .. }
+                | Value::Hole { .. }
+                | Value::Mark { .. }
+                | Value::Reify { .. }),
+            )
+            | None => Err(CheckRefusal::Access {
+                at: CoreNode::Term(TermNode::Value(value)),
+                defect: AccessDefect::HeldShared,
+            }),
+        }
     }
 
     /// Continue an access whose body was judged. An exclusive access requires
@@ -574,11 +696,11 @@ impl Machine<'_, '_>
         };
         let node = CoreNode::Term(TermNode::Computation(at));
         let innermost = self.resided(node, DeBruijnIndex::from(0_u32))?;
-        if innermost.resident != (Resident::View { at }) {
+        if !matches!(innermost.resident, Resident::View { at: found, .. } if found == at) {
             return Err(CheckRefusal::MachineInvariant);
         }
         match mode {
-            AccessMode::Exclusive { .. } if innermost.use_state == LinearUse::Available => {
+            AccessMode::Exclusive { .. } if innermost.use_state != LinearUse::Consumed => {
                 return Err(CheckRefusal::Access {
                     at: node,
                     defect: AccessDefect::Unended,
@@ -656,11 +778,15 @@ impl Machine<'_, '_>
     ///
     /// # Specification
     /// - requires: `term` is the variable `index` of the linear zone.
-    /// - ensures: a held slot not lent exclusively and a live view synthesise
-    ///   their declared type, read where the variable stands; nothing is spent.
+    /// - ensures: a slot held at grade `ω` and not lent exclusively, and a live
+    ///   view of one, synthesise their declared type, read where the variable
+    ///   stands, and nothing is spent; an exclusive view of a value held at
+    ///   grade one synthesises it once and its value is moved out.
     /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::Lent`] for a
-    ///   held slot lent exclusively and [`AccessDefect::Spent`] for a spent
-    ///   view; as [`Self::endpoint_as_value`] for an endpoint;
+    ///   held slot lent exclusively, [`AccessDefect::Spent`] for a spent view,
+    ///   and [`AccessDefect::HeldCopied`] for a slot held at grade one, a
+    ///   shared view of one, or an exclusive view of one moved already; as
+    ///   [`Self::endpoint_as_value`] for an endpoint;
     ///   [`CheckRefusal::UnboundIndex`] for an index past the zone.
     /// - panics: none.
     ///
@@ -670,10 +796,13 @@ impl Machine<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — the counter reads its held value after both accesses
     ///   and its view inside the first; a read of a value lent exclusively is
-    ///   refused, and one of a value lent shared reads it.
+    ///   refused, and one of a value lent shared reads it; a value held at
+    ///   grade one is read once through its exclusive view, and every copy of
+    ///   it is refused.
     /// - witness: `judgement::access::tests::a_counter_observes_write_back_on_resume_and_none_on_abort`
     /// - witness: `judgement::access::tests::a_held_value_lent_or_misnamed_is_refused`
     /// - witness: `judgement::access::tests::a_shared_view_reads_beside_its_held_value_and_ends_with_its_body`
+    /// - witness: `judgement::access::tests::a_value_held_at_grade_one_is_never_copied`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::ValueType(_)))))]
     pub(super) fn linear_read(
         &mut self,
@@ -709,12 +838,64 @@ impl Machine<'_, '_>
                 AccessDefect::Lent
             },
             Resident::View { .. } if read.use_state == LinearUse::Consumed => AccessDefect::Spent,
-            Resident::Held { .. } | Resident::View { .. } => {
-                let ty = self.here(read.state, read.depth)?;
-                return Ok(Step::Ascend(Produced::ValueType(ty.into())));
+            Resident::Held { at } => match self.hold_grade(at)? {
+                HoldGrade::Many => return self.read_type(&read),
+                HoldGrade::One => AccessDefect::HeldCopied,
+            },
+            Resident::View {
+                grade: HoldGrade::Many,
+                ..
+            } => return self.read_type(&read),
+            Resident::View {
+                at,
+                grade: HoldGrade::One,
+            } => {
+                let Computation::Memory(MemoryForm::Access { mode, .. }) = *self.computation(at)?
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                match (mode, read.use_state) {
+                    (AccessMode::Exclusive { .. }, LinearUse::Available) => {
+                        let _moved = self
+                            .context
+                            .binders()
+                            .move_out(index)
+                            .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+                        return self.read_type(&read);
+                    },
+                    (AccessMode::Exclusive { .. }, LinearUse::Moved | LinearUse::Consumed)
+                    | (AccessMode::Shared, _) => AccessDefect::HeldCopied,
+                }
             },
         };
         Err(CheckRefusal::Access { at: node, defect })
+    }
+
+    /// The declared type of the slot `read`, read where the variable stands.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the slot's declared type, shifted to the current depth.
+    /// - fails: as [`Self::here`].
+    /// - panics: none.
+    /// - executable: none — the clause is the shift the body is.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the counter reads its held slot and a view, each at
+    ///   the integer type where it stands; a read typed at another depth
+    ///   mismatches.
+    /// - witness: `judgement::access::tests::a_counter_observes_write_back_on_resume_and_none_on_abort`
+    /// - witness: `judgement::access::tests::a_value_held_at_grade_one_is_never_copied`
+    fn read_type(
+        &mut self,
+        read: &Resided,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let ty = self.here(read.state, read.depth)?;
+        Ok(Step::Ascend(Produced::ValueType(ty.into())))
     }
 
     /// The access refusal an effect-row mismatch inside an unwind is: the
@@ -824,7 +1005,8 @@ impl Machine<'_, '_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the view's slot, still available, its access exclusive.
+    /// - ensures: the view's slot, available or its value moved out, its access
+    ///   exclusive.
     /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::NotAView`] for
     ///   a slot no access bound, [`AccessDefect::Spent`] for a spent view and
     ///   [`AccessDefect::ReadOnly`] for a shared view; as [`Self::resided`].
@@ -839,7 +1021,7 @@ impl Machine<'_, '_>
     /// - witness: `judgement::access::tests::a_view_resumed_twice_is_refused`
     /// - witness: `judgement::access::tests::a_held_value_lent_or_misnamed_is_refused`
     /// - witness: `judgement::access::tests::a_shared_view_reads_beside_its_held_value_and_ends_with_its_body`
-    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|read| read.use_state == LinearUse::Available))]
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|read| read.use_state != LinearUse::Consumed))]
     fn live_view(
         &mut self,
         node: CoreNode,
@@ -848,7 +1030,7 @@ impl Machine<'_, '_>
     {
         let read = self.resided(node, index)?;
         let defect = match (read.resident, read.use_state) {
-            (Resident::View { at }, LinearUse::Available) => {
+            (Resident::View { at, .. }, LinearUse::Available | LinearUse::Moved) => {
                 let Computation::Memory(MemoryForm::Access { mode, .. }) = *self.computation(at)?
                 else {
                     return Err(CheckRefusal::MachineInvariant);

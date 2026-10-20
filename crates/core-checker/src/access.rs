@@ -27,6 +27,7 @@
 //! |form|written|rule|
 //! |---|---|---|
 //! |hold|`hold x = v; t`|`v` synthesises `A`; `t` runs with `x`, a slot of `Σ` at `A`|
+//! |hold at grade one|`hold[1] x = v; t`|as the hold, `v` made in place; `x` is never read, and each view of it is read at most once|
 //! |access|`access x as w { t } unwind { u }`|`x` is lent exclusively; `t` runs with `w`, a slot of `Σ` at `A`|
 //! |shared access|`access shared x as w { t }`|`x` is lent shared; `t` runs with `w`, a slot of `Σ` at `A`|
 //! |access at a place|`access x[i] as w { t } unwind { u }`, `access shared x[i] as w { t }`|`A` is `List E`; `i` checks against the integer type; `x` is lent in the mode; `t` runs with `w`, a slot of `Σ` at `E`|
@@ -44,27 +45,35 @@
 //! |access|`AccessUnwind`|an exclusive access's unwind, checked against the pure `F 1`|
 //! |resume|`ResumeValue`|the written value's check, then spends the view|
 //!
-//! # Held is a linear hypothesis
+//! # Held is a linear hypothesis, at a grade
 //!
-//! The core offers no grades today: the capability's consumable grade is
-//! refused and graded hypotheses are not scheduled, so a held value is a
-//! slot of `Σ`, opened by `hold` and by nothing else. A read of the slot
-//! copies the value it holds and spends nothing; the slot is dropped where
-//! the hold's scope ends. Exclusivity is the zone's: the slot is never
-//! captured by a thunk, a fixpoint, a branch, a handler, a first-class stack
-//! or a shift ([`AccessDefect::HeldCaptured`]), and the hold stands at a pure
-//! returner, as a fork does, so no operation a handler could resume twice
-//! runs while it holds.
+//! A held value is a slot of `Σ`, opened by `hold` and by nothing else, at a
+//! grade. At grade `ω`, `hold x = v;`, a read of the slot copies the value it
+//! holds and spends nothing; the slot is dropped where the hold's scope ends.
+//! At grade one, `hold[1] x = v;`, the value has no other holder and is never
+//! copied while held, so a write-back through an exclusive view needs no
+//! count of other holders. The value enters made in place — a constructor, a
+//! literal, a tuple, an injection, a record or a list — and any other is
+//! [`AccessDefect::HeldShared`]. A read of the slot, or of a shared view of
+//! it, is [`AccessDefect::HeldCopied`]. An exclusive view of it is read at
+//! most once: the read moves the value out (the view's slot is left
+//! `LinearUse::Moved`), a second read is [`AccessDefect::HeldCopied`], an
+//! abort after the move is [`AccessDefect::Moved`], and only `resume`, which
+//! writes a value back, ends the view. Exclusivity is the zone's at either
+//! grade: the slot is never captured by a thunk, a fixpoint, a branch, a
+//! handler, a first-class stack or a shift ([`AccessDefect::HeldCaptured`]),
+//! and the hold stands at a pure returner, as a fork does, so no operation a
+//! handler could resume twice runs while it holds.
 //!
 //! # The view is a slot, not a type
 //!
 //! `View^m A` is the role of the view's slot, not a type former: the slot is
 //! declared at `A`, the checker marks it a view of its access, whose mode the
-//! access names, and a read of it copies the value it was lent. A view is
-//! never a value, so the rule's side condition `w ∉ fv(B)` is that the view
-//! does not escape the body: a view named by a former that may run it other
-//! than once, or that outlives the body, is [`AccessDefect::Escaped`], in
-//! either mode.
+//! access names, and a read of it copies the value it was lent at grade `ω`
+//! and moves it out at grade one. A view is never a value, so the rule's side
+//! condition `w ∉ fv(B)` is that the view does not escape the body: a view
+//! named by a former that may run it other than once, or that outlives the
+//! body, is [`AccessDefect::Escaped`], in either mode.
 //!
 //! # Modes: exclusive, or shared and frozen
 //!
@@ -119,8 +128,9 @@
 //!
 //! # Spelling
 //!
-//! `hold x = e;` binds the held value, `access x as w { t } unwind { u }`
-//! the exclusive view, `access shared x as w { t }` the shared one, and
+//! `hold x = e;` binds the held value at grade `ω` and `hold[1] x = e;` at
+//! grade one; `access x as w { t } unwind {
+//! u }` the exclusive view, `access shared x as w { t }` the shared one, and
 //! `resume(w, e)` and `abort(w)` end an exclusive view. The mode is a word
 //! after `access`: exclusive is the default, unwritten, and
 //! `access exclusive x as w { … }` spells it; the unwind clause is an
@@ -195,4 +205,14 @@ pub enum AccessDefect
     /// An access at a place names a held value with no elements an index
     /// reads: its type is no list.
     Unindexed,
+    /// A hold at grade one enters a value other than one made in place: a
+    /// constructor, a literal, a tuple, an injection, a record or a list.
+    /// Any other value may have another holder.
+    HeldShared,
+    /// A value held at grade one is copied: the held slot read, a shared view
+    /// of it read, or an exclusive view of it read a second time.
+    HeldCopied,
+    /// An abort names a view of a value held at grade one after a read moved
+    /// the value out: the held slot would keep the value the read took.
+    Moved,
 }

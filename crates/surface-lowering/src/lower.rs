@@ -1698,11 +1698,13 @@ enum StatementBinding
         child: NodeIndex,
     },
     /// `hold x = e ;` holds the value `e`, under `x`'s linear binder, over the
-    /// rest of the block.
+    /// rest of the block, at the grade `hold[g]` writes.
     Held
     {
         /// The value held.
         value: NodeIndex,
+        /// The grade it is held at.
+        grade: gandr_core_term::memory::HoldGrade,
     },
     /// `leta x = v ;` opens the handle `v`, binding `x`, an intuitionistic
     /// hypothesis located at the handle's world, over the rest of the block.
@@ -12894,14 +12896,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
-            if let StatementBinding::Held { value } = statement.binding {
+            if let StatementBinding::Held { value, grade } = statement.binding {
                 let Maybe::Present(value) = self.value_at(value)
                 else {
                     return Maybe::Absent(lowered::Absent::Unminted);
                 };
-                let id = sink
-                    .arena
-                    .computation_memory(MemoryForm::Hold { value, body: chain });
+                let id = sink.arena.computation_memory(MemoryForm::Hold {
+                    value,
+                    body: chain,
+                    grade,
+                });
                 sink.origins.record_computation(id, origin);
                 chain = id;
                 continue;
@@ -13038,7 +13042,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
     #[spec(ensures: |ret| match statement.binding {
         | StatementBinding::Forked { protocol, child } => (ret == Maybe::Present(())) == (matches!(self.value_type_at(protocol), Maybe::Present(_)) && matches!(self.computation_at(child), Maybe::Present(_))),
-        | StatementBinding::Held { value } | StatementBinding::Opened { value, .. } => (ret == Maybe::Present(())) == matches!(self.value_at(value), Maybe::Present(_)),
+        | StatementBinding::Held { value, .. } | StatementBinding::Opened { value, .. } => (ret == Maybe::Present(())) == matches!(self.value_at(value), Maybe::Present(_)),
         | StatementBinding::Typed { annotation, .. } => (ret == Maybe::Present(())) == (matches!(self.computation_at(statement.bound), Maybe::Present(_)) && matches!(self.value_type_at(annotation), Maybe::Present(_))),
         | _ => (ret == Maybe::Present(())) == matches!(self.computation_at(statement.bound), Maybe::Present(_)),
     })]
@@ -13052,7 +13056,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .value_type_at(protocol)
                 .and_then(|_protocol| self.computation_at(child))
                 .map(|_child| ()),
-            StatementBinding::Held { value } | StatementBinding::Opened { value, .. } => {
+            StatementBinding::Held { value, .. } | StatementBinding::Opened { value, .. } => {
                 self.value_at(value).map(|_value| ())
             },
             StatementBinding::Typed { annotation, .. } => self

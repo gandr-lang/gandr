@@ -1294,7 +1294,9 @@ where
                 Slot::of(parent, admits, linear),
             ])
         },
-        Former::Hold { value: held, body } => Vec::from([
+        Former::Hold {
+            value: held, body, ..
+        } => Vec::from([
             value(held),
             Slot::of(body, admits, Binds {
                 zone: Zone::Linear,
@@ -6530,9 +6532,12 @@ impl Walk<'_, '_>
                     .piece(Binding::Sequence);
                 writes(Production("block"), Binding::Sequence)
             },
-            Former::Hold { .. } => {
+            Former::Hold { grade, .. } => {
                 let _ = parts
-                    .text("hold ")
+                    .text(match grade {
+                        gandr_core_term::memory::HoldGrade::Many => "hold ",
+                        gandr_core_term::memory::HoldGrade::One => "hold[1] ",
+                    })
                     .part(Part::Binder(0_usize))
                     .text(" = ")
                     .piece(Binding::Arrow)

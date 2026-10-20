@@ -399,6 +399,46 @@ fn a_linear_binder_must_be_consumed_before_it_closes()
 }
 
 #[test]
+fn a_moved_slot_ends_only_by_its_write_back()
+{
+    let (_arena, declared, _other) = two_types();
+    let mut context = Context::new();
+    context.open(Zone::Linear, declared);
+    let index = DeBruijnIndex::from(0_u32);
+    assert_eq!(
+        Ok(declared),
+        context.move_out(index),
+        "a move reads the slot's type"
+    );
+    assert_eq!(Ok(LinearUse::Moved), context.linear_use(index));
+    let before = context.clone();
+    assert_eq!(
+        Err(ContextError::LinearSlotConsumed { index }),
+        context.move_out(index),
+        "a moved value is not moved again"
+    );
+    assert_eq!(before, context, "a refused move changes nothing");
+    assert_eq!(
+        Err(ContextError::LinearSlotUnconsumed {
+            depth: BinderDepth::from(1_usize),
+        }),
+        context.close(Zone::Linear),
+        "a slot whose value was moved out and never written back does not close"
+    );
+    assert_eq!(
+        Ok(declared),
+        context.occurrence(Zone::Linear, index),
+        "the write-back ends the moved slot"
+    );
+    assert_eq!(
+        Err(ContextError::LinearSlotConsumed { index }),
+        context.move_out(index),
+        "nor is a spent slot moved"
+    );
+    assert_eq!(Ok(declared), context.close(Zone::Linear));
+}
+
+#[test]
 fn an_intuitionistic_scope_closes_without_a_use()
 {
     let (_arena, declared, _other) = two_types();

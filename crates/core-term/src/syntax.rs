@@ -4728,15 +4728,18 @@ mod tests
         let [twin, same, other] =
             [0_u32, 0, 1].map(|endpoint| arena.computation_session(send(endpoint)));
         cases.push((twin, same, alloc::vec![other], "a session action"));
-        let hold = || MemoryForm::Hold {
+        let hold = |grade| MemoryForm::Hold {
             value: unit,
             body: returned,
+            grade,
         };
-        let [twin, same] = [(); 2].map(|()| arena.computation_memory(hold()));
+        let [twin, same] =
+            [(); 2].map(|()| arena.computation_memory(hold(crate::memory::HoldGrade::Many)));
         let other = arena.computation_memory(MemoryForm::Abort {
             view: DeBruijnIndex::from(0_u32),
         });
-        cases.push((twin, same, alloc::vec![other], "a memory form"));
+        let graded = arena.computation_memory(hold(crate::memory::HoldGrade::One));
+        cases.push((twin, same, alloc::vec![other, graded], "a memory form"));
         let migrate = |world: usize| crate::world::WorldForm::Migrate {
             world: crate::world::World::Declared(ConstantIndex::from(world)),
             body: returned,

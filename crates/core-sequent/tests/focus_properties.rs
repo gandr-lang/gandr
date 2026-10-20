@@ -146,6 +146,7 @@ fn hand_built_control_cases_cover_every_former()
     let held = core.computation_memory(MemoryForm::Hold {
         value: unit,
         body: both,
+        grade: gandr_core_term::memory::HoldGrade::Many,
     });
     for program in [
         stack_return,

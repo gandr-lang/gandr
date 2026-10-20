@@ -1881,12 +1881,13 @@ fn rebuild(
             child,
             parent: commuted,
         }),
-        (Computation::Memory(MemoryForm::Hold { value, body }), &[commuted])
+        (Computation::Memory(MemoryForm::Hold { value, body, grade }), &[commuted])
             if commuted != body =>
         {
             sink.arena.computation_memory(MemoryForm::Hold {
                 value,
                 body: commuted,
+                grade,
             })
         },
         (Computation::World(WorldForm::Leta { value, body }), &[commuted]) if commuted != body => {

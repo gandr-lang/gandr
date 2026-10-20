@@ -6,11 +6,13 @@
 //!
 //! `hold x = e ;` holds the value `e` in the linear slot `x` over the rest of
 //! its block, as `fork` binds an endpoint over the rest of its block: the
-//! core hold, whose scope is that rest. `access x as v { t } unwind { u }`
-//! lends the slot `x` names exclusively and binds the view `v`, linearly,
-//! over the body `t`; the unwind `u` reads where the access stands, and a
-//! missing unwind is `unwind { pure unit }`. `access exclusive x as v { … }`
-//! spells the same mode. `access shared x as v { t }` lends `x` shared: the
+//! core hold, whose scope is that rest, at grade `ω`. `hold[1] x = e ;` holds
+//! it at grade one; any other numeral is [`LoweringRefusal::GradedBridge`], as
+//! on a thunk type. `access x as v { t }
+//! unwind { u }` lends the slot `x` names exclusively and binds the view `v`,
+//! linearly, over the body `t`; the unwind `u` reads where the access stands,
+//! and a missing unwind is `unwind { pure unit }`. `access exclusive x as v { …
+//! }` spells the same mode. `access shared x as v { t }` lends `x` shared: the
 //! view ends with the body, so the form takes no unwind, and an `unwind`
 //! after it is a misplaced tile. Either mode lends a place of `x` when an
 //! index follows it, `access shared x[e] as v { t }`: `e` is read as a value
@@ -42,6 +44,7 @@
 use anodized::spec;
 use gandr_core_term::Zone;
 use gandr_core_term::memory::AccessMode;
+use gandr_core_term::memory::HoldGrade;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place;
 use gandr_kernel_term::DeBruijnIndex;
@@ -127,17 +130,20 @@ pub(super) enum Accessed
 
 impl<'source> Lowerer<'_, 'source>
 {
-    /// Read one `hold x = e ;` statement, its `hold` tile already read.
+    /// Read one `hold x = e ;` or `hold[g] x = e ;` statement, its `hold`
+    /// tile already read.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the statement's tile `hold`;
     ///   `frame` is the frame the statement reads under.
-    /// - ensures: `e` is read as a value under `frame`; the statement is
-    ///   recorded as the hold of `e` over the rest of the block, and the frame
-    ///   binding `x` linearly over `frame`, which the rest of the block reads
-    ///   under, is returned, its binder recorded as a held slot.
+    /// - ensures: the grade is read when a bracket follows `hold`, `ω`
+    ///   otherwise; `e` is read as a value under `frame`; the statement is
+    ///   recorded as the hold of `e` at the grade over the rest of the block,
+    ///   and the frame binding `x` linearly over `frame`, which the rest of the
+    ///   block reads under, is returned, its binder recorded as a held slot.
     /// - fails: a fault naming the hold statement for a tile out of shape, the
-    ///   value hole's own fault and the binder's own refusal.
+    ///   grade's refusal, the value hole's own fault and the binder's own
+    ///   refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -145,8 +151,11 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the counter holds its count over the rest of its
-    ///   block, and both accesses name it past the views between.
+    ///   block, and both accesses name it past the views between; a hold at
+    ///   grade one carries its grade and a hold at grade two is refused at the
+    ///   grade.
     /// - witness: `lower::access::tests::the_counter_lowers_to_its_memory_forms`
+    /// - witness: `lower::access::tests::a_hold_lowers_at_its_grade`
     #[spec(
         captures: before = self.statements.len(),
         ensures: |ret| ret.is_err() || (self.statements.len() == before.saturating_add(1)
@@ -164,6 +173,10 @@ impl<'source> Lowerer<'_, 'source>
             name: FormName::HOLD_STATEMENT,
             reading: Reading::Computation(frame),
         };
+        let grade = match cursor.tile(TileName::BRACKET_OPEN) {
+            Maybe::Present(_) => self.hold_grade(statement, cursor)?,
+            Maybe::Absent(_) => HoldGrade::Many,
+        };
         let Maybe::Present(binder) = cursor.tile(TileName::IDENTIFIER)
         else {
             return Err(statement.fault(cursor.here(), FormFault::MisplacedTile));
@@ -177,7 +190,10 @@ impl<'source> Lowerer<'_, 'source>
         self.statements.push(Statement {
             origin: hold.node,
             bound: hold.node,
-            binding: StatementBinding::Held { value: value.node },
+            binding: StatementBinding::Held {
+                value: value.node,
+                grade,
+            },
             rest: exits::Rest::Bound,
         });
 
@@ -187,6 +203,54 @@ impl<'source> Lowerer<'_, 'source>
         let _held = self.held.insert(slot);
 
         Ok(Frame::Inner(slot))
+    }
+
+    /// Read a hold's grade, `[n]`, past its `[`.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the grade's `[`.
+    /// - ensures: `1` is [`HoldGrade::One`], the cursor past the `]`.
+    /// - fails: [`LoweringRefusal::GradedBridge`] for any other numeral, at the
+    ///   grade; a misplaced-tile fault for a grade out of shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The grade's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `1` and `2`, each asserted as the grade or the exact
+    ///   refusal.
+    /// - witness: `lower::access::tests::a_hold_lowers_at_its_grade`
+    #[spec(
+        captures: first = cursor.peek(),
+        ensures: |ret| match ret {
+            | Ok(HoldGrade::One) => matches!(first, Maybe::Present(Piece::Tile { label: TileName::NUMBER, .. })),
+            | Ok(HoldGrade::Many) => false,
+            | Err(_) => true,
+        },
+    )]
+    fn hold_grade(
+        &self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+    ) -> Result<HoldGrade, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(Piece::Tile { label, at }) = cursor.read()
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        if label != TileName::NUMBER {
+            return Err(site.fault(at.span, FormFault::MisplacedTile));
+        }
+        if self.name_at(at).as_ref() != "1" {
+            return Err(LoweringRefusal::GradedBridge {
+                span: at.span,
+                grade: self.name_at(at),
+            });
+        }
+        closed(site, cursor, TileName::BRACKET_CLOSE)?;
+
+        Ok(HoldGrade::One)
     }
 
     /// The linear index of the name written at `written`, read under

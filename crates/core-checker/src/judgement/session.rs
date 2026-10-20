@@ -73,11 +73,13 @@ pub(super) enum Resident
         /// The hold.
         at: ComputationId,
     },
-    /// The view the access `at` lends.
+    /// The view the access `at` lends, of a value held at `grade`.
     View
     {
         /// The access.
         at: ComputationId,
+        /// The grade the lent value is held at.
+        grade: gandr_core_term::memory::HoldGrade,
     },
     /// A capability the run's entry holds, to migrate once to `world`.
     Capability
@@ -425,7 +427,7 @@ impl Machine<'_, '_>
         let slot = self.slot(node, index)?;
         match slot.use_state {
             LinearUse::Available => Ok(slot),
-            LinearUse::Consumed => Err(CheckRefusal::Linearity {
+            LinearUse::Moved | LinearUse::Consumed => Err(CheckRefusal::Linearity {
                 at: node,
                 defect: LinearityDefect::Closed {
                     endpoint: slot.endpoint,

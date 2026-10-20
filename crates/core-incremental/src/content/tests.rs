@@ -1433,6 +1433,7 @@ fn covers_preserve_every_binding_former()
             ContentNode::Memory(MemoryForm::Hold {
                 value: index(1_usize),
                 body: index(2_usize),
+                grade: gandr_core_term::memory::HoldGrade::Many,
             }),
             both,
         ),

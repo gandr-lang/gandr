@@ -422,8 +422,22 @@ fn command(
             let linear =
                 |index: DeBruijnIndex| Piece::Owned(alloc::format!("l{}", u32::from(index)));
             let mut pieces = match *form {
-                MemoryForm::Hold { value, body } => alloc::vec![
+                MemoryForm::Hold {
+                    value,
+                    body,
+                    grade: gandr_core_term::memory::HoldGrade::Many,
+                } => alloc::vec![
                     text!("hold("),
+                    Piece::Producer(value, depth),
+                    text!("; (l; α) ⇒ "),
+                    Piece::Command(body, depth),
+                ],
+                MemoryForm::Hold {
+                    value,
+                    body,
+                    grade: gandr_core_term::memory::HoldGrade::One,
+                } => alloc::vec![
+                    text!("hold[1]("),
                     Piece::Producer(value, depth),
                     text!("; (l; α) ⇒ "),
                     Piece::Command(body, depth),

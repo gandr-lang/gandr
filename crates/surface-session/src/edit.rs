@@ -2578,7 +2578,7 @@ enum Agreement
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 /// - witness: `edit::tests::child_mapping_preserves_payloads_without_replaying_the_callback`
-/// - witness: `edit::tests::a_memory_form_agrees_on_its_kind_mode_place_and_slot`
+/// - witness: `edit::tests::a_memory_form_agrees_on_its_kind_grade_mode_place_and_slot`
 /// - witness: `edit::tests::every_node_family_agrees_exactly_on_its_payload`
 #[spec(
     ensures: |ret| {
@@ -4408,9 +4408,10 @@ def body = 1 ;
     }
 
     #[test]
-    fn a_memory_form_agrees_on_its_kind_mode_place_and_slot()
+    fn a_memory_form_agrees_on_its_kind_grade_mode_place_and_slot()
     {
         use gandr_core_term::memory::AccessMode;
+        use gandr_core_term::memory::HoldGrade;
         use gandr_core_term::memory::MemoryForm;
         use gandr_core_term::memory::Place;
         use gandr_kernel_term::DeBruijnIndex;
@@ -4427,10 +4428,14 @@ def body = 1 ;
                 body: first,
             })
         };
-        let hold = ContentNode::Memory(MemoryForm::Hold {
-            value: first,
-            body: second,
-        });
+        let held = |grade| {
+            ContentNode::Memory(MemoryForm::Hold {
+                value: first,
+                body: second,
+                grade,
+            })
+        };
+        let hold = held(HoldGrade::Many);
         let slot = DeBruijnIndex::from(0_u32);
         assert_eq!(
             super::agreement(&access(slot), &access(slot)),
@@ -4468,6 +4473,11 @@ def body = 1 ;
             super::agreement(&access(slot), &placed),
             Agreement::Differs,
             "an access at a place and one of the whole held value are two formers"
+        );
+        assert_eq!(
+            super::agreement(&hold, &held(HoldGrade::One)),
+            Agreement::Differs,
+            "a hold at grade one and one at grade ω are two formers"
         );
     }
 

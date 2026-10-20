@@ -467,7 +467,7 @@ impl Source for ContentSource<'_>
                 },
             },
             ContentNode::Memory(ref form) => match *form {
-                MemoryForm::Hold { value, body } => Former::Hold { value, body },
+                MemoryForm::Hold { value, body, grade } => Former::Hold { value, body, grade },
                 MemoryForm::Access {
                     mode,
                     held,

@@ -316,7 +316,16 @@ fn every_node_former_round_trips_under_its_own_frame()
     );
     nodes.extend(
         [
-            MemoryForm::Hold { value: a, body: b },
+            MemoryForm::Hold {
+                value: a,
+                body: b,
+                grade: gandr_core_term::memory::HoldGrade::Many,
+            },
+            MemoryForm::Hold {
+                value: a,
+                body: b,
+                grade: gandr_core_term::memory::HoldGrade::One,
+            },
             MemoryForm::Access {
                 mode: AccessMode::Exclusive { unwind: b },
                 held: slot,
@@ -2528,6 +2537,9 @@ fn every_refusal() -> Vec<Refusal>
             AccessDefect::ReadOnly,
             AccessDefect::UnwindEffect,
             AccessDefect::Unindexed,
+            AccessDefect::HeldShared,
+            AccessDefect::HeldCopied,
+            AccessDefect::Moved,
         ]
         .map(|defect| Refusal::Access { at, defect }),
     );

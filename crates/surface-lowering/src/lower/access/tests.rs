@@ -8,6 +8,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::Zone;
 use gandr_core_term::memory::AccessMode;
+use gandr_core_term::memory::HoldGrade;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place;
 use gandr_surface_syntax::SourceText;
@@ -40,10 +41,10 @@ const COUNTER: &str = r"def counter(n : Integer) -> -F Integer {
 ";
 
 /// The temporary-access forms reachable from `tail` through binds, splits,
-/// lambdas and memory forms, in source order, one token each: `hold`,
-/// `access @i` or `access shared @i`, followed by `[index]` at a place,
-/// `resume @i` and `abort @i` naming each slot's linear index, and `read @i`
-/// for a `return` of a linear variable.
+/// lambdas and memory forms, in source order, one token each: `hold`, or
+/// `hold[1]` at grade one, `access @i` or `access shared @i`, followed by
+/// `[index]` at a place, `resume @i` and `abort @i` naming each slot's linear
+/// index, and `read @i` for a `return` of a linear variable.
 ///
 /// # Specification
 /// trivial.
@@ -71,7 +72,14 @@ fn forms(
             },
             Some(&Computation::Memory(ref form)) => {
                 seen.push(match *form {
-                    MemoryForm::Hold { .. } => String::from("hold"),
+                    MemoryForm::Hold {
+                        grade: HoldGrade::Many,
+                        ..
+                    } => String::from("hold"),
+                    MemoryForm::Hold {
+                        grade: HoldGrade::One,
+                        ..
+                    } => String::from("hold[1]"),
                     MemoryForm::Access {
                         mode, held, place, ..
                     } => {
@@ -223,6 +231,38 @@ def indexed(i : Integer) -> -F Integer {
         "an index names a variable where the access stands"
     );
     assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_hold_lowers_at_its_grade()
+{
+    let source = SourceText::from(
+        r"def unique() -> -F Unit {
+  hold[1] c = 0;
+  access c as v { resume(v, v + 1) }
+}
+def two() -> -F Unit {
+  hold[2] c = 0;
+  pure unit
+}
+",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("unique")));
+    assert_eq!(
+        forms(&arena, tail),
+        ["hold[1]", "access @0", "resume @0"],
+        "`hold[1]` holds its value at grade one"
+    );
+    assert_eq!(
+        refusal_of(&module, SurfaceName::from("two")),
+        LoweringRefusal::GradedBridge {
+            span: spelled_within(source, SourceText::from("hold[2]"), SourceText::from("2")),
+            grade: SurfaceName::from("2"),
+        },
+        "a hold has no grade but one and the default ω"
+    );
 }
 
 #[test]

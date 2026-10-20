@@ -852,14 +852,16 @@ pub enum Former<'source, Node>
         /// The continuation.
         parent: Node,
     },
-    /// A hold, `hold x = v ; t`: the scope under the held slot's linear
-    /// binder.
+    /// A hold, `hold x = v ; t` or `hold[1] x = v ; t`: the scope under the
+    /// held slot's linear binder.
     Hold
     {
         /// The value held.
         value: Node,
         /// The scope.
         body: Node,
+        /// The grade the value is held at.
+        grade: gandr_core_term::memory::HoldGrade,
     },
     /// An access, `access x as w { t } unwind { u }` or
     /// `access shared x as w { t }`, either at a place `x[i]`: the body under

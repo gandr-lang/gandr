@@ -860,6 +860,7 @@ fn every_binder_former_carries_its_bodys_support_past_its_binders()
     let hold = arena.computation_memory(MemoryForm::Hold {
         value: held,
         body: access,
+        grade: crate::memory::HoldGrade::Many,
     });
     cases.push((
         "a hold",

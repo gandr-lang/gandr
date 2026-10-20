@@ -6,27 +6,30 @@
 //! |form|written|binds|
 //! |---|---|---|
 //! |hold|`hold x = v; t`|`x`, a linear slot holding `v`, over `t`|
+//! |hold at grade one|`hold[1] x = v; t`|`x`, a linear slot holding `v`, never copied, over `t`|
 //! |access|`access x as w { t } unwind { u }`|the view `w`, a linear slot, over `t`|
 //! |shared access|`access shared x as w { t }`|the view `w`, a linear slot, over `t`|
 //! |access at a place|`access x[i] as w { t } unwind { u }`, `access shared x[i] as w { t }`|the view `w`, a linear slot, over `t`|
 //! |resume|`resume(w, v)`|nothing; writes `v` back through `w`|
 //! |abort|`abort(w)`|nothing; ends `w` with nothing written|
 //!
-//! [`MemoryForm::Hold`] opens a slot of the linear zone `Σ` holding a value;
-//! a read of the slot copies the value it holds now. [`MemoryForm::Access`]
-//! lends a [`Place`] of a held slot to a view for the access's body, in the
-//! [`AccessMode`] it names: the held value whole, or the element at an index
-//! read where the access stands. Lent exclusively, the held slot is
-//! unreadable for the body, the view reads the value at its place, and the
-//! body ends the view exactly once, by [`MemoryForm::Resume`] (the new value
-//! is written back at the place when the access ends) or by
-//! [`MemoryForm::Abort`] (the mode's `unwind` runs when the access ends and
-//! the held slot keeps the value it had). Lent shared, the held slot stays
-//! readable and is frozen for the body, the view reads the same value, and
-//! the view ends with the body: a shared mode has no unwind, and neither
-//! eliminator ends a shared view. An index in the linear zone is lent with
-//! the place, never consumed by the access. The rules and the refusals are
-//! `gandr-core-checker`'s `access` module.
+//! [`MemoryForm::Hold`] opens a slot of the linear zone `Σ` holding a value at
+//! a [`HoldGrade`]: at grade `ω` a read of the slot copies the value it holds
+//! now; at grade one the value entered with no other holder and is never
+//! copied while held, so a write through an exclusive access of it needs no
+//! holder count. [`MemoryForm::Access`] lends a [`Place`] of a held slot to a
+//! view for the access's body, in the [`AccessMode`] it names: the held value
+//! whole, or the element at an index read where the access stands. Lent
+//! exclusively, the held slot is unreadable for the body, the view reads the
+//! value at its place, and the body ends the view exactly once, by
+//! [`MemoryForm::Resume`] (the new value is written back at the place when the
+//! access ends) or by [`MemoryForm::Abort`] (the mode's `unwind` runs when the
+//! access ends and the held slot keeps the value it had). Lent shared, the
+//! held slot stays readable and is frozen for the body, the view reads the
+//! same value, and the view ends with the body: a shared mode has no unwind,
+//! and neither eliminator ends a shared view. An index in the linear zone is
+//! lent with the place, never consumed by the access. The rules and the
+//! refusals are `gandr-core-checker`'s `access` module.
 //!
 //! One computation former has the four forms as its cases, and every
 //! resident is named by its linear de Bruijn index, so an access of something
@@ -158,6 +161,21 @@ impl<V> Place<V>
     }
 }
 
+/// How many holders a held value may have while it is held.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HoldGrade
+{
+    /// Grade `ω`: a read of the slot copies the value it holds.
+    #[default]
+    Many,
+    /// Grade one: the value entered with no other holder and is never copied
+    /// while held.
+    One,
+}
+
 /// The case of a memory form.
 ///
 /// # Specification
@@ -165,7 +183,7 @@ impl<V> Place<V>
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MemoryKind
 {
-    /// `hold x = v; t`.
+    /// `hold x = v; t` or `hold[1] x = v; t`.
     Hold,
     /// `access x as w { t } unwind { u }` or `access shared x as w { t }`.
     Access,
@@ -180,13 +198,16 @@ pub enum MemoryKind
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum MemoryForm<V = ValueId, C = ComputationId>
 {
-    /// `hold x = v; t`: `body` runs with `x`, a linear slot holding `value`.
+    /// `hold x = v; t` or `hold[1] x = v; t`: `body` runs with `x`, a linear
+    /// slot holding `value` at `grade`.
     Hold
     {
         /// The value held, read where the hold stands.
         value: V,
         /// The scope of the held slot, under its linear binder.
         body: C,
+        /// How many holders the value may have while held.
+        grade: HoldGrade,
     },
     /// `access x as w { t } unwind { u }`, `access shared x as w { t }`, or
     /// either at an index, `x[i]`: `body` runs with the view `w` of `place`
@@ -351,9 +372,9 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
         self.scoped().map(|(child, _)| child)
     }
 
-    /// The form with every child erased: its case, the slot it names, an
-    /// access's mode and whether its place is indexed, which is what two
-    /// forms must share to be the same former.
+    /// The form with every child erased: its case, the slot it names, a
+    /// hold's grade, an access's mode and whether its place is indexed, which
+    /// is what two forms must share to be the same former.
     ///
     /// # Specification
     /// - ensures: the form with every child replaced by the unit, kept at its
@@ -387,10 +408,10 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the case, the slot it names, an access's mode and its place's
-    ///   shape are kept; each child is replaced by its image at its own
-    ///   position; [`ChildOrder::Forward`] visits a hold's value before its
-    ///   body, an access's index before its body and its body before an
+    /// - ensures: the case, the slot it names, a hold's grade, an access's mode
+    ///   and its place's shape are kept; each child is replaced by its image at
+    ///   its own position; [`ChildOrder::Forward`] visits a hold's value before
+    ///   its body, an access's index before its body and its body before an
     ///   exclusive access's unwind, and a resume's value, and
     ///   [`ChildOrder::Reverse`] exactly the reverse.
     /// - fails: propagates the first error a map returns.
@@ -410,7 +431,7 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
             a == b && before.mode() == after.mode() && was.shape() == now.shape(),
         | (&Self::Resume { view: a, .. }, &MemoryForm::Resume { view: b, .. })
         | (&Self::Abort { view: a }, &MemoryForm::Abort { view: b }) => a == b,
-        | (&Self::Hold { .. }, &MemoryForm::Hold { .. }) => true,
+        | (&Self::Hold { grade: a, .. }, &MemoryForm::Hold { grade: b, .. }) => a == b,
         | _ => false,
     }))]
     #[inline]
@@ -426,12 +447,17 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
         Computations: FnMut(&mut S, C) -> Result<C2, E>,
     {
         Ok(match *self {
-            Self::Hold { value: held, body } => match order {
+            Self::Hold {
+                value: held,
+                body,
+                grade,
+            } => match order {
                 ChildOrder::Forward => {
                     let held = value(state, held)?;
                     MemoryForm::Hold {
                         value: held,
                         body: computation(state, body)?,
+                        grade,
                     }
                 },
                 ChildOrder::Reverse => {
@@ -439,6 +465,7 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
                     MemoryForm::Hold {
                         value: value(state, held)?,
                         body,
+                        grade,
                     }
                 },
             },
