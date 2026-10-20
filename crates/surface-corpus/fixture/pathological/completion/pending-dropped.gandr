@@ -1,0 +1,18 @@
+// A pending completion dropped: a read is submitted and its completion is
+// never reaped, though the kernel posts "exactly one matching CQE for every
+// SQE" (io_uring(7)). The pending end stays open when the program ends.
+
+// The ring's protocol and its entries.
+import "../../model/completion/ring-base.gandr" ;
+
+/// A read submitted and its pending completion left unreaped.
+@[ refuses("LinearResidue") ]
+def pendingDropped() -> -F Unit {
+  fork (kernel : Ring.Submission) {
+    recv(kernel) as sqe;
+    send(kernel, Ring.done);
+    close(kernel)
+  } as ring;
+  send(ring, Ring.read);
+  pure unit
+}

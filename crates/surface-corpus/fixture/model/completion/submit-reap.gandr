@@ -1,0 +1,20 @@
+// Submit, then reap: "exactly one matching CQE for every SQE" (io_uring(7)).
+// The mock kernel is a forked peer that serves one submission; after the
+// submit, the submitter's end is the pending completion, and the program is
+// accepted only when it reaps the completion and closes the ring.
+
+// The ring's protocol and its entries.
+import "./ring-base.gandr" ;
+
+/// A read submitted to the mock kernel and its one completion reaped.
+@[ checks ]
+def submitThenReap() -> -F Unit {
+  fork (kernel : Ring.Submission) {
+    recv(kernel) as sqe;
+    send(kernel, Ring.done);
+    close(kernel)
+  } as ring;
+  send(ring, Ring.read);
+  recv(ring) as cqe;
+  close(ring)
+}

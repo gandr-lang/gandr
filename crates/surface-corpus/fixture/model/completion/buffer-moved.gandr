@@ -1,0 +1,26 @@
+// The buffer a read fills is moved into its submission, not borrowed, because
+// the kernel owns it until the operation completes (boats, _Notes on
+// io-uring_, 2020), and it is handed back with the completion. The buffer is a
+// linear resident, here the end of a forked owner, and moving it into a
+// submission is delegation (Honda, Vasconcelos and Kubo,
+// doi:10.1007/BFb0053567).
+
+// The ring's protocol and its entries.
+import "./ring-base.gandr" ;
+
+/// A buffer moved into the mock kernel's submission and finished there before
+/// the completion is posted. Refused while an endpoint received over a session
+/// cannot be acted on (#1167).
+@[ refuses("OutOfFragment") ]
+def bufferMoved() -> -F Unit {
+  fork (owner : Ring.Buffer) { close(owner) } as buffer;
+  fork (kernel : Ring.Moving) {
+    recv(kernel) as held;
+    close(held);
+    send(kernel, Ring.done);
+    close(kernel)
+  } as ring;
+  send(ring, buffer);
+  recv(ring) as cqe;
+  close(ring)
+}

@@ -1,0 +1,28 @@
+// A stack holding a pending completion, resumed twice: an operation's clause
+// resumes the handled body twice, and that body holds a submitted read across
+// the operation, so its one completion would be reaped twice. Handlers after
+// Plotkin and Pretnar, _Handling Algebraic Effects_
+// (doi:10.2168/LMCS-9(4:23)2013).
+
+// The ring's protocol and its entries.
+import "../../model/completion/ring-base.gandr" ;
+
+/// The pending completion opened before the operation and reaped after it,
+/// in a body the operation's clause resumes twice.
+@[ refuses("CapturedEndpoint") ]
+def resumedTwice() -> -F Unit {
+  handle c : Proc {
+    fork (kernel : Ring.Submission) {
+      recv(kernel) as sqe;
+      send(kernel, Ring.done);
+      close(kernel)
+    } as ring;
+    send(ring, Ring.read);
+    c.exit(1);
+    recv(ring) as cqe;
+    close(ring)
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => { run first <- k(unit) ; k(unit) }
+  }
+}
