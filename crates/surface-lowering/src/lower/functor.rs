@@ -635,11 +635,9 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 continue;
             };
-            let renaming = renaming.clone();
             let mut outcomes = Vec::new();
             for (component, &matched) in functor.components.iter().zip(&instance.matched) {
-                let checked =
-                    self.witness_outcome(component.form, matched, &renaming, sink, origin);
+                let checked = self.witness_outcome(component.form, matched, renaming, sink, origin);
                 let witness = match matched {
                     Matched::Value { witness, .. }
                     | Matched::Abstract { witness, .. }
@@ -669,23 +667,23 @@ impl<'source> Lowerer<'_, 'source>
                         declared_type,
                         body,
                     } => DeclarationOutcome::Completed {
-                        declared_type: rename_type(sink, &renaming, declared_type, origin),
-                        body: rename_value(sink, &renaming, body, origin),
+                        declared_type: rename_type(sink, renaming, declared_type, origin),
+                        body: rename_value(sink, renaming, body, origin),
                     },
                     DeclarationOutcome::Uncompleted { declared_type } => {
                         DeclarationOutcome::Uncompleted {
-                            declared_type: rename_type(sink, &renaming, declared_type, origin),
+                            declared_type: rename_type(sink, renaming, declared_type, origin),
                         }
                     },
                     DeclarationOutcome::Bodied { body } => DeclarationOutcome::Bodied {
-                        body: rename_value(sink, &renaming, body, origin),
+                        body: rename_value(sink, renaming, body, origin),
                     },
                     DeclarationOutcome::Abstract(sealing) => {
                         DeclarationOutcome::Abstract(Sealing {
-                            kind: rename_type(sink, &renaming, sealing.kind, origin),
+                            kind: rename_type(sink, renaming, sealing.kind, origin),
                             representation: rename_type(
                                 sink,
-                                &renaming,
+                                renaming,
                                 sealing.representation,
                                 origin,
                             ),
