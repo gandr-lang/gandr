@@ -2639,6 +2639,14 @@ fn scan_word(
     }
 }
 
+/// The words [`scan_word`] reads, as a regular expression.
+///
+/// A word is an ASCII letter, or an underscore with at least one byte after
+/// it, then ASCII letters, digits, underscores and primes; a lone `_` is the
+/// wildcard. The expression is in the syntax ECMAScript and the `regex` family
+/// share, so an editor can match a name's characters with it.
+pub const WORD_PATTERN: &str = "_[A-Za-z0-9_′]+|[A-Za-z][A-Za-z0-9_′]*";
+
 /// Scan an operator/punctuation tile, or a stray byte as `Unknown`.
 ///
 /// # Specification
@@ -4211,6 +4219,54 @@ mod tests
                 (Lexeme::Quote, "\"".to_owned()),
             ]
         );
+    }
+
+    #[test]
+    fn the_word_pattern_matches_what_the_scanner_reads_as_one_word()
+    {
+        let whole = regex_lite::Regex::new(&format!("^(?:{})$", super::WORD_PATTERN))
+            .expect("the word pattern compiles");
+        // Letters of both cases, a marked word's letters and its sign, a
+        // digit, the underscore, the prime and the apostrophe beside it, a
+        // sign, a letter outside ASCII and a space: every string of up to four.
+        let alphabet = ['a', 'p', 'i', 'Z', '0', '_', '′', '\'', '-', '+', 'é', ' '];
+        let mut text = String::new();
+        let mut odometer: Vec<usize> = Vec::new();
+        while odometer.len() <= 4_usize {
+            text.clear();
+            text.extend(
+                odometer
+                    .iter()
+                    .filter_map(|&digit| alphabet.get(digit).copied()),
+            );
+            let source = SourceFragment::from(text.as_str());
+            let read = tiles(source, &label(source));
+            let one_word = matches!(
+                read.as_slice(),
+                [(Lexeme::LowerWord | Lexeme::UpperWord, word)] if *word == text
+            );
+            assert_eq!(
+                whole.is_match(&text),
+                one_word,
+                "{text:?} lexes as {read:?}"
+            );
+            // The next string: the first place that can step steps, the
+            // places before it return to the first letter, and a string that
+            // has used every letter in every place grows by one.
+            let stepped = odometer
+                .iter()
+                .position(|&digit| digit.saturating_add(1_usize) < alphabet.len());
+            let reset = stepped.unwrap_or(odometer.len());
+            if let Some(before) = odometer.get_mut(.. reset) {
+                before.fill(0_usize);
+            }
+            if let Some(digit) = stepped.and_then(|place| odometer.get_mut(place)) {
+                *digit = digit.saturating_add(1_usize);
+            }
+            else {
+                odometer.push(0_usize);
+            }
+        }
     }
     #[test]
     fn string_interpolation_segments_the_string()

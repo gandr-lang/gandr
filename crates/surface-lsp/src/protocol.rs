@@ -2436,13 +2436,17 @@ pub struct LocationLink
 }
 
 /// The ranges of a document that an edit of one applies to, each spelling
-/// the same name.
+/// the same name, and the words an edit may leave there.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[repr(transparent)]
+#[serde(rename_all = "camelCase")]
 pub struct LinkedEditingRanges
 {
     /// The ranges: a binder's name, then its uses.
     pub ranges: Vec<Range>,
+    /// The words a name is written as, the parser's
+    /// [`gandr_surface_parser::WORD_PATTERN`]: an edit that leaves a range
+    /// outside it ends the linked edit.
+    pub word_pattern: &'static str,
 }
 
 /// A range of a document that names another file: a path import's address.

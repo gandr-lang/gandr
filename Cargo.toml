@@ -1098,6 +1098,18 @@ features = ["crossterm"]
 version = "1.12.0"
 default-features = false
 
+# The regular expressions a witness runs to check a pattern the parser
+# exports against its scanner.
+# features:
+# - std: required by the crate
+# - string: `Regex`, the matcher over `&str`
+# consumers:
+# - surface-parser (dev)
+[workspace.dependencies.regex-lite]
+version = "0.1.9"
+default-features = false
+features = ["std", "string"]
+
 # Per-worker observer queues without an asynchronous runtime.
 # features:
 # - alloc: HeapRb and its owned endpoints are absent without heap storage.
