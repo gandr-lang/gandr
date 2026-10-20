@@ -667,6 +667,7 @@ version = "0.0.0"
 dependencies = [
  "gandr-kernel-core",
  "gandr-kernel-term",
+ "gandr-theory-deep-inference",
  "quenchant-anodized",
 ]
 

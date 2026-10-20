@@ -5,16 +5,30 @@
 //! `certified` boundary exports candidate relations, moves recorded skeletons
 //! forward along a simulation, and transports them through `Flow_U` only after
 //! independent kernel replay.
+//!
+//! A recorded dialogue of both endpoints is admitted by its logical time
+//! ([`admit`]): each endpoint's moves replay against its protocol, and the
+//! recorded order is one linearization of the session's causal web, whose
+//! green edges are each endpoint's own order and every send before its
+//! receipt. A dialogue that records a receipt before its send is refused by
+//! that edge.
 
 #![no_std]
 
 extern crate alloc;
 
 pub mod certified;
+mod dialogue;
 mod relation;
 mod replay;
 mod session;
 
+pub use crate::dialogue::DialogueRefusal;
+pub use crate::dialogue::DialogueWeb;
+pub use crate::dialogue::Event;
+pub use crate::dialogue::Side;
+pub use crate::dialogue::Turn;
+pub use crate::dialogue::admit;
 pub use crate::relation::Decision;
 pub use crate::relation::Relation;
 pub use crate::relation::RelationResult;

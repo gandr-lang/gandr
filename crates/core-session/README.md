@@ -37,10 +37,11 @@ Contractive binary session types, coinductive relations, and endpoint replay.
 - Search-free replay with distinct direction, label, payload, incomplete-run, and resume-after-end refusals.
 - Candidate finite relations exported by `relate`, checked independently as native `Path_U` or native `Flow_U` evidence.
 - Recorded-run transport through a freshly replayed session Flow and independently checked target monitor; `certified::advance` is the monitor-level step a checker uses once it holds an engine simulation.
+- Dialogue admission (`admit`): both endpoints' moves in one recorded order, each endpoint's projection replayed, every send matched to its receipt in FIFO order, and the order admitted as one linearization of the session's causal web (each endpoint's own order, every send before its receipt); `DialogueWeb::relation` reads happens-before on any two events, and a receipt recorded before its send is refused by that edge.
 
 ## Expected features
 
-Consumers supply payload-type identities, payload digests, and endpoint-local moves. Identity assignment and payload-body validation belong to the consumer. Certified transport additionally requires native payload-code assignments. The crate uses `core` and `alloc` and depends on `gandr-kernel-term` and `gandr-kernel-core` with default features disabled.
+Consumers supply payload-type identities, payload digests, and endpoint-local moves. Identity assignment and payload-body validation belong to the consumer. Certified transport additionally requires native payload-code assignments. The crate uses `core` and `alloc` and depends on `gandr-kernel-term`, `gandr-kernel-core` and, for the causal web a dialogue is admitted against, `gandr-theory-deep-inference`, with default features disabled.
 
 The workspace-pinned `quenchant-anodized` facade, named `anodized`, supplies executable specifications with default features disabled and its backend feature enabled. `--cfg anodized_panic` across the build graph enables runtime checks; ordinary builds type-check predicates without evaluating them, while pre-state captures retain their evaluation semantics. Construction validation and replay refusals remain active in either mode. No per-crate feature is required.
 
@@ -124,7 +125,7 @@ The independent elimination oracle exhausts 177 protocols: all send/receive word
 
 ## Integration boundary
 
-Live endpoint syntax, ownership and typing belong to `core-term` and `core-checker`. This crate reads no core terms. The kernel reflects finite session protocols as codes beside first-order codes in the value universe, solely to check type-identity evidence; it gains no endpoint or channel values. Recorded skeleton transport is a monitor-level operation, not a CBPV session-value eliminator: the checker's `ride` of a recorded run along a session flow is `certified::advance`, while a kernel `ride` along a session flow has no endpoint-value action and the kernel's ride replay refuses it as `RecordedRunRequired`. Native declaration persistence includes session codes, Path evidence and session Flow evidence. The monitor does not correlate asynchronous peers, check FIFO delivery, validate bodies, or establish global deadlock freedom.
+Live endpoint syntax, ownership and typing belong to `core-term` and `core-checker`. This crate reads no core terms. The kernel reflects finite session protocols as codes beside first-order codes in the value universe, solely to check type-identity evidence; it gains no endpoint or channel values. Recorded skeleton transport is a monitor-level operation, not a CBPV session-value eliminator: the checker's `ride` of a recorded run along a session flow is `certified::advance`, while a kernel `ride` along a session flow has no endpoint-value action and the kernel's ride replay refuses it as `RecordedRunRequired`. Native declaration persistence includes session codes, Path evidence and session Flow evidence. A dialogue correlates the two peers of one binary session by FIFO delivery; the monitor does not validate bodies, correlate more than two peers, or establish global deadlock freedom.
 
 ## License
 

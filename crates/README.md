@@ -29,7 +29,7 @@ crates/
 ├── core-incremental/              incremental checking: the item seam, the conservative footprint, validated resume, content-addressed checkpoints and the synthesis stream
 ├── core-nbe/                      the glued value domain, evaluation, readback, conversion and native path transport; the sharing overlay, its erasure and its measure; strict meta-level staging
 ├── core-sequent/                  the command IL a core program is focused into, the outcome a run answers in and the store its answer is read back from
-├── core-session/                  contractive binary session types, coinductive relation search, endpoint replay and certified recorded-run transport
+├── core-session/                  contractive binary session types, coinductive relation search, endpoint replay, dialogue admission by logical time and certified recorded-run transport
 ├── core-term/                     core syntax with native universe paths, the one unified context and the co-de Bruijn carrier
 ├── kernel-check-memo/             the check-memo seam a checker consults
 ├── kernel-conversion-trace/       the conversion-decision vocabulary and its sink
@@ -67,7 +67,7 @@ crates/
 ├── theory-coherent-resolutions/   firing, critical pairs, replayable coherence certificates, budgeted completion
 ├── theory-computads/              descriptions elaborated into cells at the declaration's polarity, circuit rules instantiated where their shift question is well-posed, the convexity supply point
 ├── theory-decomposition-spaces/   two-mode certificate composition, bounded backward pathway queries and borrowed canonical step fields
-├── theory-deep-inference/         shift equivalence, the causal order, the certificate normal form and replay plan, the causal web, the flow projection, guarded-family prices
+├── theory-deep-inference/         shift equivalence, the causal order, the certificate normal form and replay plan, the causal web and its linearizations, the flow projection, guarded-family prices
 ├── theory-dynamic-graphs/         insertion-only topological orders and feasible offset valuations
 ├── theory-graphs/                 the precedence DAG, the walk machine, and the graph algorithms they read
 ├── theory-levitation/             the first-order code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face

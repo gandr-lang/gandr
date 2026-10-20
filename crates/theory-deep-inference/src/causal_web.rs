@@ -32,9 +32,19 @@
 //! needing a correspondence between different events: an equal-size label
 //! mismatch, a size mismatch, or a malformed web. Over one fixed event set it
 //! checks that an order respects a happens-before or that a schedule weakens
-//! one. It offers no web over events a caller supplies, no comparison across
-//! event sets, no conflict relation and no persistence, and a web over n events
-//! holds n² bits.
+//! one. It offers no comparison across event sets, no conflict relation and
+//! no persistence, and a web over n events holds n² bits.
+//!
+//! # Logical time
+//!
+//! A green edge is happens-before, and the slice rule reads a partial order
+//! as the set of its linearizations. `DependenceBits::closure` builds the
+//! green relation of a web whose events a caller supplies, from its direct
+//! edges; `linearizes`, on that relation or on a [`CausalWeb`], admits a run
+//! exactly when it names every event once and places each edge's source
+//! first, and refuses one by the edge it inverts. A session's recorded
+//! dialogue is the consumer: its events are the endpoints' moves, its edges
+//! each endpoint's own order and each message's send before its receipt.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -263,6 +273,183 @@ impl DependenceBits
             rows: rows.into_boxed_slice(),
         }
     }
+
+    /// The transitive precedence `direct` generates over `count` vertices:
+    /// the green relation of a web whose events a caller supplies, each
+    /// direct edge `earlier → later` and every edge they compose to.
+    ///
+    /// # Specification
+    /// - ensures: square over `count` vertices; it contains every direct edge
+    ///   whose coordinates are in range, and an edge exactly when a path of
+    ///   in-range direct edges joins its two vertices. A cycle sets a vertex's
+    ///   own bit, and no run linearizes it.
+    /// - panics: none.
+    /// - intension: cubic in `count`, one row fold per intermediate vertex.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-edge chain closes to its composite, an
+    ///   independent pair stays white, an out-of-range edge is dropped, and a
+    ///   cycle leaves no linearization.
+    /// - witness: `causal_web::tests::a_chain_of_direct_edges_closes_to_its_composite`
+    /// - witness: `causal_web::tests::a_cycle_has_no_linearization`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |output| bool::from(output.has_shape(count)) && direct.iter().all(|&(earlier, later)| usize::from(earlier) >= usize::from(count) || usize::from(later) >= usize::from(count) || bool::from(output.contains(earlier, later))))]
+    pub fn closure(
+        count: WebVertexCount,
+        direct: &[(WebVertex, WebVertex)],
+    ) -> Self
+    {
+        let count = usize::from(count);
+        let mut bits = alloc::vec![false; count.saturating_mul(count)];
+        for &(earlier, later) in direct {
+            let (earlier, later) = (usize::from(earlier), usize::from(later));
+            if earlier < count
+                && later < count
+                && let Some(bit) = bits.get_mut(earlier.saturating_mul(count).saturating_add(later))
+            {
+                *bit = true;
+            }
+        }
+        // Warshall's closure: after the pass over `middle`, a bit is set
+        // exactly when a path through intermediates at most `middle` joins
+        // its two vertices.
+        for middle in 0 .. count {
+            for from in 0 .. count {
+                let reaches = bits
+                    .get(from.saturating_mul(count).saturating_add(middle))
+                    .copied()
+                    .unwrap_or(false);
+                if !reaches {
+                    continue;
+                }
+                for to in 0 .. count {
+                    let onward = bits
+                        .get(middle.saturating_mul(count).saturating_add(to))
+                        .copied()
+                        .unwrap_or(false);
+                    if onward
+                        && let Some(bit) =
+                            bits.get_mut(from.saturating_mul(count).saturating_add(to))
+                    {
+                        *bit = true;
+                    }
+                }
+            }
+        }
+        let rows: Vec<Box<[bool]>> = if count == 0 {
+            Vec::new()
+        }
+        else {
+            bits.chunks(count).map(Box::from).collect()
+        };
+        Self {
+            rows: rows.into_boxed_slice(),
+        }
+    }
+
+    /// Whether `run` is a linearization of the relation: every vertex once,
+    /// and no vertex placed after one it precedes.
+    ///
+    /// # Specification
+    /// - ensures: `Ok` exactly when `run` names every vertex of the relation
+    ///   once and, for every edge `earlier → later`, places `earlier` first.
+    /// - fails: [`LinearizationRefusal::Unknown`] for the first vertex past the
+    ///   relation's count, [`LinearizationRefusal::Repeated`] for the first
+    ///   named twice, [`LinearizationRefusal::Omitted`] for the least vertex
+    ///   never named, and [`LinearizationRefusal::Inverted`] for the first
+    ///   edge, in run order of its later-placed end, that the run places
+    ///   backwards. A vertex only a direct edge to itself makes precede itself
+    ///   is that edge, read once every pair is in order.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both orders of an independent pair linearize; a
+    ///   dependent pair placed backwards is refused with its edge; a short, a
+    ///   repeating and an out-of-range run are each refused by name.
+    /// - witness: `causal_web::tests::a_run_linearizes_the_web_it_respects`
+    /// - witness: `causal_web::tests::a_run_that_is_not_one_ordering_of_the_web_is_refused_by_name`
+    #[inline]
+    #[spec(ensures: |output| output.is_err() || run.len() == self.rows.len())]
+    pub fn linearizes(
+        &self,
+        run: &[WebVertex],
+    ) -> Result<(), LinearizationRefusal>
+    {
+        let mut placed = alloc::vec![false; self.rows.len()];
+        for &vertex in run {
+            let Some(seen) = placed.get_mut(usize::from(vertex))
+            else {
+                return Err(LinearizationRefusal::Unknown { vertex });
+            };
+            if *seen {
+                return Err(LinearizationRefusal::Repeated { vertex });
+            }
+            *seen = true;
+        }
+        for (index, seen) in placed.iter().enumerate() {
+            if !*seen {
+                return Err(LinearizationRefusal::Omitted {
+                    vertex: WebVertex::from(index),
+                });
+            }
+        }
+        for (position, &vertex) in run.iter().enumerate() {
+            for &before in run.get(.. position).unwrap_or_default() {
+                if bool::from(self.contains(vertex, before)) {
+                    return Err(LinearizationRefusal::Inverted {
+                        earlier: vertex,
+                        later: before,
+                    });
+                }
+            }
+        }
+        for &vertex in run {
+            if bool::from(self.contains(vertex, vertex)) {
+                return Err(LinearizationRefusal::Inverted {
+                    earlier: vertex,
+                    later: vertex,
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Why a run is not one linearization of a web.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum LinearizationRefusal
+{
+    /// The run names a vertex past the web's count.
+    Unknown
+    {
+        /// The vertex.
+        vertex: WebVertex,
+    },
+    /// The run names a vertex a second time.
+    Repeated
+    {
+        /// The vertex.
+        vertex: WebVertex,
+    },
+    /// The run never names a vertex of the web.
+    Omitted
+    {
+        /// The vertex.
+        vertex: WebVertex,
+    },
+    /// The run places `later` before `earlier`, where the web's green edge
+    /// runs `earlier → later`.
+    Inverted
+    {
+        /// The edge's source, which the run places second.
+        earlier: WebVertex,
+        /// The edge's target, which the run places first.
+        later: WebVertex,
+    },
 }
 
 /// A causal web over the canonical events of one recorded tracelet leg.
@@ -388,6 +575,31 @@ else { WebRelation::Independent })]
     ) -> WebIndependence
     {
         WebIndependence::from(self.relation(left, right) == WebRelation::Independent)
+    }
+
+    /// Whether `run`, a sequence of the web's vertices, is one of its
+    /// linearizations: the slice rule's reading of a partial order as the set
+    /// of its linear extensions.
+    ///
+    /// # Specification
+    /// - ensures: as [`DependenceBits::linearizes`] over [`Self::precedes`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`DependenceBits::linearizes`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the canonical schedule of a dependent pair linearizes
+    ///   its web and the reversed schedule is refused with the edge.
+    /// - witness: `causal_web::tests::a_run_linearizes_the_web_it_respects`
+    #[inline]
+    #[spec(ensures: |output| output == self.precedes.linearizes(run))]
+    pub fn linearizes(
+        &self,
+        run: &[WebVertex],
+    ) -> Result<(), LinearizationRefusal>
+    {
+        self.precedes.linearizes(run)
     }
 
     /// Whether the event list and the precedence relation have one shape.
@@ -863,6 +1075,105 @@ mod tests
         assert_eq!(WebRelation::Precedes, web.relation(left, right));
         assert_eq!(WebRelation::Follows, web.relation(right, left));
         assert!(!bool::from(web.independent(left, right)));
+    }
+
+    #[test]
+    fn a_run_linearizes_the_web_it_respects()
+    {
+        let left = WebVertex::from(0_usize);
+        let right = WebVertex::from(1_usize);
+        let independent = causal_web(&two_event_order(f_cell()));
+        assert_eq!(Ok(()), independent.linearizes(&[left, right]));
+        assert_eq!(Ok(()), independent.linearizes(&[right, left]));
+        let dependent = causal_web(&dependent_order());
+        assert_eq!(Ok(()), dependent.linearizes(&[left, right]));
+        assert_eq!(
+            Err(LinearizationRefusal::Inverted {
+                earlier: left,
+                later: right,
+            }),
+            dependent.linearizes(&[right, left])
+        );
+    }
+
+    #[test]
+    fn a_run_that_is_not_one_ordering_of_the_web_is_refused_by_name()
+    {
+        let web = causal_web(&two_event_order(f_cell()));
+        let left = WebVertex::from(0_usize);
+        let right = WebVertex::from(1_usize);
+        let past = WebVertex::from(2_usize);
+        assert_eq!(
+            Err(LinearizationRefusal::Omitted { vertex: right }),
+            web.linearizes(&[left])
+        );
+        assert_eq!(
+            Err(LinearizationRefusal::Repeated { vertex: left }),
+            web.linearizes(&[left, left, right])
+        );
+        assert_eq!(
+            Err(LinearizationRefusal::Unknown { vertex: past }),
+            web.linearizes(&[left, past, right])
+        );
+    }
+
+    #[test]
+    fn a_chain_of_direct_edges_closes_to_its_composite()
+    {
+        let [first, second, third, apart] = [0_usize, 1, 2, 3].map(WebVertex::from);
+        let bits = DependenceBits::closure(WebVertexCount::from(4_usize), &[
+            (first, second),
+            (second, third),
+            (third, WebVertex::from(9_usize)),
+        ]);
+        assert!(bool::from(bits.has_shape(WebVertexCount::from(4_usize))));
+        assert!(bool::from(bits.contains(first, third)));
+        assert!(!bool::from(bits.contains(third, first)));
+        assert!(!bool::from(bits.contains(first, apart)));
+        assert!(!bool::from(bits.contains(apart, first)));
+        assert_eq!(Ok(()), bits.linearizes(&[apart, first, second, third]));
+        assert_eq!(Ok(()), bits.linearizes(&[first, apart, second, third]));
+        assert_eq!(
+            Err(LinearizationRefusal::Inverted {
+                earlier: first,
+                later: third,
+            }),
+            bits.linearizes(&[third, first, second, apart])
+        );
+    }
+
+    #[test]
+    fn a_cycle_has_no_linearization()
+    {
+        let [first, second] = [0_usize, 1].map(WebVertex::from);
+        let bits = DependenceBits::closure(WebVertexCount::from(2_usize), &[
+            (first, second),
+            (second, first),
+        ]);
+        assert!(bool::from(bits.contains(first, first)));
+        assert_eq!(
+            Err(LinearizationRefusal::Inverted {
+                earlier: second,
+                later: first,
+            }),
+            bits.linearizes(&[first, second])
+        );
+        assert_eq!(
+            Err(LinearizationRefusal::Inverted {
+                earlier: first,
+                later: second,
+            }),
+            bits.linearizes(&[second, first])
+        );
+        let alone = WebVertex::from(0_usize);
+        let looped = DependenceBits::closure(WebVertexCount::from(1_usize), &[(alone, alone)]);
+        assert_eq!(
+            Err(LinearizationRefusal::Inverted {
+                earlier: alone,
+                later: alone,
+            }),
+            looped.linearizes(&[alone])
+        );
     }
 
     #[test]
