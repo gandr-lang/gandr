@@ -39,15 +39,21 @@ permissions:
 
 # pull_request only: cancelling a push-to-main run would cancel the promotion
 # of the caches PR branches read from, mid-merge.
+# Each push to main is a group of its own commit, so no landing's run waits
+# for the previous landing's or is replaced by the next one: every landing
+# promotes its state and gets its macOS verdict. Overlapping push runs may
+# save their states in either order; each state's deletion spares every
+# entry newer than the one its run saved (`ci:delete-superseded`), so the
+# newest entry always stands.
 # merge_group is naturally exempt either way: github.ref there is the
 # queue's own per-entry temporary ref (refs/heads/gh-readonly-queue/...), so
 # each queue entry already gets a distinct concurrency group and can never
 # collide with, or be cancelled by, another one.
-# The event name keeps a scheduled or dispatched run of main out of the push
-# runs' group: a group holds one pending run, so either would otherwise
-# replace a pending push (and its promotion) or be replaced by the next one.
+# The event name gives a scheduled and a dispatched run of main, which share
+# main's ref, a group each: a group holds one pending run, so one kind would
+# otherwise replace the other's.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -274,8 +280,8 @@ jobs:
         with:
           path: build-state-${{ env.CI_BUILD_STATE }}.tar.zst
           key: ${{ steps.test-state-restore.outputs.cache-primary-key }}
-      # One state per lane: each landing's supersedes the previous one, which
-      # would otherwise sit in the cache until it evicted the tool caches.
+      # One state per lane: each landing's supersedes the older ones, which
+      # would otherwise sit in the cache until they evicted the tool caches.
       - &delete-superseded-state
         name: delete superseded test state
         if: ${{ env.ACT != 'true' && github.event_name == 'push' && steps.save-test-state.outcome == 'success' }}
@@ -284,7 +290,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CI_STATE_KEY: ${{ steps.test-state-restore.outputs.cache-primary-key }}
           CI_STATE_PREFIX: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-
-        run: gh cache list --repo "$GITHUB_REPOSITORY" --ref refs/heads/main --key "$CI_STATE_PREFIX" --limit 100 --json id,key --jq '.[] | select(.key != env.CI_STATE_KEY) | .id' | xargs -r -n1 gh cache delete --repo "$GITHUB_REPOSITORY"
+        run: mise run ci:delete-superseded "$CI_STATE_PREFIX" "$CI_STATE_KEY"
       # Hand on only the units this run's builds used: Cargo never deletes
       # the ones a manifest change superseded (ci:prune-enforcing). A failed
       # prune hands on the whole directory, which is correct, only larger. A
@@ -894,7 +900,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CI_STATE_KEY: ${{ steps.clippy-state-restore.outputs.cache-primary-key }}
-        run: gh cache list --repo "$GITHUB_REPOSITORY" --ref refs/heads/main --key clippy-state-v --limit 100 --json id,key --jq '.[] | select(.key != env.CI_STATE_KEY) | .id' | xargs -r -n1 gh cache delete --repo "$GITHUB_REPOSITORY"
+        run: mise run ci:delete-superseded clippy-state-v "$CI_STATE_KEY"
       - *lane-timing
   # The external plugin checks all local targets once per landing, beside the
   # build it would otherwise repeat on every pull request; the obligations lane
@@ -1415,6 +1421,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CI_STATE_KEY: ${{ steps.policy-state-restore.outputs.cache-primary-key }}
-        run: gh cache list --repo "$GITHUB_REPOSITORY" --ref refs/heads/main --key policy-state-v --limit 100 --json id,key --jq '.[] | select(.key != env.CI_STATE_KEY) | .id' | xargs -r -n1 gh cache delete --repo "$GITHUB_REPOSITORY"
+        run: mise run ci:delete-superseded policy-state-v "$CI_STATE_KEY"
       - *save-gate-binary
       - *save-dylint-drivers

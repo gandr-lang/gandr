@@ -357,6 +357,29 @@ run = [
   "target/debug/build-state prune --profile-dir target/enforcing/debug target/enforcing/debug/units-clippy.jsonl",
 ]
 
+# Main keeps one cache entry per state: the run that saved one deletes the
+# entries under the state's key prefix it supersedes. Push runs of main
+# overlap, so an older landing's run can save after a newer one's; a run
+# deletes only the entries created before its own, and whichever run deletes
+# last, the newest entry stands. Creation times compare to the second, and a
+# tie deletes neither. A run whose own entry is not listed deletes nothing.
+# GITHUB_REPOSITORY names the repository.
+["ci:delete-superseded"]
+description = "Delete main's cache entries under a key prefix created before this run's own"
+usage = '''
+arg "<prefix>" help="the key prefix the state's entries share"
+arg "<key>" help="the key this run saved"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+gh cache list --repo "${GITHUB_REPOSITORY:?}" --ref refs/heads/main --key "${usage_prefix:?}" --limit 100 --json id,key,createdAt \
+  --jq 'def created: .createdAt | sub("\\.[0-9]+"; "") | fromdate;
+    (map(select(.key == env.usage_key)) | first | if . == null then null else created end) as $own
+    | .[] | select($own != null and created < $own) | .id' |
+  xargs -r -n1 gh cache delete --repo "$GITHUB_REPOSITORY"
+{% endraw %}'''
+
 # One hotpath series, run under the profiler and uploaded twice: as
 # `<series>`, judged on allocation in every crate (hotpath/<series>-policy.toml),
 # and as `<series>-timing`, judged on wall-clock time in the crates the change
