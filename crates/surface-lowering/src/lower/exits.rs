@@ -1153,9 +1153,9 @@ pub(super) fn commute(
                 else {
                     ends
                 };
-                let held = sink.arena.computation(node).cloned();
+                let held = sink.arena.computation(node);
                 match held {
-                    Some(Computation::Bind(bound, rest)) => {
+                    Some(&Computation::Bind(bound, rest)) => {
                         if let Some(&origin) = sink.distributed.get(&node) {
                             let at = RestAt(pending.len());
                             pending.push(Pending {
@@ -1176,7 +1176,7 @@ pub(super) fn commute(
                             steps.push(Step::Open(rest, ends, depth.deeper()));
                         }
                     },
-                    Some(Computation::Fixpoint { body: under, .. })
+                    Some(&Computation::Fixpoint { body: under, .. })
                         if sink.loops.contains(&node) =>
                     {
                         steps.push(Step::Close(node));
@@ -1186,46 +1186,46 @@ pub(super) fn commute(
                         };
                         steps.push(Step::Open(under, iterated, depth.deeper()));
                     },
-                    Some(Computation::Case { ref branches, .. }) => {
+                    Some(&Computation::Case { ref branches, .. }) => {
                         steps.push(Step::Close(node));
                         for &branch in branches.iter().rev() {
                             steps.push(Step::Open(branch, ends, depth.deeper()));
                         }
                     },
-                    Some(Computation::DataCase { ref branches, .. }) => {
+                    Some(&Computation::DataCase { ref branches, .. }) => {
                         steps.push(Step::Close(node));
                         for &branch in branches.iter().rev() {
                             steps.push(Step::Open(branch, ends, depth));
                         }
                     },
-                    Some(Computation::Split {
+                    Some(&Computation::Split {
                         arity, body: under, ..
                     }) => {
                         steps.push(Step::Close(node));
                         steps.push(Step::Open(under, ends, depth.deeper_by(arity)));
                     },
-                    Some(Computation::Lambda(under)) => {
+                    Some(&Computation::Lambda(under)) => {
                         steps.push(Step::Close(node));
                         steps.push(Step::Open(under, ends, depth.deeper()));
                     },
-                    Some(Computation::Session(SessionAction::Offer { ref arms, .. })) => {
+                    Some(&Computation::Session(SessionAction::Offer { ref arms, .. })) => {
                         steps.push(Step::Close(node));
                         for &arm in arms.values().rev() {
                             steps.push(Step::Open(arm, ends, depth));
                         }
                     },
-                    Some(Computation::Session(SessionAction::Fork { parent, .. })) => {
+                    Some(&Computation::Session(SessionAction::Fork { parent, .. })) => {
                         steps.push(Step::Close(node));
                         steps.push(Step::Open(parent, ends, depth));
                     },
-                    Some(Computation::Memory(MemoryForm::Hold { body: scope, .. })) => {
+                    Some(&Computation::Memory(MemoryForm::Hold { body: scope, .. })) => {
                         steps.push(Step::Close(node));
                         steps.push(Step::Open(scope, ends, depth));
                     },
                     // A `leta`'s body is its tail, one binder deeper; a
                     // migration's body is not, for what follows a migration
                     // runs back at the world it left.
-                    Some(Computation::World(WorldForm::Leta { body: scope, .. })) => {
+                    Some(&Computation::World(WorldForm::Leta { body: scope, .. })) => {
                         steps.push(Step::Close(node));
                         steps.push(Step::Open(scope, ends, depth.deeper()));
                     },

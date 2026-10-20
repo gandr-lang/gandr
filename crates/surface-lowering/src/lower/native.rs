@@ -6352,8 +6352,7 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 continue;
             };
-            let lowered = lowered.clone();
-            for (&(arity, at), &branch) in branches.iter().zip(&lowered) {
+            for (&(arity, at), &branch) in branches.iter().zip(lowered) {
                 let mut lambda = branch;
                 for field in 0 .. arity {
                     let level = TreeLevel(depth.0.saturating_add(field).saturating_add(1));
@@ -8099,7 +8098,7 @@ impl<'source> Lowerer<'_, 'source>
                 Shape::Root | Shape::Repair(_) | Shape::Layout => None,
             };
             read_pieces(self.pbg, self.tree, at, scratch)?;
-            let pieces = scratch.pieces.clone();
+            let pieces = &scratch.pieces;
             let operands = pieces.iter().filter_map(|piece| match *piece {
                 Piece::Operand(operand) => Some(operand),
                 Piece::Tile { .. } => None,
@@ -8128,7 +8127,7 @@ impl<'source> Lowerer<'_, 'source>
             };
             let mut children = Vec::new();
             let mut after_arrow = false;
-            for piece in &pieces {
+            for piece in pieces {
                 match *piece {
                     Piece::Tile { label, .. } => after_arrow = label == TileName::FAT_ARROW,
                     Piece::Operand(operand) => {
