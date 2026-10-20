@@ -170,17 +170,20 @@ impl ItemOrder
         Ok((Self { order }, handles))
     }
 
-    /// Splice the order from the revision `base` to the revision `edited`.
+    /// Splice the order from the revision `base` to the revision `edited`,
+    /// both laid after the item `after` holds, when it holds one.
     ///
     /// # Specification
     /// - requires: `base` holds this order's handles, one per reference of
-    ///   `base_references`, in order; each list's references are distinct.
+    ///   `base_references`, in order, each after `after`'s; each list's
+    ///   references are distinct.
     /// - ensures: on success one handle per reference of `edited`, in order,
-    ///   and the order holds exactly those handles in that order. The items
-    ///   that keep their base handle are a longest subsequence of `edited`
-    ///   whose references occur in `base` in the same order; every other item
-    ///   takes a fresh handle after its predecessor's, and every base handle
-    ///   not kept is removed.
+    ///   each after `after`'s, and the order holds exactly those handles in
+    ///   that order after `after`'s, every handle before it untouched. The
+    ///   items that keep their base handle are a longest subsequence of
+    ///   `edited` whose references occur in `base` in the same order; every
+    ///   other item takes a fresh handle after its predecessor's, or after
+    ///   `after`'s for the first, and every base handle not kept is removed.
     /// - provides: stable identity across insertions, deletions and moves
     ///   elsewhere: moving one item costs that item's handle only.
     /// - fails: when the structure cannot admit or remove an element; the order
@@ -217,12 +220,18 @@ impl ItemOrder
                 && handles.iter().zip(edited).all(|(&handle, reference)|
                     self.order.get(handle.0) == Some(reference))
                 && handles.windows(2).all(|pair| pair.first().zip(pair.last())
-                    .is_some_and(|(&left, &right)| self.order.cmp(left.0, right.0) == Some(Ordering::Less))),
+                    .is_some_and(|(&left, &right)| self.order.cmp(left.0, right.0) == Some(Ordering::Less)))
+                && match after {
+                    Maybe::Present(anchor) => handles.first().is_none_or(|&first|
+                        self.order.cmp(anchor.0, first.0) == Some(Ordering::Less)),
+                    Maybe::Absent(_) => true,
+                },
             Err(_) => true,
         },
     )]
     pub fn splice(
         &mut self,
+        after: Maybe<ItemHandle, handle::Absent>,
         base: &[ItemHandle],
         base_references: &[&Reference],
         edited: &[Reference],
@@ -265,7 +274,7 @@ impl ItemOrder
             }
         }
         let mut handles = Vec::with_capacity(edited.len());
-        let mut cursor: Maybe<Pos, handle::Absent> = Maybe::Absent(handle::Absent::Stale);
+        let mut cursor: Maybe<Pos, handle::Absent> = after.map(|anchor| anchor.0);
         for (reference, keep) in edited.iter().zip(kept) {
             let pos = match keep {
                 Maybe::Present(handle) => {

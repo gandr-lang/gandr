@@ -1237,6 +1237,7 @@ fn an_importer_lowers_its_closure_once_1033()
     use gandr_surface_lowering::OriginTable;
     use gandr_surface_lowering::Unit;
     use gandr_surface_session::ClosureSlot;
+    use gandr_surface_session::Led;
     use gandr_surface_session::Session;
     use gandr_surface_syntax::SourceText;
 
@@ -1313,9 +1314,17 @@ fn an_importer_lowers_its_closure_once_1033()
         .expect("the document parses")
         .after(closure.tree(), text)
         .expect("the document lays after its closure");
-        let (lowering, checking) =
-            lower_onto_closure(&judged, parsed, &laid.unit, &mut LoweringCount::default())
-                .expect("the document lowers");
+        // The session lowers a document after its closure onto the arena the
+        // incremental pass over the closure's items left; a fresh one here.
+        let led = Led::of(&judged).expect("the closure's items are ordered");
+        let (lowering, checking) = lower_onto_closure(
+            &judged,
+            led.arena(),
+            parsed,
+            &laid.unit,
+            &mut LoweringCount::default(),
+        )
+        .expect("the document lowers");
         let Lowered::Module { module, arena } = lowering.into_lowered()
         else {
             panic!("the revision is not refused whole");
@@ -1415,12 +1424,26 @@ fn an_importer_lowers_its_closure_once_1033()
     );
     assert_eq!(
         (cold_census.adopted, cold_census.judged),
-        (ItemCount::from(0_usize), ItemCount::from(3_usize)),
-        "and judges every item, the closure's two and the document's one"
+        (ItemCount::from(2_usize), ItemCount::from(1_usize)),
+        "and judges the document's item after the closure's, which are judged once per closure"
     );
     let cold_typings = resumed(&cold);
     assert_fresh(&first, &composed);
-    let (lowered, again, _again_census) = judged(&mut cold, &second, &again_slot);
+    let (lowered, again, again_census) = judged(&mut cold, &second, &again_slot);
+    assert_eq!(
+        (
+            again_census.recalled,
+            again_census.adopted,
+            again_census.judged
+        ),
+        (
+            ItemCount::from(2_usize),
+            ItemCount::from(3_usize),
+            ItemCount::from(1_usize)
+        ),
+        "#776: an edit to the document's own text recalls only the document's items, adopting \
+         the unchanged one and judging the new"
+    );
     assert_eq!(
         lowered,
         LoweringCount::from(1_usize),

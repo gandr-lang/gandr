@@ -2,6 +2,7 @@
 //! generated programs and edit chains, with the adoptions each named edit
 //! must make.
 
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -27,8 +28,11 @@ use gandr_core_incremental::TypeContent;
 use gandr_core_incremental::Typing;
 use gandr_core_incremental::check_program;
 use gandr_core_incremental::footprint_of;
+use gandr_core_incremental::lead;
 use gandr_core_incremental::resume;
+use gandr_core_incremental::resume_after;
 use gandr_core_incremental::resume_from;
+use gandr_core_incremental::submitted;
 use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
 use proptest::prelude::ProptestConfig;
@@ -47,6 +51,7 @@ use crate::common::def;
 use crate::common::gate;
 use crate::common::integer;
 use crate::common::lower;
+use crate::common::lower_after;
 use crate::common::read;
 use crate::common::step;
 use crate::common::text;
@@ -276,6 +281,95 @@ fn append_reuses_the_prefix_and_retypes_the_tail()
         [Adopted, Adopted, Judged],
         "the prefix is adopted and only the tail judged"
     );
+}
+
+/// #776: a revision laid after a leading program, resumed from the state
+/// `lead` left over that program, encodes and judges only its own items, and
+/// records what a whole pass over it records. An edit after the leading items
+/// resumes the same way, recalling what it can of the previous revision's own
+/// items and keeping every leading item's handle; a revision that departs from
+/// the leading items is resumed whole.
+#[test]
+fn a_revision_after_its_leading_items_judges_only_its_own_776()
+{
+    let closure = [
+        def(Name("a"), Body::Int(1)),
+        def(Name("b"), read(Name("a"))),
+    ];
+    let mut leading_program = lower(&closure);
+    let (_, leading) = lead(&mut leading_program, CheckBudget::DEFAULT).expect("the order builds");
+    assert_eq!(leading.count(), ItemCount::from(2_usize));
+    let leading = Arc::new(leading);
+    let revision = |own: &[Stmt]| -> Vec<Stmt> { closure.iter().chain(own).cloned().collect() };
+    let whole = |statements: &[Stmt]| {
+        let resumed = checked(statements);
+        let typings: Vec<Typing> = resumed.typings().cloned().collect();
+        assert_eq!(
+            typings,
+            batch(&lower(statements)),
+            "the whole pass is batch"
+        );
+        resumed
+    };
+
+    let first = revision(&[
+        def(Name("c"), read(Name("b"))),
+        def(Name("d"), Body::Int(4)),
+    ]);
+    let resumed = resume_after(
+        Maybe::Absent(submitted::Absent::Fresh),
+        &leading,
+        &mut lower_after(&leading_program, &first),
+    )
+    .expect("the order builds");
+    assert_eq!(
+        resumed.adoptions(),
+        [Adopted, Adopted, Judged, Judged],
+        "the leading items are the state's; the revision's own are judged"
+    );
+    assert_eq!(
+        resumed.checkpoints(),
+        whole(&first).checkpoints(),
+        "to the checkpoints a whole pass records"
+    );
+
+    let second = revision(&[
+        def(Name("c"), read(Name("b"))),
+        def(Name("d"), Body::Int(5)),
+    ]);
+    let leading_handles = resumed.handles().get(.. 2).expect("two leading").to_vec();
+    let again = resume_after(
+        Maybe::Present(resumed),
+        &leading,
+        &mut lower_after(&leading_program, &second),
+    )
+    .expect("the order builds");
+    assert_eq!(
+        again.adoptions(),
+        [Adopted, Adopted, Adopted, Judged],
+        "the unchanged own item is recalled and adopted; the edited one judged"
+    );
+    assert_eq!(
+        (again.census().recalled, again.census().judged),
+        (ItemCount::from(2_usize), ItemCount::from(1_usize)),
+        "only the revision's own items are encoded and recalled"
+    );
+    assert_eq!(
+        again.handles().get(.. 2),
+        Some(leading_handles.as_slice()),
+        "the leading items keep their handles"
+    );
+    assert_eq!(again.checkpoints(), whole(&second).checkpoints());
+
+    let departed = [def(Name("a"), Body::Int(1)), def(Name("c"), Body::Int(3))];
+    let resumed_whole = resume_after(Maybe::Present(again), &leading, &mut lower(&departed))
+        .expect("the order builds");
+    assert_eq!(
+        resumed_whole.census().recalled,
+        ItemCount::from(2_usize),
+        "a revision that departs from the leading items is resumed whole"
+    );
+    assert_eq!(resumed_whole.checkpoints(), whole(&departed).checkpoints());
 }
 
 #[test]

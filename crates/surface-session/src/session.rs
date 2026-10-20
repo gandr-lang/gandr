@@ -292,7 +292,6 @@ use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::CheckpointObserver;
 use gandr_core_incremental::CheckpointStore;
 use gandr_core_incremental::CheckpointStoreError;
-use gandr_core_incremental::Checkpoints;
 use gandr_core_incremental::IncrementalSession;
 use gandr_core_incremental::ItemCount;
 use gandr_core_incremental::ItemOrdinal;
@@ -374,6 +373,7 @@ use crate::item_source::program;
 use crate::lowerings;
 use crate::lowerings::Closure;
 use crate::lowerings::Held;
+use crate::lowerings::Led;
 
 quenchant_shape::reason_enum! {
     /// Why a submission carries no resume.
@@ -2146,11 +2146,15 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   ([`ParseResult::after`]), the closure's lowering is held in `slot` and
     ///   in the process's store, and the form census is the document's own;
     ///   when the closure's lowering reached its end, its declarations are
-    ///   judged once per process, the document is lowered after that
-    ///   judgement's arena ([`lower_onto_closure`]) and judged on a copy of its
-    ///   state ([`judge_member_after`]), and otherwise the module is the
-    ///   closure's lowering resumed over the tree ([`lower_resumed_unit`]),
-    ///   judged whole.
+    ///   judged, and the incremental pass led over their items
+    ///   ([`Closure::led`]), once per process and root; the document is lowered
+    ///   onto the arena that pass left, which extends the judgement's
+    ///   ([`lower_onto_closure`]), judged on a copy of the judgement's state
+    ///   ([`judge_member_after`]) and submitted after the pass's state
+    ///   ([`IncrementalSession::submit_after`]) — onto the judgement's own
+    ///   arena and submitted whole when the pass holds no state — and otherwise
+    ///   the module is the closure's lowering resumed over the tree
+    ///   ([`lower_resumed_unit`]), judged whole.
     /// - provides: an editor's judgement of a document that imports a sibling,
     ///   whose diagnostics are those `gandr check` gives the file.
     /// - fails: as [`judge`](Self::judge).
@@ -2227,7 +2231,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             },
             Held::Whole => None,
         });
-        let (lowering, checking, forms) = if let Some(closure) = closure {
+        let (lowering, checking, led, forms) = if let Some(closure) = closure {
             let document = SourceText::from(
                 <&str>::from(revision)
                     .get(usize::from(base) ..)
@@ -2241,13 +2245,28 @@ impl<Store, Blocks> Session<Store, Blocks>
                 .after(closure.lowering().tree(), revision)
                 .map_err(|fault| parse_fault(MeldError::Build(fault)))?;
             read(parsed.tree());
-            let (lowering, checking) = match closure.judged(self.root.corpus_root()) {
-                Some(judged) => lower_onto_closure(judged, parsed, unit, &mut self.lowerings),
+            let root = self.root.corpus_root();
+            let (lowering, checking, led) = match closure.judged(root) {
+                Some(judged) => {
+                    let led = closure.led(root);
+                    let onto = led.map_or_else(|| judged.arena(), Led::arena);
+                    lower_onto_closure(judged, onto, parsed, unit, &mut self.lowerings).map(
+                        |(lowering, checking)| {
+                            // The incremental pass starts after the closure's
+                            // items only over the arena it left them in.
+                            let led = match checking {
+                                Checking::After(_) => led,
+                                Checking::Whole => None,
+                            };
+                            (lowering, checking, led)
+                        },
+                    )
+                },
                 None => lower_resumed_unit(closure.lowering(), parsed, unit, &mut self.lowerings)
-                    .map(|lowering| (lowering, Checking::Whole)),
+                    .map(|lowering| (lowering, Checking::Whole, None)),
             }
             .map_err(SessionFault::Compose)?;
-            (lowering, checking, forms)
+            (lowering, checking, led, forms)
         }
         else {
             let (parsed, forms) = self
@@ -2257,7 +2276,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             read(parsed.tree());
             let lowering = lower_parsed_unit(&self.grammar, parsed, unit, &mut self.lowerings)
                 .map_err(SessionFault::Compose)?;
-            (lowering, Checking::Whole, forms)
+            (lowering, Checking::Whole, None, forms)
         };
         let mut obligations = lowering.obligations().to_vec();
         obligations.retain(|obligation| obligation.span.start() >= base);
@@ -2323,8 +2342,10 @@ impl<Store, Blocks> Session<Store, Blocks>
                 }));
             },
         };
-        let submitted = match closure.and_then(Closure::checkpoints) {
-            Some(seed) => self.incremental.submit_seeded(&mut items, seed, &mut Quiet),
+        let submitted = match led {
+            Some(led) => self
+                .incremental
+                .submit_after(&mut items, led.leading(), &mut Quiet),
             None => self.incremental.submit(&mut items, &mut Quiet),
         };
         let (census, persistence) = match submitted {
@@ -2338,19 +2359,6 @@ impl<Store, Blocks> Session<Store, Blocks>
                 Maybe::Absent(_) => return Err(SessionFault::Store(error)),
             },
         };
-        if let (Some(closure), Maybe::Present(resume)) = (closure, self.incremental.last()) {
-            let checkpoints = resume.checkpoints();
-            closure.keep_checkpoints(|| {
-                Checkpoints::new(
-                    checkpoints.budget(),
-                    checkpoints
-                        .items()
-                        .get(.. boundary)
-                        .unwrap_or_default()
-                        .to_vec(),
-                )
-            });
-        }
         let edits = diff(&self.snapshot, &snapshot);
         self.imports = imports;
         self.snapshot = snapshot;

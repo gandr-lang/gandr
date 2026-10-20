@@ -1544,6 +1544,19 @@ impl JudgedClosure
         self.0.borrow_owner()
     }
 
+    /// The arena the closure's declarations were judged over: what a document
+    /// laid after the closure is lowered onto, or an extension of it
+    /// ([`lower_onto_closure`]).
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn arena(&self) -> &CoreArena
+    {
+        &self.judgement().arena
+    }
+
     /// What judging the closure's declarations made.
     ///
     /// # Specification
@@ -1692,16 +1705,18 @@ pub enum Checking<'closure>
 }
 
 /// [`lower_resumed_unit`] over `parsed` after `judged`'s closure, minting the
-/// document's nodes after `judged`'s arena, so that the document is judged on
-/// a copy of `judged`'s state.
+/// document's nodes after `onto`'s, so that the document is judged on a copy
+/// of `judged`'s state.
 ///
 /// # Specification
-/// - requires: as [`lower_resumed_unit`] over [`JudgedClosure::lowering`].
+/// - requires: as [`lower_resumed_unit`] over [`JudgedClosure::lowering`];
+///   `onto` is `judged`'s arena ([`JudgedClosure::arena`]) or a copy that more
+///   nodes were minted into after.
 /// - ensures: the module [`ClosureLowering::resume_onto`] lowers onto a copy of
-///   `judged`'s arena, judged [`Checking::After`] it; or, for a tree the
-///   closure's lowering does not continue over, [`lower_resumed_unit`]'s
-///   answer, judged [`Checking::Whole`]. `lowerings` advances by the sources
-///   after the closure's.
+///   `onto`, judged [`Checking::After`] `judged`; or, for a tree the closure's
+///   lowering does not continue over, [`lower_resumed_unit`]'s answer, judged
+///   [`Checking::Whole`]. `lowerings` advances by the sources after the
+///   closure's.
 /// - provides: a document's lowering whose judgement continues its closure's.
 /// - fails: as [`lower_parsed_unit`].
 /// - panics: none.
@@ -1722,6 +1737,7 @@ pub enum Checking<'closure>
 )]
 pub fn lower_onto_closure<'held>(
     judged: &'held JudgedClosure,
+    onto: &CoreArena,
     parsed: ParseResult<'held>,
     unit: &Unit,
     lowerings: &mut LoweringCount,
@@ -1731,7 +1747,7 @@ pub fn lower_onto_closure<'held>(
     let obligations = parsed.obligations().to_vec();
     let tree = parsed.into_tree();
     let judgement = judged.judgement();
-    let mut arena = judgement.arena.clone();
+    let mut arena = onto.clone();
     let (ref carried, ref binds) = judgement.elaborated;
     let (lowered, checking) = match lowering::resume_onto(
         closure,
@@ -3350,7 +3366,8 @@ mod tests
                 .after(closure.tree(), text)
                 .expect("the document lays after its closure");
             let (lowering, checking) =
-                lower_onto_closure(judged, parsed, unit, lowerings).expect("the document lowers");
+                lower_onto_closure(judged, judged.arena(), parsed, unit, lowerings)
+                    .expect("the document lowers");
             assert!(
                 matches!(checking, Checking::After(_)),
                 "the document is judged after the closure"

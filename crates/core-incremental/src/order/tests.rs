@@ -67,9 +67,76 @@ fn spliced(
     let (mut order, before) = ItemOrder::seeded(&base).expect("the order builds");
     let base_references: Vec<&Reference> = base.iter().collect();
     let (after, census) = order
-        .splice(&before, &base_references, &references(edited))
+        .splice(
+            Maybe::Absent(handle::Absent::Stale),
+            &before,
+            &base_references,
+            &references(edited),
+        )
         .expect("the splice succeeds");
     (order, before, after, census)
+}
+
+/// #776: a splice after an anchor leaves the items before the anchor, and the
+/// anchor's own, as they were — a revision laid after a closure splices its
+/// own items alone — and places its first fresh item after the anchor.
+#[test]
+fn a_splice_after_an_anchor_leaves_the_handles_before_it_776()
+{
+    let base = references(&[Name("a"), Name("b"), Name("c"), Name("d")]);
+    let (mut order, seeded) = ItemOrder::seeded(&base).expect("the order builds");
+    let (&[first, anchor], &[third, fourth]) = (
+        seeded.get(.. 2).expect("two leading"),
+        seeded.get(2 ..).expect("two after"),
+    )
+    else {
+        panic!("four handles: {seeded:?}");
+    };
+    let suffix: Vec<&Reference> = base.get(2 ..).expect("two after").iter().collect();
+    let (after, census) = order
+        .splice(
+            Maybe::Present(anchor),
+            &[third, fourth],
+            &suffix,
+            &references(&[Name("x"), Name("c")]),
+        )
+        .expect("the splice succeeds");
+    let [inserted, kept] = *after.as_slice()
+    else {
+        panic!("two handles after the anchor: {after:?}");
+    };
+    assert_eq!(kept, third, "c keeps its handle");
+    assert_eq!(
+        (census.kept, census.inserted, census.removed),
+        (
+            ItemCount::from(1_usize),
+            ItemCount::from(1_usize),
+            ItemCount::from(1_usize)
+        )
+    );
+    assert_eq!(
+        order.reference(fourth),
+        Maybe::Absent(handle::Absent::Stale)
+    );
+    for (leading, name) in [(first, "a"), (anchor, "b")] {
+        assert_eq!(
+            order.reference(leading),
+            Maybe::Present(&Reference::Item {
+                key: ItemKey::from(name),
+                occurrence: Occurrence::from(0_usize),
+            }),
+            "{name} keeps its handle"
+        );
+    }
+    assert_eq!(order.compare(first, anchor), Maybe::Present(Ordering::Less));
+    assert_eq!(
+        order.compare(anchor, inserted),
+        Maybe::Present(Ordering::Less)
+    );
+    assert_eq!(
+        order.compare(inserted, kept),
+        Maybe::Present(Ordering::Less)
+    );
 }
 
 #[test]
