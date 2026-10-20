@@ -485,20 +485,6 @@ fn misses(
 /// one line and a body few.
 const BODY_PAGE: u32 = 1_000;
 
-/// The declarations kept out of the body parity by name, each by its source,
-/// its name and the issue that keeps it out; every other declaration whose
-/// printing reads back is held to it. An entry whose declaration meets the
-/// parity is itself a miss, so the list shrinks as each issue closes.
-///
-/// The sugared form of the universe sources keeps the thunk type their bodies
-/// return explicit (#838).
-const EXCLUDED_BODIES: [(&str, &str, &str); 4] = [
-    ("universe/closed.gandr", "endo", "#838"),
-    ("universe/closed.gandr", "endoBare", "#838"),
-    ("universe/closed.gandr", "onType", "#838"),
-    ("universe/vacuous-pi.gandr", "pick", "#838"),
-];
-
 /// Why the body parity cannot hold a declaration, by the issue whose symptom
 /// its printing shows: a reason read off the printing, never a name list.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -1111,15 +1097,6 @@ fn bodies(
     if held.is_empty() {
         return found;
     }
-    let excluded = |declaration: &str| {
-        EXCLUDED_BODIES
-            .iter()
-            .any(|&(source, kept, _)| name.ends_with(source) && kept == declaration)
-    };
-    let mut met: BTreeMap<&str, bool> = held
-        .iter()
-        .map(|declaration| (declaration.name.as_str(), true))
-        .collect();
     let forms = [
         (
             Form::Explicit,
@@ -1192,10 +1169,6 @@ fn bodies(
             if (got_type.clone(), got_body.clone()) == (want_type.clone(), want_body.clone()) {
                 continue;
             }
-            let _previous = met.insert(declaration.name.as_str(), false);
-            if excluded(&declaration.name) {
-                continue;
-            }
             let shown = |tokens: Option<Vec<String>>| {
                 tokens.map_or_else(|| String::from("(none)"), |tokens| tokens.join(" "))
             };
@@ -1219,13 +1192,6 @@ fn bodies(
         }
     }
     found.compared = held.len();
-    for &(source, kept, issue) in &EXCLUDED_BODIES {
-        if name.ends_with(source) && met.get(kept) == Some(&true) {
-            found.misses.push(format!(
-                "{name}: `{kept}` meets the parity; drop its exclusion under {issue}"
-            ));
-        }
-    }
     found
 }
 

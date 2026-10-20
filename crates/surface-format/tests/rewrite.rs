@@ -254,13 +254,12 @@ fn a_composite_of_types_sugars_back_803()
     .assert_eq(formatted.text().as_ref());
 }
 
-/// The value-function alias is written only in a type, as the printer
-/// writes it: a thunk type standing as a call's argument, a transport's
-/// family, keeps its thunk sugared with no rewrite tried and none
-/// withdrawn, and one that is a static abstraction's body, a type, takes
-/// the alias, nullary among them.
+/// The value-function alias is written where the printer writes it: a thunk
+/// type standing as a call's argument, a transport's family, keeps its
+/// thunk sugared with no rewrite tried and none withdrawn, and one that is a
+/// static abstraction's body, a type, takes the alias, nullary among them.
 #[test]
-fn the_value_function_alias_is_written_only_in_a_type()
+fn the_value_function_alias_is_written_where_the_printer_writes_it()
 {
     let grammar = grammar();
     let argument = "\
@@ -309,6 +308,49 @@ def suspended = \\X. () => X ;
             "{form}"
         );
     }
+}
+
+/// #838: a thunk type a body returns takes the value-function alias over
+/// one bare domain, as the printer writes it, while one standing as a call's
+/// argument, a transport's family, keeps its thunk.
+#[test]
+fn a_thunk_type_a_body_returns_takes_the_alias_838()
+{
+    let grammar = grammar();
+    let explicit = "\
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+def onType(t: Type) -> -F Type {
+  return (+U (t -> -F t))
+}
+
+def flat(a: Nat, b: Nat, q: Path(Nat, a, b), v: Nat) -> -F Nat {
+  become transport(+U (Nat -> -F Nat), q, v, v, v)
+}
+";
+    expect![[r#"
+        data Nat : Type {
+          Zero : Nat;
+          Succ : (n : Nat) --> Nat;
+        }
+
+        def onType(t: Type) -> -F Type {
+          return (t => t)
+        }
+
+        def flat(a: Nat, b: Nat, q: Path(Nat, a, b), v: Nat) -> -F Nat {
+          become transport(+U (Nat -> -F Nat), q, v, v, v)
+        }
+    "#]]
+    .assert_eq(&spelled(
+        &grammar,
+        explicit,
+        Form::Sugared,
+        Selection::Every,
+    ));
 }
 
 /// An explicit source with comments inside its declarations, sugared: each

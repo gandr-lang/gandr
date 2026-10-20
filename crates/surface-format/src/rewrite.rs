@@ -552,14 +552,17 @@ enum Changed
 enum Context
 {
     /// A type: after a `:`, an operand of a type former, or a static
-    /// abstraction's body. `A => B` reads as the value-function alias only
+    /// abstraction's body. Every spelling of the value-function alias reads
     /// here.
     Type,
     /// After a rule's `<=>`: a parenthesised list there is the rule's
     /// outputs, never a tuple.
     Outputs,
+    /// A call's argument: a thunk type there is written as its thunk, as
+    /// the printer writes it.
+    Argument,
     /// Anywhere else: a value or a computation, where `() => A` reads as an
-    /// expression.
+    /// expression and `A => B` as the value-function alias.
     Value,
 }
 
@@ -774,6 +777,7 @@ impl<'source> Respelling<'_, 'source>
             (Some(rule), _) if rule.ends_with("_type") || rule == "static_abstraction" => {
                 Context::Type
             },
+            (Some("call_expression"), _) => Context::Argument,
             _ => Context::Value,
         }
     }
@@ -1346,9 +1350,10 @@ impl<'source> Respelling<'_, 'source>
     /// pure returner. A domain that binds a name keeps it, `(x : A, …) =>
     /// C`, where a later domain or the result reads it, and is written bare
     /// otherwise, as the printer writes the dependent alias. Outside a type
-    /// it is nothing: a thunk type standing as a value, a call's argument,
-    /// the printer writes as its thunk, and `() => A` reads as an expression
-    /// there; a static abstraction's body, a transport's motive, is a type.
+    /// only the alias over one bare domain, `A => B`, is written, as the
+    /// printer writes it there, and none as a call's argument: the printer
+    /// writes a thunk type standing there, a transport's family, as its
+    /// thunk, and `() => A` reads as an expression outside a type.
     ///
     /// # Specification
     /// trivial.
@@ -1432,12 +1437,14 @@ impl<'source> Respelling<'_, 'source>
             }
         }
         match domains.as_slice() {
+            &[Domain { name: None, ty }] if context != Context::Argument => {
+                out.place(&self.operand(ty), Band::Lazy);
+            },
             _ if context != Context::Type => return None,
             &[] => {
                 out.token(OPEN_PAREN);
                 out.token(CLOSE_PAREN);
             },
-            &[Domain { name: None, ty }] => out.place(&self.operand(ty), Band::Lazy),
             many => {
                 out.token(OPEN_PAREN);
                 for (index, domain) in many.iter().enumerate() {
