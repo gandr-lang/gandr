@@ -404,6 +404,24 @@ impl InitializeParams
                 .unwrap_or(false),
         )
     }
+
+    /// Whether this client shows the progress of work the server starts: when
+    /// it declares `window.workDoneProgress`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn shows_progress(&self) -> ShowsProgress
+    {
+        ShowsProgress(
+            self.capabilities
+                .as_ref()
+                .and_then(|capabilities| capabilities.window)
+                .and_then(|window| window.work_done_progress)
+                .unwrap_or(false),
+        )
+    }
 }
 
 /// Whether a client takes a definition as links from the name asked about.
@@ -421,6 +439,11 @@ pub struct LabelOffsets(pub bool);
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct WatchesFiles(pub bool);
 
+/// Whether a client shows the progress of work the server starts.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ShowsProgress(pub bool);
+
 /// The client capabilities the server reads.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -435,6 +458,21 @@ pub struct ClientCapabilities
     /// `workspace`.
     #[serde(default)]
     pub workspace: Option<WorkspaceCapabilities>,
+    /// `window`.
+    #[serde(default)]
+    pub window: Option<WindowCapabilities>,
+}
+
+/// The window client capabilities the server reads.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct WindowCapabilities
+{
+    /// `window.workDoneProgress`: whether it shows the progress of work the
+    /// server starts.
+    #[serde(default)]
+    pub work_done_progress: Option<bool>,
 }
 
 /// The workspace client capabilities the server reads.
@@ -550,6 +588,52 @@ pub struct FileEvent
 {
     /// The file's URI.
     pub uri: DocumentUri,
+}
+
+/// The token one piece of work's progress is reported under.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct ProgressToken(pub String);
+
+/// The parameters of `window/workDoneProgress/create`: the token the client
+/// is asked to show progress under.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct CreateProgressParams
+{
+    /// The token.
+    pub token: ProgressToken,
+}
+
+/// The parameters of `$/progress`: where the work under a token is.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ProgressParams
+{
+    /// The token.
+    pub token: ProgressToken,
+    /// Where the work is.
+    pub value: WorkDone,
+}
+
+/// Where a piece of work is.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum WorkDone
+{
+    /// It started.
+    Begin
+    {
+        /// What the work is.
+        title: &'static str,
+        /// Whether the client may cancel it: never, as the work runs to its end
+        /// before the next message is read.
+        cancellable: bool,
+        /// What it works on.
+        message: String,
+    },
+    /// It ended.
+    End {},
 }
 
 /// The text document client capabilities the server reads.
