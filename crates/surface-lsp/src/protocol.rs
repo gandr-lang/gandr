@@ -595,7 +595,30 @@ impl InitializeParams
                 .unwrap_or(false),
         )
     }
+
+    /// Whether this client applies an edit the server asks it to: when it
+    /// declares `workspace.applyEdit`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn applies_edits(&self) -> AppliesEdits
+    {
+        AppliesEdits(
+            self.capabilities
+                .as_ref()
+                .and_then(|capabilities| capabilities.workspace)
+                .and_then(|workspace| workspace.apply_edit)
+                .unwrap_or(false),
+        )
+    }
 }
+
+/// Whether a client applies an edit the server asks it to.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct AppliesEdits(pub bool);
 
 /// Whether a client answers a pull of its settings.
 #[repr(transparent)]
@@ -781,6 +804,10 @@ pub struct WorkspaceCapabilities
     /// `workspace.configuration`: whether it answers a pull of its settings.
     #[serde(default)]
     pub configuration: Option<bool>,
+    /// `workspace.applyEdit`: whether it applies an edit the server asks it
+    /// to.
+    #[serde(default)]
+    pub apply_edit: Option<bool>,
 }
 
 /// What the client offers of requesting a feature's answers again.
@@ -1562,6 +1589,8 @@ impl InitializeResult
             && ret.capabilities.document_range_formatting_provider.ranges_support
             && matches!(ret.capabilities.document_on_type_formatting_provider.first_trigger_character.as_bytes(), b";")
             && ret.capabilities.code_action_provider.resolve_provider
+            && matches!(ret.capabilities.execute_command_provider.commands,
+                [command] if matches!(command.as_bytes(), b"gandr.applyFill"))
             && ret.capabilities.workspace_symbol_provider.resolve_provider
             && ret.capabilities.document_highlight_provider.0
             && ret.capabilities.references_provider.0
@@ -1622,6 +1651,7 @@ impl InitializeResult
                 code_action_provider: ResolveOptions {
                     resolve_provider: true,
                 },
+                execute_command_provider: CommandOptions { commands: COMMANDS },
                 workspace_symbol_provider: ResolveOptions {
                     resolve_provider: true,
                 },
@@ -1701,6 +1731,9 @@ pub struct ServerCapabilities
     /// Code actions are answered, each with its edit, and resolved as it
     /// came.
     pub code_action_provider: ResolveOptions,
+    /// The commands the server runs when a client executes one: each a code
+    /// lens may name.
+    pub execute_command_provider: CommandOptions,
     /// Workspace symbols are answered: the names the open documents' import
     /// closures declare, each with its location, and resolved as it came.
     pub workspace_symbol_provider: ResolveOptions,
@@ -1751,6 +1784,58 @@ pub struct ResolveOptions
 {
     /// Whether an answer is resolved by a second request.
     pub resolve_provider: bool,
+}
+
+/// The commands the server runs, as advertised.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct CommandOptions
+{
+    /// Their names.
+    pub commands: [&'static str; 1],
+}
+
+/// The command applying the one checked fill a model proposed for a range:
+/// its arguments are the document's URI and the range. The server runs it,
+/// asking the client to apply the fill's edit.
+pub const APPLY_FILL: &str = "gandr.applyFill";
+
+/// Every command the server runs.
+pub const COMMANDS: [&str; 1] = [APPLY_FILL];
+
+/// The parameters of `workspace/executeCommand`: the command and what it is
+/// run on.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct ExecuteCommandParams
+{
+    /// The command's name.
+    pub command: String,
+    /// Its arguments, in order.
+    #[serde(default)]
+    pub arguments: Vec<Value>,
+}
+
+/// The parameters of `workspace/applyEdit`: the edit the client is asked to
+/// apply, and the label its undo stack shows.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ApplyEditParams
+{
+    /// What the edit does, as the client shows it.
+    pub label: &'static str,
+    /// The edit.
+    pub edit: WorkspaceEdit,
+}
+
+/// A client's answer to `workspace/applyEdit`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppliedEdit
+{
+    /// Whether the edit was applied.
+    pub applied: bool,
+    /// Why it was not, when the client says.
+    #[serde(default)]
+    pub failure_reason: Option<String>,
 }
 
 /// An item a second request resolves as it came: what the first answered
@@ -2467,15 +2552,19 @@ pub struct TextEdit
     pub new_text: String,
 }
 
-/// A command a lens or an action names: its title, and the client command it
-/// runs, empty for one that runs nothing.
+/// A command a lens or an action names: its title, the command it runs,
+/// empty for one that runs nothing, and the command's arguments.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Command
 {
     /// The text shown.
     pub title: String,
-    /// The client command run when it is chosen.
-    pub command: &'static str,
+    /// The command run when it is chosen.
+    #[serde(rename = "command")]
+    pub name: &'static str,
+    /// What it is run on, in order; none is written when there is none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub arguments: Vec<Value>,
 }
 
 /// A code lens: a command shown above a range.
