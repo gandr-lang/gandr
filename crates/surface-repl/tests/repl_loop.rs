@@ -271,13 +271,12 @@ where
         .into_step(Path::new(""));
     entries(&step, Verb::Check(Goals::Reported))
         .filter_map(|diagnostic| match diagnostic.severity {
-            Severity::Error | Severity::Note | Severity::Warning => Some((
-                OutKind::Diag,
-                render(&diagnostic, style, Verbosity::User)
-                    .to_string()
-                    .trim_end()
-                    .to_owned(),
-            )),
+            Severity::Error | Severity::Note | Severity::Warning => {
+                let mut text = render(&diagnostic, style, Verbosity::User).to_string();
+                let kept = text.trim_end().len();
+                text.truncate(kept);
+                Some((OutKind::Diag, text))
+            },
             Severity::Goal | Severity::Ledger => None,
         })
         .collect()
