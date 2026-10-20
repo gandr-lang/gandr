@@ -116,6 +116,7 @@
 //! | ------- | ------- | ----- |
 //! | lifecycle | `initialize`, `initialized`, `shutdown`, `exit` | served |
 //! | cancellation | `$/cancelRequest` | served: a request is answered `RequestCancelled` when its cancellation was read before it was handled, and `ContentModified` when a change of the document it reads was, without being run |
+//! | progress | `window/workDoneProgress/create`, `$/progress` | served: to a client that declares `window.workDoneProgress`, an open begins `Checking` on the document's file name and a watched-files change that rechecks open copies begins `Rechecking` on how many, under a token of its own, ended once the admissions ran; none is cancellable, so `window/workDoneProgress/cancel` is never needed |
 //! | document synchronisation | `textDocument/didOpen`, `didChange` (incremental), `didClose` | served |
 //! | save notifications | `textDocument/willSave`, `willSaveWaitUntil`, `didSave` | declined: every change is judged as it arrives, so a save changes nothing the server holds |
 //! | notebook synchronisation | `notebookDocument/*` | declined: gandr has no notebook format |
@@ -151,7 +152,7 @@
 //! | workspace folders, file operations | `workspace/didChangeWorkspaceFolders`, `willCreateFiles` and the other file operations | blocked: a workspace of more than the open documents |
 //! | configuration | `workspace/didChangeConfiguration` | served: the `gandr` section's `diagnostics.verbosity`, as the `recheck` module states, `diagnostics.quiet`, as the `quiet` module states, `presentation.form`, which every later hover reads, and `presentation.spelling`, which every later hover reads and which republishes the diagnostics |
 //! | pulled configuration | `workspace/configuration` | declined: the settings are pushed; reverses for a client that only answers pulls |
-//! | window messages and progress | `window/showMessage`, `logMessage`, `workDoneProgress/*` | declined: the timing line goes to the server's log; reverses for a client that reads only the protocol stream |
+//! | window messages | `window/showMessage`, `logMessage` | declined: the timing line goes to the server's log; reverses for a client that reads only the protocol stream |
 //! | gandr's extensions | `gandr/goals`, `gandr/syntaxTree`, `gandr/serverStatus`, the render-bus attach through the language server's stream | blocked: each as the assessment in § Extensions beyond the specification names; the bus itself is served on the hub's socket (the `bus` module) |
 //!
 //! # What editors add beyond the protocol

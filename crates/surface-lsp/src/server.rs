@@ -105,6 +105,7 @@ use crate::protocol::DidOpenParams;
 use crate::protocol::DocumentParams;
 use crate::protocol::DocumentUri;
 use crate::protocol::DocumentVersion;
+use crate::protocol::FileEvent;
 use crate::protocol::Hover;
 use crate::protocol::InitializeParams;
 use crate::protocol::InitializeResult;
@@ -115,6 +116,7 @@ use crate::protocol::Linked;
 use crate::protocol::Location;
 use crate::protocol::MarkupContent;
 use crate::protocol::PositionParams;
+use crate::protocol::ProgressToken;
 use crate::protocol::PublishParams;
 use crate::protocol::RangeParams;
 use crate::protocol::ReferenceContext;
@@ -123,6 +125,7 @@ use crate::protocol::RegistrationParams;
 use crate::protocol::SelectionRangeParams;
 use crate::protocol::SemanticTokens;
 use crate::protocol::Settings;
+use crate::protocol::ShowsProgress;
 use crate::protocol::StringValue;
 use crate::protocol::SymbolInformation;
 use crate::protocol::WatchedFilesParams;
@@ -152,6 +155,8 @@ use crate::rpc::RequestId;
 use crate::rpc::Withdrawn;
 use crate::rpc::classify;
 use crate::rpc::failure;
+use crate::rpc::progress_begun;
+use crate::rpc::progress_ended;
 use crate::rpc::publish;
 use crate::rpc::register;
 use crate::rpc::success;
@@ -693,6 +698,17 @@ impl Outcome
     }
 }
 
+/// The progress reported around the work one message starts: the messages
+/// written before it is handled, and those written once its admissions ran.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Reported
+{
+    /// Written before the message is handled.
+    pub begin: Vec<Outgoing>,
+    /// Written once its admissions ran.
+    pub end: Vec<Outgoing>,
+}
+
 /// One connection among those a workspace serves.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1053,6 +1069,8 @@ impl Workspace
             linked: Linked(true),
             offsets: LabelOffsets(true),
             watching: WatchesFiles(false),
+            progress: ShowsProgress(false),
+            reported: 0_u64,
         };
         let answer = match classify(request) {
             Err(malformed) => malformed.response(),
@@ -1176,7 +1194,8 @@ impl Workspace
 /// each report its diagnostics carry, how long a diagnostic of the form under
 /// the caret waits, how its hovers spell types and are written, whether its
 /// client takes a definition as links, whether it takes a signature's
-/// parameters as their places in the label, and whether it watches files.
+/// parameters as their places in the label, whether it watches files, and
+/// whether it shows progress, with how many pieces of work it was shown.
 pub struct Server
 {
     /// Where the connection stands in the lifecycle.
@@ -1202,6 +1221,12 @@ pub struct Server
     /// Whether its client watches files for it once asked, read at
     /// `initialize`.
     watching: WatchesFiles,
+    /// Whether its client shows the progress of work the server starts, read
+    /// at `initialize`.
+    progress: ShowsProgress,
+    /// How many pieces of work its progress was reported for; the next one's
+    /// token is numbered after them.
+    reported: u64,
 }
 
 /// The style a connection hovers in until `initialize` says otherwise: the
@@ -1244,6 +1269,8 @@ impl Server
             linked: Linked(false),
             offsets: LabelOffsets(false),
             watching: WatchesFiles(false),
+            progress: ShowsProgress(false),
+            reported: 0_u64,
         }
     }
 
@@ -1524,6 +1551,98 @@ impl Server
         corrections
     }
 
+    /// The progress of the work `message` starts: the messages written before
+    /// it is handled, and those written once its admissions ran.
+    ///
+    /// # Specification
+    /// - requires: `message` is the next message [`Server::answer`] handles.
+    /// - ensures: for a running connection whose client shows progress, a
+    ///   `textDocument/didOpen` begins one piece of work titled `Checking` on
+    ///   the document's file name, and a `workspace/didChangeWatchedFiles`
+    ///   naming a file the closure of a copy this connection holds named at its
+    ///   last judgement begins one titled `Rechecking` on how many copies it
+    ///   rechecks. A piece of work begins with a create request and a begin
+    ///   report under a token no earlier piece used, and ends with one end
+    ///   report under the same token. Every other message reports nothing and
+    ///   uses no token.
+    /// - provides: what a client shows while a closure is checked and while the
+    ///   watched files' dependants are rechecked.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an open and a watched-files change are reported to a
+    ///   client that shows progress and to no other, each under a token of its
+    ///   own; a change naming no closure, an edit and a request report nothing.
+    /// - witness: `server::tests::progress_is_reported_around_the_work_a_message_starts`
+    #[spec(
+        captures: before = self.reported,
+        ensures: |ret| if ret.begin.is_empty() {
+            ret.end.is_empty() && self.reported == before
+        } else {
+            ret.begin.len() == 2 && ret.end.len() == 1 && self.reported == before.saturating_add(1)
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn reported(
+        &mut self,
+        workspace: &Workspace,
+        message: &Classified,
+    ) -> Reported
+    {
+        let Ok(Incoming::Notification {
+            ref method,
+            ref params,
+        }) = *message
+        else {
+            return Reported::default();
+        };
+        if self.phase != Phase::Running || !self.progress.0 {
+            return Reported::default();
+        }
+        let (title, about) = match method.as_ref() {
+            "textDocument/didOpen" => {
+                let Some(uri) = params.pointer("/textDocument/uri").and_then(Value::as_str)
+                else {
+                    return Reported::default();
+                };
+                let path = DocumentUri::from(uri).path();
+                let name = path.file_name().map_or_else(
+                    || uri.to_owned(),
+                    |name| name.to_string_lossy().into_owned(),
+                );
+                ("Checking", name)
+            },
+            "workspace/didChangeWatchedFiles" => {
+                let Ok(WatchedFilesParams { changes }) = WatchedFilesParams::deserialize(params)
+                else {
+                    return Reported::default();
+                };
+                let changed = changed_paths(&changes);
+                let rechecked = workspace
+                    .documents
+                    .values()
+                    .filter(|held| match held.own(self.peer) {
+                        Maybe::Present(document) => names_any(&document.named, &changed),
+                        Maybe::Absent(_) => false,
+                    })
+                    .count();
+                match rechecked {
+                    0 => return Reported::default(),
+                    1 => ("Rechecking", String::from("1 open document")),
+                    many => ("Rechecking", format!("{many} open documents")),
+                }
+            },
+            _ => return Reported::default(),
+        };
+        self.reported = self.reported.saturating_add(1);
+        let token = ProgressToken(format!("gandr/{}/{}", self.peer.0, self.reported));
+        Reported {
+            begin: Vec::from(progress_begun(&token, title, about)),
+            end: Vec::from([progress_ended(token)]),
+        }
+    }
+
     /// The response to the request `id` calling `method` with `params`.
     ///
     /// # Specification
@@ -1558,7 +1677,8 @@ impl Server
     /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
     #[spec(
         captures: [phase = self.phase, initial = initial_settings(&params), markup = initial_markup(&params),
-            linked = initial_links(&params), offsets = initial_offsets(&params), watching = initial_watching(&params)],
+            linked = initial_links(&params), offsets = initial_offsets(&params), watching = initial_watching(&params),
+            progress = initial_progress(&params)],
         ensures: |ret| match (phase, method.as_ref()) {
             (Phase::Waiting, "initialize") => self.phase == Phase::Running
                 && self.verbosity == initial.verbosity().unwrap_or_default()
@@ -1571,6 +1691,7 @@ impl Server
                 && self.linked == linked
                 && self.offsets == offsets
                 && self.watching == watching
+                && self.progress == progress
                 && matches!(ret, Outgoing::Success { result: Answer::Initialize(_), .. }),
             (Phase::Waiting, _) => self.phase == phase && matches!(ret,
                 Outgoing::Failure { ref error, .. } if error.code == ErrorCode::SERVER_NOT_INITIALIZED),
@@ -1582,74 +1703,74 @@ impl Server
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Tokens(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
             (Phase::Running, "textDocument/completion") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Completions(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
             (Phase::Running, "textDocument/signatureHelp") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Signatures(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
             (Phase::Running, "textDocument/inlineCompletion") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Inline(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
             (Phase::Running, "workspace/symbol") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Found(ref found), .. } => found.len() <= FOUND_HELD,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
             (Phase::Running, "textDocument/references") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Locations(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
             (Phase::Running, "textDocument/documentHighlight") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Highlights(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
             (Phase::Running, "textDocument/documentSymbol" | "textDocument/foldingRange" | "textDocument/selectionRange") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
             (Phase::Running, "textDocument/hover") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Hover(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
             (Phase::Running, "textDocument/definition" | "textDocument/typeDefinition") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Links(_) | Answer::Locations(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
             (Phase::Running, "textDocument/codeLens" | "textDocument/codeAction") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Lenses(_) | Answer::Actions(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
             (Phase::Running, "textDocument/formatting" | "textDocument/rangeFormatting") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Edits(_), .. } => true,
                     Outgoing::Failure { ref error, .. } =>
                         error.code == ErrorCode::INVALID_PARAMS || error.code == ErrorCode::REQUEST_FAILED,
-                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
             (Phase::Running, _) => self.phase == phase && matches!(ret,
                 Outgoing::Failure { ref error, .. } if error.code == ErrorCode::METHOD_NOT_FOUND),
@@ -1678,6 +1799,7 @@ impl Server
                 self.linked = initial_links(&params);
                 self.offsets = initial_offsets(&params);
                 self.watching = initial_watching(&params);
+                self.progress = initial_progress(&params);
                 success(
                     id,
                     Answer::Initialize(Box::new(InitializeResult::advertised())),
@@ -1998,7 +2120,7 @@ impl Server
                     },
                     Outgoing::Request { method: called, .. } => method.as_ref() == "initialized"
                         && called == "client/registerCapability" && self.watching.0,
-                    Outgoing::Success { .. } | Outgoing::Failure { .. } => false,
+                    Outgoing::Success { .. } | Outgoing::Failure { .. } | Outgoing::Progress(_) => false,
                 })
             },
     )]
@@ -2156,15 +2278,7 @@ impl Server
                 else {
                     return Outcome::quiet();
                 };
-                let mut changed: Vec<PathBuf> = changes
-                    .iter()
-                    .map(|change| named_path(&change.uri.path()))
-                    .collect();
-                changed.sort_unstable();
-                changed.dedup();
-                let names = |named: &[PathBuf]| {
-                    changed.iter().any(|path| named.binary_search(path).is_ok())
-                };
+                let changed = changed_paths(&changes);
                 let mut outcome = Outcome::quiet();
                 let peer = self.peer;
                 for (uri, held) in &mut workspace.documents {
@@ -2172,7 +2286,7 @@ impl Server
                     else {
                         continue;
                     };
-                    if !names(&document.named) {
+                    if !names_any(&document.named, &changed) {
                         continue;
                     }
                     let rechecked = synchronised(
@@ -2809,7 +2923,7 @@ impl Workspace
         Outgoing::Success { result: Answer::Nothing, .. } => !self.documents.contains_key(uri),
         Outgoing::Success { result: Answer::Edits(_), .. } => self.documents.contains_key(uri),
         Outgoing::Failure { ref error, .. } => error.code == ErrorCode::REQUEST_FAILED,
-        Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
+        Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
     })]
     fn format(
         &self,
@@ -2934,6 +3048,46 @@ fn initial_watching(params: &Value) -> WatchesFiles
         .unwrap_or_default()
 }
 
+/// Whether the client `initialize` names in `params` shows the progress of
+/// work the server starts; not when the parameters do not read.
+///
+/// # Specification
+/// trivial.
+fn initial_progress(params: &Value) -> ShowsProgress
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.shows_progress())
+        .unwrap_or_default()
+}
+
+/// The paths of the files `changes` names, as [`named_path`] names each,
+/// sorted and without repeats.
+///
+/// # Specification
+/// trivial.
+fn changed_paths(changes: &[FileEvent]) -> Vec<PathBuf>
+{
+    let mut changed: Vec<PathBuf> = changes
+        .iter()
+        .map(|change| named_path(&change.uri.path()))
+        .collect();
+    changed.sort_unstable();
+    changed.dedup();
+    changed
+}
+
+/// Whether `named`, a closure's sorted paths, holds any of `changed`.
+///
+/// # Specification
+/// trivial.
+fn names_any(
+    named: &[PathBuf],
+    changed: &[PathBuf],
+) -> bool
+{
+    changed.iter().any(|path| named.binary_search(path).is_ok())
+}
+
 /// The range of `form`, the form under `document`'s caret in the revision
 /// its session judged.
 ///
@@ -3039,18 +3193,19 @@ fn synchronised(
 /// - requires: nothing of the streams; `input` carries the client's frames,
 ///   `output` takes the server's, and `log` takes the operator's lines.
 /// - ensures: each frame read is handled by one [`Server`] over a workspace
-///   whose configured spelling is `spelling`, and every message it produces is
-///   written as one frame, in order; then the admissions its synchronisations
-///   left run, as [`Server::admit`] states, each correction written as one
-///   frame, and every line logged is written to `log` with a line terminator,
-///   before the next frame is read. A synchronisation whose publication held a
-///   diagnostic back arms its document's deadline the server's quiet interval
-///   later, and one that held nothing disarms it; a deadline that passes with
-///   no frame read publishes what the document holds back, as
-///   [`Server::release`] states. The session ends at `exit` or at a stream
-///   closed at a frame boundary, as [`Server::closed`] states. A line `log`
-///   refuses is dropped: the log is the operator's, and the protocol never
-///   depends on it.
+///   whose configured spelling is `spelling`: the progress the work it starts
+///   reports, as [`Server::reported`] states, begins first, and every message
+///   it produces is written as one frame, in order; then the admissions its
+///   synchronisations left run, as [`Server::admit`] states, each correction
+///   written as one frame, the progress ends, and every line logged is written
+///   to `log` with a line terminator, before the next frame is read. A
+///   synchronisation whose publication held a diagnostic back arms its
+///   document's deadline the server's quiet interval later, and one that held
+///   nothing disarms it; a deadline that passes with no frame read publishes
+///   what the document holds back, as [`Server::release`] states. The session
+///   ends at `exit` or at a stream closed at a frame boundary, as
+///   [`Server::closed`] states. A line `log` refuses is dropped: the log is the
+///   operator's, and the protocol never depends on it.
 /// - provides: the language server over any pair of streams and a log: the
 ///   driver's standard input, output and error, or memory.
 /// - fails: the first [`TransportFault`] of either protocol stream, and
@@ -3098,11 +3253,18 @@ where
             },
             Met::Frame { message, later } => (message, later),
         };
+        let reported = server.reported(&workspace, &message);
+        for message in &reported.begin {
+            written(output, message)?;
+        }
         let mut outcome = server.answer(&mut workspace, message, later);
         for message in &outcome.messages {
             written(output, message)?;
         }
         for message in &server.admit(&mut workspace, &mut outcome.log) {
+            written(output, message)?;
+        }
+        for message in &reported.end {
             written(output, message)?;
         }
         deadlines.note(&outcome.log, server.quiet(), Instant::now());
@@ -3949,6 +4111,114 @@ mod tests
             changed(&mut server, "elsewhere.gandr", 1),
             [],
             "a file no closure names rechecks nothing"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn progress_is_reported_around_the_work_a_message_starts()
+    {
+        let directory = std::env::temp_dir().join(format!("gandr-progress-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
+        for (file, text) in [
+            ("base.gandr", "def one : Integer ;\ndef one = 1 ;\n"),
+            ("importer.gandr", importer),
+        ] {
+            std::fs::write(directory.join(file), text).expect("the source is written");
+        }
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        let started = |shows: &str| {
+            let mut server = Connected::default();
+            let initialize = format!(
+                r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
+                {{"window":{{"workDoneProgress":{shows}}}}}}}}}"#
+            );
+            let _answered = send(&mut server, Json(&initialize));
+            server
+        };
+        let reported = |server: &mut Connected, message: &Value| {
+            let classified = crate::rpc::classify(&Body::from(message.to_string().into_bytes()));
+            let reported = server.server.reported(&server.workspace, &classified);
+            let mut outcome = server.server.answer(&mut server.workspace, classified, &[]);
+            let _admitted = server.admit(&mut outcome.log);
+            let encoded = |messages: &[Outgoing]| {
+                Value::Array(
+                    messages
+                        .iter()
+                        .map(|message| serde_json::to_value(message).expect("a message encodes"))
+                        .collect(),
+                )
+            };
+            (encoded(&reported.begin), encoded(&reported.end))
+        };
+        let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+            "textDocument": {"uri": uri("importer.gandr"), "languageId": "gandr", "version": 1_i32,
+                "text": importer}}});
+        let watched = |file: &str| {
+            serde_json::json!({"jsonrpc": "2.0", "method": "workspace/didChangeWatchedFiles",
+                "params": {"changes": [{"uri": uri(file), "type": 2_i32}]}})
+        };
+        let ended = |token: &str| {
+            serde_json::json!([{"jsonrpc": "2.0", "method": "$/progress",
+                "params": {"token": token, "value": {"kind": "end"}}}])
+        };
+        let begun = |token: &str, title: &str, message: &str| {
+            serde_json::json!([
+                {"jsonrpc": "2.0", "id": format!("window/workDoneProgress/create {token}"),
+                    "method": "window/workDoneProgress/create", "params": {"token": token}},
+                {"jsonrpc": "2.0", "method": "$/progress", "params": {"token": token,
+                    "value": {"kind": "begin", "title": title, "cancellable": false, "message": message}}},
+            ])
+        };
+        let nothing = (serde_json::json!([]), serde_json::json!([]));
+        let mut shows = started("true");
+        assert_eq!(
+            reported(&mut shows, &open),
+            (
+                begun("gandr/0/1", "Checking", "importer.gandr"),
+                ended("gandr/0/1")
+            ),
+            "an open is checked under a progress token of its own"
+        );
+        assert_eq!(
+            reported(&mut shows, &watched("base.gandr")),
+            (
+                begun("gandr/0/2", "Rechecking", "1 open document"),
+                ended("gandr/0/2")
+            ),
+            "a change to a file a closure names rechecks under the next token"
+        );
+        assert_eq!(
+            reported(&mut shows, &watched("elsewhere.gandr")),
+            nothing,
+            "a change no closure names reports nothing"
+        );
+        assert_eq!(
+            reported(
+                &mut shows,
+                &serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+                    "textDocument": {"uri": uri("importer.gandr"), "version": 2_i32},
+                    "contentChanges": [{"text": "def two : Integer ;\ndef two = 2 ;\n"}]}})
+            ),
+            nothing,
+            "an edit reports nothing"
+        );
+        assert_eq!(
+            reported(
+                &mut shows,
+                &serde_json::json!({"jsonrpc": "2.0", "id": 2_i32, "method": "textDocument/hover",
+                    "params": {"textDocument": {"uri": uri("importer.gandr")},
+                        "position": {"line": 0_i32, "character": 0_i32}}})
+            ),
+            nothing,
+            "a request reports nothing"
+        );
+        assert_eq!(
+            reported(&mut started("false"), &open),
+            nothing,
+            "a client that shows no progress is sent none"
         );
         let _removed = std::fs::remove_dir_all(&directory);
     }

@@ -418,11 +418,18 @@ fn connection<Log>(
                 Met::Frame { message, later } => (message, later),
             };
             let mut held = lock(workspace);
+            let reported = server.reported(&held, &message);
+            for message in reported.begin {
+                drop(outbox.send(message));
+            }
             let mut outcome = server.answer(&mut held, message, later);
             for message in outcome.messages {
                 drop(outbox.send(message));
             }
             for message in server.admit(&mut held, &mut outcome.log) {
+                drop(outbox.send(message));
+            }
+            for message in reported.end {
                 drop(outbox.send(message));
             }
             drop(held);

@@ -40,6 +40,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - Semantic tokens for the whole document and for a range, and `TOKEN_TYPES` and `TOKEN_MODIFIERS`, the legend.
 - Completion: the binders in scope, the import closure's names and the keywords the slot at the cursor admits, each starting with the word typed.
 - Cancellation: a request whose `$/cancelRequest`, or a change of the document it reads, was read before the request was handled is answered `RequestCancelled` or `ContentModified` without being run; frames are read ahead of the one being handled, up to `exit` ([`quiet`](src/quiet.rs)).
+- Progress: an open and a watched-files recheck reported to a client that shows progress.
 - Signature help: the head the called name was written with, its documentation, and the argument at the cursor.
 - Inline completion: ranked snippets closing the form at the cursor or filling its hole, each hole a tab stop named by what fills it.
 - The outline: document symbols nesting each declaration inside the one that holds it, folding ranges over multi-line forms, documentation and block comments, and selection ranges growing from the innermost node around a position to the whole document.

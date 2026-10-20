@@ -11,8 +11,12 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::protocol::Answer;
+use crate::protocol::CreateProgressParams;
+use crate::protocol::ProgressParams;
+use crate::protocol::ProgressToken;
 use crate::protocol::PublishParams;
 use crate::protocol::RegistrationParams;
+use crate::protocol::WorkDone;
 use crate::transport::Body;
 
 /// The version every envelope names.
@@ -24,6 +28,12 @@ const PUBLISH_DIAGNOSTICS: &str = "textDocument/publishDiagnostics";
 /// The method a server registers a capability with the client under, and the
 /// identifier of the one such request it sends.
 const REGISTER_CAPABILITY: &str = "client/registerCapability";
+
+/// The method a server asks the client to show progress under a token with.
+const CREATE_PROGRESS: &str = "window/workDoneProgress/create";
+
+/// The method progress is reported under.
+const PROGRESS: &str = "$/progress";
 
 /// A request's identifier, echoed in its response: a number, a string, or
 /// null for a message whose identifier could not be read.
@@ -366,6 +376,38 @@ pub enum Outgoing
         /// Its parameters.
         params: RegistrationParams,
     },
+    /// A report of the progress of work the server started.
+    Progress(Progress),
+}
+
+/// A message reporting the progress of work the server started.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum Progress
+{
+    /// `window/workDoneProgress/create`: the client is asked to show
+    /// progress under a token; its response is read and left.
+    Create
+    {
+        /// Always `2.0`.
+        jsonrpc: &'static str,
+        /// The request's identifier: the method and the token.
+        id: RequestId,
+        /// Always `window/workDoneProgress/create`.
+        method: &'static str,
+        /// The token.
+        params: CreateProgressParams,
+    },
+    /// `$/progress`: where the work under a token is.
+    Report
+    {
+        /// Always `2.0`.
+        jsonrpc: &'static str,
+        /// Always `$/progress`.
+        method: &'static str,
+        /// The token and where its work is.
+        params: ProgressParams,
+    },
 }
 
 /// The error object of a refusing response.
@@ -525,6 +567,62 @@ pub fn register(params: RegistrationParams) -> Outgoing
         method: REGISTER_CAPABILITY,
         params,
     }
+}
+
+/// The messages that start the work `token` names, titled `title` and
+/// working on `message`: the client is asked to show progress under `token`,
+/// then told the work began, as one that cannot be cancelled.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn progress_begun(
+    token: &ProgressToken,
+    title: &'static str,
+    message: String,
+) -> [Outgoing; 2]
+{
+    [
+        Outgoing::Progress(Progress::Create {
+            jsonrpc: VERSION,
+            id: RequestId(Value::from(format!("{CREATE_PROGRESS} {}", token.0))),
+            method: CREATE_PROGRESS,
+            params: CreateProgressParams {
+                token: token.clone(),
+            },
+        }),
+        Outgoing::Progress(Progress::Report {
+            jsonrpc: VERSION,
+            method: PROGRESS,
+            params: ProgressParams {
+                token: token.clone(),
+                value: WorkDone::Begin {
+                    title,
+                    cancellable: false,
+                    message,
+                },
+            },
+        }),
+    ]
+}
+
+/// The message telling the client the work `token` names ended.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn progress_ended(token: ProgressToken) -> Outgoing
+{
+    Outgoing::Progress(Progress::Report {
+        jsonrpc: VERSION,
+        method: PROGRESS,
+        params: ProgressParams {
+            token,
+            value: WorkDone::End {},
+        },
+    })
 }
 
 #[cfg(test)]
