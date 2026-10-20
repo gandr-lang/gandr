@@ -31,6 +31,16 @@
 //! Suspended subtrees live in a vector, so the depth of a DAG is bounded by
 //! the decode budget rather than by the host stack. A cycle would need a chunk
 //! holding its own digest; the budget would end even that walk.
+//!
+//! # Seams
+//!
+//! A child record stands where a commit cut, and a commit cuts only at a
+//! boundary constructor. The walk refuses a child record whose subtree opens
+//! with a constructor the classification makes an alias, with
+//! [`ValueError::AliasSeam`]; the subtree a walk starts from is checked the
+//! same way when it stands in a child record ([`WalkStart::Seam`]), and not
+//! when it is a whole value ([`WalkStart::Value`]), whose outermost
+//! constructor may be an alias.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -44,6 +54,8 @@ use gandr_theory_spec_combinators::Holds;
 use crate::chunk::ChunkStore;
 use crate::error::ValueError;
 use crate::error::ValueQuantity;
+use crate::manifest::BoundaryClassification;
+use crate::manifest::ConstructorClass;
 use crate::ptr::ChunkDigest;
 use crate::ptr::ContentPtr;
 use crate::ptr::TokenOffset;
@@ -115,6 +127,16 @@ impl From<ValueClosure> for BTreeSet<ChunkDigest>
     {
         closure.0
     }
+}
+
+/// Where the subtree a walk starts from stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum WalkStart
+{
+    /// It is a whole value, whose outermost constructor may be an alias.
+    Value,
+    /// It stands in a child record, so it opens with a boundary constructor.
+    Seam,
 }
 
 /// What a walk from one pointer found: its closure, and the records a reader
@@ -534,6 +556,8 @@ where
 {
     /// Where chunks are loaded from, verified.
     store: &'store Store,
+    /// Which constructors may open a subtree behind a child record.
+    classification: BoundaryClassification,
     /// Every chunk loaded.
     digests: BTreeSet<ChunkDigest>,
     /// Every subtree counted, by the pointer that addresses it.
@@ -620,6 +644,50 @@ where
 
         Ok(scan)
     }
+
+    /// Loads the chunk a child record names and opens a scan at its offset,
+    /// refusing a subtree whose outermost constructor is an alias.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success as [`Walk::enter`], and the subtree does not open
+    ///   with an alias constructor.
+    /// - provides: the seam check every child record passes.
+    /// - fails: [`ValueError::AliasSeam`] naming the alias and the chunk, and
+    ///   [`Walk::enter`]'s refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`ValueError`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a value committed with every constructor a boundary
+    ///   and read under a classification making a cut constructor an alias is
+    ///   refused naming that constructor and its chunk; L2 — every tagged
+    ///   commit's closure passes.
+    /// - witness: `tests::classification::a_seam_at_an_alias_is_refused_by_name`
+    /// - witness: `tests::classification::a_tagged_commit_reads_back_or_refuses_an_unbounded_alias`
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|scan| scan.at == pointer
+        && !matches!(scan.front(), Ok((Record::Open(tag), _rest))
+            if self.classification.class(tag) == ConstructorClass::Alias)))]
+    fn enter_seam(
+        &mut self,
+        pointer: ContentPtr,
+    ) -> Result<Scan<'store>, ValueError>
+    {
+        let scan = self.enter(pointer)?;
+        match scan.front() {
+            Ok((Record::Open(tag), _rest))
+                if self.classification.class(tag) == ConstructorClass::Alias =>
+            {
+                Err(ValueError::AliasSeam {
+                    tag,
+                    digest: pointer.digest(),
+                })
+            },
+            Ok(_) | Err(_) => Ok(scan),
+        }
+    }
 }
 
 /// Walks the closure of the value a pointer addresses.
@@ -630,14 +698,18 @@ where
 ///   loads — the chunk `root` names and, for every child record inside the
 ///   subtree at its offset, that child's closure — and the token count is the
 ///   number of records a reader of `root` delivers, each child subtree counted
-///   once per reference. Each distinct subtree is scanned once.
+///   once per reference. Each distinct subtree is scanned once, and no subtree
+///   behind a child record opens with an alias constructor under
+///   `classification`.
 /// - provides: the walk a manifest's closure checks, a commit counts an
 ///   embedded pointer with, and [`crate::measure_edit`] counts over.
 /// - fails: [`ValueError::UnknownChunk`] naming the first absent digest in
 ///   stream order, and the store's other refusals for a chunk it answers
-///   wrongly; [`ValueError::TruncatedStream`] when a body ends before its
-///   offset or before its subtree closes; [`ValueError::UnexpectedToken`] when
-///   a subtree opens with a payload or a close;
+///   wrongly; [`ValueError::AliasSeam`] for a subtree behind a child record —
+///   or the start, when `start` is [`WalkStart::Seam`] — that opens with an
+///   alias; [`ValueError::TruncatedStream`] when a body ends before its offset
+///   or before its subtree closes; [`ValueError::UnexpectedToken`] when a
+///   subtree opens with a payload or a close;
 ///   [`ValueError::DecodeBudgetExceeded`] past [`MAX_DECODE_WORK`]; an overflow
 ///   refusal at a count's width.
 /// - panics: none.
@@ -657,6 +729,7 @@ where
 /// - witness: `tests::closure::a_missing_descendant_fails_the_closure_by_name`
 /// - witness: `closure::tests::the_walk_counts_the_addressed_subtree_and_refuses_a_malformed_one`
 /// - witness: `closure::tests::cached_counts_distinguish_offsets_and_repeat_per_reference`
+/// - witness: `tests::classification::a_seam_at_an_alias_is_refused_by_name`
 #[spec(ensures: |ret| ret
     .as_ref()
     .ok()
@@ -665,17 +738,22 @@ where
 pub(crate) fn walk_closure<Store>(
     store: &Store,
     root: ContentPtr,
+    (classification, start): (BoundaryClassification, WalkStart),
 ) -> Result<Walked, ValueError>
 where
     Store: ChunkStore + ?Sized,
 {
     let mut walk = Walk {
         store,
+        classification,
         digests: BTreeSet::new(),
         counted: BTreeMap::new(),
         spent: DecodeWork::ZERO,
     };
-    let mut current = walk.enter(root)?;
+    let mut current = match start {
+        WalkStart::Value => walk.enter(root)?,
+        WalkStart::Seam => walk.enter_seam(root)?,
+    };
     let mut suspended = Vec::new();
 
     loop {
@@ -687,7 +765,7 @@ where
                     current.absorb(count)?;
                 }
                 else {
-                    let child = walk.enter(pointer)?;
+                    let child = walk.enter_seam(pointer)?;
                     suspended.push(mem::replace(&mut current, child));
                 }
             },
@@ -756,9 +834,11 @@ mod tests
     use super::Scanned;
     use super::ValueClosure;
     use super::Walk;
+    use super::WalkStart;
     use super::Walked;
     use super::add_tokens;
     use super::walk_closure;
+    use crate::BoundaryClassification;
     use crate::ChunkDigest;
     use crate::ConstructorTag;
     use crate::ValueQuantity;
@@ -774,6 +854,10 @@ mod tests
     use crate::units::DecodeWork;
     use crate::units::MAX_DECODE_WORK;
     use crate::units::TokenBody;
+
+    /// A walk of a whole value with every constructor a boundary.
+    const WHOLE: (BoundaryClassification, WalkStart) =
+        (BoundaryClassification::EveryConstructor, WalkStart::Value);
 
     #[test]
     fn the_walk_counts_the_addressed_subtree_and_refuses_a_malformed_one()
@@ -795,9 +879,9 @@ mod tests
         let unclosed = stored(&[0x01_u8, 0x2A]);
         let at = |digest, offset: u32| ContentPtr::new(digest, TokenOffset::from(offset));
 
-        let whole = walk_closure(&store, at(nested, 0)).expect("the body is one subtree");
+        let whole = walk_closure(&store, at(nested, 0), WHOLE).expect("the body is one subtree");
         assert_eq!(whole.token_count(), TokenCount::from(5_u64));
-        let inner = walk_closure(&store, at(nested, 1)).expect("offset one is a subtree");
+        let inner = walk_closure(&store, at(nested, 1), WHOLE).expect("offset one is a subtree");
         assert_eq!(
             inner.token_count(),
             TokenCount::from(3_u64),
@@ -824,7 +908,7 @@ mod tests
         ];
         for (pointer, refusal) in refusals {
             assert_eq!(
-                walk_closure(&store, pointer),
+                walk_closure(&store, pointer, WHOLE),
                 Err(refusal),
                 "the walk from {pointer:?} is refused by name"
             );
@@ -913,8 +997,12 @@ mod tests
         let mut store = InMemoryChunkStore::new();
         store.insert(child.as_verified()).expect("the child stores");
         store.insert(root.as_verified()).expect("the parent stores");
-        let walked = walk_closure(&store, ContentPtr::new(root.digest(), TokenOffset::ZERO))
-            .expect("the references close");
+        let walked = walk_closure(
+            &store,
+            ContentPtr::new(root.digest(), TokenOffset::ZERO),
+            WHOLE,
+        )
+        .expect("the references close");
         assert_eq!(walked.token_count(), TokenCount::from(15_u64));
         assert_eq!(
             walked.closure().digests(),
@@ -934,6 +1022,7 @@ mod tests
         store.insert(chunk.as_verified()).expect("the leaf stores");
         let mut walk = Walk {
             store: &store,
+            classification: BoundaryClassification::EveryConstructor,
             digests: BTreeSet::new(),
             counted: BTreeMap::new(),
             spent: DecodeWork::ZERO,

@@ -88,16 +88,17 @@
 //! | Statement | Witness | Rung |
 //! | --------- | ------- | ---- |
 //! | Segment soundness and completeness (Lemmas 3.4, 3.5) | `every_generated_value_round_trips_flat`, beside `every_record_round_trips_through_the_grammar` | L2 |
-//! | Token bound (Lemma 3.6) | none owed: the flat form has no alias stratum to bound; the reader's total budget is `the_budget_admits_the_ceiling_and_refuses_one_past` | L3 |
+//! | Token bound (Lemma 3.6) | an alias region never reopens its own tag, refused by name otherwise: `a_tagged_commit_reads_back_or_refuses_an_unbounded_alias`; the reader's total budget is `the_budget_admits_the_ceiling_and_refuses_one_past` | L2; L3 |
 //! | Deep equality (Lemma 4.4) | the codec's own equality over decoded values, the observer every witness below compares with | — |
 //! | Duplication and evacuation (Lemmas 4.6, 4.7) | none: the crate has no regions, wrappers or collector (§ Mutation) | — |
 //! | Codec round trip (Lemma 5.5) | `every_generated_value_round_trips_flat` | L2 |
-//! | Commit–load round trip (Lemma 5.7) | `every_generated_value_commits_and_derefs_back_equal` | L2 |
+//! | Commit–load round trip (Lemma 5.7) | `every_generated_value_commits_and_derefs_back_equal`, and under a tagged classification `a_tagged_commit_reads_back_or_refuses_an_unbounded_alias` | L2 |
 //! | Chunking transparency (Lemma 5.8) | `chunking_is_invisible_to_the_flat_form` | L2 |
 //! | Store-history independence | `a_root_pointer_does_not_depend_on_what_the_store_holds` | L2 |
 //! | Locality (Theorem 5.2, Corollary 5.3) | `measured_chunk_counts_sit_inside_the_locality_bound`, and the formula by `the_bound_matches_the_formula_by_hand` | measurement; L3 |
 //! | The cut rule, a deterministic complement of locality | `the_cuts_agree_with_a_reference_scanner` | L2 |
 //! | The adversarial ceiling, a deterministic complement of locality | `an_edit_under_every_cut_affects_exactly_its_path` | L3 |
+//! | A seam stands only at a boundary constructor | `a_seam_at_an_alias_is_refused_by_name` | L3 |
 //!
 //! What each law observes:
 //!
@@ -127,6 +128,13 @@
 //!   chunks of the constructors on its root path and shares every other. The
 //!   cost is more chunks and lookups, never a wrong value, and the decode
 //!   budget bounds the work.
+//! - **Alias and boundary.** Under a generated tagged classification — any set
+//!   of the seven shapes, every container a boundary, or one container an alias
+//!   — a generated value either commits, derefs back equal, is cut where the
+//!   reference scanner cuts when only boundary exits are events, and passes its
+//!   closure; or is refused as a recursive alias exactly where a reading of its
+//!   records alone finds an alias reopened inside itself with no boundary
+//!   between.
 //!
 //! The generators decide what this evidence covers. Values are constructor
 //! trees over seven shapes, with words and byte strings, biased toward deep
@@ -306,7 +314,9 @@ pub use crate::locality::LocalityMeasurement;
 pub use crate::locality::expected_chunk_bound;
 pub use crate::locality::measure_edit;
 pub use crate::manifest::BoundaryClassification;
+pub use crate::manifest::BoundaryTags;
 pub use crate::manifest::CodecIdentity;
+pub use crate::manifest::ConstructorClass;
 pub use crate::manifest::DigestFamily;
 pub use crate::manifest::MANIFEST_DIGEST_LEN;
 pub use crate::manifest::MANIFEST_DOMAIN;

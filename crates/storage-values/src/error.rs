@@ -456,6 +456,28 @@ pub enum ValueError
         /// The records a reader of the root delivers, child chunks spliced.
         spliced: TokenCount,
     },
+
+    /// An alias constructor opened inside an open alias of its own tag, with
+    /// no boundary constructor between: the classification leaves the alias
+    /// region unbounded.
+    RecursiveAlias
+    {
+        /// The alias constructor's tag.
+        tag: ConstructorTag,
+        /// The records the value emitted before its second open.
+        position: TokenCount,
+    },
+
+    /// A child record names a subtree whose outermost constructor the
+    /// manifest's classification makes an alias, which never stands in a
+    /// chunk of its own.
+    AliasSeam
+    {
+        /// The alias constructor's tag.
+        tag: ConstructorTag,
+        /// The chunk the child record names.
+        digest: ChunkDigest,
+    },
 }
 
 impl fmt::Display for ValueError
@@ -565,6 +587,18 @@ impl fmt::Display for ValueError
                 write!(
                     f,
                     "a manifest declares {declared} tokens where its closure delivers {spliced}"
+                )
+            },
+            Self::RecursiveAlias { tag, position } => {
+                write!(
+                    f,
+                    "alias constructor {tag} opens again inside itself after {position} records, with no boundary between"
+                )
+            },
+            Self::AliasSeam { tag, digest } => {
+                write!(
+                    f,
+                    "a child record names chunk {digest}, whose outermost constructor {tag} is an alias"
                 )
             },
         }
@@ -722,7 +756,7 @@ mod tests
         let manifest_field = ManifestField::RootOffset.to_string();
         let truncated_field = ManifestField::RootDigest.to_string();
         let profile_field = ProfileField::CodecVersion.to_string();
-        let cases: [(ValueError, &[&str]); 18] = [
+        let cases: [(ValueError, &[&str]); 20] = [
             (ValueError::UnknownChunk { digest: expected }, &[
                 &expected_text,
             ]),
@@ -800,6 +834,20 @@ mod tests
                 &declared_text,
                 &spliced_text,
             ]),
+            (
+                ValueError::RecursiveAlias {
+                    tag,
+                    position: declared,
+                },
+                &[&tag_text, &declared_text],
+            ),
+            (
+                ValueError::AliasSeam {
+                    tag,
+                    digest: actual,
+                },
+                &[&tag_text, &actual_text],
+            ),
         ];
         let rendered = cases.each_ref().map(|case| case.0.to_string());
         for (index, (error, payloads)) in cases.into_iter().enumerate() {

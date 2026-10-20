@@ -17,9 +17,9 @@
 //! | boundary classification | which constructors are cut candidates at all |
 //! | chunk frame version | the framed preimage is what is hashed |
 //!
-//! The digest family, the boundary classification and the frame version are
-//! fixed by this build — one variant each — and carried anyway, so a second
-//! option is a refused mismatch rather than an unrecorded assumption.
+//! The digest family and the frame version are fixed by this build — one
+//! variant each — and carried anyway, so a second option is a refused mismatch
+//! rather than an unrecorded assumption.
 //!
 //! # The image
 //!
@@ -30,7 +30,7 @@
 //!          || u8 digest family
 //!          || u16le codec identifier || u16le codec version
 //!          || u8 child index base
-//!          || u8 boundary classification
+//!          || u8 boundary classification || [32-byte boundary set]
 //!          || u16le chunk frame version
 //!          || 32-byte root digest || u32le root offset
 //!          || u64le token count
@@ -47,7 +47,10 @@
 //! typed profile: its domain, the typed algorithm's discriminator, kappa and
 //! the token cap. The assigned tags: digest family 1 is BLAKE3, child index
 //! base 1 is absolute and 2 chunk-local, boundary classification 1 is every
-//! constructor exit. The version and the chunk frame version are 1.
+//! constructor exit and 2 the exits of a declared set, whose 32 bytes follow
+//! the tag: four little-endian words, bit `t mod 64` of word `t / 64` set
+//! when constructor tag `t` is a boundary. The version and the chunk frame
+//! version are 1.
 //!
 //! # Refusal order
 //!
@@ -132,6 +135,8 @@
 //! | The closure is exactly what the commit wrote into an empty store, embeddings included | `the_closure_is_every_chunk_the_commit_wrote` | L2 |
 //! | A missing descendant two seams down is refused by digest | `a_missing_descendant_fails_the_closure_by_name` | L3 |
 //! | A count one over or one under is refused | `a_manifest_overstating_its_tokens_fails_the_closure` | L3 |
+//! | A tagged classification's set follows its tag, round-trips, and is refused by the untagged reader | `a_tagged_manifest_round_trips_and_refuses_the_untagged_reader` | L3 |
+//! | A seam at a constructor the classification makes an alias fails the closure by name | `a_seam_at_an_alias_is_refused_by_name` | L3 |
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -147,6 +152,7 @@ use gandr_storage_chunker::TypedChunkerParams;
 
 use crate::chunk::ChunkStore;
 use crate::closure::ValueClosure;
+use crate::closure::WalkStart;
 use crate::closure::walk_closure;
 use crate::deref::cam_deref;
 use crate::error::ManifestField;
@@ -158,6 +164,7 @@ use crate::ptr::ChunkDigest;
 use crate::ptr::ContentPtr;
 use crate::ptr::TokenOffset;
 use crate::tokens::CanonicalValue;
+use crate::tokens::ConstructorTag;
 use crate::units::ChunkFormatVersion;
 use crate::units::CodecId;
 use crate::units::CodecVersion;
@@ -187,6 +194,14 @@ const INDEX_BASE_CHUNK_LOCAL: u8 = 0x02_u8;
 
 /// The boundary classification tag for every constructor.
 const BOUNDARY_EVERY_CONSTRUCTOR: u8 = 0x01_u8;
+
+/// The boundary classification tag for a declared set of boundary
+/// constructors, whose [`BOUNDARY_TAGS_LEN`] bytes follow it.
+const BOUNDARY_TAGGED: u8 = 0x02_u8;
+
+/// The bytes a tagged classification's set takes in a manifest image: one bit
+/// per constructor tag.
+const BOUNDARY_TAGS_LEN: usize = 0x20_usize;
 
 /// The BLAKE3 identity of one manifest image.
 ///
@@ -285,11 +300,229 @@ pub enum DigestFamily
 }
 
 /// Which constructor exits are boundary candidates.
+///
+/// The classification splits constructors into alias and boundary types: a
+/// boundary constructor is where a chunk may begin, so its subtree may stand
+/// apart behind a content pointer; an alias constructor's subtree stays in
+/// the chunk of the constructor holding it.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum BoundaryClassification
 {
     /// Every constructor's exit but the outermost raises a boundary event.
     EveryConstructor,
+    /// The exits of the constructors the set names raise boundary events, and
+    /// every other constructor is an alias.
+    Tagged(BoundaryTags),
+}
+
+impl BoundaryClassification
+{
+    /// What a constructor of `tag` is under the classification.
+    ///
+    /// # Specification
+    /// - ensures: [`ConstructorClass::Boundary`] for every tag under
+    ///   [`BoundaryClassification::EveryConstructor`]; under
+    ///   [`BoundaryClassification::Tagged`], exactly for the tags the set
+    ///   names.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a set naming one tag classes that tag a boundary and
+    ///   its neighbours aliases, and every tag is a boundary under the
+    ///   classification by every constructor.
+    /// - witness: `manifest::tests::a_tagged_classification_classes_exactly_its_tags`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret == match self {
+        Self::EveryConstructor => ConstructorClass::Boundary,
+        Self::Tagged(tags) => tags.class(tag),
+    })]
+    pub fn class(
+        self,
+        tag: ConstructorTag,
+    ) -> ConstructorClass
+    {
+        match self {
+            Self::EveryConstructor => ConstructorClass::Boundary,
+            Self::Tagged(tags) => tags.class(tag),
+        }
+    }
+}
+
+/// What a constructor is to the chunk DAG.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ConstructorClass
+{
+    /// Its subtree stays in the chunk of the constructor holding it.
+    Alias,
+    /// Its exit is a cut candidate: its subtree may stand in a chunk of its
+    /// own, reached by a content pointer.
+    Boundary,
+}
+
+/// A set of constructor tags: the boundaries of a tagged classification.
+///
+/// # Specification
+/// - ensures: one bit per tag, the tag's byte picking the word and the bit,
+///   least significant first.
+/// - panics: none.
+/// - executable: none — a bit set has no invariant beyond its width, which the
+///   type fixes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the lowest and highest tags and a tag at a word's edge
+///   each read back as the set holds them, and their bytes round-trip.
+/// - witness: `manifest::tests::a_tagged_classification_classes_exactly_its_tags`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BoundaryTags([u64; 4]);
+
+impl BoundaryTags
+{
+    /// The set naming no tag: every constructor an alias.
+    pub const EMPTY: Self = Self([0_u64; 4]);
+
+    /// The set with `tag` added.
+    ///
+    /// # Specification
+    /// - ensures: `tag` is a boundary of the result, and every other tag is as
+    ///   it is in `self`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`BoundaryClassification::class`].
+    /// - witness: `manifest::tests::a_tagged_classification_classes_exactly_its_tags`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.class(tag) == ConstructorClass::Boundary)]
+    pub fn with(
+        self,
+        tag: ConstructorTag,
+    ) -> Self
+    {
+        let TagBit { word, mask } = TagBit::from(tag);
+        let mut words = self.0;
+        if let Some(slot) = words.get_mut(word) {
+            *slot |= mask;
+        }
+        Self(words)
+    }
+
+    /// The set with `tag` removed.
+    ///
+    /// # Specification
+    /// - ensures: `tag` is an alias of the result, and every other tag is as it
+    ///   is in `self`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`BoundaryClassification::class`].
+    /// - witness: `manifest::tests::a_tagged_classification_classes_exactly_its_tags`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.class(tag) == ConstructorClass::Alias)]
+    pub fn without(
+        self,
+        tag: ConstructorTag,
+    ) -> Self
+    {
+        let TagBit { word, mask } = TagBit::from(tag);
+        let mut words = self.0;
+        if let Some(slot) = words.get_mut(word) {
+            *slot &= !mask;
+        }
+        Self(words)
+    }
+
+    /// What a constructor of `tag` is under the set.
+    ///
+    /// # Specification
+    /// - ensures: [`ConstructorClass::Boundary`] exactly when the set names
+    ///   `tag`.
+    /// - panics: none.
+    /// - executable: none — the clause is the bit read itself.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`BoundaryClassification::class`].
+    /// - witness: `manifest::tests::a_tagged_classification_classes_exactly_its_tags`
+    #[inline]
+    #[must_use]
+    pub fn class(
+        self,
+        tag: ConstructorTag,
+    ) -> ConstructorClass
+    {
+        let TagBit { word, mask } = TagBit::from(tag);
+        match self.0.get(word) {
+            Some(&held) if held & mask != 0 => ConstructorClass::Boundary,
+            Some(_) | None => ConstructorClass::Alias,
+        }
+    }
+}
+
+impl From<BoundaryTags> for FieldBytes<BOUNDARY_TAGS_LEN>
+{
+    /// The set's bytes in a manifest image: the four words, little-endian,
+    /// lowest tags first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(tags: BoundaryTags) -> Self
+    {
+        let mut bytes = [0_u8; BOUNDARY_TAGS_LEN];
+        for (chunk, word) in bytes.chunks_exact_mut(8).zip(tags.0) {
+            chunk.copy_from_slice(&word.to_le_bytes());
+        }
+        Self(bytes)
+    }
+}
+
+impl From<FieldBytes<BOUNDARY_TAGS_LEN>> for BoundaryTags
+{
+    /// The set the bytes of a manifest image name.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(FieldBytes(bytes): FieldBytes<BOUNDARY_TAGS_LEN>) -> Self
+    {
+        let mut words = [0_u64; 4];
+        for (word, chunk) in words.iter_mut().zip(bytes.chunks_exact(8)) {
+            let mut little = [0_u8; 8];
+            little.copy_from_slice(chunk);
+            *word = u64::from_le_bytes(little);
+        }
+        Self(words)
+    }
+}
+
+/// Where one tag's bit stands in a [`BoundaryTags`]: its word, and the mask
+/// within it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TagBit
+{
+    /// The word: the tag's top two bits.
+    word: usize,
+    /// The bit within the word: the tag's low six bits.
+    mask: u64,
+}
+
+impl From<ConstructorTag> for TagBit
+{
+    /// The word and the bit that hold `tag`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(tag: ConstructorTag) -> Self
+    {
+        let byte = u8::from(tag);
+        Self {
+            word: usize::from(byte >> 6_u8),
+            mask: 1_u64 << (byte & 0x3F_u8),
+        }
+    }
 }
 
 /// The canonical token codec a value was encoded through.
@@ -383,8 +616,8 @@ impl ValueProfile
     /// - requires: nothing; a base this encoding cannot represent is refused
     ///   when a value is committed under it.
     /// - ensures: the profile carries the arguments unchanged, with the digest
-    ///   family, the boundary classification and the frame version this build
-    ///   commits under.
+    ///   family and the frame version this build commits under, and every
+    ///   constructor a boundary.
     /// - provides: the unit of agreement between two deployments.
     /// - fails: never.
     /// - panics: none.
@@ -415,6 +648,37 @@ impl ValueProfile
             index_base,
             boundary_classification: BoundaryClassification::EveryConstructor,
             chunk_frame_version: ChunkFormatVersion::V1,
+        }
+    }
+
+    /// The profile with `classification` deciding which constructors are
+    /// boundaries.
+    ///
+    /// # Specification
+    /// - ensures: every field of `self` but the boundary classification is
+    ///   unchanged, and the classification is `classification`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tagged profile's manifest round-trips through its
+    ///   bytes with its classification, and a profile differing only there is
+    ///   refused naming the boundary classification.
+    /// - witness: `tests::manifest::a_tagged_manifest_round_trips_and_refuses_the_untagged_reader`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.boundary_classification == classification
+        && ret.params == self.params
+        && ret.codec == self.codec
+        && ret.index_base == self.index_base
+        && ret.chunk_frame_version == self.chunk_frame_version)]
+    pub fn classified(
+        self,
+        classification: BoundaryClassification,
+    ) -> Self
+    {
+        Self {
+            boundary_classification: classification,
+            ..self
         }
     }
 
@@ -516,14 +780,15 @@ impl ValueProfile
     /// # Adequacy
     /// - hypothesis: L3 only — one expected profile per field that admits a
     ///   second value (kappa and the cap through the commitment, the codec
-    ///   identifier and version, the child index base), each refused naming
-    ///   that field; a profile differing in two fields, refused naming the
-    ///   earlier; and the identical profile, admitted. The digest family, the
-    ///   boundary classification and the frame version have one value each in
-    ///   this build, so no second profile can differ there; a decoded image
+    ///   identifier and version, the child index base, the boundary
+    ///   classification), each refused naming that field; a profile differing
+    ///   in two fields, refused naming the earlier; and the identical profile,
+    ///   admitted. The digest family and the frame version have one value each
+    ///   in this build, so no second profile can differ there; a decoded image
     ///   naming another is refused by its tag before a profile exists.
     /// - witness: `tests::manifest::a_profile_mismatch_is_refused_before_any_chunk_is_read`
     /// - witness: `tests::manifest::a_matching_profile_reads_the_committed_value`
+    /// - witness: `tests::manifest::a_tagged_manifest_round_trips_and_refuses_the_untagged_reader`
     #[inline]
     #[spec(ensures: |ret| ret.is_ok() == (self == expected))]
     pub fn ensure_matches(
@@ -722,7 +987,11 @@ impl ValueManifest
         && ret.as_ref().len() == MANIFEST_DOMAIN
             .len()
             .saturating_add(MANIFEST_FIXED_LEN)
-            .saturating_add(self.profile.chunker_commitment().as_ref().len()))]
+            .saturating_add(self.profile.chunker_commitment().as_ref().len())
+            .saturating_add(match self.profile.boundary_classification {
+                BoundaryClassification::EveryConstructor => 0_usize,
+                BoundaryClassification::Tagged(_) => BOUNDARY_TAGS_LEN,
+            }))]
     pub fn encode(&self) -> ManifestImageBuf
     {
         let committed = self.profile.chunker_commitment();
@@ -751,9 +1020,14 @@ impl ValueManifest
             ChildIndexBase::Absolute => INDEX_BASE_ABSOLUTE,
             ChildIndexBase::ChunkLocal => INDEX_BASE_CHUNK_LOCAL,
         });
-        image.push(match self.profile.boundary_classification {
-            BoundaryClassification::EveryConstructor => BOUNDARY_EVERY_CONSTRUCTOR,
-        });
+        match self.profile.boundary_classification {
+            BoundaryClassification::EveryConstructor => image.push(BOUNDARY_EVERY_CONSTRUCTOR),
+            BoundaryClassification::Tagged(tags) => {
+                image.push(BOUNDARY_TAGGED);
+                let FieldBytes(set) = FieldBytes::from(tags);
+                image.extend_from_slice(set.as_slice());
+            },
+        }
         image.extend_from_slice(
             u16::from(self.profile.chunk_frame_version)
                 .to_le_bytes()
@@ -920,14 +1194,17 @@ impl ValueManifest
     /// # Specification
     /// - requires: nothing; a missing or invalid chunk is refused by name.
     /// - ensures: on success the closure holds every chunk a dereference of the
-    ///   root loads, each verified, and those chunks deliver exactly the
-    ///   manifest's token count; for a manifest [`crate::cam_commit`] returned
-    ///   from an empty store, the closure is every chunk that commit wrote.
+    ///   root loads, each verified, no child record names a subtree opening
+    ///   with a constructor the profile's classification makes an alias, and
+    ///   those chunks deliver exactly the manifest's token count; for a
+    ///   manifest [`crate::cam_commit`] returned from an empty store, the
+    ///   closure is every chunk that commit wrote.
     /// - provides: the complete closure at dereference — what a consumer pins,
     ///   sends or attests for one committed value.
     /// - fails: [`ValueError::UnknownChunk`] naming the first absent digest in
-    ///   stream order; the store's refusals for an invalid chunk; the walk's
-    ///   refusals for a malformed subtree or a spent decode budget; then
+    ///   stream order; the store's refusals for an invalid chunk;
+    ///   [`ValueError::AliasSeam`] for a seam at an alias; the walk's refusals
+    ///   for a malformed subtree or a spent decode budget; then
     ///   [`ValueError::TokenCountMismatch`] when the chunks deliver another
     ///   count than the manifest declares.
     /// - panics: none.
@@ -944,6 +1221,7 @@ impl ValueManifest
     /// - witness: `tests::closure::the_closure_is_every_chunk_the_commit_wrote`
     /// - witness: `tests::closure::a_missing_descendant_fails_the_closure_by_name`
     /// - witness: `tests::closure::a_manifest_overstating_its_tokens_fails_the_closure`
+    /// - witness: `tests::classification::a_seam_at_an_alias_is_refused_by_name`
     #[inline]
     #[spec(ensures: |ret| ret
         .as_ref()
@@ -955,7 +1233,11 @@ impl ValueManifest
         store: &dyn ChunkStore,
     ) -> Result<ValueClosure, ValueError>
     {
-        let walked = walk_closure(store, self.root)?;
+        let walked = walk_closure(
+            store,
+            self.root,
+            (self.profile.boundary_classification, WalkStart::Value),
+        )?;
         if walked.token_count() != self.token_count {
             return Err(ValueError::TokenCountMismatch {
                 declared: self.token_count,
@@ -1311,11 +1593,13 @@ impl ManifestCursor<'_>
         }
     }
 
-    /// Reads the boundary classification's tag.
+    /// Reads the boundary classification: its tag, and for a tagged
+    /// classification the thirty-two bytes of its set.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: on success the classification the tag names.
+    /// - ensures: on success the classification the field names, the cursor
+    ///   past its tag and, for a tagged classification, its set.
     /// - provides: the boundary classification field.
     /// - fails: [`ValueError::MalformedManifest`] naming the classification for
     ///   an unassigned tag, and the truncation refusal.
@@ -1325,21 +1609,33 @@ impl ManifestCursor<'_>
     /// [`ValueError`] — as listed above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 admits tag one in the golden image and refuses zero,
-    ///   two and a missing byte, observing the exact field. These distinguish
-    ///   the input discriminator and consumed width rather than restating the
-    ///   single-variant return type.
+    /// - hypothesis: L3 admits tag one in the golden image and a tagged set in
+    ///   a generated one, and refuses zero, three, a missing byte and a set cut
+    ///   short, observing the exact field. These distinguish the input
+    ///   discriminator and consumed width.
     /// - witness: `tests::manifest::the_manifest_bytes_are_pinned`
     /// - witness: `tests::manifest::each_malformed_manifest_is_refused_by_name`
-    #[spec(captures: input = self.0, ensures: |ret|
-        ret.is_ok() == (input.first() == Some(&BOUNDARY_EVERY_CONSTRUCTOR))
-        && (ret.is_err() || input.get(1_usize ..) == Some(self.0)))]
+    /// - witness: `tests::manifest::a_tagged_manifest_round_trips_and_refuses_the_untagged_reader`
+    #[spec(captures: input = self.0, ensures: |ret| match ret.as_ref() {
+        Ok(&BoundaryClassification::EveryConstructor) =>
+            input.first() == Some(&BOUNDARY_EVERY_CONSTRUCTOR)
+                && input.get(1_usize ..) == Some(self.0),
+        Ok(&BoundaryClassification::Tagged(_)) =>
+            input.first() == Some(&BOUNDARY_TAGGED)
+                && input.get(BOUNDARY_TAGS_LEN.saturating_add(1_usize) ..) == Some(self.0),
+        Err(_) => input.first() != Some(&BOUNDARY_EVERY_CONSTRUCTOR)
+            && (input.first() != Some(&BOUNDARY_TAGGED) || input.len() <= BOUNDARY_TAGS_LEN),
+    })]
     fn boundary_classification(&mut self) -> Result<BoundaryClassification, ValueError>
     {
         let FieldBytes([tag]) = self.take::<1>(ManifestField::BoundaryClassification)?;
 
         match tag {
             BOUNDARY_EVERY_CONSTRUCTOR => Ok(BoundaryClassification::EveryConstructor),
+            BOUNDARY_TAGGED => {
+                let set = self.take::<BOUNDARY_TAGS_LEN>(ManifestField::BoundaryClassification)?;
+                Ok(BoundaryClassification::Tagged(BoundaryTags::from(set)))
+            },
             _ => Err(ValueError::MalformedManifest {
                 field: ManifestField::BoundaryClassification,
             }),
@@ -1488,7 +1784,10 @@ mod tests
     use gandr_storage_chunker::TokenCount;
     use gandr_storage_chunker::TypedChunkerParams;
 
+    use super::BoundaryClassification;
+    use super::BoundaryTags;
     use super::CodecIdentity;
+    use super::ConstructorClass;
     use super::FieldBytes;
     use super::INDEX_BASE_CHUNK_LOCAL;
     use super::ManifestCursor;
@@ -1499,6 +1798,7 @@ mod tests
     use crate::ChunkStore as _;
     use crate::CodecId;
     use crate::CodecVersion;
+    use crate::ConstructorTag;
     use crate::ContentPtr;
     use crate::InMemoryChunkStore;
     use crate::ManifestField;
@@ -1508,6 +1808,47 @@ mod tests
     use crate::ValueError;
     use crate::ValueManifestVersion;
     use crate::frame_chunk;
+
+    /// The lowest and highest tags and the two at the first word's edge read
+    /// back as a set holds them, every other tag stays an alias, removing a
+    /// tag returns it to an alias, a set's bytes round-trip, and every tag is
+    /// a boundary under the classification by every constructor.
+    #[test]
+    fn a_tagged_classification_classes_exactly_its_tags()
+    {
+        let named = [0x00_u8, 0x3F, 0x40, 0xFF];
+        let tags = named.iter().fold(BoundaryTags::EMPTY, |tags, &tag| {
+            tags.with(ConstructorTag::from(tag))
+        });
+        let tagged = BoundaryClassification::Tagged(tags);
+        for tag in 0_u8 ..= u8::MAX {
+            let expected = if named.contains(&tag) {
+                ConstructorClass::Boundary
+            }
+            else {
+                ConstructorClass::Alias
+            };
+            assert_eq!(
+                tagged.class(ConstructorTag::from(tag)),
+                expected,
+                "tag {tag:#04x}"
+            );
+            assert_eq!(
+                BoundaryClassification::EveryConstructor.class(ConstructorTag::from(tag)),
+                ConstructorClass::Boundary
+            );
+        }
+        let without = tags.without(ConstructorTag::from(0x40_u8));
+        assert_eq!(
+            without.class(ConstructorTag::from(0x40_u8)),
+            ConstructorClass::Alias
+        );
+        assert_eq!(
+            without.class(ConstructorTag::from(0x3F_u8)),
+            ConstructorClass::Boundary
+        );
+        assert_eq!(BoundaryTags::from(FieldBytes::from(tags)), tags);
+    }
 
     #[test]
     fn fixed_width_reads_preserve_suffixes_and_refusal_state()

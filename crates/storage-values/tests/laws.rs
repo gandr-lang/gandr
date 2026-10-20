@@ -122,7 +122,11 @@ proptest! {
     #[test]
     fn the_cuts_agree_with_a_reference_scanner((value, profile) in cut_case()) {
         let flat = encode_flat(&value).expect("a generated value encodes flat");
-        let expected = reference_cuts(flat.as_body(), &profile.params());
+        let expected = reference_cuts(
+            flat.as_body(),
+            &profile.params(),
+            profile.boundary_classification(),
+        );
         let mut store = InMemoryChunkStore::new();
         let root = cam_commit(&mut store, &profile, &value)
             .expect("a generated value commits")

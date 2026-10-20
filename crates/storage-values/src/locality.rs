@@ -31,9 +31,11 @@ use anodized::spec;
 use gandr_storage_chunker::TypedChunkerParams;
 
 use crate::chunk::ChunkStore;
+use crate::closure::WalkStart;
 use crate::closure::walk_closure;
 use crate::error::ValueError;
 use crate::error::ValueQuantity;
+use crate::manifest::BoundaryClassification;
 use crate::ptr::ContentPtr;
 use crate::units::ChunkBound;
 use crate::units::ChunkCount;
@@ -173,8 +175,10 @@ pub fn measure_edit(
     edit_depth: EditDepth,
 ) -> Result<LocalityMeasurement, ValueError>
 {
-    let original = walk_closure(store, before)?;
-    let edited = walk_closure(store, after)?;
+    // The measurement counts chunks; it checks no classification's seams.
+    let whole = (BoundaryClassification::EveryConstructor, WalkStart::Value);
+    let original = walk_closure(store, before, whole)?;
+    let edited = walk_closure(store, after, whole)?;
     let original = original.closure().digests();
     let edited = edited.closure().digests();
     let shared = edited.intersection(original).count();

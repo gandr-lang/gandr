@@ -14,8 +14,11 @@ use alloc::collections::BTreeSet;
 
 use anodized::spec;
 use gandr_storage_chunker::TypedChunkerParams;
+use gandr_storage_values::BoundaryClassification;
 use gandr_storage_values::ChunkDigest;
 use gandr_storage_values::ChunkStore;
+use gandr_storage_values::ConstructorClass;
+use gandr_storage_values::ConstructorTag;
 use gandr_storage_values::ContentPtr;
 use gandr_storage_values::InMemoryChunkStore;
 use gandr_storage_values::TokenBody;
@@ -225,6 +228,8 @@ struct Frame
 {
     /// The index of the constructor's open record.
     open: RecordIndex,
+    /// Whether the constructor's exit is a cut candidate.
+    class: ConstructorClass,
     /// The constructor's residue preimage so far.
     preimage: Vec<u8>,
 }
@@ -238,10 +243,11 @@ struct Frame
 ///   over the residue domain, its open record, each word or bytes record it
 ///   holds directly, `0x00` and the subtree digest of each constructor nested
 ///   in it, and its close record; its subtree digest is that hash. Every record
-///   joins the pending count at the next constructor exit, and so does the one
-///   child record that takes a cut subtree's place; at every exit but the
-///   outermost the constructor is cut when the count has reached the cap, or
-///   else when its residue is divisible by kappa, and a cut empties the count.
+///   joins the pending count at the next boundary constructor's exit, and so
+///   does the one child record that takes a cut subtree's place; at every
+///   boundary exit but the outermost the constructor is cut when the count has
+///   reached the cap, or else when its residue is divisible by kappa, and a cut
+///   empties the count. An alias's exit is no event.
 /// - provides: the cut rule as the README states it, sharing no code with the
 ///   committing traversal.
 /// - fails: never within the admitted flat language.
@@ -262,7 +268,10 @@ struct Frame
     let mut valid = true;
     while let Front::Record(record, after) = front(rest) {
         let cut = cuts.next_if(|cut| cut.0 == index).is_some();
-        let eligible = index > 0_usize && record.kind == Kind::Open;
+        let bytes: &[u8] = record.bytes.into();
+        let eligible = index > 0_usize && record.kind == Kind::Open
+            && bytes.get(1_usize).is_some_and(|&tag|
+                classification.class(ConstructorTag::from(tag)) == ConstructorClass::Boundary);
         valid &= (!cut || eligible) && (!every || !eligible || cut);
         rest = after;
         index = index.saturating_add(1_usize);
@@ -272,6 +281,7 @@ struct Frame
 pub fn reference_cuts(
     flat: TokenBody<'_>,
     params: &TypedChunkerParams,
+    classification: BoundaryClassification,
 ) -> Vec<RecordIndex>
 {
     let kappa = u64::from(params.kappa());
@@ -288,8 +298,10 @@ pub fn reference_cuts(
             Kind::Open => {
                 let mut preimage = RESIDUE_DOMAIN.to_vec();
                 preimage.extend_from_slice(bytes);
+                let tag = *bytes.get(1_usize).expect("an open record names its tag");
                 open.push(Frame {
                     open: RecordIndex(index),
+                    class: classification.class(ConstructorTag::from(tag)),
                     preimage,
                 });
             },
@@ -310,6 +322,9 @@ pub fn reference_cuts(
                 };
                 parent.preimage.push(NESTED_SUBTREE);
                 parent.preimage.extend_from_slice(subtree.as_bytes());
+                if frame.class == ConstructorClass::Alias {
+                    continue;
+                }
 
                 let residue = u64::from_le_bytes(
                     *subtree
@@ -665,7 +680,11 @@ fn cuts_and_splices_keep_record_coordinates()
             gandr_storage_chunker::TokenCap::try_from(cap).expect("a nonzero cap"),
         );
         assert_eq!(
-            reference_cuts(TokenBody::from(flat.as_slice()), &params),
+            reference_cuts(
+                TokenBody::from(flat.as_slice()),
+                &params,
+                BoundaryClassification::EveryConstructor
+            ),
             expected
         );
         let profile = gandr_storage_values::ValueProfile::new(
@@ -706,6 +725,7 @@ fn cuts_and_splices_keep_record_coordinates()
     }
     let mut frame = Frame {
         open: RecordIndex(1_usize),
+        class: ConstructorClass::Boundary,
         preimage: RESIDUE_DOMAIN.to_vec(),
     };
     assert!(!anodized::types::Spec::predicate(&frame));
