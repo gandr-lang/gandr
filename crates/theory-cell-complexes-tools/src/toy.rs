@@ -701,12 +701,16 @@ where
     let mut stood: Vec<(ToyVar, Vec<&[ToyHead]>)> = Vec::new();
     let mut stood_at: BTreeMap<Vec<&[ToyHead]>, ToyVar> = BTreeMap::new();
     let mut patterns = Vec::with_capacity(first.len());
+    let mut members: Vec<&Toy> = Vec::with_capacity(family.len());
+    let mut visits: Vec<Vec<ToyCount>> = Vec::new();
     for (component, term) in first.iter().enumerate() {
-        let members: Vec<&Toy> = core::iter::once(term)
-            .chain(rest.iter().filter_map(|member| member.get(component)))
-            .collect();
+        members.clear();
+        members.extend(
+            core::iter::once(term).chain(rest.iter().filter_map(|member| member.get(component))),
+        );
         let mut nodes: Vec<ToyHead> = Vec::new();
-        let mut visits: Vec<Vec<ToyCount>> = alloc::vec![alloc::vec![ToyCount(0); members.len()]];
+        visits.clear();
+        visits.push(alloc::vec![ToyCount(0); members.len()]);
         while let Some(starts) = visits.pop() {
             let mut heads = members
                 .iter()

@@ -186,22 +186,20 @@ where
     else {
         panic!("the family generalizes");
     };
+    let mut rebuilt: Vec<A::Cmd> = Vec::with_capacity(generalization.patterns.len());
     for (index, member) in family.iter().enumerate() {
-        let rebuilt: Vec<A::Cmd> = generalization
-            .patterns
-            .iter()
-            .map(|pattern| {
-                generalization
-                    .points
-                    .iter()
-                    .fold(pattern.clone(), |term, point| {
-                        A::apply_subst(&point.arms[index].binding, &term)
-                    })
-            })
-            .collect();
+        rebuilt.clear();
+        rebuilt.extend(generalization.patterns.iter().map(|pattern| {
+            generalization
+                .points
+                .iter()
+                .fold(pattern.clone(), |term, point| {
+                    A::apply_subst(&point.arms[index].binding, &term)
+                })
+        }));
         assert_eq!(
-            member.to_vec(),
-            rebuilt,
+            *member,
+            rebuilt.as_slice(),
             "member {index} is its generalization under its arms"
         );
     }
