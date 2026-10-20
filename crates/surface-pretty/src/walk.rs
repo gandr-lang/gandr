@@ -4222,8 +4222,9 @@ impl Walk<'_, '_>
                 );
             },
             // A hole is the term the author has not written; where a term is
-            // read its `?` is the grammar's hole, though the hole's identity
-            // goes unwritten.
+            // read its `?` is the grammar's hole, and it reads back as the same
+            // hole: a hole is named by its place among its source's holes, which
+            // a printing in its declaration's place keeps.
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
@@ -4233,10 +4234,7 @@ impl Walk<'_, '_>
                 )
             )]
             | Former::Unreadable(Unreadable::Hole) => {
-                return writes(
-                    Production("hole"),
-                    self.unspell(Unspelled::Unreadable(Unreadable::Hole)),
-                );
+                return writes(Production("hole"), self.atom(Glyphs("?")));
             },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",

@@ -483,8 +483,9 @@
 //! # Source holes
 //!
 //! Source `?` and `?name` lower to core value or computation holes according to
-//! their term position. Occurrences have distinct `HoleId`s derived from their
-//! syntax nodes, and retain the usual written origins. Witness:
+//! their term position. Occurrences have distinct `HoleId`s, each the number of
+//! holes the text writes before it, so a hole keeps its name however the text
+//! around it is spelled; they retain the usual written origins. Witness:
 //! `tests::source_holes_keep_their_families_and_distinct_occurrences`.
 
 use alloc::collections::BTreeMap;
@@ -2922,6 +2923,9 @@ struct Lowerer<'run, 'source>
     /// frame its computation reads under and the computation, whose callee's
     /// written result states the binder's type to a match on it.
     ran: BTreeMap<ScopeId, (Frame, Placed)>,
+    /// Every hole of the tree, by where its text starts, read once the first
+    /// hole is lowered: a hole is named by its place here.
+    holes: Vec<(ByteOffset, NodeIndex)>,
     /// Each node under an arm of a match on a recursive function's
     /// parameter: the innermost such match's function and position.
     scrutinised: BTreeMap<NodeIndex, native::Scrutiny>,
@@ -3643,6 +3647,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             recursions: BTreeMap::new(),
             staged_parameters: BTreeMap::new(),
             ran: BTreeMap::new(),
+            holes: Vec::new(),
             scrutinised: BTreeMap::new(),
             descents: BTreeMap::new(),
             injected: BTreeMap::new(),
@@ -4984,12 +4989,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::Name => self.name(site),
             Former::Constructor => self.constructor(site),
             Former::Hole => {
-                let identity = u32::try_from(usize::from(site.at.node)).map_err(|_overflow| {
-                    LoweringRefusal::BudgetExceeded {
-                        budget: self.fuel.budget,
-                    }
-                })?;
-                let hole = gandr_core_term::hole::HoleId::from(identity);
+                let hole = self.hole(site.at)?;
                 let plan = if matches!(site.reading, Reading::Computation(_) | Reading::Head(_)) {
                     let _frame = self.require(site, Produced::Computation)?;
                     Plan::CompHole(hole)
@@ -10246,6 +10246,55 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> SurfaceName<'source>
     {
         SurfaceName::from(self.text_at(placed))
+    }
+
+    /// The name of the hole written at `at`: its place among the tree's
+    /// holes in the order the text writes them, so a hole keeps its name
+    /// however the text around it is spelled or laid out.
+    ///
+    /// # Specification
+    /// - requires: `at` is a hole of the tree.
+    /// - ensures: each hole is named by how many holes the text writes before
+    ///   it, so distinct holes have distinct names.
+    /// - fails: the budget refusal for a hole past the last name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — holes before, between and after other declarations,
+    ///   in a pattern and in a body, each named by its written place.
+    /// - witness: `tests::source_holes_keep_their_families_and_distinct_occurrences`
+    #[spec(ensures: |ret| ret.is_err() || self.holes.binary_search(&(at.span.start(), at.node)).is_ok_and(|place| ret.as_ref().is_ok_and(|&hole| usize::try_from(u32::from(hole)) == Ok(place))))]
+    fn hole(
+        &mut self,
+        at: Placed,
+    ) -> Result<gandr_core_term::hole::HoleId, LoweringRefusal<'source>>
+    {
+        if self.holes.is_empty() {
+            for position in self.tree.positions() {
+                let Some(node) = self.tree.node(position)
+                else {
+                    continue;
+                };
+                if matches!(shape_of(self.pbg, node), Ok(Shape::Form { name, .. }) if name == FormName::HOLE)
+                {
+                    self.holes.push((node.span().start(), position));
+                }
+            }
+            self.holes.sort_unstable();
+        }
+        let exceeded = LoweringRefusal::BudgetExceeded {
+            budget: self.fuel.budget,
+        };
+        let place = self
+            .holes
+            .binary_search(&(at.span.start(), at.node))
+            .map_err(|_absent| exceeded)?;
+        u32::try_from(place)
+            .map(gandr_core_term::hole::HoleId::from)
+            .map_err(|_overflow| exceeded)
     }
 
     /// The descending sweep: mint every planned node and record its origin.

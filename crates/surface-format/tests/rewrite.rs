@@ -339,6 +339,35 @@ fn a_match_over_a_stated_sum_is_sugared_791()
     );
 }
 
+/// #893: a source holding a body hole beside a declaration the sugared
+/// rewrite respells formats, the hole kept: a hole is named by its place
+/// among the source's holes, so respelling the declaration beside it no
+/// longer renames it. Before the fix, the formatting was refused as a change
+/// of meaning.
+#[test]
+fn a_body_hole_keeps_its_meaning_beside_a_rewrite_893()
+{
+    let grammar = grammar();
+    let source = "data Color : Type {\n  Red : Color;\n  Green : Color;\n}\n\ndef sketch(c : \
+                  Color) -> -F Integer {\n  case c {\n    Red => return 0,\n    Green => ?\n  \
+                  }\n}\n\ndef pair : #{Integer, String} ;\n";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Sugared,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(
+        (formatted.text().as_ref(), formatted.withdrawn()),
+        (
+            source
+                .replace("#{Integer, String}", "Integer * String")
+                .as_str(),
+            [].as_slice()
+        )
+    );
+}
+
 /// A source that imports a sibling is lowered beside it: the rewrite whose
 /// meaning reads the sibling's declarations applies, where alone the
 /// declaration's lowering is refused and it keeps its spelling, reported.

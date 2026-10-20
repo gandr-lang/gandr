@@ -528,9 +528,6 @@ enum Held
     /// The same, where the sugared spelling writes a path composite `then`
     /// (#803).
     ApartComposite,
-    /// A body hole printed `?`, which neither the printer nor the formatter
-    /// reads back (#893).
-    Hole,
 }
 
 impl fmt::Display for Held
@@ -550,7 +547,6 @@ impl fmt::Display for Held
             Self::Unread => "#815, the printing does not lower back",
             Self::Apart => "#808, the two spellings lower apart",
             Self::ApartComposite => "#803, the two spellings of a composite lower apart",
-            Self::Hole => "#893, a body hole printed `?`",
         })
     }
 }
@@ -662,12 +658,6 @@ fn spelt(
         .all(|reason| *reason == Unspelled::Unreadable(Unreadable::Unnamed))
     {
         Spelt::Held(Held::Unnamed)
-    }
-    else if unspelled
-        .iter()
-        .all(|reason| *reason == Unspelled::Unreadable(Unreadable::Hole))
-    {
-        Spelt::Held(Held::Hole)
     }
     else {
         Spelt::Unfaithful(format!("{unspelled:?}: {text}"))
@@ -1118,10 +1108,7 @@ fn bodies(
             .or_default()
             .push(format!("{name} `{declaration}`"));
     }
-    // The formatter refuses to carry a source holding a body hole between
-    // forms (#893): its rounds wait on that fix.
-    let holed = found.held.contains_key(&Held::Hole);
-    if held.is_empty() || holed {
+    if held.is_empty() {
         return found;
     }
     let excluded = |declaration: &str| {
