@@ -1,0 +1,20 @@
+// A function is a computation over its parameters, and one function calls
+// another by running it and becoming the next call.
+
+/// One more than its argument.
+@[ checks ]
+def inc(x: Integer) -> -F Integer {
+  return (x + 1)
+}
+
+/// `inc` twice: the first call runs, the second is the tail call.
+@[ checks ]
+def twice(x: Integer) -> -F Integer {
+  run y <- inc(x);
+  become inc(y)
+}
+
+/// The run target calls `twice`; the lowering reads no final expression as a
+/// run target yet (#1105).
+@[ refuses("OutOfFragment") ]
+twice(40)

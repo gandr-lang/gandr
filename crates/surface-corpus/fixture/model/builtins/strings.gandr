@@ -1,0 +1,32 @@
+// The string operations of the `string` namespace: containment, equality,
+// prefix and suffix, escaping and splitting. Each is reached by projection
+// from its namespace, which the lowering admits for no builtin yet (#1106).
+
+/// A string, named.
+@[ checks ]
+def slogan = "types are machines";
+
+/// A statement before a named item: the lowering reads no root expression yet
+/// (#1105).
+@[ refuses("OutOfFragment") ]
+string.contains(slogan, "machine");
+
+/// A second statement, equality (#1105).
+@[ refuses("OutOfFragment") ]
+string.eq(slogan, "types are machines");
+
+/// Whether the string starts with a word.
+@[ refuses("OutOfFragment") ]
+def has_prefix = string.starts_with(slogan, "types");
+
+/// Whether the string ends with a word.
+@[ refuses("OutOfFragment") ]
+def has_suffix = string.ends_with(slogan, "machines");
+
+/// A path with its special characters escaped.
+@[ refuses("OutOfFragment") ]
+def escaped = string.escape("a+b.txt");
+
+/// The run target splits at a comma (#1105).
+@[ refuses("OutOfFragment") ]
+string.split("alpha,beta", ",")

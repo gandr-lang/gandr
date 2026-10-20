@@ -1,0 +1,26 @@
+// What the kernel admits stops at its value forms: a string, a pair, a
+// function check, and a number at a stated width does not lower.
+
+/// A string.
+@[ checks ]
+def greeting = "the value zone";
+
+/// The string paired with itself.
+@[ checks ]
+def pair = (greeting, greeting);
+
+/// The identity on integers.
+@[ checks ]
+def identity(x: Integer) -> -F Integer {
+  return x
+}
+
+/// A number at a stated width; the lowering admits no typed number yet
+/// (#1109).
+@[ refuses("OutOfFragment") ]
+def wide = 1u32;
+
+/// The run target returns the string; the lowering reads no final expression
+/// as a run target yet (#1105).
+@[ refuses("OutOfFragment") ]
+pure greeting

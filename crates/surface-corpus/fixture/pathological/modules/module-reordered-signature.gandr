@@ -1,0 +1,25 @@
+// A signature whose fields come in another order than the module's members:
+// matching is by name, so the order is no refusal, and a member the
+// signature leaves out stays inside.
+
+/// A module whose signature lists its members last first.
+module Ordered : #{ third: Integer, first: Integer, second: Integer } {
+  /// The first value.
+  @[ checks ]
+  def first = 1;
+  /// A member the signature leaves out.
+  @[ checks ]
+  def hidden = 99;
+  /// One more than the first. An operator in a value runs before the
+  /// computation around it, and a definition's value has none.
+  @[ refuses("UnenclosedRun") ]
+  def second = first + 1;
+  /// One more than the second, refused for the same reason.
+  @[ refuses("UnenclosedRun") ]
+  def third = second + 1;
+}
+
+/// The run target gathers the three in a record; the lowering reads no final
+/// expression as a run target yet (#1105).
+@[ refuses("OutOfFragment") ]
+#{a = Ordered.first, b = Ordered.second, c = Ordered.third}

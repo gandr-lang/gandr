@@ -82,6 +82,12 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression +", Standing::Owed(0)),
     ("Expression -", Standing::Owed(0)),
     ("Expression .", Standing::Owed(0)),
+    (
+        "Expression ;",
+        Standing::Design(
+            "the `;` ending a root statement that is no declaration: the refused stray answers",
+        ),
+    ),
     ("Expression <=", Standing::Owed(0)),
     ("Expression >", Standing::Owed(0)),
     ("Expression >=", Standing::Owed(0)),
@@ -137,7 +143,9 @@ const KINDS: &[(&str, Standing)] = &[
     ("Pattern unit", Standing::Owed(0)),
     ("Pattern |", Standing::Owed(0)),
     ("Type !", Standing::Owed(0)),
-    ("Type #{", Standing::Owed(0)),
+    // A nested module's signature inside a module signature, the type of
+    // `inner` in `Facts`'s `#{ inner: #{ answer: Integer }, … }` (#1115).
+    ("Type #{", Standing::Owed(1)),
     ("Type &", Standing::Owed(0)),
     (
         "Type ( group",
@@ -154,7 +162,9 @@ const KINDS: &[(&str, Standing)] = &[
     ("Type =>", Standing::Owed(0)),
     ("Type ?", Standing::Owed(0)),
     ("Type Cap", Standing::Owed(0)),
-    ("Type Integer", Standing::Owed(0)),
+    // The signature field of a refused member, `total: Integer` in `Facts`'s
+    // signature where `total` is refused (#1115).
+    ("Type Integer", Standing::Owed(1)),
     ("Type Path", Standing::Owed(0)),
     ("Type String", Standing::Owed(0)),
     ("Type Type", Standing::Owed(0)),
@@ -305,8 +315,8 @@ enum Placed
     /// former reads off the literal's digits, never a term, so the call
     /// the annotation heads answers (#298).
     Stratum,
-    /// The module a path selects from, `M` in `M.x` or `M.T`: a
-    /// namespace, neither a term nor a type, so the path answers.
+    /// The module a path selects from, `M` in `M.x` or `M.T`, and `M.N` in
+    /// `M.N.x`: a namespace, neither a term nor a type, so the path answers.
     Qualifier,
     /// A move of a run literal, its head, or the label it names: read by
     /// its shape, never resolved, so the run answers.
@@ -475,9 +485,17 @@ fn gated(
             && parent.is_some_and(|(_, label, headed, ..)| {
                 headed && (label == "[" || def.label == "constructor" || FORMERS.contains(&text))
             });
-        let qualifier = !melded
-            && parent.is_some_and(|(_, _, _, qualifying, _)| qualifying)
-            && (def.label == "constructor" || def.label == "type_identifier");
+        let qualifier = parent.is_some_and(|(_, _, _, qualifying, _)| qualifying)
+            && if melded {
+                def.label == "."
+                    && text
+                        .split('.')
+                        .next()
+                        .is_some_and(|head| head.trim_start().starts_with(char::is_uppercase))
+            }
+            else {
+                def.label == "constructor" || def.label == "type_identifier"
+            };
         let moved = match run {
             Run::Outside => false,
             Run::Moves => {

@@ -1,6 +1,0 @@
-data Maybe(a : Type) : Type {
-  None : Maybe(a);
-  Some : (x : a) --> Maybe(a);
-}
-
-(Some("hello") : Maybe(Integer))

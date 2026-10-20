@@ -1,0 +1,24 @@
+// A record two names share, then updated: the update copies, so neither name
+// sees it. The cost of the copy is what this source measures.
+
+/// A record of two fields.
+@[ checks ]
+def r = #{ x = 1, y = 2 };
+
+/// A first name for it.
+@[ checks ]
+def a = r;
+
+/// A second name for it.
+@[ checks ]
+def b = r;
+
+/// The record updated at `x`; the lowering admits no record update yet
+/// (#1110).
+@[ refuses("OutOfFragment") ]
+def updated = #{ r | x = 99 };
+
+/// The run target returns the first name, its `x` still one; the lowering
+/// reads no final expression as a run target yet (#1105).
+@[ refuses("OutOfFragment") ]
+a

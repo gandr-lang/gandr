@@ -1,0 +1,12 @@
+// A package's payload is a thunk: a package type over a plain value type is
+// refused. The lowering admits no package type yet (#1108), so that refusal
+// stands in front of the payload's.
+
+/// A package over an integer, defined by a computation (#1108).
+@[ refuses("OutOfFragment") ]
+def bad : package [ T ] Integer;
+def bad = pure 1;
+
+/// The run target returns it (#1105).
+@[ refuses("OutOfFragment") ]
+bad

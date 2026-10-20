@@ -1,3 +1,0 @@
-def cell = #{ count = 3, label = "start" };
-
-#{ cell | count = "three" }

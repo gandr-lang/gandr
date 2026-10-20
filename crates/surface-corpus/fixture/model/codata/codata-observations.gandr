@@ -1,0 +1,25 @@
+// A codata value is defined by what each observation answers, and observed
+// by projecting it. This source is written in an earlier surface: its kind is
+// `Type` and its copatterns stand without `&{ … }`. `streams.gandr` writes
+// both as the language now spells them.
+
+/// A point observed by its coordinates. A codata declaration's kind is a
+/// computation universe, and `Type` is none.
+@[ refuses("CodataKindNotUniverse") ]
+codata Point : Type {
+  x : Integer;
+  y : Integer;
+}
+
+/// The point at three and four, its observations written bare; the lowering
+/// reads a `def rec` body only as a computation.
+@[ refuses("OutOfFragment") ]
+def rec origin() -> Point {
+  .x => 3,
+  .y => 4
+}
+
+/// The run target sums the coordinates; the lowering reads no final
+/// expression as a run target yet (#1105).
+@[ refuses("OutOfFragment") ]
+origin.x + origin.y

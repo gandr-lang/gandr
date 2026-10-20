@@ -1,0 +1,41 @@
+// The list operations that build a new list from an old one: set, update,
+// insert and remove at a position, push, append and concatenate. Each is
+// reached by projection from the `list` namespace, which the lowering admits
+// for no builtin yet (#1106).
+
+/// Three tens, annotated as a list of integers; the lowering admits no
+/// annotation expression as a definition's value yet (#1107).
+@[ refuses("OutOfFragment") ]
+def tens = ([10, 20, 30] : List(Integer));
+
+/// The element at position one, replaced.
+@[ refuses("OutOfFragment") ]
+def replaced = list.set(tens, 1, 99);
+
+/// The element at position zero, incremented.
+@[ refuses("OutOfFragment") ]
+def bumped = list.update_at(tens, 0, thunk { fn(n) { return n + 1 } });
+
+/// An element inserted at position one.
+@[ refuses("OutOfFragment") ]
+def inserted = list.insert_at(tens, 1, 15);
+
+/// The element at position zero, removed.
+@[ refuses("OutOfFragment") ]
+def removed = list.remove_at(tens, 0);
+
+/// An element pushed at the end.
+@[ refuses("OutOfFragment") ]
+def grown = list.push(tens, 40);
+
+/// A second list appended.
+@[ refuses("OutOfFragment") ]
+def appended = list.append(tens, [40, 50]);
+
+/// A list of lists, concatenated.
+@[ refuses("OutOfFragment") ]
+def concatenated = list.concat([tens, [40, 50]]);
+
+/// The run target doubles every element over fifteen (#1105).
+@[ refuses("OutOfFragment") ]
+list.update_where(thunk { fn(n) { return n > 15 } }, thunk { fn(n) { return n * 2 } }, tens)

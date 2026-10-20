@@ -1,0 +1,32 @@
+// Operator declarations extend the module's operator table at a fixity and a
+// precedence, and a `rec` block holds definitions that call each other. The
+// lowering admits no operator declaration yet (#1111). A member claiming
+// descent on a call of another member is a `def rec`; these are plain
+// definitions, so each claim is refused.
+
+/// A left-associative infix operator at precedence six (#1111).
+@[ refuses("OutOfFragment") ]
+op infixl 6 "<|>" ;
+
+/// A right-associative infix operator at precedence five (#1111).
+@[ refuses("OutOfFragment") ]
+op infixr 5 "<>" ;
+
+/// A prefix operator at precedence nine (#1111).
+@[ refuses("OutOfFragment") ]
+op prefix 9 "!" ;
+
+/// A postfix operator at precedence nine (#1111).
+@[ refuses("OutOfFragment") ]
+op postfix 9 "?" ;
+
+/// Evenness and oddness, each by the other.
+rec {
+  /// Even when its predecessor is odd; a plain definition claims no
+  /// descent.
+  @[ refuses("OutOfFragment") ]
+  def even(n: Integer) -> -F Bool { return odd[<](n) }
+  /// Odd when its predecessor is even, refused for the same reason.
+  @[ refuses("OutOfFragment") ]
+  def odd(n: Integer) -> -F Bool { return even[<](n) }
+}

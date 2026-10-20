@@ -1,0 +1,23 @@
+// A regular expression's named captures and the path operations: join, base
+// name and extension. Each is reached by projection from its namespace, which
+// the lowering admits for no builtin yet (#1106).
+
+/// The stem and extension of a file name, captured by name.
+@[ refuses("OutOfFragment") ]
+def caps = regex.extract("^(?<stem>.*)\\.(?<ext>gandr)$", "examples/demo.gandr");
+
+/// A directory and a file name, joined.
+@[ refuses("OutOfFragment") ]
+def demo_path = path.join("examples", "demo.gandr");
+
+/// The joined path's last component.
+@[ refuses("OutOfFragment") ]
+def leaf = path.basename(demo_path);
+
+/// The joined path's extension.
+@[ refuses("OutOfFragment") ]
+def suffix = path.extension(demo_path);
+
+/// The run target gathers the three in a record (#1105).
+@[ refuses("OutOfFragment") ]
+#{ capture = caps, leaf = leaf, path_ext = suffix }

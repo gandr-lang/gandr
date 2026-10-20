@@ -1,0 +1,19 @@
+// A package whose payload is a thunk of grade zero cannot be opened: its
+// payload may not be run. The lowering admits no package type, `pack` or
+// `unpack` yet (#1108), so that refusal stands in front of the grade's.
+
+/// A package of a grade-zero thunk (#1108).
+@[ refuses("OutOfFragment") ]
+def closed : package [ T ] +U[0] (-F #{ seed: T });
+def closed = pack [ Integer ] thunk[0] { return #{ seed = 7 } };
+
+/// Opens a grade-zero package (#1108).
+@[ refuses("OutOfFragment") ]
+def open_it(p: package [ T ] +U[0] (-F #{ seed: T })) -> -F Integer {
+  unpack m : package [ T ] +U[0] (-F #{ seed: T }) = p;
+  return 1
+}
+
+/// The run target opens it (#1105).
+@[ refuses("OutOfFragment") ]
+open_it(closed)

@@ -2856,12 +2856,12 @@ def wrong = "text" ;"#,
         let composed = compose(
             &grammar,
             CorpusRoot::Fixture,
-            SourceText::from("def greeting = \"hello\" ;\npure greeting"),
+            SourceText::from("pure greeting"),
             &mut lowerings,
         );
         let Ok(Composed::Refused(refusal)) = composed
         else {
-            panic!("a top-level expression refuses the module");
+            panic!("a root of nothing but a top-level expression refuses the module");
         };
         assert!(
             matches!(refusal, LoweringRefusal::OutOfFragment {
@@ -2917,8 +2917,13 @@ def wrong = "text" ;"#,
             ("def good = 2 ;", false, &[][..]),
             (
                 "def bad = 1 ~ 2 ;\npure 3",
-                true,
+                false,
                 &[(gandr_surface_parser::Oblig::UnmoldedTok, 12_usize, 13_usize)][..],
+            ),
+            (
+                "pure 1 ~ 2",
+                true,
+                &[(gandr_surface_parser::Oblig::UnmoldedTok, 7_usize, 8_usize)][..],
             ),
         ] {
             let lowering = lower_source(&grammar, SourceText::from(source), &mut lowerings)
@@ -2942,7 +2947,7 @@ def wrong = "text" ;"#,
         }
         assert_eq!(
             usize::from(lowerings),
-            3_usize,
+            4_usize,
             "each lowering is counted once"
         );
     }

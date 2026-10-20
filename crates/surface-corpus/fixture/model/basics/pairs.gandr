@@ -1,0 +1,10 @@
+// A pair of values, named, and returned as a program's result.
+
+/// Two integers, paired.
+@[ checks ]
+def point = (1, 2);
+
+/// The run target returns the pair; the lowering reads no final expression as
+/// a run target yet (#1105).
+@[ refuses("OutOfFragment") ]
+pure point

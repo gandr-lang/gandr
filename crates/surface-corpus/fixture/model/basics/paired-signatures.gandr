@@ -1,0 +1,26 @@
+// A signature written apart from its definition: the definition is checked
+// against the type the signature states. Block comments are grammar extras
+// and nest, so the prose below changes nothing.
+
+/* Block comments are also grammar extras, and they can nest:
+   /* inner note */
+   the program below is unchanged by this prose. */
+
+/// The seed, through two primitive calls. A call nested in a value runs
+/// before the computation around it, and a definition's value has none.
+@[ refuses("UnenclosedRun") ]
+def seed : Integer;
+def seed = prim.const(40, prim.id(999));
+
+/// Two more than its argument, at a thunk of grade one; the lowering admits
+/// no thunk grade but `ω` yet (#1112).
+@[ refuses("GradedBridge") ]
+def plus_two : +U[1] (Integer -> -F Integer);
+def plus_two(x: Integer) -> -F Integer {
+  return (x + 2)
+}
+
+/// The run target applies the function to the seed; the lowering reads no
+/// final expression as a run target yet (#1105).
+@[ refuses("OutOfFragment") ]
+plus_two(seed)

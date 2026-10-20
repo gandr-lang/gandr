@@ -9587,7 +9587,7 @@ mod tests
             },
             ContentChange {
                 range: None,
-                text: String::from("def f : Integer ;\npure 3\n"),
+                text: String::from("pure 3\n"),
             },
         ];
         let (version, tried) = workspace

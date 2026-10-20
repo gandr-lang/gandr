@@ -1,0 +1,16 @@
+// Appending to a list copies it, and setting one element of the result copies
+// it again: the cost of each is the list's length.
+
+/// Ten integers, annotated as a list of them; the lowering admits no
+/// annotation expression as a definition's value yet (#1107).
+@[ refuses("OutOfFragment") ]
+def xs = ([0, 1, 2, 3, 4, 5, 6, 7, 8, 9] : List(Integer));
+
+/// Three more appended, reached by projection from the `list` namespace,
+/// which the lowering admits for no builtin yet (#1106).
+@[ refuses("OutOfFragment") ]
+def grown = list.append(xs, [10, 11, 12]);
+
+/// The run target sets the twelfth element (#1105).
+@[ refuses("OutOfFragment") ]
+list.set(grown, 11, 99)

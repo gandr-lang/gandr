@@ -1,0 +1,18 @@
+// A parameterised data type nests inside another type's argument: a list of
+// optional integers. `Maybe` is the one `data-maybe.gandr` declares.
+
+import "./data-maybe.gandr" ;
+
+/// Binds a list of optional integers, then returns. The list is annotated
+/// where it is run as a value; the lowering admits no annotation expression
+/// there yet (#1107).
+@[ refuses("OutOfFragment") ]
+def sum_first() -> -F Integer {
+  run items <- pure ([Some(1), None, Some(3)] : List(Maybe(Integer)));
+  return 7
+}
+
+/// The run target calls `sum_first`; the lowering reads no final expression
+/// as a run target yet (#1105).
+@[ refuses("OutOfFragment") ]
+sum_first()

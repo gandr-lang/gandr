@@ -1,0 +1,14 @@
+// Records are values: updating one makes a new record and leaves the old one
+// as it was, so no name aliases another's change.
+
+/// A record of two fields.
+@[ checks ]
+def r = #{ x = 1, y = 2 };
+
+/// `r` updated at `x`; the lowering admits no record update yet (#1110).
+@[ refuses("OutOfFragment") ]
+def r2 = #{ r | x = 9 };
+
+/// The run target returns `r`, still at `x = 1` (#1105).
+@[ refuses("OutOfFragment") ]
+r

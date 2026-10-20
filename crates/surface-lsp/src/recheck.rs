@@ -1613,7 +1613,7 @@ mod tests
         let base = "def a = 1 ;\ndef f : Integer ;\n";
         let candidates = [
             "def a = 1 ;\ndef f : Integer ;\ndef f = \"one\" ;\n",
-            "def a = 1 ;\ndef f : Integer ;\npure 3\n",
+            "pure 3\n",
             "def a = 1 ;\ndef f : Integer ;\ndef f = a ;\n",
         ];
         let mut session = open(&uri);

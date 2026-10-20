@@ -1120,7 +1120,7 @@ mod tests
             &mut connection,
             &mut workspace,
             &json!("trial"),
-            &json!({ "uri": uri, "candidates": ["def f : Integer ;\npure 3\n"] }),
+            &json!({ "uri": uri, "candidates": ["pure 3\n"] }),
         );
         assert_eq!(
             whole.pointer("/structuredContent/trials/0/reached"),

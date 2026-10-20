@@ -1,4 +1,0 @@
-def bad : package [ T ] Integer;
-def bad = pure 1;
-
-bad

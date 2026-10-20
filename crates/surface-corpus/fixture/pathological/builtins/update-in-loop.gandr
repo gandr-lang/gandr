@@ -1,0 +1,11 @@
+// Pushing in a fold copies the accumulated list at each step, so the fold's
+// cost is the square of the list's length.
+
+/// Four integers, annotated as a list of them; the lowering admits no
+/// annotation expression as a definition's value yet (#1107).
+@[ refuses("OutOfFragment") ]
+def steps = ([1, 2, 3, 4] : List(Integer));
+
+/// The run target pushes each element in a fold (#1105, #1106).
+@[ refuses("OutOfFragment") ]
+list.reduce(thunk { fn(acc, n) { return list.push(acc, n) } }, [], steps)

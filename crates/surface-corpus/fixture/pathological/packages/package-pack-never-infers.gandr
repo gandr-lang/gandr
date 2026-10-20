@@ -1,0 +1,11 @@
+// A `pack` is checked against a stated package type and never inferred, so a
+// definition with no type is refused. The lowering admits no `pack` yet
+// (#1108), so that refusal stands in front of the inference's.
+
+/// A pack with no stated type (#1108).
+@[ refuses("OutOfFragment") ]
+def unannotated = pack [ Integer ] thunk { return #{ seed = 7 } };
+
+/// The run target returns it (#1105).
+@[ refuses("OutOfFragment") ]
+unannotated

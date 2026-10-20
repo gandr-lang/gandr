@@ -1,8 +1,0 @@
-data Celsius : Type {
-  Cel : (x : Integer) --> Celsius;
-}
-data Fahrenheit : Type {
-  Fah : (x : Integer) --> Fahrenheit;
-}
-
-(Cel(20) : Fahrenheit)

@@ -1,0 +1,11 @@
+// A list literal at a stated element type, and a list extended at its front.
+
+/// Three integers, annotated as a list of them; the lowering admits no
+/// annotation expression as a definition's value yet (#1107).
+@[ refuses("OutOfFragment") ]
+def xs = ([1, 2, 3] : List(Integer));
+
+/// The run target prepends a zero; the lowering reads no final expression as
+/// a run target yet (#1105).
+@[ refuses("OutOfFragment") ]
+[0] ++ xs

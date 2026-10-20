@@ -1,0 +1,12 @@
+// A record update of a value that is no record is refused. The update is
+// written as the run target, which the lowering reads no final expression as
+// yet (#1105), and the lowering admits no record update (#1110), so those
+// refusals stand in front of it.
+
+/// An integer.
+@[ checks ]
+def n = 5;
+
+/// The integer updated as if a record (#1105, #1110).
+@[ refuses("OutOfFragment") ]
+#{ n | x = 1 }
