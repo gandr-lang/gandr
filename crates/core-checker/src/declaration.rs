@@ -277,6 +277,11 @@ pub struct Declaration
     /// The laws a definition's folds rest on, one per rule of the folded
     /// type in written order; empty for every other declaration.
     laws: Vec<ConstantIndex>,
+    /// The rules of the operation a value declaration lowered from, over
+    /// module positions; none for every other declaration. The judgement
+    /// reads none of them: the kernel decides them where the declaration
+    /// crosses.
+    operation_rules: gandr_kernel_term::OperationRules,
     /// The entry a value declaration states, or why none.
     entry: Maybe<Entry, entry::Absent>,
 }
@@ -317,6 +322,7 @@ impl Declaration
             content: DeclarationContent::Value { signature, body },
             origin,
             laws: Vec::new(),
+            operation_rules: gandr_kernel_term::OperationRules::default(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -363,6 +369,7 @@ impl Declaration
             origin,
             content: DeclarationContent::Data(signature),
             laws: Vec::new(),
+            operation_rules: gandr_kernel_term::OperationRules::default(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -384,6 +391,7 @@ impl Declaration
             origin,
             content: DeclarationContent::Codata(signature),
             laws: Vec::new(),
+            operation_rules: gandr_kernel_term::OperationRules::default(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -394,7 +402,7 @@ impl Declaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn abstract_type(
+    pub fn abstract_type(
         constant: ConstantIndex,
         sealed: AbstractType,
         origin: OriginToken,
@@ -405,6 +413,7 @@ impl Declaration
             origin,
             content: DeclarationContent::Abstract(sealed),
             laws: Vec::new(),
+            operation_rules: gandr_kernel_term::OperationRules::default(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -415,7 +424,7 @@ impl Declaration
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn world(
+    pub fn world(
         constant: ConstantIndex,
         origin: OriginToken,
     ) -> Self
@@ -425,6 +434,7 @@ impl Declaration
             origin,
             content: DeclarationContent::World,
             laws: Vec::new(),
+            operation_rules: gandr_kernel_term::OperationRules::default(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -450,6 +460,18 @@ impl Declaration
     pub fn laws(&self) -> &[ConstantIndex]
     {
         &self.laws
+    }
+
+    /// The rules of the operation the declaration lowered from, over module
+    /// positions.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn operation_rules(&self) -> &gandr_kernel_term::OperationRules
+    {
+        &self.operation_rules
     }
 
     /// The entry the declaration states, or why none.
@@ -496,6 +518,47 @@ impl Declaration
     {
         match self.content {
             DeclarationContent::Value { .. } => Self { laws, ..self },
+            DeclarationContent::Data(_)
+            | DeclarationContent::Codata(_)
+            | DeclarationContent::Abstract(_)
+            | DeclarationContent::World => self,
+        }
+    }
+
+    /// This value declaration carrying `rules` as the rules of the operation
+    /// it lowered from, everything else unchanged; any other declaration
+    /// unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — the kernel decides at admission that the rules
+    ///   converge.
+    /// - ensures: a value declaration carries exactly `rules`; any other
+    ///   declaration is returned unchanged.
+    /// - provides: how a producer attaches the rules an operation was written
+    ///   as.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operation's rules cross to the kernel, which
+    ///   admits the corpus's converging operations and refuses a forged pair.
+    /// - witness: `bridge::tests::an_operations_rules_cross_at_kernel_positions_and_the_kernel_decides_them`
+    #[spec(
+        captures: entry = (self.constant, self.origin, matches!(self.content, DeclarationContent::Value { .. }), self.operation_rules.rules().len(), rules.rules().len()),
+        ensures: |ret| ret.constant == entry.0 && ret.origin == entry.1
+            && ret.operation_rules.rules().len() == if entry.2 { entry.4 } else { entry.3 },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn ruled(
+        self,
+        rules: gandr_kernel_term::OperationRules,
+    ) -> Self
+    {
+        match self.content {
+            DeclarationContent::Value { .. } => Self {
+                operation_rules: rules,
+                ..self
+            },
             DeclarationContent::Data(_)
             | DeclarationContent::Codata(_)
             | DeclarationContent::Abstract(_)

@@ -4551,10 +4551,20 @@ where
             ref signature,
             ref body,
             ref laws,
+            ref rules,
         } => {
             // A value naming no law keeps its original tag; a lawful one
-            // takes its own, with the laws after the body.
-            writer.tag(Tag(if laws.is_empty() { 0 } else { 3 }));
+            // takes its own, with the laws after the body; a ruled one takes
+            // its own, with the laws, however many, then the rules.
+            writer.tag(Tag(if !rules.is_empty() {
+                5
+            }
+            else if laws.is_empty() {
+                0
+            }
+            else {
+                3
+            }));
             match *signature {
                 Maybe::Present(root) => {
                     writer.tag(Tag(1));
@@ -4569,10 +4579,17 @@ where
                 },
                 Maybe::Absent(body::Absent::Hole) => writer.tag(Tag(0)),
             }
-            if !laws.is_empty() {
+            if !laws.is_empty() || !rules.is_empty() {
                 writer.count(Count(laws.len()))?;
                 for law in laws {
                     write_reference(writer, law)?;
+                }
+            }
+            if !rules.is_empty() {
+                writer.count(Count(rules.len()))?;
+                for rule in rules {
+                    write_operation_side(writer, &rule.left)?;
+                    write_operation_side(writer, &rule.right)?;
                 }
             }
         },
@@ -4603,6 +4620,99 @@ where
     write_nodes(writer, content.nodes())?;
     write_placements(writer, content.placements());
     Ok(())
+}
+
+/// Write one side of an operation rule's content: its node count, then each
+/// node's tag and payload.
+///
+/// # Specification
+/// - fails: as [`write_reference`] and the writer's count.
+/// - panics: none.
+/// - executable: none — the bytes written are the body's own output; the
+///   witness reads them back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a ruled item's content round-trips.
+/// - witness: `codec::tests::a_ruled_value_root_round_trips_and_its_rules_are_content`
+fn write_operation_side<Out>(
+    writer: &mut Writer<'_, Out>,
+    side: &[crate::content::RuleRoot],
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(side.len()))?;
+    for node in side {
+        match *node {
+            crate::content::RuleRoot::Operation { ref callee, arity } => {
+                writer.tag(Tag(0));
+                write_reference(writer, callee)?;
+                writer.count(Count(usize::from(arity)))?;
+            },
+            crate::content::RuleRoot::Constructor { ref family, tag } => {
+                writer.tag(Tag(1));
+                write_reference(writer, family)?;
+                writer.count(Count(usize::from(tag)))?;
+            },
+            crate::content::RuleRoot::Results(count) => {
+                writer.tag(Tag(2));
+                writer.count(Count(usize::from(count)))?;
+            },
+            crate::content::RuleRoot::Variable(variable) => {
+                writer.tag(Tag(3));
+                writer.count(Count(
+                    usize::try_from(u32::from(variable))
+                        .map_err(|_overflow| CodecError::Unrepresentable)?,
+                ))?;
+            },
+        }
+    }
+    Ok(())
+}
+
+/// Read one side of an operation rule's content.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for a node tag outside the four, or a
+///   variable past `u32`; as [`read_reference`] and the reader's count.
+/// - panics: none.
+/// - executable: none — the read nodes are the body's own output; the witness
+///   pins the round trip.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a ruled item's content round-trips.
+/// - witness: `codec::tests::a_ruled_value_root_round_trips_and_its_rules_are_content`
+fn read_operation_side(reader: &mut Reader<'_>)
+-> Result<Vec<crate::content::RuleRoot>, CodecError>
+{
+    let count = reader.count()?.0;
+    let mut side = Vec::new();
+    for _node in 0 .. count {
+        side.push(match reader.tag()?.0 {
+            0 => crate::content::RuleRoot::Operation {
+                callee: read_reference(reader)?,
+                arity: gandr_kernel_term::FieldCount::from(reader.count()?.0),
+            },
+            1 => crate::content::RuleRoot::Constructor {
+                family: read_reference(reader)?,
+                tag: gandr_kernel_term::ConstructorTag::from(reader.count()?.0),
+            },
+            2 => crate::content::RuleRoot::Results(gandr_kernel_term::FieldCount::from(
+                reader.count()?.0,
+            )),
+            3 => crate::content::RuleRoot::Variable(gandr_kernel_term::RuleVariable::from(
+                u32::try_from(reader.count()?.0).map_err(|_overflow| CodecError::Corrupt)?,
+            )),
+            _ => return Err(CodecError::Corrupt),
+        });
+    }
+    Ok(side)
 }
 
 /// Read an item's content.
@@ -4681,7 +4791,7 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
 {
     let reference = read_reference(reader)?;
     let declaration = match reader.tag()?.0 {
-        tag @ (0 | 3) => {
+        tag @ (0 | 3 | 5) => {
             let signature = match reader.tag()?.0 {
                 0 => Maybe::Absent(signature::Absent::Unsigned),
                 1 => Maybe::Present(read_index(reader)?),
@@ -4693,19 +4803,32 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
                 _ => return Err(CodecError::Corrupt),
             };
             let mut laws = Vec::new();
-            if tag == 3 {
+            if tag != 0 {
                 let count = reader.count()?.0;
-                if count == 0 {
+                if count == 0 && tag == 3 {
                     return Err(CodecError::NonCanonical);
                 }
                 for _law in 0 .. count {
                     laws.push(read_reference(reader)?);
                 }
             }
+            let mut rules = Vec::new();
+            if tag == 5 {
+                let count = reader.count()?.0;
+                if count == 0 {
+                    return Err(CodecError::NonCanonical);
+                }
+                for _rule in 0 .. count {
+                    let left = read_operation_side(reader)?;
+                    let right = read_operation_side(reader)?;
+                    rules.push(crate::content::RuleRoots { left, right });
+                }
+            }
             crate::content::DeclarationRoots::Value {
                 signature,
                 body,
                 laws,
+                rules,
             }
         },
         1 => crate::content::DeclarationRoots::Data(read_data_roots(reader)?),

@@ -589,6 +589,10 @@ pub enum KernelError
     /// not a linear, constructor-headed, terminating rewrite over the
     /// declaration's own constructor table.
     RuleNotPresentable(gandr_kernel_term::RuleRefusal),
+    /// A definition's operation rules do not converge: a rule is malformed,
+    /// not oriented by the path order, or one of its critical pairs does not
+    /// join.
+    OperationRulesRefused(gandr_kernel_term::OperationRuleRefusal),
     /// A type of words is not the words its free cells mint: a cell is not a
     /// loop at one closed point of an earlier parameterless data declaration,
     /// or the declaration's table or rules are not the mint, or an earlier type
@@ -909,6 +913,9 @@ impl core::fmt::Display for KernelError
             },
             Self::RuleNotPresentable(_) => {
                 f.write_str("a data declaration's rule did not present its type")
+            },
+            Self::OperationRulesRefused(_) => {
+                f.write_str("a definition's operation rules did not converge")
             },
             Self::WordsRefused(_) => {
                 f.write_str("a type of words was not the words its free cells mint")

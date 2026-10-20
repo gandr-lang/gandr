@@ -274,6 +274,40 @@ impl StagedDeclaration
         }
     }
 
+    /// This staged definition carrying `rules` as the rules of the operation
+    /// it lowered from, its content start and content unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — the choke point decides that the rules converge.
+    /// - ensures: the declaration as [`Declaration::ruled`] leaves it, at the
+    ///   same content start: a definition carries exactly `rules`, any other
+    ///   declaration is unchanged.
+    /// - provides: how a producer attaches an operation's rules before offering
+    ///   the definition.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — converging rules admit and a forged pair is refused.
+    /// - witness: `ruled::tests::rules_over_the_environment_admit_and_a_forged_pair_is_refused`
+    #[spec(
+        captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. }), self.declaration.operation_rules().rules().len(), rules.rules().len()),
+        ensures: |ret| ret.content_start == entry.0
+            && ret.declaration.operation_rules().rules().len() == if entry.1 { entry.3 } else { entry.2 },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn ruled(
+        self,
+        rules: gandr_kernel_term::OperationRules,
+    ) -> Self
+    {
+        Self {
+            declaration: self.declaration.ruled(rules),
+            ..self
+        }
+    }
+
     /// This staged data declaration carrying `presentation` as the rules
     /// rewriting its constructor terms, its content start and content
     /// unchanged.

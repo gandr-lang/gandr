@@ -3496,6 +3496,11 @@ pub fn lower_unit<'source>(
     } = lowerer;
     resolutions.sort_unstable();
     resolutions.dedup();
+    let operation_rules = collected
+        .operations
+        .iter()
+        .map(|(&slot, plan)| (ConstantIndex::from(usize::from(slot)), plan.rules().clone()))
+        .collect();
 
     Ok(LoweredModule::new(
         declarations,
@@ -3520,7 +3525,8 @@ pub fn lower_unit<'source>(
     .with_inferred_exits(inferred)
     .with_nested_sites(nested)
     .with_in_scope(in_scope)
-    .with_resolutions(resolutions))
+    .with_resolutions(resolutions)
+    .with_operation_rules(operation_rules))
 }
 
 impl<'run, 'source> Lowerer<'run, 'source>

@@ -7743,6 +7743,9 @@ pub struct LoweredModule<'source>
     imports: ModuleImports<'source>,
     /// The outermost scope, with every declared name declared in it.
     recognition: Recognition,
+    /// The rules each operation's definition was written as, over module
+    /// positions, by its position.
+    operation_rules: BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
 }
 
 impl<'source> LoweredModule<'source>
@@ -7781,6 +7784,7 @@ impl<'source> LoweredModule<'source>
             origins,
             imports,
             recognition,
+            operation_rules: BTreeMap::new(),
         }
     }
 
@@ -7814,6 +7818,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.documentation = documentation;
+        self
+    }
+
+    /// This module, carrying `operation_rules`, each operation's rules by its
+    /// position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_operation_rules(
+        mut self,
+        operation_rules: BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
+    ) -> Self
+    {
+        self.operation_rules = operation_rules;
         self
     }
 
@@ -8446,6 +8466,35 @@ impl<'source> LoweredModule<'source>
                 },
                 Maybe::Absent(_) => None,
             })
+            .unwrap_or_default()
+    }
+
+    /// The rules `declaration`'s operation was written as, over module
+    /// positions: what the checker's declaration carries for the kernel to
+    /// decide they converge.
+    ///
+    /// # Specification
+    /// - requires: `declaration` is one of this module's declarations.
+    /// - ensures: the rules of the operation planned at the declaration's
+    ///   position; none for a declaration no operation lowered to.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the module's own map, read once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every routed operation's rules cross to the kernel,
+    ///   which admits the corpus's operations and refuses a forged pair.
+    /// - witness: `operation::tests::an_operations_rules_read_in_pre_order_over_module_positions`
+    #[inline]
+    #[must_use]
+    pub fn operation_rules(
+        &self,
+        declaration: &LoweredDeclaration<'source>,
+    ) -> gandr_kernel_term::OperationRules
+    {
+        self.operation_rules
+            .get(&declaration.constant())
+            .cloned()
             .unwrap_or_default()
     }
 

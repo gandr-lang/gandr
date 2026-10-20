@@ -6145,6 +6145,13 @@ where
                     owed: &mut owed,
                 },
             )?;
+            // An operation's rules are decided over the declarations admitted
+            // before it: well formed, oriented and every critical pair joined.
+            crate::ruled::admit(
+                judgement.entries,
+                ConstantIndex::from(judgement.entries.len()),
+                declaration.operation_rules(),
+            )?;
             Ok(())
         },
         DeclarationContent::Axiom { .. } => Ok(()),

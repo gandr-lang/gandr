@@ -1374,12 +1374,12 @@ impl<'source> Collector<'_, 'source>
                 if declined {
                     continue;
                 }
-                let Ok(plan) = plan_operation(operation, &faces, &table)
+                let constant =
+                    ConstantIndex::from(collected.slots.len().saturating_add(routed.len()));
+                let Ok(plan) = plan_operation(operation, &faces, (&table, constant))
                 else {
                     continue;
                 };
-                let constant =
-                    ConstantIndex::from(collected.slots.len().saturating_add(routed.len()));
                 let _fresh = table.callees.insert(operation.name.clone(), constant);
                 let span = described
                     .operation_spans

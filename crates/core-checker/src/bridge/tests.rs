@@ -282,6 +282,7 @@ fn erase(
         reflexivities: &BTreeMap::new(),
         relations: &BTreeMap::new(),
         laws: &BTreeMap::new(),
+        operation_rules: &BTreeMap::new(),
         natives: &BTreeMap::new(),
         definitions: &definitions,
     };
@@ -3466,6 +3467,7 @@ fn the_machine_faults_are_refused_exactly()
         reflexivities: &BTreeMap::new(),
         relations: &BTreeMap::new(),
         laws: &BTreeMap::new(),
+        operation_rules: &BTreeMap::new(),
         natives: &BTreeMap::new(),
         definitions: &definitions,
     };
@@ -4180,6 +4182,7 @@ fn a_static_lambda_crosses_only_as_a_closed_operator()
         reflexivities: &BTreeMap::new(),
         relations: &BTreeMap::new(),
         laws: &BTreeMap::new(),
+        operation_rules: &BTreeMap::new(),
         natives: &BTreeMap::new(),
         definitions: &definitions,
     };
@@ -4701,4 +4704,70 @@ proptest! {
             }
         }
     }
+}
+
+#[test]
+fn an_operations_rules_cross_at_kernel_positions_and_the_kernel_decides_them()
+{
+    use gandr_kernel_term::FieldCount;
+    use gandr_kernel_term::OperationNode;
+    use gandr_kernel_term::OperationRule;
+    use gandr_kernel_term::OperationRuleFault;
+    use gandr_kernel_term::OperationRules;
+    use gandr_kernel_term::RuleVariable;
+    let call = |constant: ConstantIndex| OperationNode::Operation {
+        constant,
+        arity: FieldCount::from(1_usize),
+    };
+    let x = OperationNode::Variable(RuleVariable::from(0_u32));
+    let rules = |own: ConstantIndex, right: &[OperationNode]| {
+        OperationRules::new(vec![OperationRule::new(
+            alloc::boxed::Box::from([call(own), x].as_slice()),
+            alloc::boxed::Box::from(right),
+        )])
+    };
+    let own = ConstantIndex::from(1_usize);
+    let mut arena = CoreArena::new();
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let ruled = |right: &[OperationNode]| {
+        declaration(At(1), Maybe::Present(unit_type), Maybe::Present(unit)).ruled(rules(own, right))
+    };
+    let first = || declaration(At(0), Maybe::Present(unit_type), Maybe::Present(unit));
+    // `f(x) ==> x`, written over module positions, crosses over kernel ones.
+    let (_, readmission) = judge_and_readmit(&mut arena, &[first(), ruled(&[x])]);
+    let position = crossed_at(&readmission, At(1));
+    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let crossed: Vec<&OperationRules> = artifact
+        .declarations()
+        .iter()
+        .map(|entry| entry.declaration().operation_rules())
+        .filter(|kept| !kept.rules().is_empty())
+        .collect();
+    assert_eq!(
+        crossed,
+        [&rules(position, &[x])],
+        "the rules travel on their definition, the head read at its kernel position"
+    );
+    // `f(x) ==> f(x)` crosses and the kernel refuses it: the order is its own.
+    let (_, readmission) = judge_and_readmit(&mut arena, &[first(), ruled(&[call(own), x])]);
+    assert!(
+        matches!(
+            readmission.readmitted()[1].outcome(),
+            &Outcome::Rejected(gandr_kernel_core::KernelError::OperationRulesRefused(refusal))
+                if refusal.fault == OperationRuleFault::Unoriented
+        ),
+        "a rule rebuilding its own call is the kernel's to refuse"
+    );
+    // A call to a position that never crossed withholds the definition.
+    let absent = ConstantIndex::from(5_usize);
+    let (_, readmission) = judge_and_readmit(&mut arena, &[first(), ruled(&[call(absent), x])]);
+    assert_eq!(
+        readmission.readmitted()[1].outcome(),
+        &Outcome::Refused(Refusal::Withheld {
+            at: unit,
+            constant: absent,
+        }),
+        "a rule naming an uncrossed declaration is withheld with its definition"
+    );
 }

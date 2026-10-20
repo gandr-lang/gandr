@@ -2208,12 +2208,102 @@ impl DataRoots
     }
 }
 
+/// One node of an operation rule's side as content: every position it names
+/// resolved to the item that takes it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum RuleRoot
+{
+    /// An operation, by the item that defines it, at its arity.
+    Operation
+    {
+        /// The item defining the operation; the ruled item's own reference
+        /// for a recursive call.
+        callee: Reference,
+        /// How many arguments follow.
+        arity: gandr_kernel_term::FieldCount,
+    },
+    /// A constructor, by its family's item and its tag.
+    Constructor
+    {
+        /// The item declaring the family.
+        family: Reference,
+        /// The constructor's tag.
+        tag: gandr_kernel_term::ConstructorTag,
+    },
+    /// A many-output operation's results, by their count.
+    Results(gandr_kernel_term::FieldCount),
+    /// A pattern variable.
+    Variable(gandr_kernel_term::RuleVariable),
+}
+
+/// One operation rule as content: its two sides in pre-order.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct RuleRoots
+{
+    /// The left side.
+    pub left: Vec<RuleRoot>,
+    /// The right side.
+    pub right: Vec<RuleRoot>,
+}
+
+/// An operation's rules as content, every position resolved through `layout`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one [`RuleRoots`] per rule in written order, each node as written
+///   but its positions, each read as [`Layout::resolve`] reads it.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a ruled item's rules are content, so two items differing
+///   only in a rule differ in identity.
+/// - witness: `content::tests::an_operation_rule_is_content`
+#[spec(ensures: |ret| ret.len() == rules.rules().len())]
+fn rule_roots(
+    layout: &Layout,
+    rules: &gandr_kernel_term::OperationRules,
+) -> Vec<RuleRoots>
+{
+    use gandr_kernel_term::OperationNode;
+    let side = |nodes: &[OperationNode]| {
+        nodes
+            .iter()
+            .map(|&node| match node {
+                OperationNode::Operation { constant, arity } => RuleRoot::Operation {
+                    callee: layout.resolve(constant),
+                    arity,
+                },
+                OperationNode::Constructor { family, tag } => RuleRoot::Constructor {
+                    family: layout.resolve(family),
+                    tag,
+                },
+                OperationNode::Results(count) => RuleRoot::Results(count),
+                OperationNode::Variable(variable) => RuleRoot::Variable(variable),
+            })
+            .collect()
+    };
+    rules
+        .rules()
+        .iter()
+        .map(|rule| RuleRoots {
+            left: side(rule.left()),
+            right: side(rule.right()),
+        })
+        .collect()
+}
+
 /// The declaration's roots; nominal declarations are not value axioms.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum DeclarationRoots
 {
-    /// A value declaration's optional signature and body, and the laws a fold
-    /// rests on.
+    /// A value declaration's optional signature and body, the laws a fold
+    /// rests on, and the rules of the operation it lowered from.
     Value
     {
         /// The signature classifier, or why it is absent.
@@ -2224,6 +2314,10 @@ pub enum DeclarationRoots
         /// type's rule order; empty for a declaration that names none. A law
         /// is evidence, not content the body reaches, so it is no node.
         laws: Vec<Reference>,
+        /// The rules of the operation the declaration lowered from, in
+        /// written order; empty for every other declaration. The kernel
+        /// decides them, so a changed rule is changed content.
+        rules: Vec<RuleRoots>,
     },
     /// A complete nominal signature.
     Data(DataRoots),
@@ -2334,10 +2428,12 @@ impl DeclarationRoots
                 ref signature,
                 ref body,
                 ref laws,
+                ref rules,
             } => Self::Value {
                 signature: signature.map(&image),
                 body: body.map(&image),
                 laws: laws.clone(),
+                rules: rules.clone(),
             },
             Self::Data(ref roots) => Self::Data(roots.renumbered(&image)),
             Self::Abstract(roots) => Self::Abstract(AbstractRoots {
@@ -3247,9 +3343,10 @@ pub struct Encoded
     && match layout.items.get(usize::from(ordinal)) {
         Some(item) => layout.references.get(usize::from(ordinal)) == Some(&ret.content.reference)
             && { let (matched_left_value, matched_right_value) = (item.declaration().content(),&ret.content.declaration);
-if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } = *matched_left_value && let DeclarationRoots::Value { signature:ref actual_signature,body:ref actual_body,laws:ref actual_laws } = *matched_right_value { signature.map(|ty| ret.sites.0.get(&ArenaNode::ValueType(ty)).copied()) == actual_signature.map(Some)
+if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } = *matched_left_value && let DeclarationRoots::Value { signature:ref actual_signature,body:ref actual_body,laws:ref actual_laws,rules:ref actual_rules } = *matched_right_value { signature.map(|ty| ret.sites.0.get(&ArenaNode::ValueType(ty)).copied()) == actual_signature.map(Some)
                     && body.map(|value| ret.sites.0.get(&ArenaNode::Value(value)).copied()) == actual_body.map(Some)
-                    && item.declaration().laws().iter().map(|&law| layout.resolve(law)).eq(actual_laws.iter().cloned()) }
+                    && item.declaration().laws().iter().map(|&law| layout.resolve(law)).eq(actual_laws.iter().cloned())
+                    && *actual_rules == rule_roots(layout, item.declaration().operation_rules()) }
  else if let gandr_core_checker::DeclarationContent::Data(ref signature) = *matched_left_value && let DeclarationRoots::Data(ref roots) = *matched_right_value { ret.sites.0.get(&ArenaNode::ValueType(signature.kind())) == Some(&roots.kind)
                     && signature.parameters().iter().map(|&ty| ret.sites.0.get(&ArenaNode::ValueType(ty))).eq(roots.parameters.iter().map(Some))
                     && signature.constructors().len() == roots.constructors.len()
@@ -3260,7 +3357,7 @@ if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } 
  else { matches!((matched_left_value, matched_right_value), (gandr_core_checker::DeclarationContent::World, DeclarationRoots::World) | (gandr_core_checker::DeclarationContent::Codata(_), DeclarationRoots::Codata)) }
 } && ret.content.locus == layout.locus(),
         None => ret.content.reference == Reference::Unoccupied
-            && matches!(ret.content.declaration,DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Absent(body::Absent::Hole),ref laws} if laws.is_empty())
+            && matches!(ret.content.declaration,DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Absent(body::Absent::Hole),ref laws,ref rules} if laws.is_empty() && rules.is_empty())
             && ret.content.nodes.is_empty(),
     })]
 pub fn encode_item(
@@ -3276,6 +3373,7 @@ pub fn encode_item(
                 signature: Maybe::Absent(signature::Absent::Unsigned),
                 body: Maybe::Absent(body::Absent::Hole),
                 laws: Vec::new(),
+                rules: Vec::new(),
             })
         },
         |item| {
@@ -3292,6 +3390,7 @@ pub fn encode_item(
                         .iter()
                         .map(|&law| layout.resolve(law))
                         .collect(),
+                    rules: rule_roots(layout, item.declaration().operation_rules()),
                 },
                 gandr_core_checker::DeclarationContent::Data(ref signature) => {
                     DeclarationRoots::Data(encoder.data_roots(signature))

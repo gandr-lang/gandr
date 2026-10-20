@@ -253,6 +253,24 @@ pub struct OperationPlan
     outputs: Vec<ConstantIndex>,
     /// The tree; a child follows its parent.
     nodes: Vec<PlanNode>,
+    /// The rules the tree decides, over module positions, for the kernel to
+    /// decide they converge.
+    rules: gandr_kernel_term::OperationRules,
+}
+
+impl OperationPlan
+{
+    /// The rules the plan's tree decides, over module positions, the
+    /// operation's own at the constant it was planned at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn rules(&self) -> &gandr_kernel_term::OperationRules
+    {
+        &self.rules
+    }
 }
 
 /// One pattern position of a rule: a written pattern, or a field no pattern
@@ -289,12 +307,15 @@ struct Work<'face>
     rows: Vec<Row<'face>>,
 }
 
-/// Plan the operation `operation` over its rules `faces`, in source order.
+/// Plan the operation `operation` over its rules `faces`, in source order, to
+/// be admitted at `own`.
 ///
 /// # Specification
 /// - requires: `faces` are the operation's rules in source order.
 /// - ensures: a plan whose tree decides every input by the first rule that
-///   matches it, with a port family per port.
+///   matches it, with a port family per port, carrying the rules read over
+///   module positions: the operation's own call at `own`, every callee at its
+///   constant, every constructor at its family and tag.
 /// - fails: the first [`RouteFault`] the module's [decisions](self) name.
 /// - panics: none.
 /// - executable: none — the plan's meaning is the function it mints, which the
@@ -314,7 +335,7 @@ struct Work<'face>
 pub fn plan_operation(
     operation: &OperDesc,
     faces: &[&RuleFace],
-    table: &RouteTable,
+    (table, own): (&RouteTable, ConstantIndex),
 ) -> Result<OperationPlan, RouteFault>
 {
     let inputs = families(&operation.arity.inputs, table)?;
@@ -372,11 +393,114 @@ pub fn plan_operation(
         .collect::<Option<Vec<_>>>()
         .ok_or(RouteFault::Uncovered)?;
 
+    let rules = faces
+        .iter()
+        .map(|face| read_rule(face, operation, (table, own)))
+        .collect::<Result<Vec<_>, _>>()
+        .map(gandr_kernel_term::OperationRules::new)?;
     Ok(OperationPlan {
         inputs,
         outputs,
         nodes,
+        rules,
     })
+}
+
+/// One rule of the operation as the kernel reads it: both sides in pre-order
+/// over module positions, its variables numbered by first occurrence on the
+/// left.
+///
+/// # Specification
+/// - requires: `face` is a rule of `operation`, which [`plan_operation`]
+///   routed.
+/// - ensures: the left side's head is `own` at the arity the face writes; an
+///   operation named `operation` reads as `own`, any other as the constant
+///   `table` gives it; a constructor as its family and tag; a results tuple as
+///   its width; a variable as its first occurrence's ordinal on the left.
+/// - fails: [`RouteFault::Callee`], [`RouteFault::Constructor`] or
+///   [`RouteFault::Unbound`] for a name the table or the left side does not
+///   bind.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every routed operation's rules cross to the kernel, which
+///   admits the corpus's operations and refuses a forged pair.
+/// - witness: `operation::tests::an_operations_rules_read_in_pre_order_over_module_positions`
+#[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|rule| !rule.left().is_empty() && !rule.right().is_empty()))]
+fn read_rule(
+    face: &RuleFace,
+    operation: &OperDesc,
+    (table, own): (&RouteTable, ConstantIndex),
+) -> Result<gandr_kernel_term::OperationRule, RouteFault>
+{
+    use gandr_kernel_term::OperationNode;
+    let mut bound: BTreeMap<&Name, gandr_kernel_term::RuleVariable> = BTreeMap::new();
+    let mut sides: [Vec<OperationNode>; 2] = [Vec::new(), Vec::new()];
+    let mut pending: Vec<TermNode<'_>> = Vec::new();
+    let mut arguments: Vec<TermNode<'_>> = Vec::new();
+    let roots = [(face.lhs.to_node(), true), (face.rhs.to_node(), false)];
+    for (side, (root, binding)) in sides.iter_mut().zip(roots) {
+        pending.push(root);
+        while let Some(node) = pending.pop() {
+            arguments.clear();
+            let read = match node.view() {
+                TermView::Var(variable) => {
+                    let ordinal = match bound.get(variable) {
+                        Some(&ordinal) => ordinal,
+                        None if binding => {
+                            let ordinal = u32::try_from(bound.len())
+                                .map(gandr_kernel_term::RuleVariable::from)
+                                .map_err(|_overflow| RouteFault::Unbound(variable.clone()))?;
+                            bound.insert(variable, ordinal);
+                            ordinal
+                        },
+                        None => return Err(RouteFault::Unbound(variable.clone())),
+                    };
+                    OperationNode::Variable(ordinal)
+                },
+                TermView::Ctor { name, args } => {
+                    let built = constructor(table, name)?;
+                    arguments.extend(args);
+                    OperationNode::Constructor {
+                        family: built.family,
+                        tag: built.tag,
+                    }
+                },
+                TermView::Op { name, args } => {
+                    let constant = if *name == operation.name {
+                        own
+                    }
+                    else {
+                        table
+                            .callees
+                            .get(name)
+                            .copied()
+                            .ok_or_else(|| RouteFault::Callee(name.clone()))?
+                    };
+                    arguments.extend(args);
+                    OperationNode::Operation {
+                        constant,
+                        arity: gandr_kernel_term::FieldCount::from(arguments.len()),
+                    }
+                },
+                TermView::Results { args } => {
+                    arguments.extend(args);
+                    OperationNode::Results(gandr_kernel_term::FieldCount::from(arguments.len()))
+                },
+            };
+            side.push(read);
+            pending.extend(arguments.iter().rev().copied());
+            arguments.clear();
+        }
+    }
+    let [left, right] = sides;
+    Ok(gandr_kernel_term::OperationRule::new(
+        left.into_boxed_slice(),
+        right.into_boxed_slice(),
+    ))
 }
 
 /// The family of each port of `ports`, in order.

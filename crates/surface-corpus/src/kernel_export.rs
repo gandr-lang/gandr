@@ -1967,6 +1967,71 @@ mod kernel_presented_readmission
     }
 
     #[test]
+    fn forged_operation_rules_are_refused_by_the_kernel_322()
+    {
+        use gandr_kernel_term::OperationNode;
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixture/model/desc/rules-overlap-joinable.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the overlapping naturals lower");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("`add` readmits: the kernel joins both of its critical pairs");
+        let add = declarations
+            .iter()
+            .position(|marked| marked.declaration().operation_rules().rules().len() == 3)
+            .expect("`add` crosses carrying its three rules");
+        let marked = &declarations[add];
+        let rules = marked.declaration().operation_rules().rules();
+        let Some(&OperationNode::Constructor { family, .. }) =
+            rules.first().and_then(|zero| zero.left().get(1))
+        else {
+            panic!("`add(Zero, n)` reads `Zero` first: {rules:?}");
+        };
+        // The twin rewrites `add(m, Zero)` to `Succ(m)`, as the pathological
+        // `rules-diverge` source writes it: at `add(Zero, Zero)` the first rule
+        // gives `Zero` and the second `Succ(Zero)`.
+        let mut forged = rules.to_vec();
+        forged[1] = gandr_kernel_term::OperationRule::new(
+            rules[1].left().into(),
+            [
+                OperationNode::Constructor {
+                    family,
+                    tag: gandr_kernel_term::ConstructorTag::from(1_usize),
+                },
+                OperationNode::Variable(gandr_kernel_term::RuleVariable::from(0_u32)),
+            ]
+            .into(),
+        );
+        let twin_declaration = marked
+            .declaration()
+            .clone()
+            .ruled(gandr_kernel_term::OperationRules::new(forged));
+        let mut twin = declarations.clone();
+        twin[add] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("the forged rules rewrite `add(Zero, Zero)` two ways");
+        assert_eq!(usize::from(refusal.position()), add);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::OperationRulesRefused(gandr_kernel_term::OperationRuleRefusal {
+                rule: RuleIndex::from(1_usize),
+                fault: gandr_kernel_term::OperationRuleFault::Diverges(
+                    gandr_kernel_term::Overlapped::Operation(RuleIndex::from(0_usize))
+                ),
+            }),
+            "the kernel names the forged rule and the rule it parts from"
+        );
+    }
+
+    #[test]
     fn a_section_at_a_variable_readmits_and_a_tampered_twin_is_refused_by_name()
     {
         let pbg = built_in().expect("the built-in grammar builds");

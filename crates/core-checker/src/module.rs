@@ -507,6 +507,9 @@ pub struct ModuleReport
     /// The laws each lawful declaration's folds rest on, by position, in its
     /// folded type's rule order.
     laws: BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
+    /// The rules of the operation each ruled declaration lowered from, by
+    /// position.
+    operation_rules: BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
     /// The native path each univalence statement the run decided derives, and
     /// each path product it judged elaborates to, by node.
     natives: BTreeMap<ValueId, ValueId>,
@@ -713,6 +716,20 @@ impl ModuleReport
     pub const fn laws(&self) -> &BTreeMap<ConstantIndex, Vec<ConstantIndex>>
     {
         &self.laws
+    }
+
+    /// The rules of the operation each ruled declaration lowered from, by
+    /// position: what the declaration crosses to the kernel carrying.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn operation_rules(
+        &self
+    ) -> &BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>
+    {
+        &self.operation_rules
     }
 
     /// The native path each univalence statement the run decided derives, and
@@ -1006,6 +1023,7 @@ fn decide(
         return unrun(refusal);
     }
     context.keep_laws(constant, declaration.laws().to_vec());
+    context.keep_operation_rules(constant, declaration.operation_rules().clone());
     let outer = (run == Run::Typed).then(|| context.start_typings());
     let finish = |context: &mut CheckingContext<'_>, outer: Option<Option<Kept>>| {
         outer.map(|outer| context.finish_typings(outer))
@@ -1558,6 +1576,7 @@ where
         reflexivities: context.reflexivities().clone(),
         relations: context.relations().clone(),
         laws: context.laws().clone(),
+        operation_rules: context.operation_rules().clone(),
         natives: context.natives().clone(),
         definitions: context.definitions().definitions().collect(),
         data_signatures: context.data_signatures().clone(),
@@ -1699,6 +1718,12 @@ pub fn absorb(
     report
         .laws
         .extend(context.laws().iter().map(|(&at, laws)| (at, laws.clone())));
+    report.operation_rules.extend(
+        context
+            .operation_rules()
+            .iter()
+            .map(|(&at, rules)| (at, rules.clone())),
+    );
     report
         .natives
         .extend(context.natives().iter().map(|(&at, &native)| (at, native)));

@@ -288,7 +288,8 @@ pub fn declarations(module: &LoweredModule<'_>) -> Vec<Declaration>
             };
             let origin = OriginToken::from(usize::from(lowered.origin()));
             let declaration = Declaration::new(lowered.constant(), declared, defined, origin)
-                .lawful(module.laws(lowered).to_vec());
+                .lawful(module.laws(lowered).to_vec())
+                .ruled(module.operation_rules(lowered));
             Some(match Entry::declared(module.worlds(lowered)) {
                 Maybe::Present(entry) => declaration.entered(entry),
                 Maybe::Absent(_) => declaration,

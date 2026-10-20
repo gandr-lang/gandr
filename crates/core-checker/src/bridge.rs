@@ -1635,6 +1635,7 @@ where
         reflexivities: report.reflexivities(),
         relations: report.relations(),
         laws: report.laws(),
+        operation_rules: report.operation_rules(),
         natives: report.natives(),
         definitions: report.definitions(),
     };
@@ -1809,6 +1810,10 @@ where
                     body,
                     relations: source.relations.get(&constant).map_or(&[], Vec::as_slice),
                     laws: source.laws.get(&constant).map_or(&[], Vec::as_slice),
+                    operation_rules: source
+                        .operation_rules
+                        .get(&constant)
+                        .map_or(&[], gandr_kernel_term::OperationRules::rules),
                 },
                 &vouch,
             ),
@@ -1930,6 +1935,10 @@ fn block_offers<'report>(
                     body,
                     relations: source.relations.get(&constant).map_or(&[], Vec::as_slice),
                     laws: source.laws.get(&constant).map_or(&[], Vec::as_slice),
+                    operation_rules: source
+                        .operation_rules
+                        .get(&constant)
+                        .map_or(&[], gandr_kernel_term::OperationRules::rules),
                 }
             },
             (Verdict::Synthesised { body, synthesised }, _)
@@ -1944,6 +1953,10 @@ fn block_offers<'report>(
                     body,
                     relations: source.relations.get(&constant).map_or(&[], Vec::as_slice),
                     laws: source.laws.get(&constant).map_or(&[], Vec::as_slice),
+                    operation_rules: source
+                        .operation_rules
+                        .get(&constant)
+                        .map_or(&[], gandr_kernel_term::OperationRules::rules),
                 }
             },
             (
@@ -2057,6 +2070,9 @@ struct Source<'source>
     relations: &'source BTreeMap<ConstantIndex, Vec<EndpointRelation>>,
     /// The laws each lawful declaration's folds rest on, by position.
     laws: &'source BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
+    /// The rules of the operation each ruled declaration lowered from, by
+    /// position.
+    operation_rules: &'source BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
     /// The native path each univalence statement the judgement decided
     /// derives, and each path product it judged elaborates to, by node.
     natives: &'source BTreeMap<ValueId, ValueId>,
@@ -2086,6 +2102,8 @@ enum Offer<'signature>
         relations: &'signature [EndpointRelation],
         /// The laws its folds rest on, by module position.
         laws: &'signature [ConstantIndex],
+        /// The rules of the operation it lowered from, over module positions.
+        operation_rules: &'signature [gandr_kernel_term::OperationRule],
     },
     /// An axiom: the type an owed hole owes.
     Axiom
@@ -2330,6 +2348,31 @@ where
         | Erased::Axiom { .. }
         | Erased::Abstract { .. } => Maybe::Absent(staged::Absent::Bodiless),
     };
+    // An operation's rules name module positions: its own crosses at the
+    // position it is about to take, every other at the position it crossed
+    // at, and one that did not cross withholds the definition.
+    let operation_rules = match offer {
+        Offer::Definition {
+            body: offered,
+            operation_rules,
+            ..
+        } => match kernel_rules(operation_rules, positions, next) {
+            Ok(rules) => rules,
+            Err(constant) => {
+                staging.discard();
+                return Err((
+                    Outcome::Refused(Refusal::Withheld {
+                        at: offered,
+                        constant,
+                    }),
+                    replayed,
+                ));
+            },
+        },
+        Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_) | Offer::Axiom { .. } => {
+            gandr_kernel_term::OperationRules::default()
+        },
+    };
     let declaration = match erased {
         Erased::Data {
             parameters,
@@ -2382,7 +2425,8 @@ where
         } => staging
             .def(LevelSignature::monomorphic(), declared, body)
             .relating(related)
-            .lawful(laws),
+            .lawful(laws)
+            .ruled(operation_rules),
         Erased::Axiom { declared } => staging.axiom(LevelSignature::monomorphic(), declared),
         Erased::Codata {
             parameters,
@@ -2409,6 +2453,79 @@ where
         image,
         replayed,
     })
+}
+
+/// An operation's rules over module positions, read at kernel positions.
+///
+/// # Specification
+/// - requires: `positions` maps every declaration crossed before; `next` is the
+///   position the ruled definition is about to take.
+/// - ensures: `Ok` with every node unchanged but its position: the head
+///   operation's position, the definition's own, read as `next`, and every
+///   other position as the one it crossed at. `Err` naming the first position
+///   that did not cross.
+/// - panics: none.
+///
+/// # Errors
+/// As `- ensures:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus's operations cross with their rules and the
+///   kernel admits them.
+/// - witness: `bridge::tests::an_operations_rules_cross_at_kernel_positions_and_the_kernel_decides_them`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|crossed| crossed.rules().len() == rules.len()) || ret.is_err())]
+fn kernel_rules(
+    rules: &[gandr_kernel_term::OperationRule],
+    positions: &Positions,
+    next: ConstantIndex,
+) -> Result<gandr_kernel_term::OperationRules, ConstantIndex>
+{
+    use gandr_kernel_term::OperationNode;
+    let own = rules
+        .first()
+        .and_then(|rule| rule.left().first())
+        .and_then(|&head| match head {
+            OperationNode::Operation { constant, .. } => Some(constant),
+            OperationNode::Constructor { .. }
+            | OperationNode::Results(_)
+            | OperationNode::Variable(_) => None,
+        });
+    let at = |constant: ConstantIndex| {
+        if Some(constant) == own {
+            Ok(next)
+        }
+        else {
+            positions.admitted.get(&constant).copied().ok_or(constant)
+        }
+    };
+    let side = |nodes: &[OperationNode]| {
+        nodes
+            .iter()
+            .map(|&node| {
+                Ok(match node {
+                    OperationNode::Operation { constant, arity } => OperationNode::Operation {
+                        constant: at(constant)?,
+                        arity,
+                    },
+                    OperationNode::Constructor { family, tag } => OperationNode::Constructor {
+                        family: at(family)?,
+                        tag,
+                    },
+                    OperationNode::Results(_) | OperationNode::Variable(_) => node,
+                })
+            })
+            .collect::<Result<alloc::boxed::Box<[OperationNode]>, ConstantIndex>>()
+    };
+    rules
+        .iter()
+        .map(|rule| {
+            Ok(gandr_kernel_term::OperationRule::new(
+                side(rule.left())?,
+                side(rule.right())?,
+            ))
+        })
+        .collect::<Result<Vec<_>, ConstantIndex>>()
+        .map(gandr_kernel_term::OperationRules::new)
 }
 
 /// Record an offer the kernel admitted: its export, its position and, for a
@@ -3887,6 +4004,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 body,
                 relations,
                 laws,
+                ..
             } => {
                 let offered = body;
                 let declared = self.value_type(target, declared)?;
