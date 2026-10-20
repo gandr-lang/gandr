@@ -59,6 +59,12 @@ const LARGE: usize = if cfg!(anodized_panic) { 32 } else { 2_000 };
 /// where specifications are enforced.
 const STRIDE: usize = if cfg!(anodized_panic) { 6 } else { 1 };
 
+/// How many tests share the corpus edit scripts, each taking every fourth of
+/// the sources `STRIDE` takes: the whole corpus is eleven seconds of one
+/// core, and a quarter of it stays inside the per-test limit on a loaded
+/// machine.
+const SHARDS: usize = 4;
+
 /// Submit `text` to `incremental` and assert it reports what the walk's
 /// composition and a fresh session's submission of the same text report.
 ///
@@ -313,7 +319,7 @@ struct Byte(usize);
 /// # Adequacy
 /// - hypothesis: L3 — every corpus source's script cuts at these bytes and
 ///   submits to the walk's compositions.
-/// - witness: `tests::forms::every_corpus_edit_script_submits_as_the_walk_composes_it`
+/// - witness: `tests::forms::every_corpus_edit_script_submits_as_the_walk_composes_it_in_shard_0`
 #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(pair, [left, right] if left <= right))
     && ret.last().copied() == Some(Byte(text.0.len())))]
 fn form_starts(text: Text<'_>) -> Vec<Byte>
@@ -332,13 +338,56 @@ fn form_starts(text: Text<'_>) -> Vec<Byte>
     starts
 }
 
+/// Which of the `SHARDS` tests a corpus source's edit script runs in.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Shard(usize);
+
 #[test]
-fn every_corpus_edit_script_submits_as_the_walk_composes_it()
+fn every_corpus_edit_script_submits_as_the_walk_composes_it_in_shard_0()
 {
-    // Every source of both corpus roots (every sixth where specifications are
-    // enforced), then a declaration inserted at its middle form, its first
-    // form deleted, its last form moved first, and the source again: each
-    // revision agrees with the walk's composition and a fresh session's.
+    edit_scripts(Shard(0));
+}
+
+#[test]
+fn every_corpus_edit_script_submits_as_the_walk_composes_it_in_shard_1()
+{
+    edit_scripts(Shard(1));
+}
+
+#[test]
+fn every_corpus_edit_script_submits_as_the_walk_composes_it_in_shard_2()
+{
+    edit_scripts(Shard(2));
+}
+
+#[test]
+fn every_corpus_edit_script_submits_as_the_walk_composes_it_in_shard_3()
+{
+    edit_scripts(Shard(3));
+}
+
+/// Every corpus source of `shard` (every sixth source where specifications
+/// are enforced, every fourth of those for a shard), then a declaration
+/// inserted at its middle form, its first form deleted, its last form moved
+/// first, and the source again: each revision agrees with the walk's
+/// composition and a fresh session's.
+///
+/// # Specification
+/// - requires: `shard` is below `SHARDS`.
+/// - ensures: every revision of every source of `shard` agreed.
+/// - panics: when a revision disagrees, the corpus walk faults, or `shard`
+///   holds no source.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the four shards together take every source `STRIDE`
+///   takes, each in one shard; a shard past `SHARDS` would take none.
+/// - witness: `tests::forms::every_corpus_edit_script_submits_as_the_walk_composes_it_in_shard_0`
+/// - witness: `tests::forms::every_corpus_edit_script_submits_as_the_walk_composes_it_in_shard_3`
+#[spec(requires: shard.0 < SHARDS)]
+fn edit_scripts(shard: Shard)
+{
+    let Shard(shard) = shard;
     let walk = Walk::new(vec![
         corpus(CorpusRoot::Strict),
         corpus(CorpusRoot::Fixture),
@@ -354,7 +403,9 @@ fn every_corpus_edit_script_submits_as_the_walk_composes_it()
                 panic!("the corpus walks without a fault: {step:?}");
             };
             walked = walked.saturating_add(1);
-            if walked.rem_euclid(STRIDE) != 0 {
+            if walked.rem_euclid(STRIDE) != 0
+                || walked.div_euclid(STRIDE).rem_euclid(SHARDS) != shard
+            {
                 return ControlFlow::Continue(());
             }
             let original = String::from(<&str>::from(text));
@@ -392,5 +443,5 @@ fn every_corpus_edit_script_submits_as_the_walk_composes_it()
             sources = sources.saturating_add(1);
             ControlFlow::Continue(())
         });
-    assert!(sources > 0, "the corpus roots are populated");
+    assert!(sources > 0, "the corpus roots populate shard {shard}");
 }
