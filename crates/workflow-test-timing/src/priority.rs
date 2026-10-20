@@ -462,7 +462,7 @@ impl fmt::Display for Table<'_>
         let width = self
             .0
             .iter()
-            .map(|proposal| proposal.test.to_string().len())
+            .map(|proposal| AsRef::<str>::as_ref(&proposal.test).len())
             .chain([4_usize])
             .max()
             .unwrap_or(4_usize);
@@ -480,7 +480,7 @@ impl fmt::Display for Table<'_>
             writeln!(
                 f,
                 "{:<width$}  {:>6.1}  {:>7.1}  {:>7.1}  {:>4}  {:>7}  {:>8}  {}{flag}",
-                proposal.test.to_string(),
+                AsRef::<str>::as_ref(&proposal.test),
                 timing.median.as_secs_f64(),
                 timing.fastest.as_secs_f64(),
                 timing.slowest.as_secs_f64(),

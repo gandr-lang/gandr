@@ -387,6 +387,7 @@ pub fn read_run(
         artifacts.push(entry.map_err(io(&root))?.path());
     }
     artifacts.sort_unstable();
+    let mut pending: Vec<PathBuf> = Vec::new();
     for artifact in artifacts {
         let Some(lane) = artifact
             .file_name()
@@ -395,7 +396,8 @@ pub fn read_run(
         else {
             continue;
         };
-        let mut pending = vec![artifact];
+        // The walk below drains the stack, so each artifact starts it empty.
+        pending.push(artifact);
         while let Some(path) = pending.pop() {
             if path.is_dir() {
                 for entry in std::fs::read_dir(&path).map_err(io(&path))? {

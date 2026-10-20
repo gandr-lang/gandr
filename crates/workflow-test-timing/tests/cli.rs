@@ -280,9 +280,13 @@ fn fetched_runs_are_stored_and_read_back()
         "the same report from the stored runs"
     );
     let log = std::fs::read_to_string(fake.root.join("gh.log")).unwrap();
-    let invocations: Vec<String> = log
+    let invocations: Vec<&str> = log
         .lines()
-        .map(|line| line.split(' ').take(3).collect::<Vec<_>>().join(" "))
+        .map(|line| {
+            line.match_indices(' ')
+                .nth(2)
+                .map_or(line, |(at, _)| line.split_at(at).0)
+        })
         .collect();
     assert_eq!(
         invocations,

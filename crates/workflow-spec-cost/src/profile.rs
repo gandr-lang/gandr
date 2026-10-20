@@ -240,7 +240,7 @@ pub fn record(
         .arg(&suite.binary)
         .args([
             "--exact",
-            &workload.test.to_string(),
+            workload.test.as_ref(),
             "--test-threads",
             "1",
             "-q",
