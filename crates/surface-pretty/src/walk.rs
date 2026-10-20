@@ -225,6 +225,7 @@ use crate::former::Former;
 use crate::former::Name;
 use crate::former::Notation;
 use crate::former::Placement;
+use crate::former::Recursion;
 use crate::former::Source;
 use crate::former::Unreadable;
 use crate::former::Unspelled;
@@ -2708,6 +2709,77 @@ where
     Maybe::Present(names)
 }
 
+/// The names of binders opened above every one of `roots`, one per entry of
+/// `preferred`, outermost first: each entry's name when no root mentions it,
+/// it is not `taken` and no earlier binder took it, otherwise the next
+/// generated name that is none of these.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: one distinct name per entry of `preferred`, none mentioned by a
+///   root, each scanned at the position admitting its [`Admits`] with its
+///   thunks spelled, and none `taken`; a preferred name where it is such a
+///   name, otherwise the candidates in their order. Absent when a scan takes
+///   more than the visit budget or the candidates run out.
+/// - provides: the parameters a recursive definition's header binds, which the
+///   binders its body opens avoid as they avoid a context name.
+/// - fails: never; an over-long scan or exhausted candidates is an absence.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a header over a body that mentions the first candidate
+///   names its parameter past it, a preferred name the body mentions is passed
+///   over, and two parameters take distinct names; other mutations of the scan
+///   are those of [`mentioned`].
+/// - witness: `tests::goldens::a_recursive_definition_spells_as_written_941`
+/// - witness: `tests::goldens::a_recursive_parameter_skips_the_names_its_body_mentions_941`
+#[spec(ensures: |ref ret| ret.as_ref().is_none_or(|names| names.len() == preferred.len()
+    && names.iter().all(|name| !taken.contains(&Name::from(name.as_str())))
+    && names.iter().enumerate().all(|(at, name)| names.get(.. at).is_some_and(|before| !before.contains(name)))))]
+pub fn parameters<S>(
+    source: &S,
+    roots: &[(S::Node, Admits)],
+    taken: &[Name<'_>],
+    preferred: &[Option<Name<'_>>],
+) -> Option<Vec<String>>
+where
+    S: Source + ?Sized,
+{
+    let mut names = BTreeSet::new();
+    for &(root, admits) in roots {
+        match mentioned(source, root, admits, Bodies::Spelled) {
+            Maybe::Present(found) => names.extend(found),
+            Maybe::Absent(scan::Absent::OverBudget) => return None,
+        }
+    }
+    names.extend(taken.iter().copied());
+    let free = |name: &str, chosen: &[String]| {
+        !names.contains(&Name::from(name)) && !chosen.iter().any(|held| held == name)
+    };
+    let mut chosen: Vec<String> = Vec::with_capacity(preferred.len());
+    let mut next = Ordinal(0_u32);
+    for &wanted in preferred {
+        if let Some(name) = wanted
+            && free(name.as_ref(), &chosen)
+        {
+            chosen.push(String::from(name.as_ref()));
+            continue;
+        }
+        loop {
+            let Maybe::Present(name) = candidate(next)
+            else {
+                return None;
+            };
+            next = Ordinal(next.0.checked_add(1_u32)?);
+            if free(name.0.as_str(), &chosen) {
+                chosen.push(name.0);
+                break;
+            }
+        }
+    }
+    Some(chosen)
+}
+
 /// Whether a data case writes its motive, `case n -> C { … }`.
 ///
 /// # Specification
@@ -2970,6 +3042,9 @@ struct Walk<'walk, 'names>
     /// The names of the intuitionistic binders the root stands under,
     /// outermost first.
     context: &'names [Option<Name<'names>>],
+    /// The claim the calls of the outermost binder in `context` write, where
+    /// it is a recursive definition's own.
+    recursive: Option<Recursion>,
     /// Whether every node so far was spelled in full.
     fidelity: Fidelity,
     /// Why each `?` written so far was written.
@@ -3311,10 +3386,11 @@ impl Walk<'_, '_>
     /// - ensures: the name of the open binder of `zone` that `index` counts out
     ///   to from the occurrence; past every open binder of the zone, an
     ///   intuitionistic variable reads as the context binder it counts out to,
-    ///   innermost last; `?`, approximate and recorded unbound, for a linear
-    ///   variable past every open binder, one past the context, and a context
-    ///   binder the source cannot name, recorded primed for a context binder
-    ///   whose prime ASCII cannot write, and recorded exhausted when the
+    ///   innermost last, a recursive definition's own written with its claim,
+    ///   `name[<]` or `name[>]`; `?`, approximate and recorded unbound, for a
+    ///   linear variable past every open binder, one past the context, and a
+    ///   context binder the source cannot name, recorded primed for a context
+    ///   binder whose prime ASCII cannot write, and recorded exhausted when the
     ///   generated names ran out.
     /// - provides: the spelling of a bound variable and of an endpoint.
     /// - fails: the builder's refusal.
@@ -3367,19 +3443,28 @@ impl Walk<'_, '_>
                 }
             },
             None => match zone {
-                Zone::Intuitionistic => match self
-                    .context
-                    .len()
-                    .checked_sub(remaining)
-                    .and_then(|outer| outer.checked_sub(1_usize))
-                    .and_then(|position| self.context.get(position).copied().flatten())
-                {
-                    Some(name) => match unwritable(name, self.spelling) {
-                        None => Ok(String::from(name.as_ref())),
-                        Some(Unspelled::Primed) => Err(Unspelled::Primed),
-                        Some(_) => Err(Unspelled::Unbound),
-                    },
-                    None => Err(Unspelled::Unbound),
+                Zone::Intuitionistic => {
+                    let position = self
+                        .context
+                        .len()
+                        .checked_sub(remaining)
+                        .and_then(|outer| outer.checked_sub(1_usize));
+                    match position.and_then(|at| self.context.get(at).copied().flatten()) {
+                        Some(name) => match (unwritable(name, self.spelling), self.recursive) {
+                            // A recursive definition's call of itself writes
+                            // its claim.
+                            (None, Some(recursion)) if position == Some(0_usize) => {
+                                Ok(format!("{}{}", name.as_ref(), match recursion {
+                                    Recursion::Descends => "[<]",
+                                    Recursion::Productive => "[>]",
+                                }))
+                            },
+                            (None, _) => Ok(String::from(name.as_ref())),
+                            (Some(Unspelled::Primed), _) => Err(Unspelled::Primed),
+                            (Some(_), _) => Err(Unspelled::Unbound),
+                        },
+                        None => Err(Unspelled::Unbound),
+                    }
                 },
                 Zone::Linear => Err(Unspelled::Unbound),
             },
@@ -6843,6 +6928,7 @@ where
         held: Vec::new(),
         substituted: BTreeMap::new(),
         context,
+        recursive: source.recursive(),
         fidelity: Fidelity::Faithful,
         unspelled: BTreeSet::new(),
         bodies,
@@ -7150,6 +7236,7 @@ mod tests
             held: super::Vec::new(),
             substituted: super::BTreeMap::new(),
             context: &[],
+            recursive: None,
             fidelity: Fidelity::Faithful,
             unspelled: super::BTreeSet::new(),
             bodies: super::Bodies::Opaque,
@@ -7234,6 +7321,7 @@ mod tests
             held: super::Vec::new(),
             substituted: super::BTreeMap::new(),
             context: &[],
+            recursive: None,
             fidelity: Fidelity::Faithful,
             unspelled: super::BTreeSet::new(),
             bodies: super::Bodies::Opaque,

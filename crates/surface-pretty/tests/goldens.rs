@@ -58,6 +58,7 @@ use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::NumericLiteral;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
+use gandr_kernel_term::StagedPosition;
 use gandr_kernel_term::StringLiteral;
 use gandr_kernel_term::Summand;
 use gandr_surface_pretty::Arity;
@@ -82,12 +83,15 @@ use gandr_surface_pretty::Unspelled;
 use gandr_surface_pretty::present_computation;
 use gandr_surface_pretty::present_computation_line;
 use gandr_surface_pretty::present_definition;
+use gandr_surface_pretty::present_recursive;
 use gandr_surface_pretty::present_type;
 use gandr_surface_pretty::present_value;
+use gandr_surface_pretty::recursive;
 use gandr_theory_sites::Degree;
 use gandr_theory_sites::PortCount;
 use gandr_theory_sites::Profile;
 use gandr_theory_sites::ShapeSize;
+use quenchant_shape::shape::Maybe;
 
 /// The narrow page of every golden pair.
 ///
@@ -3099,6 +3103,237 @@ fn an_elaborated_body_prints_with_its_exits_elided()
             "one line is the wide layout"
         );
     }
+}
+
+/// The body of `def rec down(n : Nat) -> -F Nat { case n { Zero => z, Succ(p)
+/// => down[<](p) } }` under its fixpoint, `z` the value the zero arm returns,
+/// and the type it is stated at.
+///
+/// # Specification
+/// trivial.
+fn descent(
+    core: &mut CoreArena,
+    zero: Option<ValueId>,
+    evidence: gandr_kernel_term::FixpointEvidence,
+) -> (gandr_core_term::ComputationId, ValueId)
+{
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returns_nat = core.comp_type_returner(nat);
+    // Under the fixpoint and its abstraction the parameter is the innermost
+    // binder and the fixpoint's own the next; the successor's field binds
+    // one more.
+    let parameter = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let itself = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+    let returned = core.computation_return(zero.unwrap_or(parameter));
+    let forced = core.computation_force(itself);
+    let call = core.computation_application(forced, parameter);
+    let field = core.computation_lambda(call);
+    let case = core.computation_data_case(parameter, returns_nat, vec![returned, field]);
+    let abstraction = core.computation_lambda(case);
+    let fixpoint = core.computation_fixpoint(abstraction, evidence);
+    (case, core.value_thunk(fixpoint))
+}
+
+/// The body of `def rec down(m : Nat, n : Nat) -> -F Nat { case m { Zero =>
+/// n, Succ(p) => down[<](p, n) } }` under its fixpoint.
+///
+/// # Specification
+/// trivial.
+fn two_parameters(
+    core: &mut CoreArena,
+    evidence: gandr_kernel_term::FixpointEvidence,
+) -> (gandr_core_term::ComputationId, ValueId)
+{
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returns_nat = core.comp_type_returner(nat);
+    // Under the fixpoint and both abstractions: the second parameter, the
+    // first, the fixpoint's own; the successor's field binds one more.
+    let variable = |core: &mut CoreArena, index: u32| {
+        core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let (second, first) = (variable(core, 0_u32), variable(core, 1_u32));
+    let (field, kept, itself) = (
+        variable(core, 0_u32),
+        variable(core, 1_u32),
+        variable(core, 3_u32),
+    );
+    let returned = core.computation_return(second);
+    let forced = core.computation_force(itself);
+    let applied = core.computation_application(forced, field);
+    let call = core.computation_application(applied, kept);
+    let succeeded = core.computation_lambda(call);
+    let case = core.computation_data_case(first, returns_nat, vec![returned, succeeded]);
+    let inner = core.computation_lambda(case);
+    let outer = core.computation_lambda(inner);
+    let fixpoint = core.computation_fixpoint(outer, evidence);
+    (case, core.value_thunk(fixpoint))
+}
+
+/// A definition's presentation as a `def rec`: its text and fidelity, or why
+/// it is no recursive definition.
+///
+/// # Specification
+/// trivial.
+fn recursive(
+    source: &CoreSource<'_>,
+    defined: (ValueTypeId, ValueId),
+    page: PageWidth,
+) -> Maybe<(String, Fidelity), recursive::Absent>
+{
+    match present_recursive(
+        source,
+        Name::from("down"),
+        defined,
+        page,
+        Form::Explicit.into(),
+    )
+    .expect("the definition lays out")
+    {
+        Maybe::Present(presentation) => {
+            Maybe::Present((presentation.as_ref().to_owned(), presentation.fidelity()))
+        },
+        Maybe::Absent(reason) => Maybe::Absent(reason),
+    }
+}
+
+/// A recursive definition spells whole as the `def rec` that declares it:
+/// the header with every parameter its fixpoint abstracts, the body two
+/// columns in, each call of its own binder with its claim — `down[<](b)` for
+/// a fixpoint descending on any parameter, `down[>](b)` for one claiming
+/// nothing. A body that is no fixpoint and a type that is no function are no
+/// `def rec` (#941).
+#[test]
+fn a_recursive_definition_spells_as_written_941()
+{
+    use gandr_kernel_term::FixpointEvidence;
+    let names = [Name::from("Nat")];
+    let mut core = CoreArena::new();
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returns_nat = core.comp_type_returner(nat);
+    let function = core.comp_type_arrow(nat, returns_nat);
+    let ty = core.value_type_thunk(function);
+    let curried = core.comp_type_arrow(nat, function);
+    let ty_two = core.value_type_thunk(curried);
+    let (case, descending) = descent(&mut core, None, FixpointEvidence::StructuralDescent);
+    let (partial_case, productive) = descent(&mut core, None, FixpointEvidence::Partial);
+    let (first_case, on_first) = two_parameters(&mut core, FixpointEvidence::StructuralDescent);
+    let (staged_case, staged) = two_parameters(&mut core, FixpointEvidence::Staged {
+        position: StagedPosition::from(1_usize),
+    });
+    let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let mut constructors = Constructors::default();
+    constructors.family(Name::from("Nat"), [
+        (Name::from("Zero"), Arity::from(0_usize)),
+        (Name::from("Succ"), Arity::from(1_usize)),
+    ]);
+    for case in [case, partial_case, first_case, staged_case] {
+        constructors.case(case, Name::from("Nat"));
+    }
+    let source = CoreSource::new(&core, &names).naming(&constructors);
+    let written = |text: &str| Maybe::Present((text.to_owned(), Fidelity::Faithful));
+    let (wide, narrow) = (PageWidth::from(100_u32), PageWidth::from(30_u32));
+    assert_eq!(
+        recursive(&source, (ty, descending), wide),
+        written(
+            "def rec down(a : Nat) -> -F Nat {\n  case a { Zero => a, Succ(b) => down[<](b) }\n}"
+        ),
+        "a descending call writes its claim"
+    );
+    assert_eq!(
+        recursive(&source, (ty, productive), wide),
+        written(
+            "def rec down(a : Nat) -> -F Nat {\n  case a { Zero => a, Succ(b) => down[>](b) }\n}"
+        ),
+        "a fixpoint claiming nothing writes its call productive"
+    );
+    assert_eq!(
+        recursive(&source, (ty, descending), narrow),
+        written(
+            "def rec down(a : Nat) -> -F Nat {\n  case a {\n    Zero => a,\n    Succ(b) => down[<](b)\n  }\n}"
+        ),
+        "the body breaks at the page two columns in"
+    );
+    let both = "def rec down(a : Nat, b : Nat) -> -F Nat {\n  case a { Zero => b, Succ(c) => down[<](c, b) }\n}";
+    assert_eq!(
+        recursive(&source, (ty_two, on_first), wide),
+        written(both),
+        "every parameter the fixpoint abstracts stands in the header"
+    );
+    assert_eq!(
+        recursive(&source, (ty_two, staged), wide),
+        written(both),
+        "a fixpoint staged on a later parameter writes the same claim"
+    );
+    assert_eq!(
+        recursive(&source, (ty, zero), wide),
+        Maybe::Absent(recursive::Absent::NotAFixpoint),
+        "a constructor is no recursive definition"
+    );
+    assert_eq!(
+        recursive(&source, (nat, descending), wide),
+        Maybe::Absent(recursive::Absent::NotAFunction),
+        "a definition stated at no function type is no recursive definition"
+    );
+}
+
+/// A recursive definition's parameter takes the name its arrow writes when
+/// nothing in the definition mentions it, and otherwise the first generated
+/// name the definition does not mention; the body's own binders then avoid
+/// it (#941).
+#[test]
+fn a_recursive_parameter_skips_the_names_its_body_mentions_941()
+{
+    use gandr_kernel_term::FixpointEvidence;
+    let names = [Name::from("Nat"), Name::from("a")];
+    let mut core = CoreArena::new();
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returns_nat = core.comp_type_returner(nat);
+    let arrow = core.comp_type_arrow(nat, returns_nat);
+    let unnamed = core.value_type_thunk(arrow);
+    let pi = core.comp_type_pi(nat, returns_nat);
+    let dependent = core.value_type_thunk(pi);
+    let mentioned = core.value_constant(ConstantIndex::from(1_usize));
+    let (case, mentioning) = descent(
+        &mut core,
+        Some(mentioned),
+        FixpointEvidence::StructuralDescent,
+    );
+    let (plain, quiet) = descent(&mut core, None, FixpointEvidence::StructuralDescent);
+    let mut constructors = Constructors::default();
+    constructors.family(Name::from("Nat"), [
+        (Name::from("Zero"), Arity::from(0_usize)),
+        (Name::from("Succ"), Arity::from(1_usize)),
+    ]);
+    constructors.case(case, Name::from("Nat"));
+    constructors.case(plain, Name::from("Nat"));
+    let written = |text: &str| Maybe::Present((text.to_owned(), Fidelity::Faithful));
+    let wide = PageWidth::from(100_u32);
+    let source = CoreSource::new(&core, &names).naming(&constructors);
+    assert_eq!(
+        recursive(&source, (unnamed, mentioning), wide),
+        written(
+            "def rec down(b : Nat) -> -F Nat {\n  case b { Zero => a, Succ(c) => down[<](c) }\n}"
+        ),
+        "the parameter passes over a constant the body mentions"
+    );
+    let arrows = [(pi, Name::from("n"))];
+    let named = source.naming_arrows(&arrows);
+    assert_eq!(
+        recursive(&named, (dependent, quiet), wide),
+        written(
+            "def rec down(n : Nat) -> -F Nat {\n  case n { Zero => n, Succ(a) => down[<](a) }\n}"
+        ),
+        "the parameter takes the name its arrow writes"
+    );
+    let mentioned_arrows = [(pi, Name::from("a"))];
+    let shadowing = source.naming_arrows(&mentioned_arrows);
+    assert_eq!(
+        recursive(&shadowing, (dependent, mentioning), wide),
+        written(
+            "def rec down(b : Nat) -> -F Nat {\n  case b { Zero => a, Succ(c) => down[<](c) }\n}"
+        ),
+        "an arrow's name the body mentions is passed over"
+    );
 }
 
 /// A data case writes its motive where nothing states its type — the
