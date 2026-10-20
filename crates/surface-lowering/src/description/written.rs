@@ -51,8 +51,21 @@ quenchant_shape::reason_enum! {
             /// A `data` family's rule, `rule add(Zero, n) ==> n`, which names
             /// its operation rather than itself.
             Anonymous,
-            /// A law an `ext` member generates, named by the generation
-            /// rather than by a written tile.
+            /// A member an `ext` member generates, an operation or a law,
+            /// named by the generation rather than by a written tile.
+            Generated,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a law has no written arrow.
+    pub mod arrow {
+        /// The reason a law's arrow is unwritten.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// A law an `ext` member generates, whose direction the generation
+            /// fixes and no source writes.
             Generated,
         }
     }
@@ -256,8 +269,8 @@ pub struct WrittenSortMember
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WrittenOperation
 {
-    /// The operation's name tile.
-    pub named: ByteSpan,
+    /// The operation's name tile; absent for one an `ext` member generates.
+    pub named: Maybe<ByteSpan, member_name::Absent>,
     /// Each input port, in written order.
     pub inputs: Vec<WrittenPort>,
     /// Each output port, in written order.
@@ -277,8 +290,9 @@ pub struct WrittenFace
     pub left: WrittenTerm,
     /// The side it rewrites to.
     pub right: WrittenTerm,
-    /// The bytes the written arrow covers.
-    pub arrow: ByteSpan,
+    /// The bytes the written arrow covers; absent for a law an `ext` member
+    /// generates.
+    pub arrow: Maybe<ByteSpan, arrow::Absent>,
     /// How the written arrow states its direction.
     pub orientation: RuleOrientation,
 }
@@ -394,12 +408,27 @@ pub struct WrittenObservation
     pub ty: WrittenTerm,
 }
 
+/// A name a member writes for another member of its block: the bytes of the
+/// use and the name tile of the member it names.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WrittenUse
+{
+    /// The bytes the use covers.
+    pub span: ByteSpan,
+    /// The name tile of the member it names.
+    pub named: ByteSpan,
+}
+
 /// Where a described declaration's members are written.
 ///
-/// Each list is parallel to the one the description reads its members into:
-/// for a `theory`, the presentation's sorts, operations, laws and circuits; for
-/// a `data` family, the description's constructors, operations and rules; for
-/// a `codata` family, the description's observations.
+/// Each list but `uses` is parallel to the one the description reads its
+/// members into: for a `theory`, the presentation's sorts, operations, laws
+/// and circuits; for a `data` family, the description's constructors,
+/// operations and rules; for a `codata` family, the description's
+/// observations.
 ///
 /// # Specification
 /// trivial.
@@ -418,4 +447,7 @@ pub struct WrittenMembers
     pub faces: Vec<WrittenFace>,
     /// The circuit rules.
     pub circuits: Vec<WrittenCircuit>,
+    /// The names an `ext` member writes for the face and the boundary
+    /// constant it is stated over.
+    pub uses: Vec<WrittenUse>,
 }

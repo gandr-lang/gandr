@@ -913,9 +913,19 @@ impl Typer<'_>
                 members
                     .operations
                     .iter()
-                    .map(|operation| (operation.name.clone(), operation.named.span)),
+                    .zip(&written.operations)
+                    .filter_map(|(operation, member)| match member.named {
+                        Maybe::Present(named) => Some((operation.name.clone(), named)),
+                        Maybe::Absent(_) => None,
+                    }),
             )
             .collect();
+        self.types
+            .uses
+            .extend(written.uses.iter().map(|used| DescribedUse {
+                span: used.span,
+                named: used.named,
+            }));
         let mut declared = Declared {
             sorts: members.sorts.iter().map(|sort| sort.name.clone()).collect(),
             operations: BTreeMap::new(),
@@ -965,7 +975,9 @@ impl Typer<'_>
                     self.telescope(&mut scope, telescope, tail, Codomain::Results(results))
                 {
                     let context = self.context(&scope);
-                    self.emit(member.named, DescribedRole::Name, ty, context);
+                    if let Maybe::Present(named) = member.named {
+                        self.emit(named, DescribedRole::Name, ty, context);
+                    }
                     let _first = declared.heads.insert(operation.name.clone(), (ty, context));
                 }
                 let _first = declared
@@ -1428,7 +1440,9 @@ impl Typer<'_>
                 chain = self.arena.comp_type_arrow(input, chain);
             }
             let ty = self.arena.value_type_thunk(chain);
-            self.emit(member.named, DescribedRole::Name, ty, closed);
+            if let Maybe::Present(named) = member.named {
+                self.emit(named, DescribedRole::Name, ty, closed);
+            }
             let _first =
                 operations.insert(operation.name.clone(), Operation { inputs, result, ty });
         }

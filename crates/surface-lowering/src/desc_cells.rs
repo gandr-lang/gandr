@@ -80,6 +80,7 @@ use crate::coincide::orient_block;
 use crate::coincide::rewriting_store;
 use crate::description::DescribedDeclaration;
 use crate::description::written::RuleDirection;
+use crate::description::written::arrow;
 use crate::form::Placed;
 
 /// An index into a cell report's located diagnostic vector.
@@ -176,8 +177,9 @@ pub struct DeclarationCells
     pub oriented: Vec<RuleFace>,
     /// The direction the order chose for each oriented rule.
     pub directions: Vec<RuleDirection>,
-    /// The written span of each oriented rule, parallel to `directions`.
-    pub rule_spans: Vec<ByteSpan>,
+    /// The written span of each oriented rule, parallel to `directions`;
+    /// absent for a law an `ext` member generates.
+    pub rule_spans: Vec<Maybe<ByteSpan, arrow::Absent>>,
     /// How the declaration's rules stand as one rewriting system.
     pub coincidence: Coincidence,
 }

@@ -390,6 +390,7 @@ impl Reader<'_, '_>
         let mut inclusions = Vec::new();
         let mut included_circuits = BTreeSet::new();
         let mut extensions = Vec::new();
+        let mut face_tiles = Vec::new();
         for member in &members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
@@ -503,7 +504,10 @@ impl Reader<'_, '_>
                     Ok(_) if matches!(parts.shape, Maybe::Present(_)) => {
                         diagnostics.push(reading.fault(DescriptionFault::Malformed));
                     },
-                    Ok(shape) => parts.shape = Maybe::Present(shape),
+                    Ok((shape, tiles)) => {
+                        parts.shape = Maybe::Present(shape);
+                        face_tiles = tiles;
+                    },
                     Err(diagnostic) => diagnostics.push(diagnostic),
                 }
                 continue;
@@ -583,7 +587,7 @@ impl Reader<'_, '_>
             }
         }
         for extension in &extensions {
-            match self.extended(extension, &parts) {
+            match self.extended(extension, &parts, &placement.operations, &face_tiles) {
                 Ok(generated) => {
                     for (operation, tile, ports) in generated.operations {
                         parts.operations.push(operation);
@@ -597,6 +601,7 @@ impl Reader<'_, '_>
                         placement.faces.push(extension.span());
                         written.faces.push(sides);
                     }
+                    written.uses.extend(generated.uses);
                 },
                 Err(diagnostic) => diagnostics.push(diagnostic),
             }
@@ -836,12 +841,13 @@ impl Reader<'_, '_>
     }
 
     /// Read a shape member: the finite shape the signature's cells are stated
-    /// over, and its named faces.
+    /// over, its named faces, and each face's name tile.
     ///
     /// # Specification
     /// - ensures: the shape of the written name and size, one face per written
-    ///   face in order, each holding the points it lists; a point past the
-    ///   shape is kept for the description check to refuse by name.
+    ///   face in order, each holding the points it lists, and beside it the
+    ///   faces' name tiles in the same order; a point past the shape is kept
+    ///   for the description check to refuse by name.
     /// - fails: a size or a point that is not a decimal numeral, and a member
     ///   missing its colon, a brace, an equals sign or a separator, is a
     ///   member-local refusal.
@@ -861,7 +867,7 @@ impl Reader<'_, '_>
     fn signature_shape(
         &self,
         run: &mut Run<'_>,
-    ) -> Result<TheoryShape, DescriptionDiagnostic>
+    ) -> Result<(TheoryShape, Vec<Placed>), DescriptionDiagnostic>
     {
         let name = run.take()?;
         if !run.eat(Spelling(":")).0 {
@@ -873,6 +879,7 @@ impl Reader<'_, '_>
             return Err(run.fault(DescriptionFault::Malformed));
         }
         let mut faces = Vec::new();
+        let mut tiles = Vec::new();
         while !run.eat(Spelling("}")).0 {
             let face = run.take()?;
             if !run.eat(Spelling("=")).0 || !run.eat(Spelling("{")).0 {
@@ -890,9 +897,10 @@ impl Reader<'_, '_>
                 return Err(run.fault(DescriptionFault::Malformed));
             }
             faces.push(ShapeFace::new(self.text(face).0, points));
+            tiles.push(face);
         }
         run.end()?;
-        Ok(TheoryShape::new(self.text(name).0, size, faces))
+        Ok((TheoryShape::new(self.text(name).0, size, faces), tiles))
     }
 
     /// The count a numeral tile writes, as the wrapper `Count` that holds it.
@@ -1006,7 +1014,7 @@ impl Reader<'_, '_>
             },
             name,
             WrittenOperation {
-                named: name.span,
+                named: Maybe::Present(name.span),
                 inputs: written_inputs,
                 outputs: written_outputs,
             },
@@ -1238,7 +1246,7 @@ impl Reader<'_, '_>
                     named: Maybe::Present(name.span),
                     left,
                     right,
-                    arrow,
+                    arrow: Maybe::Present(arrow),
                     orientation,
                 },
             ));

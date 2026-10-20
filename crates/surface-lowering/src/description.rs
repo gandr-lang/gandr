@@ -188,7 +188,7 @@ enum Read
     /// A description whose members the route carries.
     Described(alloc::boxed::Box<DescribedDeclaration>),
     /// A data family the native reading owns whole.
-    Native(NativeFamily),
+    Native(alloc::boxed::Box<NativeFamily>),
 }
 
 /// A generator judgment as read.
@@ -696,7 +696,7 @@ pub(crate) fn elaborate_roots<'source>(
             continue;
         }
         match declaration {
-            Ok(Read::Native(family)) => report.natives.push(family),
+            Ok(Read::Native(family)) => report.natives.push(*family),
             Ok(Read::Described(declaration)) => {
                 for diagnostic in gandr_theory_levitation::check_desc(&declaration.description) {
                     let span = match diagnostic.span {
@@ -915,7 +915,7 @@ impl Reader<'_, '_>
         }
         if !uncoded.is_empty() {
             if operations.is_empty() && rules.is_empty() {
-                return Ok(Read::Native(NativeFamily {
+                return Ok(Read::Native(alloc::boxed::Box::new(NativeFamily {
                     named,
                     name: family,
                     parameters,
@@ -923,7 +923,7 @@ impl Reader<'_, '_>
                         constructors: generators,
                         ..written::WrittenMembers::default()
                     },
-                }));
+                })));
             }
             diagnostics.extend(uncoded);
         }
