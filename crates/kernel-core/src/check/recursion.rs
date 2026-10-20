@@ -1467,12 +1467,13 @@ pub(super) fn followed(
 ) -> Maybe<ValueTypeId, Unstaged>
 {
     let plain = Maybe::Absent(Unstaged::Plain);
-    let mut arguments = alloc::vec![last];
+    // The constant the spine applies, and how many arguments it takes.
+    let mut taken = 1_usize;
     let mut cursor = head;
     let constant = loop {
         match arena.computation(cursor) {
-            Some(&Computation::Application(inner, argument)) => {
-                arguments.push(argument);
+            Some(&Computation::Application(inner, _)) => {
+                taken = taken.saturating_add(1);
                 cursor = inner;
             },
             Some(&Computation::Force(forced)) => match arena.value(forced) {
@@ -1488,13 +1489,22 @@ pub(super) fn followed(
     else {
         return plain;
     };
-    let Some(&argument) = arguments
-        .len()
-        .checked_sub(usize::from(position).saturating_add(1))
-        .and_then(|from_last| arguments.get(from_last))
+    // The argument at `position`, counted from the first applied, stands
+    // that many applications in from `last`.
+    let Some(inward) = taken.checked_sub(usize::from(position).saturating_add(1))
     else {
         return plain;
     };
+    let mut argument = last;
+    let mut cursor = head;
+    for _ in 0 .. inward {
+        let Some(&Computation::Application(inner, applied_to)) = arena.computation(cursor)
+        else {
+            return plain;
+        };
+        argument = applied_to;
+        cursor = inner;
+    }
     let Some(&Value::Variable(index)) = arena.value(argument)
     else {
         return plain;

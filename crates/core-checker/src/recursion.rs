@@ -339,6 +339,78 @@ fn result_at(
     Ok(read)
 }
 
+/// The position of the parameter a fixpoint at `expected`, recursing on the
+/// parameter at `position`, returns a result of the type of: the fixpoints
+/// whose result can follow that parameter.
+///
+/// # Specification
+/// - requires: `expected` is formed.
+/// - ensures: `position` when the telescope's arrow there is a plain arrow
+///   taking `A` and the plain arrows past it end in a returner of a type
+///   convertible with `A`; [`Unstaged::Plain`] otherwise, and for a telescope
+///   with no arrow at `position`.
+/// - fails: the unfolding's refusal.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a predecessor over the naturals returns its parameter's
+///   type and is judged again; so is one returning the successor of its field,
+///   which the second judgement then refuses.
+/// - witness: `recursion::tests::a_result_follows_the_parameter_it_recurses_on`
+#[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if found != position))]
+pub fn returns_recursed_on(
+    context: &mut CheckingContext<'_>,
+    expected: CompTypeId,
+    position: StagedPosition,
+) -> Result<Maybe<StagedPosition, Unstaged>, CheckRefusal>
+{
+    let plain = Maybe::Absent(Unstaged::Plain);
+    let mut cursor = expected;
+    let mut passed = 0_usize;
+    let mut recursed: Option<ValueTypeId> = None;
+    loop {
+        let reached = recursed.is_some() || passed == usize::from(position);
+        let head = context.whnf_comp_type(cursor)?;
+        match comp_type_view(context.arena(), head)? {
+            CompTypeView::Arrow { domain, codomain } => {
+                if passed == usize::from(position) {
+                    recursed = Some(domain);
+                }
+                passed = passed.saturating_add(1);
+                cursor = codomain;
+            },
+            CompTypeView::Pi { codomain, .. } if !reached => {
+                passed = passed.saturating_add(1);
+                cursor = codomain;
+            },
+            CompTypeView::Returner { result, .. } => {
+                let Some(domain) = recursed
+                else {
+                    return Ok(plain);
+                };
+                return Ok(
+                    if crate::conversion::equivalent(context, result, domain)?
+                        == crate::conversion::Agreement::Convertible
+                    {
+                        Maybe::Present(position)
+                    }
+                    else {
+                        plain
+                    },
+                );
+            },
+            CompTypeView::Pi { .. }
+            | CompTypeView::Unknown
+            | CompTypeView::With(..)
+            | CompTypeView::Element { .. }
+            | CompTypeView::Codata { .. } => return Ok(plain),
+        }
+    }
+}
+
 /// The motive a case checked at `expected` reads its branches at: the written
 /// `motive` with its result read at the stage `expected` returns at, when the
 /// motive names no scrutinee and returns the type that stage refines.
@@ -1166,12 +1238,13 @@ pub fn followed(
     applied: CompTypeId,
 ) -> Result<CompTypeId, CheckRefusal>
 {
-    let mut arguments = alloc::vec![last];
+    // The constant the spine applies, and how many arguments it takes.
+    let mut taken = 1_usize;
     let mut cursor = head;
     let constant = loop {
         match context.arena().computation(cursor) {
-            Some(&gandr_core_term::Computation::Application(inner, argument)) => {
-                arguments.push(argument);
+            Some(&gandr_core_term::Computation::Application(inner, _)) => {
+                taken = taken.saturating_add(1);
                 cursor = inner;
             },
             Some(&gandr_core_term::Computation::Force(forced)) => {
@@ -1187,13 +1260,23 @@ pub fn followed(
     else {
         return Ok(applied);
     };
-    let Some(&argument) = arguments
-        .len()
-        .checked_sub(usize::from(position).saturating_add(1))
-        .and_then(|from_last| arguments.get(from_last))
+    // The argument at `position`, counted from the first applied, stands
+    // that many applications in from `last`.
+    let Some(inward) = taken.checked_sub(usize::from(position).saturating_add(1))
     else {
         return Ok(applied);
     };
+    let mut argument = last;
+    let mut cursor = head;
+    for _ in 0 .. inward {
+        let Some(&gandr_core_term::Computation::Application(inner, applied_to)) =
+            context.arena().computation(cursor)
+        else {
+            return Ok(applied);
+        };
+        argument = applied_to;
+        cursor = inner;
+    }
     let Some(&Value::Variable {
         zone: Zone::Intuitionistic,
         index,

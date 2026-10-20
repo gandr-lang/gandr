@@ -1303,7 +1303,8 @@ fn follows(
 ) -> Maybe<gandr_kernel_term::StagedPosition, crate::recursion::Unstaged>
 {
     let plain = Maybe::Absent(crate::recursion::Unstaged::Plain);
-    let (Deferred::No, &Ok(Verdict::Checked { body, .. })) = (pending, judged)
+    let (Deferred::No, &Ok(Verdict::Checked { body, .. }), Direction::Check(declared)) =
+        (pending, judged, direction)
     else {
         return plain;
     };
@@ -1311,13 +1312,30 @@ fn follows(
     else {
         return plain;
     };
-    if !matches!(
-        context.arena().computation(root),
+    let recursed = match context.arena().computation(root) {
         Some(&gandr_core_term::Computation::Fixpoint {
-            evidence: gandr_kernel_term::FixpointEvidence::StructuralDescent
-                | gandr_kernel_term::FixpointEvidence::Staged { .. },
+            evidence: gandr_kernel_term::FixpointEvidence::StructuralDescent,
             ..
-        })
+        }) => gandr_kernel_term::StagedPosition::default(),
+        Some(&gandr_core_term::Computation::Fixpoint {
+            evidence: gandr_kernel_term::FixpointEvidence::Staged { position },
+            ..
+        }) => position,
+        Some(_) | None => return plain,
+    };
+    // Only a fixpoint whose type returns the type it recurses on is judged
+    // again: no other can follow its parameter.
+    let Ok(head) = context.whnf_value_type(declared.id())
+    else {
+        return plain;
+    };
+    let Some(&gandr_core_term::ValueType::Thunk(classifier)) = context.arena().value_type(head)
+    else {
+        return plain;
+    };
+    if !matches!(
+        crate::recursion::returns_recursed_on(context, classifier, recursed),
+        Ok(Maybe::Present(_))
     ) {
         return plain;
     }
