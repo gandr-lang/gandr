@@ -115,10 +115,12 @@
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::collections::VecDeque;
+use core::time::Duration;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::PoisonError;
+use std::time::SystemTime;
 
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
@@ -137,7 +139,6 @@ use quenchant_shape::shape::Maybe;
 
 use crate::root::SourceRoot;
 use crate::root::classify;
-use crate::walk::read_source;
 
 /// The keyword every import is written with: a source whose text never
 /// spells it imports nothing, and is not parsed to find out.
@@ -473,6 +474,8 @@ struct Graph
     reading: Reading,
     /// The bytes parsed reading the graph.
     parsed: ParsedBytes,
+    /// How many files the graph read from disk rather than from [`FILES`].
+    fetched: usize,
 }
 
 /// The path `target` will have once a file is written there: its directory's
@@ -946,9 +949,10 @@ impl Graph
     /// - requires: nothing.
     /// - ensures: the graph names `target` as [`named_path`] names it. The
     ///   position of the source at that path, appended when new: read as
-    ///   `shadows` holds it when it holds it, else from the file there;
-    ///   [`Edge::Unresolved`] when neither `shadows` nor a readable file holds
-    ///   it, or it is classified under a root other than `root`.
+    ///   `shadows` holds it when it holds it, else from the file there as
+    ///   [`locate`] and [`Graph::fetch`] read it; [`Edge::Unresolved`] when
+    ///   neither `shadows` nor a readable file holds it, or it is classified
+    ///   under a root other than `root`.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -958,6 +962,7 @@ impl Graph
     /// - witness: `component::tests::a_cycle_and_a_missing_path_leave_their_imports_unresolved`
     /// - witness: `component::tests::a_component_lays_each_source_once`
     /// - witness: `component::tests::a_shadowed_import_is_read_as_its_editor_holds_it`
+    /// - witness: `component::tests::a_settled_file_is_read_once_per_change_776`
     #[spec(ensures: |ret| match ret {
         Edge::To(position) => position.0 < self.read.len(),
         Edge::Unresolved => true,
@@ -969,9 +974,7 @@ impl Graph
         shadows: &dyn Shadows,
     ) -> Edge
     {
-        let canonical = std::fs::canonicalize(target);
-        let exists = canonical.is_ok();
-        let named = canonical.unwrap_or_else(|_| missing(target));
+        let Located { named, disk } = locate(target);
         let _named = self.named.insert(named.clone());
         if let Some(&known) = self.index.get(&named) {
             return if self.read.get(known.0).is_some_and(|read| read.root == root) {
@@ -981,19 +984,18 @@ impl Graph
                 Edge::Unresolved
             };
         }
-        let mut text = String::new();
-        let found = if let Some(held) = shadows.shadowed(&named) {
-            text.push_str(held.as_ref());
-            classify(&named)
-        }
-        else if exists {
-            match read_source(&named, &mut text) {
-                Ok(found) => found,
-                Err(_) => return Edge::Unresolved,
-            }
+        let (found, text) = if let Some(held) = shadows.shadowed(&named) {
+            (classify(&named), String::from(held.as_ref()))
         }
         else {
-            return Edge::Unresolved;
+            match disk {
+                OnDisk::Held(found, text) => (found, text),
+                OnDisk::Unread(stamp) => match self.fetch(target, &named, stamp) {
+                    Some(read) => read,
+                    None => return Edge::Unresolved,
+                },
+                OnDisk::Missing => return Edge::Unresolved,
+            }
         };
         if found == root {
             Edge::To(self.admit(named, root, text))
@@ -1001,6 +1003,52 @@ impl Graph
         else {
             Edge::Unresolved
         }
+    }
+
+    /// The root and text of the file at `named`, the canonical path of
+    /// `target`, read from disk now; held in [`FILES`] under `target` and
+    /// `stamp` when a stamp is given.
+    ///
+    /// # Specification
+    /// - requires: `named` is the canonical path of `target`, and `stamp`, when
+    ///   given, what `stat` read of `target` before it, [`SETTLED`] or more
+    ///   after the file last changed.
+    /// - ensures: the root [`classify`] gives `named` and the file's text, or
+    ///   `None` when it is no readable UTF-8 file; the graph counts one file
+    ///   fetched. A read under a stamp is held, letting the file asked for
+    ///   longest ago go past [`FILES_HELD`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`locate`].
+    /// - witness: `component::tests::a_settled_file_is_read_once_per_change_776`
+    #[spec(
+        captures: [fetched = self.fetched],
+        ensures: self.fetched == fetched.saturating_add(1),
+    )]
+    fn fetch(
+        &mut self,
+        target: &Path,
+        named: &Path,
+        stamp: Option<Stamp>,
+    ) -> Option<(SourceRoot, String)>
+    {
+        self.fetched = self.fetched.saturating_add(1);
+        let text = std::fs::read_to_string(named).ok()?;
+        let found = classify(named);
+        if let Some(stamp) = stamp {
+            let mut files = FILES.lock().unwrap_or_else(PoisonError::into_inner);
+            let used = files.clock;
+            files.keep(target.to_path_buf(), HeldFile {
+                stamp,
+                named: named.to_path_buf(),
+                found,
+                text: text.clone(),
+                used,
+            });
+        }
+        Some((found, text))
     }
 
     /// The components the sources at `given` stand in, each its sources in
@@ -1691,6 +1739,224 @@ static READINGS: Mutex<Readings> = Mutex::new(Readings {
     clock: 0_u64,
 });
 
+/// How long after a file last changed a read of it is held: within it, a
+/// clock of coarse resolution may give a later change the same time.
+const SETTLED: Duration = Duration::from_secs(2);
+
+/// The most files [`FILES`] holds before it lets the one asked for longest
+/// ago go: a closure of a few hundred sources.
+const FILES_HELD: usize = 512;
+
+/// A file as `stat` reads it: which file it is, its length, and when its
+/// contents and its status last changed, each in seconds and nanoseconds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Stamp
+{
+    /// The device holding the file.
+    device: u64,
+    /// The file's number on that device.
+    inode: u64,
+    /// Its length in bytes.
+    length: u64,
+    /// When its contents last changed.
+    modified: (i64, i64),
+    /// When its status last changed: a write moves it, even one that sets
+    /// the modification time back.
+    changed: (i64, i64),
+}
+
+impl Stamp
+{
+    /// The stamp of the file `metadata` describes, when a `stat` read it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the device, inode, length, and modification and status-change
+    ///   times `metadata` reads; `None` without it.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the numbers are the platform's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`locate`].
+    /// - witness: `component::tests::a_settled_file_is_read_once_per_change_776`
+    #[cfg(unix)]
+    fn of(metadata: Option<&std::fs::Metadata>) -> Option<Self>
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        metadata.map(|metadata| Self {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            length: metadata.size(),
+            modified: (metadata.mtime(), metadata.mtime_nsec()),
+            changed: (metadata.ctime(), metadata.ctime_nsec()),
+        })
+    }
+
+    /// No stamp: the platform reads no inode, so a file is read each time an
+    /// import names it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(not(unix))]
+    const fn of(_metadata: Option<&std::fs::Metadata>) -> Option<Self>
+    {
+        None
+    }
+}
+
+/// What a path an import names holds on disk, as [`locate`] finds it.
+#[derive(Debug)]
+enum OnDisk
+{
+    /// A file [`FILES`] holds a read of, its stamp unchanged: its root and
+    /// text.
+    Held(SourceRoot, String),
+    /// A file to read, its read held under the stamp when one is given.
+    Unread(Option<Stamp>),
+    /// Nothing.
+    Missing,
+}
+
+/// The path a path an import names is named by, and what it holds on disk.
+#[derive(Debug)]
+struct Located
+{
+    /// The path, as [`named_path`] names it.
+    named: PathBuf,
+    /// What it holds.
+    disk: OnDisk,
+}
+
+/// A file read from disk, held while `stat` reads the same stamp at the path
+/// an import named it at.
+#[derive(Debug)]
+struct HeldFile
+{
+    /// What `stat` read of the file before it was read.
+    stamp: Stamp,
+    /// Its canonical path.
+    named: PathBuf,
+    /// The root its canonical path is classified under.
+    found: SourceRoot,
+    /// Its text.
+    text: String,
+    /// The tick of the store's clock it was last asked for at.
+    used: u64,
+}
+
+/// Every file this process holds a read of, by the path an import named it
+/// at.
+#[derive(Debug)]
+struct Files
+{
+    /// The reads.
+    held: BTreeMap<PathBuf, HeldFile>,
+    /// Ticks once per question.
+    clock: u64,
+}
+
+impl Files
+{
+    /// Hold `fresh`, the read of the file at `target`, in place of any held
+    /// there, then let the reads asked for longest ago go until at most
+    /// [`FILES_HELD`] remain.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: at most [`FILES_HELD`] reads are held; `fresh` is held unless
+    ///   it was the one asked for longest ago.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`locate`].
+    /// - witness: `component::tests::a_settled_file_is_read_once_per_change_776`
+    #[spec(ensures: self.held.len() <= FILES_HELD)]
+    fn keep(
+        &mut self,
+        target: PathBuf,
+        fresh: HeldFile,
+    )
+    {
+        let _replaced = self.held.insert(target, fresh);
+        while self.held.len() > FILES_HELD {
+            let oldest = self
+                .held
+                .iter()
+                .min_by_key(|&(_, held)| held.used)
+                .map(|(target, _)| target.clone());
+            let Some(oldest) = oldest
+            else {
+                break;
+            };
+            let _gone = self.held.remove(&oldest);
+        }
+    }
+}
+
+/// The process's file reads, shared by every lay-out and every grouping.
+static FILES: Mutex<Files> = Mutex::new(Files {
+    held: BTreeMap::new(),
+    clock: 0_u64,
+});
+
+/// Where the path `target` an import names leads: the path the graph names
+/// it by, and the read [`FILES`] holds of the file there while its stamp is
+/// unchanged.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the path [`named_path`] names `target` by. When [`FILES`] holds a
+///   read under `target` whose stamp a `stat` of `target` reads now, that
+///   read's path, root and text, the read now the one asked for last. Otherwise
+///   the file there to read, with the stamp to hold its read under when it last
+///   changed [`SETTLED`] or more ago; or nothing there.
+/// - provides: the closure's files every keystroke's lay-out reads, each one
+///   `stat` while it is unchanged rather than a resolution and a read.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the answer reads the file system.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a closure laid out twice reads its settled files once; a
+///   file rewritten, to the same length and modification time or within
+///   [`SETTLED`] of its read, is read again.
+/// - witness: `component::tests::a_settled_file_is_read_once_per_change_776`
+fn locate(target: &Path) -> Located
+{
+    let metadata = std::fs::metadata(target).ok();
+    let stamp = Stamp::of(metadata.as_ref());
+    if let Some(stamp) = stamp {
+        let mut files = FILES.lock().unwrap_or_else(PoisonError::into_inner);
+        files.clock = files.clock.saturating_add(1);
+        let now = files.clock;
+        if let Some(held) = files.held.get_mut(target)
+            && held.stamp == stamp
+        {
+            held.used = now;
+            return Located {
+                named: held.named.clone(),
+                disk: OnDisk::Held(held.found, held.text.clone()),
+            };
+        }
+    }
+    let Ok(named) = std::fs::canonicalize(target)
+    else {
+        return Located {
+            named: missing(target),
+            disk: OnDisk::Missing,
+        };
+    };
+    let settled = metadata
+        .and_then(|metadata| metadata.modified().ok())
+        .and_then(|modified| SystemTime::now().duration_since(modified).ok())
+        .is_some_and(|age| age >= SETTLED);
+    Located {
+        named,
+        disk: OnDisk::Unread(stamp.filter(|_| settled)),
+    }
+}
+
 /// The path imports `text` writes, read whole under `grammar`: what
 /// [`paths_written`] answers, parsed once per process for each text and
 /// grammar, `parsed` counting the bytes of a text parsed now.
@@ -2098,6 +2364,89 @@ mod tests
             texts(&changed),
             [format!("{floor}\n{rewritten}\n{importer}")],
             "the closure is laid out as the sibling now reads"
+        );
+    }
+
+    /// #776: a file a lay-out reads is read from disk once while it is settled
+    /// and unchanged. A file that changed within [`super::SETTLED`] is read
+    /// each time; once settled its read is held, and a rewrite to the same
+    /// length and modification time is read again by its status-change time.
+    #[cfg(unix)]
+    #[test]
+    fn a_settled_file_is_read_once_per_change_776()
+    {
+        use core::time::Duration;
+        use std::time::SystemTime;
+
+        let grammar = built_in().expect("the grammar builds");
+        let base = "/// #776: the base.\ndef nine : Integer ;\ndef nine = 9 ;";
+        let importer = "import \"./base.gandr\" ;\n/// #776: the importer.\ndef ten : Integer \
+                        ;\ndef ten = nine ;";
+        let tree = Scratch::new(Path::new("settled"), &[
+            (Path::new("base.gandr"), SourceText::from(base)),
+            (Path::new("importer.gandr"), SourceText::from(importer)),
+        ]);
+        let sibling = tree.0.join("base.gandr");
+        // Each lay-out of the importer: how many files it read from disk, and
+        // the sibling's text as it was read.
+        let laid = || {
+            let mut graph = super::Graph::default();
+            let _importer = graph.admit(
+                named_path(&tree.0.join("importer.gandr")),
+                SourceRoot::Strict,
+                String::from(importer),
+            );
+            graph.expand(&grammar, &super::Unshadowed);
+            let read = graph
+                .read
+                .iter()
+                .find(|read| read.path == named_path(&sibling))
+                .map(|read| read.text.clone());
+            (graph.fetched, read)
+        };
+        let settled = SystemTime::now()
+            .checked_sub(Duration::from_secs(60))
+            .expect("a minute ago is a time");
+        let settle = || {
+            std::fs::File::options()
+                .write(true)
+                .open(&sibling)
+                .and_then(|file| file.set_modified(settled))
+                .expect("the sibling's modification time is set back");
+        };
+        assert_eq!(
+            laid(),
+            (1_usize, Some(String::from(base))),
+            "a sibling written now is read"
+        );
+        assert_eq!(
+            laid(),
+            (1_usize, Some(String::from(base))),
+            "and read again while a change could share its time"
+        );
+        settle();
+        assert_eq!(
+            laid(),
+            (1_usize, Some(String::from(base))),
+            "a settled sibling is read once"
+        );
+        assert_eq!(
+            laid(),
+            (0_usize, Some(String::from(base))),
+            "and held while it is unchanged"
+        );
+        let rewritten = base.replace("= 9", "= 8");
+        std::fs::write(&sibling, &rewritten).expect("the sibling is rewritten");
+        settle();
+        assert_eq!(
+            laid(),
+            (1_usize, Some(rewritten.clone())),
+            "a rewrite to the same length and modification time is read again"
+        );
+        assert_eq!(
+            laid(),
+            (0_usize, Some(rewritten)),
+            "and held as it now reads"
         );
     }
 
