@@ -1610,9 +1610,10 @@ where
         by_source.entry((dir, src)).or_default().push((dst, walks));
     }
     let mut rows: DirectRows<S> = BTreeMap::new();
+    // Each pass drains the queue before the next begins.
+    let mut queue: VecDeque<ClosureQueueItem<S>> = VecDeque::new();
     for dir in [Dir::Left, Dir::Right] {
         for src in &spec.ends {
-            let mut queue: VecDeque<ClosureQueueItem<S>> = VecDeque::new();
             let start = BTreeSet::from([src.clone()]);
             for &(dst, walks) in by_source.get(&(dir, src)).into_iter().flatten() {
                 for walk in walks {
