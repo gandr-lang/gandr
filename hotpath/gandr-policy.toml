@@ -1,0 +1,26 @@
+# hotpath Cloud's judgement of the `gandr` series' allocation report
+# (crates/surface-driver/benches/hotpath.rs) against its base's
+# (https://hotpath.rs/regression_policy).
+# `mise run ci:hotpath` uploads it; the series' wall-clock time is judged
+# apart, as `gandr-timing` (hotpath/gandr-timing-policy.toml).
+#
+# Allocation counts of a fixed workload repeat to within 0.1%, so a 2% change
+# in any crate is a real one and fails the `hotpath / gandr` check, which is
+# never a required check: a regression lands red rather than blocks. The
+# comment is posted only when the comparison finds a change.
+
+pr_check = "fail"
+pr_comment = "on_change"
+
+[functions]
+min_percent_total = 1
+
+[functions.alloc]
+judged = true
+fail_check = true
+min_percent_change = 2
+metrics = ["avg", "total"]
+min_calls = 1
+
+[functions.timing]
+judged = false

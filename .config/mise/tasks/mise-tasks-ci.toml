@@ -356,6 +356,101 @@ run = [
   "target/debug/build-state prune --profile-dir target/enforcing/debug target/enforcing/debug/units-clippy.jsonl",
 ]
 
+# One hotpath series, run under the profiler and uploaded twice: as
+# `<series>`, judged on allocation in every crate (hotpath/<series>-policy.toml),
+# and as `<series>-timing`, judged on wall-clock time in the crates the change
+# reaches (hotpath/<series>-timing-policy.toml, its trailing `[functions]`
+# table given an `ignore` naming every instrumented function of any other
+# workspace crate). hotpath's policy has no timing-only ignore, so the closure
+# needs a report of its own.
+#
+# The closure is every workspace crate a changed file sits in and every crate
+# that depends on one, however indirectly. A changed lockfile, workspace
+# manifest, toolchain pin or `.cargo/` file, or no base to compare with
+# (main's push, a dispatch), reaches every crate. A closure that misses the
+# series' package skips the timing upload. hotpath names a function
+# `<module>::<fn>`, or `<impl_type>::<fn>` where the attribute names one,
+# without its crate, so a crate's names are read from its
+# `#[cfg_attr(feature = "hotpath", hotpath::measure…)]` attributes; a series'
+# own `measure_block!` labels belong to its package. CI_BASE_SHA names the
+# base. The upload is skipped under act, which holds no OIDC token.
+["ci:hotpath"]
+description = "Run a hotpath series and upload its allocation and timing reports"
+tools.jq = "1.8.1"
+usage = '''
+arg "<series>" help="the benchmark name"
+arg "<package>" help="the package holding the bench"
+arg "<bench>" help="the bench target"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+series=${usage_series:?}
+package=${usage_package:?}
+bench=${usage_bench:?}
+root=$(git rev-parse --show-toplevel)
+scratch="$root/target/hotpath"
+mkdir -p "$scratch"
+upload() {
+  rm -f "$scratch/$1.json"
+  HOTPATH_BENCHMARK=$1 HOTPATH_POLICY_PATH=$2 HOTPATH_UPLOAD_RESPONSE_PATH="$scratch/$1.json" \
+    cargo test --locked --profile test --package "$package" --bench "$bench" --features hotpath
+  if [[ ${ACT:-} != true ]]; then test -s "$scratch/$1.json"; fi
+}
+upload "$series" "$root/hotpath/$series-policy.toml"
+
+base=${CI_BASE_SHA:-}
+: > "$scratch/changed"
+every=true
+if [[ -n "$base" ]] && git fetch --quiet --depth=1 origin "$base" \
+  && git diff --no-renames --name-only -z "$base" HEAD > "$scratch/changed"; then
+  every=false
+fi
+cargo metadata --locked --format-version 1 > "$scratch/metadata.json"
+# The first line is `in` or `out`, for the series' package; then the
+# directory of each workspace crate outside the closure, one per line.
+jq -r --rawfile changed "$scratch/changed" --argjson every "$every" --arg package "$package" '
+  def grow($crates; $deps):
+    . as $reached
+    | [$crates[] | select(.id as $id | ($reached | index($id)) != null or any($deps[$id][]; . as $dep | ($reached | index($dep)) != null)) | .id]
+    | if length == ($reached | length) then . else grow($crates; $deps) end;
+  .workspace_root as $root
+  | .workspace_members as $members
+  | [.packages[] | select(.id as $id | ($members | index($id)) != null)
+      | {id, name, dir: (.manifest_path | ltrimstr($root + "/") | rtrimstr("Cargo.toml"))}] as $crates
+  | ([.resolve.nodes[] | {key: .id, value: [.deps[].pkg]}] | from_entries) as $deps
+  | ($changed | split("\u0000") | map(select(length > 0))) as $files
+  | ($every or any($files[]; . == "Cargo.lock" or . == "Cargo.toml" or . == "rust-toolchain.toml" or startswith(".cargo/"))) as $all
+  | (if $all then [$crates[].id]
+     else [$crates[] | select(.dir as $dir | any($files[]; startswith($dir))) | .id] | grow($crates; $deps) end) as $closure
+  | (if any($crates[]; .name == $package and (.id as $id | ($closure | index($id)) != null)) then "in" else "out" end),
+    ($crates[] | select(.id as $id | ($closure | index($id)) == null) | .dir)
+' "$scratch/metadata.json" > "$scratch/outside"
+if [[ $(head -n 1 "$scratch/outside") != in ]]; then
+  echo "the change reaches no crate $package depends on: no $series-timing upload"
+  exit 0
+fi
+tail -n +2 "$scratch/outside" | while IFS= read -r dir; do
+  [[ -d "$root/${dir}src" ]] || continue
+  find "$root/${dir}src" -name '*.rs' -exec awk '
+    FNR == 1 { stem = FILENAME; sub(/.*\//, "", stem); sub(/\.rs$/, "", stem); pending = 0 }
+    /hotpath::measure/ {
+      pending = 1; owner = stem
+      if (match($0, /impl_type = "[^"]+"/)) owner = substr($0, RSTART + 13, RLENGTH - 14)
+      next
+    }
+    pending && match($0, /fn [A-Za-z_][A-Za-z0-9_]*/) { print owner "::" substr($0, RSTART + 3, RLENGTH - 3); pending = 0 }
+  ' {} +
+done | sort -u > "$scratch/ignored"
+{
+  cat "$root/hotpath/$series-timing-policy.toml"
+  if [[ -s "$scratch/ignored" ]]; then
+    printf 'ignore = [%s]\n' "$(sed 's/.*/"&"/' "$scratch/ignored" | paste -sd, -)"
+  fi
+} > "$scratch/$series-timing-policy.toml"
+upload "$series-timing" "$scratch/$series-timing-policy.toml"
+{% endraw %}'''
+
 # Head checks and merge-group checks are separate runs. Watch the queue entry
 # as well as the pull request; green head checks alone do not prove landing.
 # The entry runs every workflow with a merge_group trigger; each is reported.
