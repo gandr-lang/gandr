@@ -103,7 +103,7 @@ fn send(
 ///   then, for every document a synchronisation publishes, its report at the
 ///   version published. A resync from the client is answered with the named
 ///   document's report at its current version, nothing for a document the hub
-///   no longer holds; a detach is answered with a detach and ends the face.
+///   does not hold; a detach is answered with a detach and ends the face.
 ///   Frames are written one line each, in the order the face made them. The
 ///   face returns when the client's stream ends, a line is not a frame, or a
 ///   write fails.

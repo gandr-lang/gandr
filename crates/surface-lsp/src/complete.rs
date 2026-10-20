@@ -144,7 +144,7 @@ impl Names
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a resolved function, constructor and family each read
-    ///   their own head; a name the text no longer declares resolves to
+    ///   their own head; a name the current text does not declare resolves to
     ///   nothing.
     /// - witness: `complete::tests::a_resolved_name_reads_its_head_and_documentation`
     #[cfg_attr(
@@ -441,8 +441,8 @@ fn beside(
 /// # Adequacy
 /// - hypothesis: L3 — a documented function with parameters, a constructor with
 ///   fields, a family, a value whose head is its name alone, a binder, a
-///   keyword and a name no longer declared are each resolved to their exact
-///   detail and documentation.
+///   keyword and a name the text does not declare are each resolved to their
+///   exact detail and documentation.
 /// - witness: `complete::tests::a_resolved_name_reads_its_head_and_documentation`
 ///
 /// [`Signatures`]: crate::signature::Signatures
