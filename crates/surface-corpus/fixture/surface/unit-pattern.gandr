@@ -1,0 +1,16 @@
+// The unit value matched by its pattern: `unit` in a case arm matches the one
+// value of `Unit`, so a case on a unit takes that arm (Pierce, _Types and
+// Programming Languages_, MIT Press, 2002, § 11.2).
+
+/// Forty-two, read off the one arm a unit takes.
+@[ checks ]
+def answer(u : Unit) -> -F Integer {
+  case u {
+    unit => return 42
+  }
+}
+
+/// The unit takes its arm.
+@[ runs("42") ]
+def answerOfUnit : () => Integer ;
+def answerOfUnit = thunk { become answer(unit) } ;

@@ -2,10 +2,12 @@
 //! tree-sitter grammar is realised by this grammar.
 //!
 //! Named kinds are not grammar semantics: forms range over tiles and holes
-//! only. A kind is realised either by structural forms, the rules whose
-//! provenance is the kind's name, or, for the file root alone, by the
-//! top-level item sequence. The inventory is the table an editor-facing
-//! grammar is checked against; it never defines the tile vocabulary.
+//! only. A kind is realised by structural forms, the rules whose provenance
+//! is the kind's name; for the file root, by the top-level item sequence; or,
+//! for a comment or a shebang, by the labeler, which reads it as layout
+//! between tokens, so no form holds one. The inventory is the table an
+//! editor-facing grammar is checked against; it never defines the tile
+//! vocabulary.
 //!
 //! The kinds only this grammar has — `data` and `codata` declarations,
 //! `def rec` with copatterns, the loop forms, `import`, operator-fixity
@@ -18,10 +20,11 @@
 //! `TREE_SITTER_NAMED_KINDS` lists, ascending, the 124 named node kinds of the
 //! surface's tree-sitter grammar; `PBG_ONLY_KINDS` lists the kinds only this
 //! grammar has, disjoint from them. `named_kind_parity` classifies every listed
-//! kind: `source_file` is the file root, realised by the item forms, and every
-//! other kind is realised by a rule's provenance or an adaptation's surface
-//! form. A kind is never grammar semantics: forms range over tiles and holes
-//! only, and the inventory is how coverage of the named kinds is checked.
+//! kind: `source_file` is the file root, realised by the item forms; the
+//! comments and the shebang are layout; and every other kind is realised by a
+//! rule's provenance or an adaptation's surface form. A kind is never grammar
+//! semantics: forms range over tiles and holes only, and the inventory is how
+//! coverage of the named kinds is checked.
 //!
 //! A molded syntax tree names each form and tile by its `MoldId`;
 //! `Pbg::named_kind` reads the kind back as the provenance of the rule the mold
@@ -40,9 +43,6 @@ use anodized::spec;
 
 use crate::surface::TREE_SITTER_NAMED_KINDS;
 
-/// The named kinds the file root realises rather than a structural form.
-const FILE_ROOT_KINDS: &[&str] = &["source_file"];
-
 /// How a named kind is realised.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NamedKindRealization
@@ -51,6 +51,8 @@ pub enum NamedKindRealization
     StructuralForms,
     /// By the file root: the top-level item sequence.
     FileRoot,
+    /// By the labeler: trivia between tokens, which no form holds.
+    Layout,
 }
 
 /// One row of the named-kind inventory.
@@ -72,7 +74,8 @@ pub struct NamedKind<'kind>(pub &'kind str);
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the file root's kind is [`NamedKindRealization::FileRoot`]; every
+/// - ensures: the file root's kind is [`NamedKindRealization::FileRoot`]; the
+///   comments' and the shebang's are [`NamedKindRealization::Layout`]; every
 ///   other kind, an unknown one included, is
 ///   [`NamedKindRealization::StructuralForms`].
 /// - panics: none.
@@ -80,19 +83,18 @@ pub struct NamedKind<'kind>(pub &'kind str);
 /// # Adequacy
 /// - hypothesis: Across the committed kind inventory and explicit known,
 ///   unknown and near-root spellings, L3 classification and semantic
-///   realization observations catch accidental file-root aliases and missing
-///   structural coverage; arbitrary user text is not exhausted.
+///   realization observations catch accidental file-root or layout aliases and
+///   missing structural coverage; arbitrary user text is not exhausted.
 /// - witness: `tests::surface::named_kind_coverage_is_semantic`
-#[spec(ensures: |ret| if kind.0 == "source_file" { ret == NamedKindRealization::FileRoot } else { ret == NamedKindRealization::StructuralForms })]
+#[spec(ensures: |ret| ret == match kind.0 { "source_file" => NamedKindRealization::FileRoot, "block_comment" | "line_comment" | "shebang" => NamedKindRealization::Layout, _ => NamedKindRealization::StructuralForms })]
 #[inline]
 #[must_use]
 pub fn named_kind_realization(kind: NamedKind<'_>) -> NamedKindRealization
 {
-    if FILE_ROOT_KINDS.contains(&kind.0) {
-        NamedKindRealization::FileRoot
-    }
-    else {
-        NamedKindRealization::StructuralForms
+    match kind.0 {
+        "source_file" => NamedKindRealization::FileRoot,
+        "block_comment" | "line_comment" | "shebang" => NamedKindRealization::Layout,
+        _ => NamedKindRealization::StructuralForms,
     }
 }
 

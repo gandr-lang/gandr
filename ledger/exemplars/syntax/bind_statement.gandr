@@ -1,2 +1,0 @@
-/// `bind_statement`: a binding of what a computation returns.
-run answer <- pure 42 ;

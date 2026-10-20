@@ -1,2 +1,0 @@
-/// `unpack_statement`: an unpacking of a package into its hidden type and its value.
-unpack counter : Counter = packed ;

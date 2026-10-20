@@ -410,6 +410,11 @@ fn named_kind_coverage_is_semantic() -> Result<(), Box<dyn Error>>
                 entry.kind
             ),
             NamedKindRealization::FileRoot => assert!(item_has_forms),
+            NamedKindRealization::Layout => assert!(
+                !realised.contains(entry.kind),
+                "layout kind {} is held by no form",
+                entry.kind
+            ),
         }
     }
     let inventoried: Vec<&str> = named_kind_parity()
@@ -425,6 +430,12 @@ fn named_kind_coverage_is_semantic() -> Result<(), Box<dyn Error>>
         NamedKindRealization::StructuralForms,
         named_kind_realization(NamedKind("def_value"))
     );
+    for kind in ["line_comment", "block_comment", "shebang"] {
+        assert_eq!(
+            NamedKindRealization::Layout,
+            named_kind_realization(NamedKind(kind))
+        );
+    }
     for kind in ["", "source", "source_file ", "Source_file", "unknown_kind"] {
         assert_eq!(
             NamedKindRealization::StructuralForms,

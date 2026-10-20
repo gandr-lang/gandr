@@ -1,2 +1,0 @@
-/// `fork_statement`: a fork: a new session, its seat's body and the desk kept.
-fork (seat : end) { close(seat) } as desk ;

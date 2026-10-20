@@ -4884,12 +4884,12 @@ impl Walk<'_, '_>
                         Slot::of(result, Admits::ValueType, Binds::NONE),
                         Slot::of(rest, admits, Binds::ONE),
                     ]));
-                    Some(writes(Production("bind_statement"), Join::TypedSequence))
+                    Some(writes(Production("block"), Join::TypedSequence))
                 },
                 None if matches!(source.read(bound), Former::Receive(_)) => {
-                    Some(writes(Production("recv_statement"), Join::Received))
+                    Some(writes(Production("block"), Join::Received))
                 },
-                None => Some(writes(Production("bind_statement"), Join::Sequence)),
+                None => Some(writes(Production("block"), Join::Sequence)),
             },
             // An ascription outside a typed bind has no spelling of its own:
             // it stands as its body, its type unwritten.
@@ -6085,7 +6085,7 @@ impl Walk<'_, '_>
             },
             Former::Receive(endpoint) => {
                 let _ = parts.text("recv(").part(Part::Endpoint(endpoint)).text(")");
-                writes(Production("recv_statement"), Binding::Atom)
+                writes(Production("block"), Binding::Atom)
             },
             Former::Close(endpoint) => {
                 let _ = parts
@@ -6135,7 +6135,7 @@ impl Walk<'_, '_>
                     .text(" ;")
                     .part(Part::Line)
                     .piece(Binding::Sequence);
-                writes(Production("fork_statement"), Binding::Sequence)
+                writes(Production("block"), Binding::Sequence)
             },
             Former::Hold { .. } => {
                 let _ = parts
@@ -6146,7 +6146,7 @@ impl Walk<'_, '_>
                     .text(" ;")
                     .part(Part::Line)
                     .piece(Binding::Sequence);
-                writes(Production("hold_statement"), Binding::Sequence)
+                writes(Production("block"), Binding::Sequence)
             },
             Former::Access { held, .. } => {
                 let _ = parts
@@ -6196,7 +6196,7 @@ impl Walk<'_, '_>
                     .text(" ;")
                     .part(Part::Line)
                     .piece(Binding::Sequence);
-                writes(Production("leta_statement"), Binding::Sequence)
+                writes(Production("block"), Binding::Sequence)
             },
             Former::Migrate { world, .. } => {
                 let world = self.spelled(world, Unspelled::Unreadable(Unreadable::Unnamed));

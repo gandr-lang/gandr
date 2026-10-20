@@ -399,10 +399,7 @@ fn command_substitution_molds_with_zero_obligations() -> Result<(), Box<dyn Erro
 fn value_statement_uses_val_keyword() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    let renamed = [
-        "val value = expression;",
-        "def use() -> -F Integer { val value = expression; pure value }",
-    ];
+    let renamed = ["def use() -> -F Integer { val value = expression; pure value }"];
     for src in renamed {
         let result = parse(pbg, SourceText::from(src))?;
         assert!(
@@ -428,10 +425,7 @@ fn value_statement_uses_val_keyword() -> Result<(), Box<dyn Error>>
 fn bind_statement_uses_run_keyword() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    let renamed = [
-        "run value <- action;",
-        "def bind() -> -F Integer { run value <- action; pure value }",
-    ];
+    let renamed = ["def bind() -> -F Integer { run value <- action; pure value }"];
     for src in renamed {
         let result = parse(pbg, SourceText::from(src))?;
         assert!(
@@ -528,7 +522,6 @@ fn run_binder_annotation_molds_clean() -> Result<(), Box<dyn Error>>
     // on the tile after the pattern.
     let pbg = built();
     let annotated = [
-        "run value : -F Integer <- action;",
         "def bind() -> -F Integer { run value : -F Integer <- action; pure value }",
         "def bind() -> -F Integer { run (left, right) : -F Integer <- action; pure left }",
     ];
@@ -675,7 +668,7 @@ fn circuit_arrows_leave_the_shorter_tiles_alone() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let unchanged: &[&str] = &[
         "case x { A => 1, B => 2 }",
-        "run value <- action;",
+        "def bind() -> -F Integer { run value <- action; pure value }",
         "def le() -> -F Boolean { return a <= b }",
         "def eq() -> -F Boolean { return a == b }",
         "def arrow : A -> B;",
@@ -2335,15 +2328,21 @@ fn push_prefix<'pbg>(
 }
 
 /// `run` opens a bind statement where `<-` follows its pattern and an inline
-/// run everywhere else — at the top level, in a body, and in an argument list,
-/// where a declaration head would otherwise close the declaration around it.
+/// run everywhere else — in a statement's expression, in a body, and in an
+/// argument list, where a declaration head would otherwise close the
+/// declaration around it.
 #[test]
 fn run_reads_as_a_bind_or_an_inline_run_by_what_follows() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
     for (src, inline) in [
-        ("run value <- action;", [false].as_slice()),
-        ("val v = run f(x);", &[true]),
+        (
+            "def g() -> -F Integer { run value <- action; pure value }",
+            [false].as_slice(),
+        ),
+        ("def g() -> -F Integer { val v = run f(x); pure v }", &[
+            true,
+        ]),
         (
             "def g() -> -F Integer { run r <- f(run h(x)); pure g(run f(r), r) }",
             &[false, true, true],

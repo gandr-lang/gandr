@@ -1,0 +1,23 @@
+// The asks for a written form: `explicit_exits` and `explicit_runs` ask the
+// lowering to report each exit or run it inferred under the declaration they
+// decorate, and `form` names the spelling the formatter lays the source out
+// in (opt-in lints after Rust's lint attributes, _The Rust Reference_,
+// § Diagnostics attributes). None changes what checks: each declaration
+// below writes what its ask asks for, and checks.
+
+/// An answer whose exit is written, as `explicit_exits` asks.
+@[ checks, explicit_exits ]
+def exitWritten() -> -F Integer {
+  return 42
+}
+
+/// The same answer, bound by a written run, as `explicit_runs` asks.
+@[ checks, explicit_runs ]
+def runWritten() -> -F Integer {
+  run m <- exitWritten() ;
+  return m
+}
+
+/// A value laid out in the sugared form.
+@[ checks, form(sugared) ]
+def sugared = 42 ;

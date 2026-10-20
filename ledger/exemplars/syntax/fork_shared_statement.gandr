@@ -1,2 +1,0 @@
-/// `fork_shared_statement`: a shared fork: a new session whose seat is shared.
-fork !(seat : end) { close(seat) } ;

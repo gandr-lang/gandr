@@ -397,7 +397,7 @@ pub(super) fn standing(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a block comment form is internal through `/*`; every
-///   built-in form, the line comment included, is not.
+///   built-in form is not.
 /// - witness: `ledger::tests::each_unmoldable_form_has_its_derived_reason`
 /// - witness: `ledger::tests::every_internal_rule_has_its_derived_reason`
 #[spec(ensures: |ret| ret == Standing::Committed || matches!(ret, Standing::Internal(Internal::Layout { .. })))]
@@ -552,8 +552,8 @@ fn shadowed(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a shell form whose word reads as an identifier is
-///   captured; the line comment, whose sort has no identifier rule, and the
-///   reserved `unit` are not.
+///   captured; the reserved `unit`, whose word the labeler reads as itself, is
+///   not.
 /// - witness: `ledger::tests::each_unmoldable_form_has_its_derived_reason`
 /// - witness: `ledger::tests::every_internal_rule_has_its_derived_reason`
 #[spec(ensures: |ret| ret == Standing::Committed || matches!(ret, Standing::Internal(Internal::Captured { .. })))]
