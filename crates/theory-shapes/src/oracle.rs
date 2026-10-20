@@ -1,5 +1,6 @@
-//! Conjunctive entailment decided with evidence either way, and the two
-//! validators that check that evidence against the query alone.
+//! Entailment in the conjunctive band and its column disjunctions, decided
+//! with evidence either way, and the two validators that check that evidence
+//! against the query alone.
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -11,6 +12,7 @@ use crate::finite::Inclusion;
 use crate::finite::Membership;
 use crate::finite::SetOperation;
 use crate::finite::Subshape;
+use crate::formula::Formula;
 use crate::formula::Node;
 use crate::formula::Problem;
 use crate::formula::Truth;
@@ -44,10 +46,10 @@ pub struct Citation
 /// checked by [`Self::validate`].
 ///
 /// # Specification
-/// - provides: the four ways a conjunctive entailment holds over finite
+/// - provides: the four ways an entailment in the band holds over finite
 ///   carriers: no assignment exists, the premise reaches `⊥`, the premise's
-///   atoms on one variable meet in the empty subshape, or every conclusion atom
-///   includes the meet of premise atoms on its variable.
+///   atoms on one variable meet in the empty subshape, or every conclusion
+///   conjunct includes the meet of premise atoms on its variable.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -66,9 +68,10 @@ pub enum Derivation
     /// The cited premise atoms, all on this variable, meet in the empty
     /// subshape: no assignment satisfies the premise.
     Disjoint(Variable, Citation),
-    /// One citation per conclusion atom, in node order: the cited premise
-    /// atoms lie on the conclusion atom's variable and their meet is included
-    /// in its subshape (`∧`-elimination, meet, monotonicity, then
+    /// One citation per conclusion conjunct, in node order: the cited premise
+    /// atoms lie on the conjunct's variable and their meet is included in its
+    /// subshape, a column disjunction's being the union of its atoms'
+    /// (`∧`-elimination, meet, monotonicity, `∨`-introduction, then
     /// `∧`-introduction).
     Supported(Vec<Citation>),
 }
@@ -124,40 +127,45 @@ struct Column
 /// - ensures: `Holds` carries a derivation [`Derivation::validate`] accepts and
 ///   `Refuted` a countermodel [`Countermodel::validate`] accepts, so the answer
 ///   is entailment at every assignment of the finite carriers.
-/// - provides: a total decision of the conjunctive band. In order of
-///   precedence: `EmptyCarrier` at the least variable with an empty carrier;
-///   `FalsePremise` at the premise's first `⊥`; `Disjoint` at the least
-///   variable whose premise atoms meet in the empty subshape, citing all of
-///   them; `Refuted` at the first conclusion atom in node order whose subshape
-///   misses a point of its variable's meet, every variable at the least point
-///   of its meet and the refuted variable at the least point the atom misses;
-///   otherwise `Supported`, citing for each conclusion atom every premise atom
-///   on its variable.
+/// - provides: a total decision of the conjunctive band and its column
+///   disjunctions, a column disjunction read as membership in the union of its
+///   atoms' subshapes. In order of precedence: `EmptyCarrier` at the least
+///   variable with an empty carrier; `FalsePremise` at the premise's first `⊥`;
+///   `Disjoint` at the least variable whose premise atoms meet in the empty
+///   subshape, citing all of them; `Refuted` at the first conclusion conjunct
+///   in node order whose subshape misses a point of its variable's meet, every
+///   variable at the least point of its meet and the refuted variable at the
+///   least point the conjunct misses; otherwise `Supported`, citing for each
+///   conclusion conjunct every premise atom on its variable.
 /// - fails: only on a broken invariant of an admitted [`Problem`], as a typed
 ///   refusal; never an answer.
 /// - panics: none.
 /// - intension: with `s` the total size of both formulas including their
-///   subshape tables, `c` and `p` the numbers of conclusion and premise atoms
-///   and `d` the largest carrier, the time is `O(s + c·(p + d))` and a
-///   `Supported` derivation cites at most `c·p` atoms: polynomial in the query,
-///   never a case tree over the carriers' product.
+///   subshape tables, `o` the number of conclusion disjunctions, `c` and `p`
+///   the numbers of conclusion conjuncts and premise atoms and `d` the largest
+///   carrier, the time is `O(s + o·d + c·(p + d))` and a `Supported` derivation
+///   cites at most `c·p` atoms: polynomial in the query, never a case tree over
+///   the carriers' product.
 ///
 /// # Errors
 /// - [`ShapeError::VariableOutside`], [`ShapeError::MalformedFormula`]:
-///   unreachable for an admitted problem; a listed atom that is not one.
+///   unreachable for an admitted problem; a listed conjunct that is not one.
 ///
 /// # Adequacy
 /// - hypothesis: L1 — every answer is validated against the query by the
 ///   validators, which share no code with the decision; L2 — every atom pair,
-///   every conjunction of two atoms against every atom in both directions, and
-///   256 generated conjunctive tables per context, over every context of up to
-///   two variables with carriers of up to four points and three variables of up
-///   to two, against an independent truth table, separate a wrong polarity, a
-///   lost atom and a wrong meet; L3 — an empty carrier, a premise `⊥` and a
-///   disjoint premise pin the precedence, and a wide conjunction pins the size
-///   bound.
+///   every conjunction of two atoms against every atom in both directions,
+///   every atom against every column disjunction of two atoms, and 256
+///   generated conjunctive tables per context, over every context of up to two
+///   variables with carriers of up to four points and three variables of up to
+///   two, against an independent truth table, separate a wrong polarity, a lost
+///   atom, a wrong meet and a wrong union; L3 — an empty carrier, a premise `⊥`
+///   and a disjoint premise pin the precedence, a cover of every constructor
+///   and a cover missing one pin the column reading, and a wide conjunction
+///   pins the size bound.
 /// - witness: `tests::faces::generated_queries_agree_with_brute_force`
 /// - witness: `tests::faces::evidence_follows_the_stated_precedence`
+/// - witness: `tests::faces::a_column_disjunction_is_decided_as_its_union`
 /// - witness: `tests::faces::conjunctive_evidence_stays_polynomial`
 /// - witness: `tests::faces::deep_formulas_use_no_call_stack`
 #[inline]
@@ -221,34 +229,128 @@ pub fn decide(problem: &Problem) -> Result<Evidence, ShapeError>
             },
         }
     }
+    let mut unions: Vec<Option<RawUnion>> = Vec::new();
     let mut supports = Vec::with_capacity(problem.conclusion_atoms().len());
     for &atom in problem.conclusion_atoms() {
-        match conclusion.nodes().get(usize::from(atom)) {
-            Some(&Node::Member(variable, ref subset)) => {
-                let column = columns
-                    .get(usize::from(variable))
-                    .ok_or(ShapeError::VariableOutside(variable))?;
-                let escape = column.meet.iter().zip(subset.decisions()).position(|pair| {
-                    *pair.0 == Membership::Inside && *pair.1 == Membership::Outside
-                });
-                if let Some(point) = escape {
-                    let slot = assignment
-                        .get_mut(usize::from(variable))
-                        .ok_or(ShapeError::VariableOutside(variable))?;
-                    *slot = Point::from(point);
-                    return Ok(Evidence::Refuted(Countermodel { assignment }));
+        let (variable, decisions) = match conclusion.nodes().get(usize::from(atom)) {
+            Some(&Node::Member(variable, ref subset)) => (variable, subset.decisions()),
+            Some(&Node::Or(..)) => {
+                if unions.is_empty() {
+                    unions = raw_unions(conclusion)?;
                 }
-                supports.push(Citation {
-                    atoms: column.atoms.clone(),
-                });
+                let Some(&Some(ref union)) = unions.get(usize::from(atom))
+                else {
+                    return Err(ShapeError::MalformedFormula);
+                };
+                (union.variable, union.table.as_slice())
             },
             Some(&Node::Bottom) => return Ok(Evidence::Refuted(Countermodel { assignment })),
-            Some(&(Node::Top | Node::And(..) | Node::Or(..))) | None => {
+            Some(&(Node::Top | Node::And(..))) | None => {
                 return Err(ShapeError::MalformedFormula);
             },
+        };
+        let column = columns
+            .get(usize::from(variable))
+            .ok_or(ShapeError::VariableOutside(variable))?;
+        let escape = column
+            .meet
+            .iter()
+            .zip(decisions)
+            .position(|pair| *pair.0 == Membership::Inside && *pair.1 == Membership::Outside);
+        if let Some(point) = escape {
+            let slot = assignment
+                .get_mut(usize::from(variable))
+                .ok_or(ShapeError::VariableOutside(variable))?;
+            *slot = Point::from(point);
+            return Ok(Evidence::Refuted(Countermodel { assignment }));
         }
+        supports.push(Citation {
+            atoms: column.atoms.clone(),
+        });
     }
     Ok(Evidence::Holds(Derivation::Supported(supports)))
+}
+
+/// A column disjunction's variable and the union of its atoms' membership
+/// tables, indexed by point.
+#[derive(Clone, Debug)]
+struct RawUnion
+{
+    /// The variable every atom of the disjunction names.
+    variable: Variable,
+    /// `Inside` at each point one of the atoms holds.
+    table: Vec<Membership>,
+}
+
+/// Each column disjunction's union as a raw membership table, by node,
+/// children first; `None` at every other node.
+///
+/// # Specification
+/// - requires: every disjunction of the table is a column disjunction.
+/// - ensures: one entry per node; a disjunction's table is `Inside` exactly
+///   where one of its operands' is.
+/// - fails: a disjunction over a node that is not an atom or a disjunction is
+///   malformed.
+/// - panics: none.
+/// - intension: one table of the carrier's size per disjunction; nothing is
+///   recomputed for a shared operand.
+///
+/// # Errors
+/// - [`ShapeError::MalformedFormula`]: a disjunction's operand is not an atom
+///   or a disjunction.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated column conclusions decided against an
+///   independent truth table separate a union that drops or adds a point.
+/// - witness: `tests::faces::generated_queries_agree_with_brute_force`
+/// - witness: `tests::faces::a_column_disjunction_is_decided_as_its_union`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(ref unions) => unions.len() == conclusion.nodes().len(),
+    Err(error) => error == ShapeError::MalformedFormula,
+})]
+fn raw_unions(conclusion: &Formula) -> Result<Vec<Option<RawUnion>>, ShapeError>
+{
+    let mut unions: Vec<Option<RawUnion>> = Vec::with_capacity(conclusion.nodes().len());
+    for node in conclusion.nodes() {
+        let union = match *node {
+            Node::Or(left, right) => {
+                let operand = |child: NodeId| match conclusion.nodes().get(usize::from(child)) {
+                    Some(&Node::Member(variable, ref subset)) => {
+                        Some((variable, subset.decisions()))
+                    },
+                    Some(&Node::Or(..)) => unions
+                        .get(usize::from(child))
+                        .and_then(Option::as_ref)
+                        .map(|union| (union.variable, union.table.as_slice())),
+                    Some(&(Node::Top | Node::Bottom | Node::And(..))) | None => None,
+                };
+                let (Some((variable, left)), Some((other, right))) =
+                    (operand(left), operand(right))
+                else {
+                    return Err(ShapeError::MalformedFormula);
+                };
+                if variable != other || left.len() != right.len() {
+                    return Err(ShapeError::MalformedFormula);
+                }
+                let table = left
+                    .iter()
+                    .zip(right)
+                    .map(|pair| {
+                        if *pair.0 == Membership::Inside || *pair.1 == Membership::Inside {
+                            Membership::Inside
+                        }
+                        else {
+                            Membership::Outside
+                        }
+                    })
+                    .collect();
+                Some(RawUnion { variable, table })
+            },
+            Node::Top | Node::Bottom | Node::Member(..) | Node::And(..) => None,
+        };
+        unions.push(union);
+    }
+    Ok(unions)
 }
 
 impl Derivation
@@ -260,9 +362,10 @@ impl Derivation
     ///   assignment: `EmptyCarrier` names a variable whose carrier is empty;
     ///   `FalsePremise` names a `⊥` the premise's root reaches; `Disjoint`
     ///   cites premise membership atoms of its variable whose meet is empty;
-    ///   `Supported` holds one citation per conclusion atom, in node order,
-    ///   each citing premise membership atoms of that atom's variable whose
-    ///   meet the atom includes, and no conclusion atom is `⊥`.
+    ///   `Supported` holds one citation per conclusion conjunct, in node order,
+    ///   each citing premise membership atoms of that conjunct's variable whose
+    ///   meet the conjunct's subshape (a column's union) includes, and no
+    ///   conclusion conjunct is `⊥`.
     /// - fails: a derivation that does not establish the entailment is refused
     ///   with the first defect found, by the variable or node it concerns.
     /// - panics: none.
@@ -284,9 +387,11 @@ impl Derivation
     /// - [`ShapeError::NotDisjoint`]: `Disjoint`'s cited atoms meet in a
     ///   nonempty subshape.
     /// - [`ShapeError::CitationCount`]: `Supported` does not hold one citation
-    ///   per conclusion atom.
-    /// - [`ShapeError::Unsupported`]: a conclusion atom is `⊥`, or does not
+    ///   per conclusion conjunct.
+    /// - [`ShapeError::Unsupported`]: a conclusion conjunct is `⊥`, or does not
     ///   include the meet of its citation.
+    /// - [`ShapeError::MalformedFormula`], [`ShapeError::DifferentAmbient`]:
+    ///   unreachable for an admitted problem; a disjunction that is no column.
     ///
     /// # Adequacy
     /// - hypothesis: L1 — every derivation the oracle returns on generated
@@ -336,14 +441,26 @@ impl Derivation
                 if citations.len() != problem.conclusion_atoms().len() {
                     return Err(ShapeError::CitationCount);
                 }
+                let mut unions: Vec<Option<(Variable, Subshape)>> = Vec::new();
                 for (&atom, citation) in problem.conclusion_atoms().iter().zip(citations) {
-                    let Some(&Node::Member(variable, ref subset)) =
-                        conclusion.nodes().get(usize::from(atom))
-                    else {
-                        return Err(ShapeError::Unsupported(atom));
+                    let (variable, required) = match conclusion.nodes().get(usize::from(atom)) {
+                        Some(&Node::Member(variable, ref subset)) => (variable, subset),
+                        Some(&Node::Or(..)) => {
+                            if unions.is_empty() {
+                                unions = joined_unions(problem)?;
+                            }
+                            let Some(&Some((variable, ref union))) = unions.get(usize::from(atom))
+                            else {
+                                return Err(ShapeError::Unsupported(atom));
+                            };
+                            (variable, union)
+                        },
+                        Some(&(Node::Top | Node::Bottom | Node::And(..))) | None => {
+                            return Err(ShapeError::Unsupported(atom));
+                        },
                     };
                     let meet = cited_meet(problem, variable, citation)?;
-                    let inclusion = meet.included(subset)?;
+                    let inclusion = meet.included(required)?;
                     if let Inclusion::Escapes(_) = inclusion {
                         return Err(ShapeError::Unsupported(atom));
                     }
@@ -352,6 +469,68 @@ impl Derivation
             },
         }
     }
+}
+
+/// Each conclusion disjunction's variable and the union of its atoms'
+/// subshapes, joined with the subshape operations, by node, children first;
+/// `None` at every other node.
+///
+/// # Specification
+/// - requires: `problem` was admitted, so every conclusion disjunction is a
+///   column disjunction.
+/// - ensures: one entry per conclusion node; a disjunction's subshape is the
+///   join of its operands'.
+/// - fails: a disjunction over a node that is not an atom or a disjunction is
+///   malformed; a join of two carriers is refused by the subshape operations.
+/// - panics: none.
+///
+/// # Errors
+/// - [`ShapeError::MalformedFormula`]: a disjunction's operand is not an atom
+///   or a disjunction, or its atoms lie on two variables.
+/// - [`ShapeError::DifferentAmbient`]: two operands' subshapes lie in different
+///   carriers.
+///
+/// # Adequacy
+/// - hypothesis: L1 — every `Supported` derivation of a generated column
+///   conclusion is validated against these unions, and a forged one whose meet
+///   escapes the union is refused.
+/// - witness: `tests::faces::a_column_disjunction_is_decided_as_its_union`
+/// - witness: `tests::faces::generated_queries_agree_with_brute_force`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(ref unions) => unions.len() == problem.parts().2.nodes().len(),
+    Err(error) => matches!(error, ShapeError::MalformedFormula | ShapeError::DifferentAmbient),
+})]
+fn joined_unions(problem: &Problem) -> Result<Vec<Option<(Variable, Subshape)>>, ShapeError>
+{
+    let (_, _, conclusion) = problem.parts();
+    let mut unions: Vec<Option<(Variable, Subshape)>> =
+        Vec::with_capacity(conclusion.nodes().len());
+    for node in conclusion.nodes() {
+        let union = match *node {
+            Node::Or(left, right) => {
+                let operand = |child: NodeId| match conclusion.nodes().get(usize::from(child)) {
+                    Some(&Node::Member(variable, ref subset)) => Some((variable, subset)),
+                    Some(&Node::Or(..)) => unions
+                        .get(usize::from(child))
+                        .and_then(Option::as_ref)
+                        .map(|union| (union.0, &union.1)),
+                    Some(&(Node::Top | Node::Bottom | Node::And(..))) | None => None,
+                };
+                let (Some((variable, left)), Some((other, right))) =
+                    (operand(left), operand(right))
+                else {
+                    return Err(ShapeError::MalformedFormula);
+                };
+                if variable != other {
+                    return Err(ShapeError::MalformedFormula);
+                }
+                Some((variable, left.combine(right, SetOperation::Union)?))
+            },
+            Node::Top | Node::Bottom | Node::Member(..) | Node::And(..) => None,
+        };
+        unions.push(union);
+    }
+    Ok(unions)
 }
 
 /// The meet of a citation's premise atoms, all on one variable.

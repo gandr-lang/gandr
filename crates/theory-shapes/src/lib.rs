@@ -1,7 +1,7 @@
 //! Finite shapes for gandr: decidable subshapes of finite carriers, the outer
-//! pushout of two of them, and conjunctive entailment between face formulas,
-//! decided with a derivation or a countermodel that a validator checks
-//! without the decision procedure.
+//! pushout of two of them, and entailment between face formulas in the
+//! conjunctive band and its column disjunctions, decided with a derivation or
+//! a countermodel that a validator checks without the decision procedure.
 //!
 //! # The shape theory
 //!
@@ -47,23 +47,34 @@
 //!
 //! # The decided band
 //!
-//! [`Problem::new`] admits a query whose premise and conclusion are
-//! conjunctions of atoms (`⊤`, `⊥`, membership) over a context of finite
-//! carriers; a disjunction in either formula is refused by its node
+//! [`Problem::new`] admits a query over a context of finite carriers whose
+//! premise is a conjunction of atoms (`⊤`, `⊥`, membership) and whose
+//! conclusion is a conjunction of atoms and column disjunctions. A column
+//! disjunction `x ∈ S₁ ∨ … ∨ x ∈ Sₙ` has every atom on one variable, and
+//! holds exactly when `x ∈ S₁ ∪ … ∪ Sₙ`: the disjunction is finite over that
+//! variable's carrier, never over an interval. A disjunction in a premise, or
+//! one whose atoms name two variables, is refused by its node
 //! ([`ShapeError::Disjunction`]). Entailment is at every assignment of a point
 //! to each variable. [`decide`] answers the band in polynomial time:
 //! intersect the premise's atoms variable by variable, then test each
-//! conclusion atom for inclusion.
+//! conclusion conjunct — an atom's subshape or a column's union — for
+//! inclusion.
 //!
-//! The composite language — disjunctions on either side — is not offered.
-//! Entailment there is coNP-complete ([Rose–Licata]), and finite membership
-//! alone reaches the bar: over two-point carriers read `x ∈ {1}` as a positive
-//! literal and `x ∈ {0}` as a negative one, and a conjunctive normal form
-//! entails `⊥` exactly when it is unsatisfiable. The extension type's
-//! questions at a boundary are atomic or conjunctive, and gandr's transport is
-//! replay over a trace, which consults no entailment procedure at all.
-//! `FaceTT`'s own algorithmic assumption is decidable atomic entailment; a
-//! client meeting `φ ∨ ψ` decomposes it into one question per disjunct.
+//! The column disjunction is the shape of a coverage question: a match's arms
+//! over one column of a data type are one atom each over that type's
+//! constructors, the arms cover the column when `⊤` entails their
+//! disjunction, and a countermodel is a constructor no arm takes.
+//!
+//! The composite language — disjunctions across variables, or in a premise —
+//! is not offered. Entailment there is coNP-complete ([Rose–Licata]), and
+//! finite membership alone reaches the bar: over two-point carriers read
+//! `x ∈ {1}` as a positive literal and `x ∈ {0}` as a negative one, and a
+//! conjunctive normal form entails `⊥` exactly when it is unsatisfiable. The
+//! extension type's questions at a boundary are atomic or conjunctive, and
+//! gandr's transport is replay over a trace, which consults no entailment
+//! procedure at all. `FaceTT`'s own algorithmic assumption is decidable
+//! atomic entailment; a client meeting `φ ∨ ψ` across variables decomposes it
+//! into one question per disjunct.
 //!
 //! # Evidence
 //!
@@ -71,17 +82,18 @@
 //! [`Evidence::Refuted`] with a [`Countermodel`]. A derivation is one of four
 //! forms: a variable with an empty carrier (no assignment exists); a `⊥` the
 //! premise reaches; premise atoms on one variable whose meet is empty; or, for
-//! each conclusion atom, the premise atoms on its variable whose meet the atom
-//! includes — `∧`-elimination, meet, monotonicity and `∧`-introduction in the
-//! lattice. A countermodel is a total assignment.
+//! each conclusion conjunct, the premise atoms on its variable whose meet the
+//! conjunct includes — `∧`-elimination, meet, monotonicity, `∨`-introduction
+//! and `∧`-introduction in the lattice. A countermodel is a total assignment.
 //!
 //! Both are untrusted public data. [`Derivation::validate`] reads the cited
-//! atoms out of the query, recomputes their meet with the subshape operations
-//! and checks the claimed emptiness or inclusion; [`Countermodel::validate`]
-//! checks the assignment's length and bounds and evaluates both formulas at
-//! it. Neither calls [`decide`], and the decision shares no code with them:
-//! it intersects raw membership tables. The agreement suite checks every
-//! answer against a truth table computed by a separately written evaluator.
+//! atoms out of the query, recomputes their meet and each column's union with
+//! the subshape operations and checks the claimed emptiness or inclusion;
+//! [`Countermodel::validate`] checks the assignment's length and bounds and
+//! evaluates both formulas at it. Neither calls [`decide`], and the decision
+//! shares no code with them: it intersects and unites raw membership tables.
+//! The agreement suite checks every answer against a truth table computed by
+//! a separately written evaluator.
 //! This is executable evidence, not a machine-checked proof of the Rust.
 //!
 //! Evidence by case analysis over the carriers — split a variable into its
