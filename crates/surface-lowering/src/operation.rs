@@ -68,6 +68,7 @@ use gandr_core_term::Zone;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
+use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::OperDesc;
 use gandr_theory_levitation::RuleFace;
@@ -308,15 +309,17 @@ struct Work<'face>
 }
 
 /// Plan the operation `operation` over its rules `faces`, in source order, to
-/// be admitted at `own`.
+/// be admitted at `own`, the kernel reading `derived` beside them.
 ///
 /// # Specification
-/// - requires: `faces` are the operation's rules in source order.
-/// - ensures: a plan whose tree decides every input by the first rule that
-///   matches it, with a port family per port, carrying the rules read over
-///   module positions: the operation's own call at `own`, every callee at its
-///   constant, every constructor at its family and tag.
-/// - fails: the first [`RouteFault`] the module's [decisions](self) name.
+/// - requires: `faces` are the operation's rules in source order; `derived` are
+///   rules completion derived from the block's rules, each headed by
+///   `operation`.
+/// - ensures: a plan whose tree decides every input by the first rule of
+///   `faces` that matches it, with a port family per port, carrying the rules
+///   of `faces` and then of `derived` read over module positions: the
+///   operation's own call at `own`, every callee at its constant, every
+///   constructor at its family and tag.
 /// - panics: none.
 /// - executable: none — the plan's meaning is the function it mints, which the
 ///   witnesses run.
@@ -335,6 +338,7 @@ struct Work<'face>
 pub fn plan_operation(
     operation: &OperDesc,
     faces: &[&RuleFace],
+    derived: &[&(FreeTerm, FreeTerm)],
     (table, own): (&RouteTable, ConstantIndex),
 ) -> Result<OperationPlan, RouteFault>
 {
@@ -395,7 +399,9 @@ pub fn plan_operation(
 
     let rules = faces
         .iter()
-        .map(|face| read_rule(face, operation, (table, own)))
+        .map(|face| (&face.lhs, &face.rhs))
+        .chain(derived.iter().map(|&&(ref lhs, ref rhs)| (lhs, rhs)))
+        .map(|sides| read_rule(sides, operation, (table, own)))
         .collect::<Result<Vec<_>, _>>()
         .map(gandr_kernel_term::OperationRules::new)?;
     Ok(OperationPlan {
@@ -411,9 +417,9 @@ pub fn plan_operation(
 /// left.
 ///
 /// # Specification
-/// - requires: `face` is a rule of `operation`, which [`plan_operation`]
-///   routed.
-/// - ensures: the left side's head is `own` at the arity the face writes; an
+/// - requires: `lhs` and `rhs` are a rule of `operation`, which
+///   [`plan_operation`] routed.
+/// - ensures: the left side's head is `own` at the arity the rule writes; an
 ///   operation named `operation` reads as `own`, any other as the constant
 ///   `table` gives it; a constructor as its family and tag; a results tuple as
 ///   its width; a variable as its first occurrence's ordinal on the left.
@@ -431,7 +437,7 @@ pub fn plan_operation(
 /// - witness: `operation::tests::an_operations_rules_read_in_pre_order_over_module_positions`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|rule| !rule.left().is_empty() && !rule.right().is_empty()))]
 fn read_rule(
-    face: &RuleFace,
+    (lhs, rhs): (&FreeTerm, &FreeTerm),
     operation: &OperDesc,
     (table, own): (&RouteTable, ConstantIndex),
 ) -> Result<gandr_kernel_term::OperationRule, RouteFault>
@@ -441,7 +447,7 @@ fn read_rule(
     let mut sides: [Vec<OperationNode>; 2] = [Vec::new(), Vec::new()];
     let mut pending: Vec<TermNode<'_>> = Vec::new();
     let mut arguments: Vec<TermNode<'_>> = Vec::new();
-    let roots = [(face.lhs.to_node(), true), (face.rhs.to_node(), false)];
+    let roots = [(lhs.to_node(), true), (rhs.to_node(), false)];
     for (side, (root, binding)) in sides.iter_mut().zip(roots) {
         pending.push(root);
         while let Some(node) = pending.pop() {

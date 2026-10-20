@@ -366,6 +366,7 @@ pub use crate::rule::Variance;
 pub use crate::termination::Precedence;
 pub use crate::termination::Termination;
 pub use crate::termination::orient_rules;
+pub use crate::termination::orient_rules_with;
 pub use crate::termination::path_greater;
 pub use crate::theory::THEORY_CONSTRUCTORS;
 pub use crate::theory::TheoryBinder;

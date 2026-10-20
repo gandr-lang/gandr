@@ -130,13 +130,88 @@ pub enum Termination
 #[must_use]
 pub fn orient_rules<G>(desc: &TheoryDesc<G>) -> Termination
 {
-    let precedence = Precedence::of(desc);
-    for (index, face) in desc.rules.iter().enumerate() {
-        if !bool::from(path_greater(&precedence, &face.lhs, &face.rhs)) {
+    orient_rules_with(desc, &[], &[])
+}
+
+/// Orient every rule face of `desc` and every rewrite of `ranking` and
+/// `riding` by the lexicographic path order over the precedence `desc` and
+/// `ranking` induce.
+///
+/// The check a rule a completion derives passes beside the rules it was
+/// derived from. A rewrite of `ranking` raises its head above what it calls; a
+/// rewrite of `riding` is oriented by the precedence the others induce and
+/// adds nothing to it.
+///
+/// # Specification
+/// - ensures: [`Termination::Oriented`] exactly when [`path_greater`] over
+///   [`Precedence::with`] `desc` and `ranking` puts every left side above its
+///   right side, `desc`'s rules, then `ranking`, then `riding`; otherwise the
+///   first rule it does not, indexed in that order.
+/// - panics: none.
+/// - intension: one precedence, then one [`path_greater`] table per rule,
+///   stopping at the first unoriented one.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a ranking rule calling an operation its head did not call
+///   before raises the head above the callee and orients, a derived rule naming
+///   a variable its left side does not bind is unoriented at its index past the
+///   written rules, a ranking call closing a call cycle ranks both operations
+///   alike and unorients the written rule that ranked them apart, and the same
+///   rule riding the written precedence orients by the subterm property;
+///   reading the precedence from the written rules alone, counting a riding
+///   rule's calls, or indexing the derived rules from zero, changes a verdict.
+/// - witness: `termination::tests::a_derived_rule_raises_its_head_above_what_it_calls`
+#[spec(ensures: |ret| {
+    let precedence = Precedence::with(desc, ranking);
+    let mut rules = sides(desc, ranking).chain(pairs(riding));
+    match ret {
+        Termination::Oriented => rules.all(|(lhs, rhs)| bool::from(path_greater(&precedence, lhs, rhs))),
+        Termination::Unoriented(index) => rules.clone().nth(usize::from(index))
+            .is_some_and(|(lhs, rhs)| !bool::from(path_greater(&precedence, lhs, rhs)))
+            && rules.take(usize::from(index)).all(|(lhs, rhs)| bool::from(path_greater(&precedence, lhs, rhs))),
+    }
+})]
+#[inline]
+#[must_use]
+pub fn orient_rules_with<G>(
+    desc: &TheoryDesc<G>,
+    ranking: &[(FreeTerm, FreeTerm)],
+    riding: &[(FreeTerm, FreeTerm)],
+) -> Termination
+{
+    let precedence = Precedence::with(desc, ranking);
+    let rules = sides(desc, ranking).chain(pairs(riding));
+    for (index, (lhs, rhs)) in rules.enumerate() {
+        if !bool::from(path_greater(&precedence, lhs, rhs)) {
             return Termination::Unoriented(RuleIndex::from(index));
         }
     }
     Termination::Oriented
+}
+
+/// The two sides of every rule face of `desc`, then of every rewrite of
+/// `derived`.
+///
+/// # Specification
+/// trivial.
+fn sides<'rules, G>(
+    desc: &'rules TheoryDesc<G>,
+    derived: &'rules [(FreeTerm, FreeTerm)],
+) -> impl Iterator<Item = (&'rules FreeTerm, &'rules FreeTerm)> + Clone
+{
+    desc.rules
+        .iter()
+        .map(|face| (&face.lhs, &face.rhs))
+        .chain(pairs(derived))
+}
+
+/// The two sides of every rewrite of `rules`.
+///
+/// # Specification
+/// trivial.
+fn pairs(rules: &[(FreeTerm, FreeTerm)]) -> impl Iterator<Item = (&FreeTerm, &FreeTerm)> + Clone
+{
+    rules.iter().map(|&(ref lhs, ref rhs)| (lhs, rhs))
 }
 
 /// The precedence a description's faces induce over its operations: each
@@ -156,13 +231,32 @@ impl<'desc> Precedence<'desc>
     /// The precedence `desc`'s faces induce.
     ///
     /// # Specification
+    /// - ensures: [`Precedence::with`] `desc` and no derived face.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Precedence::with`].
+    /// - witness: `termination::tests::a_call_ranks_its_caller_above_its_callee_in_either_declaration_order`
+    #[spec(ensures: |ret| ret.ranks.len() == desc.opers.len())]
+    #[inline]
+    #[must_use]
+    pub fn of<G>(desc: &'desc TheoryDesc<G>) -> Self
+    {
+        Self::with(desc, &[])
+    }
+
+    /// The precedence `desc`'s faces and the rewrites of `ranking` induce
+    /// together.
+    ///
+    /// # Specification
     /// - ensures: one rank per declared operation; an operation calling no
     ///   other declared operation ranks one, an operation whose faces call
     ///   other declared operations ranks one above the highest of them, and an
     ///   operation on a call cycle, or calling into one, ranks zero, as an
     ///   undeclared operation does. A call is an operation other than the
     ///   face's own anywhere in its right-hand side; a face defining an
-    ///   undeclared operation induces nothing.
+    ///   undeclared operation induces nothing; a rewrite of `ranking` calls as
+    ///   a written face does.
     /// - panics: none.
     /// - intension: callees counted per operation, then ranked leaves first, an
     ///   operation ranked once its last callee is.
@@ -171,12 +265,17 @@ impl<'desc> Precedence<'desc>
     /// - hypothesis: L3 — as [`orient_rules`]: a helper declared after its
     ///   caller ranks below it, and two operations calling each other rank
     ///   alike; ranking by declaration position, or leaving a cycle's
-    ///   operations distinct, changes a witnessed verdict.
+    ///   operations distinct, changes a witnessed verdict. As
+    ///   [`orient_rules_with`]: a ranking call raises its caller.
     /// - witness: `termination::tests::a_call_ranks_its_caller_above_its_callee_in_either_declaration_order`
+    /// - witness: `termination::tests::a_derived_rule_raises_its_head_above_what_it_calls`
     #[spec(ensures: |ret| ret.ranks.len() == desc.opers.len())]
     #[inline]
     #[must_use]
-    pub fn of<G>(desc: &'desc TheoryDesc<G>) -> Self
+    pub fn with<G>(
+        desc: &'desc TheoryDesc<G>,
+        ranking: &[(FreeTerm, FreeTerm)],
+    ) -> Self
     {
         let count = desc.opers.len();
         let declared = |name: &Name| {
@@ -185,8 +284,8 @@ impl<'desc> Precedence<'desc>
                 .position(|operation| operation.name == *name)
         };
         let mut callees: Vec<Vec<usize>> = vec![Vec::new(); count];
-        for face in &desc.rules {
-            let TermView::Op { name, .. } = face.lhs.view()
+        for (lhs, rhs) in sides(desc, ranking) {
+            let TermView::Op { name, .. } = lhs.view()
             else {
                 continue;
             };
@@ -194,7 +293,7 @@ impl<'desc> Precedence<'desc>
             else {
                 continue;
             };
-            for node in flatten(&face.rhs) {
+            for node in flatten(rhs) {
                 if let Symbol::Op(name) = node.symbol
                     && let Some(callee) = declared(name)
                     && callee != caller
@@ -737,6 +836,56 @@ mod tests
             orient_rules(&nested),
             Termination::Unoriented(RuleIndex::from(0_usize)),
             "a rule nesting its own call never ends"
+        );
+    }
+
+    #[test]
+    fn a_derived_rule_raises_its_head_above_what_it_calls()
+    {
+        let f = |x| FreeTerm::op("f", [x]);
+        let g = |x| FreeTerm::op("g", [x]);
+        let family = nat([unary("f"), unary("g")], vec![
+            (f(zero()), zero()),
+            (g(zero()), zero()),
+        ]);
+        let calling = [(f(succ(var("x"))), g(var("x")))];
+        let precedence = Precedence::with(&family, &calling);
+        assert_eq!(
+            [
+                precedence.rank(&Name::from("f")),
+                precedence.rank(&Name::from("g"))
+            ],
+            [Rank(2), Rank(1)],
+            "the derived call ranks `f` above `g`, which the written rules leave alike"
+        );
+        assert_eq!(
+            orient_rules_with(&family, &calling, &[]),
+            Termination::Oriented
+        );
+        assert_eq!(
+            orient_rules_with(&family, &[(f(var("x")), g(var("y")))], &[]),
+            Termination::Unoriented(RuleIndex::from(2_usize)),
+            "a derived rule is indexed past the written rules"
+        );
+        let written = nat([unary("f"), unary("g")], vec![(
+            f(succ(var("x"))),
+            g(var("x")),
+        )]);
+        assert_eq!(
+            orient_rules_with(&written, &[(g(succ(var("x"))), f(var("x")))], &[]),
+            Termination::Unoriented(RuleIndex::from(0_usize)),
+            "a derived call closing a cycle ranks both operations alike and unorients the written rule"
+        );
+        let nested = [(g(f(var("x"))), f(var("x")))];
+        assert_eq!(
+            orient_rules_with(&written, &nested, &[]),
+            Termination::Unoriented(RuleIndex::from(0_usize)),
+            "ranking a call back to `f` closes the cycle"
+        );
+        assert_eq!(
+            orient_rules_with(&written, &[], &nested),
+            Termination::Oriented,
+            "riding the written precedence, the rule descends to its own subterm"
         );
     }
 

@@ -1,15 +1,18 @@
 // A group's laws stated as rules, the coincidence check certifying each with
 // the others: the structure the circle's loops carry under composition, whose
-// laws `circle-group.gandr` proves as paths. The unit on both sides,
-// associativity and the inverse's own two laws join among themselves; the
-// cancellation `mul(inv(x), x) ==> e()` does not until completion adds the
-// cells it derives (Knuth and Bendix, _Simple Word Problems in Universal
-// Algebras_, 1970, § 7), and is refused in
-// `../../pathological/identity/group-inverse-law.gandr`.
+// laws `circle-group.gandr` proves as paths. The written laws do not join
+// among themselves: the cancellation `mul(inv(x), x) ==> e()` meets
+// associativity at `mul(mul(inv(x), x), z)`, which the two leave at `z` and
+// at `mul(inv(x), mul(x, z))`. Completion orients each such pair into a rule
+// that follows from the written ones, certified by the pair's two paths, until
+// every pair joins (Knuth and Bendix, _Simple Word Problems in Universal
+// Algebras_, 1970, § 7). The row reads a law no written rule states, the
+// inverse of a product (#338).
 
 /// A group's unit, associativity and inverse laws, each a rule: `e()` is the
-/// unit and `a()`, `b()` two elements the rows read.
-@[ normalizes("mul(mul(e, inv(inv(a))), mul(b, e)) ~> mul(a, b)") ]
+/// unit and `a()`, `b()` two elements the row reads; the row's normal form is
+/// one only a derived rule reaches.
+@[ normalizes("inv(mul(a, b)) ~> mul(inv(b), inv(a))") ]
 theory Group {
   sort G : Type;
 
@@ -24,4 +27,5 @@ theory Group {
   rule assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));
   rule invInv : inv(inv(x)) <=> x;
   rule invE : inv(e()) <=> e();
+  rule invL : mul(inv(x), x) <=> e();
 }
