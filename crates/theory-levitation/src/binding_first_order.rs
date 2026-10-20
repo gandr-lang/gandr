@@ -111,8 +111,7 @@ impl<G> SimplySorted<'_, G>
                         .len()
                         .checked_sub(count)
                         .ok_or(BindingError::InvalidState)?;
-                    let mut arguments = terms.split_off(start);
-                    arguments.reverse();
+                    let arguments: Vec<FreeTerm> = terms.drain(start ..).rev().collect();
                     terms.push(FreeTerm::op(name.clone(), arguments));
                 },
             }
@@ -182,8 +181,7 @@ impl<G> SimplySorted<'_, G>
                         .len()
                         .checked_sub(count)
                         .ok_or(BindingError::InvalidState)?;
-                    let mut arguments = terms.split_off(start);
-                    arguments.reverse();
+                    let arguments: Vec<BindingTerm> = terms.drain(start ..).rev().collect();
                     terms.push(BindingTerm::operation(name.clone(), arguments));
                 },
                 Decode::Term(node, expected) => {

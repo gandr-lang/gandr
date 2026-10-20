@@ -31,6 +31,7 @@ mod first_order;
 #[path = "semantics.rs"]
 mod semantics;
 
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -42,6 +43,7 @@ use crate::boundary::VariableIndex;
 use crate::code::Name;
 use crate::desc::OperDesc;
 use crate::desc::Representability;
+use crate::desc::SortDesc;
 use crate::desc::TheoryDesc;
 use crate::first_order::TranslationError;
 use crate::tree::ArgumentCount;
@@ -390,12 +392,15 @@ impl<'signature, G> SimplySorted<'signature, G>
         context: &[Name],
     ) -> Result<(), BindingError>
     {
+        let sorts: BTreeMap<&Name, &SortDesc> = self
+            .source
+            .sorts
+            .iter()
+            .map(|sort| (&sort.name, sort))
+            .collect();
         for name in context {
-            let sort = self
-                .source
-                .sorts
-                .iter()
-                .find(|sort| sort.name == *name)
+            let sort = sorts
+                .get(name)
                 .ok_or_else(|| BindingError::UnknownSort(name.clone()))?;
             if sort.representability != Representability::Representable {
                 return Err(BindingError::NonRepresentable(name.clone()));

@@ -1152,9 +1152,10 @@ pub fn redex_occurrences(body: &CircuitBody)
         .zip(term.to_node().vars().position(|name| name == second)).is_some_and(|(first, second)| first < second)))]
 fn distinct_vars(term: &FreeTerm) -> Vec<Name>
 {
+    let mut seen: BTreeSet<&Name> = BTreeSet::new();
     let mut distinct: Vec<Name> = Vec::new();
     for name in term.to_node().vars() {
-        if !distinct.contains(name) {
+        if seen.insert(name) {
             distinct.push(name.clone());
         }
     }
