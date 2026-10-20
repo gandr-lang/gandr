@@ -586,6 +586,9 @@ name=${repo#*/}
 deadline=$((SECONDS + 5400))
 queued=false
 previous=
+# Set when the entry first leaves the queue with every run green while the
+# pull request still reads OPEN: the poll waits for MERGED until then.
+merging_until=
 
 pr_state() {
   gh pr view "$number" -R "$repo" --json state,mergeable,mergeStateStatus,autoMergeRequest,mergeCommit,baseRefName,statusCheckRollup --jq '[.state, .mergeable, .mergeStateStatus, (.autoMergeRequest != null), (.mergeCommit.oid // "-"), .baseRefName, (.statusCheckRollup | length)] | @tsv'
@@ -611,6 +614,13 @@ settled() {
   [[ -n "$1" ]] || return 1
   while IFS=$'\t' read -r run_id url run_status conclusion; do
     [[ "$run_status" == completed ]] || return 1
+  done <<< "$1"
+}
+# Succeeds when every run of the entry concluded success.
+succeeded() {
+  local run_id url run_status conclusion
+  while IFS=$'\t' read -r run_id url run_status conclusion; do
+    [[ "$conclusion" == success ]] || return 1
   done <<< "$1"
 }
 job_times() {
@@ -727,6 +737,13 @@ while (( SECONDS < deadline )); do
     entry_runs=$(group_runs)
     if [[ -n "$entry_runs" ]]; then
       if settled "$entry_runs"; then
+        # The queue drops a merged entry a moment before the pull request
+        # reads MERGED, so an entry gone with every run green while the
+        # pull request reads OPEN is waited on for five minutes.
+        if [[ "$state" == OPEN ]] && succeeded "$entry_runs"; then
+          if [[ -z "$merging_until" ]]; then merging_until=$((SECONDS + 300)); fi
+          if (( SECONDS < merging_until )); then sleep 30; continue; fi
+        fi
         printf 'PR #%s dequeued or closed.\n' "$number"
         # A failed run's failed steps explain the removal; with none failed,
         # every run's whole log does.
