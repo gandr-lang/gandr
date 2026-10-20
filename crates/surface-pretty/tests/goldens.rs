@@ -2777,6 +2777,56 @@ fn a_returned_composite_of_paths_is_written_infix_754()
     }
 }
 
+/// A composite a transport reads as its path or as the value it moves stays
+/// the transport it derives: nothing there states the composite's type, and
+/// the lowering reads `p then q` only where something does, as a call's
+/// argument (#815).
+#[test]
+fn a_composite_a_transport_moves_stays_explicit_815()
+{
+    let mut core = CoreArena::new();
+    let circle = core.value_type_abstract(ConstantIndex::from(0_usize));
+    let base = core.value_constant(ConstantIndex::from(1_usize));
+    let around = core.value_constant(ConstantIndex::from(2_usize));
+    let twice = gandr_core_term::identity::then(&mut core, circle, base, around, around);
+    let composite = core.value_returned(twice);
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let lifted =
+        gandr_core_term::shift_value_type(&mut core, circle, gandr_core_term::Binders::ONE)
+            .settle(&mut core);
+    let diagonal = core.value_type_path(lifted, bound, bound);
+    let moved = core.computation_path_transport(diagonal, composite, composite);
+    let transported = core.value_returned(moved);
+    let function = core.value_constant(ConstantIndex::from(3_usize));
+    let forced = core.computation_force(function);
+    let called = core.computation_application(forced, composite);
+    let names = [
+        Name::from("Circle"),
+        Name::from("base"),
+        Name::from("loop"),
+        Name::from("sect"),
+    ];
+    let source = CoreSource::new(&core, &names);
+    let rendered = presented_in(
+        &source,
+        Root::Value(CoreNode::Value(transported)),
+        PageWidth::from(1_000_u32),
+        Form::Sugared,
+    );
+    assert_eq!(
+        rendered.as_ref(),
+        "transport(\\a. Path(Circle, a, a), transport(\\a. Path(Circle, base, a), loop, loop), \
+         transport(\\a. Path(Circle, base, a), loop, loop))"
+    );
+    let rendered = presented_in(
+        &source,
+        Root::Computation(CoreNode::Computation(called)),
+        wide(),
+        Form::Sugared,
+    );
+    assert_eq!(rendered.as_ref(), "sect(loop then loop)");
+}
+
 /// An elaborated body spells as the grammar writes it, its exits elided:
 /// a returner at the end of a block bare, a call by its head, a thunk in
 /// a body spelled; a case binds its summand's payload, a split its

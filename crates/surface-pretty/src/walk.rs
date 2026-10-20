@@ -562,6 +562,9 @@ pub enum Admits
     /// A value whose type its position states: a family's argument, typed by
     /// the family's parameter, where a parameterised constructor stands bare.
     Stated,
+    /// A value whose type nothing states: a transport's path and the value it
+    /// moves, which the lowering reads with no type to bind a computation at.
+    Operand,
     /// A computation, where a path through a body ends or where it goes on.
     Computation(Tail),
 }
@@ -637,12 +640,12 @@ enum Reach
 /// - witness: `tests::goldens::beyond_the_depth_limit_renders_deep`
 /// - witness: `walk::tests::depth_boundaries_preserve_precedence_and_saturation`
 #[spec(ensures: |ret| {
-    let valued = matches!(admits, Admits::Value | Admits::Stated);
+    let valued = matches!(admits, Admits::Value | Admits::Stated | Admits::Operand);
     let deep = valued && depth.0 >= DEPTH_LIMIT.0;
     let admitted = matches!((admits, kind), (_, Kind::Unknown)
         | (Admits::Type, Kind::ValueType | Kind::CompType)
         | (Admits::ValueType, Kind::ValueType) | (Admits::CompType, Kind::CompType)
-        | (Admits::Value | Admits::Stated, Kind::Value) | (Admits::Computation(_), Kind::Computation));
+        | (Admits::Value | Admits::Stated | Admits::Operand, Kind::Value) | (Admits::Computation(_), Kind::Computation));
     (ret == Reach::Deep) == deep && (ret == Reach::Spell) == (!deep && admitted)
         && (ret == Reach::Misplaced) == (!deep && !admitted)
 })]
@@ -652,7 +655,7 @@ fn reach(
     kind: Kind,
 ) -> Reach
 {
-    if matches!(admits, Admits::Value | Admits::Stated) && depth >= DEPTH_LIMIT {
+    if matches!(admits, Admits::Value | Admits::Stated | Admits::Operand) && depth >= DEPTH_LIMIT {
         return Reach::Deep;
     }
     match (admits, kind) {
@@ -660,12 +663,15 @@ fn reach(
         | (Admits::Type, Kind::ValueType | Kind::CompType)
         | (Admits::ValueType, Kind::ValueType)
         | (Admits::CompType, Kind::CompType)
-        | (Admits::Value | Admits::Stated, Kind::Value)
+        | (Admits::Value | Admits::Stated | Admits::Operand, Kind::Value)
         | (Admits::Computation(_), Kind::Computation) => Reach::Spell,
         (Admits::Type, Kind::Value | Kind::Computation)
         | (Admits::ValueType, Kind::CompType | Kind::Value | Kind::Computation)
         | (Admits::CompType, Kind::ValueType | Kind::Value | Kind::Computation)
-        | (Admits::Value | Admits::Stated, Kind::ValueType | Kind::CompType | Kind::Computation)
+        | (
+            Admits::Value | Admits::Stated | Admits::Operand,
+            Kind::ValueType | Kind::CompType | Kind::Computation,
+        )
         | (Admits::Computation(_), Kind::ValueType | Kind::CompType | Kind::Value) => {
             Reach::Misplaced
         },
@@ -962,6 +968,7 @@ where
     S: Source + ?Sized,
 {
     let value = |node| Slot::of(node, Admits::Value, Binds::NONE);
+    let operand = |node| Slot::of(node, Admits::Operand, Binds::NONE);
     let value_type = |node| Slot::of(node, Admits::ValueType, Binds::NONE);
     let comp_type = |node| Slot::of(node, Admits::CompType, Binds::NONE);
     let continues = |node| Slot::of(node, Admits::Computation(Tail::Continues), Binds::NONE);
@@ -1122,6 +1129,7 @@ where
                 | Admits::ValueType
                 | Admits::CompType
                 | Admits::Value
+                | Admits::Operand
                 | Admits::Stated => ends(body, Binds::ONE),
             }])
         },
@@ -1129,11 +1137,13 @@ where
         // does: a definition's value, a family's argument; below any other
         // value, as a constructor's field, nothing states it.
         Former::Thunk(body) => match bodies {
-            Bodies::Spelled if admits == Admits::Value => Vec::from([Slot::of(
-                body,
-                Admits::Computation(Tail::Unstated),
-                Binds::NONE,
-            )]),
+            Bodies::Spelled if matches!(admits, Admits::Value | Admits::Operand) => {
+                Vec::from([Slot::of(
+                    body,
+                    Admits::Computation(Tail::Unstated),
+                    Binds::NONE,
+                )])
+            },
             Bodies::Spelled => Vec::from([ends(body, Binds::NONE)]),
             Bodies::Opaque => Vec::new(),
         },
@@ -1152,8 +1162,8 @@ where
             value: transported,
         } => Vec::from([
             Slot::of(motive, Admits::ValueType, Binds::ONE),
-            value(path),
-            value(transported),
+            operand(path),
+            operand(transported),
         ]),
         Former::TelescopeTransport {
             motive,
@@ -1163,10 +1173,10 @@ where
             value: transported,
         } => Vec::from([
             comp_type(motive),
-            value(path),
-            value(start),
-            value(over),
-            value(transported),
+            operand(path),
+            operand(start),
+            operand(over),
+            operand(transported),
         ]),
         Former::Case { scrutinee, arity } => {
             let mut slots = Vec::from([value(scrutinee)]);
@@ -2048,36 +2058,42 @@ where
     Some((value, path))
 }
 
-/// The former the walk reads at `node` in `form`: the source's, but in the
-/// sugared form a returned transport that a composite of paths derives reads
-/// as the composite, `p then q`.
+/// The former the walk reads at `node` in `form`, in a position admitting
+/// `admits`: the source's, but in the sugared form a returned transport that
+/// a composite of paths derives reads as the composite, `p then q`, where the
+/// position states the composite's type.
 ///
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
 /// - ensures: [`Former::Then`] over the transported value and the path when
-///   `form` is [`Form::Sugared`] and `node` reads as [`Former::Returned`] over
-///   a body [`composite`] answers; what `source` reads at `node` otherwise.
+///   `form` is [`Form::Sugared`], `admits` is not [`Admits::Operand`] and
+///   `node` reads as [`Former::Returned`] over a body [`composite`] answers;
+///   what `source` reads at `node` otherwise.
 /// - provides: the one read of each node the walk visits.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the composite's golden in both forms; a read that rewrote
-///   the explicit form, or a transport standing as a computation rather than a
-///   returned value, changes a spelling.
+/// - hypothesis: L3 — the composite's golden in both forms and as a transport's
+///   operand; a read that rewrote the explicit form, a transport standing as a
+///   computation rather than a returned value, or a composite written where
+///   nothing states its type changes a spelling.
 /// - witness: `tests::goldens::a_returned_composite_of_paths_is_written_infix_754`
-#[spec(ensures: |ref ret| form == Form::Sugared
+/// - witness: `tests::goldens::a_composite_a_transport_moves_stays_explicit_815`
+#[spec(ensures: |ref ret| (form == Form::Sugared && admits != Admits::Operand)
     || core::mem::discriminant(ret) == core::mem::discriminant(&source.read(node)))]
 fn reading<S>(
     source: &S,
     node: S::Node,
     form: Form,
+    admits: Admits,
 ) -> Former<'_, S::Node>
 where
     S: Source + ?Sized,
 {
     let former = source.read(node);
     if form == Form::Sugared
+        && admits != Admits::Operand
         && let Former::Returned(body) = former
         && let Some((value, path)) = composite(source, body)
     {
@@ -4744,7 +4760,8 @@ impl Walk<'_, '_>
                 | Admits::ValueType
                 | Admits::CompType
                 | Admits::Value
-                | Admits::Stated => Some(writes(Production("pure_expression"), Join::Prefix(Prefix::Pure))),
+                | Admits::Stated
+                | Admits::Operand => Some(writes(Production("pure_expression"), Join::Prefix(Prefix::Pure))),
             },
             | Former::Force(_) => Some(writes(Production("force_expression"), Join::Prefix(Prefix::Force))),
             | Former::Bind(bound, rest) => match self.typed_bind(source, bound) {
@@ -6718,7 +6735,7 @@ where
                 walk.visit(
                     source,
                     node,
-                    reading(source, node, walk.form),
+                    reading(source, node, walk.form, admits),
                     admits,
                     depth,
                     &mut tasks,
@@ -6760,9 +6777,12 @@ where
     // fits, one statement per line otherwise.
     let doc = match admits {
         Admits::Computation(_) => walk.builder.group(root.doc)?,
-        Admits::Type | Admits::ValueType | Admits::CompType | Admits::Value | Admits::Stated => {
-            root.doc
-        },
+        Admits::Type
+        | Admits::ValueType
+        | Admits::CompType
+        | Admits::Value
+        | Admits::Stated
+        | Admits::Operand => root.doc,
     };
     Ok(Walked::Built {
         doc,

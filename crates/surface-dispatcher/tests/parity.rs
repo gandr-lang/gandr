@@ -490,19 +490,12 @@ const BODY_PAGE: u32 = 1_000;
 /// printing reads back is held to it. An entry whose declaration meets the
 /// parity is itself a miss, so the list shrinks as each issue closes.
 ///
-/// The formatter withdraws each rewrite of these: a declaration that reads
-/// the rewritten one, and that the printer does not spell faithfully, would
-/// lower to other core (#812); `thrice` and `unthrice`, written explicitly,
-/// are refused (#812); `leftUnit`'s and `stated`'s composites have no motive
-/// the printer spells (#803). The sugared form of the universe sources keeps
-/// the thunk type their bodies return explicit (#838).
-const EXCLUDED_BODIES: [(&str, &str, &str); 14] = [
-    ("lc/subst-as-rename.gandr", "weakenedVariable", "#812"),
-    ("lc/subst-rename.gandr", "renameLookWeakens", "#812"),
-    ("lc/subst-rename.gandr", "shiftPastLift", "#812"),
-    ("lc/subst-rename.gandr", "weakenedSquare", "#812"),
-    ("lc/subst-subst.gandr", "substLookWeakenLift", "#812"),
-    ("lc/subst-subst.gandr", "weakenedComposites", "#812"),
+/// The formatter withdraws each rewrite of these: `thrice` and `unthrice`,
+/// written explicitly, are refused (#812); `leftUnit`'s and `stated`'s
+/// composites have no motive the printer spells (#803). The sugared form of
+/// the universe sources keeps the thunk type their bodies return explicit
+/// (#838).
+const EXCLUDED_BODIES: [(&str, &str, &str); 8] = [
     ("identity/path-operand.gandr", "stated", "#803"),
     ("identity/path-operand.gandr", "thrice", "#812"),
     ("identity/path-operand.gandr", "unthrice", "#812"),
