@@ -2043,6 +2043,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             CompType::Element { code, .. } => self.placed.contains_key(&AnyNode::Value(code)),
             CompType::With(left, right) => self.placed.contains_key(&AnyNode::CompType(left))
                             && self.placed.contains_key(&AnyNode::CompType(right)),
+            CompType::Codata { ref arguments, .. } => arguments.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
         },
         captures: entry_len = record.0.len(),
         ensures: record.0.get(entry_len) == Some(&u8::from(match *comp_type {
@@ -2051,6 +2052,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             CompType::Pi { .. } => gandr_kernel_term::NODE_CT_PI,
             CompType::Element { .. } => gandr_kernel_term::NODE_CT_ELEMENT,
             CompType::With(..) => gandr_kernel_term::NODE_CT_WITH,
+            CompType::Codata { .. } => gandr_kernel_term::NODE_CT_CODATA,
         }))
     )]
     fn put_comp_type(
@@ -2088,6 +2090,17 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_tag(gandr_kernel_term::NODE_CT_WITH);
                 record.put_content(self.content_of(AnyNode::CompType(left)));
                 record.put_content(self.content_of(AnyNode::CompType(right)));
+            },
+            CompType::Codata {
+                declaration,
+                ref arguments,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_CT_CODATA);
+                record.put_count(ComponentCount(usize::from(declaration)));
+                record.put_count(ComponentCount(arguments.len()));
+                for argument in arguments {
+                    record.put_content(self.content_of(AnyNode::Value(*argument)));
+                }
             },
         }
     }
@@ -2174,6 +2187,7 @@ None => opened.eq((core::iter::empty()).map(Some)),
             Some(&CompType::Arrow{domain,codomain} | &CompType::Pi {domain,codomain}) => opened.eq(([AnyNode::ValueType(domain),AnyNode::CompType(codomain)].into_iter()).map(Some)),
             Some(&CompType::Element {code,..}) => opened.eq((core::iter::once(AnyNode::Value(code))).map(Some)),
             Some(&CompType::With(left,right)) => opened.eq(([AnyNode::CompType(left),AnyNode::CompType(right)].into_iter()).map(Some)),
+            Some(&CompType::Codata {ref arguments,..}) => opened.eq((arguments.iter().copied().map(AnyNode::Value)).map(Some)),
         },
     }
 }))]
@@ -2544,6 +2558,9 @@ fn push_children(
             Some(&CompType::With(left, right)) => {
                 tasks.push(EncodeTask::Open(AnyNode::CompType(left)));
                 tasks.push(EncodeTask::Open(AnyNode::CompType(right)));
+            },
+            Some(&CompType::Codata { ref arguments, .. }) => {
+                tasks.extend((arguments.iter().copied().map(AnyNode::Value)).map(EncodeTask::Open));
             },
         },
     }

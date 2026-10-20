@@ -321,7 +321,8 @@ fn elaborate(source: SourceText<'_>) -> Elaborated
                 },
                 DeclarationContent::Axiom { declared } => (declared, None),
                 DeclarationContent::AbstractType { kind, .. }
-                | DeclarationContent::Data { kind, .. } => (kind, None),
+                | DeclarationContent::Data { kind, .. }
+                | DeclarationContent::Codata { kind, .. } => (kind, None),
             };
             (segments, digest(AnyNode::ValueType(declared)), defined)
         })

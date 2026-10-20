@@ -232,7 +232,12 @@ pub(super) fn open_fixpoint(
         let (domain, codomain, dependence) = match arena.comp_type(cursor) {
             Some(&CompType::Arrow { domain, codomain }) => (domain, codomain, Dependence::Ambient),
             Some(&CompType::Pi { domain, codomain }) => (domain, codomain, Dependence::Dependent),
-            Some(&(CompType::Returner(_) | CompType::With(..) | CompType::Element { .. })) => {
+            Some(
+                &(CompType::Returner(_)
+                | CompType::With(..)
+                | CompType::Element { .. }
+                | CompType::Codata { .. }),
+            ) => {
                 return Err(super::comp_shape_mismatch(
                     arena,
                     ExpectedComputationShape::Arrow,
@@ -432,7 +437,7 @@ fn placed<Each>(
                 each(Part::Computation(first));
                 each(Part::Computation(second));
             },
-            Some(&CompType::Element { .. }) | None => {},
+            Some(&(CompType::Element { .. } | CompType::Codata { .. })) | None => {},
         },
     }
 }
@@ -576,7 +581,9 @@ fn rebuild(
                 let (first, second) = (computation_part(child(0)?)?, computation_part(child(1)?)?);
                 Ok(Part::Computation(arena.comp_type_with(first, second)))
             },
-            Some(CompType::Element { .. }) | None => Err(KernelError::ArenaFault),
+            Some(CompType::Element { .. } | CompType::Codata { .. }) | None => {
+                Err(KernelError::ArenaFault)
+            },
         },
     }
 }

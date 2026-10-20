@@ -203,7 +203,8 @@ impl Presentations
                                 .map(|fields| FieldCount::from(fields.len()))
                                 .collect(),
                         ),
-                        DeclarationContent::Def { .. }
+                        DeclarationContent::Codata { .. }
+                        | DeclarationContent::Def { .. }
                         | DeclarationContent::Axiom { .. }
                         | DeclarationContent::AbstractType { .. } => None,
                     }

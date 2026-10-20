@@ -177,7 +177,7 @@ impl crate::decl::DeclarationContent
     /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
     /// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
     #[spec(
-        ensures: |ret| ret.0 == match *self { Self::Def { declared, .. } | Self::Axiom { declared } | Self::AbstractType { kind: declared, .. } | Self::Data { kind: declared, .. } => declared.0 },
+        ensures: |ret| ret.0 == match *self { Self::Def { declared, .. } | Self::Axiom { declared } | Self::AbstractType { kind: declared, .. } | Self::Data { kind: declared, .. } | Self::Codata { kind: declared, .. } => declared.0 },
     )]
     #[inline]
     #[must_use]
@@ -187,6 +187,7 @@ impl crate::decl::DeclarationContent
             Self::Def { declared, .. }
             | Self::Axiom { declared }
             | Self::Data { kind: declared, .. }
+            | Self::Codata { kind: declared, .. }
             | Self::AbstractType { kind: declared, .. } => declared,
         }
     }
@@ -1026,7 +1027,7 @@ impl TermArena
     /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
     #[spec(
         requires: match comp_type { CompType::Returner(result) => self.value_type(result).is_some(), CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => self.value_type(domain).is_some()
-                && self.comp_type(codomain).is_some(), CompType::Element { code, .. } => self.value(code).is_some(), CompType::With(first, second) => self.comp_type(first).is_some() && self.comp_type(second).is_some() }, captures: entry = (self.watermark(), core::mem::discriminant(&comp_type)),
+                && self.comp_type(codomain).is_some(), CompType::Element { code, .. } => self.value(code).is_some(), CompType::With(first, second) => self.comp_type(first).is_some() && self.comp_type(second).is_some(), CompType::Codata { ref arguments, .. } => arguments.iter().all(|argument| self.value(*argument).is_some()) }, captures: entry = (self.watermark(), core::mem::discriminant(&comp_type)),
         ensures: |ret| self.values.len() == entry.0.values
                 && self.computations.len() == entry.0.computations
                 && self.value_types.len() == entry.0.value_types
@@ -3097,6 +3098,7 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                 ret.as_slice() == [AnyNode::ValueType(domain), AnyNode::CompType(codomain)],
             Some(&CompType::Element { code, .. }) => ret.as_slice() == [AnyNode::Value(code)],
             Some(&CompType::With(first, second)) => ret.as_slice() == [AnyNode::CompType(first), AnyNode::CompType(second)],
+            Some(&CompType::Codata { ref arguments, .. }) => ret.iter().copied().eq(arguments.iter().copied().map(AnyNode::Value)),
         },
     })]
     pub(crate) fn children_of(
@@ -3434,6 +3436,9 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::CompType(first));
                     children.push(AnyNode::CompType(second));
                 },
+                Some(&CompType::Codata { ref arguments, .. }) => {
+                    children.extend(arguments.iter().copied().map(AnyNode::Value));
+                },
             },
         }
         children
@@ -3638,6 +3643,23 @@ impl TermArena
     ) -> CompTypeId
     {
         self.alloc_comp_type(CompType::With(left, right))
+    }
+
+    /// Mint a nominal codata application without claiming formation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn comp_type_codata(
+        &mut self,
+        declaration: ConstantIndex,
+        arguments: Vec<ValueId>,
+    ) -> CompTypeId
+    {
+        self.alloc_comp_type(CompType::Codata {
+            declaration,
+            arguments,
+        })
     }
 
     /// Mint a lazy pairing of two computations without claiming its type.

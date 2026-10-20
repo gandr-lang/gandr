@@ -1716,6 +1716,7 @@ fn the_kernel_replays_a_conversion_through_a_definition_by_eliminator()
             .map(|entry| match *entry.declaration().content() {
                 gandr_kernel_term::DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
                 gandr_kernel_term::DeclarationContent::Data { .. }
+                | gandr_kernel_term::DeclarationContent::Codata { .. }
                 | gandr_kernel_term::DeclarationContent::Axiom { .. }
                 | gandr_kernel_term::DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
             })

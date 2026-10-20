@@ -225,6 +225,16 @@ fn walk(
                 CompType::Element { code, .. } => {
                     pending.push(Visit::Code(code, sign, at, AnyNode::CompType(id)));
                 },
+                // A codata application relates nothing through its arguments,
+                // so no argument may mention the binder.
+                CompType::Codata { ref arguments, .. } => {
+                    let site = AnyNode::CompType(id);
+                    pending.extend(
+                        arguments
+                            .iter()
+                            .map(|argument| Visit::Endpoint(*argument, Sign::Invariant, at, site)),
+                    );
+                },
             },
             Visit::Code(code, sign, at, site) => {
                 match *arena.value(code).ok_or(FlowError::Arena)? {

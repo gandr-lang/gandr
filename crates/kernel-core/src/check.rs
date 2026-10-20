@@ -539,8 +539,8 @@ fn read_returned(
 ///
 /// # Specification
 /// - ensures: one unfolding per entry of `judgement`, in order — the body of a
-///   definition, [`Unfoldable::Opaque`] for a datatype, an axiom or an abstract
-///   type — presenting the judgement's presentations.
+///   definition, [`Unfoldable::Opaque`] for a datatype, a codata type, an axiom
+///   or an abstract type — presenting the judgement's presentations.
 /// - executable: none — the unfoldings expose no per-constant listing to
 ///   compare with the entries.
 ///
@@ -558,6 +558,7 @@ fn entry_unfoldings(judgement: Judgement<'_>) -> Unfoldings
             .map(|entry| match *entry.content() {
                 DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
                 DeclarationContent::Data { .. }
+                | DeclarationContent::Codata { .. }
                 | DeclarationContent::Axiom { .. }
                 | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
             })
@@ -644,9 +645,9 @@ pub struct Judgement<'session>
     /// The laws the declaration's folds rest on, one per rule of the folded
     /// type: empty but for a lawful definition.
     laws: &'session [ConstantIndex],
-    /// The block in scope beside the admitted prefix: a data declaration's own
-    /// signature while its fields form, or a mutual block's members while its
-    /// families form.
+    /// The block in scope beside the admitted prefix: a data or codata
+    /// declaration's own signature while its fields or observations form, or a
+    /// mutual block's members while its families form.
     block: Block<'session>,
     /// The presented types among the entries, whose terms conversion
     /// rewrites.
@@ -679,6 +680,15 @@ enum Block<'session>
         block: occurrence::Block,
         /// Its members, in order from the block's first position.
         members: &'session [Declaration],
+    },
+    /// A codata declaration being admitted at `position`, its signature in
+    /// scope for its own observations.
+    Codata
+    {
+        /// The position the declaration takes.
+        position: ConstantIndex,
+        /// The declaration's own telescope and observations.
+        signature: codata::Signature<'session>,
     },
 }
 
@@ -802,6 +812,28 @@ impl<'session> Judgement<'session>
     {
         Self {
             block: Block::Inside {
+                position,
+                signature,
+            },
+            ..self
+        }
+    }
+
+    /// The same judgement with a codata declaration in scope at its own
+    /// position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    const fn within_codata(
+        self,
+        position: ConstantIndex,
+        signature: codata::Signature<'session>,
+    ) -> Self
+    {
+        Self {
+            block: Block::Codata {
                 position,
                 signature,
             },
@@ -999,6 +1031,18 @@ enum CodeObligation
         /// The mutual block it was owed inside.
         scope: Owing,
     },
+    /// Argument checks deferred by codata formation.
+    Codata
+    {
+        /// Codata application whose arguments must check.
+        codata: CompTypeId,
+        /// Ambient typing telescope.
+        context: Vec<ValueTypeId>,
+        /// The stages the recording run had minted.
+        stages: StageOrder,
+        /// The mutual block it was owed inside.
+        scope: Owing,
+    },
     /// Endpoint checks deferred by identity formation.
     Endpoints
     {
@@ -1053,7 +1097,7 @@ impl Owing
     {
         match judgement.block {
             Block::Mutual { block, .. } => Self::Mutual(block),
-            Block::Outside | Block::Inside { .. } => Self::Alone,
+            Block::Outside | Block::Inside { .. } | Block::Codata { .. } => Self::Alone,
         }
     }
 
@@ -1483,6 +1527,29 @@ where
                             frames.push(TypeLevelFrame::MaxSecondComp(second));
                             goal = TypeLevelGoal::Comp(first);
                             continue 'expand;
+                        },
+                        // A codata application forms at its declaration's
+                        // computation universe; its arguments are owed against
+                        // the telescope, as a data application's are.
+                        CompType::Codata {
+                            declaration,
+                            ref arguments,
+                        } => {
+                            let signature = codata::resolve(judgement, declaration)?;
+                            if signature.parameters.len() != arguments.len() {
+                                return Err(KernelError::DataArgumentArity);
+                            }
+                            let level = codata::level(arena, signature.kind)?;
+                            judgement.levels.check_level_scope(&level)?;
+                            if !arguments.is_empty() {
+                                owed.push(CodeObligation::Codata {
+                                    codata: id,
+                                    context: context.clone(),
+                                    stages: StageOrder::default(),
+                                    scope: Owing::of(judgement),
+                                });
+                            }
+                            level
                         },
                     }
                 },
@@ -2478,6 +2545,7 @@ fn resolve_constant(
     ret.unfolding(ConstantIndex::from(position)) == match *entry.content() {
         | DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
         | DeclarationContent::Data { .. }
+        | DeclarationContent::Codata { .. }
         | DeclarationContent::Axiom { .. }
         | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
     }
@@ -2491,6 +2559,7 @@ fn admitted_unfoldings(judgement: Judgement<'_>) -> Unfoldings
             .map(|entry| match *entry.content() {
                 DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
                 DeclarationContent::Data { .. }
+                | DeclarationContent::Codata { .. }
                 | DeclarationContent::Axiom { .. }
                 | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
             })
@@ -3655,28 +3724,34 @@ where
                     // context slot and checks its body against the codomain
                     // read from under that slot. The dependent arrow's codomain
                     // is written under the binder already; the plain arrow's is
-                    // written outside it, so it is weakened past the slot.
-                    Computation::Lambda(body) => match arena.comp_type(expected) {
-                        Some(&CompType::Arrow { domain, codomain }) => {
-                            let scoped = weakened(arena, session, codomain);
-                            context.push(domain);
-                            frames.push(Frame::ScopeExit);
-                            goal = Goal::CheckComp(body, scoped);
-                            continue 'expand;
-                        },
-                        Some(&CompType::Pi { domain, codomain }) => {
-                            context.push(domain);
-                            frames.push(Frame::ScopeExit);
-                            goal = Goal::CheckComp(body, codomain);
-                            continue 'expand;
-                        },
-                        _ => {
-                            return Err(comp_shape_mismatch(
-                                arena,
-                                ExpectedComputationShape::Arrow,
-                                expected,
-                            ));
-                        },
+                    // written outside it, so it is weakened past the slot. A
+                    // codata type is read through its observations first, here
+                    // and at a returner and a pairing.
+                    Computation::Lambda(body) => {
+                        match codata::read(arena, session, judgement, expected)
+                            .map(|shape| arena.comp_type(shape))?
+                        {
+                            Some(&CompType::Arrow { domain, codomain }) => {
+                                let scoped = weakened(arena, session, codomain);
+                                context.push(domain);
+                                frames.push(Frame::ScopeExit);
+                                goal = Goal::CheckComp(body, scoped);
+                                continue 'expand;
+                            },
+                            Some(&CompType::Pi { domain, codomain }) => {
+                                context.push(domain);
+                                frames.push(Frame::ScopeExit);
+                                goal = Goal::CheckComp(body, codomain);
+                                continue 'expand;
+                            },
+                            _ => {
+                                return Err(comp_shape_mismatch(
+                                    arena,
+                                    ExpectedComputationShape::Arrow,
+                                    expected,
+                                ));
+                            },
+                        }
                     },
                     // A fixpoint checks with the self thunk as the innermost
                     // slot, its body against the classifier weakened past that
@@ -3729,18 +3804,22 @@ where
                         goal = Goal::CheckComp(body, scoped);
                         continue 'expand;
                     },
-                    Computation::Return(value) => match arena.comp_type(expected) {
-                        Some(&CompType::Returner(result)) => {
-                            goal = Goal::CheckValue(value, result);
-                            continue 'expand;
-                        },
-                        _ => {
-                            return Err(comp_shape_mismatch(
-                                arena,
-                                ExpectedComputationShape::Returner,
-                                expected,
-                            ));
-                        },
+                    Computation::Return(value) => {
+                        match codata::read(arena, session, judgement, expected)
+                            .map(|shape| arena.comp_type(shape))?
+                        {
+                            Some(&CompType::Returner(result)) => {
+                                goal = Goal::CheckValue(value, result);
+                                continue 'expand;
+                            },
+                            _ => {
+                                return Err(comp_shape_mismatch(
+                                    arena,
+                                    ExpectedComputationShape::Returner,
+                                    expected,
+                                ));
+                            },
+                        }
                     },
                     Computation::Bind(bound, body) => {
                         frames.push(Frame::CheckBind(body, expected));
@@ -3749,22 +3828,26 @@ where
                     },
                     // A pairing checks against a lazy product by checking each
                     // component against its side; neither binds anything.
-                    Computation::With(left, right) => match arena.comp_type(expected) {
-                        Some(&CompType::With(left_type, right_type)) => {
-                            frames.push(Frame::Pending(
-                                alloc::vec![Goal::CheckComp(right, right_type)],
-                                Produced::Checked,
-                            ));
-                            goal = Goal::CheckComp(left, left_type);
-                            continue 'expand;
-                        },
-                        _ => {
-                            return Err(comp_shape_mismatch(
-                                arena,
-                                ExpectedComputationShape::With,
-                                expected,
-                            ));
-                        },
+                    Computation::With(left, right) => {
+                        match codata::read(arena, session, judgement, expected)
+                            .map(|shape| arena.comp_type(shape))?
+                        {
+                            Some(&CompType::With(left_type, right_type)) => {
+                                frames.push(Frame::Pending(
+                                    alloc::vec![Goal::CheckComp(right, right_type)],
+                                    Produced::Checked,
+                                ));
+                                goal = Goal::CheckComp(left, left_type);
+                                continue 'expand;
+                            },
+                            _ => {
+                                return Err(comp_shape_mismatch(
+                                    arena,
+                                    ExpectedComputationShape::With,
+                                    expected,
+                                ));
+                            },
+                        }
                     },
                     Computation::Case {
                         scrutinee,
@@ -3811,6 +3894,10 @@ where
                             ..
                         }
                         | CodeObligation::Data {
+                            stages: ref mut under,
+                            ..
+                        }
+                        | CodeObligation::Codata {
                             stages: ref mut under,
                             ..
                         }
@@ -5043,7 +5130,8 @@ where
                 },
                 Frame::SynthApply(argument) => {
                     let head_type = produced.comp_type()?;
-                    match arena.comp_type(head_type) {
+                    let head_shape = codata::read(arena, session, judgement, head_type)?;
+                    match arena.comp_type(head_shape) {
                         // An application eliminates either arrow: check the
                         // argument against the domain and produce the codomain.
                         Some(&CompType::Arrow { domain, codomain }) => {
@@ -5171,10 +5259,12 @@ where
                     produced = Produced::CompType(arena.comp_type_with(left_type, right_type));
                 },
                 // A projection reads its side off the pairing's synthesized
-                // lazy product; any other classifier is refused by name.
+                // lazy product, a codata type read through its observations;
+                // any other classifier is refused by name.
                 Frame::Project(side) => {
                     let pair_type = produced.comp_type()?;
-                    let Some(&CompType::With(left_type, right_type)) = arena.comp_type(pair_type)
+                    let pair_shape = codata::read(arena, session, judgement, pair_type)?;
+                    let Some(&CompType::With(left_type, right_type)) = arena.comp_type(pair_shape)
                     else {
                         return Err(comp_shape_mismatch(
                             arena,
@@ -5464,7 +5554,7 @@ fn check_sealing_provenance(
         && (ret.is_err() || (arena.value_type(declaration.declared_id()).is_some()
             && match *declaration.content() {
                 DeclarationContent::Def { body, .. } => arena.value(body).is_some(),
-                DeclarationContent::Data { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true,
+                DeclarationContent::Data { .. } | DeclarationContent::Codata { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true,
             })))]
 #[inline]
 pub fn check_declaration(
@@ -5656,6 +5746,7 @@ where
                             Some((ConstantIndex::from(first.saturating_add(offset)), body))
                         },
                         DeclarationContent::Data { .. }
+                        | DeclarationContent::Codata { .. }
                         | DeclarationContent::Axiom { .. }
                         | DeclarationContent::AbstractType { .. } => None,
                     })
@@ -5668,7 +5759,7 @@ where
                 )?;
                 (judgement, accessibility)
             },
-            Block::Outside | Block::Inside { .. } => {
+            Block::Outside | Block::Inside { .. } | Block::Codata { .. } => {
                 let position = ConstantIndex::from(judgement.entries.len());
                 let accessibility = occurrence::occurrences(
                     arena,
@@ -5687,6 +5778,24 @@ where
                     accessibility,
                 )
             },
+        },
+        // A codata declaration's own position names it while its observations
+        // form; `codata::guarded` keeps every such name at an observation's
+        // result.
+        DeclarationContent::Codata {
+            kind,
+            ref parameters,
+            ref observations,
+        } => {
+            let position = ConstantIndex::from(judgement.entries.len());
+            (
+                judgement.within_codata(position, codata::Signature {
+                    parameters,
+                    observations,
+                    kind,
+                }),
+                occurrence::Accessibility::unwalked(),
+            )
         },
         DeclarationContent::Def { .. }
         | DeclarationContent::Axiom { .. }
@@ -5831,6 +5940,60 @@ where
             )?;
             Ok(())
         },
+        // A codata declaration's kind is a computation universe, and its
+        // observations form under the parameters below that universe's
+        // successor, each naming the declaration only at its result.
+        DeclarationContent::Codata {
+            kind,
+            ref parameters,
+            ref observations,
+        } => {
+            let level = codata::level(arena, kind)?;
+            let upper = level.succ()?;
+            if observations.is_empty() {
+                return Err(KernelError::CodataWithoutObservations);
+            }
+            let position = ConstantIndex::from(judgement.entries.len());
+            let mut context = Vec::new();
+            for parameter in parameters {
+                let _formed = type_level(
+                    arena,
+                    judgement,
+                    TypeLevelGoal::Value(*parameter),
+                    context.clone(),
+                    Recording {
+                        memo,
+                        session,
+                        census,
+                        owed: &mut owed,
+                    },
+                )?;
+                context.push(*parameter);
+            }
+            let mut search = crate::env::ConstantSearch::new(position);
+            for &observation in observations {
+                codata::guarded(
+                    arena,
+                    (position, &mut search),
+                    former::FamilyArity(parameters.len()),
+                    observation,
+                )?;
+                let formed = type_level(
+                    arena,
+                    judgement,
+                    TypeLevelGoal::Comp(observation),
+                    context.clone(),
+                    Recording {
+                        memo,
+                        session,
+                        census,
+                        owed: &mut owed,
+                    },
+                )?;
+                judgement.levels.check_universe_below(&formed, &upper)?;
+            }
+            Ok(())
+        },
         DeclarationContent::Def { declared, body } => {
             // The seal rule: inside the admission that minted an atom, a member
             // declared at the atom is checked at its representation. The
@@ -5847,7 +6010,13 @@ where
                 {
                     judgement.owning(root)
                 },
-                (Block::Outside | Block::Inside { .. } | Block::Mutual { .. }, _) => judgement,
+                (
+                    Block::Outside
+                    | Block::Inside { .. }
+                    | Block::Mutual { .. }
+                    | Block::Codata { .. },
+                    _,
+                ) => judgement,
             };
             let _checked = run(
                 arena,
@@ -6150,6 +6319,40 @@ where
                             .ok_or(KernelError::DataArgumentArity)?,
                         _ => return Err(KernelError::ArenaFault),
                     };
+                    let _checked = run(
+                        arena,
+                        judgement,
+                        context.clone(),
+                        Goal::CheckValue(argument, expected),
+                        stages.clone(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed: &mut owed,
+                        },
+                    )?;
+                }
+            },
+            CodeObligation::Codata {
+                codata: application,
+                context,
+                stages,
+                scope,
+            } => {
+                let Some(&CompType::Codata { declaration, .. }) = arena.comp_type(application)
+                else {
+                    return Err(KernelError::ArenaFault);
+                };
+                let judgement = scope.reading(judgement);
+                let signature = codata::resolve(judgement, declaration)?;
+                for (index, &parameter) in signature.parameters.iter().enumerate() {
+                    let (argument, expected) = codata::argument(
+                        arena,
+                        session,
+                        (application, parameter),
+                        former::ParameterPrefix(index),
+                    )?;
                     let _checked = run(
                         arena,
                         judgement,
@@ -8106,6 +8309,8 @@ mod tests
         );
     }
 }
+
+mod codata;
 
 mod former;
 

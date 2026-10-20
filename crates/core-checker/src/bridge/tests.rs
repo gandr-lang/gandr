@@ -2119,6 +2119,7 @@ fn an_export_names_each_crossed_declaration_at_its_position()
                 DeclarationContent::Def { body, .. } => artifact.arena().value(body),
                 DeclarationContent::Axiom { .. }
                 | DeclarationContent::Data { .. }
+                | DeclarationContent::Codata { .. }
                 | DeclarationContent::AbstractType { .. } => None,
             };
             let name = marked
@@ -3677,6 +3678,7 @@ fn exported_bodies(readmission: &Readmission) -> Vec<ContentDigest>
                 Some(content_digest(artifact.arena(), AnyNode::Value(body)))
             },
             DeclarationContent::Data { .. }
+            | DeclarationContent::Codata { .. }
             | DeclarationContent::Axiom { .. }
             | DeclarationContent::AbstractType { .. } => None,
         })
@@ -4134,6 +4136,7 @@ fn a_rigid_static_instance_crosses_as_a_kernel_application()
         .find_map(|marked| match *marked.declaration().content() {
             DeclarationContent::Def { body, .. } => Some(body),
             DeclarationContent::Data { .. }
+            | DeclarationContent::Codata { .. }
             | DeclarationContent::Axiom { .. }
             | DeclarationContent::AbstractType { .. } => None,
         })

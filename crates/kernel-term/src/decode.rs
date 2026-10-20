@@ -257,6 +257,8 @@ enum DeclKind
 {
     /// A nominal data signature with a parameter and constructor table.
     Data,
+    /// A codata signature with a parameter telescope and its observations.
+    Codata,
     /// A typed definition.
     Def,
     /// A tracked typed hole.
@@ -319,6 +321,8 @@ struct DeclMeta
     constructors: Vec<Vec<GlobalIndex>>,
     /// Index classifier roots for an indexed data signature; empty otherwise.
     indices: Vec<GlobalIndex>,
+    /// Observation roots for a codata signature; empty for other declarations.
+    observations: Vec<GlobalIndex>,
     /// Each constructor's result index roots for an indexed data signature;
     /// empty otherwise.
     results: Vec<Vec<GlobalIndex>>,
@@ -849,6 +853,37 @@ fn value_id_at(
     }
 }
 
+/// The computation-type id at a global index, if the entry there is a
+/// computation type.
+///
+/// # Specification
+/// - requires: nothing; `global` may name no entry.
+/// - ensures: returns the computation-type id at that index, and `None` both
+///   when the index names no entry and when the entry there is of another
+///   family.
+/// - provides: the family-checked root resolution for a codata declaration's
+///   observations.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a codata declaration's observations round-trip, and the
+///   plain data kind over the same bytes is refused.
+/// - witness: `encode::tests::a_codata_declaration_closes_its_segment_with_its_observations`
+#[spec(
+    ensures: |ret| ret == match nodes.get(global.offset().0) { Some(&DecodedNode::CompType(id)) => Some(id), _ => None },
+)]
+#[inline]
+fn comp_type_id_at(
+    nodes: &[DecodedNode],
+    global: GlobalIndex,
+) -> Option<CompTypeId>
+{
+    match nodes.get(global.offset().0) {
+        Some(&DecodedNode::CompType(id)) => Some(id),
+        _ => None,
+    }
+}
+
 /// Resolve each declaration's roots to arena ids and build the sequence.
 ///
 /// # Specification
@@ -890,6 +925,8 @@ fn value_id_at(
             DeclKind::Def => meta.root_body.is_some_and(|root| value_id_at(&table.nodes, root).is_some()),
             DeclKind::Data => meta.root_body.is_none() && meta.parameters.iter().chain(meta.constructors.iter().flatten()).chain(&meta.indices).all(|root| value_type_id_at(&table.nodes, *root).is_some())
                 && meta.results.iter().flatten().all(|root| value_id_at(&table.nodes, *root).is_some()),
+            DeclKind::Codata => meta.root_body.is_none() && meta.parameters.iter().all(|root| value_type_id_at(&table.nodes, *root).is_some())
+                && meta.observations.iter().all(|root| comp_type_id_at(&table.nodes, *root).is_some()),
             DeclKind::AbstractType => meta.root_body.is_none() && meta.sealed.is_some_and(|(root, _)| value_type_id_at(&table.nodes, root).is_some())
                 && meta.interface.is_none_or(|(relation, reflexivity)| value_id_at(&table.nodes, relation).is_some() && value_id_at(&table.nodes, reflexivity).is_some()),
             DeclKind::Axiom => meta.root_body.is_none(),
@@ -930,6 +967,12 @@ fn value_id_at(
                         && results.len() == meta.results.len()
                         && results.iter().zip(&meta.results).all(|(values, roots)| values.len() == roots.len()
                             && values.iter().zip(roots).all(|(id, root)| value_id_at(&table.nodes, *root) == Some(*id))),
+                    DeclarationContent::Codata { ref parameters, ref observations, kind } => matches!(meta.kind, DeclKind::Codata)
+                        && value_type_id_at(&table.nodes, meta.root_declared) == Some(kind)
+                        && parameters.len() == meta.parameters.len()
+                        && parameters.iter().zip(&meta.parameters).all(|(id, root)| value_type_id_at(&table.nodes, *root) == Some(*id))
+                        && observations.len() == meta.observations.len()
+                        && observations.iter().zip(&meta.observations).all(|(id, root)| comp_type_id_at(&table.nodes, *root) == Some(*id)),
                 }
         })),
 )]
@@ -991,6 +1034,32 @@ fn build_declarations(
                         declared,
                     )
                     .presented(presentation)
+            },
+            DeclKind::Codata => {
+                let parameters = meta
+                    .parameters
+                    .iter()
+                    .map(|root| {
+                        value_type_id_at(&table.nodes, *root).ok_or(DecodeError::Malformed {
+                            site: MalformedSite::Polarity,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let observations = meta
+                    .observations
+                    .iter()
+                    .map(|root| {
+                        comp_type_id_at(&table.nodes, *root).ok_or(DecodeError::Malformed {
+                            site: MalformedSite::Polarity,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                DeclarationBuilder::new(&mut table.arena).codata(
+                    meta.levels.clone(),
+                    parameters,
+                    observations,
+                    declared,
+                )
             },
             DeclKind::Def => {
                 let root = meta.root_body.ok_or(DecodeError::Malformed {
@@ -1655,9 +1724,9 @@ impl<'bytes> ByteReader<'bytes>
 ///   declaration under [`tags::KIND_DATA_PRESENTED`] or
 ///   [`tags::KIND_DATA_WORDS`] carries rules, only one under the latter carries
 ///   cells, only one under [`tags::KIND_DATA_INDEXED`] carries index
-///   classifiers and per-constructor result roots, and only an abstract type
-///   under [`tags::KIND_ABSTRACT_INTERFACED`] carries an interface's two value
-///   roots.
+///   classifiers and per-constructor result roots, only an abstract type under
+///   [`tags::KIND_ABSTRACT_INTERFACED`] carries an interface's two value roots,
+///   and only a codata declaration carries observation roots.
 /// - provides: segment parsing, not semantic validation of producer claims. On
 ///   failure the cursor and previously completed entries may have advanced;
 ///   this operation does not roll back an entire segment.
@@ -1686,19 +1755,20 @@ impl<'bytes> ByteReader<'bytes>
 /// - witness: `encode::tests::a_type_of_words_closes_its_segment_with_its_cells`
 /// - witness: `encode::tests::a_lawful_definition_closes_its_segment_with_its_laws`
 /// - witness: `encode::tests::an_indexed_data_declaration_closes_its_segment_with_its_indices`
+/// - witness: `encode::tests::a_codata_declaration_closes_its_segment_with_its_observations`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|meta|
     meta.root_declared < table.next_index()
         && table.families.get(meta.root_declared.offset().0) == Some(&Family::ValueType)
         && match (meta.kind, meta.root_body) {
             (DeclKind::Def, Some(root)) => root < table.next_index()
                 && table.families.get(root.offset().0) == Some(&Family::Value),
-            (DeclKind::Data | DeclKind::Axiom | DeclKind::AbstractType, None) => true,
+            (DeclKind::Data | DeclKind::Codata | DeclKind::Axiom | DeclKind::AbstractType, None) => true,
             _ => false,
         }
         && match (meta.kind, meta.sealed) {
             (DeclKind::AbstractType, Some((root, _))) => root < table.next_index()
                 && table.families.get(root.offset().0) == Some(&Family::ValueType),
-            (DeclKind::Data | DeclKind::Def | DeclKind::Axiom, None) => true,
+            (DeclKind::Data | DeclKind::Codata | DeclKind::Def | DeclKind::Axiom, None) => true,
             _ => false,
         }
         && meta.interface.is_none_or(|interface| matches!(meta.kind, DeclKind::AbstractType)
@@ -1729,6 +1799,7 @@ fn decode_declaration(
     let mut constructors = Vec::new();
     let mut indices = Vec::new();
     let mut results = Vec::new();
+    let mut observations = Vec::new();
     let mut sealed = None;
     let mut interface = None;
     let mut related = Vec::new();
@@ -1795,6 +1866,17 @@ fn decode_declaration(
             }
             None
         },
+        DeclKind::Codata => {
+            let count = usize::from(reader.read_usize()?);
+            for _ in 0 .. count {
+                parameters.push(decode_root(reader, table, Family::ValueType)?);
+            }
+            let count = usize::from(reader.read_usize()?);
+            for _ in 0 .. count {
+                observations.push(decode_root(reader, table, Family::CompType)?);
+            }
+            None
+        },
         DeclKind::Def => {
             let body = decode_root(reader, table, Family::Value)?;
             provenance = decode_definition_slots(reader)?;
@@ -1849,6 +1931,7 @@ fn decode_declaration(
         parameters,
         constructors,
         indices,
+        observations,
         results,
         provenance,
         related,
@@ -2589,6 +2672,16 @@ fn decode_entry(
             let id = table.arena.comp_type_with(left, right);
             (DecodedNode::CompType(id), Family::CompType)
         },
+        tags::NODE_CT_CODATA => {
+            let declaration = ConstantIndex::from(usize::from(reader.read_usize()?));
+            let count = usize::from(reader.read_usize()?);
+            let mut arguments = Vec::new();
+            for _ in 0 .. count {
+                arguments.push(read_value(reader, table, this, &mut children)?);
+            }
+            let id = table.arena.comp_type_codata(declaration, arguments);
+            (DecodedNode::CompType(id), Family::CompType)
+        },
         tags::NODE_V_VARIABLE => {
             let index = reader.read_u32()?;
             let id = table
@@ -3233,7 +3326,7 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 ///   validity.
 /// - witness: `decode::tests::tag_alphabets_partition_every_byte`
 #[spec(
-    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 | 12 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 | 11 => ret.as_ref() == Ok(&DeclKind::Data), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
+    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 | 12 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 | 11 => ret.as_ref() == Ok(&DeclKind::Data), 13 => ret.as_ref() == Ok(&DeclKind::Codata), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
 )]
 #[inline]
 fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
@@ -3243,6 +3336,7 @@ fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
         | tags::KIND_DATA_PRESENTED
         | tags::KIND_DATA_WORDS
         | tags::KIND_DATA_INDEXED => Ok(DeclKind::Data),
+        tags::KIND_CODATA => Ok(DeclKind::Codata),
         tags::KIND_DEF | tags::KIND_DEF_RELATING | tags::KIND_DEF_LAWFUL => Ok(DeclKind::Def),
         tags::KIND_AXIOM => Ok(DeclKind::Axiom),
         // The abstract-type kind is deliberately live here: it was reserved with
@@ -4305,6 +4399,7 @@ mod tests
                     kind: super::ReservedKind::FunctorDef,
                 }),
                 6 | 8 | 10 | 11 => Ok(super::DeclKind::Data),
+                13 => Ok(super::DeclKind::Codata),
                 _ => Err(unknown(super::TagSite::DeclarationKind)),
             };
             assert_eq!(super::declaration_kind(super::WireTag::from(byte)), kind);
@@ -4700,6 +4795,7 @@ mod tests
                     constructors: vec![],
                     indices: vec![],
                     results: vec![],
+                    observations: vec![],
                     mark: super::AdmissionMark::Checked,
                     kind: super::DeclKind::Axiom,
                     name: super::StructuredName::default(),
@@ -4790,6 +4886,7 @@ mod tests
             constructors: vec![],
             indices: vec![],
             results: vec![],
+            observations: vec![],
             mark: super::AdmissionMark::Checked,
             kind: super::DeclKind::Def,
             name: super::StructuredName::default(),
@@ -5606,6 +5703,7 @@ mod tests
                 constructors: vec![],
                 indices: vec![],
                 results: vec![],
+                observations: vec![],
                 mark: super::AdmissionMark::UncheckedBypass,
                 kind: super::DeclKind::Def,
                 name: name(&["definition", "é"]),
@@ -5633,6 +5731,7 @@ mod tests
                 constructors: vec![],
                 indices: vec![],
                 results: vec![],
+                observations: vec![],
                 mark: super::AdmissionMark::Checked,
                 kind: super::DeclKind::Axiom,
                 name: name(&[""]),
@@ -5652,6 +5751,7 @@ mod tests
                 constructors: vec![],
                 indices: vec![],
                 results: vec![],
+                observations: vec![],
                 mark: super::AdmissionMark::Checked,
                 kind: super::DeclKind::AbstractType,
                 name: name(&[]),

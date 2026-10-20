@@ -1302,12 +1302,32 @@ fn converge(
                         stack.push(ConversionGoal::CompType(one_left, other_left));
                         stack.push(ConversionGoal::CompType(one_right, other_right));
                     },
+                    // Codata converts nominally, as data does: one declaration
+                    // at convertible arguments. Observations are never
+                    // unfolded here, so two codata types never meet their
+                    // observation products and there is no η.
+                    (
+                        &CompType::Codata {
+                            declaration: one,
+                            arguments: ref a,
+                        },
+                        &CompType::Codata {
+                            declaration: other,
+                            arguments: ref b,
+                        },
+                    ) => {
+                        if one != other || a.len() != b.len() {
+                            return Convertibility::Distinct;
+                        }
+                        stack.extend(a.iter().zip(b).map(|(a, b)| ConversionGoal::Value(*a, *b)));
+                    },
                     (
                         &CompType::Returner(_)
                         | &CompType::Arrow { .. }
                         | &CompType::Pi { .. }
                         | &CompType::Element { .. }
-                        | &CompType::With(..),
+                        | &CompType::With(..)
+                        | &CompType::Codata { .. },
                         _,
                     ) => {
                         return Convertibility::Distinct;

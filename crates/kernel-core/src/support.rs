@@ -1545,6 +1545,9 @@ impl<R: Reach> Reaches<R>
                             tasks.push(ReachTask::OpenCompType(left));
                             tasks.push(ReachTask::OpenCompType(right));
                         },
+                        CompType::Codata { ref arguments, .. } => {
+                            tasks.extend(arguments.iter().copied().map(ReachTask::OpenValue));
+                        },
                     }
                 },
                 ReachTask::CloseCompType(id) => {
@@ -1794,6 +1797,7 @@ ValueType::Element { code, .. } => self.cached_value(code),
         CompType::Pi { domain, codomain } => self.cached_value_type(domain).join(self.cached_comp_type(codomain).under_binder()),
         CompType::Element { code, .. } => self.cached_value(code),
         CompType::With(left, right) => self.cached_comp_type(left).join(self.cached_comp_type(right)),
+        CompType::Codata { ref arguments, .. } => arguments.iter().fold(R::closed(), |depth, id| depth.join(self.cached_value(*id))),
     }))]
     fn combine_comp_type(
         &self,
@@ -1817,6 +1821,9 @@ ValueType::Element { code, .. } => self.cached_value(code),
             CompType::With(left, right) => self
                 .cached_comp_type(left)
                 .join(self.cached_comp_type(right)),
+            CompType::Codata { ref arguments, .. } => arguments
+                .iter()
+                .fold(R::closed(), |depth, id| depth.join(self.cached_value(*id))),
         }
     }
 

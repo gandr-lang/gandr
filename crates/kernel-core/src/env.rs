@@ -107,6 +107,7 @@ use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::ArenaWatermark;
 use gandr_kernel_term::CompType;
+use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Declaration;
@@ -635,6 +636,36 @@ impl<'env> Staging<'env>
         }
     }
 
+    /// Finalize a codata signature while retaining its staging claim.
+    ///
+    /// # Specification
+    /// - requires: this session owns the last outstanding staging mark.
+    /// - ensures: the mark remains outstanding and the signature is preserved.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — codata admission refuses a malformed signature
+    ///   without retaining its nodes.
+    /// - witness: `tests::codata::a_value_universe_is_no_codata_kind`
+    #[spec(requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()), captures: start = self.builder.content_start(), ensures: |ret| ret.content_start == start && matches!(ret.declaration.content(), DeclarationContent::Codata { kind: actual, .. } if *actual == kind))]
+    #[inline]
+    #[must_use]
+    pub fn codata(
+        self,
+        levels: LevelSignature,
+        parameters: Vec<ValueTypeId>,
+        observations: Vec<CompTypeId>,
+        kind: ValueTypeId,
+    ) -> StagedDeclaration
+    {
+        let content_start = self.builder.content_start();
+        let _kept = core::mem::ManuallyDrop::new(self.claim);
+        StagedDeclaration {
+            content_start,
+            declaration: self.builder.codata(levels, parameters, observations, kind),
+        }
+    }
+
     /// Finalize a nominal data signature indexed by `indices`, each
     /// constructor's fields beside the index it states, while retaining its
     /// staging claim.
@@ -666,6 +697,7 @@ impl<'env> Staging<'env>
             declaration: self.builder.indexed(levels, parameters, table, kind),
         }
     }
+
     /// Begin staging into `arena`, registering the content-start mark.
     ///
     /// # Specification
@@ -2212,7 +2244,11 @@ fn block_end(
                 end = end.max(usize::from(reached));
             },
             Some(&DeclarationContent::Def { .. }) => break,
-            Some(&(DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. }))
+            Some(
+                &(DeclarationContent::Axiom { .. }
+                | DeclarationContent::AbstractType { .. }
+                | DeclarationContent::Codata { .. }),
+            )
             | None => return ConstantIndex::from(lone),
         }
         position = position.saturating_add(1);
@@ -2282,15 +2318,6 @@ enum CodeEdges
 ///
 /// - witness: `env::tests::sealing_provenance_does_not_follow_codes`
 /// - witness: `env::tests::a_type_level_atom_reference_reaches_the_audit`
-///
-/// # Termination
-/// - reason: the walk is a loop over one explicit worklist, not recursion.
-/// - measure: lexicographically, reachable node identities not yet seen and
-///   pending worklist length. First visits reduce the former; revisits enqueue
-///   nothing and reduce the latter.
-/// - boundedness: the finite arena and its finite child-reference fields bound
-///   the reachable identities, including unreadable ones.
-/// - input recursion: none.
 #[spec(ensures: |ret| match root {
     AnyNode::Value(id) => match arena.value(id) {
         Some(&Value::Constant(index)) => ret.len() == 1_usize && ret.contains(&index),
@@ -2319,12 +2346,132 @@ fn collect_reachable(
 ) -> BTreeSet<ConstantIndex>
 {
     let mut found = BTreeSet::new();
-    // Each arena node is expanded once. The walk computes the *set* of
-    // reachable constants, so re-walking a shared subtree can only re-derive
-    // what is already recorded — and without the seen set the walk
+    let _gathered = reach(
+        arena,
+        root,
+        codes,
+        &mut Walk::default(),
+        &mut Sink::Gather(&mut found),
+    );
+    found
+}
+
+/// Whether a walk met the constant it sought.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Mention
+{
+    /// The constant is reachable from the root.
+    Named,
+    /// Nothing reachable from the root names the constant.
+    Unnamed,
+}
+
+/// What a reachability walk does with each constant it meets.
+#[derive(Debug)]
+enum Sink<'found>
+{
+    /// Gather every constant met; the walk runs to its end.
+    Gather(&'found mut BTreeSet<ConstantIndex>),
+    /// Stop at the first meeting of the one constant sought.
+    Seek(ConstantIndex),
+}
+
+impl Sink<'_>
+{
+    /// Meet `index`: gather it, or say whether it is the constant sought.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a gathering sink holds `index` and answers `Unnamed`; a
+    ///   seeking sink answers `Named` exactly when `index` is the constant it
+    ///   seeks.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a gathering walk collects both reference forms, and a
+    ///   seeking one answers for its own constant and not for another reachable
+    ///   one.
+    /// - witness: `env::tests::reachability_separates_references_and_code_edges`
+    /// - witness: `env::tests::a_search_stops_at_its_constant_across_roots`
+    #[spec(ensures: |ret| match *self {
+        Self::Gather(ref found) => ret == Mention::Unnamed && found.contains(&index),
+        Self::Seek(sought) => (ret == Mention::Named) == (sought == index),
+    })]
+    fn meet(
+        &mut self,
+        index: ConstantIndex,
+    ) -> Mention
+    {
+        match *self {
+            Self::Gather(ref mut found) => {
+                let _fresh = found.insert(index);
+                Mention::Unnamed
+            },
+            Self::Seek(sought) => {
+                if sought == index {
+                    Mention::Named
+                }
+                else {
+                    Mention::Unnamed
+                }
+            },
+        }
+    }
+}
+
+/// A reachability walk's worklist and the nodes it has expanded.
+#[derive(Debug, Default)]
+struct Walk
+{
+    /// Every node expanded so far, each once.
+    seen: BTreeSet<AnyNode>,
+    /// The nodes met and not yet expanded.
+    pending: Vec<AnyNode>,
+}
+
+/// Expand every node reachable from `root` that `walk` has not expanded,
+/// handing each constant reference one of them makes to `sink`, and stop at
+/// the first the sink answers `Named` for.
+///
+/// # Specification
+/// - requires: every node `walk` has expanded had its children expanded by it,
+///   under the same `codes`, and its worklist is empty.
+/// - ensures: `Named` exactly when `sink` answers `Named` for a constant
+///   reachable from `root` through nodes `walk` had not expanded; on `Unnamed`,
+///   every such node is expanded, every constant it names has met `sink`, and
+///   the worklist is empty again.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`collect_reachable`] for a gathering sink; a seeking
+///   walk answers a later root through the nodes an earlier one expanded.
+/// - witness: `env::tests::reachability_separates_references_and_code_edges`
+/// - witness: `env::tests::a_search_stops_at_its_constant_across_roots`
+///
+/// # Termination
+/// - reason: the walk is a loop over one explicit worklist, not recursion.
+/// - measure: lexicographically, reachable node identities not yet seen and
+///   pending worklist length. First visits reduce the former; revisits enqueue
+///   nothing and reduce the latter.
+/// - boundedness: the finite arena and its finite child-reference fields bound
+///   the reachable identities, including unreadable ones.
+/// - input recursion: none.
+#[spec(ensures: |ret| ret == Mention::Named || walk.pending.is_empty())]
+fn reach(
+    arena: &TermArena,
+    root: AnyNode,
+    codes: CodeEdges,
+    walk: &mut Walk,
+    sink: &mut Sink<'_>,
+) -> Mention
+{
+    let Walk {
+        ref mut seen,
+        ref mut pending,
+    } = *walk;
+    // Each arena node is expanded once: re-walking a shared subtree meets
+    // only constants already met, and without the seen set the walk
     // tree-expands the graph, which is exponential in sharing depth.
-    let mut seen: BTreeSet<AnyNode> = BTreeSet::new();
-    let mut pending: Vec<AnyNode> = Vec::new();
     pending.push(root);
     let follow = matches!(codes, CodeEdges::Follow);
     while let Some(node) = pending.pop() {
@@ -2345,7 +2492,9 @@ fn collect_reachable(
                     pending.extend(fields.values().copied().map(AnyNode::Value));
                 },
                 Some(&Value::Constant(index)) => {
-                    let _fresh = found.insert(index);
+                    if sink.meet(index) == Mention::Named {
+                        return Mention::Named;
+                    }
                 },
                 Some(&Value::ListNil | &Value::Variable(_) | &Value::Literal(_)) | None => {},
                 Some(&Value::PathEquiv {
@@ -2571,7 +2720,9 @@ fn collect_reachable(
                     ref arguments,
                 }) => {
                     if follow {
-                        let _fresh = found.insert(declaration);
+                        if sink.meet(declaration) == Mention::Named {
+                            return Mention::Named;
+                        }
                         pending.extend(arguments.iter().copied().map(AnyNode::Value));
                     }
                 },
@@ -2579,7 +2730,9 @@ fn collect_reachable(
                     pending.extend(fields.values().copied().map(AnyNode::ValueType));
                 },
                 Some(&ValueType::Abstract(index)) => {
-                    let _fresh = found.insert(index);
+                    if sink.meet(index) == Mention::Named {
+                        return Mention::Named;
+                    }
                 },
                 Some(
                     &ValueType::PathUniverse(source, target)
@@ -2663,11 +2816,20 @@ fn collect_reachable(
                     pending.push(AnyNode::CompType(left));
                     pending.push(AnyNode::CompType(right));
                 },
-                None => {},
+                Some(&CompType::Codata {
+                    declaration,
+                    ref arguments,
+                }) if follow => {
+                    if sink.meet(declaration) == Mention::Named {
+                        return Mention::Named;
+                    }
+                    pending.extend(arguments.iter().copied().map(AnyNode::Value));
+                },
+                Some(&CompType::Codata { .. }) | None => {},
             },
         }
     }
-    found
+    Mention::Unnamed
 }
 
 /// The constants a declaration's declared type names, **through its codes as
@@ -2682,6 +2844,79 @@ fn audited_type_constants(
 ) -> BTreeSet<ConstantIndex>
 {
     collect_reachable(arena, AnyNode::ValueType(root), CodeEdges::Follow)
+}
+
+/// A search for one constant through codes and sealed atoms alike, over as
+/// many roots as it is asked about.
+///
+/// The search keeps the nodes it expanded for every root it answered
+/// `Unnamed` for, so asking about the parts of one type walks the nodes they
+/// share once, and it stops at the first node naming the constant.
+#[derive(Debug)]
+pub(crate) struct ConstantSearch
+{
+    /// The constant sought.
+    sought: ConstantIndex,
+    /// The walk, closed under children over every node it has expanded.
+    walk: Walk,
+}
+
+impl ConstantSearch
+{
+    /// A search for `sought` that has expanded nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn new(sought: ConstantIndex) -> Self
+    {
+        Self {
+            sought,
+            walk: Walk::default(),
+        }
+    }
+
+    /// Whether `root` names the constant sought, through codes and sealed
+    /// atoms alike.
+    ///
+    /// # Specification
+    /// - requires: nothing — an unreadable id names nothing.
+    /// - ensures: `Named` exactly when the constant sought is among the
+    ///   constants [`collect_reachable`] reaches from `root` under
+    ///   [`CodeEdges::Follow`], whatever roots the search answered before.
+    /// - provides: an occurrence test that stops at the first occurrence and
+    ///   keeps no set of the constants it passes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constant reached through a code and one reached
+    ///   through a sealed atom are each found; a root sharing a node with one
+    ///   answered `Unnamed` before is still answered `Unnamed`, and one
+    ///   reaching the constant after a root that named it is still answered
+    ///   `Named`.
+    /// - witness: `env::tests::a_search_stops_at_its_constant_across_roots`
+    #[spec(ensures: |ret| (ret == Mention::Named) == collect_reachable(arena, root, CodeEdges::Follow).contains(&self.sought))]
+    pub(crate) fn names(
+        &mut self,
+        arena: &TermArena,
+        root: AnyNode,
+    ) -> Mention
+    {
+        let mention = reach(
+            arena,
+            root,
+            CodeEdges::Follow,
+            &mut self.walk,
+            &mut Sink::Seek(self.sought),
+        );
+        if mention == Mention::Named {
+            // A walk that stopped is not closed under children: the next
+            // root starts afresh.
+            self.walk.seen.clear();
+            self.walk.pending.clear();
+        }
+        mention
+    }
 }
 
 /// The atoms a value type projects onto: every sealed atom reachable from it.
@@ -3209,7 +3444,7 @@ mod tests
             super::DeclarationContent::Def { declared, body } =>
                 matches!(environment.arena().value_type(declared), Some(super::ValueType::Product(parts)) if parts.is_empty())
                 && matches!(environment.arena().value(body).and_then(super::Value::components), Some(&[])),
-            super::DeclarationContent::Data { .. } | super::DeclarationContent::Axiom { .. } | super::DeclarationContent::AbstractType { .. } => false,
+            super::DeclarationContent::Data { .. } | super::DeclarationContent::Codata { .. } | super::DeclarationContent::Axiom { .. } | super::DeclarationContent::AbstractType { .. } => false,
         })]
     fn stage_unit(environment: &mut Environment) -> StagedDeclaration
     {
@@ -3326,6 +3561,58 @@ mod tests
         ] {
             assert!(super::collect_reachable(&arena, root, super::CodeEdges::Follow).is_empty());
         }
+    }
+
+    #[test]
+    fn a_search_stops_at_its_constant_across_roots()
+    {
+        let mut arena = TermArena::new();
+        let (constant, atom, other) = (
+            ConstantIndex::from(7_usize),
+            ConstantIndex::from(9_usize),
+            ConstantIndex::from(11_usize),
+        );
+        let code = arena.value_constant(constant);
+        let decoded = arena.value_type_element(code, Level::zero());
+        let sealed = arena.value_type_abstract(atom);
+        let elsewhere = arena.value_type_abstract(other);
+        // Every root reaches `shared`, which names only `other`.
+        let shared = arena.value_type_list(elsewhere);
+        let through_code = arena.value_type_product(&[shared, decoded]);
+        let through_atom = arena.value_type_product(&[shared, sealed]);
+        let alone = arena.value_type_product(&[shared]);
+        let root = super::AnyNode::ValueType;
+
+        let mut search = super::ConstantSearch::new(atom);
+        assert_eq!(search.names(&arena, root(alone)), super::Mention::Unnamed);
+        assert_eq!(
+            search.names(&arena, root(through_atom)),
+            super::Mention::Named,
+            "a root past the nodes an earlier one expanded"
+        );
+        assert_eq!(search.names(&arena, root(alone)), super::Mention::Unnamed);
+
+        let mut search = super::ConstantSearch::new(constant);
+        assert_eq!(
+            search.names(&arena, root(through_code)),
+            super::Mention::Named,
+            "a constant inside a code"
+        );
+        assert_eq!(
+            search.names(&arena, root(through_atom)),
+            super::Mention::Unnamed
+        );
+
+        let mut search = super::ConstantSearch::new(other);
+        assert_eq!(
+            search.names(&arena, root(through_code)),
+            super::Mention::Named
+        );
+        assert_eq!(
+            search.names(&arena, root(through_atom)),
+            super::Mention::Named,
+            "a stopped walk keeps nothing it did not finish"
+        );
     }
 
     #[test]

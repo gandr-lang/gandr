@@ -363,7 +363,7 @@ fn enter(
                     steps.push(Step::Enter(Node::CompType(left)));
                     steps.push(Step::Enter(Node::CompType(right)));
                 },
-                CompType::Element { .. } => {},
+                CompType::Element { .. } | CompType::Codata { .. } => {},
             }
         },
     }
@@ -626,7 +626,7 @@ fn exit_comp_type(
                 arena.comp_type_with(left_rebuilt, right_rebuilt)
             }
         },
-        CompType::Element { .. } => id,
+        CompType::Element { .. } | CompType::Codata { .. } => id,
     };
     Ok(rebuilt)
 }

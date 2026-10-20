@@ -134,6 +134,8 @@ pub enum CompTypeHead
     Element,
     /// A lazy product.
     With,
+    /// A codata type: an observation-indexed computation type.
+    Codata,
     /// The reference resolved to nothing.
     Unreadable,
 }
@@ -154,6 +156,7 @@ impl CompTypeHead
             CompType::Pi { .. } => Self::Pi,
             CompType::Element { .. } => Self::Element,
             CompType::With(..) => Self::With,
+            CompType::Codata { .. } => Self::Codata,
         }
     }
 }
@@ -524,6 +527,18 @@ pub enum KernelError
     DataKindNotUniverse,
     /// An application supplies the wrong number of declaration arguments.
     DataArgumentArity,
+    /// A codata head does not name an admitted codata declaration.
+    NotACodataType
+    {
+        index: ConstantIndex
+    },
+    /// A codata signature's kind is not a computation universe.
+    CodataKindNotUniverse,
+    /// A codata declaration states no observation.
+    CodataWithoutObservations,
+    /// A codata declaration names itself other than at an observation's
+    /// result, at its parameter variables in telescope order.
+    CodataOccurrence,
     /// A constructor tag is absent from the declaration table.
     UnknownConstructor
     {
@@ -848,6 +863,17 @@ impl core::fmt::Display for KernelError
             Self::DataArgumentArity => {
                 f.write_str("a data application had the wrong argument arity")
             },
+            Self::NotACodataType { .. } => f.write_str("a codata head named no codata declaration"),
+            Self::CodataKindNotUniverse => {
+                f.write_str("a codata declaration kind was not a computation universe")
+            },
+            Self::CodataWithoutObservations => {
+                f.write_str("a codata declaration stated no observation")
+            },
+            Self::CodataOccurrence => f.write_str(
+                "a codata declaration named itself other than at an observation's result, at its \
+                 parameters",
+            ),
             Self::UnknownConstructor { .. } => {
                 f.write_str("a constructor tag was absent from its declaration")
             },

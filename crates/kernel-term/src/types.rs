@@ -159,6 +159,20 @@
 //! lazy record and the record of thunks are not interchangeable, and the two
 //! lost properties are the reason the former is native.
 //!
+//! # Codata
+//!
+//! [`CompType::Codata`] names a codata declaration at its parameters, the
+//! greatest fixpoint `νX. &{dᵢ : Bᵢ}` of the declaration's observations
+//! (Andreas Abel, Brigitte Pientka, David Thibodeau and Anton Setzer,
+//! *Copatterns: programming infinite structures by observations*, POPL 2013).
+//! It is read as the right-nested lazy product of its observations, `B₀ & (B₁
+//! & …)`, one observation read as itself, each instantiated at the arguments
+//! and naming the type itself where the declaration names `X`. The reading is
+//! taken where a computation is checked against the type and where a
+//! projection or an application observes a computation of it; conversion
+//! compares the declaration and the arguments and never unfolds, so the type
+//! has no η.
+//!
 //! # The returned endpoint
 //!
 //! [`Value::Returned`] is the value a pure computation returns, standing where
@@ -663,4 +677,19 @@ pub enum CompType
     /// The lazy product `C & D` of two computation types: a computation of
     /// this type runs neither component until a projection observes one.
     With(CompTypeId, CompTypeId),
+    /// A nominal codata type applied to its declaration's parameters: the
+    /// greatest fixpoint `νX. &{dᵢ : Bᵢ}` of its observations.
+    ///
+    /// It is read as the lazy product of its observations, each instantiated
+    /// at `arguments`, where a computation is introduced against it or one of
+    /// its observations is taken, and nowhere else: two codata types convert
+    /// exactly when they name one declaration at convertible arguments, and no
+    /// computation of the type is equal to the product of its observations.
+    Codata
+    {
+        /// The admitted codata declaration.
+        declaration: ConstantIndex,
+        /// One value per parameter of the declaration's telescope.
+        arguments: alloc::vec::Vec<ValueId>,
+    },
 }
