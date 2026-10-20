@@ -829,13 +829,13 @@ fn core_supports_are_walked(core: &CoreArena) -> Agreement
         })
         .collect();
     let mut scratch = core.clone();
+    let mut walked: Vec<u32> = Vec::new();
     for (subject, selected) in subjects {
         let bound = selected.last().map_or(0, |&last| last.saturating_add(2));
-        let walked: Vec<u32> = (0 .. bound)
-            .filter(|&index| {
-                occurs(&mut scratch, subject, DeBruijnIndex::from(index)) == Occurrence::Free
-            })
-            .collect();
+        walked.clear();
+        walked.extend((0 .. bound).filter(|&index| {
+            occurs(&mut scratch, subject, DeBruijnIndex::from(index)) == Occurrence::Free
+        }));
         let original = compared(&mut scratch, subject);
         let beyond = raised(&mut scratch, subject, Binders::from(bound));
         if walked != selected || same(&scratch, original, beyond) == CertificateEquality::Different
