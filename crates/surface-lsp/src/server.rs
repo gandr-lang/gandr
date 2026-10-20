@@ -193,6 +193,7 @@ use crate::transport::write_frame;
 use crate::uses::Written;
 use crate::uses::highlights;
 use crate::uses::located;
+use crate::uses::mirrored;
 use crate::uses::placed;
 use crate::view::report;
 
@@ -2299,6 +2300,12 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
+            (Phase::Running, "textDocument/linkedEditingRange") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Mirrored(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
             (Phase::Running, "textDocument/documentSymbol" | "textDocument/foldingRange" | "textDocument/selectionRange" | "textDocument/documentLink") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_) | Answer::Imports(_), .. } => true,
@@ -2447,6 +2454,19 @@ impl Server
                     Ok(params) => success(
                         id,
                         workspace.highlight(&params.text_document.uri, self.peer, params.position),
+                    ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "textDocument/linkedEditingRange") => {
+                match serde_json::from_value::<PositionParams>(params) {
+                    Ok(params) => success(
+                        id,
+                        workspace.linked_editing(
+                            &params.text_document.uri,
+                            self.peer,
+                            params.position,
+                        ),
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
@@ -3027,7 +3047,7 @@ impl Workspace
         Answer::Initialize(_) | Answer::Completions(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
-            | Answer::Imports(_) => false,
+            | Answer::Imports(_) | Answer::Mirrored(_) => false,
     })]
     fn tokens(
         &self,
@@ -3082,7 +3102,7 @@ impl Workspace
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Signatures(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
-            | Answer::Imports(_) => false,
+            | Answer::Imports(_) | Answer::Mirrored(_) => false,
     })]
     fn inline(
         &self,
@@ -3488,6 +3508,49 @@ impl Workspace
             .as_ref()
             .map_or(Answer::Nothing, |session| {
                 highlights(
+                    document.text.source(),
+                    document
+                        .text
+                        .hovering(&uri.path(), session, &self.shadowing(peer)),
+                    position,
+                )
+            })
+    }
+
+    /// What a linked-editing request at `position` of the copy of the document
+    /// at `uri` that `peer` is answered from answers.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI and any position are admitted.
+    /// - ensures: an unknown document, and one whose session holds no grammar,
+    ///   yields Nothing; otherwise what [`mirrored`] answers off the copy's
+    ///   text and what it keeps for its hovers.
+    /// - provides: the answer to `textDocument/linkedEditingRange`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`mirrored`], and an unknown document answers
+    ///   `null`.
+    /// - witness: `server::tests::linked_editing_mirrors_a_binder_within_its_declaration`
+    #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Mirrored(_))
+        && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
+    fn linked_editing(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        position: Position,
+    ) -> Answer
+    {
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Answer::Nothing;
+        };
+        document
+            .session
+            .as_ref()
+            .map_or(Answer::Nothing, |session| {
+                mirrored(
                     document.text.source(),
                     document
                         .text
@@ -4662,6 +4725,7 @@ mod tests
                         "referencesProvider":true,
                         "renameProvider":{"prepareProvider":true},
                         "documentLinkProvider":{"resolveProvider":false},
+                        "linkedEditingRangeProvider":true,
                         "workspace":{"workspaceFolders":{"supported":true,"changeNotifications":true}}},
                     "serverInfo":{"name":"gandr","version":""#,
                 env!("CARGO_PKG_VERSION"),
@@ -6182,6 +6246,54 @@ mod tests
         );
         assert_eq!(
             highlight("file:///tmp/closed.gandr", 0, 0),
+            Value::Null,
+            "a document the server does not hold answers null"
+        );
+    }
+
+    #[test]
+    fn linked_editing_mirrors_a_binder_within_its_declaration()
+    {
+        let mut server = referring(Linked(true));
+        let mut linked = |uri: &str, line: u32, character: u32| {
+            let request = serde_json::json!({
+                "jsonrpc": "2.0", "id": 7_i32, "method": "textDocument/linkedEditingRange",
+                "params": {"textDocument": {"uri": uri},
+                    "position": at(Line::from(line), Character::from(character))},
+            });
+            send(&mut server, Json(&request.to_string()))
+                .pointer("/0/result")
+                .cloned()
+                .unwrap_or(Value::Null)
+        };
+        let ranges = |sites: &[(u32, u32, u32)]| {
+            serde_json::json!({"ranges": sites.iter().map(|&(line, start, end)| Range {
+                start: at(Line::from(line), Character::from(start)),
+                end: at(Line::from(line), Character::from(end)),
+            }).collect::<Vec<_>>()})
+        };
+        let uri = "file:///tmp/referred.gandr";
+        let n = ranges(&[(4, 13, 14), (6, 12, 13), (7, 28, 29)]);
+        assert_eq!(
+            linked(uri, 4, 13),
+            n,
+            "a parameter's binder links itself and its uses"
+        );
+        assert_eq!(linked(uri, 7, 28), n, "a use links the same ranges");
+        assert_eq!(
+            linked(uri, 7, 9),
+            ranges(&[(7, 9, 10), (7, 31, 32)]),
+            "a binder a constructor pattern introduces links its use"
+        );
+        assert_eq!(
+            linked(uri, 4, 9),
+            Value::Null,
+            "a declaration's name, which importers may use, links nothing"
+        );
+        assert_eq!(linked(uri, 7, 5), Value::Null, "nor does a constructor");
+        assert_eq!(linked(uri, 4, 1), Value::Null, "a keyword links nothing");
+        assert_eq!(
+            linked("file:///tmp/closed.gandr", 0, 0),
             Value::Null,
             "a document the server does not hold answers null"
         );
