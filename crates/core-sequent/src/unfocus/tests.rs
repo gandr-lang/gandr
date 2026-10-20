@@ -424,7 +424,7 @@ fn decoding_refuses_missing_roots_and_malformed_heads()
             consumers: Box::from([]),
         },
         ProducerNode::Constructor {
-            tag: ConstructorTag::Injection(Side::Left.into()),
+            tag: ConstructorTag::Injection(Summand::from(0_usize)),
             producers: Box::from([]),
             consumers: Box::from([]),
         },
@@ -454,8 +454,15 @@ fn decoding_refuses_missing_roots_and_malformed_heads()
         destructor: DestructorTag::Force,
         body,
     };
-    let shapes: [Box<[crate::il::CopatternArm]>; 3] =
-        [Box::from([]), Box::from([force]), Box::from([apply, apply])];
+    let project = |component: usize| crate::il::CopatternArm {
+        destructor: DestructorTag::Project(Component::from(component)),
+        body,
+    };
+    let shapes: [Box<[crate::il::CopatternArm]>; 3] = [
+        Box::from([force]),
+        Box::from([apply, apply]),
+        Box::from([project(1_usize), project(0_usize)]),
+    ];
     for arms in shapes {
         let bad = arena
             .mint_producer(ProducerNode::Cocase { arms })
@@ -484,11 +491,11 @@ fn decoding_refuses_missing_roots_and_malformed_heads()
         ConsumerNode::Case {
             arms: Box::from([
                 crate::il::PatternArm {
-                    constructor: ConstructorTag::Injection(Side::Right.into()),
+                    constructor: ConstructorTag::Injection(Summand::from(1_usize)),
                     body,
                 },
                 crate::il::PatternArm {
-                    constructor: ConstructorTag::Injection(Side::Left.into()),
+                    constructor: ConstructorTag::Injection(Summand::from(0_usize)),
                     body,
                 },
             ]),

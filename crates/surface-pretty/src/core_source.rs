@@ -24,7 +24,6 @@ use gandr_core_term::world::WorldForm;
 use gandr_core_term::world::WorldType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::FixpointEvidence;
-use gandr_kernel_term::Side;
 use quenchant_shape::shape::Maybe;
 
 use crate::former::Arity;
@@ -1241,7 +1240,7 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     #[spec(ensures: |ret| match (self.arena.comp_type(id), ret) {
-        | (Some(&CompType::With(first, second)), Former::With(a, b)) => a == CoreNode::CompType(first) && b == CoreNode::CompType(second),
+        | (Some(&CompType::With(ref components)), Former::With(arity)) => usize::from(arity) == components.len(),
         | (Some(&CompType::Unknown), Former::Unreadable(Unreadable::UnknownType)) | (None, Former::Unreadable(Unreadable::Dangling)) => true,
         | (Some(&CompType::Codata { declaration, ref arguments }), Former::Codata { name, arity }) =>
             usize::from(arity) == arguments.len() && self.name(declaration) == name,
@@ -1280,9 +1279,7 @@ impl<'arena> CoreSource<'arena>
                 )
             )]
             CompType::Unknown => Former::Unreadable(Unreadable::UnknownType),
-            CompType::With(first, second) => {
-                Former::With(CoreNode::CompType(first), CoreNode::CompType(second))
-            },
+            CompType::With(ref components) => Former::With(Arity::from(components.len())),
             CompType::Returner {
                 result,
                 ref effects,
@@ -1580,14 +1577,9 @@ impl<'arena> CoreSource<'arena>
             },
             Computation::Reset(body) => Former::Reset(computation(body)),
             Computation::Shift(body) => Former::Shift(computation(body)),
-            Computation::With(first, second) => {
-                Former::Lazy(computation(first), computation(second))
-            },
-            Computation::Project(side, observed) => Former::Project(
-                Component::from(match side {
-                    Side::Left => 0_usize,
-                    Side::Right => 1_usize,
-                }),
+            Computation::With(ref components) => Former::Lazy(Arity::from(components.len())),
+            Computation::Project(component, observed) => Former::Project(
+                Component::from(usize::from(component)),
                 computation(observed),
             ),
             Computation::Session(ref action) => match *action {
@@ -1759,6 +1751,7 @@ impl Source for CoreSource<'_>
         | CoreNode::Computation(id) => self.arena.computation(id).is_some() || ret.is_none(),
         | CoreNode::CompType(id) => ret == match self.arena.comp_type(id) {
             | Some(&CompType::Codata { ref arguments, .. }) => arguments.get(usize::from(index)).map(|&argument| CoreNode::Value(argument)),
+            | Some(&CompType::With(ref components)) => components.get(usize::from(index)).map(|&component| CoreNode::CompType(component)),
             | Some(_) | None => None,
         },
     })]
@@ -1860,6 +1853,9 @@ impl Source for CoreSource<'_>
                 Computation::Primitive { ref arguments, .. } => {
                     arguments.get(at).map(|&argument| CoreNode::Value(argument))
                 },
+                Computation::With(ref components) => components
+                    .get(at)
+                    .map(|&component| CoreNode::Computation(component)),
                 Computation::Case { ref branches, .. } => branches
                     .get(at)
                     .map(|&branch| CoreNode::Computation(branch)),
@@ -1905,15 +1901,16 @@ impl Source for CoreSource<'_>
                 | Computation::Resume(..)
                 | Computation::Reset(_)
                 | Computation::Shift(_)
-                | Computation::With(..)
                 | Computation::Project(..) => None,
             },
             CoreNode::CompType(id) => match *self.arena.comp_type(id)? {
                 CompType::Codata { ref arguments, .. } => {
                     arguments.get(at).map(|&argument| CoreNode::Value(argument))
                 },
+                CompType::With(ref components) => components
+                    .get(at)
+                    .map(|&component| CoreNode::CompType(component)),
                 CompType::Unknown
-                | CompType::With(..)
                 | CompType::Returner { .. }
                 | CompType::Arrow { .. }
                 | CompType::Pi { .. }

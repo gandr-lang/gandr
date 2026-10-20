@@ -97,7 +97,7 @@ fn renders_structural_heads()
         .expect("fields resolve");
     let right = arena
         .mint_producer(ProducerNode::Constructor {
-            tag: ConstructorTag::Injection(Side::Right.into()),
+            tag: ConstructorTag::Injection(Summand::from(1_usize)),
             producers: Box::from([pair]),
             consumers: Box::from([]),
         })
@@ -171,11 +171,11 @@ fn renders_structural_heads()
         .mint_consumer(ConsumerNode::Case {
             arms: Box::from([
                 PatternArm {
-                    constructor: ConstructorTag::Injection(Side::Left.into()),
+                    constructor: ConstructorTag::Injection(Summand::from(0_usize)),
                     body: returned,
                 },
                 PatternArm {
-                    constructor: ConstructorTag::Injection(Side::Right.into()),
+                    constructor: ConstructorTag::Injection(Summand::from(1_usize)),
                     body: returned,
                 },
                 PatternArm {
@@ -448,7 +448,7 @@ fn depth_limits_and_dangling_nodes_are_distinct()
     for depth in 1_usize ..= limit.saturating_add(1) {
         nested = arena
             .mint_producer(ProducerNode::Constructor {
-                tag: ConstructorTag::Injection(Side::Left.into()),
+                tag: ConstructorTag::Injection(Summand::from(0_usize)),
                 producers: Box::from([nested]),
                 consumers: Box::from([]),
             })

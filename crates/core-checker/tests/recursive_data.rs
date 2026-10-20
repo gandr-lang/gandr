@@ -986,7 +986,7 @@ fn checker_placed(placement: Placement) -> (ModuleReport, bridge::Readmission)
         Placement::Sigma => arena.value_type_sigma(unit, own_past),
         Placement::With => {
             let first = arena.comp_type_returner(own);
-            let both = arena.comp_type_with(first, returns);
+            let both = arena.comp_type_with(&[first, returns]);
             arena.value_type_thunk(both)
         },
         Placement::Nested => arena.value_type_data(list, vec![code]),
@@ -1121,7 +1121,7 @@ fn kernel_placed(placement: Placement) -> Result<(), KernelError>
         Placement::Sigma => arena.value_type_sigma(unit, own_past),
         Placement::With => {
             let first = arena.comp_type_returner(own);
-            let both = arena.comp_type_with(first, returns);
+            let both = arena.comp_type_with(&[first, returns]);
             arena.value_type_thunk(both)
         },
         Placement::Nested => arena.value_type_data(list, vec![code]),

@@ -244,7 +244,7 @@ fn control_scopes_keep_only_ambient_indices()
     let stack = core.value_reify(alloc::sync::Arc::from([
         StackFrame::Apply(two),
         StackFrame::Bind(body),
-        StackFrame::Project(gandr_kernel_term::Side::Left),
+        StackFrame::Project(gandr_kernel_term::Component::from(0_usize)),
     ]));
     let body = core.computation_return(four);
     let resumed = core.computation_resume(zero, body);

@@ -11,8 +11,9 @@
 //! the core's record, whose fields the labels key, so two records that list
 //! the same fields in another order are one record. A sum over labels is the
 //! core's sum of its entries in written order, the labels erased; a lazy
-//! record over labels is the core's binary lazy product nested to the right,
-//! `&{C, D, E}` being `C & (D & E)`, and `C & D` the same former of two.
+//! record over labels is the core's lazy product of its entries in order, of
+//! any arity: `&{}` is the terminal computation type, `&{C}` the lazy product
+//! of one, and `&{C, D, E}` the same former as the chain `C & D & E`.
 //!
 //! An entry is positional, labelled by its index, or labelled by name, and a
 //! form holds one kind throughout. An index is a position: the indices of a
@@ -53,14 +54,6 @@
 //!   types.
 //! - Reversal: a checker that carries labels and checks a labelled form against
 //!   its expected type makes the stated type optional.
-//!
-//! # The empty and the unary lazy record wait on an n-ary former
-//!
-//! The core's lazy product is binary, so `&{}`, the terminal computation
-//! type, and `&{C}`, the lazy record of one entry, have no core former to
-//! lower to: each is refused by its own name as offered the wrong number of
-//! entries, at the type and at the copattern block alike. Reversal: an n-ary
-//! lazy record former in the core.
 //!
 //! # A later label reads an earlier one: the dependent record
 //!
@@ -201,7 +194,6 @@ use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::origin::Origin;
 use crate::resolve::Mentioned;
-use crate::resolve::OperandCount;
 use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::binder_site;
@@ -353,8 +345,8 @@ enum TypeZone
     Ordinary,
 }
 
-/// The entry an observation selects of a lazy record: its index among
-/// `count` entries.
+/// The entry an observation selects of a lazy record, or a selection of a
+/// dependent record: its index among `count` entries.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -363,8 +355,8 @@ enum TypeZone
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the first, a middle and the last entry of a lazy record
-///   of three each project along their own path.
-/// - witness: `lower::arity::tests::an_observation_projects_along_the_nesting`
+///   of three each project their own component.
+/// - witness: `lower::arity::tests::an_observation_projects_its_entry`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) struct Observed
 {
@@ -543,8 +535,8 @@ fn separated<'source>(
     Ok(())
 }
 
-/// The lazy-record path to the entry `observed` selects: the sides to
-/// project along, innermost first.
+/// The nested-pair path to the entry `observed` selects of a dependent
+/// record: the sides to project along, innermost first.
 ///
 /// # Specification
 /// - requires: `observed.index < observed.count` and `observed.count >= 2`.
@@ -553,8 +545,8 @@ fn separated<'source>(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`Observed`].
-/// - witness: `lower::arity::tests::an_observation_projects_along_the_nesting`
+/// - hypothesis: L3 — as [`Observed`], over the dependent record's nesting.
+/// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
 #[spec(ensures: |ret| ret.iter().filter(|&&side| side == Side::Right).count() == observed.index)]
 fn path(observed: Observed) -> Vec<Side>
 {
@@ -1469,23 +1461,22 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `site` is a lazy record over labels in type position.
     /// - ensures: braces whose every entry is a session form are the offer,
-    ///   read whole as a session type; otherwise the binary lazy product of its
-    ///   entries nested to the right, each read as a computation type under the
+    ///   read whole as a session type; otherwise the lazy product of its
+    ///   entries, of any number, each read as a computation type under the
     ///   form's frame.
     /// - fails: the wrong-sort refusal where no computation type is read; a
-    ///   misplaced entry where session forms and other types mix; the arity
-    ///   refusal for fewer than two entries; the entries' and the labels' own
-    ///   refusals.
+    ///   misplaced entry where session forms and other types mix; the entries'
+    ///   and the labels' own refusals.
     /// - panics: none.
     ///
     /// # Errors
     /// The lazy record's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two and three entries, and none and one.
-    /// - witness: `lower::arity::tests::a_lazy_record_lowers_to_nested_with`
+    /// - hypothesis: L3 — none, one, two and three entries.
+    /// - witness: `lower::arity::tests::a_lazy_record_lowers_to_one_lazy_product`
     /// - witness: `lower::arity::tests::a_session_entry_reads_the_select_and_the_offer`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Session(..))) || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::With(entries)) if entries.end.saturating_sub(entries.start) >= 2_usize))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Session(..) | &Plan::With(_))))]
     pub(super) fn lazy_record_type(
         &mut self,
         site: Site,
@@ -1502,9 +1493,6 @@ impl<'source> Lowerer<'_, 'source>
             });
         }
         let frame = self.require(site, Produced::CompType)?;
-        if entries.len() < 2_usize {
-            return Err(site.out(FragmentBoundary::Arity(OperandCount::from(entries.len()))));
-        }
         let (Arranged::Positional(entries) | Arranged::Labelled(entries)) = arrange(site, entries)?;
         let components = self.stored(&entries);
         for entry in &entries {
@@ -1512,49 +1500,6 @@ impl<'source> Lowerer<'_, 'source>
             self.label_entry(entry, Reading::CompType(frame));
         }
         self.plan(site, Plan::With(components));
-
-        Ok(())
-    }
-
-    /// Classify a lazy product, `C & D`.
-    ///
-    /// # Specification
-    /// - requires: `site` is a lazy product in type position.
-    /// - ensures: the binary lazy product of its two operands, each read as a
-    ///   computation type under the form's frame.
-    /// - fails: the wrong-sort refusal where no computation type is read; a
-    ///   hole's own fault.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// The lazy product's refusal.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — `C & D` and `&{C, D}` are one core type.
-    /// - witness: `lower::arity::tests::a_lazy_record_lowers_to_nested_with`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::With(entries)) if entries.end.saturating_sub(entries.start) == 2_usize))]
-    pub(super) fn lazy_product(
-        &mut self,
-        site: Site,
-        mut cursor: Cursor<'_>,
-    ) -> Result<(), LoweringRefusal<'source>>
-    {
-        let frame = self.require(site, Produced::CompType)?;
-        let first = site.one(cursor.operands())?;
-        closed(site, &mut cursor, TileName::AMPERSAND)?;
-        let second = site.one(cursor.operands())?;
-        exhausted(site, &cursor)?;
-        let start = self.operands.len();
-        self.operands.extend([first.node, second.node]);
-        self.read(first.node, Reading::CompType(frame));
-        self.read(second.node, Reading::CompType(frame));
-        self.plan(
-            site,
-            Plan::With(Stretch {
-                start,
-                end: self.operands.len(),
-            }),
-        );
 
         Ok(())
     }
@@ -1675,7 +1620,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   parameter and a selection off a dependent record each read their
     ///   labels here.
     /// - witness: `lower::arity::tests::an_injection_takes_its_index_from_its_label`
-    /// - witness: `lower::arity::tests::an_observation_projects_along_the_nesting`
+    /// - witness: `lower::arity::tests::an_observation_projects_its_entry`
     /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
     /// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
     /// - witness: `lower::native::tests::a_sum_pattern_reads_a_sum_stated_as_a_chain_791`
@@ -2059,17 +2004,17 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `site` is a copattern block in term position.
-    /// - ensures: the lazy pair of its clauses nested to the right, in index
+    /// - ensures: the lazy product of its clauses, of any number, in index
     ///   order, or in the order of the labels of the lazy record its answer
     ///   states; each clause read as a computation under the form's frame,
     ///   answering the stated entry's type when one is stated, and opened as a
     ///   body of its own, so an exit in it leaves the clause.
-    /// - fails: the wrong-sort refusal where no computation is read; the arity
-    ///   refusal for fewer than two clauses; the unannotated refusal for
-    ///   labelled clauses with no stated lazy record; the unresolved-name
-    ///   refusal for a label the stated type lacks; a missing operand at the
-    ///   closer for a label it has and the block does not; the entries' and the
-    ///   labels' own refusals; [`LoweringRefusal::Unreachable`] as a body.
+    /// - fails: the wrong-sort refusal where no computation is read; the
+    ///   unannotated refusal for labelled clauses with no stated lazy record;
+    ///   the unresolved-name refusal for a label the stated type lacks; a
+    ///   missing operand at the closer for a label it has and the block does
+    ///   not; the entries' and the labels' own refusals;
+    ///   [`LoweringRefusal::Unreachable`] as a body.
     /// - panics: none.
     ///
     /// # Errors
@@ -2077,9 +2022,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — positional clauses, labelled clauses written out of
-    ///   the stated order, labelled clauses with no answer, and one clause.
+    ///   the stated order, labelled clauses with no answer, one clause and
+    ///   none.
     /// - witness: `lower::arity::tests::a_copattern_block_orders_its_clauses_by_its_answer`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Copattern(clauses)) if clauses.end.saturating_sub(clauses.start) >= 2_usize))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Copattern(_))))]
     pub(super) fn copattern(
         &mut self,
         site: Site,
@@ -2090,9 +2036,6 @@ impl<'source> Lowerer<'_, 'source>
         closed(site, &mut cursor, TileName::AMPERSAND)?;
         closed(site, &mut cursor, TileName::BRACE_OPEN)?;
         let entries = self.dotted_entries(site, &mut cursor, TileName::FAT_ARROW)?;
-        if entries.len() < 2_usize {
-            return Err(site.out(FragmentBoundary::Arity(OperandCount::from(entries.len()))));
-        }
         let answer = self.answers.get(&site.at.node).copied();
         let stated = match answer {
             Some(answer) => {
@@ -2281,7 +2224,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — each entry of a lazy record of three, a label it
     ///   lacks, and each observation of a stream.
-    /// - witness: `lower::arity::tests::an_observation_projects_along_the_nesting`
+    /// - witness: `lower::arity::tests::an_observation_projects_its_entry`
     /// - witness: `lower::arity::tests::a_copattern_block_orders_its_clauses_by_its_codata_answer`
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Observe(..))))]
     pub(super) fn observation(
@@ -3132,20 +3075,18 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
-    /// Mint a lazy record type: its entries' lazy products nested to the
-    /// right.
+    /// Mint a lazy record type: the lazy product of its entries.
     ///
     /// # Specification
-    /// - requires: every entry is already minted or absent; at least two.
-    /// - ensures: `With(C1, With(C2, … Cn))`, every node with the written
-    ///   origin; nothing when an entry did not lower or fewer than two are
-    ///   held.
+    /// - requires: every entry is already minted or absent.
+    /// - ensures: `With(C1, …, Cn)` in written order, of any number of entries,
+    ///   with the written origin; nothing when an entry did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::lazy_record_type`].
-    /// - witness: `lower::arity::tests::a_lazy_record_lowers_to_nested_with`
+    /// - witness: `lower::arity::tests::a_lazy_record_lowers_to_one_lazy_product`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
     pub(super) fn mint_with(
         &self,
@@ -3162,29 +3103,19 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
-        let Some((&last, rest)) = parts.split_last()
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        if rest.is_empty() {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        }
-        let mut nested = last;
-        for &part in rest.iter().rev() {
-            nested = sink.arena.comp_type_with(part, nested);
-            sink.origins.record_comp_type(nested, origin);
-        }
+        let with = sink.arena.comp_type_with(&parts);
+        sink.origins.record_comp_type(with, origin);
 
-        Maybe::Present(Lowered::CompType(nested))
+        Maybe::Present(Lowered::CompType(with))
     }
 
-    /// Mint a copattern block: its clauses' lazy pairs nested to the right.
+    /// Mint a copattern block: the lazy product of its clauses.
     ///
     /// # Specification
-    /// - requires: every clause is already minted or absent; at least two.
-    /// - ensures: `with(c1, with(c2, … cn))`, each clause minted as a body with
-    ///   its exits where it ends, every node with the written origin; nothing
-    ///   when a clause did not lower or fewer than two are held.
+    /// - requires: every clause is already minted or absent.
+    /// - ensures: `with(c1, …, cn)` in the answer's order, of any number of
+    ///   clauses, each clause minted as a body with its exits where it ends,
+    ///   with the written origin; nothing when a clause did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -3207,36 +3138,25 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
-        let Some((&last, rest)) = parts.split_last()
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        if rest.is_empty() {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        }
-        let mut nested = last;
-        for &part in rest.iter().rev() {
-            nested = sink.arena.computation_with(part, nested);
-            sink.origins.record_computation(nested, origin);
-        }
+        let with = sink.arena.computation_with(&parts);
+        sink.origins.record_computation(with, origin);
 
-        Maybe::Present(Lowered::Computation(nested))
+        Maybe::Present(Lowered::Computation(with))
     }
 
-    /// Mint an observation: the thunk forced, then projected along the
-    /// nesting to the entry it selects.
+    /// Mint an observation: the thunk forced, then projected at the entry it
+    /// selects.
     ///
     /// # Specification
     /// - requires: the subject is already minted or absent.
-    /// - ensures: `force m` projected right once per entry before the selected
-    ///   one and left unless it is the last, every node with the written
-    ///   origin; nothing when the subject did not lower.
+    /// - ensures: `force m` projected at the selected entry's index, every node
+    ///   with the written origin; nothing when the subject did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::observation`].
-    /// - witness: `lower::arity::tests::an_observation_projects_along_the_nesting`
+    /// - witness: `lower::arity::tests::an_observation_projects_its_entry`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
     pub(super) fn mint_observe(
         &self,
@@ -3250,14 +3170,14 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(thunk) => thunk,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let mut observing = sink.arena.computation_force(thunk);
-        sink.origins.record_computation(observing, origin);
-        for side in path(observed) {
-            observing = sink.arena.computation_project(side, observing);
-            sink.origins.record_computation(observing, origin);
-        }
+        let forced = sink.arena.computation_force(thunk);
+        sink.origins.record_computation(forced, origin);
+        let projected = sink
+            .arena
+            .computation_project(gandr_kernel_term::Component::from(observed.index), forced);
+        sink.origins.record_computation(projected, origin);
 
-        Maybe::Present(Lowered::Computation(observing))
+        Maybe::Present(Lowered::Computation(projected))
     }
 
     /// Mint a selection: a record projected at the label it selects, or the

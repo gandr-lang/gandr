@@ -930,7 +930,8 @@ impl TermArena
             Computation::PathTransport { motive, path, value } | Computation::Ride { motive, flow: path, value } => self.value_type(motive).is_some() && self.value(path).is_some() && self.value(value).is_some(),
             Computation::TelescopeTransport { motive, path, start, over, value } | Computation::TelescopeRide { motive, flow: path, start, over, value } => self.comp_type(motive).is_some() && self.value(path).is_some() && self.value(start).is_some() && self.value(over).is_some() && self.value(value).is_some(),
             Computation::RelatedApplication { path, left, right, evidence, body } => self.value(path).is_some() && self.value(left).is_some() && self.value(right).is_some() && self.value(evidence).is_some() && self.computation(body).is_some(),
-            Computation::Bind(bound, body) | Computation::With(bound, body) => self.computation(bound).is_some() && self.computation(body).is_some(),
+            Computation::Bind(bound, body) => self.computation(bound).is_some() && self.computation(body).is_some(),
+            Computation::With(ref components) => components.iter().all(|component| self.computation(*component).is_some()),
             Computation::Project(_, pair) => self.computation(pair).is_some(),
             Computation::Case { scrutinee, ref branches } => self.value(scrutinee).is_some() && branches.iter().all(|branch| self.computation(*branch).is_some()),
             Computation::ListFold { element, result, list, on_nil, on_cons } => self.value_type(element).is_some() && self.value_type(result).is_some() && self.value(list).is_some() && self.computation(on_nil).is_some() && self.computation(on_cons).is_some(),
@@ -1028,7 +1029,7 @@ impl TermArena
     /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
     #[spec(
         requires: match comp_type { CompType::Returner(result) => self.value_type(result).is_some(), CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => self.value_type(domain).is_some()
-                && self.comp_type(codomain).is_some(), CompType::Element { code, .. } => self.value(code).is_some(), CompType::With(first, second) => self.comp_type(first).is_some() && self.comp_type(second).is_some(), CompType::Codata { ref arguments, .. } => arguments.iter().all(|argument| self.value(*argument).is_some()) }, captures: entry = (self.watermark(), core::mem::discriminant(&comp_type)),
+                && self.comp_type(codomain).is_some(), CompType::Element { code, .. } => self.value(code).is_some(), CompType::With(ref components) => components.iter().all(|component| self.comp_type(*component).is_some()), CompType::Codata { ref arguments, .. } => arguments.iter().all(|argument| self.value(*argument).is_some()) }, captures: entry = (self.watermark(), core::mem::discriminant(&comp_type)),
         ensures: |ret| self.values.len() == entry.0.values
                 && self.computations.len() == entry.0.computations
                 && self.value_types.len() == entry.0.value_types
@@ -3073,8 +3074,10 @@ Value::QuoteComputation(quoted) => ret.as_slice() == [AnyNode::CompType(quoted)]
                 ret.as_slice() == [AnyNode::Computation(head), AnyNode::Value(argument)],
             Some(&Computation::Return(value) | &Computation::Force(value)) =>
                 ret.as_slice() == [AnyNode::Value(value)],
-            Some(&Computation::Bind(bound, body) | &Computation::With(bound, body)) =>
+            Some(&Computation::Bind(bound, body)) =>
                 ret.as_slice() == [AnyNode::Computation(bound), AnyNode::Computation(body)],
+            Some(&Computation::With(ref components)) =>
+                ret.iter().copied().eq(components.iter().copied().map(AnyNode::Computation)),
             Some(&Computation::Project(_, pair)) => ret.as_slice() == [AnyNode::Computation(pair)],
             Some(&Computation::Case { scrutinee, ref branches }) =>
                 ret.iter().copied().eq(core::iter::once(AnyNode::Value(scrutinee)).chain(branches.iter().copied().map(AnyNode::Computation))),
@@ -3099,7 +3102,7 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
             Some(&CompType::Arrow { domain, codomain } | &CompType::Pi { domain, codomain }) =>
                 ret.as_slice() == [AnyNode::ValueType(domain), AnyNode::CompType(codomain)],
             Some(&CompType::Element { code, .. }) => ret.as_slice() == [AnyNode::Value(code)],
-            Some(&CompType::With(first, second)) => ret.as_slice() == [AnyNode::CompType(first), AnyNode::CompType(second)],
+            Some(&CompType::With(ref components)) => ret.iter().copied().eq(components.iter().copied().map(AnyNode::CompType)),
             Some(&CompType::Codata { ref arguments, .. }) => ret.iter().copied().eq(arguments.iter().copied().map(AnyNode::Value)),
         },
     })]
@@ -3354,9 +3357,12 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                 Some(&Computation::Return(value) | &Computation::Force(value)) => {
                     children.push(AnyNode::Value(value));
                 },
-                Some(&Computation::Bind(bound, body) | &Computation::With(bound, body)) => {
+                Some(&Computation::Bind(bound, body)) => {
                     children.push(AnyNode::Computation(bound));
                     children.push(AnyNode::Computation(body));
+                },
+                Some(&Computation::With(ref components)) => {
+                    children.extend(components.iter().copied().map(AnyNode::Computation));
                 },
                 Some(&Computation::Case {
                     scrutinee,
@@ -3445,9 +3451,8 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::CompType(codomain));
                 },
                 Some(&CompType::Element { code, .. }) => children.push(AnyNode::Value(code)),
-                Some(&CompType::With(first, second)) => {
-                    children.push(AnyNode::CompType(first));
-                    children.push(AnyNode::CompType(second));
+                Some(&CompType::With(ref components)) => {
+                    children.extend(components.iter().copied().map(AnyNode::CompType));
                 },
                 Some(&CompType::Codata { ref arguments, .. }) => {
                     children.extend(arguments.iter().copied().map(AnyNode::Value));
@@ -3672,18 +3677,17 @@ impl TermArena
         self.alloc_computation(Computation::TupleProjection(tuple, component))
     }
 
-    /// Mint the lazy product `C & D` of two computation types.
+    /// Mint the lazy product `C₀ & … & Cₙ₋₁` of computation types.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     pub fn comp_type_with(
         &mut self,
-        left: CompTypeId,
-        right: CompTypeId,
+        components: &[CompTypeId],
     ) -> CompTypeId
     {
-        self.alloc_comp_type(CompType::With(left, right))
+        self.alloc_comp_type(CompType::With(components.into()))
     }
 
     /// Mint a nominal codata application without claiming formation.
@@ -3703,33 +3707,32 @@ impl TermArena
         })
     }
 
-    /// Mint a lazy pairing of two computations without claiming its type.
+    /// Mint a lazy pairing of computations without claiming its type.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     pub fn computation_with(
         &mut self,
-        left: ComputationId,
-        right: ComputationId,
+        components: &[ComputationId],
     ) -> ComputationId
     {
-        self.alloc_computation(Computation::With(left, right))
+        self.alloc_computation(Computation::With(components.into()))
     }
 
-    /// Mint the projection of one side of a lazy pairing without claiming the
-    /// subject is one.
+    /// Mint the projection of a lazy pairing's component without claiming
+    /// the subject is one or the component exists.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     pub fn computation_project(
         &mut self,
-        side: crate::Side,
+        component: crate::Component,
         pair: ComputationId,
     ) -> ComputationId
     {
-        self.alloc_computation(Computation::Project(side, pair))
+        self.alloc_computation(Computation::Project(component, pair))
     }
 }
 

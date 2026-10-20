@@ -1814,8 +1814,12 @@ fn references(
                     | Computation::Project(_, body)
                     | Computation::Ascribe { body, .. }),
                 ) => pending.push(Node::Computation(body)),
-                Some(&Computation::With(first, second)) => {
-                    pending.extend([Node::Computation(first), Node::Computation(second)]);
+                Some(&Computation::With(ref components)) => {
+                    pending.extend(
+                        components
+                            .iter()
+                            .map(|&component| Node::Computation(component)),
+                    );
                 },
 
                 Some(

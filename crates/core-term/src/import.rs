@@ -130,7 +130,8 @@ impl Image
                 Computation::RecordProjection(ref mut record, _)
                 | Computation::TupleProjection(ref mut record, _),
             ) => [Some(V(record)), None, None, None, None],
-            Self::CompType(CompType::Codata { .. })
+            Self::CompType(CompType::Codata { .. } | CompType::With(_))
+            | Self::Computation(Computation::With(_))
             | Self::Value(Value::Record(_) | Value::Tuple(_) | Value::Recorded(_))
             | Self::ValueType(ValueType::Data { .. } | ValueType::Record(_)) => {
                 [None, None, None, None, None]
@@ -164,10 +165,7 @@ impl Image
             Self::ValueType(ValueType::Stack {
                 input: ref mut first,
                 output: ref mut second,
-            })
-            | Self::CompType(CompType::With(ref mut first, ref mut second)) => {
-                [Some(CT(first)), Some(CT(second)), None, None, None]
-            },
+            }) => [Some(CT(first)), Some(CT(second)), None, None, None],
             Self::Computation(
                 Computation::Handle {
                     subject: ref mut first,
@@ -179,7 +177,6 @@ impl Image
                     on_return: ref mut second,
                     ..
                 }
-                | Computation::With(ref mut first, ref mut second)
                 | Computation::Bind(ref mut first, ref mut second),
             ) => [Some(C(first)), Some(C(second)), None, None, None],
             Self::Computation(Computation::Ascribe {
@@ -724,7 +721,8 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                         Node::Computation(id) => {
                             let computation = self.source.computation(id).ok_or(ImportFault)?;
                             match *computation {
-                                Computation::Case { ref branches, .. } => {
+                                Computation::Case { ref branches, .. }
+                                | Computation::With(ref branches) => {
                                     self.pending.extend(
                                         branches
                                             .iter()
@@ -832,7 +830,6 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | Computation::Resume(..)
                                 | Computation::Reset(_)
                                 | Computation::Shift(_)
-                                | Computation::With(..)
                                 | Computation::Project(..) => {},
                             }
                         },
@@ -894,17 +891,31 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | ValueType::Stack { .. } => {},
                             }
                         },
-                        Node::CompType(id) => {
-                            if let Some(&CompType::Codata { ref arguments, .. }) =
-                                self.source.comp_type(id)
-                            {
+                        Node::CompType(id) => match self.source.comp_type(id) {
+                            Some(&CompType::Codata { ref arguments, .. }) => {
                                 self.pending.extend(
                                     arguments
                                         .iter()
                                         .rev()
                                         .map(|&value| Task::Open(Node::Value(value))),
                                 );
-                            }
+                            },
+                            Some(&CompType::With(ref components)) => {
+                                self.pending.extend(
+                                    components
+                                        .iter()
+                                        .rev()
+                                        .map(|&ty| Task::Open(Node::CompType(ty))),
+                                );
+                            },
+                            Some(
+                                &(CompType::Returner { .. }
+                                | CompType::Arrow { .. }
+                                | CompType::Pi { .. }
+                                | CompType::Element { .. }
+                                | CompType::Unknown),
+                            )
+                            | None => {},
                         },
                     }
                     self.pending
@@ -983,11 +994,22 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 *body = map_computation(*body)?;
                             }
                         },
-                        Image::Computation(Computation::Case {
-                            ref mut branches, ..
-                        }) => {
+                        Image::Computation(
+                            Computation::Case {
+                                ref mut branches, ..
+                            }
+                            | Computation::With(ref mut branches),
+                        ) => {
                             for body in branches.iter_mut() {
                                 *body = map_computation(*body)?;
+                            }
+                        },
+                        Image::CompType(CompType::With(ref mut components)) => {
+                            for ty in components.iter_mut() {
+                                *ty = match self.images.get(&Node::CompType(*ty)) {
+                                    Some(&Node::CompType(mapped)) => mapped,
+                                    _ => return Err(ImportFault),
+                                };
                             }
                         },
                         Image::Value(Value::Reify(ref mut frames)) => {
@@ -1010,8 +1032,8 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                             _ => return Err(ImportFault),
                                         }
                                     },
-                                    crate::control::StackFrame::Project(side) => {
-                                        crate::control::StackFrame::Project(side)
+                                    crate::control::StackFrame::Project(component) => {
+                                        crate::control::StackFrame::Project(component)
                                     },
                                 };
                                 if mapped != original {

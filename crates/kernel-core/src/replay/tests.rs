@@ -8,6 +8,7 @@ use gandr_kernel_conversion_trace::ConversionSide;
 use gandr_kernel_conversion_trace::SubgoalPosition;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
@@ -1378,7 +1379,7 @@ fn rule_dispatch_respects_constant_priority_and_eta_side()
             super::Head::Constant(name, super::Status::Defined),
             Vec::new(),
         ),
-        super::Shape::With(body, body),
+        super::Shape::With(alloc::boxed::Box::from([body, body])),
     ];
     for (left_kind, left) in shapes.iter().enumerate() {
         for (right_kind, right) in shapes.iter().enumerate() {
@@ -1409,9 +1410,9 @@ fn a_projection_runs_its_side_of_a_pairing()
     let free = arena.value_variable(DeBruijnIndex::from(0));
     let left = arena.computation_return(unit);
     let right = arena.computation_return(free);
-    let pairing = arena.computation_with(left, right);
-    let first = arena.computation_project(Side::Left, pairing);
-    let second = arena.computation_project(Side::Right, pairing);
+    let pairing = arena.computation_with(&[left, right]);
+    let first = arena.computation_project(Component::from(0_usize), pairing);
+    let second = arena.computation_project(Component::from(1_usize), pairing);
     let negative = ConversionDecision::NegativeSubgoal {
         position: SubgoalPosition::from(0_u32),
     };
@@ -1453,9 +1454,9 @@ fn a_projection_runs_its_side_of_a_pairing()
     let neutral = arena.computation_force(free);
     let suspended = arena.value_thunk(neutral);
     let forced = arena.computation_force(suspended);
-    let reducible = arena.computation_project(Side::Left, forced);
-    let stuck = arena.computation_project(Side::Left, neutral);
-    let other_side = arena.computation_project(Side::Right, neutral);
+    let reducible = arena.computation_project(Component::from(0_usize), forced);
+    let stuck = arena.computation_project(Component::from(0_usize), neutral);
+    let other_side = arena.computation_project(Component::from(1_usize), neutral);
     assert_eq!(
         run(
             &mut arena,
@@ -1477,7 +1478,7 @@ fn a_projection_runs_its_side_of_a_pairing()
         KernelVerdict::NotConvertible
     );
     let partial = arena.computation_fixpoint(pairing, FixpointEvidence::Partial);
-    let observed = arena.computation_project(Side::Left, partial);
+    let observed = arena.computation_project(Component::from(0_usize), partial);
     assert_eq!(
         run(
             &mut arena,
@@ -2180,13 +2181,13 @@ fn a_lazy_pairing_meets_a_neutral_by_its_projections()
     let none = Unfoldings::default();
     let head = arena.value_variable(DeBruijnIndex::from(0));
     let neutral = arena.computation_force(head);
-    let first = arena.computation_project(Side::Left, neutral);
-    let second = arena.computation_project(Side::Right, neutral);
-    let expanded = arena.computation_with(first, second);
-    let crossed = arena.computation_with(first, first);
-    let first_again = arena.computation_project(Side::Left, neutral);
-    let second_again = arena.computation_project(Side::Right, neutral);
-    let rebuilt = arena.computation_with(first_again, second_again);
+    let first = arena.computation_project(Component::from(0_usize), neutral);
+    let second = arena.computation_project(Component::from(1_usize), neutral);
+    let expanded = arena.computation_with(&[first, second]);
+    let crossed = arena.computation_with(&[first, first]);
+    let first_again = arena.computation_project(Component::from(0_usize), neutral);
+    let second_again = arena.computation_project(Component::from(1_usize), neutral);
+    let rebuilt = arena.computation_with(&[first_again, second_again]);
     let negative = |position| ConversionDecision::NegativeSubgoal {
         position: SubgoalPosition::from(position),
     };
@@ -2228,7 +2229,7 @@ fn a_lazy_pairing_meets_a_neutral_by_its_projections()
         })
     );
 
-    // A pairing projecting the left side twice is refuted by its second
+    // A pairing projecting the first component twice is refuted by its second
     // premise only, and only through the decision naming it.
     for sides in [
         ReplaySides::Computations(crossed, neutral),
@@ -2945,7 +2946,7 @@ fn an_introduction_under_a_spine_is_unreadable()
     let bound_pairing: Stuck = |arena| {
         let unit = arena.value_unit();
         let returned = arena.computation_return(unit);
-        let with = arena.computation_with(returned, returned);
+        let with = arena.computation_with(&[returned, returned]);
         arena.computation_bind(with, returned)
     };
     let applied_return: Stuck = |arena| {

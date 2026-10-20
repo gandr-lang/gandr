@@ -433,9 +433,10 @@ fn placed<Each>(
                 each(Part::Computation(codomain));
             },
             Some(&CompType::Returner(result)) => each(Part::Value(result)),
-            Some(&CompType::With(first, second)) => {
-                each(Part::Computation(first));
-                each(Part::Computation(second));
+            Some(&CompType::With(ref components)) => {
+                for &component in components {
+                    each(Part::Computation(component));
+                }
             },
             Some(&(CompType::Element { .. } | CompType::Codata { .. })) | None => {},
         },
@@ -577,9 +578,12 @@ fn rebuild(
                 let result = value_part(child(0)?)?;
                 Ok(Part::Computation(arena.comp_type_returner(result)))
             },
-            Some(CompType::With(..)) => {
-                let (first, second) = (computation_part(child(0)?)?, computation_part(child(1)?)?);
-                Ok(Part::Computation(arena.comp_type_with(first, second)))
+            Some(CompType::With(_)) => {
+                let parts = children
+                    .iter()
+                    .map(|&component| computation_part(component))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Part::Computation(arena.comp_type_with(&parts)))
             },
             Some(CompType::Element { .. } | CompType::Codata { .. }) | None => {
                 Err(KernelError::ArenaFault)
@@ -1101,12 +1105,16 @@ pub(super) fn subsumes(
                     (Some(&CompType::Returner(wanted)), Some(&CompType::Returner(found))) => {
                         work.push(Subsumed::Values(wanted, found));
                     },
-                    (
-                        Some(&CompType::With(wanted_first, wanted_second)),
-                        Some(&CompType::With(first, second)),
-                    ) => {
-                        work.push(Subsumed::Comps(wanted_second, second));
-                        work.push(Subsumed::Comps(wanted_first, first));
+                    (Some(&CompType::With(ref wanted)), Some(&CompType::With(ref found)))
+                        if wanted.len() == found.len() =>
+                    {
+                        work.extend(
+                            wanted
+                                .iter()
+                                .zip(found.iter())
+                                .rev()
+                                .map(|(&wanted, &found)| Subsumed::Comps(wanted, found)),
+                        );
                     },
                     (Some(_) | None, Some(_) | None) => {
                         crate::conv::convert_comp_type(arena, wanted, found)?;

@@ -115,7 +115,6 @@ fn every_node_former_round_trips_under_its_own_frame()
 
     use super::DeBruijnIndex;
     use super::Level;
-    use super::Side;
     use super::Summand;
     use super::Zone;
 
@@ -150,14 +149,16 @@ fn every_node_former_round_trips_under_its_own_frame()
         ContentNode::Reify(alloc::sync::Arc::from([
             StackFrame::Apply(a),
             StackFrame::Bind(b),
-            StackFrame::Project(Side::Left),
-            StackFrame::Project(Side::Right),
+            StackFrame::Project(Component::from(0_usize)),
+            StackFrame::Project(Component::from(2_usize)),
         ])),
         ContentNode::Stack {
             input: a,
             output: b,
         },
-        ContentNode::WithType(a, b),
+        ContentNode::WithType(vec![]),
+        ContentNode::WithType(vec![a]),
+        ContentNode::WithType(vec![a, b, c]),
         ContentNode::Resume(a, b),
         ContentNode::Split(a, ComponentCount::from(2_usize), b),
         ContentNode::DependentSplit {
@@ -168,10 +169,12 @@ fn every_node_former_round_trips_under_its_own_frame()
         },
         ContentNode::Reset(a),
         ContentNode::Shift(a),
-        ContentNode::With(a, b),
+        ContentNode::With(vec![]),
+        ContentNode::With(vec![a]),
+        ContentNode::With(vec![a, b, c]),
         ContentNode::Ascribe { body: a, ty: b },
-        ContentNode::Project(Side::Left, a),
-        ContentNode::Project(Side::Right, a),
+        ContentNode::Project(Component::from(0_usize), a),
+        ContentNode::Project(Component::from(2_usize), a),
         ContentNode::PathUniverse(a, b),
         ContentNode::PathRefl(a),
         ContentNode::PathProduct(a, b),
@@ -617,7 +620,7 @@ fn control_nodes_persist_names_frames_and_branch_order()
     use gandr_core_term::effect::capability::CapabilityGrade;
     use gandr_core_term::effect::capability::Region;
     use gandr_core_term::effect::capability::RegionDepth;
-    use gandr_kernel_term::Side;
+    use gandr_kernel_term::Component;
     let index = NodeIndex::from;
     let signature = EffectSig::new("State".into(), [
         EffectOp {
@@ -656,14 +659,14 @@ fn control_nodes_persist_names_frames_and_branch_order()
         ContentNode::Reify(alloc::sync::Arc::from([
             StackFrame::Apply(index(1_usize)),
             StackFrame::Bind(index(2_usize)),
-            StackFrame::Project(Side::Right),
+            StackFrame::Project(Component::from(1_usize)),
             StackFrame::Apply(index(3_usize)),
         ])),
         ContentNode::Stack {
             input: index(1_usize),
             output: index(2_usize),
         },
-        ContentNode::WithType(index(1_usize), index(2_usize)),
+        ContentNode::WithType(vec![index(1_usize), index(2_usize)]),
         ContentNode::Perform {
             signature: signature.clone(),
             operation: "second".into(),
@@ -705,8 +708,8 @@ fn control_nodes_persist_names_frames_and_branch_order()
         ContentNode::Resume(index(1_usize), index(2_usize)),
         ContentNode::Reset(index(1_usize)),
         ContentNode::Shift(index(1_usize)),
-        ContentNode::With(index(1_usize), index(2_usize)),
-        ContentNode::Project(Side::Left, index(1_usize)),
+        ContentNode::With(vec![index(1_usize), index(2_usize)]),
+        ContentNode::Project(Component::from(0_usize), index(1_usize)),
     ];
     let mut encodings = alloc::collections::BTreeSet::new();
     for node in nodes {
@@ -1511,7 +1514,7 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
 {
     let checkpoints = Checkpoints::new(CheckBudget::from(0x0102_0304_usize), vec![]);
     let expected = [
-        b'G', b'C', b'K', b'P', b'T', 0, 0, 12, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        b'G', b'C', b'K', b'P', b'T', 0, 0, 13, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
     assert_eq!(
         encode_checkpoints(&checkpoints)
@@ -1521,14 +1524,14 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
     );
     assert_eq!(decode_checkpoints(Bytes(&expected)), Ok(checkpoints));
     let mut wrong_version = expected;
-    *wrong_version.get_mut(7).expect("version byte") = 11;
+    *wrong_version.get_mut(7).expect("version byte") = 12;
     assert_eq!(
         decode_checkpoints(Bytes(&wrong_version)),
         Err(CodecError::Corrupt)
     );
     let mut program = CheckpointBytes::default();
     write_program(&mut program, &[]).expect("empty program");
-    assert_eq!(program.as_ref(), b"GPROG\0\0\x08\0\0\0\0\0\0\0\0");
+    assert_eq!(program.as_ref(), b"GPROG\0\0\x09\0\0\0\0\0\0\0\0");
     assert_eq!(
         decode_checkpoints(Bytes(program.as_ref())),
         Err(CodecError::Corrupt)

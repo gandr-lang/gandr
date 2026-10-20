@@ -78,7 +78,7 @@
 //! | `comp_type_level` Arrow                | `ValueLevel(domain)`         | `MaxSecondComp`, then `MaxWith`                     |
 //! | `comp_type_level` Pi                   | `ValueLevel(domain)`         | `MaxSecondCompUnder`, `ScopeExit`, then `MaxWith`   |
 //! | `comp_type_level` Element              | leaf, level read, code owed  | —                                                   |
-//! | `comp_type_level` With                 | `CompLevel(left)`            | `MaxSecondComp`, then `MaxWith`                     |
+//! | `comp_type_level` With                 | `CompLevel(first)`, zero for none | `MaxSecondComp` per later component, then `MaxWith` |
 //! | `synth_value` Var                      | leaf, slot lookup then shift | —                                                   |
 //! | `synth_value` Const / Unit / Lit       | leaf, resolve or mint        | —                                                   |
 //! | `synth_value` Pair                     | `SynthValue(first)`          | `SynthPairFirst`, then `SynthPairSecond`            |
@@ -108,8 +108,8 @@
 //! | `synth_comp` `PathTransport`           | `SynthValue(path)`           | `ElementTransport`, then `ProduceComp` at the target |
 //! | `synth_comp` `TelescopeTransport`      | `SynthValue(path)`           | `TelescopePath`, `TelescopeStart`, `TelescopeOver`, then `ProduceComp` at the target pair |
 //! | `synth_comp` `RelatedApplication`      | `SynthValue(path)`           | `RelatedPath`, `Pending`, `RelatedBody`, three `ScopeExit` and `Strengthen` |
-//! | `synth_comp` With                      | `SynthComp(left)`            | `SynthWithLeft`, then `SynthWithRight`              |
-//! | `synth_comp` Project                   | `SynthComp(pair)`            | `Project`, the side read off the lazy product       |
+//! | `synth_comp` With                      | `SynthComp(first)`, terminal for none | `SynthWith` per component                       |
+//! | `synth_comp` Project                   | `SynthComp(pair)`            | `Project`, the component read off the lazy product  |
 //! | `synth_comp` Lambda                    | leaf, not inferable          | —                                                   |
 //! | `check_comp` Lambda, Arrow             | `CheckComp(body, codomain↑)` | `ScopeExit`                                         |
 //! | `check_comp` Lambda, Pi                | `CheckComp(body, codomain)`  | `ScopeExit`                                         |
@@ -1521,13 +1521,18 @@ where
                             });
                             target.clone()
                         },
-                        // The lazy product forms at the join of its two
-                        // components' levels, as the arrow does: neither
-                        // component binds anything.
-                        CompType::With(first, second) => {
-                            frames.push(TypeLevelFrame::MaxSecondComp(second));
-                            goal = TypeLevelGoal::Comp(first);
-                            continue 'expand;
+                        // The lazy product forms at the join of its
+                        // components' levels, as the product does: no
+                        // component binds anything, and the terminal type,
+                        // with none, forms at level zero.
+                        CompType::With(ref parts) => {
+                            let mut parts = parts.iter().copied();
+                            if let Some(first) = parts.next() {
+                                frames.extend(parts.rev().map(TypeLevelFrame::MaxSecondComp));
+                                goal = TypeLevelGoal::Comp(first);
+                                continue 'expand;
+                            }
+                            Level::zero()
                         },
                         // A codata application forms at its declaration's
                         // computation universe; its arguments are owed against
@@ -2183,14 +2188,19 @@ enum Frame
     SynthForce,
     /// A returner synthesis: the value is synthesized.
     SynthReturn,
-    /// A lazy pairing synthesis: the left component is synthesizing; the right
-    /// component's source is held.
-    SynthWithLeft(ComputationId),
-    /// A lazy pairing synthesis: the right component is synthesizing; the left
-    /// component's type is held.
-    SynthWithRight(CompTypeId),
-    /// A projection: the pairing's type is synthesizing; the side is held.
-    Project(gandr_kernel_term::Side),
+    /// A lazy pairing synthesis: the component in the register is
+    /// synthesized; the rest are held, in reverse order, with the types
+    /// synthesized so far.
+    SynthWith
+    {
+        /// The components still to synthesize, the next one last.
+        remaining: Vec<ComputationId>,
+        /// The component types synthesized so far, in order.
+        types: Vec<CompTypeId>,
+    },
+    /// A projection: the pairing's type is synthesizing; the component is
+    /// held.
+    Project(gandr_kernel_term::Component),
     /// A bind synthesis: the bound computation is synthesized; the body source
     /// is held, and the body's type, strengthened past the bind's binder,
     /// becomes the bind's.
@@ -3709,16 +3719,25 @@ where
                         goal = Goal::SynthComp(bound);
                         continue 'expand;
                     },
-                    // A pairing synthesizes when both components do, as a
+                    // A pairing synthesizes when every component does, as a
                     // tuple does; a component that only checks makes the
-                    // pairing checking-only too.
-                    Computation::With(left, right) => {
-                        frames.push(Frame::SynthWithLeft(right));
-                        goal = Goal::SynthComp(left);
-                        continue 'expand;
+                    // pairing checking-only too. The empty pairing
+                    // synthesizes the terminal type.
+                    Computation::With(ref components) => {
+                        let mut remaining = components.iter().rev().copied().collect::<Vec<_>>();
+                        let arity = remaining.len();
+                        if let Some(first) = remaining.pop() {
+                            frames.push(Frame::SynthWith {
+                                remaining,
+                                types: Vec::with_capacity(arity),
+                            });
+                            goal = Goal::SynthComp(first);
+                            continue 'expand;
+                        }
+                        Produced::CompType(arena.comp_type_with(&[]))
                     },
-                    Computation::Project(side, pair) => {
-                        frames.push(Frame::Project(side));
+                    Computation::Project(component, pair) => {
+                        frames.push(Frame::Project(component));
                         goal = Goal::SynthComp(pair);
                         continue 'expand;
                     },
@@ -3853,20 +3872,22 @@ where
                         goal = Goal::SynthComp(bound);
                         continue 'expand;
                     },
-                    // A pairing checks against a lazy product by checking each
-                    // component against its side; neither binds anything.
-                    Computation::With(left, right) => {
-                        match codata::read(arena, session, judgement, expected)
-                            .map(|shape| arena.comp_type(shape))?
+                    // A pairing checks against a lazy product of its arity
+                    // by checking each component against its own; none binds
+                    // anything.
+                    Computation::With(_) => {
+                        let shape = codata::read(arena, session, judgement, expected)?;
+                        let mut goals = match (arena.comp_type(shape), read_computation(arena, id)?)
                         {
-                            Some(&CompType::With(left_type, right_type)) => {
-                                frames.push(Frame::Pending(
-                                    alloc::vec![Goal::CheckComp(right, right_type)],
-                                    Produced::Checked,
-                                ));
-                                goal = Goal::CheckComp(left, left_type);
-                                continue 'expand;
-                            },
+                            (
+                                Some(&CompType::With(ref types)),
+                                &Computation::With(ref components),
+                            ) if types.len() == components.len() => components
+                                .iter()
+                                .zip(types.iter())
+                                .rev()
+                                .map(|(&component, &ty)| Goal::CheckComp(component, ty))
+                                .collect::<Vec<_>>(),
                             _ => {
                                 return Err(comp_shape_mismatch(
                                     arena,
@@ -3874,7 +3895,13 @@ where
                                     expected,
                                 ));
                             },
+                        };
+                        if let Some(next) = goals.pop() {
+                            frames.push(Frame::Pending(goals, Produced::Checked));
+                            goal = next;
+                            continue 'expand;
                         }
+                        Produced::Checked
                     },
                     Computation::Case {
                         scrutinee,
@@ -5358,23 +5385,26 @@ where
                     let result_type = produced.value_type()?;
                     produced = Produced::CompType(arena.comp_type_returner(result_type));
                 },
-                Frame::SynthWithLeft(right) => {
-                    let left_type = produced.comp_type()?;
-                    frames.push(Frame::SynthWithRight(left_type));
-                    goal = Goal::SynthComp(right);
-                    continue 'expand;
+                Frame::SynthWith {
+                    mut remaining,
+                    mut types,
+                } => {
+                    types.push(produced.comp_type()?);
+                    if let Some(next) = remaining.pop() {
+                        frames.push(Frame::SynthWith { remaining, types });
+                        goal = Goal::SynthComp(next);
+                        continue 'expand;
+                    }
+                    produced = Produced::CompType(arena.comp_type_with(&types));
                 },
-                Frame::SynthWithRight(left_type) => {
-                    let right_type = produced.comp_type()?;
-                    produced = Produced::CompType(arena.comp_type_with(left_type, right_type));
-                },
-                // A projection reads its side off the pairing's synthesized
-                // lazy product, a codata type read through its observations;
-                // any other classifier is refused by name.
-                Frame::Project(side) => {
+                // A projection reads its component off the pairing's
+                // synthesized lazy product, a codata type read through its
+                // observations; any other classifier is refused by name, and
+                // so is a position past the lazy product's last.
+                Frame::Project(component) => {
                     let pair_type = produced.comp_type()?;
                     let pair_shape = codata::read(arena, session, judgement, pair_type)?;
-                    let Some(&CompType::With(left_type, right_type)) = arena.comp_type(pair_shape)
+                    let Some(&CompType::With(ref parts)) = arena.comp_type(pair_shape)
                     else {
                         return Err(comp_shape_mismatch(
                             arena,
@@ -5382,10 +5412,10 @@ where
                             pair_type,
                         ));
                     };
-                    produced = Produced::CompType(match side {
-                        gandr_kernel_term::Side::Left => left_type,
-                        gandr_kernel_term::Side::Right => right_type,
-                    });
+                    let part = *parts
+                        .get(usize::from(component))
+                        .ok_or(KernelError::AbsentTupleComponent { component })?;
+                    produced = Produced::CompType(part);
                 },
                 // A bind reads its bound's returner, a codata type read through
                 // its observations; any other classifier is refused by name.

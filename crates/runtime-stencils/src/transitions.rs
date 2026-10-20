@@ -736,22 +736,25 @@ macro_rules! force {
     }};
 }
 
-/// Observe the value `pair` by the projection whose observed word is
-/// `side`: enter an object's dispatch with the projection observed; take the
-/// stuck exit, `pair` in hand and the projection observed, for any other
-/// value.
+/// Observe the value `product` by the projection whose observed word is
+/// `observed`: enter an object's dispatch with the projection observed; take
+/// the stuck exit, `product` in hand and the projection observed, for any
+/// other value.
 macro_rules! project {
-    ($runtime:ident, $heap:expr, $frames:expr, $environment:expr, $pair:expr, $side:expr) => {{
-        let pair: Word = $pair;
-        let object = pair.to_pointer::<Word>();
+    (
+        $runtime:ident, $heap:expr, $frames:expr, $environment:expr, $product:expr, $observed:expr
+    ) => {{
+        let product: Word = $product;
+        let observed: Word = $observed;
+        let object = product.to_pointer::<Word>();
         // SAFETY: a positive value in hand addresses an object.
         let header = usize::from(unsafe { *object });
         // SAFETY: the runtime record outlives the run.
         unsafe {
-            (*$runtime).observed = $side;
+            (*$runtime).observed = observed;
         }
         if header & layout::OBSERVED_MASK != layout::OBJECT_CLOSURE {
-            become hole_stuck($runtime, $heap, $frames, $environment, pair)
+            become hole_stuck($runtime, $heap, $frames, $environment, product)
         }
         // SAFETY: a closure's second word is its entry's code word.
         let code = unsafe { *object.wrapping_add(1) };
@@ -912,24 +915,22 @@ pub extern "rust-preserve-none" fn stencil_argument_frame(
     )
 }
 
-/// Project the left component of the object in hand. A left projection's
-/// frame resumes here, so it is also the shared stub every such frame's code
-/// word names.
+/// Project component operand A of the object in hand.
 ///
 /// # Specification
 /// - requires: the value register holds an object; the continuation is loaded.
-/// - ensures: control enters the object's dispatch with the left projection
-///   observed, one unit of fuel spent; or the fuel exit or, for anything but a
-///   copattern object, the stuck exit is taken.
+/// - ensures: control enters the object's dispatch with projection A observed,
+///   one unit of fuel spent; or the fuel exit or, for anything but a copattern
+///   object, the stuck exit is taken.
 /// - executable: none — a stencil runs only inside a chain of tail calls whose
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — both tiers project a lazy pair's components and stick
-///   projecting a function; a swapped side answers the other component.
+/// - hypothesis: L2 — both tiers project each component of a lazy product and
+///   stick projecting a function; a wrong component answers another arm.
 /// - witness: `tests::agreement::an_object_answers_its_arms_and_sticks_on_the_rest`
 #[unsafe(no_mangle)]
-pub extern "rust-preserve-none" fn stencil_project_left(
+pub extern "rust-preserve-none" fn stencil_project(
     runtime: *mut Runtime,
     heap: *mut Word,
     frames: *mut Word,
@@ -943,24 +944,27 @@ pub extern "rust-preserve-none" fn stencil_project_left(
         frames,
         environment,
         value,
-        layout::OBSERVED_PROJECT_LEFT
+        layout::observed_projection(Word::from(operand!(runtime, A)))
     )
 }
 
-/// Project the right component of the object in hand; also the right
-/// projection frames' shared stub.
+/// The projection frames' shared stub: project the component the frame's
+/// second word holds, which is the environment register on resumption, of the
+/// object in hand.
 ///
 /// # Specification
-/// - requires: as [`stencil_project_left`].
-/// - ensures: as [`stencil_project_left`], the right projection observed.
+/// - requires: as [`stencil_project`], the environment register holding the
+///   component.
+/// - ensures: as [`stencil_project`], that component observed.
 /// - executable: none — a stencil runs only inside a chain of tail calls whose
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — as [`stencil_project_left`].
+/// - hypothesis: L2 — as [`stencil_project`], over a reified projection frame
+///   of each component.
 /// - witness: `tests::agreement::an_object_answers_its_arms_and_sticks_on_the_rest`
 #[unsafe(no_mangle)]
-pub extern "rust-preserve-none" fn stencil_project_right(
+pub extern "rust-preserve-none" fn stencil_project_frame(
     runtime: *mut Runtime,
     heap: *mut Word,
     frames: *mut Word,
@@ -974,7 +978,7 @@ pub extern "rust-preserve-none" fn stencil_project_right(
         frames,
         environment,
         value,
-        layout::OBSERVED_PROJECT_RIGHT
+        layout::observed_projection(Word::from_pointer(environment))
     )
 }
 
@@ -990,9 +994,9 @@ pub extern "rust-preserve-none" fn stencil_project_right(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — both tiers project each side of a lazy pair and apply an
-///   object of several arms; a dispatch that ignores the observed word enters
-///   the first arm for every observation.
+/// - hypothesis: L2 — both tiers project each component of a lazy product and
+///   apply an object of several arms; a dispatch that ignores the observed word
+///   enters the first arm for every observation.
 /// - witness: `tests::agreement::an_object_answers_its_arms_and_sticks_on_the_rest`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_arm(
@@ -1022,8 +1026,8 @@ pub extern "rust-preserve-none" fn stencil_arm(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — forcing a lazy pair sticks naming the pair and the force
-///   on both tiers.
+/// - hypothesis: L3 — forcing a lazy product sticks naming the product and the
+///   force on both tiers.
 /// - witness: `tests::agreement::an_object_answers_its_arms_and_sticks_on_the_rest`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_unobserved(
@@ -1331,6 +1335,38 @@ pub extern "rust-preserve-none" fn stencil_push_force(
         value,
         address!(runtime, A),
         Word::ZERO
+    )
+}
+
+/// Load a projection frame: resume at the stub operand A, the component
+/// operand B in the frame's second word.
+///
+/// # Specification
+/// - ensures: the frame region grows by one frame; or the frame exit is taken.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L2 — both tiers project each component of a lazy product
+///   through a frame; a frame of the wrong component answers another arm.
+/// - witness: `tests::agreement::an_object_answers_its_arms_and_sticks_on_the_rest`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_push_project(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    push_frame!(
+        runtime,
+        heap,
+        frames,
+        environment,
+        value,
+        address!(runtime, A),
+        Word::from(operand!(runtime, B))
     )
 }
 

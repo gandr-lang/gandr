@@ -4,6 +4,7 @@ use gandr_kernel_term::DeBruijnIndex;
 
 use super::*;
 use crate::CertificateEquality;
+use crate::Component;
 use crate::TypeImporter;
 use crate::Zone;
 use crate::effect::EffectName;
@@ -23,7 +24,7 @@ fn stack_literals_preserve_binder_scope()
     let stack = arena.value_reify(Arc::from([
         StackFrame::Apply(outer),
         StackFrame::Bind(bound_body),
-        StackFrame::Project(Side::Left),
+        StackFrame::Project(Component::from(2_usize)),
     ]));
     let unit = arena.value_unit();
     let rewritten = instantiate_value(&mut arena, stack, unit);
@@ -34,13 +35,13 @@ fn stack_literals_preserve_binder_scope()
     let [
         StackFrame::Apply(actual),
         StackFrame::Bind(body),
-        StackFrame::Project(side),
+        StackFrame::Project(component),
     ] = *frames.as_ref()
     else {
         panic!("flat stack frames")
     };
     assert_eq!(actual, unit);
-    assert_eq!(side, Side::Left);
+    assert_eq!(component, Component::from(2_usize));
     let Computation::Return(pair) = *arena.computation(body).unwrap()
     else {
         panic!("return")
@@ -126,41 +127,47 @@ fn stack_types_rebuild_both_computation_children()
 }
 
 #[test]
-fn lazy_pairs_keep_their_components_and_projection_side()
+fn lazy_tuples_keep_their_components_and_projection_position()
 {
     let mut arena = CoreArena::new();
     let free = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let unit = arena.value_unit();
     let first = arena.computation_return(free);
     let second = arena.computation_return(unit);
-    let pair = arena.computation_with(first, second);
-    let left = arena.computation_project(Side::Left, pair);
-    let right = arena.computation_project(Side::Right, pair);
+    let tuple = arena.computation_with(&[first, second, second]);
+    let at = Component::from;
+    let initial = arena.computation_project(at(0_usize), tuple);
+    let last = arena.computation_project(at(2_usize), tuple);
     assert_eq!(
-        arena.computation(pair),
-        Some(&Computation::With(first, second))
+        arena.computation(tuple),
+        Some(&Computation::With([first, second, second].into()))
     );
     assert_eq!(
-        arena.computation(left),
-        Some(&Computation::Project(Side::Left, pair))
+        arena.computation(initial),
+        Some(&Computation::Project(at(0_usize), tuple))
     );
-    let flipped = arena.computation_with(second, first);
-    let flipped_left = arena.computation_project(Side::Left, flipped);
-    let observed_left = arena.value_thunk(left);
-    let observed_right = arena.value_thunk(right);
-    let observed_flipped = arena.value_thunk(flipped_left);
-    for other in [observed_right, observed_flipped] {
+    let empty = arena.computation_with(&[]);
+    assert_eq!(
+        arena.computation(empty),
+        Some(&Computation::With([].into()))
+    );
+    let reordered = arena.computation_with(&[second, first, second]);
+    let reordered_initial = arena.computation_project(at(0_usize), reordered);
+    let observed_initial = arena.value_thunk(initial);
+    let observed_last = arena.value_thunk(last);
+    let observed_reordered = arena.value_thunk(reordered_initial);
+    for other in [observed_last, observed_reordered] {
         assert_eq!(
-            equal_certificate_syntax(&arena, observed_left, other),
+            equal_certificate_syntax(&arena, observed_initial, other),
             CertificateEquality::Different
         );
     }
     let replacement = arena.value_unit();
-    let rewritten = instantiate_value(&mut arena, observed_left, replacement);
+    let rewritten = instantiate_value(&mut arena, observed_initial, replacement);
     let expected_first = arena.computation_return(replacement);
-    let expected_pair = arena.computation_with(expected_first, second);
-    let expected_left = arena.computation_project(Side::Left, expected_pair);
-    let expected = arena.value_thunk(expected_left);
+    let expected_tuple = arena.computation_with(&[expected_first, second, second]);
+    let expected_initial = arena.computation_project(at(0_usize), expected_tuple);
+    let expected = arena.value_thunk(expected_initial);
     assert_eq!(
         equal_certificate_syntax(&arena, rewritten, expected),
         CertificateEquality::Equal
@@ -404,7 +411,7 @@ fn effect_and_stack_annotations_import_without_foreign_handles()
         .unwrap();
         let input = arena.comp_type_returner_with_effects(list, EffectRow::singleton(signature));
         let pure = arena.comp_type_returner(unit);
-        let output = arena.comp_type_with(pure, input);
+        let output = arena.comp_type_with(&[pure, input]);
         arena.value_type_stack(input, output)
     };
     let mut source = CoreArena::new();

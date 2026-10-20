@@ -3557,6 +3557,10 @@ def h = 1 ;"#,
             ("#{+{Integer, String}, Unit}", "(Integer + String) * Unit"),
             (
                 "+U (&{-F Integer, &{-F Unit, -F String}})",
+                "+U (-F Integer & (-F Unit & -F String))",
+            ),
+            (
+                "+U (&{-F Integer, -F Unit, -F String})",
                 "+U (-F Integer & -F Unit & -F String)",
             ),
             (

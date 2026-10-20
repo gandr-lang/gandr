@@ -1226,7 +1226,10 @@ fn encode_entry(
                 out.put_tag(tags::NODE_CT_ELEMENT);
                 encode_level(&mut out, target);
             },
-            Some(&CompType::With(..)) => out.put_tag(tags::NODE_CT_WITH),
+            Some(&CompType::With(ref components)) => {
+                out.put_tag(tags::NODE_CT_WITH);
+                out.put_uvarint(WireU64::from(WireUsize::from(components.len())));
+            },
             Some(&CompType::Codata {
                 declaration,
                 ref arguments,
@@ -1394,10 +1397,13 @@ fn encode_entry(
             },
             Some(&Computation::ListFold { .. }) => out.put_tag(tags::NODE_C_LIST_FOLD),
             Some(&Computation::ListCase { .. }) => out.put_tag(tags::NODE_C_LIST_CASE),
-            Some(&Computation::With(..)) => out.put_tag(tags::NODE_C_WITH),
-            Some(&Computation::Project(side, _)) => {
+            Some(&Computation::With(ref components)) => {
+                out.put_tag(tags::NODE_C_WITH);
+                out.put_uvarint(WireU64::from(WireUsize::from(components.len())));
+            },
+            Some(&Computation::Project(component, _)) => {
                 out.put_tag(tags::NODE_C_PROJECT);
-                out.put_tag(side_tag(side));
+                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(component))));
             },
         },
     }
@@ -1737,34 +1743,6 @@ fn evidence_tag(evidence: crate::FixpointEvidence) -> WireTag
         crate::FixpointEvidence::Partial => tags::FIXPOINT_PARTIAL,
         crate::FixpointEvidence::StructuralDescent => tags::FIXPOINT_STRUCTURAL_DESCENT,
         crate::FixpointEvidence::Staged { .. } => tags::FIXPOINT_STAGED,
-    }
-}
-
-/// The wire tag of a lazy projection's side.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: maps each side to its frozen tag.
-/// - provides: the total side-to-tag map, so a side's byte is decided in one
-///   place rather than at each write site.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 observes the literal entry bytes of a projection on each
-///   side; a swapped or dropped side byte changes the golden.
-/// - witness: `encode::tests::entry_goldens_pin_every_former_and_child_position`
-#[spec(
-    ensures: |ret| ret == match side {
-        crate::Side::Left => tags::SIDE_LEFT,
-        crate::Side::Right => tags::SIDE_RIGHT,
-    },
-)]
-#[inline]
-fn side_tag(side: crate::Side) -> WireTag
-{
-    match side {
-        crate::Side::Left => tags::SIDE_LEFT,
-        crate::Side::Right => tags::SIDE_RIGHT,
     }
 }
 
@@ -2210,22 +2188,26 @@ mod tests
                 &[0x1f, 3, 0x81, 1],
             ),
             (
-                AnyNode::CompType(arena.comp_type_with(k0, k1)),
+                AnyNode::CompType(arena.comp_type_with(&[k0, k1])),
                 &[first, second],
-                &[0x65, 3, 0x81, 1],
+                &[0x65, 2, 3, 0x81, 1],
             ),
             (
-                AnyNode::Computation(arena.computation_with(c0, c1)),
+                AnyNode::Computation(arena.computation_with(&[c0, c1])),
                 &[first, second],
-                &[0x66, 3, 0x81, 1],
+                &[0x66, 2, 3, 0x81, 1],
             ),
             (
-                AnyNode::Computation(arena.computation_project(crate::Side::Left, c0)),
+                AnyNode::Computation(
+                    arena.computation_project(crate::Component::from(0_usize), c0),
+                ),
                 &[second],
                 &[0x67, 0, 0x81, 1],
             ),
             (
-                AnyNode::Computation(arena.computation_project(crate::Side::Right, c0)),
+                AnyNode::Computation(
+                    arena.computation_project(crate::Component::from(1_usize), c0),
+                ),
                 &[second],
                 &[0x67, 1, 0x81, 1],
             ),
@@ -2456,7 +2438,7 @@ mod tests
         // representation as entries, then its kind root, its representation
         // root and that extent.
         let expected = [
-            b'G', b'K', b'X', b'1', 6, 0, 1, 0, 3, 0, 2, 0, 0, 0, 2, 0x02, 0, 0, 0x00, 0x00, 0, 1,
+            b'G', b'K', b'X', b'1', 7, 0, 1, 0, 3, 0, 2, 0, 0, 0, 2, 0x02, 0, 0, 0x00, 0x00, 0, 1,
             2, 1, 0, 2, 1, b'a', 2, 0xc3, 0xa9, 0, 0, 2, 0x17, 0, 0x1c, 2, 0, 3, 0, 0, 0, 0, 0, 1,
             0, 0, 0, 0, 2,
         ];
@@ -2507,7 +2489,7 @@ mod tests
         // and the four empty slots; then one pair, its two roots and its two
         // decision words.
         let expected = [
-            b'G', b'K', b'X', b'1', 6, 0, 0, 1, 0, 7, 0, 0, 0, 3, 0x03, 0, 0x0D, 0, 0x0D, 1, 1, 0,
+            b'G', b'K', b'X', b'1', 7, 0, 0, 1, 0, 7, 0, 0, 0, 3, 0x03, 0, 0x0D, 0, 0x0D, 1, 1, 0,
             1, 0, 0, 0, 0, 1, 1, 2, 2, 0x0B, 0x0E,
         ];
         let bytes = super::encode(&arena, &declarations);
@@ -2533,7 +2515,7 @@ mod tests
         // A relating kind closing with no pair decodes to a plain definition,
         // whose canonical bytes carry the plain kind.
         let empty = [
-            b'G', b'K', b'X', b'1', 6, 0, 0, 1, 0, 7, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0, 0,
+            b'G', b'K', b'X', b'1', 7, 0, 0, 1, 0, 7, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0, 0,
             0, 0,
         ];
         assert_eq!(
@@ -2582,7 +2564,7 @@ mod tests
         // and the unit as entries, the declared and body roots and the four
         // empty slots; then no related pair, and the two laws in written order.
         let expected = [
-            b'G', b'K', b'X', b'1', 6, 0, 0, 1, 0, 9, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0, 0,
+            b'G', b'K', b'X', b'1', 7, 0, 0, 1, 0, 9, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0, 0,
             0, 0, 2, 5, 2,
         ];
         let bytes = super::encode(&arena, &declarations);
@@ -2600,7 +2582,7 @@ mod tests
         // A lawful kind closing with no law decodes to a plain definition,
         // whose canonical bytes carry the plain kind.
         let empty = [
-            b'G', b'K', b'X', b'1', 6, 0, 0, 1, 0, 9, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0, 0,
+            b'G', b'K', b'X', b'1', 7, 0, 0, 1, 0, 9, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0, 0,
             0, 0, 0,
         ];
         assert_eq!(
@@ -2660,7 +2642,7 @@ mod tests
         // arity 1 and variable 0, and its right side, constructor 1 of the
         // declaration at 3 and a results tuple of 4.
         let expected = [
-            b'G', b'K', b'X', b'1', 6, 0, 0, 1, 0, 0x0E, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0,
+            b'G', b'K', b'X', b'1', 7, 0, 0, 1, 0, 0x0E, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0,
             0, 0, 0, 0, 1, 2, 2, 0, 1, 1, 0, 2, 0, 3, 1, 3, 4,
         ];
         let bytes = super::encode(&arena, &declarations);
@@ -2687,7 +2669,7 @@ mod tests
         // A ruled kind closing with no rule decodes to a plain definition,
         // whose canonical bytes carry the plain kind.
         let empty = [
-            b'G', b'K', b'X', b'1', 6, 0, 0, 1, 0, 0x0E, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0,
+            b'G', b'K', b'X', b'1', 7, 0, 0, 1, 0, 0x0E, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0,
             0, 0, 0, 0, 0,
         ];
         assert_eq!(
@@ -2837,7 +2819,7 @@ mod tests
         // parameter, three constructors of arity zero, one and one; then two
         // rules, each two sides of a node count and tagged nodes.
         let expected = [
-            b'G', b'K', b'X', b'1', 6, 0, 0, 1, 0, 8, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
+            b'G', b'K', b'X', b'1', 7, 0, 0, 1, 0, 8, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
             0, 1, 1, 1, 1, 2, 3, 0, 1, 0, 2, 1, 0, 1, 1, 0, 3, 0, 2, 0, 1, 1, 0, 1, 1, 0,
         ];
         let bytes = super::encode(&arena, &declarations);
@@ -2858,7 +2840,7 @@ mod tests
         // A presented kind closing with no rule decodes to a free type, whose
         // canonical bytes carry the plain kind.
         let empty = [
-            b'G', b'K', b'X', b'1', 6, 0, 0, 1, 0, 8, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
+            b'G', b'K', b'X', b'1', 7, 0, 0, 1, 0, 8, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
             0, 1, 1, 1, 1, 0,
         ];
         assert_eq!(
@@ -2928,7 +2910,7 @@ mod tests
         // circle writes them; then the sort's position, one cell, and its two
         // endpoints, each the one constructor `base`.
         let expected = [
-            b'G', b'K', b'X', b'1', 6, 0, 0, 1, 0, 10, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
+            b'G', b'K', b'X', b'1', 7, 0, 0, 1, 0, 10, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
             0, 1, 1, 1, 1, 2, 3, 0, 1, 0, 2, 1, 0, 1, 1, 0, 3, 0, 2, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1,
             0, 0, 1, 0, 0,
         ];
@@ -2953,7 +2935,7 @@ mod tests
         // Words whose rules were dropped still decode, to be refused by the
         // kernel against the mint, and keep their canonical bytes.
         let dropped = [
-            b'G', b'K', b'X', b'1', 6, 0, 0, 1, 0, 10, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
+            b'G', b'K', b'X', b'1', 7, 0, 0, 1, 0, 10, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
             0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0,
         ];
         let decoded = crate::decode::decode(ArtifactImage::from(dropped.as_slice()))

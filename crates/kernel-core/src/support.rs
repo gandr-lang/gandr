@@ -1440,9 +1440,12 @@ impl<R: Reach> Reaches<R>
                         Computation::Return(value) | Computation::Force(value) => {
                             tasks.push(ReachTask::OpenValue(value));
                         },
-                        Computation::Bind(bound, body) | Computation::With(bound, body) => {
+                        Computation::Bind(bound, body) => {
                             tasks.push(ReachTask::OpenComp(bound));
                             tasks.push(ReachTask::OpenComp(body));
+                        },
+                        Computation::With(ref components) => {
+                            tasks.extend(components.iter().copied().map(ReachTask::OpenComp));
                         },
                         Computation::Case {
                             scrutinee,
@@ -1552,9 +1555,8 @@ impl<R: Reach> Reaches<R>
                         CompType::Element { code, .. } => {
                             tasks.push(ReachTask::OpenValue(code));
                         },
-                        CompType::With(left, right) => {
-                            tasks.push(ReachTask::OpenCompType(left));
-                            tasks.push(ReachTask::OpenCompType(right));
+                        CompType::With(ref components) => {
+                            tasks.extend(components.iter().copied().map(ReachTask::OpenCompType));
                         },
                         CompType::Codata { ref arguments, .. } => {
                             tasks.extend(arguments.iter().copied().map(ReachTask::OpenValue));
@@ -1807,7 +1809,7 @@ ValueType::Element { code, .. } => self.cached_value(code),
         CompType::Arrow { domain, codomain } => self.cached_value_type(domain).join(self.cached_comp_type(codomain)),
         CompType::Pi { domain, codomain } => self.cached_value_type(domain).join(self.cached_comp_type(codomain).under_binder()),
         CompType::Element { code, .. } => self.cached_value(code),
-        CompType::With(left, right) => self.cached_comp_type(left).join(self.cached_comp_type(right)),
+        CompType::With(ref components) => components.iter().fold(R::closed(), |depth, id| depth.join(self.cached_comp_type(*id))),
         CompType::Codata { ref arguments, .. } => arguments.iter().fold(R::closed(), |depth, id| depth.join(self.cached_value(*id))),
     }))]
     fn combine_comp_type(
@@ -1829,9 +1831,9 @@ ValueType::Element { code, .. } => self.cached_value(code),
                 .cached_value_type(domain)
                 .join(self.cached_comp_type(codomain).under_binder()),
             CompType::Element { code, .. } => self.cached_value(code),
-            CompType::With(left, right) => self
-                .cached_comp_type(left)
-                .join(self.cached_comp_type(right)),
+            CompType::With(ref components) => components.iter().fold(R::closed(), |depth, id| {
+                depth.join(self.cached_comp_type(*id))
+            }),
             CompType::Codata { ref arguments, .. } => arguments
                 .iter()
                 .fold(R::closed(), |depth, id| depth.join(self.cached_value(*id))),
@@ -2032,7 +2034,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
         Some(&Computation::Return(value) | &Computation::Force(value)) => self.cached_value(value),
         Some(&Computation::Project(_, pair)) => self.cached_comp(pair),
         Some(&Computation::Bind(bound, body)) => self.cached_comp(bound).join(self.cached_comp(body).under_binder()),
-        Some(&Computation::With(left, right)) => self.cached_comp(left).join(self.cached_comp(right)),
+        Some(&Computation::With(ref components)) => components.iter().fold(R::closed(), |depth, id| depth.join(self.cached_comp(*id))),
         Some(&Computation::Case { scrutinee, ref branches }) => branches.iter().fold(self.cached_value(scrutinee), |depth, id| depth.join(self.cached_comp(*id).under_binder())),
     })]
     fn combine_comp(
@@ -2150,7 +2152,9 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
             Computation::Bind(bound, body) => self
                 .cached_comp(bound)
                 .join(self.cached_comp(body).under_binder()),
-            Computation::With(left, right) => self.cached_comp(left).join(self.cached_comp(right)),
+            Computation::With(ref components) => components
+                .iter()
+                .fold(R::closed(), |depth, id| depth.join(self.cached_comp(*id))),
             Computation::Case {
                 scrutinee,
                 ref branches,

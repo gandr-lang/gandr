@@ -128,12 +128,11 @@ fn the_unknown_type_matches_every_former_with_unknown_components()
         Some(&CompType::Unknown)
     );
     assert_eq!(function.scope(), CodomainScope::Ambient);
-    let Maybe::Present((first, second)) = matched_with(&mut arena, unknown)
+    let Maybe::Present(Components::Unknown(component)) = matched_with(&mut arena, unknown)
     else {
-        panic!("the unknown type matches a lazy pair");
+        panic!("the unknown type matches a lazy product of unknown components");
     };
-    assert_eq!(arena.comp_type(first), Some(&CompType::Unknown));
-    assert_eq!(arena.comp_type(second), Some(&CompType::Unknown));
+    assert_eq!(arena.comp_type(component), Some(&CompType::Unknown));
 }
 
 #[test]
@@ -152,7 +151,8 @@ fn a_known_type_matches_only_its_own_former()
     let pi = arena.comp_type_pi(text, returner);
     let list = arena.value_type_list(atom);
     let stack = arena.value_type_stack(returner, arrow);
-    let with = arena.comp_type_with(returner, arrow);
+    let with = arena.comp_type_with(&[returner, arrow, returner]);
+    let top = arena.comp_type_with(&[]);
     assert_eq!(matched_thunk(&mut arena, thunk), Maybe::Present(returner));
     let known = |parts: &[ValueTypeId]| Maybe::Present(Components::Known(parts.into()));
     assert_eq!(matched_product(&mut arena, product), known(&[atom, text]));
@@ -187,7 +187,13 @@ fn a_known_type_matches_only_its_own_former()
     );
     assert_eq!(
         matched_with(&mut arena, with),
-        Maybe::Present((returner, arrow))
+        Maybe::Present(Components::Known([returner, arrow, returner].into())),
+        "a lazy product of three matches with its three components"
+    );
+    assert_eq!(
+        matched_with(&mut arena, top),
+        Maybe::Present(Components::Known([].into())),
+        "the terminal type is the lazy product of no components"
     );
     let Maybe::Present(ambient) = matched_function(&mut arena, arrow)
     else {

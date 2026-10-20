@@ -1138,9 +1138,12 @@ where
                             .map(|operation| (AnyNode::ValueType(operation), reach.nest())),
                     );
                 },
-                Some(&CompType::With(first, second)) => {
-                    pending.push((AnyNode::CompType(first), reach));
-                    pending.push((AnyNode::CompType(second), reach));
+                Some(&CompType::With(ref components)) => {
+                    pending.extend(
+                        components
+                            .iter()
+                            .map(|&component| (AnyNode::CompType(component), reach)),
+                    );
                 },
                 Some(&CompType::Element { code, .. }) => {
                     pending.push((AnyNode::Value(code), reach.term()));
@@ -1344,9 +1347,12 @@ where
                 ) => {
                     pending.push((AnyNode::Computation(body), reach));
                 },
-                Some(&Computation::With(first, second)) => {
-                    pending.push((AnyNode::Computation(first), reach));
-                    pending.push((AnyNode::Computation(second), reach));
+                Some(&Computation::With(ref components)) => {
+                    pending.extend(
+                        components
+                            .iter()
+                            .map(|&component| (AnyNode::Computation(component), reach)),
+                    );
                 },
                 Some(&Computation::Ascribe { body, ty }) => {
                     pending.push((AnyNode::Computation(body), reach));

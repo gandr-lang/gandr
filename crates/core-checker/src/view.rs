@@ -252,8 +252,8 @@ pub enum ValueTypeView<'arena>
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CompTypeView<'arena>
 {
-    /// A lazy pair of computations, selected by projection.
-    With(CompTypeId, CompTypeId),
+    /// A lazy product of computations, each selected by projection.
+    With(&'arena [CompTypeId]),
     /// The returner `F A` of the value type held.
     Returner
     {
@@ -481,7 +481,7 @@ pub fn value_type_view(
 /// - witness: `view::tests::both_views_refuse_ids_missing_from_their_arena`
 /// - witness: `view::tests::the_unknown_type_and_the_decode_of_a_hole_view_alike`
 #[spec(ensures: |ret| match (arena.comp_type(comp_type), ret) {
-    | (Some(&CompType::With(first, second)), Ok(CompTypeView::With(left, right))) => first == left && second == right,
+    | (Some(&CompType::With(ref held)), Ok(CompTypeView::With(found))) => **held == *found,
     | (Some(&CompType::Returner { result: inner, ref effects }), Ok(CompTypeView::Returner { result: held, effects: row })) => inner == held && effects == row,
     | (Some(&CompType::Arrow { domain, codomain }), Ok(CompTypeView::Arrow { domain: found_domain, codomain: found_codomain }))
     | (Some(&CompType::Pi { domain, codomain }), Ok(CompTypeView::Pi { domain: found_domain, codomain: found_codomain })) => domain == found_domain && codomain == found_codomain,
@@ -503,7 +503,7 @@ pub fn comp_type_view(
         return Err(FragmentRefusal::DanglingNode { node: at });
     };
     match *node {
-        CompType::With(first, second) => Ok(CompTypeView::With(first, second)),
+        CompType::With(ref components) => Ok(CompTypeView::With(components)),
         CompType::Returner {
             result,
             ref effects,

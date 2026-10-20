@@ -359,9 +359,12 @@ fn enter(
                     steps.push(Step::Enter(Node::ValueType(domain)));
                     steps.push(Step::Enter(Node::CompType(codomain)));
                 },
-                CompType::With(left, right) => {
-                    steps.push(Step::Enter(Node::CompType(left)));
-                    steps.push(Step::Enter(Node::CompType(right)));
+                CompType::With(ref components) => {
+                    steps.extend(
+                        components
+                            .iter()
+                            .map(|&component| Step::Enter(Node::CompType(component))),
+                    );
                 },
                 CompType::Element { .. } | CompType::Codata { .. } => {},
             }
@@ -617,13 +620,16 @@ fn exit_comp_type(
                 arena.comp_type_pi(domain_rebuilt, codomain_rebuilt)
             }
         },
-        CompType::With(left, right) => {
-            let (left_rebuilt, right_rebuilt) = (done.comp_type(left)?, done.comp_type(right)?);
-            if left_rebuilt == left && right_rebuilt == right {
+        CompType::With(components) => {
+            let rebuilt = components
+                .iter()
+                .map(|&component| done.comp_type(component))
+                .collect::<Result<Vec<_>, _>>()?;
+            if *rebuilt == *components {
                 id
             }
             else {
-                arena.comp_type_with(left_rebuilt, right_rebuilt)
+                arena.comp_type_with(&rebuilt)
             }
         },
         CompType::Element { .. } | CompType::Codata { .. } => id,
@@ -735,7 +741,7 @@ mod tests
         let list = arena.value_type_list(u);
         let returner = arena.comp_type_returner(list);
         let arrow = arena.comp_type_arrow(u, returner);
-        let with = arena.comp_type_with(arrow, returner);
+        let with = arena.comp_type_with(&[arrow, returner]);
         let thunk = arena.value_type_thunk(with);
         let record = arena.value_type_record(BTreeMap::from([(
             FieldLabel::from(alloc::string::String::from("f")),
@@ -748,7 +754,7 @@ mod tests
         let list = arena.value_type_list(pair);
         let returner = arena.comp_type_returner(list);
         let arrow = arena.comp_type_arrow(pair, returner);
-        let with = arena.comp_type_with(arrow, returner);
+        let with = arena.comp_type_with(&[arrow, returner]);
         let thunk = arena.value_type_thunk(with);
         let expected = arena.value_type_record(BTreeMap::from([(
             FieldLabel::from(alloc::string::String::from("f")),
@@ -935,8 +941,8 @@ mod tests
                 arena.value_type_thunk(pi)
             },
             Former::With => {
-                let (left, right) = (c.comp_type(arena), c.comp_type(arena));
-                let with = arena.comp_type_with(left, right);
+                let components = [c.comp_type(arena), c.comp_type(arena)];
+                let with = arena.comp_type_with(&components);
                 arena.value_type_thunk(with)
             },
         }

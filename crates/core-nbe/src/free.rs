@@ -743,6 +743,8 @@ enum ExtraChildren<'arena>
     ),
     /// Product components or sum summands, in order.
     Types(core::slice::Iter<'arena, ValueTypeId>),
+    /// Lazy product components, in order.
+    CompTypes(core::slice::Iter<'arena, CompTypeId>),
     /// Offer arms in label order; each binds nothing.
     Arms(alloc::collections::btree_map::Values<'arena, gandr_core_term::FieldLabel, ComputationId>),
     /// A recorded run's moves; a send's or a receive's payload is a value.
@@ -779,6 +781,9 @@ impl Iterator for ExtraChildren<'_>
             Self::Types(ref mut types) => types
                 .next()
                 .map(|id| (Reached::ValueType(*id), Lowering::NONE)),
+            Self::CompTypes(ref mut types) => types
+                .next()
+                .map(|id| (Reached::CompType(*id), Lowering::NONE)),
             Self::Arms(ref mut arms) => arms
                 .next()
                 .map(|id| (Reached::Term(CoreTerm::Computation(*id)), Lowering::NONE)),
@@ -820,6 +825,9 @@ impl DoubleEndedIterator for ExtraChildren<'_>
             Self::Types(ref mut types) => types
                 .next_back()
                 .map(|id| (Reached::ValueType(*id), Lowering::NONE)),
+            Self::CompTypes(ref mut types) => types
+                .next_back()
+                .map(|id| (Reached::CompType(*id), Lowering::NONE)),
             Self::Moves(ref mut moves) => moves
                 .rev()
                 .find_map(recorded_payload)
@@ -1129,8 +1137,9 @@ Err(_) => false,
                             ],
                         }
                     },
-                    Computation::With(first, second) => {
-                        two(computation(first), computation(second), Lowering::NONE)
+                    Computation::With(ref components) => {
+                        extra = ExtraChildren::Computations(components.iter());
+                        [None, None, None, None, None]
                     },
                     Computation::Ascribe { body, ty } => {
                         two(computation(body), Reached::CompType(ty), Lowering::NONE)
@@ -1373,11 +1382,10 @@ Err(_) => false,
             Reached::CompType(id) => {
                 let held = core.comp_type(id).ok_or(FreeFault::Dangling)?;
                 match *held {
-                    CompType::With(first, second) => two(
-                        Reached::CompType(first),
-                        Reached::CompType(second),
-                        Lowering::NONE,
-                    ),
+                    CompType::With(ref components) => {
+                        extra = ExtraChildren::CompTypes(components.iter());
+                        [None, None, None, None, None]
+                    },
                     CompType::Returner {
                         result,
                         effects: ref row,

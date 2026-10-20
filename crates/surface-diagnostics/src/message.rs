@@ -716,7 +716,7 @@ fn checked(
                 CheckingForm::Handle(_) => "a handler",
                 CheckingForm::Reset(_) => "a reset",
                 CheckingForm::Shift(_) => "a shift",
-                CheckingForm::With(_) => "a lazy pair",
+                CheckingForm::With(_) => "a lazy product",
                 CheckingForm::Injection(_) => "an injection",
                 CheckingForm::List(_) => "a list",
                 CheckingForm::Case(_) => "a case",

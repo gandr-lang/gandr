@@ -175,16 +175,16 @@ pub const REWRITES: [Rewrite; 16] = [
         name: RewriteName::LazyProduct,
         direction: Direction::Sugar,
         mold: MoldName("lazy_record_type"),
-        from: Spelling("&{C, D}"),
-        to: Spelling("C & D"),
+        from: Spelling("&{C, D, …}"),
+        to: Spelling("C & D & …"),
         enabled: Enabled::On,
     },
     Rewrite {
         name: RewriteName::LazyProduct,
         direction: Direction::Desugar,
         mold: MoldName("lazy_product_type"),
-        from: Spelling("C & D"),
-        to: Spelling("&{C, D}"),
+        from: Spelling("C & D & …"),
+        to: Spelling("&{C, D, …}"),
         enabled: Enabled::On,
     },
     Rewrite {
@@ -386,9 +386,8 @@ impl Band
             },
             ("product_type", _) => Self::Bridge,
             ("sum_type", _) => Self::Product,
-            ("lazy_product_type", Position::First) => Self::Sum,
-            ("lazy_product_type", Position::Later)
-            | ("function_type" | "value_function_type", Position::First) => Self::Lazy,
+            ("lazy_product_type", _) => Self::Sum,
+            ("function_type" | "value_function_type", Position::First) => Self::Lazy,
             _ => Self::Loose,
         }
     }
@@ -1280,12 +1279,9 @@ impl<'source> Respelling<'_, 'source>
             },
             (RewriteName::LazyProduct, Direction::Sugar) => {
                 let listed = listed(parts, &[AMPERSAND, OPEN_BRACE], CLOSE_BRACE)?;
-                if listed.len() != 2 {
-                    return None;
-                }
                 self.infix(&mut out, &listed, parts, Spelling(" & "), [
                     Band::Sum,
-                    Band::Lazy,
+                    Band::Sum,
                 ])?;
                 Band::Lazy
             },
@@ -1320,11 +1316,11 @@ impl<'source> Respelling<'_, 'source>
                 Band::Atom
             },
             (RewriteName::LazyProduct, Direction::Desugar) => {
-                let operands = infixed(parts, AMPERSAND)?;
+                let chain = self.chain(at, parts, AMPERSAND);
                 self.braced(
                     &mut out,
-                    &operands,
-                    parts,
+                    &chain.operands,
+                    &chain.parts,
                     &[AMPERSAND, OPEN_BRACE],
                     CLOSE_BRACE,
                 )?;
@@ -2246,23 +2242,6 @@ enum Closed
     No,
     /// It was.
     Yes,
-}
-
-/// The two operands of a binary infix form written `left infix right`, or
-/// nothing when `parts` spell anything else.
-///
-/// # Specification
-/// trivial.
-fn infixed<'source>(
-    parts: &[Part<'source>],
-    infix: Spelling,
-) -> Option<Vec<Child<'source>>>
-{
-    let (owns, operands) = split(parts);
-    match (owns.as_slice(), operands.as_slice()) {
-        (&[tile], &[_, _]) if <&str>::from(tile) == infix.0 => Some(operands),
-        _ => None,
-    }
 }
 
 /// The comment parts of `parts`, grouped by how many operands precede each.

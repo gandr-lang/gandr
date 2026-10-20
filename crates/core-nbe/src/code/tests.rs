@@ -343,10 +343,10 @@ fn control_type_codes_compare_distinct_inputs_and_outputs()
         let list = core.value_type_list(element);
         let input = core.comp_type_returner(list);
         let output = if reverse {
-            core.comp_type_with(input, returned_integer)
+            core.comp_type_with(&[input, returned_integer])
         }
         else {
-            core.comp_type_with(returned_integer, input)
+            core.comp_type_with(&[returned_integer, input])
         };
         let stack = core.value_type_stack(input, output);
         core.value_quote(stack)

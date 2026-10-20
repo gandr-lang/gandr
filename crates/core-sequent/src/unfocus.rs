@@ -67,8 +67,8 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::Component;
 use gandr_kernel_term::DeBruijnIndex;
-use gandr_kernel_term::Side;
 use gandr_kernel_term::Summand;
 
 use crate::boundary::NodeCount;
@@ -326,7 +326,7 @@ pub enum Root
     /// A recursive thunk's suspended command, read as the thunk of the
     /// fixpoint it suspends.
     FixpointBody(CommandId, gandr_kernel_term::FixpointEvidence),
-    /// A copattern object, read as its lambda or lazy pair of computations.
+    /// A copattern object, read as its lambda or lazy product of computations.
     Copattern(ProducerId),
     /// A stack bind body, open in one producer and one return covariable.
     BindBody(CommandId),
@@ -465,10 +465,10 @@ enum Task
     Reify(ProducerId),
     /// Assemble an effect or control instruction at its ambient depth.
     Control(CommandId, Depth),
-    /// Assemble a lazy computation pair.
-    With,
+    /// Pop this many computations and build their lazy product.
+    With(NodeCount),
     /// Project one component of a decoded computation.
-    Project(Side),
+    Project(Component),
     /// Mint a native list cell from its decoded head and tail.
     ListCons,
     /// Rebuild a native fold from decoded branches and its list.
@@ -657,7 +657,8 @@ impl Unfocusing<'_>
                 CommandNode::Memory { ref form, .. } => self.values.len() >= form.values().count()
                     && self.computations.len() >= form.computations().count(),
             }),
-            | &Task::With | &Task::Bind => self.computations.len() >= 2,
+            | &Task::With(count) => self.computations.len() >= usize::from(count),
+            | &Task::Bind => self.computations.len() >= 2,
             | &Task::Project(_) | &Task::Thunk | &Task::Fixpoint(_) | &Task::Lambda | &Task::Spine(..) => !self.computations.is_empty(),
             | &Task::Primitive(_, arguments) => self.values.len() >= arguments.len(),
             | &Task::ListCons => self.values.len() >= 2,
@@ -681,17 +682,25 @@ impl Unfocusing<'_>
         match task {
             Task::Reify(source) => self.complete_reify(source),
             Task::Control(source, depth) => self.complete_control(source, depth),
-            Task::With => {
-                let right = self.pop_computation()?;
-                let left = self.pop_computation()?;
-                self.computations
-                    .push(self.core.computation_with(left, right));
+            Task::With(count) => {
+                let start = self
+                    .computations
+                    .len()
+                    .checked_sub(usize::from(count))
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let components = self
+                    .computations
+                    .get(start ..)
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let with = self.core.computation_with(components);
+                self.computations.truncate(start);
+                self.computations.push(with);
                 Ok(())
             },
-            Task::Project(side) => {
+            Task::Project(component) => {
                 let subject = self.pop_computation()?;
                 self.computations
-                    .push(self.core.computation_project(side, subject));
+                    .push(self.core.computation_project(component, subject));
                 Ok(())
             },
             Task::ListFold(element, result) => {
@@ -1708,14 +1717,15 @@ impl Unfocusing<'_>
         Ok(())
     }
 
-    /// Schedule a copattern object's decoding as a lambda or a lazy pair.
+    /// Schedule a copattern object's decoding as a lambda or a lazy product.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the lambda builder and its body are scheduled.
-    /// - provides: the head rule for a function.
-    /// - fails: a dangling address, or an object with any arm other than one
-    ///   application arm.
+    /// - ensures: one application arm schedules the lambda builder and its
+    ///   body; arms projecting components `0..n` in order schedule the lazy
+    ///   product of `n` components and their bodies.
+    /// - provides: the head rules for a function and a lazy product.
+    /// - fails: a dangling address, or an object whose arms are neither.
     /// - panics: none.
     ///
     /// # Errors
@@ -1723,16 +1733,15 @@ impl Unfocusing<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a missing producer, a non-function and copattern
-    ///   objects with zero, one valid, one wrong and two arms distinguish shape
-    ///   and head checks by exact refusal. L2 — generated lambda readings
-    ///   observe the scheduled body and binders.
+    ///   objects with one valid, one wrong and out-of-order projection arms
+    ///   distinguish shape and head checks by exact refusal. L2 — generated
+    ///   lambda readings observe the scheduled body and binders.
     /// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
     #[spec(ensures: |ret| ret == match self.arena.producer(id) {
         | None => Err(UnfocusRefusal::DanglingProducer(id)),
-        | Some(&ProducerNode::Cocase { ref arms }) if matches!(arms.as_ref(),
-            &[crate::il::CopatternArm { destructor: DestructorTag::Apply, .. }]
-            | &[crate::il::CopatternArm { destructor: DestructorTag::Project(Side::Left), .. }, crate::il::CopatternArm { destructor: DestructorTag::Project(Side::Right), .. }]) => Ok(()),
+        | Some(&ProducerNode::Cocase { ref arms }) if matches!(arms.as_ref(), &[crate::il::CopatternArm { destructor: DestructorTag::Apply, .. }])
+            || arms.iter().enumerate().all(|(position, arm)| arm.destructor == DestructorTag::Project(Component::from(position))) => Ok(()),
         | Some(_) => Err(UnfocusRefusal::ProducerOutsideTheImage(id)),
     })]
     fn copattern_head(
@@ -1749,34 +1758,29 @@ impl Unfocusing<'_>
         else {
             return Err(UnfocusRefusal::ProducerOutsideTheImage(id));
         };
-        match *arms.as_ref() {
-            [
-                crate::il::CopatternArm {
-                    destructor: DestructorTag::Apply,
-                    body,
-                },
-            ] => {
-                self.tasks.push(Task::Lambda);
-                self.tasks
-                    .push(Task::Command(body, depth.under_function_arm()));
+        if let [
+            crate::il::CopatternArm {
+                destructor: DestructorTag::Apply,
+                body,
             },
-            [
-                crate::il::CopatternArm {
-                    destructor: DestructorTag::Project(Side::Left),
-                    body: left,
-                },
-                crate::il::CopatternArm {
-                    destructor: DestructorTag::Project(Side::Right),
-                    body: right,
-                },
-            ] => {
-                self.tasks.push(Task::With);
-                self.tasks
-                    .push(Task::Command(right, depth.under_covariable()));
-                self.tasks
-                    .push(Task::Command(left, depth.under_covariable()));
-            },
-            _ => return Err(UnfocusRefusal::ProducerOutsideTheImage(id)),
+        ] = *arms.as_ref()
+        {
+            self.tasks.push(Task::Lambda);
+            self.tasks
+                .push(Task::Command(body, depth.under_function_arm()));
+        }
+        else if arms.iter().enumerate().all(|(position, arm)| {
+            arm.destructor == DestructorTag::Project(Component::from(position))
+        }) {
+            self.tasks.push(Task::With(NodeCount::from(arms.len())));
+            self.tasks.extend(
+                arms.iter()
+                    .rev()
+                    .map(|arm| Task::Command(arm.body, depth.under_covariable())),
+            );
+        }
+        else {
+            return Err(UnfocusRefusal::ProducerOutsideTheImage(id));
         }
         Ok(())
     }
@@ -1858,7 +1862,7 @@ impl Unfocusing<'_>
                 Ok(())
             },
             ConsumerNode::Destructor {
-                tag: DestructorTag::Project(side),
+                tag: DestructorTag::Project(component),
                 ref producers,
                 ref consumers,
             } => {
@@ -1867,7 +1871,7 @@ impl Unfocusing<'_>
                     return Err(UnfocusRefusal::ConsumerOutsideTheImage(id));
                 };
                 self.tasks.push(Task::Spine(then, depth));
-                self.tasks.push(Task::Project(side));
+                self.tasks.push(Task::Project(component));
                 Ok(())
             },
             ConsumerNode::Destructor {

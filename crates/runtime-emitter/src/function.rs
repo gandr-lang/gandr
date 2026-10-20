@@ -109,24 +109,21 @@ pub enum Stub
     /// `stencil_answer_frame`: an aborted access's answer frame passes the
     /// answer in its second word on, the unwind's unit discarded.
     Answer,
-    /// `stencil_project_left`: a left projection's frame resumes with the
-    /// object in hand, which is that stencil's input.
-    ProjectLeft,
-    /// `stencil_project_right`: as [`Self::ProjectLeft`], projecting right.
-    ProjectRight,
+    /// `stencil_project_frame`: a projection's frame resumes with the object
+    /// in hand and the component in its second word.
+    Project,
 }
 
 impl Stub
 {
     /// Every stub, in the order both tiers lay them out.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 6] = [
         Self::Apply,
         Self::Force,
         Self::Argument,
         Self::Reset,
         Self::Answer,
-        Self::ProjectLeft,
-        Self::ProjectRight,
+        Self::Project,
     ];
 
     /// The stencil the stub's shared copy runs.
@@ -143,8 +140,7 @@ impl Stub
             Self::Argument => StencilId::ArgumentFrame,
             Self::Reset => StencilId::Pop,
             Self::Answer => StencilId::AnswerFrame,
-            Self::ProjectLeft => StencilId::ProjectLeft,
-            Self::ProjectRight => StencilId::ProjectRight,
+            Self::Project => StencilId::ProjectFrame,
         }
     }
 
@@ -162,15 +158,14 @@ impl Stub
     where
         Entry: Copy,
     {
-        let [apply, force, argument, reset, answer, left, right] = *table;
+        let [apply, force, argument, reset, answer, project] = *table;
         match self {
             Self::Apply => apply,
             Self::Force => force,
             Self::Argument => argument,
             Self::Reset => reset,
             Self::Answer => answer,
-            Self::ProjectLeft => left,
-            Self::ProjectRight => right,
+            Self::Project => project,
         }
     }
 }

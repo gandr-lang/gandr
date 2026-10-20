@@ -1230,7 +1230,7 @@ impl fmt::Display for Checked
                     | CheckingForm::Handle(_) => "a handler",
                     | CheckingForm::Reset(_) => "a reset",
                     | CheckingForm::Shift(_) => "a shift",
-                    | CheckingForm::With(_) => "a lazy pair",
+                    | CheckingForm::With(_) => "a lazy product",
                     | CheckingForm::Injection(_) => "an injection",
                     | CheckingForm::List(_) => "a List introduction",
                     | CheckingForm::Case(_) => "a case",
@@ -1586,7 +1586,7 @@ impl fmt::Display for Shape
             ExpectedShape::Data => "a nominal datatype",
             ExpectedShape::Record => "a record type",
             ExpectedShape::Stack => "a stack type from input to output computation",
-            ExpectedShape::With => "a lazy pair of computation types",
+            ExpectedShape::With => "a lazy product of computation types",
             ExpectedShape::PathUniverse => "a universe-path classifier `Path_U a b`",
             ExpectedShape::Sum => "a sum type `A + B`",
             ExpectedShape::List => "a List type `List(A)`",
@@ -1678,7 +1678,7 @@ impl fmt::Display for Captor
         f.write_str(match self.0 {
             Capture::Thunk => "a thunk",
             Capture::Recursion => "a fixpoint",
-            Capture::Branch => "a branch of a case, a lazy pair or a fold",
+            Capture::Branch => "a branch of a case, a lazy product or a fold",
             Capture::Stack => "a first-class stack",
             Capture::Continuation => "a continuation a handler or a shift may resume",
         })

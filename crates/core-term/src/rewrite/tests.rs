@@ -3612,12 +3612,12 @@ fn formers() -> Vec<Witnessed>
             let sigma = a.value_type_sigma(first, unit_type);
             a.value_quote(sigma)
         }),
-        ("pair of computation types", |a, c| {
+        ("lazy product of computation types", |a, c| {
             let first = path(a, c);
             let first = a.comp_type_returner(first);
             let unit_type = a.value_type_unit();
             let second = a.comp_type_returner(unit_type);
-            let with = a.alloc_comp_type(CompType::With(first, second));
+            let with = a.alloc_comp_type(CompType::With([second, first, second].into()));
             a.value_quote_computation(with)
         }),
     ];

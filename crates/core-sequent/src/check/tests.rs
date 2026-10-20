@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 
+use gandr_kernel_term::Component;
 use gandr_kernel_term::Side;
 
 use super::*;
@@ -200,7 +201,7 @@ fn control_scopes_are_local_to_each_body()
         ProducerNode::Reify(alloc::sync::Arc::from([
             StackFrame::Apply(producers[0]),
             StackFrame::Bind(bind_body),
-            StackFrame::Project(Side::Left),
+            StackFrame::Project(Component::from(0_usize)),
             StackFrame::Apply(producers[3]),
         ])),
     );

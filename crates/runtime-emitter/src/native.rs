@@ -176,8 +176,7 @@ const SHARED: [StencilId; 5_usize.wrapping_add(Stub::ALL.len())] = [
     Stub::Argument.stencil(),
     Stub::Reset.stencil(),
     Stub::Answer.stencil(),
-    Stub::ProjectLeft.stencil(),
-    Stub::ProjectRight.stencil(),
+    Stub::Project.stencil(),
 ];
 
 impl Native
@@ -370,8 +369,7 @@ impl Native
             argument,
             reset,
             answer,
-            left,
-            right,
+            project,
         ] = addresses;
         let shared = Shared {
             halt,
@@ -379,7 +377,7 @@ impl Native
             frames,
             fuel,
             stuck,
-            stubs: [apply, force, argument, reset, answer, left, right],
+            stubs: [apply, force, argument, reset, answer, project],
         };
         region.write(
             reservation,

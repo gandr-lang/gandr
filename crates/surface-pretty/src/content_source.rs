@@ -13,7 +13,6 @@ use gandr_core_incremental::NodeIndex;
 use gandr_core_incremental::Reference;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
-use gandr_kernel_term::Side;
 use quenchant_shape::shape::Maybe;
 
 use crate::Constructors;
@@ -174,7 +173,7 @@ impl Source for ContentSource<'_>
         match *content {
             ContentNode::Reify(_) => Former::Reify,
             ContentNode::Stack { input, output } => Former::Stack(input, output),
-            ContentNode::WithType(first, second) => Former::With(first, second),
+            ContentNode::WithType(ref components) => Former::With(Arity::from(components.len())),
             ContentNode::PrimitiveValue(primitive) => {
                 Former::Constant(Name::from(<&'static str>::from(primitive.name())))
             },
@@ -388,15 +387,11 @@ impl Source for ContentSource<'_>
             },
             ContentNode::Reset(body) => Former::Reset(body),
             ContentNode::Shift(body) => Former::Shift(body),
-            ContentNode::With(first, second) => Former::Lazy(first, second),
+            ContentNode::With(ref components) => Former::Lazy(Arity::from(components.len())),
             ContentNode::Ascribe { body, ty } => Former::Ascription { body, ty },
-            ContentNode::Project(side, observed) => Former::Project(
-                Component::from(match side {
-                    Side::Left => 0_usize,
-                    Side::Right => 1_usize,
-                }),
-                observed,
-            ),
+            ContentNode::Project(component, observed) => {
+                Former::Project(Component::from(usize::from(component)), observed)
+            },
             ContentNode::Transport(path, transported) => Former::Transport(path, transported),
             ContentNode::ElementTransport {
                 motive,
@@ -680,12 +675,12 @@ impl Source for ContentSource<'_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the index at `index` among a product's, a sum's or a tuple's
-    ///   components, a record's or a record type's fields in label order, a
-    ///   session type's payloads in slot order, a family's arguments, a
-    ///   constructor's fields, a primitive's arguments, a case's or a data
-    ///   case's branches, a handler's clauses or an offer's arms; none past
-    ///   them, for another node, or past the table.
+    /// - ensures: the index at `index` among a product's, a sum's, a tuple's or
+    ///   a lazy product's components, a record's or a record type's fields in
+    ///   label order, a session type's payloads in slot order, a family's
+    ///   arguments, a constructor's fields, a primitive's arguments, a case's
+    ///   or a data case's branches, a handler's clauses or an offer's arms;
+    ///   none past them, for another node, or past the table.
     /// - provides: the printer's reading of an n-ary former.
     /// - fails: never.
     /// - panics: none.
@@ -711,6 +706,8 @@ impl Source for ContentSource<'_>
             ContentNode::Product(ref parts)
             | ContentNode::Sum(ref parts)
             | ContentNode::Tuple(ref parts)
+            | ContentNode::WithType(ref parts)
+            | ContentNode::With(ref parts)
             | ContentNode::Data {
                 arguments: ref parts,
                 ..
@@ -741,7 +738,6 @@ impl Source for ContentSource<'_>
             | ContentNode::TupleProjection(..)
             | ContentNode::Reify(_)
             | ContentNode::Stack { .. }
-            | ContentNode::WithType(..)
             | ContentNode::Perform { .. }
             | ContentNode::Exercise { .. }
             | ContentNode::Capability { .. }
@@ -750,7 +746,6 @@ impl Source for ContentSource<'_>
             | ContentNode::DependentSplit { .. }
             | ContentNode::Reset(_)
             | ContentNode::Shift(_)
-            | ContentNode::With(..)
             | ContentNode::Ascribe { .. }
             | ContentNode::Project(..)
             | ContentNode::PrimitiveValue(_)
@@ -1269,7 +1264,7 @@ mod tests
         );
         assert_eq!(
             spelled(&[
-                ContentNode::WithType(n1, n2),
+                ContentNode::WithType(alloc::vec![n1, n2]),
                 ContentNode::Returner {
                     result: n3,
                     effects: gandr_core_term::effect::EffectRow::EMPTY

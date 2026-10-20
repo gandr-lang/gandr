@@ -2505,7 +2505,7 @@ fn control_type_codes_read_back_their_captured_scope()
     let input = core.comp_type_returner(list);
     let unit = core.value_type_unit();
     let returned_unit = core.comp_type_returner(unit);
-    let output = core.comp_type_with(returned_unit, input);
+    let output = core.comp_type_with(&[returned_unit, input]);
     let stack = core.value_type_stack(input, output);
     let quote = core.value_quote(stack);
     let lambda = core.value_static_lambda(quote);
@@ -2527,7 +2527,7 @@ fn control_type_codes_read_back_their_captured_scope()
     .unwrap();
     let closed_list = core.value_type_list(string);
     let closed_input = core.comp_type_returner(closed_list);
-    let closed_output = core.comp_type_with(returned_unit, closed_input);
+    let closed_output = core.comp_type_with(&[returned_unit, closed_input]);
     let closed_stack = core.value_type_stack(closed_input, closed_output);
     let expected = core.value_quote(closed_stack);
     assert_eq!(

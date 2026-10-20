@@ -463,9 +463,10 @@ impl CoreArena
                 self.value_into(&mut union, stack, at);
                 self.computation_into(&mut union, body, at);
             },
-            Computation::With(first, second) => {
-                self.computation_into(&mut union, first, at);
-                self.computation_into(&mut union, second, at);
+            Computation::With(ref components) => {
+                for &component in components {
+                    self.computation_into(&mut union, component, at);
+                }
             },
             Computation::Session(ref action) => {
                 if let quenchant_shape::shape::Maybe::Present(endpoint) = action.endpoint() {
@@ -655,9 +656,10 @@ impl CoreArena
             },
             CompType::Element { code, .. } => self.value_into(&mut union, code, at),
             CompType::Unknown => {},
-            CompType::With(first, second) => {
-                self.comp_type_into(&mut union, first, at);
-                self.comp_type_into(&mut union, second, at);
+            CompType::With(ref components) => {
+                for &component in components {
+                    self.comp_type_into(&mut union, component, at);
+                }
             },
             CompType::Codata { ref arguments, .. } => {
                 for &argument in arguments {

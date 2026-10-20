@@ -97,7 +97,6 @@ use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::NumericLiteral;
 use gandr_kernel_term::OccurrenceSite;
 use gandr_kernel_term::ParameterPosition;
-use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::Stage;
 use gandr_kernel_term::StageDepth;
@@ -134,10 +133,10 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x0c";
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x0d";
 
 /// The magic and version a program's address is computed over.
-const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x08";
+const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x09";
 
 /// The decoder's cap on a level atom's offset.
 ///
@@ -1366,12 +1365,9 @@ where
                         writer.tag(Tag(1));
                         write_index(writer, body)?;
                     },
-                    gandr_core_term::control::StackFrame::Project(side) => {
+                    gandr_core_term::control::StackFrame::Project(component) => {
                         writer.tag(Tag(2));
-                        writer.tag(match side {
-                            Side::Left => Tag(0),
-                            Side::Right => Tag(1),
-                        });
+                        writer.count(Count(usize::from(component)))?;
                     },
                 }
             }
@@ -1381,10 +1377,9 @@ where
             write_index(writer, input)?;
             write_index(writer, output)?;
         },
-        ContentNode::WithType(first, second) => {
+        ContentNode::WithType(ref components) => {
             writer.tag(Tag(0x73));
-            write_index(writer, first)?;
-            write_index(writer, second)?;
+            write_indices(writer, components)?;
         },
         ContentNode::SessionType(ref session) => {
             writer.tag(Tag(0x60));
@@ -1593,17 +1588,13 @@ where
             writer.tag(Tag(0x78));
             write_index(writer, body)?;
         },
-        ContentNode::With(first, second) => {
+        ContentNode::With(ref components) => {
             writer.tag(Tag(0x79));
-            write_index(writer, first)?;
-            write_index(writer, second)?;
+            write_indices(writer, components)?;
         },
-        ContentNode::Project(side, body) => {
+        ContentNode::Project(component, body) => {
             writer.tag(Tag(0x7A));
-            writer.tag(match side {
-                Side::Left => Tag(0),
-                Side::Right => Tag(1),
-            });
+            writer.count(Count(usize::from(component)))?;
             write_index(writer, body)?;
         },
         ContentNode::PrimitiveValue(primitive) => {
@@ -3545,11 +3536,9 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 frames.push(match reader.tag()?.0 {
                     0 => gandr_core_term::control::StackFrame::Apply(read_index(reader)?),
                     1 => gandr_core_term::control::StackFrame::Bind(read_index(reader)?),
-                    2 => gandr_core_term::control::StackFrame::Project(match reader.tag()?.0 {
-                        0 => Side::Left,
-                        1 => Side::Right,
-                        _ => return Err(CodecError::Corrupt),
-                    }),
+                    2 => gandr_core_term::control::StackFrame::Project(
+                        gandr_core_term::Component::from(reader.count()?.0),
+                    ),
                     _ => return Err(CodecError::Corrupt),
                 });
             }
@@ -3559,7 +3548,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             input: read_index(reader)?,
             output: read_index(reader)?,
         },
-        0x73 => ContentNode::WithType(read_index(reader)?, read_index(reader)?),
+        0x73 => ContentNode::WithType(read_indices(reader)?),
         0x60 => ContentNode::SessionType(read_session_type(reader)?),
         0x61 => ContentNode::Session(read_session_action(reader)?),
         0x7E => {
@@ -3719,14 +3708,10 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
         0x76 => ContentNode::Resume(read_index(reader)?, read_index(reader)?),
         0x77 => ContentNode::Reset(read_index(reader)?),
         0x78 => ContentNode::Shift(read_index(reader)?),
-        0x79 => ContentNode::With(read_index(reader)?, read_index(reader)?),
+        0x79 => ContentNode::With(read_indices(reader)?),
         0x7A => {
-            let side = match reader.tag()?.0 {
-                0 => Side::Left,
-                1 => Side::Right,
-                _ => return Err(CodecError::Corrupt),
-            };
-            ContentNode::Project(side, read_index(reader)?)
+            let component = gandr_core_term::Component::from(reader.count()?.0);
+            ContentNode::Project(component, read_index(reader)?)
         },
         0x0D | 0x16 => {
             use gandr_core_term::primitive::Arguments;

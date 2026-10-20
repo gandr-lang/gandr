@@ -502,12 +502,12 @@ pub fn level_of(
                 },
             },
             Task::Enter(TypeNode::Computation(at)) => match comp_type_view(arena, at)? {
-                CompTypeView::With(first, second) => {
-                    tasks.extend([
-                        Task::Join,
-                        Task::Enter(TypeNode::Computation(second)),
-                        Task::Enter(TypeNode::Computation(first)),
-                    ]);
+                CompTypeView::With(components) => {
+                    levels.push(Level::zero());
+                    for &component in components.iter().rev() {
+                        tasks.push(Task::Join);
+                        tasks.push(Task::Enter(TypeNode::Computation(component)));
+                    }
                 },
                 CompTypeView::Returner { result, effects } => {
                     for operation_type in effects.types() {

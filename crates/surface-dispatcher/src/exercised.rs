@@ -988,8 +988,12 @@ fn formers(
                     | Computation::Project(_, body)
                     | Computation::Ascribe { body, .. }),
                 ) => worklist.push(Node::Computation(body)),
-                Some(&Computation::With(first, second)) => {
-                    worklist.extend([Node::Computation(first), Node::Computation(second)]);
+                Some(&Computation::With(ref components)) => {
+                    worklist.extend(
+                        components
+                            .iter()
+                            .map(|&component| Node::Computation(component)),
+                    );
                 },
 
                 Some(

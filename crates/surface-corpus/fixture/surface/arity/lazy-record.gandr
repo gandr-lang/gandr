@@ -17,11 +17,52 @@ def offered(n : Integer) -> &{get : -F Integer, put : -F String} {
   &{.put => return "s", .get => return n}
 }
 
-@[ refuses("OutOfFragment") ]
+/// The empty lazy record is the empty lazy product, answered by the empty
+/// block.
+@[ checks ]
 def terminal : +U &{} ;
+def terminal = thunk { &{} } ;
 
-@[ refuses("OutOfFragment") ]
-def single : +U &{get : -F Integer} ;
+/// A lazy record of one entry is the lazy product of one, not its entry: its
+/// block answers the one entry.
+@[ checks ]
+def single() -> &{get : -F Integer} {
+  &{.get => return 1}
+}
+
+/// A lazy record of three is one lazy product of three, its block answering
+/// each entry.
+@[ checks ]
+def triple() -> &{a : -F Integer, b : -F String, c : -F Integer} {
+  &{.a => return 1, .b => return "s", .c => return 3}
+}
+
+/// The chain `C & D & E` is the lazy product the lazy record of three is.
+@[ checks ]
+def chained : +U (-F Integer & -F String & -F Integer) ;
+def chained = triple ;
+
+/// Each entry of a lazy product of three is one projection of it.
+@[ checks ]
+def third(m : +U &{a : -F Integer, b : -F String, c : -F Integer}) -> -F Integer {
+  become m.c
+}
+
+/// The last entry of `triple`, observed.
+@[ runs("3") ]
+def tripled : () => Integer ;
+def tripled = thunk { become third(triple) } ;
+
+/// The one entry of a lazy product of one is its one projection.
+@[ checks ]
+def only(m : +U &{get : -F Integer}) -> -F Integer {
+  become m.get
+}
+
+/// The only entry of `single`, observed.
+@[ runs("1") ]
+def singled : () => Integer ;
+def singled = thunk { become only(single) } ;
 
 @[ refuses("OutOfFragment") ]
 def unthunked : -F Integer & -F Integer ;

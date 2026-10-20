@@ -733,7 +733,7 @@ pub enum Former
     ProductType,
     /// The sum type `A + B`.
     SumType,
-    /// The lazy product type `C & D`, the binary lazy record.
+    /// The lazy product type `C & D & …`, the lazy record of its operands.
     LazyProductType,
     /// The telescope type `#{…}`: the product of its positional entries, or
     /// the record of its labelled ones.

@@ -1119,9 +1119,12 @@ where
                 Some(&CompType::Element { code, .. }) => {
                     pending.push((AnyNode::Value(code), reach.term()));
                 },
-                Some(&CompType::With(left, right)) => {
-                    pending.push((AnyNode::CompType(left), reach));
-                    pending.push((AnyNode::CompType(right), reach));
+                Some(&CompType::With(ref components)) => {
+                    pending.extend(
+                        components
+                            .iter()
+                            .map(|&component| (AnyNode::CompType(component), reach)),
+                    );
                 },
                 Some(&CompType::Codata { ref arguments, .. }) => {
                     pending.extend(
@@ -1321,9 +1324,16 @@ where
                     pending.push((AnyNode::Computation(head), reach));
                     pending.push((AnyNode::Value(argument), reach));
                 },
-                Some(&(Computation::Bind(bound, body) | Computation::With(bound, body))) => {
+                Some(&Computation::Bind(bound, body)) => {
                     pending.push((AnyNode::Computation(bound), reach));
                     pending.push((AnyNode::Computation(body), reach));
+                },
+                Some(&Computation::With(ref components)) => {
+                    pending.extend(
+                        components
+                            .iter()
+                            .map(|&component| (AnyNode::Computation(component), reach)),
+                    );
                 },
                 Some(&Computation::Case {
                     scrutinee,

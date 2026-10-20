@@ -10,6 +10,7 @@ use gandr_core_checker::CheckingContext;
 use gandr_core_checker::CoreNode;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::DeclarationContent;
+use gandr_core_checker::ExpectedShape;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::TypeNode;
@@ -29,11 +30,11 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
-use gandr_kernel_term::Side;
 use quenchant_shape::shape::Maybe;
 
 /// A definition at its source position.
@@ -133,7 +134,7 @@ fn ones(
     let head = arena.computation_return(unit);
     let own = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let tail = arena.computation_force(own);
-    let pair = arena.computation_with(head, tail);
+    let pair = arena.computation_with(&[head, tail]);
     let fixpoint = arena.computation_fixpoint(pair, FixpointEvidence::Partial);
     (declared, arena.value_thunk(fixpoint))
 }
@@ -153,8 +154,8 @@ fn a_stream_is_admitted_observed_and_adopted()
     // its observations again.
     let ones_constant = arena.value_constant(ConstantIndex::from(1_usize));
     let forced = arena.computation_force(ones_constant);
-    let tail = arena.computation_project(Side::Right, forced);
-    let second = arena.computation_project(Side::Left, tail);
+    let tail = arena.computation_project(Component::from(1_usize), forced);
+    let second = arena.computation_project(Component::from(0_usize), tail);
     let unit_type = arena.value_type_unit();
     let returner = arena.comp_type_returner(unit_type);
     let second_type = arena.value_type_thunk(returner);
@@ -214,7 +215,7 @@ fn a_stream_is_admitted_observed_and_adopted()
 }
 
 #[test]
-fn a_single_observation_reads_as_itself()
+fn a_single_observation_reads_as_a_lazy_product_of_one()
 {
     let mut arena = CoreArena::new();
     let family = ConstantIndex::from(0_usize);
@@ -225,15 +226,18 @@ fn a_single_observation_reads_as_itself()
     let boxed_type = arena.value_type_thunk(boxed);
     let unit = arena.value_unit();
     let returned = arena.computation_return(unit);
-    let body = arena.value_thunk(returned);
-    // `b : U Box = thunk (return ())`, then `x ← force b; return x : F Unit`
-    // reads the box through its one observation, and `force b : F Unit`
-    // without the bind meets no η.
+    let product = arena.computation_with(&[returned]);
+    let body = arena.value_thunk(product);
+    let unwrapped = arena.value_thunk(returned);
+    // `b : U Box = thunk &{.0 => return ()}`, then `x ← (force b).0; return
+    // x : F Unit` reads the box through its one observation; `force b : F
+    // Unit` meets no η, and `thunk (return ())` is not the box.
     let held = arena.value_constant(ConstantIndex::from(1_usize));
     let forced = arena.computation_force(held);
+    let observed = arena.computation_project(Component::from(0_usize), forced);
     let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let rest = arena.computation_return(bound);
-    let unboxed = arena.computation_bind(forced, rest);
+    let unboxed = arena.computation_bind(observed, rest);
     let unboxed = arena.value_thunk(unboxed);
     let bare = arena.computation_force(held);
     let bare = arena.value_thunk(bare);
@@ -243,6 +247,7 @@ fn a_single_observation_reads_as_itself()
         definition(ConstantIndex::from(1_usize), boxed_type, body),
         definition(ConstantIndex::from(2_usize), returner_type, unboxed),
         definition(ConstantIndex::from(3_usize), returner_type, bare),
+        definition(ConstantIndex::from(4_usize), boxed_type, unwrapped),
     ];
     let (report, crossed) = run(&mut arena, &declarations);
     assert_eq!(report.judged()[0].verdict(), Verdict::Data);
@@ -268,6 +273,17 @@ fn a_single_observation_reads_as_itself()
         ),
         "{:?}",
         report.judged()[3].verdict()
+    );
+    assert!(
+        matches!(
+            report.judged()[4].verdict(),
+            Verdict::Refused(CheckRefusal::ShapeMismatch {
+                wanted: ExpectedShape::Returner,
+                ..
+            })
+        ),
+        "a return checked at the box meets a lazy product, not a returner: {:?}",
+        report.judged()[4].verdict()
     );
 }
 

@@ -248,15 +248,15 @@
 //!
 //! Stack Apply instantiates a dependent codomain; Bind unions rows and
 //! strengthens its result, refusing escaping type codes as `DependentStack`;
-//! Project selects a lazy-pair component. Reset supplies Shift's answer,
+//! Project selects a lazy-product component. Reset supplies Shift's answer,
 //! weakened through intervening binders. Stack literals, handlers, resets,
-//! shifts and lazy pairs check rather than synthesise. A handler's subject and
-//! a Bind frame's body synthesise, so a bare `return` there is refused as a
+//! shifts and lazy products check rather than synthesise. A handler's subject
+//! and a Bind frame's body synthesise, so a bare `return` there is refused as a
 //! checking form. Returner rows and stacks subsume by the variance `conversion`
 //! states.
 //!
 //! Against the unknown type, a stack literal runs its frames over unknown
-//! endpoints, a lazy pair checks both components against unknowns, and a List
+//! endpoints, a lazy product checks its components against unknowns, and a List
 //! reads an unknown element. A handler checked against the unknown answer reads
 //! it through the matched returner: the residual is absorbed and each
 //! resumption consumes the reply under the empty row. A resumption of a hole
@@ -1292,13 +1292,13 @@ enum Frame
         /// The computation fed to it.
         body: ComputationId,
     },
-    /// Select one component of a synthesized lazy pair.
+    /// Select one component of a synthesized lazy product.
     Project
     {
         /// The projection.
         at: ComputationId,
         /// The selected component.
-        side: gandr_kernel_term::Side,
+        component: gandr_kernel_term::Component,
     },
     /// The nearest answer delimiter, retained while checking its body.
     Reset
@@ -2567,24 +2567,29 @@ impl<'context, 'arena> Machine<'context, 'arena>
         }
     }
 
-    /// Read a lazy pair without evaluating either component.
+    /// Read a lazy product without evaluating any component.
     ///
     /// # Specification
-    /// - ensures: the components retain their left-to-right order; an unknown
-    ///   classifier reads as two unknown components.
+    /// - ensures: the components retain their order; an unknown classifier
+    ///   reads as one unknown type every component stands at.
     /// - fails: a non-With classifier is a named shape mismatch.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — distinct component types expose selecting the wrong
-    ///   side.
+    ///   component.
     /// - witness: `judgement::tests::control_rules_preserve_rows_scopes_and_shapes`
     /// - witness: `judgement::tests::an_introduction_against_the_unknown_type_checks_its_parts`
-    #[spec(ensures: |ret| match ret { Err(CheckRefusal::ShapeMismatch { at: site, wanted, found }) => site == at && wanted == ExpectedShape::With && found == TypeNode::Computation(classifier), Ok((first, second)) => self.context.arena().comp_type(first).is_some() && self.context.arena().comp_type(second).is_some(), Err(_) => true })]
+    #[spec(ensures: |ret| match ret {
+        | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found }) => site == at && wanted == ExpectedShape::With && found == TypeNode::Computation(classifier),
+        | Ok(Components::Known(ref parts)) => parts.iter().all(|&part| self.context.arena().comp_type(part).is_some()),
+        | Ok(Components::Unknown(unknown)) => self.context.arena().comp_type(unknown).is_some(),
+        | Err(_) => true,
+    })]
     fn with_parts(
         &mut self,
         at: TermNode,
         classifier: CompTypeId,
-    ) -> Result<(CompTypeId, CompTypeId), CheckRefusal>
+    ) -> Result<Components<CompTypeId>, CheckRefusal>
     {
         let head = crate::codata::read(self.context, classifier)?;
         match matched_with(self.context.arena_mut(), head) {
@@ -2721,12 +2726,18 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            gandr_core_term::control::StackFrame::Project(side) => {
-                let (first, second) = self.with_parts(TermNode::Value(judgement.at), input)?;
-                let input = match side {
-                    gandr_kernel_term::Side::Left => first,
-                    gandr_kernel_term::Side::Right => second,
-                };
+            gandr_core_term::control::StackFrame::Project(component) => {
+                let input =
+                    match self.with_parts(TermNode::Value(judgement.at), input)? {
+                        Components::Known(parts) => *parts.get(usize::from(component)).ok_or(
+                            CheckRefusal::ShapeMismatch {
+                                at: TermNode::Value(judgement.at),
+                                wanted: ExpectedShape::With,
+                                found: TypeNode::Computation(input),
+                            },
+                        )?,
+                        Components::Unknown(unknown) => unknown,
+                    };
                 Ok(Step::Descend(Goal::Stack {
                     judgement,
                     position,
@@ -4908,8 +4919,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            Computation::Project(side, subject) => {
-                self.wait(Frame::Project { at: term, side });
+            Computation::Project(component, subject) => {
+                self.wait(Frame::Project {
+                    at: term,
+                    component,
+                });
                 Ok(Step::Descend(Goal::Computation {
                     term: subject,
                     direction: Direction::Synthesise,
@@ -5101,10 +5115,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   codomain — an arrow's shifted past the binder, a dependent arrow's as
     ///   it stands; a return's value checks against the result it matches as a
     ///   returner; a bind awaits its bound computation's synthesised type, then
-    ///   checks its body against `expected` shifted past its binder; a hole and
-    ///   a mark check against any type at once; a fixpoint opens a binder of `U
-    ///   expected` and checks its body against `expected` shifted past it,
-    ///   except that a structural one opens its stage
+    ///   checks its body against `expected` shifted past its binder; a lazy
+    ///   product of `n` components matches `expected` as a lazy product of `n`
+    ///   and leaves one goal per component, each checked against its own; a
+    ///   hole and a mark check against any type at once; a fixpoint opens a
+    ///   binder of `U expected` and checks its body against `expected` shifted
+    ///   past it, except that a structural one opens its stage
     ///   ([`crate::recursion::open_fixpoint`]): the self binder takes the
     ///   recursed-on parameter below the stage and the body takes it at the
     ///   stage; a list case synthesises its list's type, opens one stage below
@@ -5138,7 +5154,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
         captures: before = self.frames.len(),
         ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(_))) && self.frames.len() >= before)
             || (matches!(ret, Ok(Step::Ascend(Produced::Checked))) && self.frames.len() == before
-                && matches!(self.context.arena().computation(term), Some(Computation::Hole(_) | Computation::Mark { .. }))),
+                && matches!(self.context.arena().computation(term), Some(Computation::Hole(_) | Computation::Mark { .. })))
+            || (matches!(ret, Ok(Step::Ascend(Produced::Checked)))
+                && matches!(self.context.arena().computation(term), Some(Computation::With(components)) if before.checked_add(components.len()) == Some(self.frames.len()))),
     )]
     fn check_comp(
         &mut self,
@@ -5160,17 +5178,38 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             Computation::Shift(body) => self.shift(term, body, expected),
-            Computation::With(first, second) => {
-                let (first_type, second_type) =
-                    self.with_parts(TermNode::Computation(term), expected)?;
-                self.wait(Frame::Next(Goal::Computation {
-                    term: second,
-                    direction: Direction::Check(second_type),
-                }));
-                Ok(Step::Descend(Goal::Computation {
-                    term: first,
-                    direction: Direction::Check(first_type),
-                }))
+            Computation::With(ref components) => {
+                let count = components.len();
+                let parts = self.with_parts(TermNode::Computation(term), expected)?;
+                if matches!(parts, Components::Known(ref types) if types.len() != count) {
+                    return Err(CheckRefusal::ShapeMismatch {
+                        at: TermNode::Computation(term),
+                        wanted: ExpectedShape::With,
+                        found: TypeNode::Computation(expected),
+                    });
+                }
+                let Some(&Computation::With(ref components)) =
+                    self.context.arena().computation(term)
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                let owner = self.owner;
+                for (index, &component) in components.iter().enumerate().rev() {
+                    let component_type = match parts {
+                        Components::Known(ref types) => {
+                            *types.get(index).ok_or(CheckRefusal::MachineInvariant)?
+                        },
+                        Components::Unknown(unknown) => unknown,
+                    };
+                    self.frames.push(Waiting {
+                        frame: Frame::Next(Goal::Computation {
+                            term: component,
+                            direction: Direction::Check(component_type),
+                        }),
+                        owner,
+                    });
+                }
+                Ok(Step::Ascend(Produced::Checked))
             },
             Computation::Lambda(body) => {
                 let (domain, codomain) = self.arrow_expected(term, expected)?;
@@ -6027,9 +6066,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         match comp_type_view(self.context.arena(), at)? {
-            CompTypeView::With(first, second) => {
-                self.wait(Frame::FormNext(TypeNode::Computation(second)));
-                Ok(Step::Descend(Goal::Form(TypeNode::Computation(first))))
+            CompTypeView::With(components) => {
+                let owner = self.owner;
+                self.frames
+                    .extend(components.iter().rev().map(|&component| Waiting {
+                        frame: Frame::FormNext(TypeNode::Computation(component)),
+                        owner,
+                    }));
+                Ok(Step::Ascend(Produced::Checked))
             },
             CompTypeView::Returner { result, effects } => {
                 let owner = self.owner;
@@ -6751,12 +6795,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(input),
                 }))
             },
-            (Frame::Project { at, side }, Produced::CompType(classifier)) => {
-                let (first, second) = self.with_parts(TermNode::Computation(at), classifier)?;
-                Ok(Step::Ascend(Produced::CompType(match side {
-                    gandr_kernel_term::Side::Left => first,
-                    gandr_kernel_term::Side::Right => second,
-                })))
+            (Frame::Project { at, component }, Produced::CompType(classifier)) => {
+                Ok(Step::Ascend(Produced::CompType(
+                    match self.with_parts(TermNode::Computation(at), classifier)? {
+                        Components::Known(parts) => *parts
+                            .get(usize::from(component))
+                            .ok_or(CheckRefusal::AbsentTupleComponent(at))?,
+                        Components::Unknown(unknown) => unknown,
+                    },
+                )))
             },
             (
                 Frame::HandlerForm {

@@ -141,7 +141,7 @@ impl AsRef<[u8]> for Bytes
         ensures: |ret| { let entries = CHAIN_LINKS.saturating_mul(2).saturating_add(1);
             let count_word = u64::try_from(entries).unwrap_or(u64::MAX);
             let first = 13_usize.saturating_add(usize::try_from(64_u32.saturating_sub((count_word).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
-            ret.0.starts_with(&[b'G', b'K', b'X', b'1', 6, 0, 0, 1, 0, 1, 0, 0, 0])
+            ret.0.starts_with(&[b'G', b'K', b'X', b'1', 7, 0, 0, 1, 0, 1, 0, 0, 0])
                 && ({ let scalar = count_word;
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
             ret.0.as_slice().get(13_usize .. (13_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);

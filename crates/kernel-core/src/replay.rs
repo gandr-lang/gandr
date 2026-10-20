@@ -320,7 +320,6 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::RewriteFuel;
-use gandr_kernel_term::Side;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
@@ -1773,8 +1772,8 @@ enum Elimination
     RecordProjection(ComputationId),
     /// Tuple projection; the arena node retains its component.
     TupleProjection(ComputationId),
-    /// Lazy product projection of this side.
-    Project(Side),
+    /// Lazy product projection of this component.
+    Project(gandr_kernel_term::Component),
     /// Transport under a neutral path head, retaining its operand.
     Transport(ValueId),
     /// Product transport waiting for a neutral pair operand.
@@ -1817,8 +1816,8 @@ enum Shape
     Thunk(ComputationId),
     /// A lambda over this body.
     Lambda(ComputationId),
-    /// A lazy pairing of these two components.
-    With(ComputationId, ComputationId),
+    /// A lazy pairing of these components.
+    With(alloc::boxed::Box<[ComputationId]>),
     /// A fixpoint over this body, standing at no gate, applied to these
     /// leading arguments, first to last.
     Fixpoint(ComputationId, Vec<ValueId>),
@@ -1961,8 +1960,8 @@ enum Frame
     Apply(ValueId),
     /// A bind into this continuation.
     Bind(ComputationId),
-    /// A projection of this side of a lazy pairing.
-    Project(Side),
+    /// A projection of this component of a lazy pairing.
+    Project(gandr_kernel_term::Component),
 }
 
 /// Where a goal's forced one-sided rewrites are read from.
@@ -3044,8 +3043,8 @@ where
                     frames.push(Frame::Bind(next));
                     focus = bound;
                 },
-                Some(&Computation::Project(side, pair)) => {
-                    frames.push(Frame::Project(side));
+                Some(&Computation::Project(component, pair)) => {
+                    frames.push(Frame::Project(component));
                     focus = pair;
                 },
                 Some(&Computation::Force(forced))
@@ -3475,17 +3474,23 @@ where
     /// [`Stop::Refused`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3: the pairing of a variable's two projections converts
-    ///   with that variable on either side with an empty trace; a pairing whose
-    ///   right component differs refutes through `NegativeSubgoal` at position
-    ///   one and not at position zero; an `EtaExpand` there is never read and
-    ///   is left over, and a `Decompose` there is inapplicable.
+    /// - hypothesis: L3: the pairing of a variable's projections converts with
+    ///   that variable on either side with an empty trace; a pairing whose last
+    ///   component differs refutes through `NegativeSubgoal` at that position
+    ///   and not at position zero; an `EtaExpand` there is never read and is
+    ///   left over, and a `Decompose` there is inapplicable.
     /// - witness: `replay::tests::a_lazy_pairing_meets_a_neutral_by_its_projections`
     #[spec(
-        captures: before = goals.len(),
+        captures: [before = goals.len(), width = match goal.side(opposite(side)) {
+            Term::Computation(pairing) => match self.arena.computation(pairing) {
+                Some(&Computation::With(ref components)) => components.len(),
+                _ => 0_usize,
+            },
+            Term::Value(_) => 0_usize,
+        }],
         ensures: |ret| match ret {
             Ok(()) => goals.get(before..).is_some_and(|pending| {
-                pending.len() == match goal.expect { Expect::Convertible => 2_usize, Expect::NotConvertible => 1_usize }
+                pending.len() == match goal.expect { Expect::Convertible => width, Expect::NotConvertible => 1_usize }
                     && pending.iter().all(|next| next.expect == goal.expect && matches!(next.side(side), Term::Computation(projected)
                         if matches!(self.arena.computation(projected), Some(&Computation::Project(_, neutral)) if goal.side(side) == Term::Computation(neutral))))
             }),
@@ -3504,22 +3509,21 @@ where
         else {
             return Err(unreadable());
         };
-        let Some(&Computation::With(first, second)) = self.arena.computation(pairing)
+        let Some(&Computation::With(ref components)) = self.arena.computation(pairing)
         else {
             return Err(unreadable());
         };
-        let first_projection = self.arena.computation_project(Side::Left, neutral);
-        let second_projection = self.arena.computation_project(Side::Right, neutral);
-        let premises = match side {
-            ConversionSide::Left => Vec::from([
-                Premise::computations(first_projection, first),
-                Premise::computations(second_projection, second),
-            ]),
-            ConversionSide::Right => Vec::from([
-                Premise::computations(first, first_projection),
-                Premise::computations(second, second_projection),
-            ]),
-        };
+        let components = components.clone();
+        let mut premises = Vec::with_capacity(components.len());
+        for (position, &component) in components.iter().enumerate() {
+            let projection = self
+                .arena
+                .computation_project(gandr_kernel_term::Component::from(position), neutral);
+            premises.push(match side {
+                ConversionSide::Left => Premise::computations(projection, component),
+                ConversionSide::Right => Premise::computations(component, projection),
+            });
+        }
         self.schedule(goal.expect, premises, goals)
     }
 
@@ -3938,8 +3942,12 @@ where
         } else {
             ret == Ok(Structure::Leaf(Expect::NotConvertible))
         },
-        (&Shape::With(one_first, one_second), &Shape::With(other_first, other_second)) => matches!(ret, Ok(Structure::Premises(ref premises))
-            if premises.as_slice() == [Premise::computations(one_first, other_first), Premise::computations(one_second, other_second)]),
+        (&Shape::With(ref ones), &Shape::With(ref others)) => if ones.len() == others.len() {
+            matches!(ret, Ok(Structure::Premises(ref premises))
+                if premises.iter().copied().eq(ones.iter().zip(others.iter()).map(|(&one, &other)| Premise::computations(one, other))))
+        } else {
+            ret == Ok(Structure::Leaf(Expect::NotConvertible))
+        },
         (&Shape::Former | &Shape::Neutral(..), &Shape::Former)
         | (&Shape::Former, &Shape::Neutral(..)) => true,
         (&Shape::Neutral(one, _), &Shape::Neutral(other, _)) if one == other => match ret {
@@ -3990,11 +3998,17 @@ where
                 );
                 Structure::of(premises)
             },
-            (&Shape::With(left_first, left_second), &Shape::With(right_first, right_second)) => {
-                Structure::of(Vec::from([
-                    Premise::computations(left_first, right_first),
-                    Premise::computations(left_second, right_second),
-                ]))
+            // Two pairings compare componentwise; a different arity is apart.
+            (&Shape::With(ref ones), &Shape::With(ref others)) => {
+                if ones.len() != others.len() {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+                Structure::of(
+                    ones.iter()
+                        .zip(others.iter())
+                        .map(|(&one, &other)| Premise::computations(one, other))
+                        .collect(),
+                )
             },
             (
                 &Shape::Neutral(left_head, ref left_spine),
@@ -4742,8 +4756,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         work.extend([AnyNode::ValueType(domain), AnyNode::CompType(codomain)]);
                     },
                     Some(&CompType::Element { code, .. }) => work.push(AnyNode::Value(code)),
-                    Some(&CompType::With(left, right)) => {
-                        work.extend([AnyNode::CompType(left), AnyNode::CompType(right)]);
+                    Some(&CompType::With(ref components)) => {
+                        work.extend(components.iter().copied().map(AnyNode::CompType));
                     },
                     Some(&CompType::Codata { ref arguments, .. }) => {
                         work.extend(arguments.iter().copied().map(AnyNode::Value));
@@ -4809,7 +4823,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         },
         Term::Computation(computation) => match self.arena.computation(computation) {
             Some(&Computation::Lambda(body)) => ret == Ok(Shape::Lambda(body)),
-            Some(&Computation::With(first, second)) => ret == Ok(Shape::With(first, second)),
+            Some(&Computation::With(ref components)) => ret == Ok(Shape::With(components.clone())),
             Some(&Computation::Fixpoint { body, .. }) => ret == Ok(Shape::Fixpoint(body, Vec::new())),
             Some(&Computation::Return(value)) => ret == Ok(Shape::Return(value)),
             Some(node) => match ret {
@@ -4969,8 +4983,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 Some(&Computation::Lambda(body)) if spine.is_empty() => {
                     return Ok(Shape::Lambda(body));
                 },
-                Some(&Computation::With(first, second)) if spine.is_empty() => {
-                    return Ok(Shape::With(first, second));
+                Some(&Computation::With(ref components)) if spine.is_empty() => {
+                    return Ok(Shape::With(components.clone()));
                 },
                 Some(&Computation::Fixpoint { body, .. }) if spine.is_empty() => {
                     return Ok(Shape::Fixpoint(body, Vec::new()));
@@ -5018,8 +5032,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     spine.push(Elimination::Bind(body));
                     focus = bound;
                 },
-                Some(&Computation::Project(side, pair)) => {
-                    spine.push(Elimination::Project(side));
+                Some(&Computation::Project(component, pair)) => {
+                    spine.push(Elimination::Project(component));
                     focus = pair;
                 },
                 Some(&Computation::Force(value)) => {
@@ -5326,8 +5340,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     frames.push(Frame::Bind(next));
                     focus = bound;
                 },
-                Some(&Computation::Project(side, pair)) => {
-                    frames.push(Frame::Project(side));
+                Some(&Computation::Project(component, pair)) => {
+                    frames.push(Frame::Project(component));
                     focus = pair;
                 },
                 Some(&Computation::Force(_)) => break self.arena.computation_force(body),
@@ -5869,19 +5883,21 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         frames.push(Frame::Bind(body));
                         focus = bound;
                     },
-                    Some(&Computation::Project(side, pair)) => {
-                        frames.push(Frame::Project(side));
+                    Some(&Computation::Project(component, pair)) => {
+                        frames.push(Frame::Project(component));
                         focus = pair;
                     },
-                    // A projection of a lazy pairing runs the side it names; a
-                    // pairing under no projection is in weak head form.
-                    Some(&Computation::With(first, second)) => match frames.last() {
-                        Some(&Frame::Project(side)) => {
-                            frames.pop();
-                            focus = match side {
-                                Side::Left => first,
-                                Side::Right => second,
+                    // A projection of a lazy pairing runs the component it
+                    // names; a pairing under no projection is in weak head
+                    // form.
+                    Some(&Computation::With(ref components)) => match frames.last() {
+                        Some(&Frame::Project(component)) => {
+                            let Some(&selected) = components.get(usize::from(component))
+                            else {
+                                return Err(unreadable());
                             };
+                            frames.pop();
+                            focus = selected;
                             progress = Progress::Reduced;
                         },
                         Some(&(Frame::Apply(_) | Frame::Bind(_))) | None => break,
@@ -6702,7 +6718,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     #[spec(ensures: |ret| self.arena.computation(ret) == Some(&match frame {
         Frame::Apply(argument) => Computation::Application(computation, argument),
         Frame::Bind(body) => Computation::Bind(computation, body),
-        Frame::Project(side) => Computation::Project(side, computation),
+        Frame::Project(component) => Computation::Project(component, computation),
     }))]
     fn wrap(
         &mut self,
@@ -6713,7 +6729,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         match frame {
             Frame::Apply(argument) => self.arena.computation_application(computation, argument),
             Frame::Bind(body) => self.arena.computation_bind(computation, body),
-            Frame::Project(side) => self.arena.computation_project(side, computation),
+            Frame::Project(component) => self.arena.computation_project(component, computation),
         }
     }
 

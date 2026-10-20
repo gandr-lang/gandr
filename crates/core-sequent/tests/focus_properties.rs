@@ -51,6 +51,7 @@ use gandr_core_term::shift_comp_type_under;
 use gandr_core_term::shift_computation_under;
 use gandr_core_term::shift_value_type_under;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Side;
@@ -91,7 +92,7 @@ fn hand_built_control_cases_cover_every_former()
     let stack = core.value_reify(alloc::sync::Arc::from([
         StackFrame::Apply(unit),
         StackFrame::Bind(identity),
-        StackFrame::Project(Side::Right),
+        StackFrame::Project(Component::from(1_usize)),
     ]));
     let stack_return = core.computation_return(stack);
     let performed = core.computation_perform(signature.clone(), "op".into(), unit);
@@ -120,10 +121,10 @@ fn hand_built_control_cases_cover_every_former()
     let resume_captured = core.computation_resume(zero, returned);
     let shifted = core.computation_shift(resume_captured);
     let reset = core.computation_reset(shifted);
-    let pair = core.computation_with(returned, identity);
+    let pair = core.computation_with(&[returned, identity]);
     let under = core.computation_lambda(pair);
-    let pair = core.computation_with(returned, returned);
-    let projected = core.computation_project(Side::Right, pair);
+    let pair = core.computation_with(&[returned, returned, returned]);
+    let projected = core.computation_project(Component::from(2_usize), pair);
     let view = 0_u32.into();
     let resumed_view = core.computation_memory(MemoryForm::Resume { view, value: unit });
     let ended = core.computation_bind(resumed_view, returned);

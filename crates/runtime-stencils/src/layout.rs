@@ -569,20 +569,29 @@ pub enum Observed
     Apply,
     /// A force.
     Force,
-    /// A lazy pair's left projection.
-    ProjectLeft,
-    /// A lazy pair's right projection.
-    ProjectRight,
+    /// A lazy product's projection of the component the word counts, from
+    /// zero.
+    Project(Word),
 }
 
 /// The observed word of [`Observed::Apply`].
 pub const OBSERVED_APPLY: Word = Word(1);
 /// The observed word of [`Observed::Force`].
 pub const OBSERVED_FORCE: Word = Word(2);
-/// The observed word of [`Observed::ProjectLeft`].
-pub const OBSERVED_PROJECT_LEFT: Word = Word(3);
-/// The observed word of [`Observed::ProjectRight`].
-pub const OBSERVED_PROJECT_RIGHT: Word = Word(4);
+/// The observed word of [`Observed::Project`] of the first component; each
+/// later component's is one more.
+pub const OBSERVED_PROJECT: Word = Word(3);
+
+/// The observed word of the projection of `component`.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub const fn observed_projection(component: Word) -> Word
+{
+    Word(OBSERVED_PROJECT.0.wrapping_add(component.0))
+}
 
 impl TryFrom<Word> for Observed
 {
@@ -598,9 +607,10 @@ impl TryFrom<Word> for Observed
         match word {
             OBSERVED_APPLY => Ok(Self::Apply),
             OBSERVED_FORCE => Ok(Self::Force),
-            OBSERVED_PROJECT_LEFT => Ok(Self::ProjectLeft),
-            OBSERVED_PROJECT_RIGHT => Ok(Self::ProjectRight),
-            other => Err(UnknownStatus(other)),
+            Word(other) => other
+                .checked_sub(OBSERVED_PROJECT.0)
+                .map(|component| Self::Project(Word(component)))
+                .ok_or(UnknownStatus(Word(other))),
         }
     }
 }
@@ -617,8 +627,7 @@ impl From<Observed> for Word
         match observed {
             Observed::Apply => OBSERVED_APPLY,
             Observed::Force => OBSERVED_FORCE,
-            Observed::ProjectLeft => OBSERVED_PROJECT_LEFT,
-            Observed::ProjectRight => OBSERVED_PROJECT_RIGHT,
+            Observed::Project(component) => observed_projection(component),
         }
     }
 }

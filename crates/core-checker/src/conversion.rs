@@ -62,7 +62,7 @@
 //! without minting the moved tree. Where both sides stand at a former whose
 //! comparison is types beneath and a leaf — a product, a sum, a record, a
 //! list, a thunk, a stack, a static or dependent pair, a lift, a universe, a
-//! base type, a lazy pair, a returner over the empty row, an arrow of either
+//! base type, a lazy product, a returner over the empty row, an arrow of either
 //! kind — each child pair is pushed carrying its parent's relocation, under
 //! one more binder at a dependent pair's second factor and a dependent
 //! arrow's codomain; the plain codomain an arrow meets a dependent one with
@@ -1342,9 +1342,14 @@ fn convert(
                     comp_type_view(context.arena(), right)?,
                 ) {
                     (CompTypeView::Unknown, _) | (_, CompTypeView::Unknown) => true,
-                    (CompTypeView::With(a, b), CompTypeView::With(c, d)) => {
-                        pending.extend([comps(a, c), comps(b, d)]);
-                        true
+                    (CompTypeView::With(a), CompTypeView::With(b)) => {
+                        if a.len() == b.len() {
+                            pending.extend(a.iter().zip(b).map(|(&a, &b)| comps(a, b)));
+                            true
+                        }
+                        else {
+                            false
+                        }
                     },
                     (
                         CompTypeView::Returner {
@@ -2050,9 +2055,9 @@ fn relocated_values(
 ///
 /// # Specification
 /// - requires: both sides at their weak heads.
-/// - ensures: as [`relocated_values`], for lazy pairs, returners over the empty
-///   row, and arrows of either kind; a returner over a row, a decode and a
-///   codata type are [`through::Absent::Unread`].
+/// - ensures: as [`relocated_values`], for lazy products, returners over the
+///   empty row, and arrows of either kind; a returner over a row, a decode and
+///   a codata type are [`through::Absent::Unread`].
 /// - fails: the view's refusal for a node outside the fragment.
 /// - panics: none.
 ///
@@ -2076,140 +2081,138 @@ fn relocated_comps(
     if at_left == Relocation::IDENTITY && at_right == Relocation::IDENTITY {
         return Ok(Maybe::Absent(through::Absent::Plain));
     }
-    let read = match (
-        comp_type_view(arena, left.node())?,
-        comp_type_view(arena, right.node())?,
-    ) {
-        (CompTypeView::Element { .. } | CompTypeView::Codata { .. }, _)
-        | (_, CompTypeView::Element { .. } | CompTypeView::Codata { .. }) => {
-            return Ok(Maybe::Absent(through::Absent::Unread));
-        },
-        (CompTypeView::Unknown, _) | (_, CompTypeView::Unknown) => Read::Pushed,
-        (
-            CompTypeView::With(left_first, left_second),
-            CompTypeView::With(right_first, right_second),
-        ) => {
-            pending.extend([
-                variance.comps(
-                    arena.place_comp_type(left_first, at_left),
-                    arena.place_comp_type(right_first, at_right),
-                ),
-                variance.comps(
-                    arena.place_comp_type(left_second, at_left),
-                    arena.place_comp_type(right_second, at_right),
-                ),
-            ]);
-            Read::Pushed
-        },
-        (
-            CompTypeView::Returner {
-                result: left_result,
-                effects: left_effects,
+    let read =
+        match (
+            comp_type_view(arena, left.node())?,
+            comp_type_view(arena, right.node())?,
+        ) {
+            (CompTypeView::Element { .. } | CompTypeView::Codata { .. }, _)
+            | (_, CompTypeView::Element { .. } | CompTypeView::Codata { .. }) => {
+                return Ok(Maybe::Absent(through::Absent::Unread));
             },
-            CompTypeView::Returner {
-                result: right_result,
-                effects: right_effects,
-            },
-        ) if left_effects.signatures().len() == 0 => {
-            if variance == Variance::Subtyping || right_effects.signatures().len() == 0 {
-                pending.push(variance.values(
-                    arena.place_value_type(left_result, at_left),
-                    arena.place_value_type(right_result, at_right),
+            (CompTypeView::Unknown, _) | (_, CompTypeView::Unknown) => Read::Pushed,
+            (CompTypeView::With(left_components), CompTypeView::With(right_components))
+                if left_components.len() == right_components.len() =>
+            {
+                pending.extend(left_components.iter().zip(right_components).map(
+                    |(&left, &right)| {
+                        variance.comps(
+                            arena.place_comp_type(left, at_left),
+                            arena.place_comp_type(right, at_right),
+                        )
+                    },
                 ));
                 Read::Pushed
-            }
-            else {
-                Read::Apart
-            }
-        },
-        (
-            CompTypeView::Arrow {
-                domain: left_domain,
-                codomain: left_codomain,
             },
-            CompTypeView::Arrow {
-                domain: right_domain,
-                codomain: right_codomain,
+            (
+                CompTypeView::Returner {
+                    result: left_result,
+                    effects: left_effects,
+                },
+                CompTypeView::Returner {
+                    result: right_result,
+                    effects: right_effects,
+                },
+            ) if left_effects.signatures().len() == 0 => {
+                if variance == Variance::Subtyping || right_effects.signatures().len() == 0 {
+                    pending.push(variance.values(
+                        arena.place_value_type(left_result, at_left),
+                        arena.place_value_type(right_result, at_right),
+                    ));
+                    Read::Pushed
+                }
+                else {
+                    Read::Apart
+                }
             },
-        ) => {
-            pending.push(variance.comps(
-                arena.place_comp_type(left_codomain, at_left),
-                arena.place_comp_type(right_codomain, at_right),
-            ));
-            pending.push(variance.values(
-                arena.place_value_type(right_domain, at_right),
-                arena.place_value_type(left_domain, at_left),
-            ));
-            Read::Pushed
-        },
-        (
-            CompTypeView::Pi {
-                domain: left_domain,
-                codomain: left_codomain,
+            (
+                CompTypeView::Arrow {
+                    domain: left_domain,
+                    codomain: left_codomain,
+                },
+                CompTypeView::Arrow {
+                    domain: right_domain,
+                    codomain: right_codomain,
+                },
+            ) => {
+                pending.push(variance.comps(
+                    arena.place_comp_type(left_codomain, at_left),
+                    arena.place_comp_type(right_codomain, at_right),
+                ));
+                pending.push(variance.values(
+                    arena.place_value_type(right_domain, at_right),
+                    arena.place_value_type(left_domain, at_left),
+                ));
+                Read::Pushed
             },
-            CompTypeView::Pi {
-                domain: right_domain,
-                codomain: right_codomain,
+            (
+                CompTypeView::Pi {
+                    domain: left_domain,
+                    codomain: left_codomain,
+                },
+                CompTypeView::Pi {
+                    domain: right_domain,
+                    codomain: right_codomain,
+                },
+            ) => {
+                pending.push(variance.comps(
+                    arena.place_comp_type(left_codomain, at_left.under(Binders::ONE)),
+                    arena.place_comp_type(right_codomain, at_right.under(Binders::ONE)),
+                ));
+                pending.push(variance.values(
+                    arena.place_value_type(right_domain, at_right),
+                    arena.place_value_type(left_domain, at_left),
+                ));
+                Read::Pushed
             },
-        ) => {
-            pending.push(variance.comps(
-                arena.place_comp_type(left_codomain, at_left.under(Binders::ONE)),
-                arena.place_comp_type(right_codomain, at_right.under(Binders::ONE)),
-            ));
-            pending.push(variance.values(
-                arena.place_value_type(right_domain, at_right),
-                arena.place_value_type(left_domain, at_left),
-            ));
-            Read::Pushed
-        },
-        (
-            CompTypeView::Pi {
-                domain: left_domain,
-                codomain: left_codomain,
+            (
+                CompTypeView::Pi {
+                    domain: left_domain,
+                    codomain: left_codomain,
+                },
+                CompTypeView::Arrow {
+                    domain: right_domain,
+                    codomain: right_codomain,
+                },
+            ) => {
+                let dependent = arena.place_comp_type(left_codomain, at_left.under(Binders::ONE));
+                let plain = arena.place_comp_type(right_codomain, at_right);
+                let weakened = shift_comp_type(arena, plain, Binders::ONE);
+                pending.push(variance.comps(dependent, weakened));
+                pending.push(variance.values(
+                    arena.place_value_type(right_domain, at_right),
+                    arena.place_value_type(left_domain, at_left),
+                ));
+                Read::Pushed
             },
-            CompTypeView::Arrow {
-                domain: right_domain,
-                codomain: right_codomain,
+            (
+                CompTypeView::Arrow {
+                    domain: left_domain,
+                    codomain: left_codomain,
+                },
+                CompTypeView::Pi {
+                    domain: right_domain,
+                    codomain: right_codomain,
+                },
+            ) => {
+                let plain = arena.place_comp_type(left_codomain, at_left);
+                let weakened = shift_comp_type(arena, plain, Binders::ONE);
+                let dependent = arena.place_comp_type(right_codomain, at_right.under(Binders::ONE));
+                pending.push(variance.comps(weakened, dependent));
+                pending.push(variance.values(
+                    arena.place_value_type(right_domain, at_right),
+                    arena.place_value_type(left_domain, at_left),
+                ));
+                Read::Pushed
             },
-        ) => {
-            let dependent = arena.place_comp_type(left_codomain, at_left.under(Binders::ONE));
-            let plain = arena.place_comp_type(right_codomain, at_right);
-            let weakened = shift_comp_type(arena, plain, Binders::ONE);
-            pending.push(variance.comps(dependent, weakened));
-            pending.push(variance.values(
-                arena.place_value_type(right_domain, at_right),
-                arena.place_value_type(left_domain, at_left),
-            ));
-            Read::Pushed
-        },
-        (
-            CompTypeView::Arrow {
-                domain: left_domain,
-                codomain: left_codomain,
-            },
-            CompTypeView::Pi {
-                domain: right_domain,
-                codomain: right_codomain,
-            },
-        ) => {
-            let plain = arena.place_comp_type(left_codomain, at_left);
-            let weakened = shift_comp_type(arena, plain, Binders::ONE);
-            let dependent = arena.place_comp_type(right_codomain, at_right.under(Binders::ONE));
-            pending.push(variance.comps(weakened, dependent));
-            pending.push(variance.values(
-                arena.place_value_type(right_domain, at_right),
-                arena.place_value_type(left_domain, at_left),
-            ));
-            Read::Pushed
-        },
-        (
-            CompTypeView::Returner { .. }
-            | CompTypeView::With(..)
-            | CompTypeView::Arrow { .. }
-            | CompTypeView::Pi { .. },
-            _,
-        ) => return Ok(Maybe::Absent(through::Absent::Unread)),
-    };
+            (
+                CompTypeView::Returner { .. }
+                | CompTypeView::With(..)
+                | CompTypeView::Arrow { .. }
+                | CompTypeView::Pi { .. },
+                _,
+            ) => return Ok(Maybe::Absent(through::Absent::Unread)),
+        };
     Ok(Maybe::Present(read))
 }
 

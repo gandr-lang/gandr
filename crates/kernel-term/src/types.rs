@@ -125,39 +125,23 @@
 //!
 //! # The lazy product
 //!
-//! [`CompType::With`] is the computation product `C & D` of call-by-push-value
-//! (Paul Blain Levy, *Call-By-Push-Value: A Functional/Imperative Synthesis*,
-//! Springer 2003, the computation product with its projections).
-//! [`Computation::With`] pairs two computations without running either;
-//! [`Computation::Project`] observes one [`Side`] and runs that component. The
-//! β law is `Project(Left, With(M, N)) = M`, and `N` on the right. The η law is
-//! the type's definition as a destructor-defined (negative) type: a
-//! computation `M : C & D` is `With(Project(Left, M), Project(Right, M))`, the
-//! pairing of its own projections.
+//! [`CompType::With`] is the computation product `C₀ & … & Cₙ₋₁` of
+//! call-by-push-value (Paul Blain Levy, *Call-By-Push-Value: A
+//! Functional/Imperative Synthesis*, Springer 2003, the computation product
+//! with its projections), n-ary as [`ValueType::Product`] is: the empty lazy
+//! product is the terminal computation type `⊤`. [`Computation::With`] pairs
+//! computations without running any; [`Computation::Project`] observes the
+//! component at one position and runs it. The β law is
+//! `Project(i, With(M₀, …, Mₙ₋₁)) = Mᵢ`. The η law is the type's definition
+//! as a destructor-defined (negative) type: a computation `M : C₀ & … & Cₙ₋₁`
+//! is `With(Project(0, M), …, Project(n - 1, M))`, the pairing of its own
+//! projections, so every computation of `⊤` is the empty pairing.
 //!
-//! **Choice.** A native negative former at its own three bytes, binary as the
-//! core's former is. A lazy record of `n` entries is the right-nested chain
-//! the lowering builds; the empty lazy record `⊤` has no node.
-//!
-//! **Alternatives.** The record of thunks: by the call-by-push-value
-//! isomorphism `U(&{l : C_l}) ≅ #{l : U C_l}` the lazy record derives from the
-//! positive record and thunks, with no new node. That encoding loses two
-//! properties:
-//!
-//! - **`With`'s η.** A computation of type `C & D` stops being the pairing of
-//!   its projections: the encoding turns it into a value of a record type, and
-//!   no conversion rule relates that value to the record of its projections.
-//! - **The codata abstraction.** Under the encoding the lazy record is data, so
-//!   a pattern can match the record the lazy product hides; only observation
-//!   should reach a component.
-//!
-//! A counted former, like [`ValueType::Product`], would spell an `n`-entry
-//! lazy record without the chain; it waits on the core's former becoming
-//! counted, and takes a new byte when it does.
-//!
-//! **Reversal.** Never while effects are in the language. With effects the
-//! lazy record and the record of thunks are not interchangeable, and the two
-//! lost properties are the reason the former is native.
+//! The former is native rather than the record of thunks the
+//! call-by-push-value isomorphism `U(&{l : C_l}) ≅ #{l : U C_l}` would derive
+//! it as. Under that encoding a computation of the lazy product is a value of
+//! a record type, so `With`'s η no longer holds, and a pattern can match the
+//! record where only an observation should reach a component.
 //!
 //! # Codata
 //!
@@ -165,11 +149,11 @@
 //! greatest fixpoint `νX. &{dᵢ : Bᵢ}` of the declaration's observations
 //! (Andreas Abel, Brigitte Pientka, David Thibodeau and Anton Setzer,
 //! *Copatterns: programming infinite structures by observations*, POPL 2013).
-//! It is read as the right-nested lazy product of its observations, `B₀ & (B₁
-//! & …)`, one observation read as itself, each instantiated at the arguments
-//! and naming the type itself where the declaration names `X`. The reading is
+//! It is read as the lazy product of its observations, `&{B₀, B₁, …}`, one
+//! observation a lazy product of one, each instantiated at the arguments and
+//! naming the type itself where the declaration names `X`. The reading is
 //! taken where a computation is checked against the type and where a
-//! projection or an application observes a computation of it; conversion
+//! projection observes a computation of it; conversion
 //! compares the declaration and the arguments and never unfolds, so the type
 //! has no η.
 //!
@@ -210,7 +194,6 @@
 //! [`Value::Returned`]: crate::Value::Returned
 //! [`Computation::With`]: crate::Computation::With
 //! [`Computation::Project`]: crate::Computation::Project
-//! [`Side`]: crate::Side
 //! [`TermArena::value_type_element`]: crate::TermArena::value_type_element
 //! [`TermArena::comp_type_element`]: crate::TermArena::comp_type_element
 
@@ -674,9 +657,10 @@ pub enum CompType
         /// level.
         target: Level,
     },
-    /// The lazy product `C & D` of two computation types: a computation of
-    /// this type runs neither component until a projection observes one.
-    With(CompTypeId, CompTypeId),
+    /// The lazy product `C₀ & … & Cₙ₋₁` of computation types, the terminal
+    /// computation type when there are none: a computation of this type runs
+    /// no component until a projection observes one.
+    With(alloc::boxed::Box<[CompTypeId]>),
     /// A nominal codata type applied to its declaration's parameters: the
     /// greatest fixpoint `νX. &{dᵢ : Bᵢ}` of its observations.
     ///

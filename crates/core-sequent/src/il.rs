@@ -345,8 +345,8 @@ pub enum DestructorTag
     Apply,
     /// Forcing a thunk, returning to one continuation.
     Force,
-    /// Observe one component of a lazy computation pair.
-    Project(gandr_kernel_term::Side),
+    /// Observe one component of a lazy product.
+    Project(gandr_kernel_term::Component),
 }
 
 impl Ord for DestructorTag
@@ -355,7 +355,7 @@ impl Ord for DestructorTag
     ///
     /// # Specification
     /// - ensures: distinct observations compare unequal; application precedes
-    ///   force, followed by the left and right projections.
+    ///   force, followed by the projections in component order.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — accepting both projections and rejecting a duplicate
@@ -369,10 +369,9 @@ impl Ord for DestructorTag
     ) -> core::cmp::Ordering
     {
         let rank = |tag: &Self| match *tag {
-            Self::Apply => 0_u8,
-            Self::Force => 1,
-            Self::Project(gandr_kernel_term::Side::Left) => 2,
-            Self::Project(gandr_kernel_term::Side::Right) => 3,
+            Self::Apply => (0_u8, 0_usize),
+            Self::Force => (1, 0),
+            Self::Project(component) => (2, usize::from(component)),
         };
         rank(self).cmp(&rank(other))
     }
