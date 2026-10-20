@@ -286,13 +286,12 @@ fn generated_queries_agree_with_brute_force()
             }
         }
     }
+    let mut atomic: Vec<Formula> = Vec::new();
     for context in contexts {
         let rows = assignments(&context);
         let basis = atoms(&context);
-        let atomic: Vec<Formula> = basis
-            .iter()
-            .map(|node| formula(vec![node.clone()]))
-            .collect();
+        atomic.clear();
+        atomic.extend(basis.iter().map(|node| formula(vec![node.clone()])));
         for left in &atomic {
             for right in &atomic {
                 check(&context, left, right, &rows, &mut tally);
@@ -343,8 +342,7 @@ fn generated_queries_agree_with_brute_force()
         }
         // Shared conjunctive tables whose roots leave some atoms unreached.
         for _ in 0_usize .. 256 {
-            let mut pair = Vec::with_capacity(2);
-            for _ in 0_usize .. 2 {
+            let [premise, conclusion]: [Formula; 2] = core::array::from_fn(|_| {
                 let mut nodes = basis.clone();
                 for _ in 0_usize .. 32 {
                     let bound = NodeId::from(nodes.len());
@@ -352,9 +350,9 @@ fn generated_queries_agree_with_brute_force()
                     let right = seed.index(bound);
                     nodes.push(Node::And(left, right));
                 }
-                pair.push(formula(nodes));
-            }
-            check(&context, &pair[0], &pair[1], &rows, &mut tally);
+                formula(nodes)
+            });
+            check(&context, &premise, &conclusion, &rows, &mut tally);
         }
     }
     assert!(
@@ -491,10 +489,12 @@ fn a_column_disjunction_is_decided_as_its_union()
         (problem, evidence)
     };
     let arms = |carrier: usize, written: &[&[usize]]| {
+        let mut points: Vec<Point> = Vec::new();
         let mut nodes: Vec<Node> = written
             .iter()
             .map(|arm| {
-                let points: Vec<Point> = arm.iter().map(|&point| Point::from(point)).collect();
+                points.clear();
+                points.extend(arm.iter().map(|&point| Point::from(point)));
                 Node::Member(
                     Variable::from(0_usize),
                     Subshape::new(PointCount::from(carrier), &points).expect("a subset"),

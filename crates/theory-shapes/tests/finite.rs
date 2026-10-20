@@ -1,6 +1,8 @@
 //! Finite subshapes: every subset pair of the small carriers, the union
 //! square's universal map, and the refusals at the carrier's edges.
 
+use alloc::collections::BTreeSet;
+
 use gandr_theory_shapes::Block;
 use gandr_theory_shapes::Cofibration;
 use gandr_theory_shapes::Inclusion;
@@ -160,6 +162,7 @@ fn union_square_has_unique_mediators()
     // the meet, and it is the one candidate that restricts to both.
     let mut glued = 0_usize;
     let mut refused = 0_usize;
+    let mut right_set: BTreeSet<Point> = BTreeSet::new();
     for size in 0_usize ..= 3 {
         let count = PointCount::from(size);
         let carrier = subsets(count);
@@ -170,32 +173,33 @@ fn union_square_has_unique_mediators()
                 let right_points = members(count, right_mask);
                 let union_points = members(count, Mask(left_mask.0 | right_mask.0));
                 let candidates = tables(PointCount::from(union_points.len()));
+                right_set.clear();
+                right_set.extend(right_points.iter().copied());
                 for left_map in tables(PointCount::from(left_points.len())) {
                     for right_map in tables(PointCount::from(right_points.len())) {
-                        let restricting: Vec<&Vec<Point>> = candidates
-                            .iter()
-                            .filter(|candidate| {
-                                left_points.iter().all(|point| {
-                                    value_at(candidate, &union_points, *point)
-                                        == value_at(&left_map, &left_points, *point)
-                                }) && right_points.iter().all(|point| {
-                                    value_at(candidate, &union_points, *point)
-                                        == value_at(&right_map, &right_points, *point)
-                                })
+                        let mut restricting = candidates.iter().filter(|candidate| {
+                            left_points.iter().all(|point| {
+                                value_at(candidate, &union_points, *point)
+                                    == value_at(&left_map, &left_points, *point)
+                            }) && right_points.iter().all(|point| {
+                                value_at(candidate, &union_points, *point)
+                                    == value_at(&right_map, &right_points, *point)
                             })
-                            .collect();
+                        });
+                        let first = restricting.next();
+                        let another = restricting.next();
                         let disagreement = left_points.iter().copied().find(|point| {
-                            right_points.contains(point)
+                            right_set.contains(point)
                                 && value_at(&left_map, &left_points, *point)
                                     != value_at(&right_map, &right_points, *point)
                         });
                         match square.mediator(&left_map, &right_map) {
                             Ok(table) => {
-                                assert_eq!(restricting, vec![&table]);
+                                assert_eq!((first, another), (Some(&table), None));
                                 glued = glued.saturating_add(1);
                             },
                             Err(error) => {
-                                assert!(restricting.is_empty());
+                                assert_eq!(first, None);
                                 assert_eq!(Some(error), disagreement.map(ShapeError::Disagreement));
                                 refused = refused.saturating_add(1);
                             },
