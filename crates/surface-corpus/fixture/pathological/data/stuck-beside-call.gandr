@@ -1,0 +1,28 @@
+// The twin of `model/data/stuck-beside-call.gandr`: two applications of one
+// recursion at one stuck call compare part by part, so an argument beside
+// the stuck call that differs is still told apart (#879).
+
+// The naturals.
+import "../../model/data/data-base.gandr" ;
+// `succ` and `walk`, whose arm passes its accumulator through `succ`.
+import "../../model/data/stuck-beside-call.gandr" ;
+
+/// The step with the accumulator passed through `succ` twice.
+@[ refuses("EndpointMismatch") ]
+def walkTwiceOvershot(b : Nat, c1 : Nat, c2 : Nat) -> -F Path(
+  Nat,
+  walk(Succ(walk(b, c1)), c2),
+  Succ(walk(walk(b, c1), succ(succ(c2))))
+) {
+  here(Succ(walk(walk(b, c1), succ(succ(c2)))))
+}
+
+/// The step with the stuck call's own accumulator changed.
+@[ refuses("EndpointMismatch") ]
+def walkTwiceInner(b : Nat, c1 : Nat, c2 : Nat) -> -F Path(
+  Nat,
+  walk(Succ(walk(b, c1)), c2),
+  Succ(walk(walk(b, succ(c1)), succ(c2)))
+) {
+  here(Succ(walk(walk(b, succ(c1)), succ(c2))))
+}

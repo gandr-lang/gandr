@@ -1,0 +1,49 @@
+// A recursive call whose descending argument is another recursion's stuck
+// call, beside an argument the arm passes through a definition: unfolded at
+// that call, the arm runs the definition before it recurses, and the path
+// states the recursion with the definition still written. Both sides apply
+// the recursion at the one stuck call and differ only in that argument, so
+// they compare part by part, the definition unfolding to meet what the arm
+// ran.
+
+// The naturals the recursion takes apart.
+import "./data-base.gandr" ;
+
+/// One successor over a natural.
+@[ checks ]
+def succ(n : Nat) -> -F Nat {
+  Succ(n)
+}
+
+/// A walk down its first argument, passing its accumulator through `succ`
+/// at every step.
+@[ checks ]
+def rec walk(t : Nat, c : Nat) -> -F Nat {
+  case t {
+    Zero => c,
+    Succ(m) => Succ(walk[<](m, succ(c)))
+  }
+}
+
+/// Two walked from zero: a successor per step over the accumulator `succ`
+/// raised once per step.
+@[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
+def walkedTwo : +U (-F Nat) ;
+def walkedTwo = thunk { walk(two, Zero) } ;
+
+/// One step at a variable.
+@[ checks ]
+def walkOnce(b : Nat, c : Nat) -> -F Path(Nat, walk(Succ(b), c), Succ(walk(b, succ(c)))) {
+  here(Succ(walk(b, succ(c))))
+}
+
+/// One step at another walk's stuck call: the step's recursive call
+/// receives that call beside `succ(c2)` (#879).
+@[ checks ]
+def walkTwice(b : Nat, c1 : Nat, c2 : Nat) -> -F Path(
+  Nat,
+  walk(Succ(walk(b, c1)), c2),
+  Succ(walk(walk(b, c1), succ(c2)))
+) {
+  here(Succ(walk(walk(b, c1), succ(c2))))
+}

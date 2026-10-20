@@ -8,15 +8,16 @@
 // two substitution data: a substitution shifts, conses a term onto another
 // or lifts one under a binder, and a renaming shifts or lifts. Lifting is a
 // constructor, so the substitution laws reach their inductive steps by
-// conversion; lifting written as a definition does not yet (#879).
+// conversion; lifting written as a definition reaches them too.
 //
 // The argument, file by file: this base; the laws that hold by computation
 // (`sub-q-single`, `sub-q-lift`, `sub-lam`, `sub-app`); the congruences and
 // the lemmas laws 3 and 4 are proved from (`congruence`, `shift-lookup`,
 // `rename-rename`, `lookup-weaken`, `subst-rename`, `subst-subst`,
-// `subst-id`, `subst-as-rename`); laws 3 and 4 (`sub-weaken-lift`,
-// `sub-weaken-single`); the syntax model (`syntax-model`) and the record of
-// `LC`'s models it packs into (`model-record`).
+// `lift-as-definition`, `subst-id`, `subst-as-rename`); laws 3 and 4
+// (`sub-weaken-lift`, `sub-weaken-single`); the syntax model
+// (`syntax-model`) and the record of `LC`'s models it packs into
+// (`model-record`).
 
 // The naturals, the de Bruijn indices.
 import "../model-in-source.gandr" ;

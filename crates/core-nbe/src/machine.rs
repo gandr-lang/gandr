@@ -2948,6 +2948,16 @@ where
                 Subgoal::OpenedUnder(left, right, count) => {
                     (SupportSides::OpenedUnder(left, right, count), goal.depth)
                 },
+                Subgoal::Continued(left, right) => {
+                    let depth = deeper(goal.depth)?;
+                    let variable = self.variable(goal.depth)?;
+                    let left = self.continued(left, variable)?;
+                    let right = self.continued(right, variable)?;
+                    (
+                        SupportSides::Heads(Glued::Computation(left), Glued::Computation(right)),
+                        depth,
+                    )
+                },
             };
             let child = self.start_fresh(sides, depth)?;
             let outcome = self.depend(id, child)?;
@@ -3187,6 +3197,50 @@ where
                 None => Err(ConversionFault::Domain(DomainFault::Dangling)),
             },
         }
+    }
+
+    /// The first elimination of `held` applied to `variable`: the
+    /// continuation of the bind the kernel reads over a held endpoint an
+    /// elimination inspects.
+    ///
+    /// # Specification
+    /// - requires: `variable` is fresh at the parent goal's depth.
+    /// - ensures: a stuck computation whose head is `variable` and whose spine
+    ///   is `held`'s first elimination alone.
+    /// - provides: one side of [`Subgoal::Continued`].
+    /// - fails: [`ConversionFault::Domain`] for a dangling node,
+    ///   [`ConversionFault::MachineInvariant`] when `held` has an empty spine
+    ///   or `variable` is no neutral.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two applications of one fixpoint at one held call
+    ///   compare their fixpoints at the bound variable, as the kernel compares
+    ///   the binds' continuations; applying the whole spine there would compare
+    ///   the arguments past the gate twice.
+    /// - witness: `machine::tests::two_held_eliminations_of_one_call_compare_by_their_parts_879`
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|continued|
+        matches!(self.domain.computation(*continued), Some(&DomainComp::Neutral { neutral, .. })
+            if self.domain.neutral(neutral).is_some_and(|node| node.spine().len() == 1_usize))))]
+    fn continued(
+        &mut self,
+        held: NeutralId,
+        variable: DomainValueId,
+    ) -> Result<DomainCompId, ConversionFault>
+    {
+        let first = *self
+            .domain
+            .neutral(held)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?
+            .spine()
+            .first()
+            .ok_or(ConversionFault::MachineInvariant)?;
+        let fresh = self.neutral_of(Glued::Value(variable))?;
+        let grown = extend_spine(self.domain, fresh, first).map_err(ConversionFault::Evaluation)?;
+        Ok(self.domain.comp_neutral(grown, CompTermFace::Reduced))
     }
 
     /// The constant a neutral is headed by.

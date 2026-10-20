@@ -3626,6 +3626,77 @@ fn a_continuation_handing_its_stuck_call_to_a_definition_reads_as_that_call_761(
 }
 
 #[test]
+fn two_held_eliminations_of_one_call_compare_by_their_parts_879()
+{
+    // `⟨g ⟨S⟩ ⟨unit⟩⟩` against `⟨g ⟨S⟩ ()⟩` for the stuck call `S`, the
+    // fixpoint `g = fix rec. λt. λc. return c` and the definition `unit =
+    // return ()`: `walk(walk(b, c1), succ(c2))` against `walk(S(walk(b,
+    // c1)), c2)` unfolded, in miniature. Both sides are `g` at its gate over
+    // the held call, apart only in the argument one side unfolded, so the
+    // walk finds them apart; they decompose as the kernel reads each, a bind
+    // over the call, and `unit` unfolds to meet `()`. A second argument
+    // apart from `()` refutes at that argument. Before, both pairs declined.
+    let mut core = CoreArena::new();
+    let stuck = stuck_call(&mut core);
+    let held = core.value_returned(stuck);
+    let occurrence = innermost(&mut core);
+    let unit = core.value_unit();
+    let returned_unit = core.computation_return(unit);
+    let unit_body = core.value_thunk(returned_unit);
+    let unit_name = core.value_constant(Name::Zero.constant());
+    let unforced = call(&mut core, unit_name, &[]);
+    let unforced = core.value_returned(unforced);
+    let produced = core.computation_return(occurrence);
+    let inner = core.computation_lambda(produced);
+    let outer = core.computation_lambda(inner);
+    let walk = core.computation_fixpoint(
+        outer,
+        gandr_kernel_term::FixpointEvidence::StructuralDescent,
+    );
+    let walked = |core: &mut CoreArena, argument| {
+        let gated = core.computation_application(walk, held);
+        let applied = core.computation_application(gated, argument);
+        core.value_returned(applied)
+    };
+    let left = walked(&mut core, unforced);
+    let right = walked(&mut core, unit);
+    let pair = core.value_tuple(&[unit, unit]);
+    let apart = walked(&mut core, pair);
+    let world = World::new(core, &[(Name::Zero, unit_body)]).holding();
+
+    let converts = Sides::Values(left, right);
+    let (verdict, decisions) = world.traced(converts);
+    assert_eq!(
+        MachineVerdict::Convertible,
+        verdict,
+        "the two applications compare by their parts: {decisions:?}"
+    );
+    assert!(
+        decisions.contains(&ConversionDecision::Unfold {
+            constant: TraceNode::Constant(Name::Zero.constant()),
+        }),
+        "the argument meets `()` by unfolding `unit`: {decisions:?}"
+    );
+    assert_eq!(
+        KernelVerdict::Convertible,
+        world.replayed(converts, verdict, &decisions),
+        "the kernel decomposes the same binds: {decisions:?}"
+    );
+    let refutes = Sides::Values(left, apart);
+    let (verdict, decisions) = world.traced(refutes);
+    assert_eq!(
+        MachineVerdict::NotConvertible,
+        verdict,
+        "a second argument apart refutes: {decisions:?}"
+    );
+    assert_eq!(
+        KernelVerdict::NotConvertible,
+        world.replayed(refutes, verdict, &decisions),
+        "and the kernel refutes at the same argument: {decisions:?}"
+    );
+}
+
+#[test]
 fn two_held_transports_convert_by_their_computations()
 {
     // `⟨comp(R)⟩` against `⟨other((), R)⟩` for the rigid path `R`, where
