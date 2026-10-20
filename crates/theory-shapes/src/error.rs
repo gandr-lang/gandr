@@ -36,8 +36,8 @@ pub enum ShapeError
     /// A membership atom's subshape lies in another carrier than its
     /// variable's.
     WrongCarrier(Variable),
-    /// A query formula holds a disjunction at this node: the decided band is
-    /// conjunctive.
+    /// A query formula holds a disjunction at this node outside the decided
+    /// band: one in a premise, or one whose atoms are not all on one variable.
     Disjunction(NodeId),
     /// A countermodel's assignment and the context differ in length.
     AssignmentLength,
@@ -110,7 +110,7 @@ impl fmt::Display for ShapeError
             Self::Disjunction(node) => {
                 write!(
                     f,
-                    "disjunction at node {} outside the conjunctive band",
+                    "disjunction at node {} outside the decided band",
                     usize::from(node)
                 )
             },

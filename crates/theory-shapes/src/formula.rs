@@ -1,5 +1,5 @@
 //! Face formulas over finite membership atoms, and the entailment queries in
-//! the conjunctive band.
+//! the conjunctive band and its column disjunctions.
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -109,19 +109,25 @@ impl Formula
         &self.nodes
     }
 
-    /// Admits the formula as one side of a query in the conjunctive band and
-    /// lists the atoms its root reaches.
+    /// Admits the formula as one side of a query and lists the conjuncts its
+    /// root reaches.
+    ///
+    /// A column disjunction is a disjunction whose every operand is a
+    /// membership atom or a column disjunction, all on one variable: `x ∈ S₁
+    /// ∨ … ∨ x ∈ Sₙ`, which holds exactly when `x ∈ S₁ ∪ … ∪ Sₙ`.
     ///
     /// # Specification
     /// - ensures: every membership atom of the table names a variable of the
-    ///   context and a subshape of that variable's carrier, and the table holds
-    ///   no disjunction; the list holds every `⊥` and membership node the root
-    ///   reaches through conjunctions, once each, in node order.
+    ///   context and a subshape of that variable's carrier; a premise holds no
+    ///   disjunction and every disjunction of a conclusion is a column
+    ///   disjunction. The list holds every `⊥`, membership and (in a
+    ///   conclusion) disjunction node the root reaches through conjunctions,
+    ///   once each, in node order.
     /// - provides: the conjuncts the formula is: it holds at an assignment
-    ///   exactly when every listed atom does.
+    ///   exactly when every listed conjunct does.
     /// - fails: the first offending node in table order is refused: an atom
     ///   outside the context or in another carrier by its variable, a
-    ///   disjunction by its node.
+    ///   disjunction outside the band by its node.
     /// - panics: none.
     ///
     /// # Errors
@@ -129,14 +135,17 @@ impl Formula
     ///   context.
     /// - [`ShapeError::WrongCarrier`]: an atom's subshape is not of its
     ///   variable's carrier.
-    /// - [`ShapeError::Disjunction`]: the table holds a disjunction.
+    /// - [`ShapeError::Disjunction`]: a premise holds a disjunction, or a
+    ///   conclusion holds one that is not a column disjunction.
     /// - [`ShapeError::MalformedFormula`]: unreachable for an admitted table; a
     ///   child outside the table.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an atom past the context, an atom in a smaller and in
     ///   a larger carrier and a disjunction, on either side of a query,
-    ///   separate the scope, carrier and band checks; L2 — generated tables
+    ///   separate the scope, carrier and band checks, and a one-variable
+    ///   disjunction admitted as a conclusion beside one across two variables
+    ///   and one over `⊤` separates the column check; L2 — generated tables
     ///   whose root leaves atoms unreached, against an independent evaluator of
     ///   the root, separate a list that keeps an unreached atom or drops a
     ///   reached one.
@@ -144,7 +153,11 @@ impl Formula
     /// - witness: `tests::faces::generated_queries_agree_with_brute_force`
     #[spec(ensures: |ref ret| match *ret {
         Ok(ref atoms) => atoms.iter().zip(atoms.iter().skip(1)).all(|pair| pair.0 < pair.1)
-            && atoms.iter().all(|atom| matches!(self.nodes.get(usize::from(*atom)), Some(&(Node::Bottom | Node::Member(..))))),
+            && atoms.iter().all(|atom| match self.nodes.get(usize::from(*atom)) {
+                Some(&(Node::Bottom | Node::Member(..))) => true,
+                Some(&Node::Or(..)) => side == Side::Conclusion,
+                _ => false,
+            }),
         Err(ShapeError::VariableOutside(variable)) => usize::from(variable) >= context.len(),
         Err(ShapeError::WrongCarrier(variable)) => usize::from(variable) < context.len(),
         Err(ShapeError::Disjunction(node)) => matches!(self.nodes.get(usize::from(node)), Some(&Node::Or(..))),
@@ -153,10 +166,14 @@ impl Formula
     fn conjuncts(
         &self,
         context: &[PointCount],
+        side: Side,
     ) -> Result<Vec<NodeId>, ShapeError>
     {
+        // The variable every atom under a node names, when the node is an atom
+        // or a column disjunction.
+        let mut columns: Vec<Option<Variable>> = Vec::with_capacity(self.nodes.len());
         for (index, node) in self.nodes.iter().enumerate() {
-            match *node {
+            let column = match *node {
                 Node::Member(variable, ref subset) => {
                     let carrier = context
                         .get(usize::from(variable))
@@ -164,10 +181,19 @@ impl Formula
                     if subset.ambient() != *carrier {
                         return Err(ShapeError::WrongCarrier(variable));
                     }
+                    Some(variable)
                 },
-                Node::Or(..) => return Err(ShapeError::Disjunction(NodeId::from(index))),
-                Node::Top | Node::Bottom | Node::And(..) => {},
-            }
+                Node::Or(left, right) => {
+                    let left = columns.get(usize::from(left)).copied().flatten();
+                    let right = columns.get(usize::from(right)).copied().flatten();
+                    match (side, left, right) {
+                        (Side::Conclusion, Some(left), Some(right)) if left == right => Some(left),
+                        _ => return Err(ShapeError::Disjunction(NodeId::from(index))),
+                    }
+                },
+                Node::Top | Node::Bottom | Node::And(..) => None,
+            };
+            columns.push(column);
         }
         let mut reach = vec![Reach::Unreached; self.nodes.len()];
         if let Some(root) = reach.last_mut() {
@@ -187,13 +213,23 @@ impl Formula
                         *slot = Reach::Reached;
                     }
                 },
-                Node::Bottom | Node::Member(..) => atoms.push(NodeId::from(index)),
-                Node::Top | Node::Or(..) => {},
+                Node::Bottom | Node::Member(..) | Node::Or(..) => atoms.push(NodeId::from(index)),
+                Node::Top => {},
             }
         }
         atoms.reverse();
         Ok(atoms)
     }
+}
+
+/// Which side of a query a formula stands on.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Side
+{
+    /// The assumed face: conjunctions of atoms only.
+    Premise,
+    /// The required face: conjunctions of atoms and column disjunctions.
+    Conclusion,
 }
 
 /// Whether the root of a formula reaches a node.
@@ -216,20 +252,24 @@ pub enum Truth
     No,
 }
 
-/// An admitted entailment query: a premise and a conclusion, each a
-/// conjunction of membership atoms, over a context of finite carriers.
+/// An admitted entailment query over a context of finite carriers.
+///
+/// The premise is a conjunction of membership atoms; the conclusion a
+/// conjunction of membership atoms and column disjunctions.
 ///
 /// # Specification
 /// - ensures: every atom of both formulas names a variable of the context and a
-///   subshape of its carrier; neither formula holds a disjunction.
+///   subshape of its carrier; the premise holds no disjunction, and every
+///   disjunction of the conclusion has its atoms on one variable.
 /// - provides: one query for [`decide`] and both validators, with the conjuncts
 ///   of each side listed once.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — ill-scoped, ill-carried and disjunctive atoms on either
-///   side are refused; L2 — every admitted generated query is decided in
-///   agreement with brute force.
+///   side are refused, and a column disjunction is admitted as a conclusion
+///   alone; L2 — every admitted generated query is decided in agreement with
+///   brute force.
 /// - witness: `tests::faces::input_boundaries_are_checked`
 /// - witness: `tests::faces::generated_queries_agree_with_brute_force`
 ///
@@ -243,22 +283,22 @@ pub struct Problem
     premise: Formula,
     /// The required face.
     conclusion: Formula,
-    /// The premise's reachable atoms, in node order.
+    /// The premise's reachable conjuncts, in node order.
     premise_atoms: Vec<NodeId>,
-    /// The conclusion's reachable atoms, in node order.
+    /// The conclusion's reachable conjuncts, in node order.
     conclusion_atoms: Vec<NodeId>,
 }
 
 impl Problem
 {
-    /// Admits a query in the conjunctive band.
+    /// Admits a query in the conjunctive band and its column disjunctions.
     ///
     /// # Specification
     /// - ensures: both formulas are admitted against the context, the premise
     ///   first; the conjuncts of each are listed in node order.
     /// - fails: the premise's first offending node is refused before the
     ///   conclusion's: an atom outside the context or in another carrier by its
-    ///   variable, a disjunction by its node.
+    ///   variable, a disjunction outside the band by its node.
     /// - panics: none.
     ///
     /// # Errors
@@ -266,14 +306,15 @@ impl Problem
     ///   context.
     /// - [`ShapeError::WrongCarrier`]: an atom's subshape is not of its
     ///   variable's carrier.
-    /// - [`ShapeError::Disjunction`]: a formula holds a disjunction; the band
-    ///   this crate decides is conjunctive.
+    /// - [`ShapeError::Disjunction`]: the premise holds a disjunction, or the
+    ///   conclusion holds one whose atoms are not all on one variable.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each refusal on the premise alone and on the
     ///   conclusion alone, and an atom refused on both sides, separate an
-    ///   admission that checks one side or names the wrong defect; L2 —
-    ///   generated queries are admitted and decided.
+    ///   admission that checks one side or names the wrong defect; a column
+    ///   disjunction refused as a premise and admitted as a conclusion
+    ///   separates the sides; L2 — generated queries are admitted and decided.
     /// - witness: `tests::faces::input_boundaries_are_checked`
     /// - witness: `tests::faces::generated_queries_agree_with_brute_force`
     #[inline]
@@ -281,7 +322,7 @@ impl Problem
         Ok(ref problem) => problem.premise_atoms.iter()
                 .all(|atom| matches!(problem.premise.nodes.get(usize::from(*atom)), Some(&(Node::Bottom | Node::Member(..)))))
             && problem.conclusion_atoms.iter()
-                .all(|atom| matches!(problem.conclusion.nodes.get(usize::from(*atom)), Some(&(Node::Bottom | Node::Member(..))))),
+                .all(|atom| matches!(problem.conclusion.nodes.get(usize::from(*atom)), Some(&(Node::Bottom | Node::Member(..) | Node::Or(..))))),
         Err(error) => matches!(error, ShapeError::VariableOutside(_) | ShapeError::WrongCarrier(_) | ShapeError::Disjunction(_)),
     })]
     pub fn new(
@@ -290,8 +331,8 @@ impl Problem
         conclusion: Formula,
     ) -> Result<Self, ShapeError>
     {
-        let premise_atoms = premise.conjuncts(&context)?;
-        let conclusion_atoms = conclusion.conjuncts(&context)?;
+        let premise_atoms = premise.conjuncts(&context, Side::Premise)?;
+        let conclusion_atoms = conclusion.conjuncts(&context, Side::Conclusion)?;
         Ok(Self {
             context,
             premise,
@@ -324,8 +365,8 @@ impl Problem
         &self.premise_atoms
     }
 
-    /// The conclusion's conjuncts: the `⊥` and membership nodes its root
-    /// reaches, in node order.
+    /// The conclusion's conjuncts: the `⊥`, membership and column disjunction
+    /// nodes its root reaches, in node order.
     ///
     /// # Specification
     /// trivial.
@@ -342,11 +383,12 @@ impl Problem
 /// # Specification
 /// - requires: `atoms` lists the conjuncts of `formula`, and `assignment` gives
 ///   every variable a point.
-/// - ensures: `Yes` exactly when every listed atom holds: a membership atom
-///   holds when its variable's point is inside its subshape, `⊥` never.
+/// - ensures: `Yes` exactly when every listed conjunct holds: a membership atom
+///   holds when its variable's point is inside its subshape, a column
+///   disjunction when one of its operands holds, `⊥` never.
 /// - fails: an assignment too short for an atom's variable, or a point outside
-///   the atom's carrier, is refused by name; a listed node that is not an atom
-///   is malformed.
+///   the atom's carrier, is refused by name; a listed node that is not a
+///   conjunct is malformed.
 /// - panics: none.
 /// - executable: none — the reading is the formula's semantics itself; the
 ///   independent evaluator in the agreement suite is its oracle.
@@ -355,7 +397,7 @@ impl Problem
 /// - [`ShapeError::VariableOutside`]: the assignment has no point for an atom's
 ///   variable.
 /// - [`ShapeError::PointOutside`]: the point lies outside the atom's carrier.
-/// - [`ShapeError::MalformedFormula`]: a listed node is not an atom.
+/// - [`ShapeError::MalformedFormula`]: a listed node is not a conjunct.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — every countermodel the oracle returns for generated
@@ -370,22 +412,117 @@ pub fn truth(
     assignment: &[Point],
 ) -> Result<Truth, ShapeError>
 {
+    // Each node's reading at the assignment, children first; read only once a
+    // column disjunction is listed.
+    let mut readings: Vec<Option<Truth>> = Vec::new();
     for &atom in atoms {
-        match formula.nodes.get(usize::from(atom)) {
-            Some(&Node::Member(variable, ref subset)) => {
-                let point = assignment
-                    .get(usize::from(variable))
-                    .ok_or(ShapeError::VariableOutside(variable))?;
-                let decision = subset.contains(*point)?;
-                if decision == Membership::Outside {
-                    return Ok(Truth::No);
+        let reading = match formula.nodes.get(usize::from(atom)) {
+            Some(&Node::Member(variable, ref subset)) => member(variable, subset, assignment)?,
+            Some(&Node::Or(..)) => {
+                if readings.is_empty() {
+                    readings = disjunctions(formula, assignment)?;
                 }
+                readings
+                    .get(usize::from(atom))
+                    .copied()
+                    .flatten()
+                    .ok_or(ShapeError::MalformedFormula)?
             },
-            Some(&Node::Bottom) => return Ok(Truth::No),
-            Some(&(Node::Top | Node::And(..) | Node::Or(..))) | None => {
+            Some(&Node::Bottom) => Truth::No,
+            Some(&(Node::Top | Node::And(..))) | None => {
                 return Err(ShapeError::MalformedFormula);
             },
+        };
+        if reading == Truth::No {
+            return Ok(Truth::No);
         }
     }
     Ok(Truth::Yes)
+}
+
+/// Whether a membership atom holds at the assignment.
+///
+/// # Specification
+/// - ensures: `Yes` exactly when the variable's point is inside the subshape.
+/// - fails: a variable the assignment does not reach, and a point outside the
+///   subshape's carrier, are refused by name.
+/// - panics: none.
+///
+/// # Errors
+/// - [`ShapeError::VariableOutside`]: the assignment has no point for the
+///   variable.
+/// - [`ShapeError::PointOutside`]: the point lies outside the carrier.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every countermodel the oracle returns is read through
+///   this atom reading and by an independent truth-table evaluator.
+/// - witness: `tests::faces::generated_queries_agree_with_brute_force`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(_) => usize::from(variable) < assignment.len(),
+    Err(error) => matches!(error, ShapeError::VariableOutside(_) | ShapeError::PointOutside(_)),
+})]
+fn member(
+    variable: Variable,
+    subset: &Subshape,
+    assignment: &[Point],
+) -> Result<Truth, ShapeError>
+{
+    let point = assignment
+        .get(usize::from(variable))
+        .ok_or(ShapeError::VariableOutside(variable))?;
+    Ok(match subset.contains(*point)? {
+        Membership::Inside => Truth::Yes,
+        Membership::Outside => Truth::No,
+    })
+}
+
+/// The reading at the assignment of every membership atom and every
+/// disjunction of a table, children first; `None` at every other node.
+///
+/// # Specification
+/// - requires: every disjunction of the table is a column disjunction.
+/// - ensures: one entry per node; a disjunction reads `Yes` exactly when one of
+///   its operands does.
+/// - fails: an atom the assignment does not read is refused by name; a
+///   disjunction over a node that is not an atom or a disjunction is malformed.
+/// - panics: none.
+///
+/// # Errors
+/// - [`ShapeError::VariableOutside`]: the assignment has no point for an atom's
+///   variable.
+/// - [`ShapeError::PointOutside`]: a point lies outside an atom's carrier.
+/// - [`ShapeError::MalformedFormula`]: a disjunction's operand is not read.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every countermodel the oracle returns for a generated
+///   column conclusion is read through these readings and by an independent
+///   truth-table evaluator.
+/// - witness: `tests::faces::generated_queries_agree_with_brute_force`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(ref readings) => readings.len() == formula.nodes.len(),
+    Err(error) => matches!(error, ShapeError::VariableOutside(_) | ShapeError::PointOutside(_) | ShapeError::MalformedFormula),
+})]
+fn disjunctions(
+    formula: &Formula,
+    assignment: &[Point],
+) -> Result<Vec<Option<Truth>>, ShapeError>
+{
+    let mut readings: Vec<Option<Truth>> = Vec::with_capacity(formula.nodes.len());
+    for node in &formula.nodes {
+        let reading = match *node {
+            Node::Member(variable, ref subset) => Some(member(variable, subset, assignment)?),
+            Node::Or(left, right) => {
+                let left = readings.get(usize::from(left)).copied().flatten();
+                let right = readings.get(usize::from(right)).copied().flatten();
+                match (left, right) {
+                    (Some(Truth::Yes), Some(_)) | (Some(_), Some(Truth::Yes)) => Some(Truth::Yes),
+                    (Some(Truth::No), Some(Truth::No)) => Some(Truth::No),
+                    _ => return Err(ShapeError::MalformedFormula),
+                }
+            },
+            Node::Top | Node::Bottom | Node::And(..) => None,
+        };
+        readings.push(reading);
+    }
+    Ok(readings)
 }

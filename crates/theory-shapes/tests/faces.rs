@@ -1,5 +1,6 @@
-//! Conjunctive entailment: agreement with an independent truth table, the
-//! stated precedence and size of the evidence, hostile evidence, and the
+//! Entailment in the conjunctive band and its column disjunctions: agreement
+//! with an independent truth table, the stated precedence and size of the
+//! evidence, the coverage reading of a column, hostile evidence, and the
 //! refusals of query admission.
 
 use gandr_theory_shapes::Citation;
@@ -184,7 +185,7 @@ fn check(
         naive(premise, row) == Reading::Fails || naive(conclusion, row) == Reading::Holds
     });
     let problem = Problem::new(context.to_vec(), premise.clone(), conclusion.clone())
-        .expect("a conjunctive query");
+        .expect("a query in the band");
     tally.queries = tally.queries.saturating_add(1);
     match decide(&problem).expect("a decision") {
         Evidence::Holds(derivation) => {
@@ -308,6 +309,35 @@ fn generated_queries_agree_with_brute_force()
                 for atom in &atomic {
                     check(&context, &both, atom, &rows, &mut tally);
                     check(&context, atom, &both, &rows, &mut tally);
+                }
+            }
+        }
+        // Every atom against every column disjunction of two atoms on one
+        // variable, alone and sharing an operand with a second disjunction.
+        for first in &basis {
+            for second in &basis {
+                let (&Node::Member(left, _), &Node::Member(right, _)) = (first, second)
+                else {
+                    continue;
+                };
+                if left != right {
+                    continue;
+                }
+                let column = formula(vec![
+                    first.clone(),
+                    second.clone(),
+                    Node::Or(NodeId::from(0_usize), NodeId::from(1_usize)),
+                ]);
+                let shared = formula(vec![
+                    first.clone(),
+                    second.clone(),
+                    Node::Or(NodeId::from(0_usize), NodeId::from(1_usize)),
+                    Node::Or(NodeId::from(2_usize), NodeId::from(0_usize)),
+                    Node::And(NodeId::from(3_usize), NodeId::from(2_usize)),
+                ]);
+                for atom in &atomic {
+                    check(&context, atom, &column, &rows, &mut tally);
+                    check(&context, atom, &shared, &rows, &mut tally);
                 }
             }
         }
@@ -444,6 +474,92 @@ fn evidence_follows_the_stated_precedence()
 }
 
 #[test]
+fn a_column_disjunction_is_decided_as_its_union()
+{
+    // A match's arms over one column are a column disjunction, one atom per
+    // arm over the column's constructors; the arms cover the column when `⊤`
+    // entails it, and a countermodel is a constructor no arm takes.
+    let top = formula(vec![Node::Top]);
+    let decided = |context: Vec<PointCount>, conclusion: &Formula| {
+        let problem =
+            Problem::new(context, top.clone(), conclusion.clone()).expect("a column query");
+        let evidence = decide(&problem).expect("a decision");
+        match evidence {
+            Evidence::Holds(ref derivation) => assert_eq!(derivation.validate(&problem), Ok(())),
+            Evidence::Refuted(ref model) => assert_eq!(model.validate(&problem), Ok(())),
+        }
+        (problem, evidence)
+    };
+    let arms = |carrier: usize, written: &[&[usize]]| {
+        let mut nodes: Vec<Node> = written
+            .iter()
+            .map(|arm| {
+                let points: Vec<Point> = arm.iter().map(|&point| Point::from(point)).collect();
+                Node::Member(
+                    Variable::from(0_usize),
+                    Subshape::new(PointCount::from(carrier), &points).expect("a subset"),
+                )
+            })
+            .collect();
+        for operand in 1 .. written.len() {
+            let left = if operand == 1 { 0 } else { nodes.len() - 1 };
+            nodes.push(Node::Or(NodeId::from(left), NodeId::from(operand)));
+        }
+        formula(nodes)
+    };
+    // `Bool` as `Fin(2)`, `false` at 0: `true`, `false` covers it.
+    let (_, bool_cover) = decided(context![2], &arms(2, &[&[1], &[0]]));
+    assert_eq!(bool_cover, Evidence::Holds(supported![&[]]));
+    // `true`, `true` leaves `false`.
+    let (_, bool_short) = decided(context![2], &arms(2, &[&[1], &[1]]));
+    assert_eq!(bool_short, Evidence::Refuted(countermodel![0]));
+    // Three constructors, `Red`, `Green`, `Blue`: `Red`, `Blue` leaves `Green`.
+    let (_, color_short) = decided(context![3], &arms(3, &[&[0], &[2]]));
+    assert_eq!(color_short, Evidence::Refuted(countermodel![1]));
+    // `Nat` over the prefix `Z`, `S(Z)`, `S(S(_))`: `Z`, `S(n)` covers it, and
+    // `Z`, `S(Z)` leaves `S(S(_))`.
+    let (_, nat_cover) = decided(context![3], &arms(3, &[&[0], &[1, 2]]));
+    assert_eq!(nat_cover, Evidence::Holds(supported![&[]]));
+    let (nat_problem, nat_short) = decided(context![3], &arms(3, &[&[0], &[1]]));
+    assert_eq!(nat_short, Evidence::Refuted(countermodel![2]));
+    // Forged evidence the other way is refused: no citation makes the short
+    // cover hold, and no point escapes the full one.
+    assert_eq!(
+        supported![&[]].validate(&nat_problem),
+        Err(ShapeError::Unsupported(NodeId::from(2_usize)))
+    );
+    let (bool_problem, _) = decided(context![2], &arms(2, &[&[1], &[0]]));
+    assert_eq!(
+        countermodel![0].validate(&bool_problem),
+        Err(ShapeError::NotCountermodel)
+    );
+    // A premise narrows each column: under `x ∈ {Z} ∧ y ∈ {true}` the arms
+    // `Z`, `S(S(_))` cover `x`, which they do not alone; one column per
+    // variable, side by side.
+    let premise = formula(vec![
+        member!(0, 3, [0]),
+        member!(1, 2, [1]),
+        Node::And(NodeId::from(0_usize), NodeId::from(1_usize)),
+    ]);
+    let two = formula(vec![
+        member!(0, 3, [0]),
+        member!(0, 3, [2]),
+        Node::Or(NodeId::from(0_usize), NodeId::from(1_usize)),
+        member!(1, 2, [1]),
+        member!(1, 2, [0]),
+        Node::Or(NodeId::from(3_usize), NodeId::from(4_usize)),
+        Node::And(NodeId::from(2_usize), NodeId::from(5_usize)),
+    ]);
+    let (_, alone) = decided(context![3, 2], &two);
+    assert_eq!(alone, Evidence::Refuted(countermodel![1, 0]));
+    let narrowed = Problem::new(context![3, 2], premise, two).expect("two columns");
+    assert_eq!(
+        decide(&narrowed),
+        Ok(Evidence::Holds(supported![&[0], &[1]]))
+    );
+}
+
+#[test]
 fn conjunctive_evidence_stays_polynomial()
 {
     // `∧ᵢ xᵢ ∈ {0,1} ⊢ ∧ᵢ xᵢ ∈ {0,1}` over 64 three-point carriers: a case
@@ -512,7 +628,6 @@ fn input_boundaries_are_checked()
         ),
         (&smaller, ShapeError::WrongCarrier(Variable::from(0_usize))),
         (&larger, ShapeError::WrongCarrier(Variable::from(0_usize))),
-        (&either, ShapeError::Disjunction(NodeId::from(2_usize))),
         (&unreached, ShapeError::Disjunction(NodeId::from(1_usize))),
     ] {
         assert_eq!(
@@ -524,6 +639,23 @@ fn input_boundaries_are_checked()
             Err(refusal)
         );
     }
+    // A disjunction of atoms on one variable is a conclusion's column
+    // disjunction, and no premise's; one across two variables is no column.
+    assert_eq!(
+        Problem::new(pair.clone(), either.clone(), top.clone()),
+        Err(ShapeError::Disjunction(NodeId::from(2_usize)))
+    );
+    let column = Problem::new(pair.clone(), top.clone(), either.clone()).expect("a column");
+    assert_eq!(column.conclusion_atoms(), [NodeId::from(2_usize)]);
+    let across = formula(vec![
+        member!(0, 2, [0]),
+        member!(1, 2, [0]),
+        Node::Or(NodeId::from(0_usize), NodeId::from(1_usize)),
+    ]);
+    assert_eq!(
+        Problem::new(context![2, 2], top.clone(), across),
+        Err(ShapeError::Disjunction(NodeId::from(2_usize)))
+    );
     // The premise is admitted first; within a table, the first offending
     // node.
     assert_eq!(
@@ -760,4 +892,22 @@ fn deep_formulas_use_no_call_stack()
     assert_eq!(problem.premise_atoms(), [NodeId::from(0_usize)]);
     let evidence = decide(&problem).expect("decision");
     assert_eq!(evidence, Evidence::Holds(supported![&[0]]));
+    // A column disjunction a hundred thousand deep, each node naming the one
+    // before it twice: a walk of its operands would visit `2¹⁰⁰⁰⁰⁰` leaves.
+    let mut column = vec![member!(0, 2, [1])];
+    for index in 1_usize ..= 100_000 {
+        let before = NodeId::from(index.saturating_sub(1));
+        column.push(Node::Or(before, before));
+    }
+    let column = formula(column);
+    let short = Problem::new(context![2], formula(vec![Node::Top]), column).expect("query");
+    assert_eq!(
+        decide(&short).expect("decision"),
+        Evidence::Refuted(countermodel![0])
+    );
+    assert_eq!(countermodel![0].validate(&short), Ok(()));
+    assert_eq!(
+        supported![&[]].validate(&short),
+        Err(ShapeError::Unsupported(NodeId::from(100_000_usize)))
+    );
 }
