@@ -178,8 +178,12 @@ impl Changed
         };
         let mut names: BTreeSet<CorpusName> =
             added.lines().filter(source).map(CorpusName::from).collect();
+        let mut shown = String::new();
         for name in modified.lines().filter(source) {
-            let shown = format!("{}:./{name}", base.0);
+            shown.clear();
+            shown.push_str(base.0);
+            shown.push_str(":./");
+            shown.push_str(name);
             let before = git(corpus, GitArgs(&["show", &shown]))?;
             let after = std::fs::read_to_string(corpus.join(name)).ok();
             let before = laid_out(&grammar, SourceText::from(before.as_str()));

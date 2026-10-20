@@ -120,24 +120,6 @@
         reason = "module documentation that predates the shape lint"
     )
 )]
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(linear_search_in_loop, reason = "4 cost-shape sites; #814 lists them")
-)]
-#![cfg_attr(
-    all(test, dylint_lib = "quenchant_dylints"),
-    expect(
-        count_against_constant,
-        reason = "1 cost-shape site in test modules; #814 lists it"
-    )
-)]
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        allocation_in_repeated_body,
-        reason = "2 cost-shape sites; #814 lists them"
-    )
-)]
 
 extern crate alloc;
 
