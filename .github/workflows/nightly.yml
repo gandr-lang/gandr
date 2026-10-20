@@ -115,7 +115,7 @@ jobs:
           cache-save: false
       # The ci.yml test-state restore: main's newest complete test state of
       # this toolchain generation, which Cargo's fingerprints bring up to
-      # date. Only main's ci.yml promotions write it; this workflow reads.
+      # date. Only main's ci.yml push runs write it; this workflow reads.
       - &identify-build-state
         name: identify build-state inputs
         env:

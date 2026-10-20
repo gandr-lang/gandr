@@ -20,8 +20,12 @@ on:
   # branches, so cache misses may reuse artifacts from the latest completed
   # queue run. Successful builds publish state even when a later test fails.
   # Main promotes only the exact landing's state; cached state never
-  # substitutes for running a gate. macOS is tested here and daily, never in
-  # the queue: no landing waits for it (#702).
+  # substitutes for running a gate. A commit pushed to main without the
+  # queue has no queue run to promote: its push runs the Linux test lanes,
+  # which test it and cache their state as main's, so the next queue run
+  # builds over it rather than over the last queued landing. macOS is
+  # tested here and daily, never in the queue: no landing waits for it
+  # (#702).
   push:
     branches: [main]
   merge_group: {}
@@ -104,8 +108,9 @@ jobs:
       # Main promotes queue state into shared caches. Manual test runs warm
       # only their own branch, making a second dispatch a warm measurement.
       # A promote job that found no state skips the setup. Each platform has
-      # one writer: the plain lane on Linux, the enforcing join of main's push
-      # on macOS, which runs no plain lane.
+      # one writer: the plain lane on Linux (its promotion, or the lane itself
+      # on a queue-less push), the enforcing join of main's push on macOS,
+      # which runs no plain lane.
       - &setup-rust
         id: setup-rust
         name: setup rust
@@ -113,7 +118,7 @@ jobs:
         uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
         with:
           install-toolchain: ${{ env.CI_INSTALL_TOOLCHAIN || needs.ci-image-ref.outputs.ref == '' }}
-          cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && (hashFiles('build-state-*.tar.zst') != '' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test')) || (github.event_name == 'push' && env.CI_ON_MAIN == 'true' && env.CI_SHARDS != '')) }}
+          cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && (hashFiles('build-state-*.tar.zst') != '' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test')) || (github.event_name == 'push' && env.CI_ON_MAIN == 'true' && (env.CI_SHARDS != '' || env.CI_ENFORCING != 'true'))) }}
       # Cache installed tools by locked pins, including source-built sizelint
       # and macOS Dylint tools. Install the complete CI subset inside the cache.
       # A hosted runner carries rustup and the setup step installs the pinned
@@ -456,10 +461,12 @@ jobs:
   # The enforcing run is the full test pass on each platform. The plain lane
   # compiles and runs only what enforcement removes, the corpus roots and
   # rustdoc; plain Clippy covers the rest of the plain graph's compilation.
+  # On main's push the Linux test lanes run only when no queue run tested the
+  # commit, and then build on main's state and cache theirs as main's.
   cargo-test-plain-only:
     name: test plain-only targets (linux)
     needs: &cached-test-needs [changes, ci-image-ref, build-state]
-    if: &heavy-lane ${{ !cancelled() && !failure() && needs.changes.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}
+    if: &test-lane ${{ !cancelled() && !failure() && (needs.changes.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.build-state.outputs.run-id == '') }}
     runs-on: *linux
     permissions: &build-state-read-permissions
       contents: read
@@ -469,6 +476,7 @@ jobs:
     timeout-minutes: 30
     env:
       CI_BUILD_STATE: cargo-test-plain-only
+      CI_ON_MAIN: ${{ github.event_name == 'push' }}
     steps: &workspace-test-steps
       - *git-checkout
       - *trust-workspace
@@ -622,7 +630,7 @@ jobs:
   cargo-test-enforcing-shard:
     name: test enforcing targets (linux, ${{ matrix.shard }})
     needs: *cached-test-needs
-    if: *heavy-lane
+    if: *test-lane
     runs-on: *linux
     permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
@@ -644,6 +652,7 @@ jobs:
             excludes: [*surface-shard, *checker-shard]
     env:
       CI_BUILD_STATE: cargo-test-enforcing
+      CI_ON_MAIN: ${{ github.event_name == 'push' }}
       CI_ENFORCING: "true"
       CI_SPEC_COST_RATIO: "true"
       CI_FETCH_DEPTH: "2"
@@ -660,13 +669,14 @@ jobs:
   cargo-test-enforcing:
     name: join the enforcing shards (linux)
     needs: [changes, ci-image-ref, build-state, cargo-test-enforcing-shard]
-    if: *heavy-lane
+    if: *test-lane
     runs-on: *linux
     permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
     timeout-minutes: 30
     env:
       CI_BUILD_STATE: cargo-test-enforcing
+      CI_ON_MAIN: ${{ github.event_name == 'push' }}
       CI_SHARDS: cargo-test-enforcing-shard
       CI_ENFORCING: "true"
       CI_WITNESSES: "true"
@@ -877,7 +887,7 @@ jobs:
   cargo-dylint-crate:
     name: check quenchant compiler policy
     needs: *rust-needs
-    if: *heavy-lane
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
     permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
