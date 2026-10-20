@@ -712,12 +712,16 @@ fn anti_unify_terms(
     let mut stood: Vec<(Name, Vec<&[Head]>)> = Vec::new();
     let mut stood_at: BTreeMap<Vec<&[Head]>, Name> = BTreeMap::new();
     let mut patterns = Vec::with_capacity(first.len());
+    let mut members: Vec<&Term> = Vec::with_capacity(family.len());
+    let mut visits: Vec<Vec<Count>> = Vec::new();
     for (component, term) in first.iter().enumerate() {
-        let members: Vec<&Term> = core::iter::once(term)
-            .chain(rest.iter().filter_map(|member| member.get(component)))
-            .collect();
+        members.clear();
+        members.extend(
+            core::iter::once(term).chain(rest.iter().filter_map(|member| member.get(component))),
+        );
         let mut nodes: Vec<Head> = Vec::new();
-        let mut visits: Vec<Vec<Count>> = alloc::vec![alloc::vec![Count(0); members.len()]];
+        visits.clear();
+        visits.push(alloc::vec![Count(0); members.len()]);
         while let Some(starts) = visits.pop() {
             let mut heads = members
                 .iter()
