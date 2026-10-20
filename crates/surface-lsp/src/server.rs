@@ -3735,6 +3735,56 @@ mod tests
         );
     }
 
+    /// #843: a call typed up to its next argument without its `)`, as an
+    /// editor that does not close brackets holds it, answers its head.
+    #[test]
+    fn signature_help_answers_inside_a_call_typed_before_its_close_843()
+    {
+        let mut server = Connected::default();
+        let _answered = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":
+                {"textDocument":{"signatureHelp":{"signatureInformation":
+                {"parameterInformation":{"labelOffsetSupport":true}}}}}}}"#,
+            ),
+        );
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/typing.gandr","languageId":"gandr","version":1,
+                     "text":"data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef f : +U (-F Nat) ;\ndef f = thunk { plus(Zero, "}}}"#,
+            ),
+        );
+        let ask = |server: &mut Connected, character: u32| {
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":9,"method":"textDocument/signatureHelp","params":{{
+                    "textDocument":{{"uri":"file:///tmp/typing.gandr"}},
+                    "position":{{"line":11,"character":{character}}}}}}}"#
+            );
+            send(server, Json(&request))
+        };
+        let plus = |active: u32| {
+            wire(Json(&format!(
+                r#"[{{"jsonrpc":"2.0","id":9,"result":{{"signatures":[{{
+                    "label":"plus(n : Nat, m : Nat) -> -F Nat",
+                    "parameters":[{{"label":[5,12]}},{{"label":[14,21]}}]}}],
+                    "activeSignature":0,"activeParameter":{active}}}}}]"#
+            )))
+        };
+        assert_eq!(
+            ask(&mut server, 27),
+            plus(1),
+            "past the comma at the end of the text, the second parameter"
+        );
+        assert_eq!(
+            ask(&mut server, 21),
+            plus(0),
+            "at the first argument, the first"
+        );
+    }
+
     #[test]
     fn a_watching_client_is_asked_to_watch_every_source()
     {

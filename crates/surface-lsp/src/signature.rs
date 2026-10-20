@@ -1027,14 +1027,15 @@ fn telescope(
 ///
 /// # Specification
 /// - requires: `reading` and `hovering` were read off `text`.
-/// - ensures: for the innermost call whose arguments hold the position
-///   ([`Calls::at`]), when the type table refers its head's first byte to a
-///   declaration or constructor whose head the hovering keeps: that head as the
-///   one signature, active, with its documentation as markdown, each parameter
-///   as its start and end in the label counted in UTF-16 code units when
-///   `offsets` holds or as its text otherwise, and the argument the position
-///   writes as the active parameter, `null` past the last parameter; Nothing
-///   otherwise.
+/// - ensures: for the innermost call whose arguments hold the position, read
+///   back over the whitespace before it so a call the parser closed at the end
+///   of what is written still holds the blank typed after it ([`Calls::at`]),
+///   when the type table refers its head's first byte to a declaration or
+///   constructor whose head the hovering keeps: that head as the one signature,
+///   active, with its documentation as markdown, each parameter as its start
+///   and end in the label counted in UTF-16 code units when `offsets` holds or
+///   as its text otherwise, and the argument the position writes as the active
+///   parameter, `null` past the last parameter; Nothing otherwise.
 /// - provides: the answer to `textDocument/signatureHelp`.
 /// - fails: never.
 /// - panics: none.
@@ -1042,9 +1043,10 @@ fn telescope(
 /// # Adequacy
 /// - hypothesis: L3 — a function's call at each argument, a constructor applied
 ///   to no field yet, a nested call, a position past the last parameter, a call
-///   of a sibling's declaration and a position in no call are each asserted at
-///   their exact answer.
+///   of a sibling's declaration, a call typed before its close and a position
+///   in no call are each asserted at their exact answer.
 /// - witness: `server::tests::signature_help_answers_the_declared_head_of_the_call`
+/// - witness: `server::tests::signature_help_answers_inside_a_call_typed_before_its_close_843`
 /// - witness: `tests::session::signature_help_reads_a_sibling_s_head`
 #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Signatures(_)))]
 #[must_use]
@@ -1056,8 +1058,14 @@ pub fn help(
     offsets: LabelOffsets,
 ) -> Answer
 {
-    let index = LineIndex::new(<&str>::from(text).into());
-    let at = ByteOffset::from(usize::from(position.byte(&index)));
+    let written = <&str>::from(text);
+    let index = LineIndex::new(written.into());
+    let at = usize::from(position.byte(&index));
+    let at = ByteOffset::from(
+        written
+            .get(.. at)
+            .map_or(at, |before| before.trim_end().len()),
+    );
     let Some((head, argument)) = reading.call_at(at)
     else {
         return Answer::Nothing;
