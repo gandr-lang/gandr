@@ -133,15 +133,22 @@
 //!   Nat`; a list built around the scrutinee itself stands at no stage and
 //!   keeps `map` at the plain `Rose`, where `s` refuses it. Only a variable
 //!   drives the rule, and the first one that holds the parameter decides it: a
-//!   staged code inside another code, and a callee whose result stage follows
-//!   its argument's, need a signature quantified over stages.
+//!   staged code inside another code needs a signature quantified over stages.
+//! - **A result follows the parameter it recurses on.** A structural definition
+//!   whose arrows past the recursed-on `A` end in `F A` is judged a second time
+//!   with that result at `A^ι` in its body and `A^{<ι}` at its self binder, a
+//!   case checked there reading its written motive's result at the stage; when
+//!   that holds, a call handed a variable at `A^s` in that position returns `F
+//!   A^s`. `minus(p, d)`, `p` a field one stage below a fixpoint's, returns a
+//!   natural the fixpoint's self binder takes. A definition with no recursion
+//!   opens no stage, and its result follows nothing.
 //!
 //! The kernel re-derives every stage from the case structure, the evidence's
-//! staged position and the same instantiation rule, and no stage is carried on
-//! a node or crosses to the kernel: a stage in a term would change node
-//! identity, which stays free of sizes. A staged type is a classifier the
-//! judgement holds and erases to its plain code on the wire; a staged type the
-//! bridge meets in a term is refused by name.
+//! staged position and the same instantiation and following rules, and no
+//! stage is carried on a node or crosses to the kernel: a stage in a term would
+//! change node identity, which stays free of sizes. A staged type is a
+//! classifier the judgement holds and erases to its plain code on the wire; a
+//! staged type the bridge meets in a term is refused by name.
 //!
 //! **This is the solver-free fragment of sized types** (Barthe et al.'s
 //! stage-based termination): every stage is minted by a fixpoint or a case and

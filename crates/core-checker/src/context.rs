@@ -418,6 +418,12 @@ pub struct CheckingContext<'arena>
         Maybe<ComputationId, own::Absent>,
         Maybe<(BinderDepth, ValueTypeId), own::Absent>,
     ),
+    /// How the definition under way's own fixpoint reads its result: as
+    /// declared, or at the stage of the parameter it recurses on.
+    result_stage: crate::recursion::ResultStage,
+    /// The definitions admitted whose result stands at the stage of the
+    /// parameter their recursion is staged on, with that parameter's position.
+    following: BTreeMap<ConstantIndex, gandr_kernel_term::StagedPosition>,
     /// The worlds declared, each declaration's home, the entries, the host's
     /// entry and the entry under way.
     worlds: crate::worlds::Worlds,
@@ -566,6 +572,8 @@ impl<'arena> CheckingContext<'arena>
                 Maybe::Absent(own::Absent::Unopened),
                 Maybe::Absent(own::Absent::Unopened),
             ),
+            result_stage: crate::recursion::ResultStage::Declared,
+            following: BTreeMap::new(),
             worlds: crate::worlds::Worlds::default(),
             pattern_holes: BTreeSet::new(),
         }
@@ -3111,6 +3119,58 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             Maybe::Absent(own::Absent::Unopened),
             Maybe::Absent(own::Absent::Unopened),
         );
+    }
+
+    /// Read the result of the definition under way's own fixpoint as `stage`
+    /// says.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn read_result(
+        &mut self,
+        stage: crate::recursion::ResultStage,
+    )
+    {
+        self.result_stage = stage;
+    }
+
+    /// How the definition under way's own fixpoint reads its result.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn result_stage(&self) -> crate::recursion::ResultStage
+    {
+        self.result_stage
+    }
+
+    /// Note that the result of the definition at `constant` stands at the
+    /// stage of its parameter at `position`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn record_following(
+        &mut self,
+        constant: ConstantIndex,
+        position: gandr_kernel_term::StagedPosition,
+    )
+    {
+        let _earlier = self.following.insert(constant, position);
+    }
+
+    /// The position of the parameter whose stage the result of the definition
+    /// at `constant` stands at, when it follows one.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn following(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<gandr_kernel_term::StagedPosition, crate::recursion::Unstaged>
+    {
+        self.following.get(&constant).map_or(
+            Maybe::Absent(crate::recursion::Unstaged::Plain),
+            |&position| Maybe::Present(position),
+        )
     }
 
     /// Take `body`, the definition under way's body, as its own fixpoint's

@@ -732,7 +732,8 @@ pub(super) type Scrutinised = (
 ///
 /// # Specification
 /// - requires: the scrutinee has the supplied data classifier; motive formation
-///   is checked by the surrounding judgement.
+///   is checked by the surrounding judgement; `read` is the written motive or
+///   the staged result the case is checked at (`recursion::motive_at`).
 /// - ensures: exactly one branch obligation per constructor, in table order,
 ///   each binding its recursive fields at the stage the case `opened`
 ///   (`recursion::stage_branch`) when it opened one — with the declaration's
@@ -740,7 +741,8 @@ pub(super) type Scrutinised = (
 ///   named it returned as a [`super::recursion::Read`] — then, for a case
 ///   carrying a loop arm per loop of its sort (`loops::loops`), one per loop
 ///   arm at `loops::arm_type`; [`Looped::Owed`] exactly when the sort has loops
-///   and the case carries no loop arm.
+///   and the case carries no loop arm. The branches and the result are read at
+///   `read` over a sort with no loops, and at the written motive otherwise.
 /// - fails: wrong shape or a non-exhaustive branch vector: neither one branch
 ///   per constructor nor one more per loop. A presented type's rules are an
 ///   obligation the caller decides once the branches have checked, by
@@ -763,37 +765,38 @@ pub(super) fn case(
     arena: &mut TermArena,
     (entries, presentations): (&[AdmittedDeclaration], &crate::presented::Presentations),
     session: &mut SupportContext,
-    case: ComputationId,
+    (case, read): (ComputationId, CompTypeId),
     (datatype, opened, own): Scrutinised,
 ) -> Result<(CompTypeId, Vec<Goal>, Looped, Vec<super::recursion::Read>), KernelError>
 {
-    let (scrutinee, motive, count) = match arena.computation(case).ok_or(KernelError::ArenaFault)? {
-        &Computation::DataCase {
-            ref scrutinee,
-            ref motive,
-            ref branches,
-        } => (*scrutinee, *motive, branches.len()),
-        &Computation::RecordProjection(..)
-        | &Computation::TupleProjection(..)
-        | &Computation::Lambda(_)
-        | &Computation::Application(..)
-        | &Computation::Return(_)
-        | &Computation::Bind(..)
-        | &Computation::Force(_)
-        | &Computation::Case { .. }
-        | &Computation::SigmaSplit { .. }
-        | &Computation::ListFold { .. }
-        | &Computation::ListCase { .. }
-        | &Computation::Transport(..)
-        | &Computation::PathTransport { .. }
-        | &Computation::TelescopeTransport { .. }
-        | &Computation::Ride { .. }
-        | &Computation::TelescopeRide { .. }
-        | &Computation::RelatedApplication { .. }
-        | &Computation::With(..)
-        | &Computation::Project(..)
-        | &Computation::Fixpoint { .. } => return Err(KernelError::ArenaFault),
-    };
+    let (scrutinee, written, count) =
+        match arena.computation(case).ok_or(KernelError::ArenaFault)? {
+            &Computation::DataCase {
+                ref scrutinee,
+                ref motive,
+                ref branches,
+            } => (*scrutinee, *motive, branches.len()),
+            &Computation::RecordProjection(..)
+            | &Computation::TupleProjection(..)
+            | &Computation::Lambda(_)
+            | &Computation::Application(..)
+            | &Computation::Return(_)
+            | &Computation::Bind(..)
+            | &Computation::Force(_)
+            | &Computation::Case { .. }
+            | &Computation::SigmaSplit { .. }
+            | &Computation::ListFold { .. }
+            | &Computation::ListCase { .. }
+            | &Computation::Transport(..)
+            | &Computation::PathTransport { .. }
+            | &Computation::TelescopeTransport { .. }
+            | &Computation::Ride { .. }
+            | &Computation::TelescopeRide { .. }
+            | &Computation::RelatedApplication { .. }
+            | &Computation::With(..)
+            | &Computation::Project(..)
+            | &Computation::Fixpoint { .. } => return Err(KernelError::ArenaFault),
+        };
     let (declaration, argument_count) =
         match arena.value_type(datatype).ok_or(KernelError::ArenaFault)? {
             &ValueType::Data {
@@ -836,6 +839,8 @@ pub(super) fn case(
         return Err(KernelError::IndexedCase);
     }
     let owed = super::loops::loops(arena, presentations, datatype);
+    // A loop is owed at the written motive.
+    let motive = if owed.is_empty() { read } else { written };
     let constructors = signature.constructors.len();
     let looped = if count == constructors {
         if owed.is_empty() {

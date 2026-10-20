@@ -1,0 +1,18 @@
+// What a following result refuses (#392). A recursive definition whose
+// result can stand above the argument it recurses on returns at no stage, and
+// a recursion through it is refused at the top. The twin of
+// `../../model/data/following.gandr`.
+
+// The naturals and `plus`, which recurses on its second argument.
+import "../../model/data/data-base.gandr" ;
+
+/// Half a number through `plus`: `plus(Zero, p)` recurses on `p` but returns
+/// a sum, which can stand above `p`, so its result stands at no stage, which
+/// `halvedThroughPlus[<]` does not take (#392).
+@[ refuses("StageNotBelow") ]
+def rec halvedThroughPlus(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(p) => { run q <- plus(Zero, p); Succ(halvedThroughPlus[<](q)) }
+  }
+}

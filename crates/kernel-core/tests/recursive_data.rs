@@ -1609,6 +1609,111 @@ fn a_claim_at_the_scrutinee_through_map_is_refused()
     );
 }
 
+/// What a predecessor's successor arm returns.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Returning
+{
+    /// The field `p`, below the argument.
+    Field,
+    /// `succ n`, one step above the argument.
+    Successor,
+}
+
+/// Offer `pred : U (Nat → F Nat)`, `fix f. λn. case n { zero ↦ return zero;
+/// succ ↦ λp. return v }`, `v` what `returning` names under `p` 0, `n` 1.
+///
+/// # Specification
+/// trivial.
+fn predecessor(
+    environment: &mut Environment,
+    nat: ConstantIndex,
+    returning: Returning,
+) -> CheckedId
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let nat_type = arena.value_type_data(nat, vec![]);
+    let returner = arena.comp_type_returner(nat_type);
+    let classifier = arena.comp_type_arrow(nat_type, returner);
+    let zero = arena.value_constructor(nat_type, ConstructorTag::from(0), vec![]);
+    let returned = arena.computation_return(zero);
+    let value = match returning {
+        Returning::Field => arena.value_variable(DeBruijnIndex::from(0)),
+        Returning::Successor => {
+            let argument = arena.value_variable(DeBruijnIndex::from(1));
+            arena.value_constructor(nat_type, ConstructorTag::from(1), vec![argument])
+        },
+    };
+    let given = arena.computation_return(value);
+    let on_successor = arena.computation_lambda(given);
+    let body = case_on_argument(arena, returner, returned, on_successor);
+    let fixpoint = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
+    let declared = arena.value_type_thunk(classifier);
+    let value = arena.value_thunk(fixpoint);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment
+        .add_decl(declaration)
+        .expect("a predecessor checks")
+}
+
+/// Offer `halve : U (Nat → F Nat)`, `fix h. λn. case n { zero ↦ return zero;
+/// succ ↦ λp. q ← (force pred) p; (force h) q }`: under `q` 0, `p` 1, `n` 2,
+/// `h` 3.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// The kernel's refusal.
+fn halve_through(
+    environment: &mut Environment,
+    (nat, pred): (ConstantIndex, ConstantIndex),
+) -> Result<CheckedId, KernelError>
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let nat_type = arena.value_type_data(nat, vec![]);
+    let returner = arena.comp_type_returner(nat_type);
+    let classifier = arena.comp_type_arrow(nat_type, returner);
+    let zero = arena.value_constructor(nat_type, ConstructorTag::from(0), vec![]);
+    let returned = arena.computation_return(zero);
+    let head = arena.value_constant(pred);
+    let field = arena.value_variable(DeBruijnIndex::from(0));
+    let predecessor = spine(arena, head, &[field]);
+    let bound = arena.value_variable(DeBruijnIndex::from(0));
+    let recursed = call(arena, DeBruijnIndex::from(3), bound);
+    let bind = arena.computation_bind(predecessor, recursed);
+    let on_successor = arena.computation_lambda(bind);
+    let body = case_on_argument(arena, returner, returned, on_successor);
+    let fixpoint = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
+    let declared = arena.value_type_thunk(classifier);
+    let value = arena.value_thunk(fixpoint);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment.add_decl(declaration)
+}
+
+/// A predecessor returning its field returns at its argument's stage, so a
+/// recursion on the predecessor of its own field descends; one returning a
+/// successor of its argument returns at no stage, and the same recursion is
+/// refused at the top.
+#[test]
+fn a_result_follows_the_parameter_it_recurses_on()
+{
+    let mut environment = Environment::new();
+    let nat = nat(&mut environment).position();
+    let pred = predecessor(&mut environment, nat, Returning::Field).position();
+    let halved = halve_through(&mut environment, (nat, pred));
+    assert!(halved.is_ok(), "{halved:?}");
+    let bumped = predecessor(&mut environment, nat, Returning::Successor).position();
+    assert_eq!(
+        halve_through(&mut environment, (nat, bumped)).map(drop),
+        Err(KernelError::StageNotBelow {
+            found: Standing::Top,
+            bound: below(Stage::At(StageId::from(0_usize))),
+        })
+    );
+}
+
 #[test]
 fn a_recursion_descends_on_its_first_parameter()
 {

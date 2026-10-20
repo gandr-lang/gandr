@@ -1853,6 +1853,9 @@ enum Frame
     /// Pi must then be rigid, and the application has the codomain.
     ApplicationArgument
     {
+        /// The head the argument is applied to, when the application is a
+        /// term rather than a stack frame.
+        head: Option<ComputationId>,
         /// The argument, which a dependent codomain is instantiated at.
         argument: ValueId,
         /// The domain the argument checked against.
@@ -2529,6 +2532,10 @@ struct Machine<'context, 'arena>
     /// reads against its type's rules: taken by the next case the run meets,
     /// which is that one, since the fixpoint's body is `λy. case y`.
     root: Maybe<(ComputationId, crate::respect::Reading), crate::respect::root::Absent>,
+    /// The cases checked at a staged result, each beside the motive its
+    /// branches read ([`crate::recursion::motive_at`]): set where the case is
+    /// checked, taken where its branches are.
+    staged_motives: Vec<(ComputationId, CompTypeId)>,
 }
 
 impl<'context, 'arena> Machine<'context, 'arena>
@@ -2691,6 +2698,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     position,
                 });
                 self.wait(Frame::ApplicationArgument {
+                    head: None,
                     argument,
                     domain,
                     codomain,
@@ -3487,6 +3495,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             marks: Vec::new(),
             sessions: Sessions::new(base),
             root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
+            staged_motives: Vec::new(),
         };
         let register = machine.context.binders().world();
         let scope = machine.session_scope();
@@ -5128,9 +5137,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   `expected` and its cell branch, under a binder of the element and one
     ///   of the tail at that stage, against `expected` shifted past both; an
     ///   applied fixpoint synthesises its argument's type and checks the
-    ///   fixpoint against the arrow from it to `expected`; a synthesising
-    ///   computation synthesises, then crosses the computation bridge to
-    ///   `expected`.
+    ///   fixpoint against the arrow from it to `expected`; a data case at its
+    ///   written motive with the result read at a stage
+    ///   ([`crate::recursion::motive_at`]) synthesises its branches at that
+    ///   reading; a synthesising computation synthesises, then crosses the
+    ///   computation bridge to `expected`.
     /// - fails: [`CheckRefusal::ShapeMismatch`] for a lambda against no arrow,
     ///   a return against no returner, or a structural fixpoint against a type
     ///   with no arrow to recurse on; [`CheckRefusal::OutOfFragment`] for a
@@ -5150,6 +5161,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::a_pattern_hole_at_a_leaf_leaves_the_match_undecided`
     /// - witness: `tests::recursive_data::a_fixpoint_checks_at_every_computation_type`
     /// - witness: `recursion::tests::a_recursion_descends_on_its_first_parameter`
+    /// - witness: `recursion::tests::a_result_follows_the_parameter_it_recurses_on`
     #[spec(
         captures: before = self.frames.len(),
         ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(_))) && self.frames.len() >= before)
@@ -5164,6 +5176,22 @@ impl<'context, 'arena> Machine<'context, 'arena>
         expected: CompTypeId,
     ) -> Result<Step, CheckRefusal>
     {
+        // A case checked at its written motive with the result read at a stage
+        // reads its branches there.
+        if let &Computation::DataCase {
+            scrutinee, motive, ..
+        } = self.computation(term)?
+            && let Maybe::Present(read) =
+                crate::recursion::motive_at(self.context, motive, expected)?
+        {
+            self.wait(Frame::CompBridge { at: term, expected });
+            self.staged_motives.push((term, read));
+            self.wait(Frame::NativeCase(term));
+            return Ok(Step::Descend(Goal::Value {
+                term: scrutinee,
+                direction: Direction::Synthesise,
+            }));
+        }
         match *self.computation(term)? {
             Computation::Handle { .. } => self.handle(term, expected),
             Computation::Scope { .. } => self.scope(term, expected),
@@ -7701,6 +7729,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let (domain, codomain) =
                     self.application_type(TermNode::Computation(head), synthesised)?;
                 self.wait(Frame::ApplicationArgument {
+                    head: Some(head),
                     argument,
                     domain,
                     codomain,
@@ -7712,6 +7741,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             (
                 Frame::ApplicationArgument {
+                    head,
                     argument,
                     domain,
                     codomain,
@@ -7724,6 +7754,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     self.rigid_operator(argument)?;
                 }
                 let applied = self.applied(argument, codomain)?;
+                let applied = match head {
+                    Some(head) => {
+                        crate::recursion::followed(self.context, (head, argument), applied)?
+                    },
+                    None => applied,
+                };
                 Ok(Step::Ascend(Produced::CompType(applied)))
             },
             (Frame::LambdaBody | Frame::FormBinder | Frame::BindBody { .. }, Produced::Checked) => {

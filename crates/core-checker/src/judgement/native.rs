@@ -745,7 +745,10 @@ impl Machine<'_, '_>
     ///   declaration's constant as its self binder formed in the block's
     ///   foresight before the branch checks; with `respect` present the rules
     ///   are decided after every branch has checked and before the type is
-    ///   yielded.
+    ///   yielded. A case the machine holds a staged motive for
+    ///   ([`crate::recursion::motive_at`]) has it taken, and reads its branches
+    ///   there over a type with no rules and no loops; every other reads the
+    ///   written motive.
     /// - fails: the internal scope guard or telescope instantiation.
     /// - panics: none.
     ///
@@ -756,9 +759,11 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — dependent motives and unequal fields distinguish
     ///   capture, branch order and an incorrectly ambient result type; an
     ///   ill-typed branch of a case over the circle is refused by its own
-    ///   mismatch before any rule is decided.
+    ///   mismatch before any rule is decided; a predecessor's case judged at a
+    ///   staged result owes it in each branch.
     /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
     /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+    /// - witness: `recursion::tests::a_result_follows_the_parameter_it_recurses_on`
     #[spec(ensures: |ret| ret.is_err() || ret == Ok(Step::Ascend(Produced::Checked)))]
     pub(super) fn native_branches(
         &mut self,
@@ -769,7 +774,7 @@ impl Machine<'_, '_>
     ) -> Result<Step, CheckRefusal>
     {
         self.close()?;
-        let (scrutinee, motive, count) = match self.computation(term)? {
+        let (scrutinee, written, count) = match self.computation(term)? {
             &Computation::DataCase {
                 ref scrutinee,
                 ref motive,
@@ -807,6 +812,22 @@ impl Machine<'_, '_>
             | &Computation::Session(_)
             | &Computation::Memory(_)
             | &Computation::World(_) => return Err(CheckRefusal::MachineInvariant),
+        };
+        // A rule or a loop is owed at the written motive; only a type with
+        // neither reads its branches at a staged one.
+        let staged = self
+            .staged_motives
+            .iter()
+            .rposition(|&(case, _)| case == term)
+            .map(|at| self.staged_motives.swap_remove(at).1);
+        let motive = match staged {
+            Some(read)
+                if matches!(respect, Maybe::Absent(_))
+                    && crate::loops::loops(self.context, datatype).is_empty() =>
+            {
+                read
+            },
+            Some(_) | None => written,
         };
         let result =
             gandr_core_term::instantiate_comp_type(self.context.arena_mut(), motive, scrutinee);

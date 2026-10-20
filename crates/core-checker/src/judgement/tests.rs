@@ -2276,6 +2276,7 @@ fn a_result_of_the_wrong_kind_is_a_machine_fault()
         marks: Vec::new(),
         sessions: Sessions::new(BinderDepth::default()),
         root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
+        staged_motives: Vec::new(),
     };
     let refusal = machine
         .resume(Frame::LambdaBody, Produced::ValueType(unit_type.into()))
@@ -2315,6 +2316,7 @@ fn machine_bookkeeping_preserves_zero_and_one_boundaries()
         marks: Vec::new(),
         sessions: Sessions::new(BinderDepth::default()),
         root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
+        staged_motives: Vec::new(),
     };
     assert_eq!(machine.charge(), Ok(()));
     assert_eq!(machine.remaining, 0);

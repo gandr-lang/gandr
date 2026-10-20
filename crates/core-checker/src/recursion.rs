@@ -83,6 +83,21 @@ pub struct Opened
     pub inside: CompTypeId,
 }
 
+/// How a definition's own fixpoint reads its result.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ResultStage
+{
+    /// As its type declares it.
+    Declared,
+    /// For the fixpoint named, a result of the type the recursed-on parameter
+    /// is refined from read at that parameter's stage: `F A^ι` in the body
+    /// and `F A^{<ι}` at the self binder.
+    Asked(ComputationId),
+    /// The fixpoint asked for opened with its result read at the stage of its
+    /// parameter at the position named.
+    Staged(StagedPosition),
+}
+
 /// Whether a value in scope shows a stage is not the empty first one.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Room
@@ -153,9 +168,12 @@ pub fn families(
 ///   and the self binder's the same telescope with it at `A^{<ι}`; for `A` a
 ///   sum of data types, `A^ι` is the sum of each summand at `ι` — a mutual
 ///   block's recursion, its families' sum at one stage — and `A^{<ι}` the same
-///   below it; every other arrow, and the codomain past `position`, as
-///   `expected` holds them. The unknown type, anywhere down the telescope,
-///   opens nothing.
+///   below it; every other arrow as `expected` holds them, and the codomain
+///   past `position` too, except that a fixpoint the definition under way reads
+///   as [`ResultStage::Asked`], at a plain arrow at `position`, returns a
+///   result of type `A` past plain arrows at `A^ι` in the body and at `A^{<ι}`
+///   at the self binder, and is then read as [`ResultStage::Staged`]. The
+///   unknown type, anywhere down the telescope, opens nothing.
 /// - fails: [`CheckRefusal::ShapeMismatch`] wanting an arrow when the telescope
 ///   ends, in a returner, a lazy product or a rigid decode, before `position`;
 ///   a fixpoint at such a type is never checked unstaged, since a fixpoint
@@ -214,6 +232,26 @@ pub fn open_fixpoint(
         cursor = codomain;
     };
     let root = context.stages_mut().mint_root();
+    // A fixpoint asked to read its result at its parameter's stage returns a
+    // result of the recursed-on type at `A^ι` in the body and at `A^{<ι}` at
+    // the self binder, and notes that it did; a result under the parameter's
+    // binder is read as declared.
+    let (inside_codomain, own_codomain) = match context.result_stage() {
+        ResultStage::Asked(fixpoint) if fixpoint == at && dependence == Dependence::Ambient => {
+            let inside = result_at(context, codomain, (domain, Stage::At(root)))?;
+            let own = result_at(context, codomain, (domain, below(Stage::At(root))))?;
+            context.read_result(if inside == codomain {
+                ResultStage::Declared
+            }
+            else {
+                ResultStage::Staged(position)
+            });
+            (inside, own)
+        },
+        ResultStage::Asked(_) | ResultStage::Staged(_) | ResultStage::Declared => {
+            (codomain, codomain)
+        },
+    };
     let arena = context.arena_mut();
     let (inside_domain, own_domain) = match arena.value_type(domain) {
         Some(&ValueType::Sum(ref summands))
@@ -236,13 +274,138 @@ pub fn open_fixpoint(
             arena.value_type_staged(domain, below(Stage::At(root))),
         ),
     };
-    let mut own = dependence.former(arena, own_domain, codomain);
-    let mut inside = dependence.former(arena, inside_domain, codomain);
+    let mut own = dependence.former(arena, own_domain, own_codomain);
+    let mut inside = dependence.former(arena, inside_domain, inside_codomain);
     while let Some((outer, dependence)) = spine.pop() {
         own = dependence.former(arena, outer, own);
         inside = dependence.former(arena, outer, inside);
     }
     Ok(Maybe::Present(Opened { own, inside }))
+}
+
+/// `codomain` with the result it returns read at `stage` where that result is
+/// `base`, past every arrow before it.
+///
+/// # Specification
+/// - requires: `codomain` is formed.
+/// - ensures: for a telescope of arrows ending in a returner of `base`, the
+///   same telescope ending in a returner of `base^stage` with the same effects;
+///   `codomain` itself for any other.
+/// - fails: the unfolding's refusal.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a subtraction's result past its second argument is read
+///   at its first argument's stage.
+/// - witness: `recursion::tests::a_result_follows_the_parameter_it_recurses_on`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&read| context.arena().comp_type(read).is_some()))]
+fn result_at(
+    context: &mut CheckingContext<'_>,
+    codomain: CompTypeId,
+    (base, stage): (ValueTypeId, Stage),
+) -> Result<CompTypeId, CheckRefusal>
+{
+    let mut spine: Vec<ValueTypeId> = Vec::new();
+    let mut cursor = codomain;
+    let (result, effects) = loop {
+        let head = context.whnf_comp_type(cursor)?;
+        match comp_type_view(context.arena(), head)? {
+            CompTypeView::Arrow { domain, codomain } => {
+                spine.push(domain);
+                cursor = codomain;
+            },
+            CompTypeView::Returner { result, effects } => break (result, effects.clone()),
+            CompTypeView::Pi { .. }
+            | CompTypeView::Unknown
+            | CompTypeView::With(..)
+            | CompTypeView::Element { .. }
+            | CompTypeView::Codata { .. } => return Ok(codomain),
+        }
+    };
+    if crate::conversion::equivalent(context, result, base)?
+        != crate::conversion::Agreement::Convertible
+    {
+        return Ok(codomain);
+    }
+    let arena = context.arena_mut();
+    let staged = arena.value_type_staged(base, stage);
+    let mut read = arena.comp_type_returner_with_effects(staged, effects);
+    while let Some(outer) = spine.pop() {
+        read = arena.comp_type_arrow(outer, read);
+    }
+    Ok(read)
+}
+
+/// The motive a case checked at `expected` reads its branches at: the written
+/// `motive` with its result read at the stage `expected` returns at, when the
+/// motive names no scrutinee and returns the type that stage refines.
+///
+/// A motive is written without stages, as every type the lowering writes is:
+/// a case in a body judged at a staged result returns at that stage, and its
+/// branches owe it. The case's type is then compared with `expected` as any
+/// other.
+///
+/// # Specification
+/// - requires: `motive` is formed under one scrutinee binder, `expected` in the
+///   case's context.
+/// - ensures: present exactly when `expected` is a telescope of arrows ending
+///   in a returner of a staged type `base^s`, `motive` strengthens past its
+///   binder to a type `m` whose arrows end in a returner of `base`; then `m`
+///   with that result read at `s`, shifted back under the binder.
+/// - fails: the unfolding's refusal.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a predecessor's case judged at a staged result reads its
+///   branches there, and a motive at another type keeps its own.
+/// - witness: `recursion::tests::a_result_follows_the_parameter_it_recurses_on`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |read| match *read {
+    Maybe::Present(read) => context.arena().comp_type(read).is_some(),
+    Maybe::Absent(reason) => reason == Unstaged::Plain,
+}))]
+pub fn motive_at(
+    context: &mut CheckingContext<'_>,
+    motive: CompTypeId,
+    expected: CompTypeId,
+) -> Result<Maybe<CompTypeId, Unstaged>, CheckRefusal>
+{
+    let plain = Maybe::Absent(Unstaged::Plain);
+    let mut cursor = expected;
+    let result = loop {
+        let head = context.whnf_comp_type(cursor)?;
+        match comp_type_view(context.arena(), head)? {
+            CompTypeView::Arrow { codomain, .. } => cursor = codomain,
+            CompTypeView::Returner { result, .. } => break result,
+            CompTypeView::Pi { .. }
+            | CompTypeView::Unknown
+            | CompTypeView::With(..)
+            | CompTypeView::Element { .. }
+            | CompTypeView::Codata { .. } => return Ok(plain),
+        }
+    };
+    let Some(&ValueType::Staged { base, stage }) = context.arena().value_type(result)
+    else {
+        return Ok(plain);
+    };
+    let Maybe::Present(written) =
+        gandr_core_term::strengthen_comp_type(context.arena_mut(), motive)
+    else {
+        return Ok(plain);
+    };
+    let written = written.settle(context.arena_mut());
+    let restaged = result_at(context, written, (base, stage))?;
+    if restaged == written {
+        return Ok(plain);
+    }
+    let read = gandr_core_term::shift_comp_type(context.arena_mut(), restaged, Binders::ONE)
+        .settle(context.arena_mut());
+    Ok(Maybe::Present(read))
 }
 
 /// Whether an arrow's codomain stands under its binder.
@@ -963,6 +1126,102 @@ where
         telescope = rest;
     }
     Ok(Maybe::Absent(Unstaged::Plain))
+}
+
+/// The type an application of `head` to `last` reads, `applied` as the arrow
+/// gives it: for a call into a definition whose result follows its parameter
+/// at a position, a result of that parameter's type read at the stage of the
+/// argument there.
+///
+/// The definition was judged with that result at its own parameter's stage
+/// (`module`'s second judgement), so it holds at every stage the argument
+/// stands at: `minus(p, d)`, for `p` a field one stage below a fixpoint's,
+/// returns a natural at that stage, which the fixpoint's self binder then
+/// takes. The stage is read off a variable argument, never searched for, as
+/// [`instantiation`] reads a type parameter's.
+///
+/// # Specification
+/// - requires: `applied` is the computation type the application of `head` to
+///   `last` has.
+/// - ensures: for `head` a spine of applications over the force of a following
+///   constant, `applied` a returner of the type its argument at the followed
+///   position is refined from, and that argument a variable at a stage, the
+///   same returner at that stage; `applied` otherwise.
+/// - fails: the unfolding's refusal; [`CheckRefusal::MachineInvariant`] for a
+///   variable out of scope.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a division calling a subtraction on its dividend's
+///   predecessor descends on the result; a call on a value at no stage leaves
+///   the result at none.
+/// - witness: `recursion::tests::a_result_follows_the_parameter_it_recurses_on`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&read| context.arena().comp_type(read).is_some()))]
+pub fn followed(
+    context: &mut CheckingContext<'_>,
+    (head, last): (ComputationId, ValueId),
+    applied: CompTypeId,
+) -> Result<CompTypeId, CheckRefusal>
+{
+    let mut arguments = alloc::vec![last];
+    let mut cursor = head;
+    let constant = loop {
+        match context.arena().computation(cursor) {
+            Some(&gandr_core_term::Computation::Application(inner, argument)) => {
+                arguments.push(argument);
+                cursor = inner;
+            },
+            Some(&gandr_core_term::Computation::Force(forced)) => {
+                match context.arena().value(forced) {
+                    Some(&Value::Constant(constant)) => break constant,
+                    Some(_) | None => return Ok(applied),
+                }
+            },
+            Some(_) | None => return Ok(applied),
+        }
+    };
+    let Maybe::Present(position) = context.following(constant)
+    else {
+        return Ok(applied);
+    };
+    let Some(&argument) = arguments
+        .len()
+        .checked_sub(usize::from(position).saturating_add(1))
+        .and_then(|from_last| arguments.get(from_last))
+    else {
+        return Ok(applied);
+    };
+    let Some(&Value::Variable {
+        zone: Zone::Intuitionistic,
+        index,
+    }) = context.arena().value(argument)
+    else {
+        return Ok(applied);
+    };
+    let declared = context.hypothesis(index)?;
+    let found = shift_value_type(context.arena_mut(), declared, Binders::past(index))
+        .settle(context.arena_mut());
+    let Some(&ValueType::Staged { base, stage }) = context.arena().value_type(found)
+    else {
+        return Ok(applied);
+    };
+    let read = context.whnf_comp_type(applied)?;
+    let CompTypeView::Returner { result, effects } = comp_type_view(context.arena(), read)?
+    else {
+        return Ok(applied);
+    };
+    let effects = effects.clone();
+    if crate::conversion::equivalent(context, result, base)?
+        != crate::conversion::Agreement::Convertible
+    {
+        return Ok(applied);
+    }
+    let arena = context.arena_mut();
+    let staged = arena.value_type_staged(base, stage);
+    Ok(arena.comp_type_returner_with_effects(staged, effects))
 }
 
 /// Where a variable's type holds a staged code for a type parameter.

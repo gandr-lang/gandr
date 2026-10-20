@@ -656,6 +656,9 @@ pub struct Judgement<'session>
     /// The structural fixpoint a definition's body thunks: its own, whose
     /// self binder its constant reads as in a case's field types.
     own: Maybe<ComputationId, recursion::Unowned>,
+    /// The structural fixpoint whose result of its recursed-on parameter's
+    /// type is read at that parameter's stage.
+    following: Maybe<ComputationId, recursion::Unowned>,
 }
 
 /// The block a judgement may name past the admitted prefix.
@@ -715,6 +718,7 @@ impl<'session> Judgement<'session>
             block: Block::Outside,
             presentations: &crate::presented::FREE,
             own: Maybe::Absent(recursion::Unowned::Outside),
+            following: Maybe::Absent(recursion::Unowned::Outside),
         }
     }
 
@@ -731,6 +735,24 @@ impl<'session> Judgement<'session>
     {
         Self {
             own: Maybe::Present(fixpoint),
+            ..self
+        }
+    }
+
+    /// The same judgement reading `fixpoint`'s result of its recursed-on
+    /// parameter's type at that parameter's stage.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    const fn following(
+        self,
+        fixpoint: ComputationId,
+    ) -> Self
+    {
+        Self {
+            following: Maybe::Present(fixpoint),
             ..self
         }
     }
@@ -1962,8 +1984,15 @@ enum Frame
     /// component.
     TupleProjection(ValueId, gandr_kernel_term::Component),
     /// Check a motive and constructor-specific branches after scrutinee
-    /// synthesis.
-    DataCase(ComputationId),
+    /// synthesis, the branches at `motive`: the written one, or the staged
+    /// result the case is checked at ([`recursion::motive_at`]).
+    DataCase
+    {
+        /// The case.
+        case: ComputationId,
+        /// The motive its branches are read at.
+        motive: CompTypeId,
+    },
     /// Decide that a case over a presented type respects the type's rules,
     /// once its branches have checked.
     Respect(ComputationId, respect::Reading),
@@ -2176,6 +2205,9 @@ enum Frame
     FixpointArgument(ComputationId, CompTypeId),
     /// An application: the argument checked; produce the held codomain.
     ProduceComp(CompTypeId),
+    /// A call into a definition whose result follows a parameter: the
+    /// application's returner of the held staged type's base reads at it.
+    Restage(ValueTypeId),
     /// A static application: the head is synthesized; the argument source is
     /// held.
     SynthStaticApply(ValueId),
@@ -3627,8 +3659,10 @@ where
                     },
                 },
                 Goal::SynthComp(id) => match *read_computation(arena, id)? {
-                    Computation::DataCase { scrutinee, .. } => {
-                        frames.push(Frame::DataCase(id));
+                    Computation::DataCase {
+                        scrutinee, motive, ..
+                    } => {
+                        frames.push(Frame::DataCase { case: id, motive });
                         goal = Goal::SynthValue(scrutinee);
                         continue 'expand;
                     },
@@ -3713,7 +3747,17 @@ where
                         goal = Goal::SynthValue(path);
                         continue 'expand;
                     },
+                    // A call into a definition whose result follows the
+                    // parameter it recurses on returns at the stage of the
+                    // argument there, read as the checker reads it.
                     Computation::Application(head, argument) => {
+                        if let Maybe::Present(staged) = recursion::followed(
+                            arena,
+                            (session, judgement.entries, context.as_slice()),
+                            (head, argument),
+                        ) {
+                            frames.push(Frame::Restage(staged));
+                        }
                         frames.push(Frame::SynthApply(argument));
                         goal = Goal::SynthComp(head);
                         continue 'expand;
@@ -3841,11 +3885,19 @@ where
                                     (expected, position),
                                     body,
                                 );
+                                let result = match judgement.following {
+                                    Maybe::Present(fixpoint) if fixpoint == id => {
+                                        recursion::ResultStage::Following
+                                    },
+                                    Maybe::Present(_) | Maybe::Absent(_) => {
+                                        recursion::ResultStage::Declared
+                                    },
+                                };
                                 let opened = recursion::open_fixpoint(
                                     arena,
                                     &mut stages,
-                                    expected,
-                                    position,
+                                    (expected, position),
+                                    result,
                                 )?;
                                 staged_bodies = staged_bodies.saturating_add(1);
                                 frames.push(Frame::StageExit);
@@ -3960,8 +4012,25 @@ where
                         goal = Goal::SynthValue(argument);
                         continue 'expand;
                     },
-                    Computation::DataCase { .. }
-                    | Computation::SigmaSplit { .. }
+                    Computation::DataCase {
+                        scrutinee, motive, ..
+                    } => {
+                        frames.push(Frame::ConvertComp(expected));
+                        // A case checked at its written motive with the
+                        // result read at a stage reads its branches there.
+                        match recursion::motive_at(arena, session, motive, expected)? {
+                            Maybe::Present(at) => {
+                                frames.push(Frame::DataCase {
+                                    case: id,
+                                    motive: at,
+                                });
+                                goal = Goal::SynthValue(scrutinee);
+                            },
+                            Maybe::Absent(_plain) => goal = Goal::SynthComp(id),
+                        }
+                        continue 'expand;
+                    },
+                    Computation::SigmaSplit { .. }
                     | Computation::RecordProjection(..)
                     | Computation::TupleProjection(..)
                     | Computation::Transport(..)
@@ -4095,7 +4164,7 @@ where
                         .ok_or(KernelError::AbsentTupleComponent { component })?;
                     produced = Produced::CompType(arena.comp_type_returner(part));
                 },
-                Frame::DataCase(case) => {
+                Frame::DataCase { case, motive: at } => {
                     // A scrutinee at a stage opens one below it, and a
                     // scrutinee at a looped point's path is split over the
                     // words its free cells mint.
@@ -4176,11 +4245,18 @@ where
                                 Maybe::Absent(recursion::Unowned::Outside)
                             },
                         };
+                        // A rule is owed at the written motive; only a type
+                        // with none reads its branches at a staged one.
+                        let obliged = respect::obliged(arena, judgement.entries, datatype, reading);
+                        let branches_at = match obliged {
+                            Maybe::Present(_) => motive,
+                            Maybe::Absent(_) => at,
+                        };
                         let (result, mut goals, looped, reads) = former::case(
                             arena,
                             (judgement.entries, judgement.presentations),
                             session,
-                            case,
+                            (case, branches_at),
                             (datatype, opened, own_constant),
                         )?;
                         // A field domain that named the constant is formed as
@@ -4220,9 +4296,7 @@ where
                         if looped == former::Looped::Owed {
                             frames.push(Frame::Loops(case, datatype));
                         }
-                        if let Maybe::Present(reading) =
-                            respect::obliged(arena, judgement.entries, datatype, reading)
-                        {
+                        if let Maybe::Present(reading) = obliged {
                             frames.push(Frame::Respect(case, reading));
                         }
                         goals.reverse();
@@ -5351,6 +5425,10 @@ where
                 Frame::ProduceComp(codomain) => {
                     produced = Produced::CompType(codomain);
                 },
+                Frame::Restage(staged) => {
+                    let read = produced.comp_type()?;
+                    produced = Produced::CompType(recursion::restaged(arena, read, staged));
+                },
                 Frame::SynthStaticApply(argument) => {
                     let head_type = produced.value_type()?;
                     match arena.value_type(head_type) {
@@ -5983,6 +6061,7 @@ where
         },
     )?;
     check_sealing_provenance(arena, declared, declaration.provenance())?;
+    let mut following = Maybe::Absent(recursion::Unstaged::Plain);
     let verdict: Result<(), KernelError> = match *declaration.content() {
         DeclarationContent::Data {
             kind,
@@ -6193,6 +6272,54 @@ where
                     owed: &mut owed,
                 },
             )?;
+            // A structural definition whose type returns the type it recurses
+            // on is checked once more with that result read at the
+            // parameter's stage; when that holds, a call reads its result at
+            // its argument's stage. The second check recalls nothing the first
+            // recorded, which held at the declared result, and what it owes is
+            // discharged with it; a refusal leaves the result as declared.
+            if let Some(&Value::Thunk(root)) = arena.value(body)
+                && let Some(&Computation::Fixpoint { evidence, .. }) = arena.computation(root)
+                && let Some(recursed) = match evidence {
+                    FixpointEvidence::Partial => None,
+                    FixpointEvidence::StructuralDescent => {
+                        Some(gandr_kernel_term::StagedPosition::default())
+                    },
+                    FixpointEvidence::Staged { position } => Some(position),
+                }
+                && let Some(&ValueType::Thunk(classifier)) = arena.value_type(unsealed)
+                && let Maybe::Present(position) =
+                    recursion::returns_recursed_on(arena, classifier, recursed)?
+            {
+                let mut owed_staged: Vec<CodeObligation> = Vec::new();
+                let unrecorded = &mut gandr_kernel_check_memo::NullMemo;
+                let staged = run(
+                    arena,
+                    owning.following(root),
+                    Vec::new(),
+                    Goal::CheckValue(body, unsealed),
+                    StageOrder::default(),
+                    Recording {
+                        memo: unrecorded,
+                        session,
+                        census,
+                        owed: &mut owed_staged,
+                    },
+                )
+                .and_then(|_checked| {
+                    drain_code_obligations(
+                        arena,
+                        judgement,
+                        &mut gandr_kernel_check_memo::NullMemo,
+                        session,
+                        census,
+                        owed_staged,
+                    )
+                });
+                if staged.is_ok() {
+                    following = Maybe::Present(position);
+                }
+            }
             // An operation's rules are decided over the declarations admitted
             // before it: well formed, oriented and every critical pair joined,
             // and the body their decision tree.
@@ -6314,7 +6441,10 @@ where
     };
     verdict?;
     drain_code_obligations(arena, judgement, memo, session, census, owed)?;
-    Ok(accessibility)
+    Ok(match following {
+        Maybe::Present(position) => accessibility.following(position),
+        Maybe::Absent(_) => accessibility,
+    })
 }
 
 /// Check every code a formation walk owed, and every code those checks owe in
