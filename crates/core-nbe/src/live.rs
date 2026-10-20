@@ -467,6 +467,7 @@ pub fn match_pattern(
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
                 | DomainValue::Univalence { .. }
+                | DomainValue::HeldTransport { .. }
                 | DomainValue::Flow { .. }
                 | DomainValue::Tuple { .. }
                 | DomainValue::Literal { .. }

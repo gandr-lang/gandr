@@ -521,6 +521,225 @@ fn transport_along_univalence_applies_the_forward_map()
     );
 }
 
+/// A map on the booleans, `truth` the left injection of the unit.
+#[derive(Clone, Copy)]
+enum Map
+{
+    /// The identity.
+    Same,
+    /// Negation.
+    Not,
+    /// Constantly `falsity`.
+    False,
+}
+
+/// The booleans' two points, `[truth, falsity]`.
+///
+/// # Specification
+/// trivial.
+fn booleans(core: &mut CoreArena) -> [ValueId; 2]
+{
+    let unit = core.value_unit();
+    [Side::Left, Side::Right].map(|side| core.value_injection(side.into(), unit))
+}
+
+/// The thunk of a map on the booleans.
+///
+/// # Specification
+/// trivial.
+fn boolean_map(
+    core: &mut CoreArena,
+    map: Map,
+) -> ValueId
+{
+    let [truth, falsity] = booleans(core);
+    let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let body = match map {
+        Map::Same => core.computation_return(bound),
+        Map::Not => {
+            let negated = [falsity, truth].map(|value| core.computation_return(value));
+            core.computation_case(bound, &negated)
+        },
+        Map::False => core.computation_return(falsity),
+    };
+    let lambda = core.computation_lambda(body);
+    core.value_thunk(lambda)
+}
+
+/// `ua(#{f, #{#{g, ()}, #{h, ()}}})` over three maps on the booleans: the
+/// forward map, the left inverse and the right inverse. The laws are the
+/// unit, which the evaluator never runs.
+///
+/// # Specification
+/// trivial.
+fn boolean_univalence(
+    core: &mut CoreArena,
+    maps: [Map; 3],
+) -> ValueId
+{
+    let unit = core.value_unit();
+    let [forward, left, right] = maps.map(|map| boolean_map(core, map));
+    let left = core.value_tuple(&[left, unit]);
+    let right = core.value_tuple(&[right, unit]);
+    let inverses = core.value_tuple(&[left, right]);
+    let record = core.value_tuple(&[forward, inverses]);
+    let forward = gandr_core_term::identity::univalence_forward(core, record);
+    core.value_univalence(record, forward)
+}
+
+/// The universe of value codes at level zero, a code standing as a path's
+/// fixed endpoint, and the decode of a motive's own binder.
+///
+/// # Specification
+/// trivial.
+fn universe_parts(core: &mut CoreArena) -> (ValueTypeId, ValueId, ValueTypeId)
+{
+    let universe = core.value_type_universe(
+        gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+        Level::zero(),
+    );
+    let text = text_type(core);
+    let code = core.value_quote(text);
+    let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let decode = core.value_type_element(bound, Level::zero());
+    (universe, code, decode)
+}
+
+#[test]
+fn transport_back_along_univalence_applies_the_left_inverse()
+{
+    // Forward negation, the identity as left inverse and constant falsity
+    // as right inverse: back along the path carries `truth` to itself, where
+    // the forward map or the right inverse would carry it to `falsity`.
+    let mut core = CoreArena::new();
+    let path = boolean_univalence(&mut core, [Map::Not, Map::Same, Map::False]);
+    let (universe, code, decode) = universe_parts(&mut core);
+    let reversed = back(&mut core, universe, code, path);
+    let reversed = core.value_returned(reversed);
+    let [truth, falsity] = booleans(&mut core);
+    let transported = core.computation_path_transport(decode, reversed, truth);
+    let [kept, moved] = [truth, falsity].map(|value| core.computation_return(value));
+    assert_eq!(
+        normalises_to(&mut core, transported, kept),
+        CertificateEquality::Equal,
+        "back along `ua(e)` applies the record's left inverse"
+    );
+    assert_eq!(
+        normalises_to(&mut core, transported, moved),
+        CertificateEquality::Different
+    );
+}
+
+#[test]
+fn a_held_back_reads_back_as_its_transport()
+{
+    // `back(ua(e))` returns the transport that formed it, held as a path:
+    // its reversed family, the univalence it moved along and `here` at the
+    // fixed endpoint, each in its own slot.
+    use gandr_core_term::Computation;
+    use gandr_core_term::Value;
+    use gandr_core_term::ValueType;
+
+    let mut core = CoreArena::new();
+    let path = boolean_univalence(&mut core, [Map::Not, Map::Same, Map::False]);
+    let (universe, code, _) = universe_parts(&mut core);
+    let reversed = back(&mut core, universe, code, path);
+    let normal = normal(&mut core, reversed);
+    let Some(&Value::Thunk(read)) = core.value(normal)
+    else {
+        panic!("a normal form is wrapped as a thunk");
+    };
+    let Some(&Computation::Return(held)) = core.computation(read)
+    else {
+        panic!("`back(ua(e))` returns a path");
+    };
+    let Some(&Value::Returned(formed)) = core.value(held)
+    else {
+        panic!("the path is held as the transport that formed it");
+    };
+    let Some(&Computation::PathTransport {
+        motive,
+        path: along,
+        value,
+    }) = core.computation(formed)
+    else {
+        panic!("the held path is a transport");
+    };
+    assert!(
+        matches!(core.value(along), Some(&Value::Univalence(..))),
+        "it moves along the univalence"
+    );
+    let start = core.value_here(code);
+    assert_eq!(
+        equal_certificate_syntax(&core, value, start),
+        CertificateEquality::Equal,
+        "from `here` at the fixed endpoint"
+    );
+    let Some(&ValueType::Path { left, right, .. }) = core.value_type(motive)
+    else {
+        panic!("in a path family");
+    };
+    assert!(
+        matches!(core.value(left), Some(&Value::Variable { index, .. }) if u32::from(index) == 0_u32),
+        "whose left endpoint moves"
+    );
+    assert_eq!(
+        equal_certificate_syntax(&core, right, code),
+        CertificateEquality::Equal,
+        "and whose right endpoint is fixed"
+    );
+}
+
+#[test]
+fn transport_along_then_moves_along_both_paths_in_order()
+{
+    // The first path sends every point to `falsity` and the second negates:
+    // in order `truth` arrives back at `truth`, where the other order would
+    // leave it at `falsity`.
+    let mut core = CoreArena::new();
+    let first = boolean_univalence(&mut core, [Map::False, Map::Same, Map::Same]);
+    let second = boolean_univalence(&mut core, [Map::Not, Map::Same, Map::Same]);
+    let (universe, code, decode) = universe_parts(&mut core);
+    let composite = then(&mut core, universe, code, first, second);
+    let composite = core.value_returned(composite);
+    let [truth, falsity] = booleans(&mut core);
+    let transported = core.computation_path_transport(decode, composite, truth);
+    let [kept, moved] = [truth, falsity].map(|value| core.computation_return(value));
+    assert_eq!(
+        normalises_to(&mut core, transported, kept),
+        CertificateEquality::Equal,
+        "along `p then q` the operand moves along `p`, then along `q`"
+    );
+    assert_eq!(
+        normalises_to(&mut core, transported, moved),
+        CertificateEquality::Different
+    );
+}
+
+#[test]
+fn transport_along_then_moves_a_stuck_first_leg_on()
+{
+    // A first path no rule reduces: its transport sticks, and the second
+    // path's forward map applies to it, held as the value it stands for.
+    let mut core = CoreArena::new();
+    let first = stuck(&mut core, ConstantIndex::from(0_usize));
+    let second = boolean_univalence(&mut core, [Map::Not, Map::Same, Map::Same]);
+    let (universe, code, decode) = universe_parts(&mut core);
+    let composite = then(&mut core, universe, code, first, second);
+    let composite = core.value_returned(composite);
+    let [truth, falsity] = booleans(&mut core);
+    let transported = core.computation_path_transport(decode, composite, truth);
+    let held = core.computation_path_transport(decode, first, truth);
+    let held = core.value_returned(held);
+    let negated = [falsity, truth].map(|value| core.computation_return(value));
+    let expected = core.computation_case(held, &negated);
+    assert_eq!(
+        normalises_to(&mut core, transported, expected),
+        CertificateEquality::Equal,
+        "the second path's map applies to the first path's stuck transport"
+    );
+}
+
 #[test]
 fn a_compound_endpoint_stands_for_what_it_returns()
 {
@@ -752,6 +971,42 @@ fn stuck_transports_compare_by_motive_and_operand()
     assert_eq!(decided(one, other), MachineVerdict::Convertible);
     assert_eq!(decided(one, apart), MachineVerdict::NotConvertible);
     assert_eq!(decided(one, remotivated), MachineVerdict::NotConvertible);
+}
+
+#[test]
+fn stuck_transports_under_one_motive_over_captures_it_does_not_read_settle_alike()
+{
+    let mut core = CoreArena::new();
+    let five = literal(&mut core, Word::Five);
+    let six = literal(&mut core, Word::Six);
+    let here = core.value_here(five);
+    let motive = diagonal(&mut core);
+    let path = stuck(&mut core, ConstantIndex::from(0_usize));
+    // `λa. λb. transport(y. Path(Text, y, y), p, here(5))`, entered at two
+    // argument orders: each motive closes over `[a, b]`, which its body never
+    // reads, the way a definition's family does at two of its calls.
+    let transported = core.computation_path_transport(motive, path, here);
+    let inner = core.computation_lambda(transported);
+    let body = core.computation_lambda(inner);
+    let mut called = |first, second| {
+        let once = core.computation_application(body, first);
+        core.computation_application(once, second)
+    };
+    let (forward, swapped) = (called(five, six), called(six, five));
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut domain = DomainArena::new();
+    let mut run = |term| {
+        eval_computation(&core, &mut domain, definitions, ample(), term)
+            .expect("closed transports evaluate")
+    };
+    let (one, other) = (run(forward), run(swapped));
+    assert_eq!(
+        crate::conv::convert_computations(&core, &domain, one, other),
+        Ok(crate::conv::Settlement::StructurallyEqual),
+        "the captures the motive does not read leave the two one family"
+    );
 }
 
 #[test]

@@ -3524,6 +3524,7 @@ where
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
                 | DomainValue::Univalence { .. }
+                | DomainValue::HeldTransport { .. }
                 | DomainValue::Flow { .. }
                 | DomainValue::Tuple { .. }
                 | DomainValue::Literal { .. }

@@ -476,6 +476,7 @@ fn head(
         | DomainValue::PathCertificate { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Univalence { .. }
+        | DomainValue::HeldTransport { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Literal { .. }
         | DomainValue::Tuple { .. }

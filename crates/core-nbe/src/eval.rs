@@ -3267,8 +3267,8 @@ fn run(
                 && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Return { value, .. })
                     if matches!(domain.value(value), Some(&DomainValue::ListCons { first, second, .. })
                         if first == head && machine.env(env).is_ok_and(|environment| environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)) == Some(second)))),
-            Task::Body { body: crate::closure::CompBody::AlongWord { motive, rest }, env } => machine.comps.len() == entry_comps
-                && machine.env(env).is_ok_and(|environment| environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)).is_some_and(|bound| machine.values.ends_with(&[rest, bound])))
+            Task::Body { body: crate::closure::CompBody::AlongWord { motive, rest: onward } | crate::closure::CompBody::AlongThen { motive, second: onward }, env } => machine.comps.len() == entry_comps
+                && machine.env(env).is_ok_and(|environment| environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)).is_some_and(|bound| machine.values.ends_with(&[onward, bound])))
                 && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::PathTransport(held)]) if held == motive),
             Task::Body { body: crate::closure::CompBody::Prefixed(word), .. } => machine.values.len() == entry_values
                 && machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps.saturating_add(1)
@@ -3557,10 +3557,18 @@ fn step(
                     Ok(())
                 },
                 // `y. tr(P, u, y)`: the rest of the word moves the value the
-                // first letter moved.
-                crate::closure::CompBody::AlongWord { motive, rest } => {
+                // first letter moved, and a composite's second path the value
+                // its first moved.
+                crate::closure::CompBody::AlongWord {
+                    motive,
+                    rest: onward,
+                }
+                | crate::closure::CompBody::AlongThen {
+                    motive,
+                    second: onward,
+                } => {
                     machine.tasks.push(Task::PathTransport(motive));
-                    machine.values.extend([rest, bound]);
+                    machine.values.extend([onward, bound]);
                     Ok(())
                 },
                 // `v. tr(P, q, v)`: the held operand's run moves along the
@@ -3775,6 +3783,7 @@ fn step(
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
                 | DomainValue::Univalence { .. }
+                | DomainValue::HeldTransport { .. }
                 | DomainValue::Flow { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::Tuple { .. }
@@ -4625,6 +4634,7 @@ fn step_force(
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
         | DomainValue::Univalence { .. }
+        | DomainValue::HeldTransport { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
@@ -4752,6 +4762,7 @@ fn step_apply(
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
                 | DomainValue::Univalence { .. }
+                | DomainValue::HeldTransport { .. }
                 | DomainValue::Flow { .. }
                 | DomainValue::Tuple { .. }
                 | DomainValue::Literal { .. }
@@ -4918,6 +4929,7 @@ fn step_static_apply(
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
         | DomainValue::Univalence { .. }
+        | DomainValue::HeldTransport { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
@@ -5095,6 +5107,7 @@ fn step_case(
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
         | DomainValue::Univalence { .. }
+        | DomainValue::HeldTransport { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
@@ -5117,8 +5130,10 @@ fn step_case(
 ///   bound innermost in its own environment; a neutral grows its spine by the
 ///   same bind, the closure reused rather than re-captured, except under a
 ///   word's first letter ([`crate::closure::CompBody::Prefixed`]), which
-///   returns the letter before the neutral held as the value it stands for; a
-///   fixpoint unfolds once beneath the same bind.
+///   returns the letter before the neutral held as the value it stands for, and
+///   under a composite's second path ([`crate::closure::CompBody::AlongThen`]),
+///   whose body is pushed with that held value bound as a returner's would be;
+///   a fixpoint unfolds once beneath the same bind.
 /// - provides: [`step_bind`] for a continuation a spine already captured, which
 ///   is how an unfolding re-applies a stuck bind.
 /// - fails: [`EvalFault::MachineInvariant`] when the operand is missing,
@@ -5134,6 +5149,7 @@ fn step_case(
 /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
 /// - witness: `eval::tests::reapplied_closures_keep_stuck_spines_and_refuse_wrong_formers`
 /// - witness: `eval::words::tests::a_word_appends_on_its_first_word`
+/// - witness: `identity::tests::transport_along_then_moves_a_stuck_first_leg_on`
 #[spec(
     captures: [entry_values = machine.values.len(), entry_comps = machine.comps.len(), entry_tasks = machine.tasks.len()],
     ensures: |ret| ((ret == Err(EvalFault::MachineInvariant)) == (entry_comps == 0_usize))
@@ -5155,27 +5171,16 @@ fn step_bind_closure(
     else {
         return Err(EvalFault::Domain(DomainFault::Dangling));
     };
-    match *node {
-        DomainComp::Return { value, .. } => {
-            let closure = domain
-                .comp_closure(body)
-                .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
-            let term = closure.body();
-            let mut extended = closure.environment().clone();
-            extended.extend(Zone::Intuitionistic, value);
-            let env = machine.hold_env(extended);
-            machine.tasks.push(Task::Body { body: term, env });
-            Ok(())
-        },
+    let value = match *node {
+        DomainComp::Return { value, .. } => value,
         DomainComp::Neutral { neutral, .. } => {
+            let continuation = domain
+                .comp_closure(body)
+                .map(crate::closure::CompClosure::body);
             // A word's first letter goes back before its rest's stuck
             // transport, held as the value it stands for, as `ℓ ∷ ⟨c⟩` reads
             // its field: the transport is pure, so the bind is that field.
-            if let Some(&crate::closure::CompBody::Prefixed(word)) = domain
-                .comp_closure(body)
-                .map(crate::closure::CompClosure::body)
-                .as_ref()
-            {
+            if let Some(crate::closure::CompBody::Prefixed(word)) = continuation {
                 let held = returned_value(domain, bound)?;
                 let Some(&DomainValue::Constructor { tag, .. }) = domain.value(word)
                 else {
@@ -5187,18 +5192,35 @@ fn step_bind_closure(
                     .push(domain.comp_return(prefixed, CompTermFace::Reduced));
                 return Ok(());
             }
-            let grown = extend_spine(domain, neutral, Elimination::Bind(body))?;
-            machine
-                .comps
-                .push(domain.comp_neutral(grown, CompTermFace::Reduced));
-            Ok(())
+            // A composite's first path moved the value by a transport, which
+            // is pure, so a stuck one is bound as the value it stands for, as
+            // the kernel's reduct hands it to the second path.
+            if let Some(crate::closure::CompBody::AlongThen { .. }) = continuation {
+                returned_value(domain, bound)?
+            }
+            else {
+                let grown = extend_spine(domain, neutral, Elimination::Bind(body))?;
+                machine
+                    .comps
+                    .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+                return Ok(());
+            }
         },
-        DomainComp::Lambda { .. } => Err(EvalFault::BoundNonReturner),
+        DomainComp::Lambda { .. } => return Err(EvalFault::BoundNonReturner),
         DomainComp::Fixpoint { recursive, .. } => {
             machine.tasks.push(Task::BindClosure(body));
-            unfold(core, domain, machine, recursive)
+            return unfold(core, domain, machine, recursive);
         },
-    }
+    };
+    let closure = domain
+        .comp_closure(body)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+    let term = closure.body();
+    let mut extended = closure.environment().clone();
+    extended.extend(Zone::Intuitionistic, value);
+    let env = machine.hold_env(extended);
+    machine.tasks.push(Task::Body { body: term, env });
+    Ok(())
 }
 
 /// Choose between two already-captured branches once the scrutinee has a
@@ -5275,6 +5297,7 @@ fn step_case_branches(
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
         | DomainValue::Univalence { .. }
+        | DomainValue::HeldTransport { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
@@ -5400,6 +5423,7 @@ fn step_transport(
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
                 | DomainValue::Univalence { .. }
+                | DomainValue::HeldTransport { .. }
                 | DomainValue::Flow { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::ListNil { .. }
@@ -5430,6 +5454,7 @@ fn step_transport(
         | DomainValue::Thunk { .. }
         | DomainValue::Lift { .. }
         | DomainValue::Code { .. }
+        | DomainValue::HeldTransport { .. }
         | DomainValue::StaticLambda { .. } => Err(EvalFault::TransportedNonPath),
     }
 }
@@ -5514,10 +5539,11 @@ fn step_path_transport(
         return Err(EvalFault::MachineInvariant);
     };
     let environment = closure.environment().clone();
-    let read = crate::identity::binder_read(core, family).map_err(|fault| match fault {
+    let free = |fault| match fault {
         crate::free::FreeFault::Dangling => EvalFault::DanglingTerm,
         crate::free::FreeFault::MachineInvariant => EvalFault::MachineInvariant,
-    })?;
+    };
+    let read = crate::identity::binder_read(core, family).map_err(free)?;
     if read == crate::free::Membership::Absent {
         machine
             .comps
@@ -5600,18 +5626,57 @@ fn step_path_transport(
             machine.tasks.push(Task::Supply(path));
             return Ok(());
         },
+        // The decode of the motive's own binder along a held `back` or
+        // `then`: back along a path goes the other way, and along a composite
+        // the operand moves along its first path, then its second.
+        (Some(&ValueType::Element { code, .. }), _)
+            if matches!(
+                core.value(code),
+                Some(&Value::Variable { zone: gandr_core_term::Zone::Intuitionistic, index }) if u32::from(index) == 0
+            ) && matches!(carried, DomainValue::HeldTransport { .. }) =>
+        {
+            return along_held(core, domain, machine, motive, (carried, value));
+        },
         (Some(&ValueType::Path { .. }), DomainValue::Here { .. }) => {
-            let read =
-                crate::identity::transport_family(core, family).map_err(|fault| match fault {
-                    crate::free::FreeFault::Dangling => EvalFault::DanglingTerm,
-                    crate::free::FreeFault::MachineInvariant => EvalFault::MachineInvariant,
-                })?;
-            if read == crate::identity::TransportFamily::Singleton {
-                machine
-                    .comps
-                    .push(domain.comp_return(path, CompTermFace::Reduced));
-                return Ok(());
+            match crate::identity::transport_family(core, family).map_err(free)? {
+                crate::identity::TransportFamily::Singleton => {
+                    machine
+                        .comps
+                        .push(domain.comp_return(path, CompTermFace::Reduced));
+                    return Ok(());
+                },
+                // `back(p)` along a universe path is held as the transport
+                // that forms it, in `y. Path(U, y, c)` from `here(c)`.
+                crate::identity::TransportFamily::Reversed
+                    if matches!(
+                        carried,
+                        DomainValue::Univalence { .. } | DomainValue::HeldTransport { .. }
+                    ) =>
+                {
+                    let held = domain.value_held_transport(motive, path, value, TermFace::Reduced);
+                    machine
+                        .comps
+                        .push(domain.comp_return(held, CompTermFace::Reduced));
+                    return Ok(());
+                },
+                crate::identity::TransportFamily::Reversed
+                | crate::identity::TransportFamily::Other => {},
             }
+        },
+        // `q then p` along a universe path `p` is held as the transport that
+        // forms it, in `y. Path(U, c, y)` from `q`.
+        (Some(&ValueType::Path { .. }), _)
+            if matches!(
+                carried,
+                DomainValue::Univalence { .. } | DomainValue::HeldTransport { .. }
+            ) && crate::identity::transport_family(core, family).map_err(free)?
+                == crate::identity::TransportFamily::Singleton =>
+        {
+            let held = domain.value_held_transport(motive, path, value, TermFace::Reduced);
+            machine
+                .comps
+                .push(domain.comp_return(held, CompTermFace::Reduced));
+            return Ok(());
         },
         _ => {},
     }
@@ -5646,6 +5711,196 @@ fn step_path_transport(
         .comps
         .push(domain.comp_neutral(grown, CompTermFace::Reduced));
     Ok(())
+}
+
+/// Transport the operand at the decode of the motive's own binder along a
+/// held `back` or `then`.
+///
+/// # Specification
+/// - requires: `held` was read off the path transported along; `motive` closes
+///   the decode of its own binder.
+/// - ensures: along a held `back(p)`, the operand moves back along `p`, by
+///   [`back_along`]; along a held `q then p`, the transport of the operand
+///   along `q` in `motive` runs beneath an [`CompBody::AlongThen`] continuation
+///   that moves its result along `p` in `motive`.
+/// - provides: the decode rows for the paths the evaluator holds as transports,
+///   the kernel's reducts at the universe's decode.
+/// - fails: [`EvalFault::MachineInvariant`] for a value that is no held
+///   transport, or one whose family is neither singleton;
+///   [`EvalFault::TransportedNonPath`] from [`back_along`]; domain faults for
+///   dangling nodes; [`EvalFault::DanglingTerm`] for a family naming no core
+///   node.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — back along `ua(e)` applies the left inverse and along a
+///   composite the first path moves the operand before the second; swapping the
+///   legs or the map changes the transported result.
+/// - witness: `identity::tests::transport_back_along_univalence_applies_the_left_inverse`
+/// - witness: `identity::tests::transport_along_then_moves_a_stuck_first_leg_on`
+#[spec(
+    captures: [tasks = machine.tasks.len()],
+    ensures: |ret| ret.is_err() || machine.tasks.len() > tasks,
+)]
+fn along_held(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    motive: crate::arena::ValueClosureId,
+    (held, value): (DomainValue, DomainValueId),
+) -> Result<(), EvalFault>
+{
+    let DomainValue::HeldTransport {
+        motive: formed,
+        path: along,
+        value: first,
+        ..
+    } = held
+    else {
+        return Err(EvalFault::MachineInvariant);
+    };
+    match held_family(core, domain, formed)? {
+        crate::identity::TransportFamily::Reversed => {
+            back_along(core, domain, machine, motive, (along, value))
+        },
+        crate::identity::TransportFamily::Singleton => {
+            let onward = domain.native_continuation(CompBody::AlongThen {
+                motive,
+                second: along,
+            });
+            machine.tasks.push(Task::BindClosure(onward));
+            machine.tasks.push(Task::PathTransport(motive));
+            machine.values.extend([first, value]);
+            Ok(())
+        },
+        crate::identity::TransportFamily::Other => Err(EvalFault::MachineInvariant),
+    }
+}
+
+/// Transport the operand back along a universe path at the decode of the
+/// motive's own binder.
+///
+/// # Specification
+/// - requires: `along` is the path a held `back` moved along; `motive` closes
+///   the decode of its own binder.
+/// - ensures: back along `ua(e)` whose record is a tuple of the equivalence's
+///   shape applies the left inverse, the record's `e.1.0.0`, to the operand;
+///   back along a held `back(p)` transports the operand along `p` in `motive`.
+/// - provides: the reverse half of the decode rows: the kernel's reducts `g ←
+///   e.1.0.0; g(x)` and `tr(El, p, x)`.
+/// - fails: [`EvalFault::TransportedNonPath`] for any other path, and for a
+///   record that is no tuple of that shape; domain faults for dangling nodes;
+///   [`EvalFault::DanglingTerm`] for a family naming no core node.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the left inverse, not the forward map or the right
+///   inverse, reaches the operand, and back along a `back` moves forward.
+/// - witness: `identity::tests::transport_back_along_univalence_applies_the_left_inverse`
+#[spec(
+    captures: [tasks = machine.tasks.len()],
+    ensures: |ret| ret.is_err() || machine.tasks.len() > tasks,
+)]
+fn back_along(
+    core: &CoreArena,
+    domain: &DomainArena,
+    machine: &mut Machine<'_>,
+    motive: crate::arena::ValueClosureId,
+    (along, value): (DomainValueId, DomainValueId),
+) -> Result<(), EvalFault>
+{
+    let dangling = EvalFault::Domain(DomainFault::Dangling);
+    match *domain.value(along).ok_or(dangling)? {
+        DomainValue::Univalence { record, .. } => {
+            // `#{f, #{#{g, s}, #{h, r}}}`: the left inverse is `g`.
+            let mut inverse = record;
+            for component in [1_usize, 0_usize, 0_usize] {
+                let node = domain.value(inverse).ok_or(dangling)?;
+                inverse = *domain
+                    .components(node)
+                    .and_then(|fields| fields.get(component))
+                    .ok_or(EvalFault::TransportedNonPath)?;
+            }
+            machine.values.extend([value, inverse]);
+            machine.tasks.push(Task::Apply);
+            machine.tasks.push(Task::Force);
+            Ok(())
+        },
+        DomainValue::HeldTransport {
+            motive: formed,
+            path: inner,
+            ..
+        } if held_family(core, domain, formed)? == crate::identity::TransportFamily::Reversed => {
+            machine.tasks.push(Task::PathTransport(motive));
+            machine.values.extend([inner, value]);
+            Ok(())
+        },
+        DomainValue::Constructor { .. }
+        | DomainValue::Record { .. }
+        | DomainValue::PathCertificate { .. }
+        | DomainValue::PathProduct { .. }
+        | DomainValue::Here { .. }
+        | DomainValue::HeldTransport { .. }
+        | DomainValue::Flow { .. }
+        | DomainValue::Literal { .. }
+        | DomainValue::Tuple { .. }
+        | DomainValue::ListNil { .. }
+        | DomainValue::ListCons { .. }
+        | DomainValue::Injection { .. }
+        | DomainValue::Thunk { .. }
+        | DomainValue::Lift { .. }
+        | DomainValue::Neutral { .. }
+        | DomainValue::Code { .. }
+        | DomainValue::StaticLambda { .. } => Err(EvalFault::TransportedNonPath),
+    }
+}
+
+/// How a held transport's family reads: `back`'s reversed singleton or
+/// `then`'s singleton.
+///
+/// # Specification
+/// - requires: `formed` is a held transport's motive closure.
+/// - ensures: the [`crate::identity::transport_family`] reading of the
+///   closure's value type.
+/// - provides: the one read that tells a held `back` from a held `then`.
+/// - fails: [`EvalFault::Domain`] for a dangling closure,
+///   [`EvalFault::MachineInvariant`] for a closure holding no value type,
+///   [`EvalFault::DanglingTerm`] for a family naming no core node.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a held `back` reads reversed and a held `then` reads as
+///   the singleton; mistaking one for the other moves the operand the wrong
+///   way.
+/// - witness: `identity::tests::transport_back_along_univalence_applies_the_left_inverse`
+/// - witness: `identity::tests::transport_along_then_moves_a_stuck_first_leg_on`
+#[spec(ensures: |ret| ret.is_err() || domain.value_closure(formed).is_some())]
+fn held_family(
+    core: &CoreArena,
+    domain: &DomainArena,
+    formed: crate::arena::ValueClosureId,
+) -> Result<crate::identity::TransportFamily, EvalFault>
+{
+    let closure = domain
+        .value_closure(formed)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+    let crate::ValueBody::ValueType(family) = closure.body()
+    else {
+        return Err(EvalFault::MachineInvariant);
+    };
+    crate::identity::transport_family(core, family).map_err(|fault| match fault {
+        crate::free::FreeFault::Dangling => EvalFault::DanglingTerm,
+        crate::free::FreeFault::MachineInvariant => EvalFault::MachineInvariant,
+    })
 }
 
 /// Ride the value above a flow along it, in a motive, by the kernel's directed
@@ -5754,6 +6009,7 @@ fn step_ride(
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
         | DomainValue::Univalence { .. }
+        | DomainValue::HeldTransport { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Literal { .. }
         | DomainValue::Tuple { .. }
@@ -5918,6 +6174,7 @@ fn step_ride(
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
                 | DomainValue::Univalence { .. }
+                | DomainValue::HeldTransport { .. }
                 | DomainValue::Flow { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::Tuple { .. }
@@ -5946,6 +6203,7 @@ fn step_ride(
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
                 | DomainValue::Univalence { .. }
+                | DomainValue::HeldTransport { .. }
                 | DomainValue::Flow { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::Tuple { .. }
@@ -6209,6 +6467,7 @@ fn step_telescope_transport(
         | DomainValue::PathCertificate { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Univalence { .. }
+        | DomainValue::HeldTransport { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Literal { .. }
         | DomainValue::Tuple { .. }
@@ -7124,6 +7383,7 @@ fn step_data_case(
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
         | DomainValue::Univalence { .. }
+        | DomainValue::HeldTransport { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Literal { .. }
         | DomainValue::Tuple { .. }
@@ -7203,6 +7463,7 @@ fn step_split(
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
         | DomainValue::Univalence { .. }
+        | DomainValue::HeldTransport { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Literal { .. }
         | DomainValue::ListNil { .. }

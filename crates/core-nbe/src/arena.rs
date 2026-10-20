@@ -1277,7 +1277,7 @@ impl DomainArena
     /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| match *value { DomainValue::Tuple { fields, .. } => ret == self.fields(fields).ok(), DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Univalence { .. } | DomainValue::Flow { .. } | DomainValue::Literal { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Injection { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } | DomainValue::Neutral { .. } | DomainValue::Code { .. } | DomainValue::StaticLambda { .. } => ret.is_none() })]
+    #[spec(ensures: |ret| match *value { DomainValue::Tuple { fields, .. } => ret == self.fields(fields).ok(), DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Univalence { .. } | DomainValue::HeldTransport { .. } | DomainValue::Flow { .. } | DomainValue::Literal { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Injection { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } | DomainValue::Neutral { .. } | DomainValue::Code { .. } | DomainValue::StaticLambda { .. } => ret.is_none() })]
     pub fn components(
         &self,
         value: &DomainValue,
@@ -1291,6 +1291,7 @@ impl DomainArena
             | DomainValue::PathProduct { .. }
             | DomainValue::Here { .. }
             | DomainValue::Univalence { .. }
+            | DomainValue::HeldTransport { .. }
             | DomainValue::Flow { .. }
             | DomainValue::Literal { .. }
             | DomainValue::ListNil { .. }
@@ -1462,6 +1463,48 @@ impl DomainArena
                 face,
             },
             guard,
+        )
+    }
+
+    /// Mint a path held as the transport that formed it, over its motive
+    /// closure and its already-allocated path and operand.
+    ///
+    /// Its guard is flexible: the motive is a closure, which the comparison
+    /// reads rather than a content hash.
+    ///
+    /// # Specification
+    /// - requires: `motive` names a live value closure of this arena, and
+    ///   `path` and `value` live value nodes.
+    /// - ensures: a fresh value node carrying the three parts and `face`.
+    /// - provides: the domain form `back(p)` and `q then p` evaluate to when
+    ///   `p` is a universe path, which transport at the universe's decode reads
+    ///   back along `p`, or along `q` and then `p`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — transport along the held `back` of `ua(e)` applies
+    ///   the record's left inverse; a wrong part changes the transported
+    ///   result.
+    /// - witness: `identity::tests::transport_back_along_univalence_applies_the_left_inverse`
+    #[inline]
+    #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::HeldTransport { motive, path, value, face }))]
+    pub fn value_held_transport(
+        &mut self,
+        motive: ValueClosureId,
+        path: DomainValueId,
+        value: DomainValueId,
+        face: TermFace,
+    ) -> DomainValueId
+    {
+        self.alloc_value(
+            DomainValue::HeldTransport {
+                motive,
+                path,
+                value,
+                face,
+            },
+            Guard::Flexible,
         )
     }
 

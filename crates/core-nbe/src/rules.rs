@@ -1551,7 +1551,7 @@ pub fn bind_step(
 #[spec(ensures: |ret| match value {
     DomainValue::Neutral { neutral, .. } => ret == head(domain, frozen, side, neutral)
         .map(|read| Neutrality::Neutral(neutral, read)),
-    DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Univalence { .. } | DomainValue::Flow { .. } | DomainValue::Literal { .. } | DomainValue::Tuple { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Injection { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } | DomainValue::Code { .. } | DomainValue::StaticLambda { .. } => ret == Ok(Neutrality::Former),
+    DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Univalence { .. } | DomainValue::HeldTransport { .. } | DomainValue::Flow { .. } | DomainValue::Literal { .. } | DomainValue::Tuple { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Injection { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } | DomainValue::Code { .. } | DomainValue::StaticLambda { .. } => ret == Ok(Neutrality::Former),
 })]
 fn value_neutrality(
     domain: &DomainArena,
@@ -1571,6 +1571,7 @@ fn value_neutrality(
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
         | DomainValue::Univalence { .. }
+        | DomainValue::HeldTransport { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
@@ -2349,6 +2350,26 @@ fn plan_values(
                 ..
             },
         ) => Plan::Decompose(Vec::from([Subgoal::Values(left_record, right_record)])),
+        // A held `back` or `then` meets another in the transport that formed
+        // each: its family, the path it moved along, then what it moved.
+        (
+            DomainValue::HeldTransport {
+                motive: left_motive,
+                path: left_path,
+                value: left_value,
+                ..
+            },
+            DomainValue::HeldTransport {
+                motive: right_motive,
+                path: right_path,
+                value: right_value,
+                ..
+            },
+        ) => Plan::Decompose(Vec::from([
+            Subgoal::Motives(left_motive, right_motive),
+            Subgoal::Values(left_path, right_path),
+            Subgoal::Values(left_value, right_value),
+        ])),
         (
             DomainValue::Lift {
                 target: left_target,
@@ -2461,6 +2482,7 @@ fn plan_values(
             | DomainValue::PathProduct { .. }
             | DomainValue::Here { .. }
             | DomainValue::Univalence { .. }
+            | DomainValue::HeldTransport { .. }
             | DomainValue::Flow { .. }
             | DomainValue::Tuple { .. }
             | DomainValue::Literal { .. }

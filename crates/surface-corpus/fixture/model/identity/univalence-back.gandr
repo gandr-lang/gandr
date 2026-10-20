@@ -1,0 +1,24 @@
+// Transport back along `ua`: the cubical case table of Cohen, Coquand, Huber
+// and Mörtberg, _Cubical Type Theory: a constructive interpretation of the
+// univalence axiom_ (TYPES 2015, arXiv:1611.02108), § 4.5, read at the
+// universe. `back(ua(e))` is the transport of `here(a)` along `ua(e)` in `y.
+// Path(Type, y, a)`, and transport along it applies the record's left
+// inverse `g`.
+
+// Transport forward and back along a path between types.
+import "./univalence.gandr" ;
+
+/// Transport back along `ua` applies the record's left inverse.
+@[ checks ]
+def backBeta(
+  a : Type,
+  b : Type,
+  t : +U (a -> -F b),
+  g : +U (b -> -F a),
+  s : +U ((x : a) -> -F Path(a, g(t(x)), x)),
+  h : +U (b -> -F a),
+  r : +U ((y : b) -> -F Path(b, t(h(y)), y)),
+  y : b
+) -> -F Path(a, bwdAlong(a, b, ua(#{t, #{#{g, s}, #{h, r}}}), y), g(y)) {
+  return here(g(y))
+}
