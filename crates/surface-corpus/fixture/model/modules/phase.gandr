@@ -1,0 +1,56 @@
+// The phase distinction (Sterling and Harper, _Logical relations as types:
+// proof-relevant parametricity for program modules_, doi:10.1145/3474834):
+// a module's type members are its static part and its values its dynamic
+// part, ordered static below dynamic. A member reads only members at or
+// below its own phase, so a type reads types and static data, and a value
+// reads both. A type member reading a module's or a parameter's value is
+// refused by name at the value (`PhaseDependence`), which no fixture can
+// state until a type member can carry its own refusal (#1087).
+
+/// A sign, closed data whose constructors are static.
+data Sign : Type {
+  Plus : Sign;
+  Minus : Sign;
+}
+
+/// A point sealed by its signature: an abstract type and a value of it.
+module Point :> #{ type T, z : T } {
+  type T = Integer;
+  /// The point.
+  @[ runs("0") ]
+  def z = 0;
+}
+
+/// A functor whose type member reads only its argument's type: its result's
+/// static part is a function of the argument's static part.
+module Square(S : #{ type T, z : T }) :> #{ type U, w : U } {
+  type U = S.T * S.T;
+  /// The argument's point, twice.
+  @[ checks ]
+  def w = (S.z, S.z);
+}
+
+/// The functor applied to the point.
+module Squared = Square(Point) ;
+
+/// The applied functor's value, at its own abstract type.
+@[ checks ]
+def squared : Squared.U ;
+def squared = Squared.w ;
+
+/// A module whose type members read a literal and a constructor, which are
+/// static data, and whose values read those types.
+module Fixed {
+  /// A path at three.
+  type Three = Path(Integer, 3, 3);
+  /// A path at the plus sign.
+  type Positive = Path(Sign, Plus, Plus);
+  /// The constant path at three.
+  @[ checks ]
+  def three : Three ;
+  def three = here(3);
+  /// The constant path at the plus sign.
+  @[ checks ]
+  def positive : Positive ;
+  def positive = here(Plus);
+}

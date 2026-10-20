@@ -1,0 +1,93 @@
+// One ascription path for a module and a theory (#746): a module is a
+// model of a theory, `module M : Model(T)` ascribes it transparently and
+// `module M :> Model(T)` seals it, the theory's sorts abstract outside. A
+// theory with no laws is an ML signature; the same ascription checks a
+// theory with laws, whose members are the module's proofs. After Kaposi and
+// Xie (_Second-Order Generalised Algebraic Theories_, FSCD 2024,
+// doi:10.4230/LIPIcs.FSCD.2024.10), whose first-order models are a
+// theory's algebras, and Rossberg, Russo and Dreyer (_F-ing Modules_,
+// doi:10.1017/S0956796814000264) for sealing as opaque ascription.
+
+/// A counter: a carrier, a start and a step. No laws: an ML signature.
+@[ checks ]
+theory Counter {
+  sort C : Type;
+  oper start : () --> C;
+  oper step : (c : C) --> C;
+}
+
+/// A counter on the integers, ascribed transparently: its carrier is
+/// `Integer` outside.
+module Open : Model(Counter) {
+  type C = Integer;
+
+  def start() -> -F Integer { return 0 }
+
+  def step(n : Integer) -> -F Integer { become n + 1 }
+}
+
+/// The same counter sealed by the theory: its carrier is abstract outside,
+/// reachable only through `start` and `step`.
+module Sealed :> Model(Counter) {
+  type C = Integer;
+
+  def start() -> -F Integer { return 0 }
+
+  def step(n : Integer) -> -F Integer { become n + 1 }
+}
+
+/// Two steps on the transparent counter, read as an integer.
+@[ runs("2") ]
+def openTwice : () => Integer ;
+def openTwice = thunk { run s <- Open.start() ; run t <- Open.step(s) ; become Open.step(t) } ;
+
+/// Two steps on the sealed counter, at its abstract carrier.
+@[ checks ]
+def sealedTwice : () => Sealed.C ;
+def sealedTwice = thunk {
+  run s <- Sealed.start() ;
+  run t <- Sealed.step(s) ;
+  become Sealed.step(t)
+} ;
+
+/// A toggle: a step that undoes itself. A law, so the models give its proof.
+@[ checks ]
+theory Toggle {
+  sort T : Type;
+  oper flip : (t : T) --> T;
+  rule twice : flip(flip(t)) <=> t;
+}
+
+/// Two states.
+@[ checks ]
+data Bit : Type {
+  Low : Bit;
+  High : Bit;
+}
+
+/// The two states as a model of the toggle, ascribed transparently: the law
+/// holds by conversion at each state.
+module Bits : Model(Toggle) {
+  type T = Bit;
+
+  def flip(b : Bit) -> -F Bit {
+    case b {
+      Low => return High,
+      High => return Low
+    }
+  }
+
+  /// The law, by cases.
+  @[ checks ]
+  def twice(b : Bit) -> -F Path(Bit, flip(flip(b)), b) {
+    case b {
+      Low => return here(Low),
+      High => return here(High)
+    }
+  }
+}
+
+/// The toggle twice from `Low`, run.
+@[ runs("Low") ]
+def flippedTwice : () => Bit ;
+def flippedTwice = thunk { run b <- Bits.flip(Low) ; become Bits.flip(b) } ;

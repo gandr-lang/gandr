@@ -684,6 +684,8 @@ mod model;
 
 mod native;
 
+mod phase;
+
 mod sealing;
 
 mod session;
@@ -6061,7 +6063,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         match self.resolve_name(site, frame, name)? {
             Maybe::Present(resolved) => {
                 self.resolved(site.at.span, resolved);
-                let plan = self.resolved_term(site, frame, resolved);
+                let plan = self.resolved_term(site, frame, resolved)?;
                 self.plan(site, plan);
                 Ok(())
             },
@@ -6179,7 +6181,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return self.codata_type(site, constant, arity, none);
             }
             let frame = self.require(site, Produced::Value)?;
-            let plan = self.resolved_term(site, frame, resolved);
+            let plan = self.resolved_term(site, frame, resolved)?;
             self.plan(site, plan);
             return Ok(());
         }
@@ -6210,20 +6212,32 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   constant it names.
     /// - provides: the one place a term name inside a type reads the type's
     ///   telescope rather than the term context.
-    /// - fails: never.
+    /// - fails: [`LoweringRefusal::PhaseDependence`] for a declaration the
+    ///   member `site` belongs to may not read, as [`Self::phased`] decides.
     /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a parameter named in a result type's compound
-    ///   endpoint, and one named in a body, each checked.
+    ///   endpoint, and one named in a body, each checked; a module's value
+    ///   named in a type member's type, refused.
     /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
+    /// - witness: `tests::modules::a_type_member_reads_types_and_never_values`
     #[spec(
-        ensures: |ret| match (resolved, self.in_type.contains(&site.at.node)) {
-            | (Resolved::Binder(bound), true) => {
-                matches!(ret, Plan::StaticApplication(Code::Bound { binder, .. }, arguments) if binder == bound.binder && arguments.start == arguments.end)
-                    && (bool::from(self.scope.mentioned(bound.binder)) || self.in_quote.contains(&site.at.node))
+        ensures: |ret| match ret {
+            | Err(ref refusal) => {
+                matches!(resolved, Resolved::Declaration { .. })
+                    && matches!(*refusal, LoweringRefusal::PhaseDependence { .. })
             },
-            | _ => ret == resolved.term(),
+            | Ok(ref plan) => match (resolved, self.in_type.contains(&site.at.node)) {
+                | (Resolved::Binder(bound), true) => {
+                    matches!(*plan, Plan::StaticApplication(Code::Bound { binder, .. }, arguments) if binder == bound.binder && arguments.start == arguments.end)
+                        && (bool::from(self.scope.mentioned(bound.binder)) || self.in_quote.contains(&site.at.node))
+                },
+                | _ => *plan == resolved.term(),
+            },
         },
     )]
     fn resolved_term(
@@ -6231,7 +6245,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         site: Site,
         frame: Frame,
         resolved: Resolved,
-    ) -> Plan
+    ) -> Result<Plan, LoweringRefusal<'source>>
     {
         match resolved {
             Resolved::Binder(bound) if self.in_type.contains(&site.at.node) => {
@@ -6240,16 +6254,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     start: self.operands.len(),
                     end: self.operands.len(),
                 };
-                Plan::StaticApplication(
+                Ok(Plan::StaticApplication(
                     Code::Bound {
                         from: frame,
                         binder: bound.binder,
                         telescope,
                     },
                     none,
-                )
+                ))
             },
-            Resolved::Binder(_) | Resolved::Declaration { .. } => resolved.term(),
+            Resolved::Binder(_) => Ok(resolved.term()),
+            Resolved::Declaration { constant, .. } => {
+                self.phased(site, SlotIndex::from(usize::from(constant)))?;
+                Ok(resolved.term())
+            },
         }
     }
 
@@ -8231,7 +8249,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return self.codata_type(site, constant, arity, none);
             }
             let frame = self.require(site, Produced::Value)?;
-            let plan = self.resolved_term(site, frame, resolved);
+            let plan = self.resolved_term(site, frame, resolved)?;
             self.plan(site, plan);
             return Ok(());
         }
@@ -8389,20 +8407,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `target` is the member an exported path resolved to.
     /// - ensures: the member's constant, when the member is declared strictly
-    ///   before the declaration `site` belongs to.
-    /// - provides: the position rule for a path.
+    ///   before the declaration `site` belongs to and stands at or below its
+    ///   phase.
+    /// - provides: the position rule and the phase rule for a path.
     /// - fails: yields [`LoweringRefusal::ForwardMemberReference`] for a member
-    ///   declared at or after it.
+    ///   declared at or after it; [`LoweringRefusal::PhaseDependence`] for a
+    ///   value read inside a type, as [`Self::phased`] decides.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::ForwardMemberReference`].
+    /// [`LoweringRefusal::ForwardMemberReference`] and
+    /// [`LoweringRefusal::PhaseDependence`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a backward member becomes its declared constant while
-    ///   a forward member is refused at the use, with the declaration retained.
+    ///   a forward member is refused at the use, with the declaration retained;
+    ///   a parameter's value read inside a type member is refused by phase.
     /// - witness: `tests::modules::a_backward_member_reference_resolves`
     /// - witness: `tests::modules::a_forward_member_reference_is_refused_by_position`
+    /// - witness: `tests::modules::functors::a_type_member_never_reads_its_parameter_s_value`
     #[spec(
         ensures: |ret| match self.collected.slots.get(usize::from(target)) {
             | None => ret == Err(site.out(FragmentBoundary::Unadmitted)),
@@ -8416,8 +8439,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     })
                 }
                 else {
-                    ret.is_ok()
-                        && matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Constant(constant)) if constant == entry.constant)
+                    matches!(ret, Err(LoweringRefusal::PhaseDependence { .. }))
+                        || ret.is_ok()
+                            && matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Constant(constant)) if constant == entry.constant)
                 }
             },
         },
@@ -8442,6 +8466,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 declared,
             });
         }
+        self.phased(site, target)?;
         self.plan(site, Plan::Constant(constant));
 
         Ok(())

@@ -3470,6 +3470,66 @@ fn a_forward_member_reference_is_refused_by_position()
 }
 
 #[test]
+fn a_type_member_reads_types_and_never_values()
+{
+    let phase = |source: &str, member: &str, reached: &str, (written, at): (&str, usize)| {
+        let found = rows(&lower(source));
+        let refused = |amounts: &Amounts<'_>| {
+            *amounts
+                == Amounts::Refused(LoweringRefusal::PhaseDependence {
+                    span: span_of(source, written, at),
+                    member: name(member),
+                    reached: name(reached),
+                })
+        };
+        assert!(
+            found
+                .iter()
+                .any(|&(_, role, ref amounts)| role == Role::Held && refused(amounts)),
+            "the type `{member}` is refused at `{written}`, naming the value `{reached}`, in \
+             {source:?}: {found:?}"
+        );
+    };
+    phase(
+        "module M {\n  def count = 3;\n  type Q = Path(Integer, count, 3);\n}\n",
+        "Q",
+        "count",
+        ("count", 1_usize),
+    );
+    phase(
+        "module M {\n  def count = 3;\n  module N { type Q = Path(Integer, M.count, 3); }\n}\n",
+        "Q",
+        "count",
+        ("M.count", 0_usize),
+    );
+    phase(
+        "module S :> #{ type T, z : T, type P = Path(T, z, z) } {\n  type T = Integer;\n  def \
+         z = 0;\n  type P = Path(Integer, 0, 0);\n}\n",
+        "P",
+        "z",
+        ("z", 1_usize),
+    );
+    let static_only = "data Bit : Type { Low : Bit; High : Bit; }\nmodule M {\n  type Three = \
+                       Path(Integer, 3, 3);\n  type Lowered = Path(Bit, Low, Low);\n  def three \
+                       : Three ;\n  def three = here(3);\n}\n";
+    let mut lowered = lower(static_only);
+    let found = rows(&lowered);
+    assert!(
+        found
+            .iter()
+            .all(|&(_, _, ref amounts)| !matches!(*amounts, Amounts::Refused(_))),
+        "a type reading a literal and a constructor, and a value reading that type, are read: \
+         {found:?}"
+    );
+    assert!(
+        verdicts(&mut lowered)
+            .iter()
+            .all(|&(_, judgement)| matches!(judgement, Judgement::Checked | Judgement::Declared)),
+        "and check"
+    );
+}
+
+#[test]
 fn a_backward_member_reference_resolves()
 {
     let sibling = "module M { def b = 1; def a = b; }";

@@ -457,6 +457,8 @@ pub enum RefusalName
     IllTypedPayload,
     /// A module member named at or after the member naming it.
     ForwardMemberReference,
+    /// A type member, or a type a signature states, reading a value.
+    PhaseDependence,
     /// A selection or a signature component a module does not supply.
     UnknownMember,
     /// A module binding applying a name that is not a functor.
@@ -648,7 +650,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 169_usize] = [
+    pub const VOCABULARY: [Self; 170_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -732,6 +734,7 @@ impl RefusalName
         Self::NonValuePayload,
         Self::IllTypedPayload,
         Self::ForwardMemberReference,
+        Self::PhaseDependence,
         Self::UnknownMember,
         Self::NotAFunctor,
         Self::ProjectionFromApplication,
@@ -855,6 +858,7 @@ impl RefusalName
         b"DuplicateAttribute") | (Self::MissingPayload, b"MissingPayload") |
         (Self::NonValuePayload, b"NonValuePayload") | (Self::IllTypedPayload,
         b"IllTypedPayload") | (Self::ForwardMemberReference, b"ForwardMemberReference") |
+        (Self::PhaseDependence, b"PhaseDependence") |
         (Self::UnknownMember, b"UnknownMember") | (Self::NotAFunctor, b"NotAFunctor")
         | (Self::ProjectionFromApplication, b"ProjectionFromApplication")
         | (Self::UnreadAscription,
@@ -1125,6 +1129,7 @@ impl RefusalName
             Self::NonValuePayload => "NonValuePayload",
             Self::IllTypedPayload => "IllTypedPayload",
             Self::ForwardMemberReference => "ForwardMemberReference",
+            Self::PhaseDependence => "PhaseDependence",
             Self::UnknownMember => "UnknownMember",
             Self::NotAFunctor => "NotAFunctor",
             Self::ProjectionFromApplication => "ProjectionFromApplication",
@@ -1326,6 +1331,8 @@ impl Refusal<'_>
         RefusalName::IllTypedPayload) |
         (Self::Lowering(LoweringRefusal::ForwardMemberReference { .. }),
         RefusalName::ForwardMemberReference) |
+        (Self::Lowering(LoweringRefusal::PhaseDependence { .. }),
+        RefusalName::PhaseDependence) |
         (Self::Lowering(LoweringRefusal::UnknownMember { .. }),
         RefusalName::UnknownMember) | (Self::Lowering(LoweringRefusal::NotAFunctor { .. }),
         RefusalName::NotAFunctor) |
@@ -1553,7 +1560,8 @@ impl Refusal<'_>
         RefusalName::MissingPayload) | (LoweringRefusal::NonValuePayload { .. },
         RefusalName::NonValuePayload) | (LoweringRefusal::IllTypedPayload { .. },
         RefusalName::IllTypedPayload) | (LoweringRefusal::ForwardMemberReference { .. },
-        RefusalName::ForwardMemberReference) | (LoweringRefusal::UnknownMember { .. },
+        RefusalName::ForwardMemberReference) | (LoweringRefusal::PhaseDependence { .. },
+        RefusalName::PhaseDependence) | (LoweringRefusal::UnknownMember { .. },
         RefusalName::UnknownMember) | (LoweringRefusal::NotAFunctor { .. },
         RefusalName::NotAFunctor) | (LoweringRefusal::ProjectionFromApplication { .. },
         RefusalName::ProjectionFromApplication) | (LoweringRefusal::UnreadAscription { .. },
@@ -1608,6 +1616,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::NonValuePayload { .. } => RefusalName::NonValuePayload,
         LoweringRefusal::IllTypedPayload { .. } => RefusalName::IllTypedPayload,
         LoweringRefusal::ForwardMemberReference { .. } => RefusalName::ForwardMemberReference,
+        LoweringRefusal::PhaseDependence { .. } => RefusalName::PhaseDependence,
         LoweringRefusal::UnknownMember { .. } => RefusalName::UnknownMember,
         LoweringRefusal::NotAFunctor { .. } => RefusalName::NotAFunctor,
         LoweringRefusal::ProjectionFromApplication { .. } => RefusalName::ProjectionFromApplication,
