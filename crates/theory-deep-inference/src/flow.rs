@@ -134,6 +134,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use foldhash::fast::FixedState;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
@@ -143,6 +144,7 @@ use gandr_theory_cell_complexes::SequentAlphabet;
 use gandr_theory_coherent_resolutions::CellApp;
 use gandr_theory_coherent_resolutions::Tracelet;
 use gandr_theory_coherent_resolutions::rewrite_at;
+use hashbrown::HashMap;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::CausalDepth;
@@ -762,14 +764,14 @@ where
         labels.push(cell_address(cell));
         // Ports are numbered inside the match image, never across the whole
         // term, so a vertex's incidences are its own.
-        let before_covered: Vec<A::Pos> = A::command_positions(&current)
-            .into_iter()
-            .filter(|position| bool::from(covered_by::<A>(&step.at, position)))
-            .collect();
-        let after_covered: Vec<A::Pos> = A::command_positions(&next)
-            .into_iter()
-            .filter(|position| bool::from(covered_by::<A>(&step.at, position)))
-            .collect();
+        let mut before_covered: Vec<A::Pos> = A::command_positions(&current);
+        before_covered.retain(|position| bool::from(covered_by::<A>(&step.at, position)));
+        let mut after_covered: Vec<A::Pos> = A::command_positions(&next);
+        after_covered.retain(|position| bool::from(covered_by::<A>(&step.at, position)));
+        let mut before_ports: HashMap<&A::Pos, usize, FixedState> = HashMap::default();
+        for (port, position) in before_covered.iter().enumerate() {
+            before_ports.entry(position).or_insert(port);
+        }
         // Upper edges: everything the match image covers is consumed.
         let mut surviving: Vec<LiveAtom<A>> = Vec::with_capacity(live.len());
         for atom in live {
@@ -777,9 +779,9 @@ where
                 surviving.push(atom);
                 continue;
             }
-            let port = before_covered
-                .iter()
-                .position(|candidate| *candidate == atom.at)
+            let port = before_ports
+                .get(&atom.at)
+                .copied()
                 .map_or_else(FlowPortIndex::default, FlowPortIndex::from);
             threads.push(FlowThread {
                 up: atom.birth,
@@ -801,11 +803,11 @@ where
     }
     // The conclusion's own enumeration orders `⊥`'s edges, as the source's does.
     let final_positions = A::command_positions(&current);
-    live.sort_by_key(|atom| {
-        final_positions
-            .iter()
-            .position(|candidate| *candidate == atom.at)
-    });
+    let mut final_order: HashMap<&A::Pos, usize, FixedState> = HashMap::default();
+    for (index, position) in final_positions.iter().enumerate() {
+        final_order.entry(position).or_insert(index);
+    }
+    live.sort_by_key(|atom| final_order.get(&atom.at).copied());
     for atom in live {
         threads.push(FlowThread {
             up: atom.birth,

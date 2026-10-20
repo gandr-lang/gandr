@@ -474,6 +474,7 @@ impl<A: CellAlphabet> EventOrder<A>
         let mut dependences: Vec<Vec<EventIndex>> = Vec::with_capacity(events.len());
         let mut depths: Vec<CausalDepth> = Vec::with_capacity(events.len());
         let mut keys: Vec<EventKey> = Vec::with_capacity(events.len());
+        let mut inherited: Vec<CausalPast> = Vec::new();
         for (index, current) in events.iter().enumerate() {
             let mut edges: Vec<EventIndex> = Vec::new();
             let mut depth = CausalDepth::default();
@@ -492,14 +493,12 @@ impl<A: CellAlphabet> EventOrder<A>
                 let above = CausalDepth::from(usize::from(prior_depth).saturating_add(1_usize));
                 depth = depth.max(above);
             }
-            let inherited: Vec<CausalPast> = edges
-                .iter()
-                .map(|earlier| {
-                    keys.get(usize::from(*earlier))
-                        .map(EventKey::past)
-                        .unwrap_or_default()
-                })
-                .collect();
+            inherited.clear();
+            inherited.extend(edges.iter().map(|earlier| {
+                keys.get(usize::from(*earlier))
+                    .map(EventKey::past)
+                    .unwrap_or_default()
+            }));
             keys.push(EventKey {
                 address: current.address,
                 past: causal_past_address(current.address, &inherited),

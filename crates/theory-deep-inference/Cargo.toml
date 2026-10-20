@@ -22,8 +22,10 @@ path = "tests/lib.rs"
 # logic/BigInt stays disabled.
 [dependencies]
 anodized.workspace = true
+foldhash.workspace = true
 gandr-theory-cell-complexes.workspace = true
 gandr-theory-coherent-resolutions.workspace = true
+hashbrown.workspace = true
 quenchant-shape.workspace = true
 
 [dev-dependencies]

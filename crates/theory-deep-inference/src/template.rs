@@ -120,6 +120,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use foldhash::fast::FixedState;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::Generalization;
@@ -128,6 +129,7 @@ use gandr_theory_coherent_resolutions::ReplayPathOutcome;
 use gandr_theory_coherent_resolutions::StuckStep;
 use gandr_theory_coherent_resolutions::Tracelet;
 use gandr_theory_coherent_resolutions::TraceletReplay;
+use hashbrown::HashSet;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::AdmissionCount;
@@ -1058,7 +1060,7 @@ where
     else {
         return Err(TemplateRefusal::Ungeneralizable);
     };
-    let peak_vars = A::metavariables(&peak);
+    let peak_vars: HashSet<A::Var, FixedState> = A::metavariables(&peak).into_iter().collect();
     let mut carrier = first.clone();
     carrier.overlap.peak = peak;
     carrier.joins_at = joins_at;

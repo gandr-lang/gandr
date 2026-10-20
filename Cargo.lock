@@ -1209,10 +1209,12 @@ dependencies = [
 name = "gandr-theory-deep-inference"
 version = "0.0.0"
 dependencies = [
+ "foldhash 0.2.0",
  "gandr-theory-cell-complexes",
  "gandr-theory-cell-complexes-tools",
  "gandr-theory-coherent-resolutions",
  "gandr-theory-decomposition-spaces",
+ "hashbrown 0.17.1",
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",

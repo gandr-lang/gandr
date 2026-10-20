@@ -656,9 +656,10 @@ fn holes<A>(cmd: &A::Cmd) -> Vec<A::Var>
 where
     A: CellAlphabet,
 {
+    let mut seen: std::collections::HashSet<A::Var> = std::collections::HashSet::new();
     let mut distinct: Vec<A::Var> = Vec::new();
     for var in A::metavariables(cmd) {
-        if !distinct.contains(&var) {
+        if seen.insert(var.clone()) {
             distinct.push(var);
         }
     }
@@ -737,13 +738,16 @@ where
 {
     let base_holes = holes::<A>(&base.overlap.peak);
     let last = members.0.saturating_sub(1);
+    let mut values: Vec<(A::Var, Value)> = Vec::with_capacity(base_holes.len());
     (0_usize .. members.0)
         .map(|index| {
-            let values: Vec<(A::Var, Value)> = base_holes
-                .iter()
-                .enumerate()
-                .map(|(hole, var)| (var.clone(), value(regime, Ordinal(index), Ordinal(hole))))
-                .collect();
+            values.clear();
+            values.extend(
+                base_holes
+                    .iter()
+                    .enumerate()
+                    .map(|(hole, var)| (var.clone(), value(regime, Ordinal(index), Ordinal(hole)))),
+            );
             let sigma = A::numerals(&values);
             let mut member = base.clone();
             member.overlap.peak = A::apply_subst(&sigma, &base.overlap.peak);
