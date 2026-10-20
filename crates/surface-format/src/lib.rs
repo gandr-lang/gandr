@@ -174,13 +174,6 @@
     )
 )]
 #![no_std]
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        allocation_in_repeated_body,
-        reason = "4 cost-shape sites; #814 lists them"
-    )
-)]
 
 extern crate alloc;
 
@@ -732,6 +725,8 @@ pub fn format_beside(
             }
         }
     }
+    let mut stuck = Vec::new();
+    let mut fresh: Vec<NodeKey> = Vec::new();
     loop {
         let spans = forms_of(tree, &withdrawn);
         let rewrites = match (chosen, lowered.as_ref()) {
@@ -767,20 +762,22 @@ pub fn format_beside(
             },
             Agreement::Declarations(differing) => {
                 let before = withdrawn.len();
-                let mut stuck = Vec::new();
+                stuck.clear();
                 for declaration in differing {
-                    let fresh: Vec<NodeKey> = declaration
-                        .keys
-                        .iter()
-                        .copied()
-                        .filter(|key| !held.contains(key))
-                        .collect();
+                    fresh.clear();
+                    fresh.extend(
+                        declaration
+                            .keys
+                            .iter()
+                            .copied()
+                            .filter(|key| !held.contains(key)),
+                    );
                     if fresh.is_empty() {
                         stuck.push(declaration);
                     }
                     else {
                         held.extend(fresh.iter().copied());
-                        withdrawn.extend(fresh);
+                        withdrawn.append(&mut fresh);
                         reports.push(declaration.withdrawal);
                     }
                 }

@@ -150,31 +150,32 @@ pub fn comments<'source>(tree: &SyntaxTree<'source>) -> Vec<Comment<'source>>
 {
     let mut found: Vec<Comment<'source>> = Vec::new();
     let mut pending: Vec<NodeIndex> = Vec::from([tree.root()]);
+    let mut children: Vec<NodeIndex> = Vec::new();
+    let mut significant: Vec<NodeIndex> = Vec::new();
+    let mut lines: Vec<(NodeIndex, CommentKind)> = Vec::new();
     while let Some(owner) = pending.pop() {
-        let children: Vec<NodeIndex> = tree.children(owner).collect();
-        let significant: Vec<NodeIndex> = children
-            .iter()
-            .copied()
-            .filter(|&child| {
-                tree.node(child)
-                    .is_some_and(|node| bool::from(node.label().significance()))
-            })
-            .collect();
+        children.clear();
+        children.extend(tree.children(owner));
+        significant.clear();
+        significant.extend(children.iter().copied().filter(|&child| {
+            tree.node(child)
+                .is_some_and(|node| bool::from(node.label().significance()))
+        }));
         for &child in &children {
             let Some(node) = tree.node(child)
             else {
                 continue;
             };
-            let lines: Vec<(NodeIndex, CommentKind)> = match node.label() {
-                NodeLabel::Space => written(tree, child)
-                    .into_iter()
-                    .map(|kind| (child, kind))
-                    .collect(),
-                NodeLabel::Doc => tree
-                    .children(child)
-                    .filter(|&line| written(tree, line).is_some())
-                    .map(|line| (line, CommentKind::Documentation))
-                    .collect(),
+            lines.clear();
+            match node.label() {
+                NodeLabel::Space => {
+                    lines.extend(written(tree, child).into_iter().map(|kind| (child, kind)));
+                },
+                NodeLabel::Doc => lines.extend(
+                    tree.children(child)
+                        .filter(|&line| written(tree, line).is_some())
+                        .map(|line| (line, CommentKind::Documentation)),
+                ),
                 NodeLabel::Wald
                 | NodeLabel::Meld(_)
                 | NodeLabel::Tile(_)
@@ -183,8 +184,8 @@ pub fn comments<'source>(tree: &SyntaxTree<'source>) -> Vec<Comment<'source>>
                     pending.push(child);
                     continue;
                 },
-            };
-            for (line, kind) in lines {
+            }
+            for &(line, kind) in &lines {
                 let (Some(leaf), Some(text)) = (tree.node(line), tree.fragment(line))
                 else {
                     continue;
