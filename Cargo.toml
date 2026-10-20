@@ -878,6 +878,20 @@ default-features = false
 version = "0.2.189"
 default-features = false
 
+# The operating system's file events: the hub's watch over the files open
+# documents import, for connections whose client watches none, and the
+# terminal REPL's watch over the files it loaded.
+# features:
+# - macos_fsevent: the FSEvents backend, macOS's recommended watcher, which
+#   needs it to build there. Linux's inotify backend has no feature.
+# consumers:
+# - surface-lsp
+# - surface-repl
+[workspace.dependencies.notify]
+version = "8.2.0"
+default-features = false
+features = ["macos_fsevent"]
+
 # Exact, dynamically sized integers for native arithmetic.
 # features:
 # - none: allocation works without std or optional integrations

@@ -66,11 +66,13 @@
 //! reads, and at the end of the stream.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use core::ops::ControlFlow;
 use core::time::Duration;
 use std::io::BufRead;
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::mpsc::RecvTimeoutError;
 use std::time::Instant;
@@ -386,16 +388,20 @@ pub enum Met<'later>
     },
     /// A document whose deadline passed.
     Quiet(DocumentUri),
+    /// Files a watch beside the loop saw change on disk, sorted.
+    Changed(Vec<PathBuf>),
     /// The client's stream closed at a frame boundary.
     Closed,
 }
 
-/// What the reading thread hands the loop.
+/// What the reading thread, or a watch beside it, hands the loop.
 #[derive(Debug)]
 enum Read
 {
     /// A message, classified.
     Message(Classified),
+    /// Files changed on disk.
+    Changed(Vec<PathBuf>),
     /// The stream closed at a frame boundary.
     Closed,
     /// The stream failed.
@@ -412,14 +418,15 @@ enum End
     Fault(TransportFault),
 }
 
-/// Queue what the reading thread handed over, and say how the stream ended
-/// when it did.
+/// Queue what the reading thread or a watch handed over, and say how the
+/// stream ended when it did.
 ///
 /// # Specification
 /// trivial.
 fn queue(
     read: Read,
     queued: &mut VecDeque<Classified>,
+    changed: &mut BTreeSet<PathBuf>,
 ) -> Option<End>
 {
     match read {
@@ -427,26 +434,95 @@ fn queue(
             queued.push_back(message);
             None
         },
+        Read::Changed(paths) => {
+            changed.extend(paths);
+            None
+        },
         Read::Closed => Some(End::Closed),
         Read::Fault(fault) => Some(End::Fault(fault)),
     }
 }
 
-/// Serve `input` through `visit`: each message read, each deadline passed and
-/// the end of the stream, in the order they come, until `visit` breaks.
+/// Where a paced loop takes what it meets: its reader's messages and a
+/// watch's changes.
+#[derive(Debug)]
+pub struct Inbox
+{
+    /// The sending end, for the reader and each watch.
+    sending: mpsc::Sender<Read>,
+    /// The receiving end, the loop's.
+    receiving: mpsc::Receiver<Read>,
+}
+
+impl Default for Inbox
+{
+    /// An empty inbox.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        let (sending, receiving) = mpsc::channel();
+        Self { sending, receiving }
+    }
+}
+
+impl Inbox
+{
+    /// A handle a watch hands this inbox's loop the files it saw change by.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn changes(&self) -> Changes
+    {
+        Changes(self.sending.clone())
+    }
+}
+
+/// A handle a watch hands a paced loop the files it saw change by.
+#[repr(transparent)]
+#[derive(Clone, Debug)]
+pub struct Changes(mpsc::Sender<Read>);
+
+impl Changes
+{
+    /// Hand the loop `paths`, changed on disk; nothing once the loop ended.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn hand(
+        &self,
+        paths: Vec<PathBuf>,
+    )
+    {
+        let _sent = self.0.send(Read::Changed(paths));
+    }
+}
+
+/// Serve `input` through `visit`: each message read, each deadline passed,
+/// each change a watch hands `inbox` and the end of the stream, in the order
+/// they come, until `visit` breaks.
 ///
 /// # Specification
 /// - requires: nothing of the stream.
 /// - ensures: frames are read as they arrive, on a scoped thread that
 ///   classifies each once and stops after `exit`, at the stream's end or at its
 ///   first fault; each message is handed to `visit` as [`Met::Frame`], in
-///   order, with every message already read after it; while none waits, each
-///   document whose deadline in the [`Deadlines`] `visit` arms passes is handed
-///   to `visit` as [`Met::Quiet`], disarmed; a stream closed at a frame
-///   boundary is [`Met::Closed`] once every message before it was handed over.
-///   The first break `visit` returns is returned.
-/// - provides: the loop of [`crate::serve`] and of each hub connection, and the
-///   later messages a request is withdrawn by.
+///   order, with every message already read after it; the files a watch hands
+///   `inbox` through [`Inbox::changes`] are gathered, sorted and without
+///   repeats, and handed to `visit` as [`Met::Changed`] before the next
+///   message; while nothing waits, each document whose deadline in the
+///   [`Deadlines`] `visit` arms passes is handed to `visit` as [`Met::Quiet`],
+///   disarmed; a stream closed at a frame boundary, or ended by `exit`, is
+///   [`Met::Closed`] once every message before it was handed over, whether or
+///   not a watch still holds a handle. The first break `visit` returns is
+///   returned.
+/// - provides: the loop of [`crate::serve`] and of each hub connection, the
+///   later messages a request is withdrawn by, and the hub's watch's way in.
 /// - fails: the first [`TransportFault`] of the stream, once every message
 ///   before it was handed over, and the first `visit` returns.
 /// - panics: none.
@@ -459,24 +535,30 @@ fn queue(
 /// # Adequacy
 /// - hypothesis: L2 — every served editor session runs here; L3 — a held
 ///   diagnostic publishes after the interval with no frame sent, a session ends
-///   at `exit` and at a closed stream, nothing past `exit` is read, and a
-///   message read while the one before was handled is handed over with it.
+///   at `exit` and at a closed stream, nothing past `exit` is read, a message
+///   read while the one before was handled is handed over with it, and a
+///   watch's changes reach the loop gathered.
 /// - witness: `tests::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
 /// - witness: `tests::session::a_session_round_trips_over_in_memory_streams`
 /// - witness: `tests::session::a_stream_closed_without_exit_ends_abruptly`
 /// - witness: `quiet::tests::a_message_read_while_another_is_handled_comes_with_it`
 /// - witness: `quiet::tests::nothing_past_exit_is_read`
+/// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
 #[inline]
 pub fn paced<Input, Visit, Ended>(
     input: &mut Input,
+    inbox: Inbox,
     mut visit: Visit,
 ) -> Result<Ended, TransportFault>
 where
     Input: BufRead + Send,
     Visit: FnMut(Met<'_>, &mut Deadlines) -> Result<ControlFlow<Ended>, TransportFault>,
 {
+    let Inbox {
+        sending: read,
+        receiving: frames,
+    } = inbox;
     std::thread::scope(|scope| {
-        let (read, frames) = mpsc::channel::<Read>();
         let _reader = scope.spawn(move || {
             loop {
                 let (frame, last) = match read_frame(input) {
@@ -488,16 +570,24 @@ where
                     Ok(Maybe::Absent(_)) => (Read::Closed, true),
                     Err(fault) => (Read::Fault(fault), true),
                 };
+                let ended = matches!(frame, Read::Message(_)) && last;
                 if read.send(frame).is_err() || last {
+                    if ended {
+                        // A watch's handle keeps the channel open, so the
+                        // stream's end is said rather than left to the
+                        // channel's.
+                        let _sent = read.send(Read::Closed);
+                    }
                     break;
                 }
             }
         });
         let mut deadlines = Deadlines::default();
         let mut queued: VecDeque<Classified> = VecDeque::new();
+        let mut changed: BTreeSet<PathBuf> = BTreeSet::new();
         let mut end: Option<End> = None;
         loop {
-            if queued.is_empty() && end.is_none() {
+            if queued.is_empty() && changed.is_empty() && end.is_none() {
                 loop {
                     let received = deadlines.next().map_or_else(
                         || {
@@ -511,7 +601,7 @@ where
                     );
                     match received {
                         Ok(frame) => {
-                            end = queue(frame, &mut queued);
+                            end = queue(frame, &mut queued, &mut changed);
                             break;
                         },
                         Err(RecvTimeoutError::Disconnected) => {
@@ -533,7 +623,14 @@ where
             while end.is_none()
                 && let Ok(frame) = frames.try_recv()
             {
-                end = queue(frame, &mut queued);
+                end = queue(frame, &mut queued, &mut changed);
+            }
+            if !changed.is_empty() {
+                let paths: Vec<PathBuf> = core::mem::take(&mut changed).into_iter().collect();
+                if let ControlFlow::Break(ended) = visit(Met::Changed(paths), &mut deadlines)? {
+                    return Ok(ended);
+                }
+                continue;
             }
             if let Some(message) = queued.pop_front() {
                 let met = Met::Frame {
@@ -767,7 +864,7 @@ mod tests
             Ending(reached),
         ));
         let mut seen = 0_usize;
-        let ended = super::paced(&mut input, |met, _deadlines| {
+        let ended = super::paced(&mut input, super::Inbox::default(), |met, _deadlines| {
             Ok(match met {
                 super::Met::Frame { message, .. } => {
                     seen = seen.saturating_add(1);
@@ -778,7 +875,9 @@ mod tests
                         core::ops::ControlFlow::Continue(())
                     }
                 },
-                super::Met::Quiet(_) => core::ops::ControlFlow::Continue(()),
+                super::Met::Quiet(_) | super::Met::Changed(_) => {
+                    core::ops::ControlFlow::Continue(())
+                },
                 super::Met::Closed => core::ops::ControlFlow::Break("closed"),
             })
         })
@@ -804,7 +903,7 @@ mod tests
             Ending(reached),
         ));
         let mut handed: Vec<(String, usize)> = Vec::new();
-        super::paced(&mut input, |met, _deadlines| {
+        super::paced(&mut input, super::Inbox::default(), |met, _deadlines| {
             Ok(match met {
                 super::Met::Frame { message, later } => {
                     if handed.is_empty() {
@@ -822,7 +921,9 @@ mod tests
                     handed.push((method, later.len()));
                     core::ops::ControlFlow::Continue(())
                 },
-                super::Met::Quiet(_) => core::ops::ControlFlow::Continue(()),
+                super::Met::Quiet(_) | super::Met::Changed(_) => {
+                    core::ops::ControlFlow::Continue(())
+                },
                 super::Met::Closed => core::ops::ControlFlow::Break(()),
             })
         })

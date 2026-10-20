@@ -116,7 +116,7 @@
 //! | ------- | ------- | ----- |
 //! | lifecycle | `initialize`, `initialized`, `shutdown`, `exit` | served |
 //! | cancellation | `$/cancelRequest` | served: a request is answered `RequestCancelled` when its cancellation was read before it was handled, and `ContentModified` when a change of the document it reads was, without being run |
-//! | progress | `window/workDoneProgress/create`, `$/progress` | served: to a client that declares `window.workDoneProgress`, an open begins `Checking` on the document's file name and a watched-files change that rechecks open copies begins `Rechecking` on how many, under a token of its own, ended once the admissions ran; none is cancellable, so `window/workDoneProgress/cancel` is never needed |
+//! | progress | `window/workDoneProgress/create`, `$/progress` | served: to a client that declares `window.workDoneProgress`, an open begins `Checking` on the document's file name and a change of files on disk that rechecks open copies begins `Rechecking` on how many, under a token of its own, ended once the admissions ran; none is cancellable, so `window/workDoneProgress/cancel` is never needed |
 //! | document synchronisation | `textDocument/didOpen`, `didChange` (incremental), `didClose` | served |
 //! | save notifications | `textDocument/willSave`, `willSaveWaitUntil`, `didSave` | declined: every change is judged as it arrives, so a save changes nothing the server holds |
 //! | notebook synchronisation | `notebookDocument/*` | declined: gandr has no notebook format |
@@ -148,7 +148,7 @@
 //! | inline values | `textDocument/inlineValue` | declined: they serve a debugger, and gandr has no debug adapter |
 //! | monikers | `textDocument/moniker` | declined: no cross-repository index reads them |
 //! | workspace symbols | `workspace/symbol` | served: every name the open documents' import closures declare whose characters the query holds in order, without case, at most 128, as the `search` module states; a source no open document's closure reads is not searched |
-//! | file watching | `client/registerCapability`, `workspace/didChangeWatchedFiles` | served: a client that registers watchers dynamically is asked at `initialized` to watch `**/*.gandr`; a changed file rechecks and republishes every open copy whose closure named it at its last judgement, a missing import written included, as the `server` module states; the editor's own copy of the changed file stays authoritative |
+//! | file watching | `client/registerCapability`, `workspace/didChangeWatchedFiles` | served: a client that registers watchers dynamically is asked at `initialized` to watch `**/*.gandr`; on the hub, a connection whose client does not is watched by the hub itself, over the files its copies' closures name, as the `disk` module states; a changed file rechecks and republishes every open copy whose closure named it at its last judgement, a missing import written included, as the `server` module states; the editor's own copy of the changed file stays authoritative |
 //! | workspace folders, file operations | `workspace/didChangeWorkspaceFolders`, `willCreateFiles` and the other file operations | blocked: a workspace of more than the open documents |
 //! | configuration | `workspace/didChangeConfiguration` | served: the `gandr` section's `diagnostics.verbosity`, as the `recheck` module states, `diagnostics.quiet`, as the `quiet` module states, `presentation.form`, which every later hover reads, and `presentation.spelling`, which every later hover reads and which republishes the diagnostics |
 //! | pulled configuration | `workspace/configuration` | declined: the settings are pushed; reverses for a client that only answers pulls |
@@ -350,6 +350,8 @@ use core::fmt;
 #[cfg(unix)]
 mod bus;
 mod complete;
+#[cfg(unix)]
+mod disk;
 mod format;
 mod goto;
 mod hover;

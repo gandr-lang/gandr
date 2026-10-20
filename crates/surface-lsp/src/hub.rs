@@ -74,6 +74,7 @@
 //! own judgement of its session's ending replaces the relay's reading of its
 //! input with one of the hub's answers.
 
+use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use core::ops::ControlFlow;
 use core::sync::atomic::AtomicU64;
@@ -101,6 +102,8 @@ use anodized::spec;
 use gandr_surface_pretty::Spelling;
 use quenchant_shape::shape::Maybe;
 
+use crate::disk::Disk;
+use crate::quiet::Inbox;
 use crate::quiet::Met;
 use crate::quiet::paced;
 use crate::rpc::Incoming;
@@ -266,10 +269,15 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 ///   connection shares, the workspace's configured spelling `spelling`, each
 ///   connection answered from its own copy: its answers and publications reach
 ///   it in the order its handling made them, and each synchronisation's timing
-///   line goes to `log`. A connection ends at `exit`, at the end of its stream,
-///   or at a stream fault; it then holds nothing and its socket is shut. The
-///   hub returns once no connection has been open for `linger`, its socket file
-///   removed first so a late client starts a fresh hub.
+///   line goes to `log`. For a connection whose client watches no file, the hub
+///   watches the files its copies' closures name, as [`Server::followed`] reads
+///   them, and a change to one on disk is handled as
+///   [`Server::changed_on_disk`] states; a watch that cannot start is said once
+///   in `log` and the hub serves on unwatched. A connection ends at `exit`, at
+///   the end of its stream, or at a stream fault; it then holds nothing and its
+///   socket is shut. The hub returns once no connection has been open for
+///   `linger`, its socket file removed first so a late client starts a fresh
+///   hub.
 /// - provides: the engine hub's whole lifetime.
 /// - fails: when accepting fails for a reason other than having nothing to
 ///   accept.
@@ -290,12 +298,13 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 /// - witness: `hub::tests::a_hub_whose_socket_is_already_gone_exits_cleanly`
 /// - witness: `hub::tests::a_line_connection_reaches_the_second_face`
 /// - witness: `hub::tests::an_attached_view_follows_the_editors_edits`
+/// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
 #[inline]
 pub fn run_hub<Log>(
     listener: &UnixListener,
     socket: &Path,
     linger: Duration,
-    log: Log,
+    mut log: Log,
     lines: Option<Face>,
     spelling: Spelling,
 ) -> Result<(), io::Error>
@@ -304,6 +313,14 @@ where
 {
     listener.set_nonblocking(true)?;
     let workspace = Arc::new(Mutex::new(Workspace::spelled(spelling)));
+    let disk = match Disk::new() {
+        Ok(disk) => Some(disk),
+        Err(error) => {
+            drop(writeln!(log, "the hub watches no file: {error}"));
+            None
+        },
+    };
+    let disk = Arc::new(Mutex::new(disk));
     let log = Arc::new(Mutex::new(log));
     let open = Arc::new(AtomicU64::new(0));
     let mut peers = 0_u64;
@@ -312,10 +329,15 @@ where
         stream.set_nonblocking(false)?;
         peers = peers.saturating_add(1);
         let _opened = open.fetch_add(1, Ordering::SeqCst);
-        let (workspace, log, open) = (Arc::clone(&workspace), Arc::clone(&log), Arc::clone(&open));
+        let (workspace, disk, log, open) = (
+            Arc::clone(&workspace),
+            Arc::clone(&disk),
+            Arc::clone(&log),
+            Arc::clone(&open),
+        );
         let peer = Peer::from(peers);
         drop(thread::spawn(move || {
-            connection(stream, peer, &workspace, &log, lines);
+            connection(stream, peer, &workspace, &disk, &log, lines);
             let _closed = open.fetch_sub(1, Ordering::SeqCst);
         }));
         Ok(())
@@ -368,6 +390,7 @@ fn connection<Log>(
     stream: UnixStream,
     peer: Peer,
     workspace: &Mutex<Workspace>,
+    disk: &Mutex<Option<Disk>>,
     log: &Mutex<Log>,
     lines: Option<Face>,
 ) where
@@ -404,32 +427,47 @@ fn connection<Log>(
         })
     });
     let mut server = Server::new(peer);
+    let inbox = Inbox::default();
+    let changes = inbox.changes();
     if writer.is_ok() {
-        let _ended = paced(&mut reading, |met, deadlines| {
-            let (message, later) = match met {
+        let _ended = paced(&mut reading, inbox, |met, deadlines| {
+            let mut held = lock(workspace);
+            let (reported, mut outcome) = match met {
                 Met::Closed => return Ok(ControlFlow::Break(())),
                 Met::Quiet(uri) => {
-                    let mut held = lock(workspace);
                     for message in server.release(&mut held, &uri) {
                         drop(outbox.send(message));
                     }
                     return Ok(ControlFlow::Continue(()));
                 },
-                Met::Frame { message, later } => (message, later),
+                Met::Changed(paths) => {
+                    let reported = server.reported_on_disk(&held, &paths);
+                    for message in reported.begin {
+                        drop(outbox.send(message));
+                    }
+                    (reported.end, server.changed_on_disk(&mut held, &paths))
+                },
+                Met::Frame { message, later } => {
+                    let reported = server.reported(&held, &message);
+                    for message in reported.begin {
+                        drop(outbox.send(message));
+                    }
+                    (reported.end, server.answer(&mut held, message, later))
+                },
             };
-            let mut held = lock(workspace);
-            let reported = server.reported(&held, &message);
-            for message in reported.begin {
+            let admitted = server.admit(&mut held, &mut outcome.log);
+            // The watch is armed before the client hears the judgement, so a
+            // change it makes on hearing it is seen.
+            if let Some(ref mut watch) = *lock(disk) {
+                watch.follow(peer, &changes, server.followed(&held));
+            }
+            for message in core::mem::take(&mut outcome.messages) {
                 drop(outbox.send(message));
             }
-            let mut outcome = server.answer(&mut held, message, later);
-            for message in outcome.messages {
+            for message in admitted {
                 drop(outbox.send(message));
             }
-            for message in server.admit(&mut held, &mut outcome.log) {
-                drop(outbox.send(message));
-            }
-            for message in reported.end {
+            for message in reported {
                 drop(outbox.send(message));
             }
             drop(held);
@@ -444,6 +482,9 @@ fn connection<Log>(
                 Flow::Continue => ControlFlow::Continue(()),
             })
         });
+    }
+    if let Some(ref mut watch) = *lock(disk) {
+        watch.follow(peer, &changes, BTreeSet::new());
     }
     lock(workspace).depart(peer);
     drop(outbox);
@@ -1070,6 +1111,56 @@ mod tests
             "another bus version is detached at once"
         );
         drop(editor);
+        hub.join().expect("the hub exits");
+    }
+
+    #[test]
+    fn an_unwatching_client_is_told_of_a_rewritten_import()
+    {
+        let scratch = Scratch::new(Json("disk"));
+        let socket = scratch.socket();
+        let hub = hub(&socket);
+        let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
+        let base = scratch.0.join("base.gandr");
+        std::fs::write(&base, "def one : Integer ;\ndef one = 1 ;\n").expect("the base is written");
+        let importing = scratch.0.join("importer.gandr");
+        std::fs::write(&importing, importer).expect("the importer is written");
+        let mut client = Client::new(&socket);
+        client
+            .reading
+            .get_ref()
+            .set_read_timeout(Some(Duration::from_secs(20)))
+            .expect("the stream takes a timeout");
+        let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+            "textDocument": {"uri": format!("file://{}", importing.display()), "languageId": "gandr",
+                "version": 1_i32, "text": importer}}});
+        client.send(Json(&open.to_string()));
+        let opened = client.receive();
+        assert_eq!(
+            opened.pointer("/params/diagnostics"),
+            Some(&serde_json::json!([])),
+            "the importer checks against its base"
+        );
+        std::fs::write(&base, "def other : Integer ;\ndef other = 1 ;\n")
+            .expect("the base is rewritten");
+        let rechecked = client.receive();
+        assert_eq!(
+            rechecked.get("method"),
+            Some(&serde_json::json!("textDocument/publishDiagnostics")),
+            "with nothing sent, the hub republishes the importer: {rechecked}"
+        );
+        assert_eq!(
+            rechecked.pointer("/params/version"),
+            Some(&serde_json::json!(1_i32))
+        );
+        assert!(
+            rechecked
+                .pointer("/params/diagnostics")
+                .and_then(Value::as_array)
+                .is_some_and(|diagnostics| !diagnostics.is_empty()),
+            "the name the base no longer declares is refused: {rechecked}"
+        );
+        drop(client);
         hub.join().expect("the hub exits");
     }
 

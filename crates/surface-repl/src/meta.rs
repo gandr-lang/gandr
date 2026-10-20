@@ -20,10 +20,11 @@ quenchant_shape::reason_enum! {
 }
 
 /// The lines `:help` answers with, one per command.
-pub const HELP: [&str; 6] = [
+pub const HELP: [&str; 7] = [
     "Enter declarations; a buffer is submitted once the parser expects no further token.",
     ":type <expression>  the type of an expression, as `def it = <expression> ;` checks it",
     ":load <file>        submit a file's declarations as one chunk",
+    ":reload             resubmit each loaded file changed on disk, in place of its chunk",
     ":reset              forget every declaration",
     ":help               this list",
     ":quit, :q           leave",
@@ -51,6 +52,9 @@ pub enum Command<'line>
     Reset,
     /// `:load <file>`: submit the file's text as one chunk.
     Load(&'line Path),
+    /// `:reload`: resubmit each loaded file whose text changed, in place of
+    /// the chunk it was.
+    Reload,
     /// `:type <expression>`: the expression's type, by a probe never kept.
     TypeOf(SourceText<'line>),
     /// A known command without the argument it needs.
@@ -65,11 +69,11 @@ pub enum Command<'line>
 /// - requires: nothing.
 /// - ensures: a line whose first non-space character is `:` is read as a
 ///   command: its word is the text up to the first space, its argument the rest
-///   with surrounding space trimmed. `:help`, `:quit`, `:q` and `:reset` ignore
-///   an argument; `:load` and `:type` take theirs, or are a usage answer
-///   without one; any other word is unknown, preserving the rest of the line
-///   including its argument and trimming trailing space. Every other line is
-///   source text.
+///   with surrounding space trimmed. `:help`, `:quit`, `:q`, `:reset` and
+///   `:reload` ignore an argument; `:load` and `:type` take theirs, or are a
+///   usage answer without one; any other word is unknown, preserving the rest
+///   of the line including its argument and trimming trailing space. Every
+///   other line is source text.
 /// - provides: the loop's reading of a line typed while no buffer waits.
 /// - fails: never.
 /// - panics: none.
@@ -89,12 +93,13 @@ pub enum Command<'line>
             Command::Help => word == "help",
             Command::Quit => matches!(word, "q" | "quit"),
             Command::Reset => word == "reset",
+            Command::Reload => word == "reload",
             Command::Load(path) => word == "load" && !argument.is_empty() && path == Path::new(argument),
             Command::TypeOf(expression) => word == "type" && !argument.is_empty()
                 && <&str>::from(expression) == argument,
             Command::Usage(Missing::Path) => word == "load" && argument.is_empty(),
             Command::Usage(Missing::Expression) => word == "type" && argument.is_empty(),
-            Command::Unknown(text) => !matches!(word, "help" | "q" | "quit" | "reset" | "load" | "type")
+            Command::Unknown(text) => !matches!(word, "help" | "q" | "quit" | "reset" | "reload" | "load" | "type")
                 && <&str>::from(text) == rest.trim_end(),
         }
     }),
@@ -113,6 +118,7 @@ pub fn command(line: SourceText<'_>) -> Maybe<Command<'_>, commanded::Absent>
         ("help", _) => Command::Help,
         ("quit" | "q", _) => Command::Quit,
         ("reset", _) => Command::Reset,
+        ("reload", _) => Command::Reload,
         ("load", false) => Command::Load(Path::new(argument)),
         ("load", true) => Command::Usage(Missing::Path),
         ("type", false) => Command::TypeOf(SourceText::from(argument)),
@@ -144,6 +150,7 @@ mod tests
         assert_eq!(command("  :quit  ".into()), Maybe::Present(Command::Quit));
         assert_eq!(command(":q".into()), Maybe::Present(Command::Quit));
         assert_eq!(command(":reset now".into()), Maybe::Present(Command::Reset));
+        assert_eq!(command(" :reload ".into()), Maybe::Present(Command::Reload));
         assert_eq!(
             command(":load  dir/a file.gandr ".into()),
             Maybe::Present(Command::Load(Path::new("dir/a file.gandr")))
