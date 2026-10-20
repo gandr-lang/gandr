@@ -99,6 +99,36 @@ fn an_imported_arrow_answers_its_image()
     );
 }
 
+#[test]
+fn an_imported_code_keeps_its_type()
+{
+    let mut source = CoreArena::new();
+    let unit = source.value_type_unit();
+    let list = source.value_type_list(unit);
+    let code = source.value_quote(list);
+    let mut target = CoreArena::new();
+    let occupied = target.value_type_unit();
+    let _shifted = target.value_type_list(occupied);
+    let mut importer = TypeImporter::new(&source, &mut target);
+    let copied = importer.value(code).expect("source graph resolves");
+    let list_image = importer
+        .value_type_image(list)
+        .expect("the quoted type is imported");
+    assert_eq!(
+        importer.target.value(copied),
+        Some(&Value::Quote(list_image)),
+        "the code quotes the image of its type"
+    );
+    let Some(&ValueType::List(element)) = importer.target.value_type(list_image)
+    else {
+        panic!("a native list");
+    };
+    assert!(
+        matches!(importer.target.value_type(element), Some(&ValueType::Product(ref parts)) if parts.is_empty()),
+        "the quoted type keeps its element, the unit"
+    );
+}
+
 /// `Path((), ⟨stack, run, handler, chooser⟩, ())`: a type whose endpoint
 /// holds a stack of an application and a bind, a recorded send, a handler
 /// with one clause and a case of two branches, every one of them over values

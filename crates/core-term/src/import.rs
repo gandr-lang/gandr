@@ -542,8 +542,74 @@ impl<'source, 'target> TypeImporter<'source, 'target>
         root: ValueTypeId,
     ) -> Result<ValueTypeId, ImportFault>
     {
+        match self.import(Node::ValueType(root))? {
+            Node::ValueType(image) => Ok(image),
+            Node::Value(_) | Node::Computation(_) | Node::CompType(_) => Err(ImportFault),
+        }
+    }
+
+    /// Copy a reachable value graph, retaining previous imported nodes: a
+    /// code a value carries, with every type, value and computation it
+    /// reaches.
+    ///
+    /// # Specification
+    /// - requires: the same binder and declaration context in both arenas.
+    /// - ensures: success returns a target-owned value with the source graph's
+    ///   syntax and sharing; unrelated source nodes are not copied.
+    /// - fails: an unresolved source edge or an inconsistent family image.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::value_type`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a quoted type imported into a nonempty arena keeps
+    ///   its type and retains no source handle.
+    /// - witness: `import::tests::an_imported_code_keeps_its_type`
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|id| self.target.value(id).is_some()))]
+    #[inline]
+    pub fn value(
+        &mut self,
+        root: ValueId,
+    ) -> Result<ValueId, ImportFault>
+    {
+        match self.import(Node::Value(root))? {
+            Node::Value(image) => Ok(image),
+            Node::ValueType(_) | Node::Computation(_) | Node::CompType(_) => Err(ImportFault),
+        }
+    }
+
+    /// Copy the graph reachable from `root`, retaining previous imported
+    /// nodes, and answer `root`'s image.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::value_type`].
+    /// - ensures: success answers an image of `root`'s own family.
+    /// - fails: as [`Self::value_type`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::value_type`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value_type`] and [`Self::value`].
+    /// - witness: `import::tests::dependent_annotations_preserve_sharing_across_arenas`
+    /// - witness: `import::tests::an_imported_code_keeps_its_type`
+    #[spec(ensures: |ret| matches!(
+        (root, ret),
+        (_, Err(_))
+            | (Node::Value(_), Ok(Node::Value(_)))
+            | (Node::Computation(_), Ok(Node::Computation(_)))
+            | (Node::ValueType(_), Ok(Node::ValueType(_)))
+            | (Node::CompType(_), Ok(Node::CompType(_)))
+    ))]
+    fn import(
+        &mut self,
+        root: Node,
+    ) -> Result<Node, ImportFault>
+    {
         self.pending.clear();
-        self.pending.push(Task::Open(Node::ValueType(root)));
+        self.pending.push(Task::Open(root));
         while let Some(task) = self.pending.pop() {
             match task {
                 Task::Open(node) => {
@@ -1067,10 +1133,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                 },
             }
         }
-        match self.images.get(&Node::ValueType(root)) {
-            Some(&Node::ValueType(image)) => Ok(image),
-            _ => Err(ImportFault),
-        }
+        self.images.get(&root).copied().ok_or(ImportFault)
     }
 }
 

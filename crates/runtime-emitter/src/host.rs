@@ -195,6 +195,8 @@ pub struct Calls<'run, 'host>
     windows: &'run [(Label, Slots)],
     /// The heads a head object names, by family.
     heads: &'run [ConstructorTag],
+    /// The codes a code object names, by family.
+    code_table: &'run [gandr_core_term::ValueId],
     /// Where the run's code is.
     codes: Codes<'run>,
     /// The closure sites, by their code words.
@@ -319,6 +321,7 @@ impl<'run, 'host> Calls<'run, 'host>
             handlers: &lowered.handlers,
             windows: &lowered.windows,
             heads: &lowered.heads,
+            code_table: &lowered.codes,
             codes,
             sites,
             arena,
@@ -351,6 +354,7 @@ impl<'run, 'host> Calls<'run, 'host>
         let tables = Tables {
             heads: self.heads,
             literals: &self.literals,
+            codes: self.code_table,
         };
         // SAFETY: the caller's invariant; `moved` holds only this run's
         // objects, moved into this store.
@@ -729,6 +733,7 @@ impl<'run, 'host> Calls<'run, 'host>
         let tables = Tables {
             heads: self.heads,
             literals: &self.literals,
+            codes: self.code_table,
         };
         // SAFETY: the payload is a value of this run, whose heap and
         // constants are live while its host call runs.
@@ -760,6 +765,7 @@ impl<'run, 'host> Calls<'run, 'host>
                 let mut laying = Laying {
                     store: self.store,
                     heads: self.heads,
+                    code_table: self.code_table,
                     literals: &mut self.literals,
                     moved: &self.moved,
                 };
@@ -1085,6 +1091,8 @@ struct Laying<'laying>
     store: &'laying Store,
     /// The function's heads, by family.
     heads: &'laying [ConstructorTag],
+    /// The function's codes, by family.
+    code_table: &'laying [gandr_core_term::ValueId],
     /// The run's literals, by family, which a literal the reply holds joins.
     literals: &'laying mut Vec<Literal>,
     /// The run's objects already moved into the store.
@@ -1238,6 +1246,19 @@ impl Laying<'_>
                 0,
                 Family::try_from(usize::from(constant)).map_err(width)?,
             )?]),
+            HeapValue::Code(code) => {
+                let row = self
+                    .code_table
+                    .iter()
+                    .position(|held| *held == code)
+                    .ok_or(Unlaid::Value(id))?;
+                Vec::from([header(
+                    Kind::Code,
+                    0,
+                    0,
+                    Family::try_from(row).map_err(width)?,
+                )?])
+            },
             HeapValue::Capability
             | HeapValue::Thunk { .. }
             | HeapValue::Fixpoint { .. }

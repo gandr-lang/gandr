@@ -116,15 +116,17 @@
 //! `Tuple(n)` in its written order and a projection as the split at its place,
 //! and the labels leave the IL.
 //!
-//! # A code has no producer
+//! # A quote passes as itself
 //!
-//! A quote is a runtime value of a universe, but the IL has no producer for
-//! that value. Its owned annotation arena carries types for List folds and
-//! effect interfaces, not executable code values. Focusing therefore refuses
-//! quotes and static code operators with `FocusRefusal::Code` and restores its
-//! marks. Keeping a foreign core-arena reference would tie the runtime to that
-//! arena; erasing a code to unit would corrupt readback. Revisit only when code
-//! values have a runtime representation that preserves their meaning.
+//! A quote of either sort focuses to a [`ProducerNode::Code`] holding the
+//! quote, imported into the IL arena's annotations beside the types folds and
+//! effect interfaces keep there. A run passes it to the function that takes a
+//! type argument and never inspects it; a returned code reads back by
+//! importing it into the core again. The machine lays it as a code object
+//! whose family names the quote in the lowered function's code table. A static
+//! lambda or a static application is a type-level computation no run
+//! performs: focusing refuses it with `FocusRefusal::Code` and restores its
+//! marks.
 //!
 //! # Native universe paths
 //!
@@ -382,8 +384,8 @@ pub enum FocusRefusal
     DanglingComputation(ComputationId),
     /// The command arena refused a node.
     Mint(MintRefusal),
-    /// A code: the command IL carries no types, so a quoted type, a type
-    /// operator or a static application has no producer to become.
+    /// A static code: a type operator or a static application is a type-level
+    /// computation no run performs, so it has no producer to become.
     Code(ValueId),
     /// A hole or a mark in value position: an unfinished or ill-typed program
     /// has no command-IL image, as it has no kernel one.
@@ -431,7 +433,7 @@ impl fmt::Display for FocusRefusal
             Self::DanglingComputation(_) => f.write_str("a core computation id names no node"),
             Self::Mint(refusal) => write!(f, "the command arena refused a node: {refusal}"),
             Self::TranslationInvariant => f.write_str("the translation lost a result it pushed"),
-            Self::Code(_) => f.write_str("a code has no producer in the command IL"),
+            Self::Code(_) => f.write_str("a static code has no producer in the command IL"),
             Self::IncompleteValue(_) | Self::IncompleteComputation(_) => {
                 f.write_str("a hole or a mark has no image in the command IL")
             },
@@ -486,7 +488,8 @@ impl From<MintRefusal> for FocusRefusal
 /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
 /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
 /// - witness: `focus::tests::a_refused_focusing_leaves_the_arena_at_its_mark`
-/// - witness: `focus::tests::a_code_is_refused_by_name`
+/// - witness: `focus::tests::a_quote_focuses_to_the_code_it_names`
+/// - witness: `focus::tests::a_static_code_is_refused_by_name`
 /// - witness: `focus::tests::focusing_mints_no_name`
 /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
 #[inline]
@@ -1603,11 +1606,11 @@ impl<'run> Focusing<'run>
     ///   translator, as [`crate::identity`] tabulates.
     /// - provides: the `𝓥` rows.
     /// - fails: [`FocusRefusal::DanglingValue`], [`FocusRefusal::Code`] for a
-    ///   quote of either sort, a static lambda or a static application,
-    ///   [`FocusRefusal::ElementPath`] for funext, a stratum `ua`, a session
-    ///   equivalence or a compound endpoint, [`FocusRefusal::IncompleteValue`]
-    ///   for a hole or a mark, [`FocusRefusal::Unelaborated`] for an
-    ///   unelaborated computation in value position, or a refused mint.
+    ///   static lambda or a static application, [`FocusRefusal::ElementPath`]
+    ///   for funext, a stratum `ua`, a session equivalence or a compound
+    ///   endpoint, [`FocusRefusal::IncompleteValue`] for a hole or a mark,
+    ///   [`FocusRefusal::Unelaborated`] for an unelaborated computation in
+    ///   value position, or a refused mint.
     /// - panics: none.
     ///
     /// # Errors
@@ -1622,7 +1625,8 @@ impl<'run> Focusing<'run>
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
     /// - witness: `focus::tests::a_record_focuses_to_its_labels_in_canonical_order`
-    /// - witness: `focus::tests::a_code_is_refused_by_name`
+    /// - witness: `focus::tests::a_quote_focuses_to_the_code_it_names`
+    /// - witness: `focus::tests::a_static_code_is_refused_by_name`
     /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
     /// - witness: `focus::tests::a_hole_or_a_mark_is_refused_by_name`
     /// - witness: `tests::run::native_paths_run_as_their_maps`
@@ -1631,7 +1635,8 @@ impl<'run> Focusing<'run>
         captures: [work = self.tasks.len(), results = self.producers.len()],
         ensures: |ret| match self.core.value(id) {
             | None => ret == Err(FocusRefusal::DanglingValue(id)),
-            | Some(&Value::Quote(_) | &Value::QuoteComputation(_)) => ret == Err(FocusRefusal::Code(id)),
+            | Some(&Value::Quote(_) | &Value::QuoteComputation(_)) => ret.is_err() || self.producers.len() == results.saturating_add(1),
+            | Some(&Value::StaticLambda(_) | &Value::StaticApplication(..)) => ret == Err(FocusRefusal::Code(id)),
             | Some(&Value::Hole(_) | &Value::Mark { .. }) => ret == Err(FocusRefusal::IncompleteValue(id)),
             | Some(&Value::Nested(_) | &Value::Run(_)) => ret == Err(FocusRefusal::Unelaborated(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work || self.producers.len() > results,
@@ -1750,10 +1755,17 @@ impl<'run> Focusing<'run>
                 });
                 return Ok(());
             },
-            Value::Quote(_)
-            | Value::QuoteComputation(_)
-            | Value::StaticLambda(_)
-            | Value::StaticApplication(..) => return Err(FocusRefusal::Code(id)),
+            // A code passes as itself, imported beside the command's other
+            // annotations, so a type argument reaches the function that takes
+            // it and a returned type reads back as the type it quotes.
+            Value::Quote(_) | Value::QuoteComputation(_) => ProducerNode::Code(
+                gandr_core_term::TypeImporter::new(self.core, self.arena.annotations_mut())
+                    .value(id)
+                    .map_err(|gandr_core_term::ImportFault| FocusRefusal::DanglingValue(id))?,
+            ),
+            Value::StaticLambda(_) | Value::StaticApplication(..) => {
+                return Err(FocusRefusal::Code(id));
+            },
             // A path between types runs as its two maps, forward then
             // backward.
             Value::Here(_) | Value::PathRefl(_) => {

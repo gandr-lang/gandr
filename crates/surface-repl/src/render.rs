@@ -172,8 +172,13 @@ mod tests
             last("def copy : Integer ; def copy = later ;"),
             Some((OutKind::Blame, _))
         ));
-        assert!(matches!(
+        assert_eq!(
             last("def small : Type ; def small = Integer ;"),
+            Some((OutKind::Value, String::from("pure Integer"))),
+            "a code defined at `Type` runs to itself"
+        );
+        assert!(matches!(
+            last("def ratio : +U (-F Integer) ; def ratio = thunk { become int.div(19, 0) } ;"),
             Some((OutKind::Stuck, _))
         ));
     }

@@ -645,7 +645,7 @@ impl Unfocusing<'_>
             | &Task::Reify(source) => self.arena.producer(source).is_none_or(|node| match *node {
                 ProducerNode::Reify(ref frames) => self.values.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Apply(_))).count()
                     && self.computations.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Bind(_))).count(),
-                ProducerNode::Primitive { .. } | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } | ProducerNode::Cocase { .. } | ProducerNode::Mu { .. } => true,
+                ProducerNode::Primitive { .. } | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) | ProducerNode::Code(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } | ProducerNode::Cocase { .. } | ProducerNode::Mu { .. } => true,
             }),
             | &Task::Control(source, _) => self.arena.command(source).is_none_or(|node| match *node {
                 CommandNode::Perform { route: Route::Nearest, .. } => !self.values.is_empty(),
@@ -1300,6 +1300,11 @@ impl Unfocusing<'_>
             },
             ProducerNode::Constant(constant) => self.core.value_constant(constant),
             ProducerNode::Literal(ref literal) => self.core.value_literal(literal.clone()),
+            ProducerNode::Code(code) => {
+                gandr_core_term::TypeImporter::new(self.arena.annotations(), self.core)
+                    .value(code)
+                    .map_err(|gandr_core_term::ImportFault| UnfocusRefusal::DanglingProducer(id))?
+            },
             ProducerNode::Constructor {
                 ref tag,
                 ref producers,
@@ -1551,6 +1556,7 @@ impl Unfocusing<'_>
             | ProducerNode::Variable { .. }
             | ProducerNode::Constant(_)
             | ProducerNode::Literal(_)
+            | ProducerNode::Code(_)
             | ProducerNode::Constructor { .. }
             | ProducerNode::Thunk { .. } => {},
         }

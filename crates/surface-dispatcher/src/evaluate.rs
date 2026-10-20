@@ -558,7 +558,7 @@ impl fmt::Display for Evaluation<'_>
                 refusal: FocusRefusal::Code(_),
             }) => write!(
                 f,
-                "unrunnable: `{declaration}` is a code, which the machine carries no image of"
+                "unrunnable: `{declaration}` is a static code, which the machine carries no image of"
             ),
             Self::Unrunnable(Unrunnable::Unfocused {
                 declaration,
@@ -834,10 +834,10 @@ impl<'source> Program<'source>
     ///   instrumentation support rather than changing the public signature.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two code refusals retain order across defined, owed
-    ///   and refused declarations; other focusing refusal kinds are not
-    ///   generated.
-    /// - witness: `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`
+    /// - hypothesis: L3 — four codes, three of them reached through references,
+    ///   are never listed, and the one transport the machine does not lower is;
+    ///   other focusing refusal kinds are not generated.
+    /// - witness: `evaluate::tests::a_code_and_every_reference_to_it_run_to_the_type_it_quotes`
     #[inline]
     pub fn focus_refusals(&self)
     -> impl Iterator<Item = (SurfaceName<'source>, FocusRefusal)> + '_
@@ -1062,6 +1062,7 @@ impl<'source> Program<'source>
             },
             Some(
                 &(HeapValue::Literal(_)
+                | HeapValue::Code(_)
                 | HeapValue::Constructed { .. }
                 | HeapValue::Stack { .. }
                 | HeapValue::Closure { .. }
@@ -1334,6 +1335,7 @@ impl<'source> Program<'source>
                     Some(&HeapValue::Opaque(constant)) => Err(self.met(constant)),
                     Some(
                         &(HeapValue::Literal(_)
+                        | HeapValue::Code(_)
                         | HeapValue::Constructed { .. }
                         | HeapValue::Stack { .. }
                         | HeapValue::Thunk { .. }
@@ -1366,7 +1368,7 @@ impl<'source> Program<'source>
     #[spec(ensures: |ret| match store.value(value) {
         Some(&HeapValue::Opaque(constant)) => ret == Maybe::Present(constant),
         Some(&HeapValue::Constructed { .. }) => true,
-        Some(&(HeapValue::Stack { .. } | HeapValue::Literal(_) | HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. } | HeapValue::Closure { .. } | HeapValue::Capability)) | None =>
+        Some(&(HeapValue::Stack { .. } | HeapValue::Literal(_) | HeapValue::Code(_) | HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. } | HeapValue::Closure { .. } | HeapValue::Capability)) | None =>
             matches!(ret, Maybe::Absent(carried::Absent::Carried)),
     })]
     fn opaque_within(
@@ -1384,6 +1386,7 @@ impl<'source> Program<'source>
                 Some(
                     &(HeapValue::Stack { .. }
                     | HeapValue::Literal(_)
+                    | HeapValue::Code(_)
                     | HeapValue::Thunk { .. }
                     | HeapValue::Fixpoint { .. }
                     | HeapValue::Closure { .. }
@@ -2069,7 +2072,10 @@ def identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { retu
 def first : +U (Integer -> Integer -> -F Integer) ; def first = thunk { fn (x) { fn (y) { return x } } } ;
 def applied : +U (-F Integer) ; def applied = thunk { become (force identity)(answer) } ;
 def chosen : +U (-F Integer) ; def chosen = thunk { become (force first)(answer)(7) } ;
-def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { return 1 } } ;"#,
+def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { return 1 } } ;
+def small : Type ; def small = Integer ;
+def same(a : Type, x : a) -> -F a { return x }
+def instantiated : +U (-F Integer) ; def instantiated = thunk { become same(Integer, 5) } ;"#,
         );
         let declared: Vec<_> = values.declarations.keys().copied().collect();
         for constant in declared {
@@ -2135,37 +2141,14 @@ def kept : +U (-F (+U (-F Integer))) ; def kept = thunk { return holder } ;"#,
         let mut carried = program(
             r#"def bad : Integer ; def bad = "text" ;
 def uses : Integer ; def uses = bad ;
-def small : Type ; def small = Integer ;
-def alias : Type ; def alias = small ;
-def again : Type ; def again = alias ;
-def later : Integer ; def lost = missing ; def answer = 42 ;
-def wide : Type ; def wide = String ;"#,
+def later : Integer ; def lost = missing ; def answer = 42 ;"#,
         );
         let before = carried.arena.watermark();
-        assert!(
-            carried
-                .focus_refusals()
-                .map(|(name, _)| name)
-                .eq([SurfaceName::from("small"), SurfaceName::from("wide")])
-        );
         for name in ["bad", "uses"] {
             assert_eq!(
                 run(&mut carried, SurfaceName::from(name)),
                 Evaluation::Unrunnable(Unrunnable::Refused(SurfaceName::from("bad"))),
                 "`{name}` reaches the refused declaration and never runs"
-            );
-        }
-        for name in ["small", "alias", "again"] {
-            let evaluation = run(&mut carried, SurfaceName::from(name));
-            assert!(
-                matches!(
-                    evaluation,
-                    Evaluation::Unrunnable(Unrunnable::Unfocused {
-                        declaration,
-                        refusal: FocusRefusal::Code(_),
-                    }) if declaration == SurfaceName::from("small")
-                ),
-                "`{name}` reaches the code and never runs: {evaluation}"
             );
         }
         assert_eq!(
@@ -2186,6 +2169,43 @@ def wide : Type ; def wide = String ;"#,
             run(&mut carried, SurfaceName::from("answer")).to_string(),
             "42"
         );
+    }
+
+    /// A code focuses and runs to the type it quotes, through any chain of
+    /// references to it, as the run of an interface operation at a type
+    /// argument needs (#452); only a body that did not focus is listed as a
+    /// refusal.
+    #[test]
+    fn a_code_and_every_reference_to_it_run_to_the_type_it_quotes()
+    {
+        let mut codes = program(
+            r"def small : Type ; def small = Integer ;
+def alias : Type ; def alias = small ;
+def again : Type ; def again = alias ;
+def wide : Type ; def wide = String ;
+def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
+  transport(\y. Path(Integer, y, y), p then p, here(1))
+}",
+        );
+        assert!(
+            codes
+                .focus_refusals()
+                .map(|(name, _)| name)
+                .eq([SurfaceName::from("law")]),
+            "every code focuses; the transport the machine does not lower is the one refusal"
+        );
+        for (name, spelled) in [
+            ("small", "pure Integer"),
+            ("alias", "pure Integer"),
+            ("again", "pure Integer"),
+            ("wide", "pure String"),
+        ] {
+            assert_eq!(
+                run(&mut codes, SurfaceName::from(name)).to_string(),
+                spelled,
+                "`{name}` runs to the type it quotes"
+            );
+        }
     }
 
     /// A declaration whose body did not focus blocks its own run and every
@@ -2225,7 +2245,7 @@ def kept : +U (-F (+U (-F Path(Integer, 1, 1)))) ; def kept = thunk { return rea
     {
         let mut written = program(
             r#"def later : Integer ; def answer = 42 ; def copy : Integer ; def copy = later ;
-def small : Type ; def small = Integer ;"#,
+def bad : Integer ; def bad = "text" ;"#,
         );
         let rows = [
             (
@@ -2237,7 +2257,7 @@ def small : Type ; def small = Integer ;"#,
                 RunStatus::Failed,
             ),
             (
-                run(&mut written, SurfaceName::from("small")),
+                run(&mut written, SurfaceName::from("bad")),
                 RunStatus::Unreached,
             ),
             (
@@ -2305,7 +2325,10 @@ def small : Type ; def small = Integer ;"#,
     {
         let written = program(
             r#"def answer = 42 ; def later : Integer ;
-def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"#,
+def bad : Integer ; def bad = "text" ;
+def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
+  transport(\y. Path(Integer, y, y), p then p, here(1))
+}"#,
         );
         let defined = written.met(ConstantIndex::from(0_usize));
         assert_eq!(
@@ -2322,7 +2345,7 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
         );
         assert!(
             matches!(written.met(ConstantIndex::from(3_usize)), Evaluation::Unrunnable(
-            Unrunnable::Unfocused { declaration, refusal: FocusRefusal::Code(_) }) if declaration == SurfaceName::from("small"))
+            Unrunnable::Unfocused { declaration, .. }) if declaration == SurfaceName::from("law"))
         );
         let absent = written.met(ConstantIndex::from(99_usize));
         assert_eq!(

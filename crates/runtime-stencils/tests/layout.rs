@@ -63,6 +63,7 @@ fn a_header_reads_back_every_field()
         Kind::Injection,
         Kind::Data,
         Kind::Closure,
+        Kind::Code,
     ] {
         let header = Header::new(kind, tag, arity, family);
         assert_eq!(Ok(kind), header.kind(), "{kind:?}: the kind");

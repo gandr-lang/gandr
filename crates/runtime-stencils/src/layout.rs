@@ -61,6 +61,9 @@ pub enum Kind
     Stack,
     /// A linear binding's mutable words: the value held first.
     Cell,
+    /// A code a run passes as a type argument and never observes, whose
+    /// family names its entry in the function's code table.
+    Code,
 }
 
 /// The header bits of [`Kind::Integer`].
@@ -85,6 +88,8 @@ const KIND_CAPABILITY: usize = 8;
 const KIND_STACK: usize = 9;
 /// The header bits of [`Kind::Cell`].
 const KIND_CELL: usize = 10;
+/// The header bits of [`Kind::Code`].
+const KIND_CODE: usize = 11;
 /// The kind's bits in a header.
 pub const KIND_MASK: usize = 0xF;
 /// Where the tag starts in a header.
@@ -423,6 +428,7 @@ impl Header
             Kind::Capability => KIND_CAPABILITY,
             Kind::Stack => KIND_STACK,
             Kind::Cell => KIND_CELL,
+            Kind::Code => KIND_CODE,
         };
         let family = usize::try_from(family.0).unwrap_or(0);
         Self(Word(
@@ -498,6 +504,7 @@ impl Header
             KIND_CAPABILITY => Ok(Kind::Capability),
             KIND_STACK => Ok(Kind::Stack),
             KIND_CELL => Ok(Kind::Cell),
+            KIND_CODE => Ok(Kind::Code),
             _ => Err(UnknownKind(self.0)),
         }
     }

@@ -664,6 +664,9 @@ pub struct Lowered
     pub heads: Vec<ConstructorTag>,
     /// The literals a literal constant names by its family.
     pub literals: Vec<Literal>,
+    /// The codes a code constant names by its family, in the IL arena's
+    /// annotations.
+    pub codes: Vec<gandr_core_term::ValueId>,
     /// The host calls a call names by its operand A.
     pub callees: Vec<Callee>,
     /// The handlers the function installs.
@@ -792,6 +795,8 @@ struct Lowering<'run>
     heads: Vec<ConstructorTag>,
     /// The literals a literal constant names, by family.
     literals: Vec<Literal>,
+    /// The codes a code constant names, by family.
+    codes: Vec<gandr_core_term::ValueId>,
     /// The host calls a call names.
     callees: Vec<Callee>,
     /// Each label selection, its table patched once every head is known.
@@ -1778,6 +1783,7 @@ impl Lowering<'_>
             | ProducerNode::Variable { .. }
             | ProducerNode::Constant(_)
             | ProducerNode::Literal(_)
+            | ProducerNode::Code(_)
             | ProducerNode::Constructor { .. }
             | ProducerNode::Thunk { .. }
             | ProducerNode::Fixpoint { .. }
@@ -1844,6 +1850,17 @@ impl Lowering<'_>
         match *self.arena.producer(id).ok_or(Form::Dangling)? {
             ProducerNode::Literal(ref literal) => {
                 let at = self.literal(literal)?;
+                self.emit(StencilId::Const, Operand::Data(at), Operand::Unused);
+            },
+            ProducerNode::Code(code) => {
+                let width = |_overflow| Form::HeaderWidth;
+                let header = Header::new(
+                    Kind::Code,
+                    Tag::try_from(0_usize).map_err(width)?,
+                    Arity::try_from(0_usize).map_err(width)?,
+                    intern(&mut self.codes, &code).family()?,
+                );
+                let at = self.function.constant(&[header.word()]);
                 self.emit(StencilId::Const, Operand::Data(at), Operand::Unused);
             },
             ProducerNode::Variable {
@@ -2361,6 +2378,7 @@ fn lower_pass(
         checked: pass == Pass::Checked,
         heads: Vec::new(),
         literals: Vec::new(),
+        codes: Vec::new(),
         callees: Vec::new(),
         selections: Vec::new(),
         unmatched: Vec::new(),
@@ -2423,6 +2441,7 @@ fn lower_pass(
         bounds: lowering.bounds,
         heads: lowering.heads,
         literals: lowering.literals,
+        codes: lowering.codes,
         callees: lowering.callees,
         handlers: lowering.handlers,
         windows: lowering.windows,
