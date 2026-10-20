@@ -3067,3 +3067,139 @@ fn a_decoded_endpoint_passes_exactly_where_its_code_reads_as_the_other_type()
         );
     }
 }
+
+/// `ua(#{f, #{#{g, ()}, #{h, ()}}})` over three maps on the booleans — the
+/// forward map, the left inverse and the right inverse — each given by its
+/// images of `truth` and `falsity`. The laws are the unit, which no reduct
+/// runs.
+///
+/// # Specification
+/// trivial.
+fn boolean_univalence(
+    arena: &mut TermArena,
+    maps: [[ValueId; 2]; 3],
+) -> ValueId
+{
+    let unit = arena.value_unit();
+    let [forward, left, right] = maps.map(|images| {
+        let branches = images.map(|image| arena.computation_return(image));
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let body = arena.computation_case(bound, &branches);
+        let lambda = arena.computation_lambda(body);
+        arena.value_thunk(lambda)
+    });
+    let left = arena.value_tuple(&[left, unit]);
+    let right = arena.value_tuple(&[right, unit]);
+    let inverses = arena.value_tuple(&[left, right]);
+    let record = arena.value_tuple(&[forward, inverses]);
+    arena.value_univalence(record)
+}
+
+/// `⟨q then p⟩` over the booleans' code: the transport along `p` in `y.
+/// Path(U, c, y)` from `q`, returned as a path.
+///
+/// # Specification
+/// trivial.
+fn composite(
+    arena: &mut TermArena,
+    code: ValueId,
+    (first, second): (ValueId, ValueId),
+) -> ValueId
+{
+    let universe = universe(arena);
+    let binder = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let family = arena.value_type_path(universe, code, binder);
+    let composite = arena.computation_path_transport(family, second, first);
+    arena.value_returned(composite)
+}
+
+#[test]
+fn transport_back_along_univalence_applies_the_left_inverse()
+{
+    // Forward negation, the identity as left inverse and constant falsity
+    // as right inverse: back along the path carries `truth` to itself, where
+    // the forward map or the right inverse would carry it to `falsity`.
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let (truth, falsity) = (boolean.truth, boolean.falsity);
+    let path = boolean_univalence(&mut arena, [[falsity, truth], [truth, falsity], [
+        falsity, falsity,
+    ]]);
+    let universe = universe(&mut arena);
+    let code = arena.value_quote(boolean.ty);
+    let binder = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let reversed = arena.value_type_path(universe, binder, code);
+    let here = arena.value_here(code);
+    let back = arena.computation_path_transport(reversed, path, here);
+    let back = arena.value_returned(back);
+    let decode = arena.value_type_element(binder, Level::zero());
+    let transport = arena.computation_path_transport(decode, back, truth);
+    let [kept, moved] = [truth, falsity].map(|value| arena.computation_return(value));
+    assert_eq!(
+        computes(&mut arena, transport, kept),
+        KernelVerdict::Convertible
+    );
+    assert_ne!(
+        computes(&mut arena, transport, moved),
+        KernelVerdict::Convertible
+    );
+}
+
+#[test]
+fn transport_along_then_moves_along_both_paths()
+{
+    // The first path sends every point to `falsity` and the second negates:
+    // in order `truth` arrives back at `truth`, where the other order would
+    // leave it at `falsity`.
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let (truth, falsity) = (boolean.truth, boolean.falsity);
+    let identity = [truth, falsity];
+    let first = boolean_univalence(&mut arena, [[falsity, falsity], identity, identity]);
+    let second = boolean_univalence(&mut arena, [[falsity, truth], identity, identity]);
+    let code = arena.value_quote(boolean.ty);
+    let composite = composite(&mut arena, code, (first, second));
+    let binder = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let decode = arena.value_type_element(binder, Level::zero());
+    let transport = arena.computation_path_transport(decode, composite, truth);
+    let [kept, moved] = [truth, falsity].map(|value| arena.computation_return(value));
+    assert_eq!(
+        computes(&mut arena, transport, kept),
+        KernelVerdict::Convertible
+    );
+    assert_ne!(
+        computes(&mut arena, transport, moved),
+        KernelVerdict::Convertible
+    );
+}
+
+#[test]
+fn transport_along_then_holds_a_stuck_first_leg()
+{
+    // A first path no rule reduces: its transport sticks, and the second
+    // path's forward map applies to it, passed as the value it stands for.
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let (truth, falsity) = (boolean.truth, boolean.falsity);
+    let identity = [truth, falsity];
+    let first = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let second = boolean_univalence(&mut arena, [[falsity, truth], identity, identity]);
+    let code = arena.value_quote(boolean.ty);
+    let composite = composite(&mut arena, code, (first, second));
+    let binder = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let decode = arena.value_type_element(binder, Level::zero());
+    let transport = arena.computation_path_transport(decode, composite, truth);
+    let held = arena.computation_path_transport(decode, first, truth);
+    let held = arena.value_returned(held);
+    let negated = [falsity, truth].map(|value| arena.computation_return(value));
+    let expected = arena.computation_case(held, &negated);
+    assert_eq!(
+        computes(&mut arena, transport, expected),
+        KernelVerdict::Convertible
+    );
+    let kept = arena.computation_case(held, &[negated[1], negated[0]]);
+    assert_ne!(
+        computes(&mut arena, transport, kept),
+        KernelVerdict::Convertible
+    );
+}

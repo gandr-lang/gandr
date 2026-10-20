@@ -1,0 +1,24 @@
+// Transport along a composite ending in `ua`: the cubical case table of
+// Cohen, Coquand, Huber and Mörtberg, _Cubical Type Theory: a constructive
+// interpretation of the univalence axiom_ (TYPES 2015, arXiv:1611.02108),
+// § 4.5, read at the universe. `p then ua(e)` is the transport of `p` along
+// `ua(e)` in `y. Path(Type, a, y)`, and transport along it moves the operand
+// along `p`, then applies the record's forward map. A first path that does
+// not compute, as `p` here, is carried on as the value it stands for.
+
+// Transport forward along a path between types.
+import "./univalence.gandr" ;
+
+/// Transport along a composite whose second path is a `ua` applies the first
+/// path's transport, then the record's map.
+@[ checks ]
+def thenBeta(
+  a : Type,
+  b : Type,
+  c : Type,
+  p : Path(Type, a, b),
+  e : b ≃ c,
+  x : a
+) -> -F Path(c, fwdAlong(a, c, p then ua(e), x), fwdAlong(b, c, ua(e), fwdAlong(a, b, p, x))) {
+  return here(fwdAlong(b, c, ua(e), fwdAlong(a, b, p, x)))
+}

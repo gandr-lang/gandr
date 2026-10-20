@@ -526,23 +526,30 @@ pub(crate) enum TransportFamily
     /// endpoint is the binder, and its carrier and left endpoint never read
     /// it.
     Singleton,
+    /// The reversed singleton `y. Path(D, y, r)`: its left endpoint is the
+    /// binder, and its carrier and right endpoint never read it.
+    Reversed,
     /// Any other family.
     Other,
 }
 
-/// Read a one-binder transport's or ride's family as the singleton or not.
+/// Read a one-binder transport's or ride's family as a singleton or not.
 ///
 /// # Specification
 /// - requires: `family` is a transport or ride motive's value type, read under
 ///   its one binder.
 /// - ensures: [`TransportFamily::Singleton`] exactly when `family` is a path or
 ///   flow type whose right endpoint is the binder and whose carrier and left
-///   endpoint read no index the binder binds; [`TransportFamily::Other`]
-///   otherwise.
+///   endpoint read no index the binder binds; [`TransportFamily::Reversed`]
+///   exactly when it is a path type whose right endpoint is not the binder,
+///   whose left endpoint is, and whose carrier and right endpoint read no index
+///   the binder binds; [`TransportFamily::Other`] otherwise.
 /// - provides: the guard of the singleton row, the kernel's own clause:
 ///   transport in `y. Path(D, l, y)` carries `here(l)` to the path itself,
 ///   which is what lets `J` check its identity over the path, and a ride in `y.
-///   Flow(D, l, y)` composes the ridden flow with the flow it rides along.
+///   Flow(D, l, y)` composes the ridden flow with the flow it rides along; and
+///   the guard of the rows that hold `back(p)` and `q then p` along a universe
+///   path as the transports that form them.
 /// - fails: the free-index walk's fault for a dangling node.
 /// - panics: none.
 ///
@@ -551,15 +558,24 @@ pub(crate) enum TransportFamily
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the singleton returns the path, a ride in the flow
-///   singleton composes, and a family whose left endpoint is the binder keeps
-///   the transport stuck.
+///   singleton composes, `back` along `ua(e)` is held, and a family whose
+///   moving endpoint's partner reads the binder keeps the transport stuck.
 /// - witness: `identity::tests::transport_in_the_singleton_returns_the_path`
 /// - witness: `identity::tests::rides_compute_by_the_kernels_rows`
-#[spec(ensures: |ret| !matches!(ret, Ok(TransportFamily::Singleton)) || matches!(
-    core.value_type(family),
-    Some(&(ValueType::Path { right, .. } | ValueType::Flow { target: right, .. }))
-        if matches!(core.value(right), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if u32::from(index) == 0_u32)
-))]
+/// - witness: `identity::tests::transport_back_along_univalence_applies_the_left_inverse`
+#[spec(ensures: |ret| match ret {
+    Ok(TransportFamily::Singleton) => matches!(
+        core.value_type(family),
+        Some(&(ValueType::Path { right, .. } | ValueType::Flow { target: right, .. }))
+            if matches!(core.value(right), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if u32::from(index) == 0_u32)
+    ),
+    Ok(TransportFamily::Reversed) => matches!(
+        core.value_type(family),
+        Some(&ValueType::Path { left, .. })
+            if matches!(core.value(left), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if u32::from(index) == 0_u32)
+    ),
+    Ok(TransportFamily::Other) | Err(_) => true,
+})]
 pub(crate) fn transport_family(
     core: &CoreArena,
     family: ValueTypeId,
@@ -581,28 +597,37 @@ pub(crate) fn transport_family(
         return Ok(TransportFamily::Other);
     };
     let bound = DeBruijnIndex::from(0_u32);
-    let endpoint = matches!(
-        core.value(right),
-        Some(&Value::Variable {
-            zone: Zone::Intuitionistic,
-            index,
-        }) if index == bound
-    );
-    if !endpoint {
-        return Ok(TransportFamily::Other);
+    let binder = |endpoint| {
+        matches!(
+            core.value(endpoint),
+            Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index,
+            }) if index == bound
+        )
+    };
+    let path = matches!(core.value_type(family), Some(&ValueType::Path { .. }));
+    let (fixed, shape) = if binder(right) {
+        (left, TransportFamily::Singleton)
     }
+    else if path && binder(left) {
+        (right, TransportFamily::Reversed)
+    }
+    else {
+        return Ok(TransportFamily::Other);
+    };
     let mut free = FreeIndices::default();
     if free.of_type(core, carrier)?.intuitionistic().holds(bound) == Membership::Held {
         return Ok(TransportFamily::Other);
     }
     Ok(
         match free
-            .of(core, CoreTerm::Value(left))?
+            .of(core, CoreTerm::Value(fixed))?
             .intuitionistic()
             .holds(bound)
         {
             Membership::Held => TransportFamily::Other,
-            Membership::Absent => TransportFamily::Singleton,
+            Membership::Absent => shape,
         },
     )
 }

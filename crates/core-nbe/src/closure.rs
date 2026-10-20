@@ -531,6 +531,17 @@ pub enum CompBody
         /// The rest of the word.
         rest: DomainValueId,
     },
+    /// Transport the bound value along a composite's second path in the same
+    /// motive: the continuation `y. tr(P, q, y)` the transport along `p then
+    /// q`'s first path binds into. Transport is pure, so a first leg that
+    /// sticks is bound as the value it stands for.
+    AlongThen
+    {
+        /// The transport's motive, closed over its environment.
+        motive: crate::arena::ValueClosureId,
+        /// The composite's second path.
+        second: DomainValueId,
+    },
     /// Return the held word's first letter before the newly bound word: the
     /// continuation `w. return ℓ ∷ w` the transport of a word `ℓ ∷ p` in a
     /// singleton family binds `p`'s transport into.

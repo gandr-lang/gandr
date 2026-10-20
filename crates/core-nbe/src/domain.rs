@@ -629,6 +629,23 @@ pub enum DomainValue
         /// The term face.
         face: TermFace,
     },
+    /// A path held as the transport that formed it: transport along a
+    /// universe path in `y. Path(U, y, c)` from `here(c)`, which is `back`,
+    /// or in `y. Path(U, c, y)` from a path, which is `then`. Transport
+    /// along it at the universe's decode goes back along `path`, or along
+    /// `value` and then `path`.
+    HeldTransport
+    {
+        /// The path family, closed over its environment.
+        motive: ValueClosureId,
+        /// The universe path transported along.
+        path: DomainValueId,
+        /// The path transported: `here(c)` for `back`, the first path for
+        /// `then`.
+        value: DomainValueId,
+        /// The term face.
+        face: TermFace,
+    },
     /// A flow introduction at its evaluated parts: `stay(a)` and `forward(f)`
     /// hold one, `f then g` and `arrow(d, c)` two, in written order.
     Flow
@@ -777,6 +794,7 @@ impl DomainValue
         | Self::PathProduct { face, .. }
         | Self::Here { face, .. }
         | Self::Univalence { face, .. }
+        | Self::HeldTransport { face, .. }
         | Self::Flow { face, .. }
         | Self::Literal { face, .. }
         | Self::Tuple { face, .. }
@@ -797,6 +815,7 @@ impl DomainValue
             | Self::PathProduct { face, .. }
             | Self::Here { face, .. }
             | Self::Univalence { face, .. }
+            | Self::HeldTransport { face, .. }
             | Self::Flow { face, .. }
             | Self::Literal { face, .. }
             | Self::Tuple { face, .. }

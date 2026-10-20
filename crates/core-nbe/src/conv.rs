@@ -1166,6 +1166,11 @@ impl<'run> Walk<'run>
                     .push(Goal::Values(left_record, right_record, context));
                 Ok(Local::Agree)
             },
+            // A held transport compares its family under a binder, which the
+            // machine reads.
+            (DomainValue::HeldTransport { .. }, DomainValue::HeldTransport { .. }) => {
+                Ok(Local::Defer(Deferral::Binder))
+            },
             (
                 DomainValue::Thunk {
                     body: left_body, ..
@@ -1276,6 +1281,7 @@ impl<'run> Walk<'run>
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
                 | DomainValue::Univalence { .. }
+                | DomainValue::HeldTransport { .. }
                 | DomainValue::Flow { .. }
                 | DomainValue::Tuple { .. }
                 | DomainValue::Literal { .. }
@@ -1438,8 +1444,10 @@ impl<'run> Walk<'run>
     ///   and one elimination kind at every position — each operand pair then
     ///   queued beneath the head, flexible for unfolding when the head has a
     ///   body; two returned heads agree as heads with their stuck computations
-    ///   queued beneath; [`Local::Defer`] for a binder when the heads agree and
-    ///   the spines owe a commuting conversion of `F` first
+    ///   queued beneath; two transports or rides queue their operands alone
+    ///   when their motives read alike through their captures
+    ///   ([`crate::code::motives_alike`]); [`Local::Defer`] for a binder when
+    ///   the heads agree and the spines owe a commuting conversion of `F` first
     ///   ([`crate::rules::bind_step`]); [`Local::Disagree`] when the guards
     ///   separate the neutrals, or when rigid heads differ or a rigid head's
     ///   spines disagree in shape; [`Local::Defer`] for unfolding when either
@@ -1465,6 +1473,7 @@ impl<'run> Walk<'run>
     /// - witness: `eval::tests::native_transport_sequences_product_components`
     /// - witness: `conv::tests::a_neutral_one_bind_short_of_its_twin_waits_for_return_eta`
     /// - witness: `conv::tests::two_cases_over_as_many_branches_compare_their_branches`
+    /// - witness: `identity::tests::stuck_transports_under_one_motive_over_captures_it_does_not_read_settle_alike`
     #[spec(ensures: |ret| if self.domain.neutral(left).is_some() && self.domain.neutral(right).is_some() {
         ret.is_ok() && (left != right || ret == Ok(Local::Agree))
             && (ret != Ok(Local::Agree) || self.domain.neutral(left).zip(self.domain.neutral(right)).is_some_and(|(one, other)|
@@ -1575,6 +1584,19 @@ impl<'run> Walk<'run>
                 ) => match crate::identity::motives(self.domain, left_motive, right_motive)
                     .map_err(ConversionFault::Domain)?
                 {
+                    // One body over captures the body does not read apart —
+                    // a definition's family at two of its calls — is one
+                    // family, as the kernel's shared motive term is.
+                    crate::identity::Motives::Alike(_)
+                        if crate::code::motives_alike(
+                            self.core,
+                            self.domain,
+                            left_motive,
+                            right_motive,
+                        )? == crate::code::Alike::Same =>
+                    {
+                        queued.push(Goal::Values(left_value, right_value, beneath));
+                    },
                     crate::identity::Motives::Alike(bindings) => {
                         let flexible = Context::Flexible(Deferral::Binder);
                         queued.extend(

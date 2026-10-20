@@ -3587,6 +3587,24 @@ fn step_value(
             });
             Ok(())
         },
+        // A held `back` or `then` reads back as the transport that formed it.
+        DomainValue::HeldTransport {
+            motive,
+            path,
+            value,
+            ..
+        } => {
+            let family = fresh_motive(domain, machine, motive, binders)?;
+            machine.tasks.push(Task::Returned);
+            machine.tasks.push(Task::PathTransport);
+            machine.tasks.push(Task::Value { value, binders });
+            machine.tasks.push(Task::Value {
+                value: path,
+                binders,
+            });
+            machine.tasks.push(family);
+            Ok(())
+        },
         DomainValue::Flow { former, parts, .. } => {
             let parts = domain.fields(parts).map_err(ReadbackFault::Domain)?;
             machine.tasks.push(Task::Flow(former));
@@ -3695,6 +3713,75 @@ fn step_value(
             Ok(())
         },
     }
+}
+
+/// The task reading a one-binder motive back under a fresh variable.
+///
+/// The motive reads its own binder past the capture, so it is read back one
+/// binder deeper, its environment extended by a rigid variable at the next
+/// level, as a nominal case's motive is.
+///
+/// # Specification
+/// - requires: `motive` names a value closure of `domain` whose body is a value
+///   type.
+/// - ensures: a [`Task::QuotedValueType`] over the closure's family, in a frame
+///   holding its environment extended by the fresh variable, at `binders` one
+///   binder deeper.
+/// - provides: the motive half of a transport's or a ride's readback, stuck on
+///   a spine or held as a path.
+/// - fails: [`ReadbackFault::Domain`] for a dangling closure,
+///   [`ReadbackFault::MachineInvariant`] for a closure holding no value type,
+///   [`ReadbackFault::BinderCeiling`] past the binder ceiling.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L1 — a stuck transport's motive and a held `back`'s read back
+///   with the binder as index zero; a stale environment or a missing binder
+///   changes the read-back family.
+/// - witness: `identity::tests::transport_along_a_stuck_path_is_stuck`
+/// - witness: `identity::tests::a_held_back_reads_back_as_its_transport`
+#[spec(ensures: |ret| matches!(&ret, Err(_) | Ok(Task::QuotedValueType { .. })))]
+fn fresh_motive(
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    motive: crate::arena::ValueClosureId,
+    binders: OpenBinders,
+) -> Result<Task, ReadbackFault>
+{
+    let held = domain
+        .value_closure(motive)
+        .ok_or(ReadbackFault::Domain(DomainFault::Dangling))?;
+    let crate::ValueBody::ValueType(family) = held.body()
+    else {
+        return Err(ReadbackFault::MachineInvariant);
+    };
+    let zone = Zone::Intuitionistic;
+    let deeper = binders
+        .opened(zone)
+        .ok_or(ReadbackFault::BinderCeiling { zone })?;
+    let mut environment = held.environment().clone();
+    let fresh = domain
+        .neutral_node(
+            NeutralHead::Variable {
+                zone,
+                level: binders.fresh(zone),
+            },
+            Vec::new(),
+            Unfolding::Rigid,
+        )
+        .map_err(ReadbackFault::Domain)?;
+    let bound = domain
+        .value_neutral(fresh, TermFace::Reduced)
+        .map_err(ReadbackFault::Domain)?;
+    environment.extend(zone, bound);
+    Ok(Task::QuotedValueType {
+        quoted: family,
+        frame: machine.hold_frame(environment),
+        binders: deeper,
+    })
 }
 
 /// Perform one computation task: read one weak-head domain computation.
@@ -4361,8 +4448,6 @@ fn step_spine(
             });
             Ok(())
         },
-        // The motive reads its own binder past the capture, so it is read
-        // back under a fresh variable, as a nominal case's motive is.
         Elimination::PathTransport { motive, value } | Elimination::Ride { motive, value } => {
             let assemble = if matches!(elimination, Elimination::Ride { .. }) {
                 Task::Ride
@@ -4371,41 +4456,11 @@ fn step_spine(
                 Task::PathTransport
             };
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
-            let held = domain
-                .value_closure(motive)
-                .ok_or(ReadbackFault::Domain(DomainFault::Dangling))?;
-            let crate::ValueBody::ValueType(family) = held.body()
-            else {
-                return Err(ReadbackFault::MachineInvariant);
-            };
-            let zone = Zone::Intuitionistic;
-            let deeper = binders
-                .opened(zone)
-                .ok_or(ReadbackFault::BinderCeiling { zone })?;
-            let mut environment = held.environment().clone();
-            let fresh = domain
-                .neutral_node(
-                    NeutralHead::Variable {
-                        zone,
-                        level: binders.fresh(zone),
-                    },
-                    Vec::new(),
-                    Unfolding::Rigid,
-                )
-                .map_err(ReadbackFault::Domain)?;
-            let bound = domain
-                .value_neutral(fresh, TermFace::Reduced)
-                .map_err(ReadbackFault::Domain)?;
-            environment.extend(zone, bound);
-            let frame = machine.hold_frame(environment);
+            let family = fresh_motive(domain, machine, motive, binders)?;
             machine.tasks.push(onward);
             machine.tasks.push(assemble);
             machine.tasks.push(Task::Value { value, binders });
-            machine.tasks.push(Task::QuotedValueType {
-                quoted: family,
-                frame,
-                binders: deeper,
-            });
+            machine.tasks.push(family);
             Ok(())
         },
         // The motive's arrows bind the telescope, so it is read back at the
