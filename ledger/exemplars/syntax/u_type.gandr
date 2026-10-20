@@ -1,2 +1,3 @@
-/// `u_type`: a thunk type.
-def later : +U (-F Integer) ;
+/// `u_type`: a thunk type at the unrestricted grade, written with its glyph and in ASCII.
+def later : +U[ω] (-F Integer) ;
+def laterAscii : +U[inf] (-F Integer) ;

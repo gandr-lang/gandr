@@ -1,2 +1,3 @@
-/// `isomorphism_type`: an isomorphism type.
+/// `isomorphism_type`: an isomorphism type, written with its glyph and as the call of `Iso`.
 def turned : Integer ≅ Integer ;
+def turnedAscii : Iso(Integer, Integer) ;

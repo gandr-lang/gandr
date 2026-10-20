@@ -1,2 +1,3 @@
-/// `thunk_expression`: a thunk: a suspended computation.
-def later = thunk { return 42 } ;
+/// `thunk_expression`: a thunk: a suspended computation at the unrestricted grade, written with its glyph and in ASCII.
+def later = thunk[ω] { return 42 } ;
+def laterAscii = thunk[inf] { return 42 } ;
