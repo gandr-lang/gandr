@@ -1009,14 +1009,18 @@ fn scopes(
     // A label is the record's own name for the field, so it stands unless a
     // written name already holds it.
     for at in labelled {
-        while let Some(name) = bound.get(at).and_then(|held| held.name.clone())
-            && bound
-                .iter()
-                .enumerate()
-                .any(|(other, held)| other != at && held.name.as_ref() == Some(&name))
+        while bound
+            .get(at)
+            .and_then(|held| held.name.as_deref())
+            .is_some_and(|name| {
+                bound
+                    .iter()
+                    .enumerate()
+                    .any(|(other, held)| other != at && held.name.as_deref() == Some(name))
+            })
         {
-            if let Some(held) = bound.get_mut(at) {
-                held.name = Some(format!("{name}′"));
+            if let Some(name) = bound.get_mut(at).and_then(|held| held.name.as_mut()) {
+                name.push('′');
             }
         }
     }
@@ -4558,15 +4562,14 @@ mod tests
                     else {
                         panic!("`joined` runs to a value");
                     };
-                    let spelled = value.presentation().as_ref().to_owned();
-                    reprinted.push((
-                        spelled.clone(),
-                        table.reprint_value(
-                            &grammar,
-                            Maybe::Present(Name::from("joined")),
-                            SourceText::from(spelled.as_str()),
-                        ),
-                    ));
+                    let presentation = value.presentation();
+                    let spelled: &str = presentation.as_ref();
+                    let reprint = table.reprint_value(
+                        &grammar,
+                        Maybe::Present(Name::from("joined")),
+                        SourceText::from(spelled),
+                    );
+                    reprinted.push((String::from(spelled), reprint));
                 }
                 ControlFlow::Continue(())
             },
