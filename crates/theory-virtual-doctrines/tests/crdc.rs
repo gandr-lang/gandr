@@ -1615,10 +1615,10 @@ mod tests
                 {
                     continue;
                 }
-                let seam = overlap.peak.clone();
-                let instance = tau.apply_cmd(&seam);
-                let left_face = require_present(store.get(a_id)).lhs().clone();
-                let left_vars = cmd_vars(&left_face);
+                let seam = &overlap.peak;
+                let instance = tau.apply_cmd(seam);
+                let left_face = require_present(store.get(a_id)).lhs();
+                let left_vars = cmd_vars(left_face);
                 let left_match = compose(&tau, &overlap.unifier, &left_vars);
                 let right_face = require_present(store.get(b_id)).lhs().clone();
                 let renamed_right_vars = cmd_vars(overlap.right_renamed().lhs());
@@ -1644,7 +1644,7 @@ mod tests
                     overlap,
                     "the unique factor is the overlap the cospan was built from"
                 );
-                let seam_vars = cmd_vars(&seam);
+                let seam_vars = cmd_vars(seam);
                 prop_assert!(bool::from(substs_agree_on(&mediator, &tau, &seam_vars)));
             }
         }
@@ -1675,8 +1675,8 @@ mod tests
                     continue;
                 };
                 let instance = tau.apply_cmd(&seam);
-                let left_face = require_present(store.get(a_id)).rhs().clone();
-                let left_vars = cmd_vars(&left_face);
+                let left_face = require_present(store.get(a_id)).rhs();
+                let left_vars = cmd_vars(left_face);
                 let left_match = compose(&tau, &overlap.unifier, &left_vars);
                 let right_face = require_present(store.get(b_id)).lhs().clone();
                 let renamed_right_vars = cmd_vars(overlap.right_renamed().lhs());
