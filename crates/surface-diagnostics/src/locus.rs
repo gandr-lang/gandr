@@ -2785,6 +2785,7 @@ mod tests
                 at: computation,
                 capability: value_type,
             },
+            CheckRefusal::IndexedCase(computation),
             CheckRefusal::NonExhaustiveDataCase(computation),
             CheckRefusal::UndecidedCoverage(computation),
             CheckRefusal::RuleNotRespected {
@@ -3171,6 +3172,7 @@ mod tests
                         | CheckRefusal::HandlerCoverage { .. }
                         | CheckRefusal::ShiftWithoutReset { .. }
                         | CheckRefusal::CapabilityOutsideAuthority { .. }
+                        | CheckRefusal::IndexedCase(_)
                         | CheckRefusal::NonExhaustiveDataCase(_)
                         | CheckRefusal::UndecidedCoverage(_)
                         | CheckRefusal::RuleNotRespected { .. }
