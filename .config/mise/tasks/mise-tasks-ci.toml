@@ -359,8 +359,8 @@ run = [
 # One hotpath series, run under the profiler and uploaded twice: as
 # `<series>`, judged on allocation in every crate (hotpath/<series>-policy.toml),
 # and as `<series>-timing`, judged on wall-clock time in the crates the change
-# reaches (hotpath/<series>-timing-policy.toml, its trailing `[functions]`
-# table given an `ignore` naming every instrumented function of any other
+# reaches (hotpath/<series>-timing-policy.toml, its `[functions]` table
+# given an `ignore` naming every instrumented function of any other
 # workspace crate). hotpath's policy has no timing-only ignore, so the closure
 # needs a report of its own.
 #
@@ -442,12 +442,18 @@ tail -n +2 "$scratch/outside" | while IFS= read -r dir; do
     pending && match($0, /fn [A-Za-z_][A-Za-z0-9_]*/) { print owner "::" substr($0, RSTART + 3, RLENGTH - 3); pending = 0 }
   ' {} +
 done | sort -u > "$scratch/ignored"
-{
-  cat "$root/hotpath/$series-timing-policy.toml"
-  if [[ -s "$scratch/ignored" ]]; then
-    printf 'ignore = [%s]\n' "$(sed 's/.*/"&"/' "$scratch/ignored" | paste -sd, -)"
-  fi
-} > "$scratch/$series-timing-policy.toml"
+# hotpath takes `ignore` in the `[functions]` table alone and refuses it in
+# a metric block (#996), so the line goes right under that table's header,
+# wherever the formatter places the table.
+ignore=
+if [[ -s "$scratch/ignored" ]]; then
+  ignore="ignore = [$(sed 's/.*/"&"/' "$scratch/ignored" | paste -sd, -)]"
+fi
+awk -v ignore="$ignore" '
+  { print }
+  $0 == "[functions]" { found = 1; if (ignore != "") print ignore }
+  END { if (!found) { print FILENAME " has no [functions] table to hold the ignore" > "/dev/stderr"; exit 1 } }
+' "$root/hotpath/$series-timing-policy.toml" > "$scratch/$series-timing-policy.toml"
 upload "$series-timing" "$scratch/$series-timing-policy.toml"
 {% endraw %}'''
 

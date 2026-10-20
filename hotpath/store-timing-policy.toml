@@ -2,11 +2,9 @@
 # (crates/storage-schema/benches/store.rs) against its base's
 # (https://hotpath.rs/regression_policy).
 # `mise run ci:hotpath` uploads it only when the change reaches a crate the
-# series' package depends on, and appends to `[functions]` an `ignore`
-# naming every instrumented function of a crate outside that closure; the
-# series' allocation is judged in every crate as `store`
-# (hotpath/store-policy.toml). `[functions]` stays the last table so the
-# appended line lands in it.
+# series' package depends on, and adds to `[functions]` an `ignore` naming
+# every instrumented function of a crate outside that closure; the series'
+# allocation is judged in every crate as `store` (hotpath/store-policy.toml).
 #
 # Wall-clock time on a shared runner is noisy: it is judged on the average of
 # functions called at least 20 times, at 5%. A regression fails the
