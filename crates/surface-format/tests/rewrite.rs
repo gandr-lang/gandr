@@ -227,6 +227,48 @@ def spun : Path(
     }
 }
 
+/// #985: a composite read as a value, alone or under `back`, moves both
+/// ways: desugared, each composite is its transport, written where a value
+/// is read, and sugared back it is the composite again, since a written
+/// transport read as a value lowers to the value it returns.
+#[test]
+fn a_composite_read_as_a_value_moves_both_ways_985()
+{
+    let grammar = grammar();
+    let sugared = format!(
+        "{CIRCLE}def two : Path(Circle, Base, Base) ;
+def two = loop then loop ;
+
+def undone : Path(Circle, Base, Base) ;
+def undone = back(loop then loop) ;
+"
+    );
+    let explicit = format!(
+        "{CIRCLE}def two : Path(Circle, Base, Base) ;
+def two = transport(\\a. Path(Circle, Base, a), loop, loop) ;
+
+def undone : Path(Circle, Base, Base) ;
+def undone = transport(
+  \\a. Path(Circle, a, Base),
+  transport(\\a. Path(Circle, Base, a), loop, loop),
+  here(Base)
+) ;
+"
+    );
+    for (source, form, expected) in [
+        (&sugared, Form::Explicit, &explicit),
+        (&explicit, Form::Sugared, &sugared),
+        (&sugared, Form::Sugared, &sugared),
+        (&explicit, Form::Explicit, &explicit),
+    ] {
+        assert_eq!(
+            spelled(&grammar, source.as_str(), form, Selection::Every),
+            *expected,
+            "{form}"
+        );
+    }
+}
+
 /// A transport standing as a computation keeps its spelling sugared, with
 /// nothing withdrawn: the printer writes `then` only for the transport the
 /// lowering returns at a composite, and spells one a body runs as written.

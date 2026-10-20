@@ -514,13 +514,8 @@ enum Held
     /// read back (#941).
     Notation,
     /// A printing whose sugared and explicit spellings, each substituted
-    /// for the declaration, lower to different core, where the sugared
-    /// spelling writes no derived path operation (#808).
+    /// for the declaration, lower to different core (#808).
     Apart,
-    /// The same, where the sugared spelling writes a path composite `then`
-    /// or a map's action `cong`, whose explicit spelling holds a transport
-    /// or a call in value position (#985).
-    ApartComposite,
 }
 
 impl fmt::Display for Held
@@ -537,9 +532,6 @@ impl fmt::Display for Held
         f.write_str(match *self {
             Self::Notation => "#941, written in the printer's own notation",
             Self::Apart => "#808, the two spellings lower apart",
-            Self::ApartComposite => {
-                "#985, the two spellings of a composite or an action lower apart"
-            },
         })
     }
 }
@@ -1093,22 +1085,7 @@ fn bodies(
         .into_iter()
         .partition(|declaration| !parted.contains(&declaration.name));
     for declaration in parted {
-        let writes = |operation: &str| {
-            [&declaration.ty.sugared, &declaration.body.sugared]
-                .into_iter()
-                .any(|text| {
-                    tokens(SourceFragment::from(text.as_str()))
-                        .iter()
-                        .any(|token| token == operation)
-                })
-        };
-        let held = if writes("then") || writes("cong") {
-            Held::ApartComposite
-        }
-        else {
-            Held::Apart
-        };
-        holding.push((held, declaration.name.as_str()));
+        holding.push((Held::Apart, declaration.name.as_str()));
     }
     for (held, declaration) in holding {
         found

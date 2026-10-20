@@ -803,6 +803,45 @@ fn a_derived_operation_needs_a_written_path_answer()
     }
 }
 
+/// #985: a written transport read as a value is the value it returns, as the
+/// derived composite's transport is, so `loop then loop` and its explicit
+/// spelling lower alike; before, the written one nested a run that no
+/// computation encloses.
+#[test]
+fn a_written_transport_read_as_a_value_is_the_value_it_returns_985()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\n",
+            "def derived : Path(Circle, Base, Base);\ndef derived = loop then loop;\n",
+            "def written : Path(Circle, Base, Base);\ndef written = transport(\\a. Path(Circle, Base, a), loop, loop);\n",
+        )),
+        &mut arena,
+    );
+    for name in ["derived", "written"] {
+        let body = match outcome_of(&module, name.into()) {
+            DeclarationOutcome::Completed { body, .. } => body,
+            other @ (DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World
+            | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers both halves: {other:?}"),
+        };
+        assert!(
+            matches!(
+                arena.value(body),
+                Some(&Value::Returned(computation))
+                    if matches!(arena.computation(computation), Some(&Computation::PathTransport { .. }))
+            ),
+            "`{name}` is the value its transport returns: {:?}",
+            arena.value(body)
+        );
+    }
+}
+
 /// #1003: `back(loop)` at the circle's point moves the empty word, as the
 /// written transport's `here(Base)` lowers there, so the two spellings lower
 /// to one transport. Away from a looped point it moves `here`, as
