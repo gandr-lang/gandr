@@ -192,6 +192,45 @@ fn a_functor_body_never_reaches_the_kernel()
 }
 
 #[test]
+fn a_type_member_never_reads_its_parameter_s_value()
+{
+    let pinned = "module Pinned(S : #{ type T, z : T }) :> #{ type P, q : P } {\n  type P = \
+                  Path(S.T, S.z, S.z);\n  def q = here(S.z);\n}\n";
+    let found = rows(&lower(pinned));
+    let phase = LoweringRefusal::PhaseDependence {
+        span: span_of(pinned, "S.z", 0_usize),
+        member: name("P"),
+        reached: name("z"),
+    };
+    assert!(
+        found.iter().any(
+            |&(_, role, ref amounts)| role == Role::Held && *amounts == Amounts::Refused(phase)
+        ),
+        "a type member reading the parameter's value is refused at the value: {found:?}"
+    );
+    let squared = [
+        SEED,
+        "module Square(S : #{ type T, seed : T }) :> #{ type U, w : U } {\n  type U = S.T * \
+         S.T;\n  def w = (S.seed, S.seed);\n}\nmodule Squared = Square(Seed) ;\n",
+    ]
+    .concat();
+    let mut lowered = lower(squared.as_str());
+    let applied = rows(&lowered);
+    assert!(
+        applied
+            .iter()
+            .all(|&(_, _, ref amounts)| !matches!(*amounts, Amounts::Refused(_))),
+        "one reading only the parameter's type is read: {applied:?}"
+    );
+    assert!(
+        verdicts(&mut lowered)
+            .iter()
+            .all(|&(_, judgement)| matches!(judgement, Judgement::Checked | Judgement::Declared)),
+        "and its application checks"
+    );
+}
+
+#[test]
 fn an_application_is_bound_before_anything_projects_from_it()
 {
     let projected = [

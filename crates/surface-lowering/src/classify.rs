@@ -118,6 +118,7 @@ impl LoweringRefusal<'_>
             | Self::NonValuePayload { .. }
             | Self::IllTypedPayload { .. }
             | Self::ForwardMemberReference { .. }
+            | Self::PhaseDependence { .. }
             | Self::UnknownMember { .. }
             | Self::NotAFunctor { .. }
             | Self::ProjectionFromApplication { .. }
@@ -159,6 +160,7 @@ impl LoweringRefusal<'_>
             | Self::NonValuePayload { .. }
             | Self::IllTypedPayload { .. }
             | Self::ForwardMemberReference { .. }
+            | Self::PhaseDependence { .. }
             | Self::UnknownMember { .. }
             | Self::NotAFunctor { .. }
             | Self::ProjectionFromApplication { .. }
@@ -245,7 +247,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 46_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 47_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -339,6 +341,11 @@ mod tests
                 span: empty,
                 name: SurfaceName::from("second"),
                 declared: empty,
+            },
+            LoweringRefusal::PhaseDependence {
+                span: empty,
+                member: SurfaceName::from("Q"),
+                reached: SurfaceName::from("n"),
             },
             LoweringRefusal::UnknownMember {
                 span: empty,
@@ -463,6 +470,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unrepresentable,
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unrepresentable,

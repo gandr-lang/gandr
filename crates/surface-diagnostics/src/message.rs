@@ -396,6 +396,10 @@ fn lowered(
         LoweringRefusal::ForwardMemberReference { name, .. } => {
             write!(f, "the member `{name}` is used before it is declared")
         },
+        LoweringRefusal::PhaseDependence { member, reached, .. } => write!(
+            f,
+            "the type `{member}` depends on the value `{reached}`; a type depends only on types"
+        ),
         LoweringRefusal::UnknownMember { module, member, .. } => {
             write!(f, "the module `{module}` has no member `{member}`")
         },
@@ -1144,6 +1148,11 @@ mod tests
                 span,
                 name,
                 declared: span,
+            },
+            LoweringRefusal::PhaseDependence {
+                span,
+                member: name,
+                reached: name,
             },
             LoweringRefusal::UnknownMember {
                 span,

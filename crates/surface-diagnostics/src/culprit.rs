@@ -188,6 +188,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::NonValuePayload { .. } => "a payload that is not a value",
         LoweringRefusal::IllTypedPayload { .. } => "a payload of another schema",
         LoweringRefusal::ForwardMemberReference { .. } => "named before it is declared",
+        LoweringRefusal::PhaseDependence { .. } => "a value a type depends on",
         LoweringRefusal::UnknownMember { .. } => "no member of this name",
         LoweringRefusal::NotAFunctor { .. } => "not a functor",
         LoweringRefusal::ProjectionFromApplication { .. } => {
@@ -520,6 +521,7 @@ mod tests
             LoweringRefusal::NonValuePayload { .. } => "a payload that is not a value",
             LoweringRefusal::IllTypedPayload { .. } => "a payload of another schema",
             LoweringRefusal::ForwardMemberReference { .. } => "named before it is declared",
+            LoweringRefusal::PhaseDependence { .. } => "a value a type depends on",
             LoweringRefusal::UnknownMember { .. } => "no member of this name",
             LoweringRefusal::NotAFunctor { .. } => "not a functor",
             LoweringRefusal::ProjectionFromApplication { .. } => {
@@ -734,6 +736,11 @@ mod tests
                 span: at,
                 name,
                 declared: at,
+            },
+            LoweringRefusal::PhaseDependence {
+                span: at,
+                member: name,
+                reached: name,
             },
             LoweringRefusal::UnknownMember {
                 span: at,

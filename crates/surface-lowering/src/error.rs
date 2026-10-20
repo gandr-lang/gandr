@@ -895,6 +895,19 @@ pub enum LoweringRefusal<'source>
         declared: ByteSpan,
     },
 
+    /// A static member — a type member, or a type a signature states — whose
+    /// type reads a dynamic member, a module's value or a parameter's: a type
+    /// depends only on types.
+    PhaseDependence
+    {
+        /// The bytes the reference covers.
+        span: ByteSpan,
+        /// The static member whose type the reference is written in.
+        member: SurfaceName<'source>,
+        /// The dynamic member it reads.
+        reached: SurfaceName<'source>,
+    },
+
     /// A module that exports no member of this name: a path selecting a
     /// member the module hid or never declared, or a signature component no
     /// member supplies.
@@ -1269,6 +1282,11 @@ impl fmt::Display for LoweringRefusal<'_>
                 "the member `{name}` is declared at or after the member naming it; a member \
                  names only the members before it"
             ),
+            Self::PhaseDependence { member, reached, .. } => write!(
+                f,
+                "the type `{member}` depends on the value `{reached}`; a type is static and \
+                 depends only on static members, never on a module's or a parameter's values"
+            ),
             Self::UnknownMember { module, member, .. } => {
                 write!(f, "the module `{module}` exports no member `{member}`")
             },
@@ -1449,6 +1467,7 @@ impl LoweringRefusal<'_>
             | Self::NonValuePayload { span, .. }
             | Self::IllTypedPayload { span, .. }
             | Self::ForwardMemberReference { span, .. }
+            | Self::PhaseDependence { span, .. }
             | Self::UnknownMember { span, .. }
             | Self::NotAFunctor { span, .. }
             | Self::ProjectionFromApplication { span, .. }
@@ -1534,7 +1553,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 43_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 44_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -1628,6 +1647,11 @@ mod tests
                 span: s(32_usize, 33_usize),
                 name: SurfaceName::from("second"),
                 declared: s(40_usize, 46_usize),
+            },
+            LoweringRefusal::PhaseDependence {
+                span: s(83_usize, 84_usize),
+                member: SurfaceName::from("Q"),
+                reached: SurfaceName::from("n"),
             },
             LoweringRefusal::UnknownMember {
                 span: s(34_usize, 35_usize),
@@ -1762,6 +1786,7 @@ mod tests
             s(28_usize, 29_usize),
             s(30_usize, 31_usize),
             s(32_usize, 33_usize),
+            s(83_usize, 84_usize),
             s(34_usize, 35_usize),
             s(36_usize, 37_usize),
             s(38_usize, 39_usize),

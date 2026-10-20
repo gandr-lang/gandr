@@ -1,0 +1,31 @@
+// What sealing a module by a theory hides (#746): outside, the sealed
+// counter's carrier is abstract, so its operations take and give no
+// integer. `../../model/modules/model-ascription.gandr` runs the same
+// counter transparently.
+
+/// A counter: a carrier, a start and a step.
+@[ checks ]
+theory Counter {
+  sort C : Type;
+  oper start : () --> C;
+  oper step : (c : C) --> C;
+}
+
+/// The counter on the integers, sealed by the theory.
+module Sealed :> Model(Counter) {
+  type C = Integer;
+
+  def start() -> -F Integer { return 0 }
+
+  def step(n : Integer) -> -F Integer { become n + 1 }
+}
+
+/// An integer where the sealed carrier is asked.
+@[ refuses("TypeMismatch") ]
+def stepOne : () => Sealed.C ;
+def stepOne = thunk { become Sealed.step(1) } ;
+
+/// The sealed start read as an integer.
+@[ refuses("TypeMismatch") ]
+def leaked : () => Integer ;
+def leaked = thunk { become Sealed.start() } ;
