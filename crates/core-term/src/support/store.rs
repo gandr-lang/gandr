@@ -259,15 +259,15 @@ impl Union
     /// - ensures: as [`Union::child`] of the support [`WordArena::read`]
     ///   answers for `slot`; nothing for a handle past `words`.
     /// - panics: none.
-    /// - executable: none — this runs once per child on the mint and check
-    ///   paths, as [`Union::child`]; the witness holds it to that union.
+    /// - executable: none — this runs once per child on the mint path, as
+    ///   [`Union::child`]; the witness holds it to that union.
     /// - intension: a shift, a mask and a disjunction while the union and the
     ///   slot are one-word dense intuitionistic codes.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Union::child`], over slots of one word and
     ///   handles, crossings in either zone and unions inline and gathered.
-    /// - witness: `support::tests::a_slot_unions_and_compares_as_its_support`
+    /// - witness: `support::tests::a_slot_unions_as_its_support`
     #[inline]
     pub fn stored_child(
         &mut self,
@@ -300,55 +300,6 @@ impl Union
     {
         if let Maybe::Present(support) = words.read(slot) {
             self.child(support, crossing);
-        }
-    }
-
-    /// Whether the union, finished, is the support `slot` keeps in `words`.
-    ///
-    /// # Specification
-    /// - ensures: as [`Union::equals`] of the support [`WordArena::read`]
-    ///   answers for `slot`; [`super::Agreement::Different`] for a handle past
-    ///   `words`.
-    /// - panics: none.
-    /// - executable: none — this runs once per carrier on the check path, as
-    ///   [`Union::equals`]; the witness holds it to that comparison.
-    /// - intension: one comparison of two words while the union is inline: a
-    ///   one-word union finishes to its own word, which a slot keeps itself.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Union::equals`], over slots of one word and
-    ///   handles, a union that holds the support and one that holds more.
-    /// - witness: `support::tests::a_slot_unions_and_compares_as_its_support`
-    #[inline]
-    #[must_use]
-    pub fn equals_stored(
-        &self,
-        slot: Slot,
-        words: &WordArena,
-    ) -> super::Agreement
-    {
-        match self.listed {
-            None if slot.0 == self.inline => super::Agreement::Same,
-            None => super::Agreement::Different,
-            Some(_) => self.equals_stored_read(slot, words),
-        }
-    }
-
-    /// Whether gathered lists, finished, are the slot's view in `words`: the
-    /// comparison [`Self::equals_stored`] keeps off its inline path.
-    ///
-    /// # Specification
-    /// trivial.
-    #[cold]
-    fn equals_stored_read(
-        &self,
-        slot: Slot,
-        words: &WordArena,
-    ) -> super::Agreement
-    {
-        match words.read(slot) {
-            Maybe::Present(support) => self.equals(support),
-            Maybe::Absent(unstored::Absent::Unstored) => super::Agreement::Different,
         }
     }
 }

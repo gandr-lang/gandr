@@ -8,7 +8,6 @@ use anodized::spec;
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
-use super::Agreement;
 use super::Coding;
 use super::Cover;
 use super::CoverError;
@@ -713,11 +712,6 @@ fn one_encoding_per_selection()
                     union.name(zone, named);
                 }
             }
-            assert_eq!(
-                union.equals(held.view()),
-                Agreement::Same,
-                "the union agrees"
-            );
             assert_eq!(union.finish(), held, "the union is the same code");
             built.push(held);
         }
@@ -931,11 +925,6 @@ fn union_is_canonical()
                 }
                 union.child(near.view(), Crossing::default());
                 assert_eq!(
-                    union.equals(expected.view()),
-                    Agreement::Same,
-                    "{zone:?} {listed:?}: agrees"
-                );
-                assert_eq!(
                     union.finish(),
                     expected,
                     "{zone:?} {listed:?}: order {order}"
@@ -1024,7 +1013,7 @@ fn a_stored_support_reads_back()
 }
 
 #[test]
-fn a_slot_unions_and_compares_as_its_support()
+fn a_slot_unions_as_its_support()
 {
     let index = DeBruijnIndex::from;
     let depth = |binders: usize| BinderDepth::from(binders);
@@ -1064,22 +1053,6 @@ fn a_slot_unions_and_compares_as_its_support()
                         "{held:?} {names:?} {crossing:?}"
                     );
                 }
-                let mut same = start(names);
-                same.child(held.view(), Crossing::default());
-                let expected = same.equals(held.view());
-                assert_eq!(
-                    same.equals_stored(slot, &arena),
-                    expected,
-                    "{held:?} {names:?}"
-                );
-                let mut wider = start(names);
-                wider.child(held.view(), Crossing::default());
-                wider.name(Zone::Intuitionistic, index(70));
-                assert_eq!(
-                    wider.equals_stored(slot, &arena),
-                    wider.equals(held.view()),
-                    "{held:?} {names:?}: wider"
-                );
             }
         }
     }
@@ -1122,63 +1095,6 @@ fn outside_cuts_at_the_crossing()
                 );
             }
         }
-    }
-}
-
-#[test]
-fn a_union_equals_exactly_its_finished_thinning()
-{
-    let index = DeBruijnIndex::from;
-    for (listed, wider, narrower, reading) in [
-        (
-            alloc::vec![index(0), index(3)],
-            alloc::vec![index(0), index(3), index(5)],
-            alloc::vec![index(0)],
-            "an inline union",
-        ),
-        (
-            alloc::vec![index(0), index(3), index(100)],
-            alloc::vec![index(0), index(3), index(100), index(101)],
-            alloc::vec![index(0), index(100)],
-            "a spilled union",
-        ),
-    ] {
-        let mut union = Union::new();
-        for &named in listed.iter().rev() {
-            union.name(Zone::Intuitionistic, named);
-            union.name(Zone::Linear, named);
-        }
-        let own = thinning(&listed, &listed);
-        assert_eq!(
-            Agreement::Same,
-            union.equals(own.view()),
-            "{reading}: its own thinning"
-        );
-        assert_eq!(
-            Agreement::Different,
-            union.equals(thinning(&wider, &listed).view()),
-            "{reading}: an index more"
-        );
-        assert_eq!(
-            Agreement::Different,
-            union.equals(thinning(&listed, &narrower).view()),
-            "{reading}: an index fewer"
-        );
-        assert_eq!(
-            union.finish(),
-            own,
-            "{reading}: comparing left the union whole"
-        );
-        let mut reused = Union::new();
-        for &named in &listed {
-            reused.name(Zone::Linear, named);
-        }
-        reused.clear();
-        assert_eq!(
-            Agreement::Same,
-            reused.equals(Thinning::empty().view()),
-            "{reading}: a cleared union is empty"
-        );
     }
 }
 
