@@ -72,13 +72,6 @@
         reason = "module documentation that predates the shape lint"
     )
 )]
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        allocation_in_repeated_body,
-        reason = "2 cost-shape sites; #814 lists them"
-    )
-)]
 extern crate alloc;
 
 #[path = "staging_templates/admission.rs"]
@@ -795,6 +788,13 @@ fn admission_residency(
 ///   observers.
 /// - witness: `tests::harvested_workloads_preserve_typed_replay_and_power_values`
 /// - witness: `tests::measurements_preserve_structural_and_replay_refusals`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        allocation_in_repeated_body,
+        reason = "bounded: two gates per case, and each gate's productions and fuels start empty so the allocation counter measures the same growth under both"
+    )
+)]
 fn main() -> Result<(), ObservationError>
 {
     let mut output = io::BufWriter::new(io::stdout().lock());

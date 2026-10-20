@@ -722,11 +722,14 @@ fn a_corolla_automorphism_acts_on_a_certificate_by_conjugation()
     let action = [1_usize, 0, 3, 2];
     for (element, &image) in elements.iter().zip(&action) {
         let swapped = elements.get(image).expect("the action stays in the code");
-        let crossed: Vec<_> = element.inputs().iter().rev().copied().collect();
         assert_eq!(
-            (swapped.generator(), swapped.inputs()),
-            (element.generator(), crossed.as_slice()),
-            "the swap crosses each element's inputs and keeps its generator"
+            swapped.generator(),
+            element.generator(),
+            "the swap keeps each element's generator"
+        );
+        assert!(
+            swapped.inputs().iter().eq(element.inputs().iter().rev()),
+            "the swap crosses each element's inputs"
         );
     }
     let function = translator_type(&mut arena, &two, Legs(2, 1));

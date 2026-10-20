@@ -173,6 +173,13 @@ impl Grouping
     ///   merged or reordered key or member changes the families.
     /// - witness: `template::tests::grouping_by_certificate_keeps_first_occurrence_and_member_order`
     /// - witness: `template::tests::empty_and_malformed_families_preserve_refusals`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: a key is one of the seven rules with a shallow shape of four term constructors, a set the stage calculus fixes; a `Discriminant` has no order to key a map by and the crate takes no hasher"
+        )
+    )]
     #[spec(ensures: |output| output.as_ref().ok().is_none_or(|grouping|
         grouping.steps.len() == certificate.steps.len()
             && certificate.steps.iter().zip(&grouping.steps).all(|(step, group)|
@@ -268,6 +275,13 @@ impl Harvest
         expect(
             spec_clause_traversal,
             reason = "parity: the body searches the families once per key of the grouping; the check sums the families' member counts twice"
+        )
+    )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: a family is one of the seven rules with a shallow shape of four term constructors, a set the stage calculus fixes; a `Discriminant` has no order to key a map by and the crate takes no hasher"
         )
     )]
     #[spec(captures: [members = self.families.iter().map(|family| family.members.len()).sum::<usize>()],

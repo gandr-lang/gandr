@@ -1025,20 +1025,15 @@ fn serialized_images_reconstruct_the_original_equations()
         };
         let encoded = serde_json::to_vec(&candidate.image().unwrap()).unwrap();
         let image: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
-        let rows: Vec<serde_json::Value> = candidate
-            .substitutions()
-            .map(|row| {
-                let bytes = serde_json::to_vec(&row).unwrap();
-                serde_json::from_slice(&bytes).unwrap()
-            })
-            .collect();
-        assert_eq!(rows.len(), family.len());
-        for (step, choices) in family.iter().zip(&rows) {
+        assert_eq!(candidate.substitutions().count(), family.len());
+        for (step, row) in family.iter().zip(candidate.substitutions()) {
+            let bytes = serde_json::to_vec(&row).unwrap();
+            let choices: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
             let bytes = serde_json::to_vec(&plain_image(&original, step).unwrap()).unwrap();
             let plain: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
             let empty = serde_json::json!([]);
             for (equation, entries, choices) in [
-                (&image["equation"], &image["entries"], choices),
+                (&image["equation"], &image["entries"], &choices),
                 (&plain, &empty, &empty),
             ] {
                 let (mut decoded, decoded_step) = decode_equation_image(equation, entries, choices);
@@ -1834,6 +1829,13 @@ fn normalized(edition: Edition) -> (Arena, Vec<Certificate>)
 /// - hypothesis: L2 — an independent oracle; the harvest under test shares no
 ///   code with it.
 /// - witness: `template::tests::grouping_by_certificate_keeps_first_occurrence_and_member_order`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        linear_search_in_loop,
+        reason = "bounded: a key is one of the seven rules with a shallow shape of term constructors, a set the stage calculus fixes; a `Discriminant` has no order to key a map by"
+    )
+)]
 fn grouped_at_once(
     arena: &Arena,
     certificates: &[Certificate],
@@ -2388,6 +2390,8 @@ where
 fn forked_families_equal_one_by_one_admission_across_the_edit_traces()
 {
     let allowance = Budget(100_000_000);
+    // The one-by-one reports of each edition, refilled per edition.
+    let mut expected: Vec<String> = Vec::new();
     for trace in edit_traces() {
         let mut one_by_one = Memo::default();
         let mut serial = Memo::default();
@@ -2396,20 +2400,18 @@ fn forked_families_equal_one_by_one_admission_across_the_edit_traces()
         for edition in trace {
             let (arena, certificates) = normalized(edition);
             let families = harvest(&arena, ProgramId(0), &certificates).unwrap();
-            let expected: Vec<String> = families
-                .iter()
-                .map(|family| {
-                    let report = one_by_one.admit_family(
-                        &arena,
-                        family,
-                        PriceGate::Memoized,
-                        &mut cache,
-                        &mut { allowance },
-                        &mut memo::tests::Stopped,
-                    );
-                    format!("{report:?}")
-                })
-                .collect();
+            expected.clear();
+            expected.extend(families.iter().map(|family| {
+                let report = one_by_one.admit_family(
+                    &arena,
+                    family,
+                    PriceGate::Memoized,
+                    &mut cache,
+                    &mut { allowance },
+                    &mut memo::tests::Stopped,
+                );
+                format!("{report:?}")
+            }));
             let forked = [
                 (
                     admitted(&mut serial, &arena, &families, &crate::fork::Serial),

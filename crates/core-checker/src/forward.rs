@@ -540,29 +540,23 @@ fn natural(
                 Some(&Value::Tuple(ref components)) if components.is_empty() => continue,
                 _ => return Err(unsupported),
             },
-            ValueTypeView::Product(parts) => {
-                let parts = parts.to_vec();
-                match context.arena().value(value) {
-                    Some(&Value::Tuple(ref components)) if components.len() == parts.len() => {
-                        pending.extend(components.iter().copied().zip(parts));
-                        continue;
-                    },
-                    _ => return Err(unsupported),
-                }
+            ValueTypeView::Product(parts) => match context.arena().value(value) {
+                Some(&Value::Tuple(ref components)) if components.len() == parts.len() => {
+                    pending.extend(components.iter().copied().zip(parts.iter().copied()));
+                    continue;
+                },
+                _ => return Err(unsupported),
             },
-            ValueTypeView::Sum(parts) => {
-                let parts = parts.to_vec();
-                match context.arena().value(value) {
-                    Some(&Value::Injection(summand, payload)) => {
-                        let part = parts
-                            .get(usize::from(summand))
-                            .copied()
-                            .ok_or(unsupported)?;
-                        pending.push((payload, part));
-                        continue;
-                    },
-                    _ => return Err(unsupported),
-                }
+            ValueTypeView::Sum(parts) => match context.arena().value(value) {
+                Some(&Value::Injection(summand, payload)) => {
+                    let part = parts
+                        .get(usize::from(summand))
+                        .copied()
+                        .ok_or(unsupported)?;
+                    pending.push((payload, part));
+                    continue;
+                },
+                _ => return Err(unsupported),
             },
             ValueTypeView::Data { .. }
             | ValueTypeView::Record(_)

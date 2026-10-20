@@ -490,32 +490,6 @@
     )
 )]
 #![no_std]
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        collect_read_once,
-        linear_search_in_loop,
-        reason = "11 cost-shape sites (10 linear_search_in_loop, 1 collect_read_once); #814 lists them"
-    )
-)]
-#![cfg_attr(
-    all(not(test), dylint_lib = "quenchant_dylints"),
-    expect(
-        allocation_in_repeated_body,
-        reason = "3 cost-shape sites; #814 lists them"
-    )
-)]
-#![cfg_attr(
-    all(test, dylint_lib = "quenchant_dylints"),
-    expect(
-        allocation_in_repeated_body,
-        reason = "6 cost-shape sites (3 in test modules); #814 lists them"
-    )
-)]
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(clone_in_loop, reason = "3 cost-shape sites; #814 lists them")
-)]
 
 extern crate alloc;
 // The profiler's instrumentation names `std`; it links only into the

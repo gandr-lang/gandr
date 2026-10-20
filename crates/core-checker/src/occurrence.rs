@@ -890,7 +890,7 @@ impl Extend<(AnyNode, Reach)> for Pending
 /// # Specification
 /// - requires: `scope` is the root's scope in its declaration, `parameters`
 ///   holds the declaration's whole telescope, and `definitions` are the bodies
-///   of the block's definitions by position.
+///   of the block's definitions by ascending position.
 /// - ensures: `Err(index)` when the root names a position at or past the
 ///   block's end; otherwise the most severe finding over every occurrence of a
 ///   family of the block, a uniform one the stage order places finding nothing
@@ -1173,8 +1173,9 @@ where
                     // A definition of the block is read through: what its
                     // body names, the field names where it names the
                     // definition (#602).
-                    else if let Some(&(_, body)) =
-                        definitions.iter().find(|&&(defined, _)| defined == index)
+                    else if let Ok(position) =
+                        definitions.binary_search_by_key(&index, |&(defined, _)| defined)
+                        && let Some(&(_, body)) = definitions.get(position)
                     {
                         pending.read(AnyNode::Value(body), reach, Reading::Body);
                     }
@@ -1547,9 +1548,10 @@ const fn refusal(
 ///
 /// # Specification
 /// - requires: `block` holds the admission position the declaration takes among
-///   its families, `definitions` the bodies of its definitions by position,
-///   `earlier` the accessibility of the families admitted before it, and
-///   `signature`'s parameters and fields are scoped as the signature states.
+///   its families, `definitions` the bodies of its definitions by ascending
+///   position, `earlier` the accessibility of the families admitted before it,
+///   and `signature`'s parameters and fields are scoped as the signature
+///   states.
 /// - ensures: success exactly when no parameter names a family of the block,
 ///   every field names one only where the stage order places it — under the
 ///   placeable formers [`worst`] names, through a strictly positive parameter

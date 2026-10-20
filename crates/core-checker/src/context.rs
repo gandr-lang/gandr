@@ -3412,7 +3412,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         mark: Foresight,
     )
     {
-        let forgotten = self.foreseen.split_off(mark.0.min(self.foreseen.len()));
+        let at = mark.0.min(self.foreseen.len());
+        let forgotten: BTreeSet<ConstantIndex> = self.foreseen.drain(at ..).collect();
         self.signatures
             .retain(|&(held, _)| !forgotten.contains(&held));
     }

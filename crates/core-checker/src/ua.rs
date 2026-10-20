@@ -225,6 +225,7 @@
 use alloc::borrow::Cow;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -589,12 +590,13 @@ pub fn derive(
     translators: &BTreeMap<ShapeIndex, Translators>,
 ) -> Result<Universal, UaRefusal>
 {
+    let corollas: BTreeSet<ShapeIndex> = stratum
+        .corollas()
+        .iter()
+        .map(gandr_theory_sites::Corolla::index)
+        .collect();
     for &shape in translators.keys() {
-        if !stratum
-            .corollas()
-            .iter()
-            .any(|corolla| corolla.index() == shape)
-        {
+        if !corollas.contains(&shape) {
             return Err(UaRefusal::Species(Defect::Tables { shape }));
         }
     }

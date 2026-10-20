@@ -4,6 +4,7 @@
 //! that may run its use other than once. The decisions are stated in
 //! [`crate::session`].
 
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -1510,6 +1511,7 @@ impl Machine<'_, '_>
         }
         let node = CoreNode::Term(TermNode::Computation(at));
         let shared = self.free_linear(CoreTerm::Computation(parent))?;
+        let shared: BTreeSet<DeBruijnIndex> = shared.into_iter().collect();
         for index in self.free_linear(CoreTerm::Computation(child))? {
             if u32::from(index) == 0 {
                 continue;

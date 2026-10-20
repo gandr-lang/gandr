@@ -535,9 +535,8 @@ pub fn coverage(
                     .len()
                     .checked_sub(arity)
                     .ok_or(CheckRefusal::MachineInvariant)?;
-                let components: Vec<Vec<Pattern>> = built.drain(start ..).collect();
                 let mut tuples = Vec::from([(Vec::<ValueId>::new(), 0_u32)]);
-                for component in components {
+                for component in built.drain(start ..) {
                     let mut crossed = Vec::new();
                     for &(ref prefix, binders) in &tuples {
                         for next in &component {
