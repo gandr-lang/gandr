@@ -225,6 +225,7 @@ impl Subst
         vars: &[MetaVar],
     ) -> Self
     {
+        let vars: BTreeSet<&MetaVar> = vars.iter().collect();
         Self {
             prods: self
                 .prods
