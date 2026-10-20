@@ -312,9 +312,10 @@ struct DeclMeta
     /// The representation's global index and the scope's extent, for an
     /// abstract type only.
     sealed: Option<(GlobalIndex, SealExtent)>,
-    /// The relation's and the reflexivity's global indices, for an abstract
-    /// type under [`tags::KIND_ABSTRACT_INTERFACED`] only.
-    interface: Option<(GlobalIndex, GlobalIndex)>,
+    /// The relation's and the reflexivity's global indices, and the law's
+    /// under [`tags::KIND_ABSTRACT_LAWFUL`], for an abstract type under that
+    /// kind or [`tags::KIND_ABSTRACT_INTERFACED`] only.
+    interface: Option<(GlobalIndex, GlobalIndex, Option<GlobalIndex>)>,
     /// Parameter roots for a data signature; empty for other declarations.
     parameters: Vec<GlobalIndex>,
     /// Constructor field roots for a data signature.
@@ -931,7 +932,7 @@ fn comp_type_id_at(
             DeclKind::Codata => meta.root_body.is_none() && meta.parameters.iter().all(|root| value_type_id_at(&table.nodes, *root).is_some())
                 && meta.observations.iter().all(|root| comp_type_id_at(&table.nodes, *root).is_some()),
             DeclKind::AbstractType => meta.root_body.is_none() && meta.sealed.is_some_and(|(root, _)| value_type_id_at(&table.nodes, root).is_some())
-                && meta.interface.is_none_or(|(relation, reflexivity)| value_id_at(&table.nodes, relation).is_some() && value_id_at(&table.nodes, reflexivity).is_some()),
+                && meta.interface.is_none_or(|(relation, reflexivity, law)| value_id_at(&table.nodes, relation).is_some() && value_id_at(&table.nodes, reflexivity).is_some() && law.is_none_or(|law| value_id_at(&table.nodes, law).is_some())),
             DeclKind::Axiom => meta.root_body.is_none(),
         }),
     captures: [entry = table.arena.watermark(), related = metas.iter().map(|meta| meta.related.len()).collect::<Vec<_>>()],
@@ -953,8 +954,13 @@ fn comp_type_id_at(
                         && meta.sealed.is_some_and(|(root, extent)| value_type_id_at(&table.nodes, root) == Some(representation)
                             && scope == SealScope::Closed(extent))
                         && match (meta.interface, interface) {
-                            (Some((relation, reflexivity)), Maybe::Present(interface)) => value_id_at(&table.nodes, relation) == Some(interface.relation())
-                                && value_id_at(&table.nodes, reflexivity) == Some(interface.reflexivity()),
+                            (Some((relation, reflexivity, law)), Maybe::Present(interface)) => value_id_at(&table.nodes, relation) == Some(interface.relation())
+                                && value_id_at(&table.nodes, reflexivity) == Some(interface.reflexivity())
+                                && match (law, interface.law()) {
+                                    (Some(law), Maybe::Present(stated)) => value_id_at(&table.nodes, law) == Some(stated),
+                                    (None, Maybe::Absent(_)) => true,
+                                    (Some(_), Maybe::Absent(_)) | (None, Maybe::Present(_)) => false,
+                                },
                             (None, Maybe::Absent(_)) => true,
                             (Some(_), Maybe::Absent(_)) | (None, Maybe::Present(_)) => false,
                         },
@@ -1115,16 +1121,18 @@ fn build_declarations(
                     SealScope::Closed(extent),
                 );
                 match meta.interface {
-                    Some((relation, reflexivity)) => {
+                    Some((relation, reflexivity, law)) => {
                         let resolve = |root: GlobalIndex| {
                             value_id_at(&table.nodes, root).ok_or(DecodeError::Malformed {
                                 site: MalformedSite::Polarity,
                             })
                         };
-                        atom.interfaced(AtomInterface::new(
-                            resolve(relation)?,
-                            resolve(reflexivity)?,
-                        ))
+                        let interface =
+                            AtomInterface::new(resolve(relation)?, resolve(reflexivity)?);
+                        atom.interfaced(match law {
+                            Some(law) => interface.lawful(resolve(law)?),
+                            None => interface,
+                        })
                     },
                     None => atom,
                 }
@@ -1732,8 +1740,9 @@ impl<'bytes> ByteReader<'bytes>
 ///   [`tags::KIND_DATA_WORDS`] carries rules, only one under the latter carries
 ///   cells, only one under [`tags::KIND_DATA_INDEXED`] carries index
 ///   classifiers and per-constructor result roots, only an abstract type under
-///   [`tags::KIND_ABSTRACT_INTERFACED`] carries an interface's two value roots,
-///   and only a codata declaration carries observation roots.
+///   [`tags::KIND_ABSTRACT_INTERFACED`] carries an interface's two value roots
+///   and one under [`tags::KIND_ABSTRACT_LAWFUL`] those and its law's root, and
+///   only a codata declaration carries observation roots.
 /// - provides: segment parsing, not semantic validation of producer claims. On
 ///   failure the cursor and previously completed entries may have advanced;
 ///   this operation does not roll back an entire segment.
@@ -1778,8 +1787,8 @@ impl<'bytes> ByteReader<'bytes>
             (DeclKind::Data | DeclKind::Codata | DeclKind::Def | DeclKind::Axiom, None) => true,
             _ => false,
         }
-        && meta.interface.is_none_or(|interface| matches!(meta.kind, DeclKind::AbstractType)
-            && <[_; 2]>::from(interface).iter().all(|root| *root < table.next_index()
+        && meta.interface.is_none_or(|(relation, reflexivity, law)| matches!(meta.kind, DeclKind::AbstractType)
+            && [Some(relation), Some(reflexivity), law].iter().flatten().all(|root| *root < table.next_index()
                 && table.families.get(root.offset().0) == Some(&Family::Value)))
         && meta.related.iter().all(|&(left, right, _)| matches!(meta.kind, DeclKind::Def)
             && [left, right].iter().all(|root| *root < table.next_index()
@@ -1923,15 +1932,23 @@ fn decode_declaration(
         // its scope's extent: no body, and therefore no per-definition
         // annotation slots. Whether the extent fits the artifact is decided at
         // assembly, where the declaration count is known. An interfaced atom
-        // closes with its relation's and its reflexivity's roots.
+        // closes with its relation's and its reflexivity's roots, and a lawful
+        // one with its law's root after them.
         DeclKind::AbstractType => {
             let representation = decode_root(reader, table, Family::ValueType)?;
             let extent = SealExtent::from(usize::from(reader.read_usize()?));
             sealed = Some((representation, extent));
-            if kind_tag == tags::KIND_ABSTRACT_INTERFACED {
+            let lawful = kind_tag == tags::KIND_ABSTRACT_LAWFUL;
+            if kind_tag == tags::KIND_ABSTRACT_INTERFACED || lawful {
                 let relation = decode_root(reader, table, Family::Value)?;
                 let reflexivity = decode_root(reader, table, Family::Value)?;
-                interface = Some((relation, reflexivity));
+                let law = if lawful {
+                    Some(decode_root(reader, table, Family::Value)?)
+                }
+                else {
+                    None
+                };
+                interface = Some((relation, reflexivity, law));
             }
             None
         },
@@ -3403,7 +3420,8 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 /// # Specification
 /// - requires: `kind` is the byte read at a declaration-kind position.
 /// - ensures: returns the live kind for a definition, plain, relating, lawful
-///   or ruled, an axiom, a sealed abstract type, or a data signature.
+///   or ruled, an axiom, a sealed abstract type, plain, interfaced or lawful,
+///   or a data signature.
 /// - provides: the one place a kind byte is interpreted, keeping a reserved
 ///   kind's refusal distinct from an unknown byte's, so a reader learns whether
 ///   the kind is unimplemented or unassigned.
@@ -3420,7 +3438,7 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 ///   validity.
 /// - witness: `decode::tests::tag_alphabets_partition_every_byte`
 #[spec(
-    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 | 14 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 | 12 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 | 11 => ret.as_ref() == Ok(&DeclKind::Data), 13 => ret.as_ref() == Ok(&DeclKind::Codata), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
+    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 | 14 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 | 12 | 15 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 | 11 => ret.as_ref() == Ok(&DeclKind::Data), 13 => ret.as_ref() == Ok(&DeclKind::Codata), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
 )]
 #[inline]
 fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
@@ -3438,7 +3456,9 @@ fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
         // The abstract-type kind is deliberately live here: it was reserved with
         // the other three and sealing made it real, so it is decoded rather than
         // refused.
-        tags::KIND_ABSTRACT_TYPE | tags::KIND_ABSTRACT_INTERFACED => Ok(DeclKind::AbstractType),
+        tags::KIND_ABSTRACT_TYPE | tags::KIND_ABSTRACT_INTERFACED | tags::KIND_ABSTRACT_LAWFUL => {
+            Ok(DeclKind::AbstractType)
+        },
         tags::KIND_MODULE_SIG => Err(DecodeError::ReservedDeclarationKind {
             kind: ReservedKind::ModuleSig,
         }),
@@ -4441,7 +4461,7 @@ mod tests
             let kind = match byte {
                 0 | 7 | 9 | 14 => Ok(super::DeclKind::Def),
                 1 => Ok(super::DeclKind::Axiom),
-                2 | 12 => Ok(super::DeclKind::AbstractType),
+                2 | 12 | 15 => Ok(super::DeclKind::AbstractType),
                 3 => Err(DecodeError::ReservedDeclarationKind {
                     kind: super::ReservedKind::ModuleSig,
                 }),

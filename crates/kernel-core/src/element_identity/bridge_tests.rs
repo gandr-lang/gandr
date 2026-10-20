@@ -26,6 +26,7 @@ use super::tests::closed;
 use super::tests::forced;
 use super::tests::persisted;
 use super::tests::quantified;
+use crate::KernelVerdict;
 use crate::check::check_closed_value;
 use crate::conv::Convertibility;
 use crate::conv::convertible_value_types;
@@ -686,7 +687,7 @@ fn an_interfaced_atom_bears_its_relation_as_its_bridge()
     at(&mut environment, Mode::Bridge, (first, second), unit).expect("the relation's evidence");
     at(&mut environment, Mode::Bridge, (first, first), here).expect("the reflexivity");
 
-    // The interface states no transport, so an identity between the two
+    // The interface states no identity law, so an identity between the two
     // points has no fibre to read; reflexivity at the atom still forms.
     let admitted = environment.entries().len();
     let identity = at(&mut environment, Mode::Identity, (first, second), unit);
@@ -696,7 +697,7 @@ fn an_interfaced_atom_bears_its_relation_as_its_bridge()
     };
     assert_eq!(
         error.to_string(),
-        "an identity at a sealed type whose interface states no transport"
+        "an identity at a sealed type whose interface states no identity law"
     );
     assert_eq!(environment.entries().len(), admitted);
     at(&mut environment, Mode::Identity, (first, first), here).expect("reflexivity at the atom");
@@ -725,6 +726,192 @@ fn an_interface_is_checked_where_its_atom_is_admitted()
     assert!(
         irreflexive.is_err(),
         "a reflexivity outside its relation's diagonal"
+    );
+    assert!(environment.entries().is_empty());
+}
+
+/// An atom over `representation` at the value universe, admitted with the
+/// total relation, its reflexivity and the law `law` mints.
+///
+/// # Specification
+/// trivial.
+fn lawful_atom(
+    environment: &mut Environment,
+    representation: fn(&mut TermArena) -> ValueTypeId,
+    law: fn(&mut TermArena) -> ValueId,
+) -> Result<ConstantIndex, KernelError>
+{
+    let mut staging = environment.stage();
+    let kind = universe(staging.arena(), LevelConstant::from(0_u64));
+    let representation = representation(staging.arena());
+    let (relation, reflexivity) = total(staging.arena());
+    let law = law(staging.arena());
+    let declaration = staging
+        .abstract_type(
+            LevelSignature::monomorphic(),
+            kind,
+            representation,
+            SealScope::Closed(SealExtent::from(0_usize)),
+        )
+        .interfaced(AtomInterface::new(relation, reflexivity).lawful(law));
+    environment
+        .add_decl(declaration)
+        .map(super::super::env::CheckedId::position)
+}
+
+/// `thunk (λa. λb. λr. return (centre, over))`: the law naming one identity
+/// in the representation and one over it for every element of a singleton.
+///
+/// # Specification
+/// trivial.
+fn contraction(
+    arena: &mut TermArena,
+    centre: ValueId,
+    over: ValueId,
+) -> ValueId
+{
+    let pair = arena.value_tuple(&[centre, over]);
+    let mut body = arena.computation_return(pair);
+    for _ in 0_u8 .. 3_u8 {
+        body = arena.computation_lambda(body);
+    }
+    arena.value_thunk(body)
+}
+
+/// The total relation's law over the unit type: every identity in `Unit` and
+/// over it is `()`.
+///
+/// # Specification
+/// trivial.
+fn unit_contraction(arena: &mut TermArena) -> ValueId
+{
+    let unit = arena.value_unit();
+    contraction(arena, unit, unit)
+}
+
+#[test]
+fn a_lawful_atom_reads_its_relation_as_its_identity()
+{
+    // An atom over `Unit` relating its elements by `Unit`, a relation whose
+    // singletons contract, and two sealed points of it.
+    let mut environment = Environment::new();
+    let atom = lawful_atom(
+        &mut environment,
+        TermArena::value_type_unit,
+        unit_contraction,
+    )
+    .expect("a lawful atom");
+    let first = sealed_point(&mut environment, atom);
+    let second = sealed_point(&mut environment, atom);
+
+    // The identity between the two points is the relation between them.
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let sealed = arena.value_type_abstract(atom);
+    let a = arena.value_constant(first);
+    let b = arena.value_constant(second);
+    let identity = arena.value_type_path(sealed, a, b);
+    let unit = arena.value_unit();
+    let declaration = staging.def(LevelSignature::monomorphic(), identity, unit);
+    let path = environment
+        .add_decl(declaration)
+        .expect("the relation's evidence is an identity")
+        .position();
+
+    // Transport in the singleton family along that identity moves `here(a)`
+    // to the identity itself.
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let sealed = arena.value_type_abstract(atom);
+    let a = arena.value_constant(first);
+    let b = arena.value_constant(second);
+    let path = arena.value_constant(path);
+    let end = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let singleton = arena.value_type_path(sealed, a, end);
+    let here = arena.value_here(a);
+    let moved = arena.computation_path_transport(singleton, path, here);
+    let returned = arena.computation_return(path);
+    assert_eq!(
+        super::tests::computes(arena, moved, returned),
+        KernelVerdict::Convertible
+    );
+    let thunk = arena.value_thunk(moved);
+    let target = arena.value_type_path(sealed, a, b);
+    let returns = arena.comp_type_returner(target);
+    let declared = arena.value_type_thunk(returns);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, thunk);
+    environment
+        .add_decl(declaration)
+        .expect("transport in the singleton family");
+
+    // J over the atom, derived in the singleton, checks, and computes to its
+    // base case on `here(a)`.
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let sealed = arena.value_type_abstract(atom);
+    let a = arena.value_constant(first);
+    let var = |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
+    let singleton = |arena: &mut TermArena, end: u32| {
+        let end = var(arena, end);
+        arena.value_type_path(sealed, a, end)
+    };
+    let body_at = |arena: &mut TermArena, point: u32, element: u32| {
+        let fibre = singleton(arena, point);
+        let element = var(arena, element);
+        arena.value_type_path(fibre, element, element)
+    };
+    let family = singleton(arena, 0);
+    let body = body_at(arena, 1, 0);
+    let returns = arena.comp_type_returner(body);
+    let entry = arena.comp_type_pi(family, returns);
+    let motive = arena.comp_type_pi(sealed, entry);
+    let start = arena.value_here(a);
+    let reflexive = arena.value_type_path(sealed, a, a);
+    let at_source = arena.value_type_path(reflexive, start, start);
+    let carrier = singleton(arena, 0);
+    let result = body_at(arena, 2, 1);
+    let path = var(arena, 1);
+    let over = arena.value_here(path);
+    let held = var(arena, 0);
+    let j = arena.computation_telescope_transport(motive, path, start, over, held);
+    let (term, declared) = super::tests::function(arena, &[sealed, carrier, at_source], result, j);
+    let base = arena.value_here(start);
+    let at_here = arena.computation_telescope_transport(motive, start, start, base, base);
+    let returned = arena.computation_return(base);
+    assert_eq!(
+        super::tests::computes(arena, at_here, returned),
+        KernelVerdict::Convertible
+    );
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, term);
+    environment
+        .add_decl(declaration)
+        .expect("J over the atom, derived in the singleton");
+}
+
+#[test]
+fn a_law_is_checked_where_its_atom_is_admitted()
+{
+    // Over `Integer` the total relation holds between distinct elements, so
+    // its singleton has no centre every element is identified with: the
+    // identity in the representation the law names is refused.
+    let mut environment = Environment::new();
+    let integer: fn(&mut TermArena) -> ValueTypeId =
+        |arena| arena.value_type_base(BaseType::Integer);
+    let uncontracted = lawful_atom(&mut environment, integer, unit_contraction);
+    assert!(
+        matches!(
+            uncontracted,
+            Err(KernelError::Identity(IdentityError::NeutralFibre))
+        ),
+        "a law over a relation that is no identity: {uncontracted:?}"
+    );
+    // A law that is no function of the singleton's elements.
+    let unfunctional = lawful_atom(&mut environment, TermArena::value_type_unit, |arena| {
+        arena.value_unit()
+    });
+    assert!(
+        matches!(unfunctional, Err(KernelError::ValueShapeMismatch { .. })),
+        "a law that is no function: {unfunctional:?}"
     );
     assert!(environment.entries().is_empty());
 }

@@ -99,7 +99,7 @@ use crate::replay::read_endpoints;
 ///
 /// # Specification
 /// trivial.
-fn computes(
+pub(super) fn computes(
     arena: &mut TermArena,
     computation: ComputationId,
     reduct: ComputationId,
@@ -2708,7 +2708,7 @@ fn a_returned_endpoint_a_computation_returns_replays_as_its_computation()
 ///
 /// # Specification
 /// trivial.
-fn function(
+pub(super) fn function(
     arena: &mut TermArena,
     domains: &[ValueTypeId],
     result: ValueTypeId,

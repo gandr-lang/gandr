@@ -38,16 +38,17 @@
 //! | List A | Lazy constructor relation; each Cons applies the already-folded element clause and delays its tail. | A complete finite observation records Unit or a distinguishing Empty fibre, depth and instruction count. | The relation lifting: Unit at two nils, Empty at a nil and a cons, and at two conses the heads' bridge beside the tails' persisted `Bridge`; a neutral list suspends. |
 //! | Value universe | Identity at level zero: native `PathUniverse` of the two indexed codes. Bridge at every level: the relation `El A → El B → F U`. | Native path reflexivity and certified translator replay. | A relation thunk, supplied, never derived from the codes. |
 //! | `PathUniverse` | Identity only: the higher record of two native certificates. | Pointwise forward/backward fields and both round-trip coherence obligations, observed separately. | Refused as an unsupported type. |
-//! | Abstract | The relation its declaration's interface states, `El(⟨R a b⟩)`, read through [`Interfaces`]; an atom stating none is a named obstruction, even for the same nominal atom. | Refused by name, `AtomTransport`: the interface states a relation and its reflexivity, not transport or coherence. | The interface's relation at the endpoints, with its reflexivity as `here`; `BridgeAtSealedType` at formation and at every reading where the atom states no interface. |
+//! | Abstract | The relation its declaration's interface states, `El(⟨R a b⟩)`, read through [`Interfaces`]; an atom stating none is a named obstruction, even for the same nominal atom. | The interface's relation once its law contracts the relation's singletons: `here` by the reflexivity, transport and the eliminator derived in the singleton family. Refused by name, `AtomTransport`, where the interface states no law. | The interface's relation at the endpoints, with its reflexivity as `here`; `BridgeAtSealedType` at formation and at every reading where the atom states no interface. |
 //! | Codes | Identity consumes existing `Path_U` formation; bridges are checked indexed families over two element types. | Existing certified-equivalence and transport semantics are reused, not redefined. | `Relation::constant` and `Relation::cases`, in memory. |
 //!
 //! **Base choice.** These built-in scalar codes are discrete; their canonical
 //! data has decidable equality. This is not a nominal-identifier test for
 //! sealed values. A different base interpretation needs an explicit relation
 //! interface. A sealed Abstract likewise reads the relation and reflexivity
-//! its declaration supplies; transport and coherence are not part of that
-//! interface, so identity at an atom stays refused. Looking through the seal
-//! or treating its name as equality evidence is not an alternative.
+//! its declaration supplies; identity reads that relation only when the
+//! interface also states the law that makes it an identity system. Looking
+//! through the seal or treating its name as equality evidence is not an
+//! alternative.
 //!
 //! `Relation::constant` and `Relation::cases` construct heterogeneous indexed
 //! bridge families. The distinguishing witness is `Br_U Unit Bool` with fibre
@@ -289,6 +290,7 @@ use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
+use quenchant_shape::shape::Maybe;
 
 use crate::check::check_closed_value;
 use crate::conv::Convertibility;
@@ -572,8 +574,8 @@ pub enum RelationError
     UnsupportedType(ValueTypeId),
     /// A sealed type exposes no element relation or its structure.
     AbstractInterface(ValueTypeId),
-    /// An identity at a sealed atom: its interface states a relation and its
-    /// reflexivity, not transport or coherence.
+    /// An identity at a sealed atom whose interface states a relation and its
+    /// reflexivity but no law contracting its singletons.
     AtomTransport(ValueTypeId),
     /// Ordinary kernel formation or checking failed.
     Typing(Box<KernelError>),
@@ -636,9 +638,7 @@ impl fmt::Display for RelationError
             Self::AbstractInterface(_) => {
                 f.write_str("sealed type has no element-relation interface")
             },
-            Self::AtomTransport(_) => {
-                f.write_str("sealed type's interface states no transport or coherence")
-            },
+            Self::AtomTransport(_) => f.write_str("sealed type's interface states no identity law"),
             Self::Typing(ref error) => write!(f, "relation typing failed: {error}"),
             Self::Path(ref error) => write!(f, "universe identity failed: {error}"),
             Self::Boundary => f.write_str("relation indices do not match"),
@@ -700,10 +700,11 @@ impl core::error::Error for RelationError
 ///   contribute one clause in either mode. Identity additionally reaches the
 ///   level-zero value universe as native paths and path certificates as higher
 ///   fields; a bridge reaches every value universe as its relations, and a
-///   sealed atom as the relation its interface states. An atom stating no
-///   interface refuses before nominal comparison, and identity at an atom
-///   refuses by name. Codes selects certified paths or indexed relation
-///   families.
+///   sealed atom as the relation its interface states, which an identity
+///   reaches too when the interface states its law. An atom stating no
+///   interface refuses before nominal comparison, and identity at an atom whose
+///   interface states no law refuses by name. Codes selects certified paths or
+///   indexed relation families.
 /// - provides: a flat iterative fold; it never compares endpoint elements.
 /// - fails: `UnsupportedCode`, `UnsupportedType`, `AbstractInterface`,
 ///   `AtomTransport`, `Arena`.
@@ -718,6 +719,7 @@ impl core::error::Error for RelationError
 /// - witness: `identity_recursion::tests::both_modes_compute_all_element_clauses`
 /// - witness: `identity_recursion::tests::abstract_is_an_interface_obstruction`
 /// - witness: `element_identity::bridge_tests::an_interfaced_atom_bears_its_relation_as_its_bridge`
+/// - witness: `element_identity::bridge_tests::a_lawful_atom_reads_its_relation_as_its_identity`
 /// - witness: `identity_recursion::function::tests::function_clause_retains_related_inputs_and_neutrals`
 /// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
 #[spec(ensures: |ret| match (domain, &ret) {
@@ -729,8 +731,8 @@ impl core::error::Error for RelationError
             Clause::Product(a, b) | Clause::Sum(a, b) | Clause::Function(a, b) => a.0 < index && b.0 < index,
             Clause::List(element) => element.0 < index,
             Clause::Universe | Clause::Certificate => mode == Mode::Identity,
-            Clause::Relation | Clause::Atom { .. } => mode == Mode::Bridge,
-            Clause::Unit | Clause::Discrete => true,
+            Clause::Relation => mode == Mode::Bridge,
+            Clause::Unit | Clause::Discrete | Clause::Atom { .. } => true,
             Clause::Empty | Clause::CaseLeft(..) | Clause::CaseRight(..) => false,
         }),
     (Domain::Elements(_), &Err(RelationError::AbstractInterface(ty) | RelationError::AtomTransport(ty))) => matches!(arena.value_type(ty), Some(&ValueType::Abstract(_))),
@@ -849,6 +851,14 @@ pub fn interpret(
                 (Some((interface, kind)), Mode::Bridge) => Clause::Atom {
                     relation: interface.relation(),
                     kind,
+                },
+                (Some((interface, kind)), Mode::Identity)
+                    if matches!(interface.law(), Maybe::Present(_)) =>
+                {
+                    Clause::Atom {
+                        relation: interface.relation(),
+                        kind,
+                    }
                 },
                 (Some(_), Mode::Identity) => return Err(RelationError::AtomTransport(ty)),
                 (None, _) => return Err(RelationError::AbstractInterface(ty)),

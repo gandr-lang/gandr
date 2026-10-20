@@ -284,11 +284,23 @@
 //! representation. A bridge between two elements of an interfaced atom is
 //! `El(R a b)`, and `here a` checks at `Bridge(A, a, a)` by the reflexivity.
 //! A domain reaching an atom stating no interface is refused at formation as
-//! [`IdentityError::BridgeAtSealedType`]. An identity at an interfaced atom is
-//! refused as [`IdentityError::AtomTransport`]: the interface states no
-//! transport or coherence. Elsewhere a bridge has no reflexivity, transport or
-//! eliminator: `here` is refused at it by shape, and a bridge never converts
-//! with a path or a flow.
+//! [`IdentityError::BridgeAtSealedType`].
+//!
+//! **An identity at an atom is its relation once the law makes the relation
+//! an identity system.** The interface may state the law `(a b : Rep) → (r :
+//! R a b) → Path(Σ (y : Rep). R a y, (b, r), (a, refl a))`, checked at the
+//! atom's admission ([`law_type`]): every singleton at `a` contracts onto its
+//! centre. A reflexive relation whose singletons contract is an identity
+//! system (_Homotopy Type Theory_, Theorem 5.8.2), so an identity at such an
+//! atom reads `El(R a b)` as its fibre, as a bridge does, and its eliminator
+//! is the one derived in the singleton family: transport along `here`
+//! returns its value, and the telescope transport over `(y : A, z : Path(A,
+//! a, y))` computes to its base case at `here(a)`. An identity at an atom
+//! whose interface states no law is refused as
+//! [`IdentityError::AtomTransport`].
+//!
+//! Elsewhere a bridge has no reflexivity, transport or eliminator: `here` is
+//! refused at it by shape, and a bridge never converts with a path or a flow.
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -490,8 +502,8 @@ pub enum IdentityError
     /// abstraction's to choose, so no fold clause reads it.
     BridgeAtSealedType(ValueTypeWitness),
     /// An identity's domain reaches a sealed atom whose interface states a
-    /// relation and its reflexivity but no transport or coherence, so its
-    /// fibre is not an identity's.
+    /// relation and its reflexivity but no law contracting its singletons, so
+    /// its relation is not known to be an identity system.
     AtomTransport(ValueTypeWitness),
 }
 
@@ -551,7 +563,7 @@ impl fmt::Display for IdentityError
             Self::NotOver { .. } => f.write_str("an identity that does not lie over its path"),
             Self::BridgeAtSealedType(_) => f.write_str("a bridge at a sealed type"),
             Self::AtomTransport(_) => {
-                f.write_str("an identity at a sealed type whose interface states no transport")
+                f.write_str("an identity at a sealed type whose interface states no identity law")
             },
         }
     }
@@ -574,8 +586,8 @@ impl core::error::Error for IdentityError
 ///   inhabits.
 /// - fails: [`IdentityError::NeutralFibre`] at an open domain or at an atom
 ///   stating no interface; [`IdentityError::AtomTransport`] at an identity
-///   reaching an atom that states one; `ArenaFault` for a domain the arena does
-///   not hold.
+///   reaching an atom whose interface states no law; `ArenaFault` for a domain
+///   the arena does not hold.
 /// - panics: none.
 ///
 /// # Errors
@@ -583,10 +595,12 @@ impl core::error::Error for IdentityError
 ///
 /// # Adequacy
 /// - hypothesis: L3 — native evidence at the decode of a variable code and at a
-///   sealed atom refuses as a neutral fibre, at an interfaced atom by its
-///   missing transport, while the same evidence at a closed Bool checks.
+///   sealed atom refuses as a neutral fibre, at an interfaced atom stating no
+///   law by its missing law, while the same evidence at a closed Bool and at a
+///   lawful atom checks.
 /// - witness: `element_identity::tests::identity_at_an_open_type_is_a_neutral_fibre`
 /// - witness: `element_identity::bridge_tests::an_interfaced_atom_bears_its_relation_as_its_bridge`
+/// - witness: `element_identity::bridge_tests::a_lawful_atom_reads_its_relation_as_its_identity`
 #[spec(ensures: |ret| ret.as_ref().map_or_else(
     |error| matches!(error, &(KernelError::Identity(IdentityError::NeutralFibre | IdentityError::AtomTransport(_)) | KernelError::ArenaFault)),
     |&()| arena.value_type(domain).is_some()))]
@@ -608,6 +622,15 @@ fn require_folded(
     match mode {
         Mode::Bridge => Ok(()),
         Mode::Identity if atoms.is_empty() => Ok(()),
+        Mode::Identity
+            if atoms.iter().all(|&atom| {
+                interfaces
+                    .of_atom(atom)
+                    .is_some_and(|(interface, _)| matches!(interface.law(), Maybe::Present(_)))
+            }) =>
+        {
+            Ok(())
+        },
         Mode::Identity if atoms.iter().any(|&atom| interfaces.of_atom(atom).is_some()) => {
             Err(KernelError::Identity(IdentityError::AtomTransport(
                 value_type_witness(arena, domain),
@@ -759,6 +782,58 @@ pub(crate) fn interface_types(
     let witnessed = arena.comp_type_returner(diagonal);
     let reflexive = arena.comp_type_pi(representation, witnessed);
     (relations, arena.value_type_thunk(reflexive))
+}
+
+/// The type an atom's identity-system law is checked at, over the atom's
+/// representation `R`: `U(Π (a : R). Π (b : R). Π (r : El(⟨relation a b⟩)).
+/// F Path(Σ (y : R). El(⟨relation a y⟩), (b, r), (a, ⟨reflexivity a⟩)))`,
+/// every element of the singleton at `a` identified with its centre.
+///
+/// # Specification
+/// - requires: `relation` and `reflexivity` are closed and have checked at the
+///   types [`interface_types`] gives at `level`.
+/// - ensures: the thunk type above.
+/// - provides: the obligation that makes the relation the atom's identity: by
+///   _Homotopy Type Theory_, Theorem 5.8.2, a reflexive relation whose
+///   singletons are contractible is an identity system, its eliminator and
+///   transport derived from the law.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a law over a representation whose singletons contract
+///   checks at the atom's admission; the same law over a representation whose
+///   relation holds between distinct elements is refused there.
+/// - witness: `element_identity::bridge_tests::a_lawful_atom_reads_its_relation_as_its_identity`
+/// - witness: `element_identity::bridge_tests::a_law_is_checked_where_its_atom_is_admitted`
+#[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&ValueType::Thunk(_))))]
+pub(crate) fn law_type(
+    arena: &mut TermArena,
+    level: &Level,
+    representation: ValueTypeId,
+    (relation, reflexivity): (ValueId, ValueId),
+) -> ValueTypeId
+{
+    let var = |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
+    // Under `a`, `b` and `r`, and under the pair's binder `y` beneath them.
+    let (a, y) = (var(arena, 3), var(arena, 0));
+    let singleton = related_by(arena, relation, (a, y), level.clone());
+    let pairs = arena.value_type_sigma(representation, singleton);
+    let (a, b, r) = (var(arena, 2), var(arena, 1), var(arena, 0));
+    let source = arena.value_tuple(&[b, r]);
+    let forced = arena.computation_force(reflexivity);
+    let diagonal = arena.computation_application(forced, a);
+    let centre = arena.value_returned(diagonal);
+    let centre = arena.value_tuple(&[a, centre]);
+    let contracted = arena.value_type_path(pairs, source, centre);
+    let returns = arena.comp_type_returner(contracted);
+    // Under `a` and `b`: the relation between them.
+    let (a, b) = (var(arena, 1), var(arena, 0));
+    let related = related_by(arena, relation, (a, b), level.clone());
+    let over_r = arena.comp_type_pi(related, returns);
+    let over_b = arena.comp_type_pi(representation, over_r);
+    let over_a = arena.comp_type_pi(representation, over_b);
+    arena.value_type_thunk(over_a)
 }
 
 /// Relate a reflexivity's point to both endpoints of the identity it is

@@ -247,26 +247,34 @@ pub enum SealScope
     Closed(SealExtent),
 }
 
-/// A sealed atom's element interface: the relation two of its elements bear
-/// and that relation's reflexivity.
+/// A sealed atom's element interface: the relation two of its elements bear,
+/// that relation's reflexivity and, optionally, the law that makes the pair
+/// an identity system.
 ///
-/// Both are closed values the atom's admission checks against its
+/// Each is a closed value the atom's admission checks against its
 /// representation `R`, at the level `l` of its kind: `relation` at
-/// `U(R → R → F U_l)` and `reflexivity` at `U(Π (x : R). F El(⟨relation x
-/// x⟩))`. A bridge at the atom reads `relation` as its fibre and `reflexivity`
-/// as its diagonal; the interface carries no transport or coherence, so an
-/// identity at the atom stays refused.
+/// `U(R → R → F U_l)`, `reflexivity` at `U(Π (x : R). F El(⟨relation x
+/// x⟩))`, and `law` at `U(Π (a : R). Π (b : R). Π (r : El(⟨relation a b⟩)).
+/// F Path(Σ (y : R). El(⟨relation a y⟩), (b, r), (a, ⟨reflexivity a⟩)))`:
+/// every element of the singleton at `a` is the centre `(a, reflexivity a)`.
+/// A bridge at the atom reads `relation` as its fibre and `reflexivity` as its
+/// diagonal. An identity at the atom reads them the same way when the law is
+/// stated, the identity system's eliminator and transport deriving from it
+/// (_Homotopy Type Theory_, Theorem 5.8.2); without the law an identity at the
+/// atom stays refused.
 ///
 /// # Specification
 /// - requires: nothing; liveness and typing are the admission's obligations.
-/// - ensures: retains both roots verbatim.
+/// - ensures: retains every root verbatim.
 /// - panics: none.
 /// - executable: none — data declaration, not a callable boundary.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a related atom round-trips with both roots, and the plain
-///   abstract-type kind over the same bytes is refused.
+/// - hypothesis: L3 — a related atom round-trips with its roots, a lawful one
+///   with its law after them, and the kind of one fewer root over the same
+///   bytes is refused.
 /// - witness: `encode::tests::an_interfaced_atom_closes_its_segment_with_its_interface`
+/// - witness: `encode::tests::a_lawful_atom_closes_its_segment_with_its_law`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct AtomInterface
 {
@@ -274,12 +282,14 @@ pub struct AtomInterface
     relation: ValueId,
     /// The relation's reflexivity, one witness per element.
     reflexivity: ValueId,
+    /// The singleton's contraction onto its centre, when stated.
+    law: Maybe<ValueId, law::Absent>,
 }
 
 impl AtomInterface
 {
     /// The interface relating elements by `relation`, reflexive by
-    /// `reflexivity`.
+    /// `reflexivity`, stating no law.
     ///
     /// # Specification
     /// trivial.
@@ -293,6 +303,24 @@ impl AtomInterface
         Self {
             relation,
             reflexivity,
+            law: Maybe::Absent(law::Absent::Unstated),
+        }
+    }
+
+    /// This interface with `law` as its identity-system law.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn lawful(
+        self,
+        law: ValueId,
+    ) -> Self
+    {
+        Self {
+            law: Maybe::Present(law),
+            ..self
         }
     }
 
@@ -316,6 +344,28 @@ impl AtomInterface
     pub const fn reflexivity(&self) -> ValueId
     {
         self.reflexivity
+    }
+
+    /// The identity-system law, when stated.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn law(&self) -> Maybe<ValueId, law::Absent>
+    {
+        self.law
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a sealed atom's interface states no identity-system law.
+    pub mod law {
+        /// The reason an interface states no law.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The declaration states none: an identity at the atom is refused.
+            Unstated,
+        }
     }
 }
 
