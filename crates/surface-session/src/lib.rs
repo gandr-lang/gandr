@@ -181,6 +181,7 @@ mod edit;
 mod forms;
 mod item_source;
 mod live_match;
+mod lowerings;
 mod session;
 mod typed;
 
@@ -212,6 +213,7 @@ pub use crate::live_match::MatchRun;
 pub use crate::live_match::MatchRunFault;
 pub use crate::session::Admitted;
 pub use crate::session::CandidateIndex;
+pub use crate::session::ClosureSlot;
 pub use crate::session::ImportRow;
 pub use crate::session::KernelCheckpoint;
 pub use crate::session::Laying;

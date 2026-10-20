@@ -1139,6 +1139,18 @@ default-features = false
 version = "18.0.1"
 default-features = false
 
+# A value that borrows a value it owns: the lowering's import-closure state,
+# held across rechecks with the closure text, the grammar and the closure's
+# tree it reads.
+# features:
+# - none: the cell needs nothing beyond `core` and `alloc`; `old_rust` only
+#   serves compilers older than the workspace's
+# consumers:
+# - surface-lowering
+[workspace.dependencies.self_cell]
+version = "1.3.0"
+default-features = false
+
 # The serialization framework the render-bus wire image, the language
 # server's protocol messages, the diagnostics' JSON image, the
 # specification-cost ranking's reading of nextest's test list, the build

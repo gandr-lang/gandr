@@ -661,6 +661,38 @@ impl ByteSpan
 
         Self { start, end }
     }
+
+    /// The span `by` bytes later: what the bytes it covers span once a text
+    /// `by` bytes long is laid before them.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: both endpoints moved by `by`, each saturating at the offset
+    ///   ceiling, so the start stays at or below the end.
+    /// - provides: a span of one text read in a text that lays another before
+    ///   it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 only — two saturating additions, separated by an empty
+    ///   span, a nonempty span and a span shifted to the ceiling, each asserted
+    ///   as an exact span.
+    /// - witness: `span::tests::a_shifted_span_moves_both_ends`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.start.0 == self.start.0.saturating_add(by.0)
+        && ret.end.0 == self.end.0.saturating_add(by.0))]
+    pub const fn shifted(
+        self,
+        by: ByteLength,
+    ) -> Self
+    {
+        Self {
+            start: ByteOffset(self.start.0.saturating_add(by.0)),
+            end: ByteOffset(self.end.0.saturating_add(by.0)),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -787,6 +819,32 @@ mod tests
                 .join(span(ByteOffset::from(4_usize), ByteOffset::from(6_usize))),
             span(ByteOffset::from(2_usize), ByteOffset::from(9_usize)),
             "a nested span leaves the enclosing one unchanged"
+        );
+    }
+
+    #[test]
+    fn a_shifted_span_moves_both_ends()
+    {
+        assert_eq!(
+            span(ByteOffset::from(3_usize), ByteOffset::from(3_usize))
+                .shifted(ByteLength::from(4_usize)),
+            span(ByteOffset::from(7_usize), ByteOffset::from(7_usize)),
+            "an empty span stays empty where it lands"
+        );
+        assert_eq!(
+            span(ByteOffset::from(2_usize), ByteOffset::from(5_usize))
+                .shifted(ByteLength::from(10_usize)),
+            span(ByteOffset::from(12_usize), ByteOffset::from(15_usize)),
+            "both ends move by the extent laid before them"
+        );
+        assert_eq!(
+            span(ByteOffset::from(2_usize), ByteOffset::from(5_usize))
+                .shifted(ByteLength::from(usize::MAX.saturating_sub(3_usize))),
+            span(
+                ByteOffset::from(usize::MAX.saturating_sub(1_usize)),
+                ByteOffset::from(usize::MAX)
+            ),
+            "an end past the ceiling saturates, the start below it"
         );
     }
 

@@ -411,6 +411,7 @@ pub use crate::import::ModuleImports;
 pub use crate::import::alias_scope;
 pub use crate::import::aliased;
 pub use crate::lower::AskedRuns;
+pub use crate::lower::ClosureLowering;
 pub use crate::lower::Exit;
 pub use crate::lower::Explicitness;
 pub use crate::lower::Fuel;

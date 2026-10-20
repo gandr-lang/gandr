@@ -653,6 +653,10 @@ mod arity;
 
 mod capability;
 
+mod closure;
+
+pub use closure::ClosureLowering;
+
 mod description;
 
 mod exits;
@@ -2706,6 +2710,7 @@ impl Site
 /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
 /// - witness: `lower::tests::every_minted_node_has_an_origin`
 /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
+#[derive(Clone)]
 struct Lowerer<'run, 'source>
 {
     /// The grammar the tree was molded under.
@@ -3066,20 +3071,22 @@ struct Current
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Ours(bool);
 
-/// Each node's source: a top-level node's is the source its span starts in,
-/// and every other node's is its parent's.
+/// Each node's source: a root's and a top-level node's is the source its span
+/// starts in, and every other node's is its parent's.
 ///
 /// # Specification
 /// - requires: `unit` lays out the text `tree` was parsed from.
-/// - ensures: one source per node; the root and every node under a top-level
-///   form hold that form's source, the root the first.
+/// - ensures: one source per node; each root holds the source it starts in, and
+///   every node under a top-level form holds that form's source.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a two-source unit's nodes split at the second source's
-///   first form.
+///   first form, whether its tree is one parse or a closure's with the
+///   document's laid after it.
 /// - witness: `tests::namespace::a_source_lowers_alike_whatever_follows_it_776`
+/// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
 #[spec(ensures: |ret| ret.len() == usize::from(tree.node_count()))]
 fn sources_of(
     tree: &SyntaxTree<'_>,
@@ -3088,11 +3095,17 @@ fn sources_of(
 {
     let mut of = Vec::new();
     of.resize(usize::from(tree.node_count()), SourceIndex::default());
-    let root = tree.root();
+    let roots = tree.roots();
+    for &root in roots {
+        if let (Some(held), Some(node)) = (of.get_mut(usize::from(root)), tree.node(root)) {
+            *held = unit.source_at(node.span().start());
+        }
+    }
     for position in tree.positions() {
         let own = of.get(usize::from(position)).copied().unwrap_or_default();
+        let rooted = roots.binary_search(&position).is_ok();
         for child in tree.children(position) {
-            let source = if position == root {
+            let source = if rooted {
                 tree.node(child)
                     .map_or(own, |node| unit.source_at(node.span().start()))
             }
@@ -3405,128 +3418,396 @@ pub fn lower_unit<'source>(
             grammar: pbg.fingerprint(),
         });
     }
-    let empty = |outermost| {
-        LoweredModule::new(
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            AttributeTable::new(),
-            OriginTable::new(),
-            ModuleImports::new(),
-            outermost,
-        )
-    };
-    let Some(root) = tree.node(tree.root())
-    else {
-        return Ok(empty(outermost));
-    };
-    match shape_of(pbg, root)? {
-        Shape::Root => {},
-        Shape::Layout => return Ok(empty(outermost)),
-        Shape::Form { name, .. } => {
-            return Err(LoweringRefusal::OutOfFragment {
-                span: root.span(),
-                form: name,
-                sort: FragmentSort::Module,
-                boundary: FragmentBoundary::WrongSort,
-            });
-        },
-        Shape::Repair(repair) => {
-            return Err(LoweringRefusal::MalformedForm {
-                span: root.span(),
-                form: FormName::ROOT,
-                fault: FormFault::Repaired(repair),
-            });
-        },
+    if rooted(pbg, tree, tree.roots())? == Rooted(false) {
+        return Ok(empty_module(outermost));
     }
-    let fuel = Fuel::new(budget);
     let collected = begin_collection(pbg, tree, unit)?;
     let pieces = root_pieces(pbg, tree)?;
-    let mut lowerer = Lowerer::new(pbg, tree, collected, fuel, outermost);
+    let mut lowerer = Lowerer::new(pbg, tree, collected, Fuel::new(budget), outermost);
     let mut origins = OriginTable::new();
-    let mut sink = Sink {
-        arena,
-        origins: &mut origins,
-        exits: BTreeSet::new(),
-        distributed: BTreeMap::new(),
-        host: capability::Host::Unminted,
-        loops: BTreeSet::new(),
-        breaks: BTreeSet::new(),
-        identities: BTreeMap::new(),
-    };
+    let mut sink = Sink::new(arena, &mut origins, SinkTables::new());
     for (source, own) in source_pieces(unit, pieces).into_iter().enumerate() {
-        lowerer.begin_source(SourceIndex::from(source), own)?;
-        lowerer.refuse_imports();
-        lowerer.declare();
-        lowerer.seed()?;
-        lowerer.survey()?;
-        lowerer.classify()?;
-        lowerer.refuse_unsynthesised()?;
-        lowerer.propagate_manifests();
-        while lowerer.refuse_unrepresented().0 {
-            lowerer.propagate_manifests();
-        }
-        lowerer.mint(&mut sink)?;
-        lowerer.mint_joints(&mut sink);
-        lowerer.mint_abstracts(&mut sink);
-        lowerer.mint_models(&mut sink);
-        lowerer.check_families(&mut sink);
-        lowerer.mint_data(&mut sink);
-        lowerer.mint_descriptions(&mut sink)?;
-        lowerer.mint_presentations(&mut sink)?;
-        lowerer.mint_operations(&mut sink);
-        lowerer.mint_instances(&mut sink);
+        lowerer.lower_source(SourceIndex::from(source), own, &mut sink)?;
     }
-    let mut attributes = AttributeTable::new();
-    lowerer.attribute(&mut attributes, sink.arena)?;
-    let documentation = lowerer.document()?;
-    let inferred = lowerer.inferred_exits();
-    let nested = lowerer.nested_sites(&origins);
-    let declarations = lowerer.assemble(&mut origins);
-    let structures = lowerer.structures();
-    let in_scope = lowerer.in_scope();
-    let Lowerer {
-        collected,
-        recognition,
-        data,
-        constructors,
-        codata,
-        mut resolutions,
-        ..
-    } = lowerer;
-    resolutions.sort_unstable();
-    resolutions.dedup();
-    let operation_rules = collected
-        .operations
-        .iter()
-        .map(|(&slot, plan)| (ConstantIndex::from(usize::from(slot)), plan.rules().clone()))
-        .collect();
 
-    Ok(LoweredModule::new(
-        declarations,
-        data,
-        structures,
-        attributes,
-        origins,
-        collected.imports,
-        recognition,
+    lowerer.finish(arena, origins)
+}
+
+/// Whether some root reads as a module's root: a root that is layout lowers
+/// to nothing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+struct Rooted(bool);
+
+/// Whether some root of `roots` reads as a module's, refusing a root of any
+/// other shape.
+///
+/// # Specification
+/// - requires: `roots` are roots of `tree`, molded under `pbg`.
+/// - ensures: `Rooted(true)` when a root reads as a module's root, and
+///   `Rooted(false)` when every root is layout or the tree holds none.
+/// - fails: [`LoweringRefusal::OutOfFragment`] at the first root that is a
+///   form, [`LoweringRefusal::MalformedForm`] at the first that is a repair,
+///   and [`LoweringRefusal::UnknownMold`] for a mold `pbg` does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// As the specification's fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a root that is a form refuses the module, and a document
+///   resumed after its closure reads the closure's roots before its own.
+/// - witness: `lower::tests::a_root_that_is_not_a_module_is_refused`
+/// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+#[spec(ensures: |ret| ret.is_err() || !roots.is_empty() || matches!(ret, Ok(Rooted(false))))]
+fn rooted<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    roots: &[NodeIndex],
+) -> Result<Rooted, LoweringRefusal<'source>>
+{
+    let mut rooted = Rooted(false);
+    for &position in roots {
+        let Some(root) = tree.node(position)
+        else {
+            continue;
+        };
+        match shape_of(pbg, root)? {
+            Shape::Root => rooted = Rooted(true),
+            Shape::Layout => {},
+            Shape::Form { name, .. } => {
+                return Err(LoweringRefusal::OutOfFragment {
+                    span: root.span(),
+                    form: name,
+                    sort: FragmentSort::Module,
+                    boundary: FragmentBoundary::WrongSort,
+                });
+            },
+            Shape::Repair(repair) => {
+                return Err(LoweringRefusal::MalformedForm {
+                    span: root.span(),
+                    form: FormName::ROOT,
+                    fault: FormFault::Repaired(repair),
+                });
+            },
+        }
+    }
+
+    Ok(rooted)
+}
+
+/// The module of a tree no root of which reads as a module's: nothing
+/// declared over `outermost`.
+///
+/// # Specification
+/// trivial.
+fn empty_module<'source>(outermost: Recognition) -> LoweredModule<'source>
+{
+    LoweredModule::new(
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        AttributeTable::new(),
+        OriginTable::new(),
+        ModuleImports::new(),
+        outermost,
     )
-    .with_descriptions(
-        crate::description::DescriptionReport {
-            declarations: collected.descriptions.into_values().collect(),
-            diagnostics: collected.description_diagnostics,
-            natives: collected.natives,
-        },
-        collected.cells,
+}
+
+/// The tables the mint sweep keeps beside the arena and the origin table,
+/// held between two sources' lowerings.
+///
+/// # Specification
+/// - ensures: each table is [`Sink`]'s field of the same name.
+/// - provides: what a lowering suspended at a source boundary carries of its
+///   sink.
+/// - fails: none as a data value.
+/// - panics: none as a data value.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a document resumed after its closure commutes its exits
+///   over the closure's tables as the whole lowering does.
+/// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+#[derive(Clone, Debug)]
+struct SinkTables
+{
+    /// [`Sink::exits`].
+    exits: BTreeSet<ComputationId>,
+    /// [`Sink::distributed`].
+    distributed: BTreeMap<ComputationId, Origin>,
+    /// [`Sink::host`].
+    host: capability::Host,
+    /// [`Sink::loops`].
+    loops: BTreeSet<ComputationId>,
+    /// [`Sink::breaks`].
+    breaks: BTreeSet<ComputationId>,
+    /// [`Sink::identities`].
+    identities: BTreeMap<ComputationId, identity::Identity>,
+}
+
+impl SinkTables
+{
+    /// The tables before anything is minted: every table empty, the host
+    /// unminted.
+    ///
+    /// # Specification
+    /// trivial.
+    fn new() -> Self
+    {
+        Self {
+            exits: BTreeSet::new(),
+            distributed: BTreeMap::new(),
+            host: capability::Host::Unminted,
+            loops: BTreeSet::new(),
+            breaks: BTreeSet::new(),
+            identities: BTreeMap::new(),
+        }
+    }
+}
+
+impl<'run> Sink<'run>
+{
+    /// The sink writing into `arena` and `origins`, its tables `tables`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn new(
+        arena: &'run mut CoreArena,
+        origins: &'run mut OriginTable,
+        tables: SinkTables,
+    ) -> Self
+    {
+        let SinkTables {
+            exits,
+            distributed,
+            host,
+            loops,
+            breaks,
+            identities,
+        } = tables;
+        Self {
+            arena,
+            origins,
+            exits,
+            distributed,
+            host,
+            loops,
+            breaks,
+            identities,
+        }
+    }
+
+    /// The sink's tables, its arena and origin table released.
+    ///
+    /// # Specification
+    /// trivial.
+    fn into_tables(self) -> SinkTables
+    {
+        let Self {
+            exits,
+            distributed,
+            host,
+            loops,
+            breaks,
+            identities,
+            ..
+        } = self;
+        SinkTables {
+            exits,
+            distributed,
+            host,
+            loops,
+            breaks,
+            identities,
+        }
+    }
+}
+
+impl<'run, 'source> Lowerer<'run, 'source>
+{
+    /// Lower `source`, whose top-level forms are `pieces`: its collection and
+    /// every pass over it, minting into `sink`.
+    ///
+    /// # Specification
+    /// - requires: every source before `source` is lowered, and none after.
+    /// - ensures: `source`'s declarations are collected and every pass over
+    ///   them has run, its core nodes minted into `sink` after the earlier
+    ///   sources'.
+    /// - provides: one step of [`lower_unit`], and what a resumed lowering
+    ///   takes after its closure's.
+    /// - fails: the module-level refusals [`lower_unit`] names, raised by this
+    ///   source.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the specification's fails clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`lower_unit`].
+    /// - witness: `tests::namespace::a_source_lowers_alike_whatever_follows_it_776`
+    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    #[spec(ensures: |result| result.is_err() || self.current.source == source)]
+    fn lower_source(
+        &mut self,
+        source: SourceIndex,
+        pieces: Vec<Piece>,
+        sink: &mut Sink<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        self.begin_source(source, pieces)?;
+        self.refuse_imports();
+        self.declare();
+        self.seed()?;
+        self.survey()?;
+        self.classify()?;
+        self.refuse_unsynthesised()?;
+        self.propagate_manifests();
+        while self.refuse_unrepresented().0 {
+            self.propagate_manifests();
+        }
+        self.mint(sink)?;
+        self.mint_joints(sink);
+        self.mint_abstracts(sink);
+        self.mint_models(sink);
+        self.check_families(sink);
+        self.mint_data(sink);
+        self.mint_descriptions(sink)?;
+        self.mint_presentations(sink)?;
+        self.mint_operations(sink);
+        self.mint_instances(sink);
+
+        Ok(())
+    }
+
+    /// The module every source lowered amounts to: its attributes,
+    /// documentation, exits and declarations, assembled over `arena` and
+    /// `origins`.
+    ///
+    /// # Specification
+    /// - requires: every source of the unit is lowered into `arena`, its
+    ///   origins recorded in `origins`.
+    /// - ensures: the module [`lower_unit`] answers.
+    /// - provides: the tail of [`lower_unit`] and of a resumed lowering.
+    /// - fails: as the attribute and documentation readings.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the specification's fails clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`lower_unit`].
+    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
+    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |module| {
+        usize::from(module.origins().declaration_count()) == module.declarations().len()
+    }))]
+    fn finish(
+        mut self,
+        arena: &CoreArena,
+        mut origins: OriginTable,
+    ) -> Result<LoweredModule<'source>, LoweringRefusal<'source>>
+    {
+        let mut attributes = AttributeTable::new();
+        self.attribute(&mut attributes, arena)?;
+        let documentation = self.document()?;
+        let inferred = self.inferred_exits();
+        let nested = self.nested_sites(&origins);
+        let declarations = self.assemble(&mut origins);
+        let structures = self.structures();
+        let in_scope = self.in_scope();
+        let Self {
+            collected,
+            recognition,
+            data,
+            constructors,
+            codata,
+            mut resolutions,
+            ..
+        } = self;
+        resolutions.sort_unstable();
+        resolutions.dedup();
+        let operation_rules = collected
+            .operations
+            .iter()
+            .map(|(&slot, plan)| (ConstantIndex::from(usize::from(slot)), plan.rules().clone()))
+            .collect();
+
+        Ok(LoweredModule::new(
+            declarations,
+            data,
+            structures,
+            attributes,
+            origins,
+            collected.imports,
+            recognition,
+        )
+        .with_descriptions(
+            crate::description::DescriptionReport {
+                declarations: collected.descriptions.into_values().collect(),
+                diagnostics: collected.description_diagnostics,
+                natives: collected.natives,
+            },
+            collected.cells,
+        )
+        .with_documentation(documentation)
+        .with_constructors(constructors)
+        .with_codata(codata)
+        .with_inferred_exits(inferred)
+        .with_nested_sites(nested)
+        .with_in_scope(in_scope)
+        .with_resolutions(resolutions)
+        .with_operation_rules(operation_rules))
+    }
+
+    /// Rebind the lowering to `tree`, which lays more nodes after the ones
+    /// it read, under `unit`, which lays more sources after the ones it
+    /// lowered, `described` the description reading of the roots `tree`
+    /// adds.
+    ///
+    /// # Specification
+    /// - requires: `tree`'s first nodes are the nodes the lowering read, at the
+    ///   same positions over the same text, and `unit`'s first sources the ones
+    ///   it lowered; `described` is [`crate::description::elaborate_roots`]
+    ///   over the added roots, numbered after the descriptions collected.
+    /// - ensures: one cell per node of `tree` in every per-node table, the
+    ///   added nodes' as [`Self::new`] makes them and the read nodes' kept; the
+    ///   collection widened as [`Collected::widen`] says; every node's source
+    ///   read over `tree`; the holes, once read, read over `tree`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a document resumed after its closure lowers as the
+    ///   whole unit does, holes and descriptions included.
+    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    #[spec(ensures: self.readings.len() == usize::from(tree.node_count())
+        && self.source_of.len() == usize::from(tree.node_count()))]
+    fn widen(
+        &mut self,
+        tree: &'run SyntaxTree<'source>,
+        unit: &Unit,
+        described: crate::description::DescriptionReport,
     )
-    .with_documentation(documentation)
-    .with_constructors(constructors)
-    .with_codata(codata)
-    .with_inferred_exits(inferred)
-    .with_nested_sites(nested)
-    .with_in_scope(in_scope)
-    .with_resolutions(resolutions)
-    .with_operation_rules(operation_rules))
+    {
+        let read = NodeIndex::from(self.readings.len());
+        let count = usize::from(tree.node_count());
+        self.tree = tree;
+        self.readings.resize(count, Reading::Unread);
+        self.plans.resize(count, Plan::Unplanned);
+        self.taken.resize(count, false);
+        self.bridges.resize(count, Bridge::Bare);
+        self.lowered
+            .resize(count, Maybe::Absent(lowered::Absent::Unminted));
+        self.payload.resize(count, InPayload(false));
+        self.scopes
+            .resize(count, Maybe::Absent(scoped::Absent::Unscoped));
+        self.leaves.resize(count, exits::Leaves::Never);
+        self.collected.widen(tree.node_count(), unit, described);
+        self.source_of = sources_of(tree, unit);
+        if !self.holes.is_empty() {
+            self.read_holes(read);
+        }
+    }
 }
 
 impl<'run, 'source> Lowerer<'run, 'source>
@@ -10353,17 +10634,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<gandr_core_term::hole::HoleId, LoweringRefusal<'source>>
     {
         if self.holes.is_empty() {
-            for position in self.tree.positions() {
-                let Some(node) = self.tree.node(position)
-                else {
-                    continue;
-                };
-                if matches!(shape_of(self.pbg, node), Ok(Shape::Form { name, .. }) if name == FormName::HOLE)
-                {
-                    self.holes.push((node.span().start(), position));
-                }
-            }
-            self.holes.sort_unstable();
+            self.read_holes(NodeIndex::from(0_usize));
         }
         let exceeded = LoweringRefusal::BudgetExceeded {
             budget: self.fuel.budget,
@@ -10375,6 +10646,47 @@ impl<'run, 'source> Lowerer<'run, 'source>
         u32::try_from(place)
             .map(gandr_core_term::hole::HoleId::from)
             .map_err(|_overflow| exceeded)
+    }
+
+    /// Read the holes among the tree's nodes from `from` on into the holes
+    /// read before, in the order the text writes them.
+    ///
+    /// # Specification
+    /// - requires: no node from `from` on was read before.
+    /// - ensures: every hole from `from` on is held, sorted by where its text
+    ///   starts beside the holes held before.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::hole`]; a document resumed after a closure
+    ///   that read its holes names its own after the closure's.
+    /// - witness: `lower::tests::source_holes_keep_their_families_and_distinct_occurrences`
+    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body reads every node from `from` on and sorts the holes once; the check reads each hole once more"
+        )
+    )]
+    #[spec(ensures: self.holes.is_sorted())]
+    fn read_holes(
+        &mut self,
+        from: NodeIndex,
+    )
+    {
+        for position in self.tree.positions().skip(usize::from(from)) {
+            let Some(node) = self.tree.node(position)
+            else {
+                continue;
+            };
+            if matches!(shape_of(self.pbg, node), Ok(Shape::Form { name, .. }) if name == FormName::HOLE)
+            {
+                self.holes.push((node.span().start(), position));
+            }
+        }
+        self.holes.sort_unstable();
     }
 
     /// The descending sweep: mint every planned node and record its origin.

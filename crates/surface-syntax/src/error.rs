@@ -9,6 +9,7 @@ use core::error::Error;
 use core::fmt;
 
 use crate::build::StagedId;
+use crate::mold::GrammarFingerprint;
 use crate::span::ByteOffset;
 use crate::span::ByteSpan;
 
@@ -76,6 +77,25 @@ pub enum SyntaxError
         /// The identity offered twice.
         node: StagedId,
     },
+
+    /// Two trees were offered to be joined that were molded under different
+    /// grammars, so no one mold table reads the joined tree's labels.
+    GrammarsDisagree
+    {
+        /// The grammar the first tree was molded under.
+        before: GrammarFingerprint,
+        /// The grammar the second tree was molded under.
+        after: GrammarFingerprint,
+    },
+
+    /// A text was offered for two joined trees that does not lay their two
+    /// sources end to end.
+    SourcesDisagree
+    {
+        /// Where the second tree's source starts were it laid after the
+        /// first's: the first source's length.
+        at: ByteOffset,
+    },
 }
 
 impl fmt::Display for SyntaxError
@@ -127,6 +147,18 @@ impl fmt::Display for SyntaxError
             },
             Self::ChildAlreadyAttached { node } => {
                 write!(f, "staged node {node} already has a parent")
+            },
+            Self::GrammarsDisagree { before, after } => write!(
+                f,
+                "the trees to join were molded under grammars {:#018x} and {:#018x}",
+                u64::from(before),
+                u64::from(after)
+            ),
+            Self::SourcesDisagree { at } => {
+                write!(
+                    f,
+                    "the text does not lay the joined sources end to end at offset {at}"
+                )
             },
         }
     }
@@ -199,6 +231,11 @@ mod tests
             SyntaxError::UnknownStagedNode { node },
             SyntaxError::BuilderIdExhausted,
             SyntaxError::ChildAlreadyAttached { node },
+            SyntaxError::GrammarsDisagree {
+                before: GrammarFingerprint::from(1_u64),
+                after: GrammarFingerprint::from(2_u64),
+            },
+            SyntaxError::SourcesDisagree { at: zero },
         ] {
             assert!(
                 crate::test_support::RefusingSink
@@ -231,6 +268,19 @@ mod tests
                     offset: ByteOffset::from(1_usize),
                 },
                 ["1", "1"],
+            ),
+            (
+                SyntaxError::GrammarsDisagree {
+                    before: GrammarFingerprint::from(0x1f_u64),
+                    after: GrammarFingerprint::from(0x2e_u64),
+                },
+                ["0x000000000000001f", "0x000000000000002e"],
+            ),
+            (
+                SyntaxError::SourcesDisagree {
+                    at: ByteOffset::from(41_usize),
+                },
+                ["41", "41"],
             ),
         ];
         let exhausted = format!("{}", SyntaxError::BuilderIdExhausted);

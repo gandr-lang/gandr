@@ -90,6 +90,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SyntaxTree;
 use gandr_theory_levitation::Attrs;
 use gandr_theory_levitation::Code;
@@ -554,11 +555,55 @@ pub fn elaborate_descriptions<'source>(
             grammar: grammar.fingerprint(),
         });
     }
-    let reader = Reader { grammar, tree };
     let mut report = DescriptionReport::default();
+    elaborate_roots(
+        grammar,
+        tree,
+        tree.roots(),
+        NominalSerial::from(0_u64),
+        &mut report,
+    )?;
+
+    Ok(report)
+}
+
+/// Read the data and codata declarations under `roots` into `report`, the
+/// first of them numbered `first`, retaining every readable sibling.
+///
+/// # Specification
+/// - requires: `grammar` interprets `tree`, and `roots` are roots of `tree`.
+/// - ensures: as [`elaborate_descriptions`], over the declarations under
+///   `roots` in their order, each appended to `report` after what it holds and
+///   numbered `first` and on in that order.
+/// - provides: the description reading of a document laid after a closure whose
+///   declarations were read before.
+/// - fails: as [`elaborate_descriptions`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`elaborate_descriptions`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`elaborate_descriptions`]; a document resumed after
+///   its closure numbers its declarations as the whole unit's reading does.
+/// - witness: `description::tests::data_lowering_preserves_constructor_fields`
+/// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+#[spec(
+    captures: before = report.declarations.len(),
+    ensures: |result| result.is_err() || report.declarations.len() >= before,
+)]
+pub(crate) fn elaborate_roots<'source>(
+    grammar: &Pbg,
+    tree: &SyntaxTree<'source>,
+    roots: &[NodeIndex],
+    first: NominalSerial,
+    report: &mut DescriptionReport,
+) -> Result<(), LoweringRefusal<'source>>
+{
+    let reader = Reader { grammar, tree };
     // The declarations in source order: a mutual block's members are read in
     // its place, as declarations of their own.
-    let mut pending: Vec<_> = tree.children(tree.root()).collect();
+    let mut pending: Vec<_> = roots.iter().flat_map(|&root| tree.children(root)).collect();
     pending.reverse();
     while let Some(position) = pending.pop() {
         let Some(node) = tree.node(position)
@@ -577,8 +622,10 @@ pub fn elaborate_descriptions<'source>(
             continue;
         }
         let mut run = Run::new(&pieces.pieces, at.span);
-        let serial =
-            NominalSerial::from(u64::try_from(report.declarations.len()).unwrap_or(u64::MAX));
+        let serial = NominalSerial::from(
+            u64::from(first)
+                .saturating_add(u64::try_from(report.declarations.len()).unwrap_or(u64::MAX)),
+        );
         let reported = report.diagnostics.len();
         let declaration = if run.eat(Spelling("data")).0 {
             reader.declaration(
@@ -655,7 +702,7 @@ pub fn elaborate_descriptions<'source>(
             Err(diagnostic) => report.diagnostics.push(diagnostic),
         }
     }
-    Ok(report)
+    Ok(())
 }
 
 impl Reader<'_, '_>

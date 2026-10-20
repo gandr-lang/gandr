@@ -246,6 +246,7 @@ pub(super) struct Scoped
 ///
 /// # Specification
 /// trivial.
+#[derive(Clone, Debug)]
 pub(super) enum Host
 {
     /// No capability form has been minted.

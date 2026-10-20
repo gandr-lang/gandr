@@ -395,13 +395,17 @@ impl Signatures
         unit: &Unit,
     ) -> Self
     {
-        let text = SourceText::from(
-            tree.fragment(tree.root())
-                .map(<&str>::from)
-                .unwrap_or_default(),
-        );
+        let text = tree.source();
         let mut heads: Vec<((SourceIndex, ByteSpan), Signature)> = Vec::new();
-        let mut pending: Vec<(NodeIndex, Option<String>)> = Vec::from([(tree.root(), None)]);
+        // The roots of a forest read as the one root of the text they lay end
+        // to end: their children are one level.
+        let mut pending: Vec<(NodeIndex, Option<String>)> = Vec::new();
+        level(
+            grammar,
+            tree,
+            tree.roots().iter().flat_map(|&root| tree.children(root)),
+            &mut pending,
+        );
         while let Some((at, carried)) = pending.pop() {
             let read = Form::of(grammar, roles, tree, at);
             if let Some(ref form) = read {
@@ -411,37 +415,7 @@ impl Signatures
                     }
                 });
             }
-            let first = pending.len();
-            let mut documented: Option<String> = None;
-            for child in tree.children(at) {
-                let Some(node) = tree.node(child)
-                else {
-                    continue;
-                };
-                match node.label() {
-                    NodeLabel::Doc => append(&mut documented, documentation(grammar, tree, child)),
-                    NodeLabel::Meld(mold)
-                        if grammar
-                            .rule_of(mold)
-                            .is_ok_and(|rule| rule.name().0 == ATTRIBUTE_BLOCK) =>
-                    {
-                        for inner in tree.children(child) {
-                            if tree.node(inner).map(Node::label) == Some(NodeLabel::Doc) {
-                                append(&mut documented, documentation(grammar, tree, inner));
-                            }
-                        }
-                    },
-                    NodeLabel::Meld(_) => pending.push((child, documented.take())),
-                    NodeLabel::Tile(_) => documented = None,
-                    NodeLabel::Wald
-                    | NodeLabel::Grout { .. }
-                    | NodeLabel::GhostClose { .. }
-                    | NodeLabel::Space => {},
-                }
-            }
-            if let Some(added) = pending.get_mut(first ..) {
-                added.reverse();
-            }
+            level(grammar, tree, tree.children(at), &mut pending);
         }
         heads.sort_by_key(|held| held.0);
         heads.dedup_by(|second, first| first.0 == second.0);
@@ -464,6 +438,62 @@ impl Signatures
             .ok()
             .and_then(|at| self.0.get(at))
             .map(|held| &held.1)
+    }
+}
+
+/// Push the forms among `children`, one level of `tree`, onto `pending` so
+/// that the first pops first, each with the documentation written before it
+/// since the last form or tile: in its attribute blocks or as its own
+/// documentation nodes.
+///
+/// # Specification
+/// - requires: `children` are siblings in `tree`, in order.
+/// - ensures: one entry per form among them, in reverse order, each carrying
+///   the documentation [`Signatures::of`] reads for it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Signatures::of`].
+/// - witness: `signature::tests::each_head_reads_its_parameters`
+#[spec(captures: before = pending.len(), ensures: pending.len() >= before)]
+fn level(
+    grammar: &Pbg,
+    tree: &SyntaxTree<'_>,
+    children: impl IntoIterator<Item = NodeIndex>,
+    pending: &mut Vec<(NodeIndex, Option<String>)>,
+)
+{
+    let first = pending.len();
+    let mut documented: Option<String> = None;
+    for child in children {
+        let Some(node) = tree.node(child)
+        else {
+            continue;
+        };
+        match node.label() {
+            NodeLabel::Doc => append(&mut documented, documentation(grammar, tree, child)),
+            NodeLabel::Meld(mold)
+                if grammar
+                    .rule_of(mold)
+                    .is_ok_and(|rule| rule.name().0 == ATTRIBUTE_BLOCK) =>
+            {
+                for inner in tree.children(child) {
+                    if tree.node(inner).map(Node::label) == Some(NodeLabel::Doc) {
+                        append(&mut documented, documentation(grammar, tree, inner));
+                    }
+                }
+            },
+            NodeLabel::Meld(_) => pending.push((child, documented.take())),
+            NodeLabel::Tile(_) => documented = None,
+            NodeLabel::Wald
+            | NodeLabel::Grout { .. }
+            | NodeLabel::GhostClose { .. }
+            | NodeLabel::Space => {},
+        }
+    }
+    if let Some(added) = pending.get_mut(first ..) {
+        added.reverse();
     }
 }
 

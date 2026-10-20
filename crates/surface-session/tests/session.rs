@@ -1050,8 +1050,9 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
             panic!("the document is laid out after its sibling: {laid:?}");
         };
         let text = SourceText::from(laid.text.as_str());
+        let slot = gandr_surface_session::ClosureSlot::new();
         let _judged = session
-            .judge_unit_reading(text, &laid.unit, laid.base, |_| ())
+            .judge_unit_reading(text, &laid.unit, laid.base, &slot, |_| ())
             .expect("the revision is judged");
         let Ok(Maybe::Present(admitted)) = session.admit()
         else {
@@ -1109,5 +1110,193 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
         (1_usize, 3_usize, true),
         "and the changed closure is resumed thereafter"
     );
+    let _removed = std::fs::remove_dir_all(&directory);
+}
+
+/// #1033: an importer judged twice lowers its closure once and its own source
+/// each time; a second session judges it over the closure the first lowered,
+/// to the same composition; every judgement reports what the dispatcher
+/// reports of the whole laid-out text lowered whole; and the session's held
+/// parse of each revision is the tree its judgement read.
+#[test]
+fn an_importer_lowers_its_closure_once_1033()
+{
+    use gandr_core_checker::HostGrant;
+    use gandr_core_incremental::MemoryCheckpointStore;
+    use gandr_storage_records::InMemoryBlockStore;
+    use gandr_surface_corpus::CorpusRoot;
+    use gandr_surface_dispatcher::Laid;
+    use gandr_surface_dispatcher::Lowered;
+    use gandr_surface_dispatcher::LoweringCount;
+    use gandr_surface_dispatcher::judge_member;
+    use gandr_surface_dispatcher::lay_out;
+    use gandr_surface_dispatcher::lower_unit_source;
+    use gandr_surface_lowering::OriginTable;
+    use gandr_surface_session::ClosureSlot;
+    use gandr_surface_session::Session;
+    use gandr_surface_syntax::SourceText;
+
+    /// The sources a judgement of `laid` lowered, and its composition with
+    /// the origin table, which indexes the syntax tree it was read off,
+    /// cleared; the session's held parse of `laid` is the tree the judgement
+    /// read.
+    fn judged<'text>(
+        session: &mut Session<MemoryCheckpointStore, InMemoryBlockStore>,
+        laid: &'text Laid,
+        slot: &'text ClosureSlot,
+    ) -> (LoweringCount, Composed<'text>)
+    {
+        let text = SourceText::from(laid.text.as_str());
+        let before = usize::from(session.lowerings());
+        let mut read = None;
+        let submission = session
+            .judge_unit_reading(text, &laid.unit, laid.base, slot, |tree| {
+                read = Some(tree.clone());
+            })
+            .expect("the revision is judged");
+        let lowered = usize::from(session.lowerings()).saturating_sub(before);
+        let held = session
+            .parse_held_unit(text, &laid.unit, laid.base)
+            .expect("the revision parses held");
+        assert_eq!(
+            Some(held.tree()),
+            read.as_ref(),
+            "the held parse is the tree the judgement read"
+        );
+        (
+            LoweringCount::from(lowered),
+            unrooted(submission.composed().clone()),
+        )
+    }
+
+    /// What the dispatcher composes of `laid`'s whole text lowered whole, its
+    /// origin table cleared.
+    fn whole(laid: &Laid) -> Composed<'_>
+    {
+        let text = SourceText::from(laid.text.as_str());
+        let Lowered::Module { module, arena } = lower_unit_source(
+            &crate::common::GRAMMAR,
+            text,
+            &laid.unit,
+            &mut LoweringCount::default(),
+        )
+        .expect("the revision lowers")
+        .into_lowered()
+        else {
+            panic!("the revision is not refused whole");
+        };
+        let (settled, _admission) = judge_member(
+            CorpusRoot::Strict,
+            (module, text),
+            arena,
+            &HostGrant::UNBOUNDED,
+            laid.base,
+        )
+        .into_parts();
+        unrooted(settled.expect("the revision settles"))
+    }
+
+    /// `composed` with its origin table cleared: the one table that differs
+    /// between the document laid after its closure's tree and the whole
+    /// text's tree, the nodes being numbered in each.
+    fn unrooted(composed: Composed<'_>) -> Composed<'_>
+    {
+        match composed {
+            Composed::Settled {
+                report,
+                exercised,
+                unstatable,
+                spellings,
+                failures,
+                shadowed,
+                inferred,
+                runs,
+                kernel,
+                program,
+                ..
+            } => Composed::Settled {
+                report,
+                exercised,
+                unstatable,
+                origins: OriginTable::default(),
+                spellings,
+                failures,
+                shadowed,
+                inferred,
+                runs,
+                kernel,
+                program,
+            },
+            refused @ Composed::Refused(_) => refused,
+        }
+    }
+
+    let directory =
+        std::env::temp_dir().join(format!("gandr-session-closure-1033-{}", std::process::id()));
+    let _cleared = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+    let directory =
+        std::fs::canonicalize(&directory).expect("the scratch directory has a canonical path");
+    let sibling = directory.join("base.gandr");
+    let document = directory.join("document.gandr");
+    std::fs::write(
+        &sibling,
+        "/// #1033: the closure.\ndef one : Integer ;\ndef one = 1 ;\ndef two : Integer ;\ndef \
+         two = one ;\n",
+    )
+    .expect("the sibling is written");
+    // The editor's buffer is what is judged; the file only has to exist.
+    std::fs::write(&document, "").expect("the document is written");
+    let laid = |own: &str| {
+        let laid = lay_out(
+            &crate::common::GRAMMAR,
+            &document,
+            SourceRoot::Strict,
+            own.into(),
+        );
+        let Maybe::Present(laid) = laid
+        else {
+            panic!("the document is laid out after its sibling: {laid:?}");
+        };
+        laid
+    };
+    let first = laid("import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = two ;\n");
+    let second = laid(
+        "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = two ;\ndef four : \
+         Integer ;\ndef four = three ;\n",
+    );
+    let (cold_slot, again_slot, warm_slot) =
+        (ClosureSlot::new(), ClosureSlot::new(), ClosureSlot::new());
+    let mut cold = session(SourceRoot::Strict);
+    let (lowered, composed) = judged(&mut cold, &first, &cold_slot);
+    assert_eq!(
+        lowered,
+        LoweringCount::from(2_usize),
+        "the first judgement lowers the closure and the document"
+    );
+    assert_eq!(
+        composed,
+        whole(&first),
+        "and reports the whole text's composition"
+    );
+    let (lowered, again) = judged(&mut cold, &second, &again_slot);
+    assert_eq!(
+        lowered,
+        LoweringCount::from(1_usize),
+        "an edit to the document's own text lowers the document alone"
+    );
+    assert_eq!(
+        again,
+        whole(&second),
+        "and reports the whole text's composition"
+    );
+    let mut warm = session(SourceRoot::Strict);
+    let (lowered, warmed) = judged(&mut warm, &first, &warm_slot);
+    assert_eq!(
+        lowered,
+        LoweringCount::from(1_usize),
+        "a second session lowers the document over the closure the first lowered"
+    );
+    assert_eq!(warmed, composed, "to the composition the cold store gave");
     let _removed = std::fs::remove_dir_all(&directory);
 }

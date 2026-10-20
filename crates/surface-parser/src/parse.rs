@@ -161,15 +161,18 @@
 //!   digest of the identity.
 
 use alloc::boxed::Box;
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_syntax::ByteLength;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
+use gandr_surface_syntax::SyntaxError;
 use gandr_surface_syntax::SyntaxTree;
 
 use crate::FormUnit;
@@ -358,7 +361,7 @@ impl<'source> ParseResult<'source>
     pub fn minted_close_classes(&self) -> Vec<ClosingClass>
     {
         let mut classes = Vec::new();
-        let mut pending: Vec<NodeIndex> = Vec::from([self.tree.root()]);
+        let mut pending: Vec<NodeIndex> = self.tree.roots().iter().rev().copied().collect();
         let mut children: Vec<NodeIndex> = Vec::new();
         while let Some(next) = pending.pop() {
             let Some(node) = self.tree.node(next)
@@ -375,6 +378,106 @@ impl<'source> ParseResult<'source>
         classes
     }
 
+    /// This parse laid after `before`, over `source`, the text that lays
+    /// `before`'s source and then this parse's end to end: the tree
+    /// [`SyntaxTree::joined`] gives, carrying this parse's obligations, each
+    /// moved past `before`'s text.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` and `before` are checked by the join.
+    /// - ensures: on success, the tree is [`SyntaxTree::joined`] of `before`
+    ///   and this parse's tree over `source`, and the obligations are this
+    ///   parse's in their order, each class kept and each span moved by
+    ///   `before`'s source length. `before`'s own parse's obligations are not
+    ///   carried. When `before`'s parse is [layable](Self::layable), the joined
+    ///   parse reads as the parse of `source` does.
+    /// - provides: a document's parse laid after its import closure's tree,
+    ///   which a recheck keeps across the document's edits.
+    /// - fails: as [`SyntaxTree::joined`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`SyntaxError::GrammarsDisagree`] and [`SyntaxError::SourcesDisagree`],
+    /// from the join.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a layable closure's tree and a document's parse laid
+    ///   after it read as the parse of the whole text: the same forms, keys and
+    ///   digest, and the document's repair at the whole text's offset, for a
+    ///   document opening with layout, a shebang or documentation and a closure
+    ///   closing with documentation.
+    /// - witness: `parse::tests::a_parse_laid_after_a_tree_reads_as_the_whole_texts`
+    #[inline]
+    #[spec(
+        captures: count = self.obligations.len(),
+        ensures: |ref ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|joined| {
+            joined.obligations.len() == count && joined.tree.source() == source
+        }),
+    )]
+    pub fn after<'joined>(
+        self,
+        before: &SyntaxTree<'_>,
+        source: SourceText<'joined>,
+    ) -> Result<ParseResult<'joined>, SyntaxError>
+    {
+        let tree = SyntaxTree::joined(before, &self.tree, source)?;
+        let by = ByteLength::from(<&str>::from(before.source()).len());
+        let mut obligations = self.obligations;
+        for obligation in &mut obligations {
+            obligation.span = obligation.span.shifted(by);
+        }
+
+        Ok(ParseResult { tree, obligations })
+    }
+
+    /// Whether every document parsed alone and laid after this parse reads as
+    /// the parse of the whole text: refused when this parse repaired its
+    /// text, or its text ends inside a token.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Unlayable::Repaired`] when the parse carries an obligation;
+    ///   [`Unlayable::Open`] when its text, followed by a word, labels no token
+    ///   starting where it ends — a comment or a string a following text
+    ///   continues; `Ok` otherwise.
+    /// - provides: the condition under which [`Self::after`] reads as the whole
+    ///   text's parse, checked once per closure.
+    /// - fails: as the ensures clause.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Unlayable`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closure ending in an unterminated comment, an
+    ///   unterminated string and an unclosed bracket are refused, each of which
+    ///   a whole text's parse reads differently from a document's laid after
+    ///   it; a closure of complete forms is layable.
+    /// - witness: `parse::tests::a_closure_that_repairs_or_ends_inside_a_token_is_not_layable`
+    /// - witness: `parse::tests::a_parse_laid_after_a_tree_reads_as_the_whole_texts`
+    #[inline]
+    #[spec(ensures: |ret| ret.is_err() || self.obligations.is_empty())]
+    pub fn layable(&self) -> Result<(), Unlayable>
+    {
+        if !self.obligations.is_empty() {
+            return Err(Unlayable::Repaired);
+        }
+        let text = <&str>::from(self.tree.source());
+        let end = u32::try_from(text.len()).map_err(|_overflow| Unlayable::Open)?;
+        let mut followed = String::with_capacity(text.len().saturating_add(1));
+        followed.push_str(text);
+        followed.push('x');
+        if label(SourceFragment::from(followed.as_str()))
+            .iter()
+            .any(|token| token.start == end)
+        {
+            Ok(())
+        }
+        else {
+            Err(Unlayable::Open)
+        }
+    }
+
     /// Consume the result and return the committed tree.
     ///
     /// # Specification
@@ -385,6 +488,45 @@ impl<'source> ParseResult<'source>
     {
         self.tree
     }
+}
+
+/// Why a parse cannot stand before documents parsed alone and laid after it
+/// ([`ParseResult::layable`]).
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Unlayable
+{
+    /// The parse repaired its text: a text laid after it could complete the
+    /// repaired form in the whole text's parse.
+    Repaired,
+    /// The text ends inside a token: a comment or a string a text laid after
+    /// it would continue.
+    Open,
+}
+
+impl core::fmt::Display for Unlayable
+{
+    /// The reason, in prose.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Repaired => "the text before the document is repaired",
+            Self::Open => "the text before the document ends inside a token",
+        })
+    }
+}
+
+impl core::error::Error for Unlayable
+{
 }
 
 /// Batch-parse `source` over the checked grammar `pbg`.
@@ -1043,6 +1185,99 @@ mod tests
                 .minted_close_classes()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn a_parse_laid_after_a_tree_reads_as_the_whole_texts()
+    {
+        use gandr_surface_syntax::SyntaxTree;
+
+        let pbg = built_in().unwrap();
+        let keyed = |tree: &SyntaxTree<'_>| {
+            let mut keyed: Vec<_> = tree
+                .positions()
+                .filter_map(|position| Some((tree.key(position)?, tree.node(position)?.span())))
+                .collect();
+            keyed.sort_unstable();
+            keyed
+        };
+        for (closure, document) in [
+            (
+                "def a = 1;\nmodule M {\n  def b = (a, 2);\n}\n",
+                "def c = M.b;\ndef d = (c ;\n",
+            ),
+            ("def a = 1;\n", "  \n// c\n\ndef b = a;\n"),
+            ("def a = 1;\n", "#!/usr/bin/env gandr\ndef b = a;\n"),
+            ("def a = 1;\n/// a\n", "def b = 2;\n"),
+            ("def a = 1;\n", "/// b\ndef b = 2;\n"),
+        ] {
+            let whole = format!("{closure}{document}");
+            let before = parse(&pbg, SourceText::from(closure)).unwrap();
+            assert_eq!(before.layable(), Ok(()), "{closure:?}");
+            let laid = parse(&pbg, SourceText::from(document))
+                .unwrap()
+                .after(before.tree(), SourceText::from(whole.as_str()))
+                .unwrap();
+            let parsed = parse(&pbg, SourceText::from(whole.as_str())).unwrap();
+            assert_eq!(laid.tree().roots().len(), 2_usize, "one root per tree laid");
+            assert_eq!(
+                keyed(laid.tree()),
+                keyed(parsed.tree()),
+                "every keyed node of the whole text's parse, at its span: {whole:?}"
+            );
+            assert_eq!(laid.tree().digest(), parsed.tree().digest(), "{whole:?}");
+            assert_eq!(
+                laid.obligations(),
+                parsed.obligations(),
+                "each at the whole text's offset: {whole:?}"
+            );
+            assert_eq!(laid.minted_close_classes(), parsed.minted_close_classes());
+        }
+        let repaired = parse(&pbg, SourceText::from("def d = (c ;\n")).unwrap();
+        assert!(
+            !repaired.obligations().is_empty(),
+            "the first document's repair"
+        );
+    }
+
+    #[test]
+    fn a_closure_that_repairs_or_ends_inside_a_token_is_not_layable()
+    {
+        use gandr_surface_syntax::SyntaxTree;
+
+        use super::Unlayable;
+
+        let pbg = built_in().unwrap();
+        let keyed = |tree: &SyntaxTree<'_>| {
+            let mut keyed: Vec<_> = tree
+                .positions()
+                .filter_map(|position| Some((tree.key(position)?, tree.node(position)?.span())))
+                .collect();
+            keyed.sort_unstable();
+            keyed
+        };
+        let document = "def b = 2;\n";
+        for (closure, refused) in [
+            ("def a = 1;\n/* open\n", Unlayable::Open),
+            ("def a = \"open\n", Unlayable::Repaired),
+            ("def a = (1\n", Unlayable::Repaired),
+            ("def a = 1; // closed by the newline", Unlayable::Open),
+        ] {
+            let before = parse(&pbg, SourceText::from(closure)).unwrap();
+            assert_eq!(before.layable(), Err(refused), "{closure:?}");
+            // What a laid parse would read differently from the whole text's.
+            let whole = format!("{closure}{document}");
+            let laid = parse(&pbg, SourceText::from(document))
+                .unwrap()
+                .after(before.tree(), SourceText::from(whole.as_str()))
+                .unwrap();
+            let parsed = parse(&pbg, SourceText::from(whole.as_str())).unwrap();
+            assert!(
+                keyed(laid.tree()) != keyed(parsed.tree())
+                    || laid.obligations() != parsed.obligations(),
+                "{whole:?}"
+            );
+        }
     }
 
     #[test]
