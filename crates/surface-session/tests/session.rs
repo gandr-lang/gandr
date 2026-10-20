@@ -1003,19 +1003,24 @@ fn documentation_is_kept_by_declaration_identity()
 }
 
 /// #776: a document laid out after its import closure offers the kernel its
-/// own declarations alone once the closure was admitted, exporting what a
-/// whole admission of the revision exports, and offers the whole closure again
-/// once a source of it changed.
+/// own declarations alone once the closure was admitted, exporting and
+/// committing what a whole admission of the revision exports and commits, and
+/// offers the whole closure again once a source of it changed.
 #[test]
 fn an_edit_to_its_own_text_readmits_the_document_alone_776()
 {
     use gandr_core_checker::HostGrant;
+    use gandr_storage_artifact::ArtifactRecordSet;
+    use gandr_storage_artifact::build;
+    use gandr_storage_records::InMemoryBlockStore;
+    use gandr_storage_records::TreeParams;
     use gandr_surface_corpus::CorpusRoot;
     use gandr_surface_dispatcher::Lowered;
     use gandr_surface_dispatcher::LoweringCount;
     use gandr_surface_dispatcher::judge_member;
     use gandr_surface_dispatcher::lay_out;
     use gandr_surface_dispatcher::lower_unit_source;
+    use gandr_surface_session::KernelCheckpoint;
     use gandr_surface_syntax::SourceText;
 
     let directory =
@@ -1037,8 +1042,8 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
     let grammar = &*crate::common::GRAMMAR;
     let mut session = session(SourceRoot::Strict);
     // Each revision of the document, judged and admitted laid out after the
-    // sibling: what the admission counted, and whether its artifact is what a
-    // whole admission of the same text exports.
+    // sibling: what the admission counted, and whether its artifact and its
+    // commit are what a whole admission of the same text exports and commits.
     let mut admit = |own: &str| {
         let laid = lay_out(grammar, &document, SourceRoot::Strict, own.into());
         let Maybe::Present(laid) = laid
@@ -1072,22 +1077,30 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
         .1
         .admit()
         .expect("the kernel re-derives the revision");
+        let cut = ArtifactRecordSet::from_artifact(whole.as_image()).expect("the export cuts");
+        let committed = build(
+            &cut,
+            TreeParams::current(),
+            &mut InMemoryBlockStore::default(),
+        )
+        .expect("the records commit");
         (
             usize::from(admitted.crossed()),
             usize::from(admitted.judged()),
             *admitted.kernel() == whole,
+            *admitted.checkpoint() == KernelCheckpoint::Stored(committed),
         )
     };
     let first = "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = two ;\n";
     let second = format!("{first}def four : Integer ;\ndef four = three ;\n");
     assert_eq!(
         admit(first),
-        (3_usize, 3_usize, true),
+        (3_usize, 3_usize, true, true),
         "the closure's first admission offers the kernel every declaration"
     );
     assert_eq!(
         admit(&second),
-        (2_usize, 4_usize, true),
+        (2_usize, 4_usize, true, true),
         "an edit to the document's own text offers its own declarations alone"
     );
     std::fs::write(
@@ -1098,12 +1111,12 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
     .expect("the sibling is rewritten");
     assert_eq!(
         admit(&second),
-        (4_usize, 4_usize, true),
+        (4_usize, 4_usize, true, true),
         "a changed sibling offers the whole closure again"
     );
     assert_eq!(
         admit(first),
-        (1_usize, 3_usize, true),
+        (1_usize, 3_usize, true, true),
         "and the changed closure is resumed thereafter"
     );
     let _removed = std::fs::remove_dir_all(&directory);

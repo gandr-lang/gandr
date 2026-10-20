@@ -84,12 +84,17 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_kernel_term::ArtifactImage;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DecodedPrefix;
 use gandr_kernel_term::SegmentLayout;
 use gandr_kernel_term::decode;
+use gandr_kernel_term::decode_after;
+use gandr_kernel_term::decode_keeping;
+use gandr_kernel_term::decoded_prefix;
 use gandr_storage_records::Record;
 use gandr_storage_records::RecordIndex;
 use gandr_storage_records::RecordRef;
 use gandr_theory_spec_combinators::Holds;
+use quenchant_shape::shape::Maybe;
 
 use crate::error::ArtifactError;
 
@@ -412,19 +417,7 @@ impl ArtifactRecordSet
     /// - witness: `tests::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
     /// - witness: `tests::artifact_contract::round_trip_over_generated_environments`
     #[spec(ensures: |ret| match ret {
-        Ok(ref set) => {
-            let mut offset = set.header.len();
-            image.as_ref().starts_with(set.header.as_ref())
-                && set.records.iter().enumerate().all(|(index, record)| {
-                    let end = offset.saturating_add(record.segment.len());
-                    let agrees = record.index == ConstantIndex::from(index)
-                        && record.key == AdmissionKey::from(record.index)
-                        && image.as_ref().get(offset .. end) == Some(record.segment.as_ref());
-                    offset = end;
-                    agrees
-                })
-                && offset == image.as_ref().len()
-        },
+        Ok(ref set) => bool::from(set.cuts(image)),
         Err(ArtifactError::Kernel { .. } | ArtifactError::SegmentBoundary { .. }) => true,
         Err(_) => false,
     })]
@@ -432,7 +425,102 @@ impl ArtifactRecordSet
     pub fn from_artifact(image: ArtifactImage<'_>) -> Result<Self, ArtifactError>
     {
         let decoded = decode(image)?;
-        let layout = decoded.segments();
+        Self::cut(image, decoded.segments())
+    }
+
+    /// [`from_artifact`](Self::from_artifact), keeping what decoding the
+    /// artifact's first `end` declarations left, for
+    /// [`from_artifact_after`](Self::from_artifact_after) to resume.
+    ///
+    /// # Specification
+    /// - requires: nothing; the bytes are arbitrary.
+    /// - ensures: [`from_artifact`](Self::from_artifact)'s set or refusal, and
+    ///   the prefix the kernel's `decode_keeping` keeps of its first `end`
+    ///   declarations.
+    /// - provides: the first commit of an editor's export, which decodes the
+    ///   import closure's declarations once.
+    /// - fails: as [`from_artifact`](Self::from_artifact).
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`from_artifact`](Self::from_artifact).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a set cut after a kept prefix is the set cut whole.
+    /// - witness: `tests::artifact_contract::a_set_cut_after_a_kept_prefix_is_the_whole_cut_776`
+    #[spec(ensures: |ret| match ret {
+        Ok((ref set, _)) => bool::from(set.cuts(image)),
+        Err(ArtifactError::Kernel { .. } | ArtifactError::SegmentBoundary { .. }) => true,
+        Err(_) => false,
+    })]
+    #[inline]
+    pub fn from_artifact_keeping(
+        image: ArtifactImage<'_>,
+        end: ConstantIndex,
+    ) -> Result<(Self, Maybe<DecodedPrefix, decoded_prefix::Absent>), ArtifactError>
+    {
+        let (decoded, prefix) = decode_keeping(image, end)?;
+        Ok((Self::cut(image, decoded.segments())?, prefix))
+    }
+
+    /// [`from_artifact`](Self::from_artifact), decoding `image` after
+    /// `prefix` when its segments lead with `prefix`'s.
+    ///
+    /// # Specification
+    /// - requires: nothing; the bytes are arbitrary, and `prefix` was kept by
+    ///   [`from_artifact_keeping`](Self::from_artifact_keeping).
+    /// - ensures: [`from_artifact`](Self::from_artifact)'s set or refusal.
+    /// - provides: each later commit of an editor's export, which decodes the
+    ///   document's segments alone.
+    /// - fails: as [`from_artifact`](Self::from_artifact).
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`from_artifact`](Self::from_artifact).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a set cut after a kept prefix is the set cut whole.
+    /// - witness: `tests::artifact_contract::a_set_cut_after_a_kept_prefix_is_the_whole_cut_776`
+    #[spec(ensures: |ret| match ret {
+        Ok(ref set) => bool::from(set.cuts(image)),
+        Err(ArtifactError::Kernel { .. } | ArtifactError::SegmentBoundary { .. }) => true,
+        Err(_) => false,
+    })]
+    #[inline]
+    pub fn from_artifact_after(
+        prefix: &DecodedPrefix,
+        image: ArtifactImage<'_>,
+    ) -> Result<Self, ArtifactError>
+    {
+        let decoded = decode_after(prefix, image)?;
+        Self::cut(image, decoded.segments())
+    }
+
+    /// `image` cut at the boundaries `layout` reports.
+    ///
+    /// # Specification
+    /// - requires: `layout` is a decode's of `image`.
+    /// - ensures: the header is the image up to the header's end, and record
+    ///   `i`, keyed by admission index `i`, holds the bytes from the end before
+    ///   it to its own.
+    /// - fails: [`ArtifactError::SegmentBoundary`] for a reported end the image
+    ///   does not hold, which a decode's own specification rules out.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`from_artifact`](Self::from_artifact).
+    /// - witness: `tests::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
+    /// - witness: `tests::artifact_contract::round_trip_over_generated_environments`
+    #[spec(ensures: |ret| match ret {
+        Ok(ref set) => set.records.len() == layout.declaration_ends().len(),
+        Err(ArtifactError::SegmentBoundary { .. }) => true,
+        Err(_) => false,
+    })]
+    fn cut(
+        image: ArtifactImage<'_>,
+        layout: &SegmentLayout,
+    ) -> Result<Self, ArtifactError>
+    {
         let bytes = image.as_ref();
         let mut start = usize::from(layout.header_end());
         let header = bytes.get(.. start).ok_or(ArtifactError::SegmentBoundary {
@@ -458,6 +546,43 @@ impl ArtifactRecordSet
             header: Box::from(header),
             records,
         })
+    }
+
+    /// Holds when the set is `image` cut at its segments: the header leads the
+    /// image, record `i` is keyed by admission index `i` and holds the bytes
+    /// from the end before it to its own, and the last ends where the image
+    /// does.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: holds exactly as stated.
+    /// - provides: the postcondition every constructor that cuts an image
+    ///   states.
+    /// - panics: none.
+    /// - executable: none — this is the postcondition's predicate; a
+    ///   postcondition could only repeat its pass.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`from_artifact`](Self::from_artifact).
+    /// - witness: `tests::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
+    fn cuts(
+        &self,
+        image: ArtifactImage<'_>,
+    ) -> Holds
+    {
+        let mut offset = self.header.len();
+        Holds::from(
+            image.as_ref().starts_with(self.header.as_ref())
+                && self.records.iter().enumerate().all(|(index, record)| {
+                    let end = offset.saturating_add(record.segment.len());
+                    let agrees = record.index == ConstantIndex::from(index)
+                        && record.key == AdmissionKey::from(record.index)
+                        && image.as_ref().get(offset .. end) == Some(record.segment.as_ref());
+                    offset = end;
+                    agrees
+                })
+                && offset == image.as_ref().len(),
+        )
     }
 
     /// Builds a set from a header and declaration records in any order.

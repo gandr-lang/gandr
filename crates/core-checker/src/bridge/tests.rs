@@ -89,6 +89,7 @@ use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::DeclarationContent;
+use gandr_kernel_term::EncodedPrefix;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::NameSegment;
 use gandr_kernel_term::Side;
@@ -97,6 +98,7 @@ use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value as KernelValue;
 use gandr_kernel_term::ValueType as KernelValueType;
 use gandr_kernel_term::decode;
+use gandr_kernel_term::encode_prefix;
 use proptest::prelude::ProptestConfig;
 use proptest::prelude::prop_assert;
 use proptest::prelude::prop_assert_eq;
@@ -782,7 +784,9 @@ fn a_code_constant_unfolds_in_conversion_and_its_trace_replays()
 /// made over another arena, answers what a whole readmission answers — the
 /// same entries, audit and artifact, the later declarations unfolding the
 /// resumed ones' bodies as their own arena holds them — and a record whose
-/// verdicts disagree with the report is not resumed.
+/// verdicts disagree with the report is not resumed. The export that records
+/// them keeps their encoding in the record, and an export resumed from it
+/// writes that encoding as it was kept and encodes the later declarations.
 #[test]
 fn a_resumed_readmission_answers_as_a_whole_one_776()
 {
@@ -822,17 +826,32 @@ fn a_resumed_readmission_answers_as_a_whole_one_776()
         (arena, report)
     };
     let (mut first, first_report) = judged(0, false, 3);
-    let (_, recorded) = readmit_resuming(
+    let (first_readmission, recorded) = readmit_resuming(
         &mut first,
         &first_report,
         LeadingCount::from(2_usize),
         Maybe::Absent(crossed::Absent::Unasked),
+    );
+    let mut recorded = recorded;
+    assert_eq!(
+        first_readmission.export_resuming(
+            BTreeMap::new(),
+            Maybe::Absent(crossed::Absent::Unasked),
+            &mut recorded
+        ),
+        first_readmission.export(BTreeMap::new()),
+        "the export that keeps the leading encoding is the whole one"
     );
     let Maybe::Present(recorded) = recorded
     else {
         panic!("the two leading declarations are recorded: {recorded:?}");
     };
     assert_eq!(recorded.boundary(), LeadingCount::from(2_usize));
+    assert_eq!(
+        recorded.encoded.as_ref().map(EncodedPrefix::end),
+        Some(ConstantIndex::from(2_usize)),
+        "the record keeps the encoding of the two kernel declarations"
+    );
 
     let (mut whole_arena, whole_report) = judged(7, false, 4);
     let whole = readmit(&mut whole_arena, &whole_report);
@@ -858,6 +877,36 @@ fn a_resumed_readmission_answers_as_a_whole_one_776()
         resumed.export(BTreeMap::new()),
         whole.export(BTreeMap::new()),
         "the resumed artifact is the whole one, byte for byte"
+    );
+    let mut unchanged = again;
+    assert_eq!(
+        resumed.export_resuming(BTreeMap::new(), Maybe::Present(&recorded), &mut unchanged),
+        whole.export(BTreeMap::new()),
+        "the export resumed after the kept encoding is the whole one, byte for byte"
+    );
+    // A record keeping its declarations' encoding under a name exports them
+    // under it: the kept bytes are written, not encoded again.
+    let named = BTreeMap::from([(
+        ConstantIndex::from(0_usize),
+        StructuredName::from(vec![NameSegment::from_text(String::from("Num")).unwrap()]),
+    )]);
+    let mut renamed = recorded.clone();
+    let marked = first_readmission.marked(&mut named.clone(), ConstantIndex::from(0_usize));
+    renamed.encoded = match encode_prefix(
+        first_readmission.environment().arena(),
+        marked.get(.. 2).expect("the record keeps two declarations"),
+    ) {
+        Maybe::Present(prefix) => Some(prefix),
+        Maybe::Absent(absent) => panic!("no seal is open: {absent:?}"),
+    };
+    assert_eq!(
+        resumed.export_resuming(
+            BTreeMap::new(),
+            Maybe::Present(&renamed),
+            &mut Maybe::Absent(crossed::Absent::Unchanged)
+        ),
+        whole.export(named),
+        "the kept encoding is written as it was kept"
     );
     assert_eq!(
         steps(&resumed.readmitted()[3]),

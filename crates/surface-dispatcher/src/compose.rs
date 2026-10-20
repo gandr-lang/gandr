@@ -681,20 +681,20 @@ impl Admission
     ) -> Resumption
     {
         let judged = bridge::LeadingCount::from(self.verdicts.judged().len());
-        let (readmission, crossed) =
+        let (readmission, mut recorded) =
             readmitted(&mut self.arena, &self.verdicts, (boundary, crossed));
         match readmission {
             Ok(readmission) => Resumption {
                 resumed: readmission.resumed(),
                 judged,
-                artifact: Ok(readmission.export(self.names)),
-                crossed,
+                artifact: Ok(readmission.export_resuming(self.names, crossed, &mut recorded)),
+                crossed: recorded,
             },
             Err(fault) => Resumption {
                 artifact: Err(fault),
                 resumed: bridge::LeadingCount::NONE,
                 judged,
-                crossed,
+                crossed: recorded,
             },
         }
     }

@@ -41,16 +41,90 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use std::sync::Mutex;
+use std::sync::OnceLock;
 use std::sync::PoisonError;
 
 use anodized::spec;
 use gandr_core_checker::bridge::Crossed;
 use gandr_core_incremental::ItemCheckpoint;
+use gandr_kernel_term::DecodedPrefix;
 use gandr_surface_syntax::SourceText;
 
 /// The most closures [`CLOSURES`] holds before it lets the one asked for
 /// longest ago go: the closures of the few documents an editor has open.
 const CLOSURES_HELD: usize = 8;
+
+/// A closure's readmission, and once a commit of an export kept it, the decode
+/// of the kernel declarations the readmission admitted.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the readmission it was kept with; the decoded prefix at most one
+///   commit kept.
+/// - panics: none.
+/// - executable: none — a carrier; [`keep`] and
+///   [`ClosureAdmission::keep_decoded`] set it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`find`].
+/// - witness: `tests::session::an_edit_to_its_own_text_readmits_the_document_alone_776`
+#[derive(Debug)]
+pub struct ClosureAdmission
+{
+    /// What readmitting the closure's declarations built.
+    crossed: Crossed,
+    /// The decode of the kernel declarations they admitted, once kept.
+    decoded: OnceLock<DecodedPrefix>,
+}
+
+impl ClosureAdmission
+{
+    /// What readmitting the closure's declarations built.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn crossed(&self) -> &Crossed
+    {
+        &self.crossed
+    }
+
+    /// The decode of the kernel declarations the closure admitted, once a
+    /// commit kept it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn decoded(&self) -> Option<&DecodedPrefix>
+    {
+        self.decoded.get()
+    }
+
+    /// Keep `decoded`, the decode of the kernel declarations the closure
+    /// admitted, unless one is kept.
+    ///
+    /// # Specification
+    /// - requires: `decoded` was kept by a decode of an artifact leading with
+    ///   the closure's kernel declarations.
+    /// - ensures: a decoded prefix is kept.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`find`].
+    /// - witness: `tests::session::an_edit_to_its_own_text_readmits_the_document_alone_776`
+    #[spec(ensures: self.decoded.get().is_some())]
+    #[inline]
+    pub fn keep_decoded(
+        &self,
+        decoded: DecodedPrefix,
+    )
+    {
+        let _kept = self.decoded.set(decoded);
+    }
+}
 
 /// One closure's readmission, under the text and the checkpoints that select
 /// and admit it.
@@ -62,7 +136,7 @@ struct Held
     /// The checkpoints of the closure's declarations, in order.
     checkpoints: Vec<ItemCheckpoint>,
     /// What readmitting them built.
-    crossed: Arc<Crossed>,
+    admission: Arc<ClosureAdmission>,
     /// The tick of the store's clock it was last asked for at.
     used: u64,
 }
@@ -104,7 +178,7 @@ static CLOSURES: Mutex<Closures> = Mutex::new(Closures {
 pub fn find(
     text: SourceText<'_>,
     checkpoints: &[ItemCheckpoint],
-) -> Option<Arc<Crossed>>
+) -> Option<Arc<ClosureAdmission>>
 {
     let mut closures = CLOSURES.lock().unwrap_or_else(PoisonError::into_inner);
     closures.clock = closures.clock.saturating_add(1);
@@ -115,7 +189,7 @@ pub fn find(
         .find(|held| held.text == <&str>::from(text) && held.checkpoints == checkpoints)
         .map(|held| {
             held.used = now;
-            Arc::clone(&held.crossed)
+            Arc::clone(&held.admission)
         });
     drop(closures);
     found
@@ -128,9 +202,9 @@ pub fn find(
 /// # Specification
 /// - requires: `crossed` records the readmission of declarations judged to
 ///   `checkpoints`, laid out as `text`.
-/// - ensures: [`find`] of `text` and `checkpoints` answers `crossed` until a
-///   later [`keep`] replaces it or lets it go; the store holds at most
-///   [`CLOSURES_HELD`].
+/// - ensures: [`find`] of `text` and `checkpoints` answers what is returned,
+///   holding `crossed` and no decode, until a later [`keep`] replaces it or
+///   lets it go; the store holds at most [`CLOSURES_HELD`].
 /// - provides: the record a later admission of the same closure resumes from.
 /// - fails: never.
 /// - panics: none.
@@ -143,8 +217,12 @@ pub fn keep(
     text: String,
     checkpoints: Vec<ItemCheckpoint>,
     crossed: Crossed,
-)
+) -> Arc<ClosureAdmission>
 {
+    let admission = Arc::new(ClosureAdmission {
+        crossed,
+        decoded: OnceLock::new(),
+    });
     let mut closures = CLOSURES.lock().unwrap_or_else(PoisonError::into_inner);
     closures.clock = closures.clock.saturating_add(1);
     let now = closures.clock;
@@ -154,7 +232,7 @@ pub fn keep(
     closures.held.push(Held {
         text,
         checkpoints,
-        crossed: Arc::new(crossed),
+        admission: Arc::clone(&admission),
         used: now,
     });
     while closures.held.len() > CLOSURES_HELD {
@@ -171,4 +249,5 @@ pub fn keep(
         let _gone = closures.held.swap_remove(oldest);
     }
     drop(closures);
+    admission
 }

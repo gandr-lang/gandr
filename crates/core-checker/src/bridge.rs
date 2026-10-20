@@ -418,6 +418,7 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Declaration as KernelDeclaration;
 use gandr_kernel_term::EncodedArtifact;
+use gandr_kernel_term::EncodedPrefix;
 use gandr_kernel_term::EndpointDialogues;
 use gandr_kernel_term::EvaluationComponent;
 use gandr_kernel_term::EvaluationDialogues;
@@ -432,6 +433,8 @@ use gandr_kernel_term::StructuredName;
 use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::encode;
+use gandr_kernel_term::encode_after;
+use gandr_kernel_term::encode_prefix;
 use quenchant_shape::shape::Maybe;
 
 use crate::code::Certificate;
@@ -1137,11 +1140,116 @@ impl Readmission
         mut names: BTreeMap<ConstantIndex, StructuredName>,
     ) -> EncodedArtifact
     {
+        let marked = self.marked(&mut names, ConstantIndex::from(0_usize));
+        encode(self.environment.arena(), &marked)
+    }
+
+    /// [`export`](Self::export), encoding only the declarations after the
+    /// leading ones `crossed` holds when this readmission resumed them from it
+    /// and `crossed` keeps their encoding; and keeping in `recorded` the
+    /// encoding of the leading declarations it holds, for a later export to
+    /// resume.
+    ///
+    /// # Specification
+    /// - requires: as [`export`](Self::export); `crossed` is the record
+    ///   [`readmit_resuming`] was given and `recorded` the one it answered, and
+    ///   `names` names the leading declarations `crossed` holds as it named
+    ///   them when their encoding was kept.
+    /// - ensures: [`export`](Self::export)'s artifact. When this readmission
+    ///   resumed every declaration of `crossed` and `crossed` keeps their
+    ///   encoding, only the declarations after them are encoded. Otherwise,
+    ///   when `recorded` is present and no seal among its declarations is open,
+    ///   it keeps their encoding, which ends where its declarations do in the
+    ///   kernel.
+    /// - provides: an editor's export of a document laid out after its import
+    ///   closure, which encodes the closure once.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an admission of a laid-out document resumed from the
+    ///   record of another revision's admission exports, byte for byte, what a
+    ///   whole admission exports, and the record it answers keeps the encoding
+    ///   of its declarations.
+    /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every readmitted entry once; the check walks the readmitted entries once"
+        )
+    )]
+    #[spec(
+        requires: self.readmitted.iter().all(|entry| match entry.outcome {
+            | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } | Outcome::Data { admitted, .. } => self.admitted.get(usize::from(admitted.position())).is_some(),
+            | _ => true,
+        }),
+        ensures: |ret| match *recorded {
+            Maybe::Present(ref record) => record.encoded.as_ref().is_none_or(|prefix|
+                usize::from(prefix.end()) == record.positions.exports.len()),
+            Maybe::Absent(_) => true,
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn export_resuming(
+        &self,
+        mut names: BTreeMap<ConstantIndex, StructuredName>,
+        crossed: Maybe<&Crossed, crossed::Absent>,
+        recorded: &mut Maybe<Crossed, crossed::Absent>,
+    ) -> EncodedArtifact
+    {
+        let arena = self.environment.arena();
+        if let Maybe::Present(crossed) = crossed
+            && let Some(ref prefix) = crossed.encoded
+            && self.resumed == crossed.readmitted.len()
+        {
+            let after = self.marked(&mut names, prefix.end());
+            return encode_after(prefix, arena, &after);
+        }
+        let marked = self.marked(&mut names, ConstantIndex::from(0_usize));
+        if let Maybe::Present(ref mut record) = *recorded
+            && let Some((leading, after)) = marked.split_at_checked(record.positions.exports.len())
+            && let Maybe::Present(prefix) = encode_prefix(arena, leading)
+        {
+            let artifact = encode_after(&prefix, arena, after);
+            record.encoded = Some(prefix);
+            return artifact;
+        }
+        encode(arena, &marked)
+    }
+
+    /// The admitted declarations from kernel position `from` on, each marked
+    /// checked and named as `names` names its module position, every name read
+    /// taken out of `names`.
+    ///
+    /// # Specification
+    /// - requires: each crossed position indexes `admitted`.
+    /// - ensures: one declaration per admitted declaration at `from` or later,
+    ///   in kernel admission order, each carrying the name `names` held at its
+    ///   module position, or none; each name read is removed from `names`, and
+    ///   none of a declaration before `from` is read.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`export`](Self::export) and
+    ///   [`export_resuming`](Self::export_resuming).
+    /// - witness: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`
+    /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+    #[spec(ensures: |ret| ret.len() == self.admitted.len().saturating_sub(usize::from(from)))]
+    fn marked(
+        &self,
+        names: &mut BTreeMap<ConstantIndex, StructuredName>,
+        from: ConstantIndex,
+    ) -> Vec<MarkedDeclaration>
+    {
         let mut kernel_names = BTreeMap::new();
         for entry in &self.readmitted {
             if let Outcome::Defined { admitted, .. }
             | Outcome::Assumed { admitted, .. }
             | Outcome::Data { admitted, .. } = entry.outcome
+                && admitted.position() >= from
             {
                 kernel_names.insert(
                     admitted.position(),
@@ -1149,10 +1257,10 @@ impl Readmission
                 );
             }
         }
-        let marked: Vec<_> = self
-            .admitted
+        self.admitted
             .iter()
             .enumerate()
+            .skip(usize::from(from))
             .map(|(position, declaration)| {
                 let mut declaration = declaration.clone();
                 if let Some(name) = kernel_names.remove(&ConstantIndex::from(position)) {
@@ -1160,9 +1268,7 @@ impl Readmission
                 }
                 MarkedDeclaration::new(AdmissionMark::Checked, declaration)
             })
-            .collect();
-
-        encode(self.environment.arena(), &marked)
+            .collect()
     }
 }
 
@@ -1254,10 +1360,12 @@ impl fmt::Display for LeadingCount
 ///   positions it had built once its first [`Crossed::boundary`] entries were
 ///   recorded, and those entries; no core body, since a core body names a node
 ///   of the arena the record was made over, and a resuming readmission reads
-///   each from its own report.
+///   each from its own report. Once an export kept it, the encoding of the
+///   kernel declarations they admitted.
 /// - panics: none.
 /// - executable: none — the fields are private and set only by
-///   [`Crossed::record`], whose specification states them.
+///   [`Crossed::record`] and [`Readmission::export_resuming`], whose
+///   specifications state them.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`readmit_resuming`].
@@ -1271,6 +1379,9 @@ pub struct Crossed
     positions: Positions,
     /// Their entries, in order.
     readmitted: Vec<Readmitted>,
+    /// The encoding of the kernel declarations they admitted, once an export
+    /// kept it ([`Readmission::export_resuming`]).
+    encoded: Option<EncodedPrefix>,
 }
 
 impl Crossed
@@ -1284,6 +1395,18 @@ impl Crossed
     pub fn boundary(&self) -> LeadingCount
     {
         LeadingCount(self.readmitted.len())
+    }
+
+    /// The kernel position the first declaration after the record's takes:
+    /// how many kernel declarations the environment holds once they crossed.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn kernel_end(&self) -> ConstantIndex
+    {
+        ConstantIndex::from(self.positions.exports.len())
     }
 
     /// The record of `built` — the environment, positions and entries of a
@@ -1346,6 +1469,7 @@ impl Crossed
                 presentations: positions.presentations.clone(),
             },
             readmitted: readmitted.to_vec(),
+            encoded: None,
         })
     }
 
