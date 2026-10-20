@@ -171,6 +171,7 @@ use gandr_surface_corpus::RunSpelling;
 use gandr_surface_corpus::Runner;
 use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::constant_names;
+use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_pretty::CoreNode;
@@ -320,6 +321,10 @@ enum Slot
 {
     /// Its body focused; the constants the body refers to.
     Defined(Vec<ConstantIndex>),
+    /// The checker refused it and its lowered body focused: it runs only as
+    /// the root of a refused run, and any other run reaching it stops there as
+    /// at a refusal; the constants the body refers to.
+    Refused(Vec<ConstantIndex>),
     /// The machine carries it as itself, for the reason given.
     Opaque(Opacity),
 }
@@ -333,11 +338,28 @@ enum Opacity
     /// It is owed its body, or waits on holes that are: running into it is
     /// blame.
     Owed,
-    /// It was refused, by the lowering or the checker, or the checker accepted
-    /// it and recorded no body: there is nothing to run.
+    /// It was refused, by the lowering or the checker with no body that
+    /// focuses, or the checker accepted it and recorded no body: there is
+    /// nothing to run.
     Refused,
     /// Its body did not focus.
     Unfocused(FocusRefusal),
+}
+
+/// Which declaration a run may start from.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Start
+{
+    /// A declaration the checker accepted: one it refused stops the run
+    /// wherever it is reached.
+    Accepted,
+    /// The declaration at the root, though the checker refused it: its body
+    /// and its references to itself run, and any other refused declaration
+    /// stops the run.
+    Refused,
 }
 
 /// A value, spelled: the text `gandr run` prints for a run that returned one,
@@ -604,9 +626,11 @@ impl<'source> Program<'source>
     /// - ensures: one entry per declaration of `module`, at its own admission
     ///   position, so a reference a body holds reads the declaration it names.
     ///   A declaration checked or synthesised has its elaborated body focused
-    ///   and is defined as it; one owed its body is carried as itself; one
-    ///   refused by the lowering or the checker, or whose body does not focus,
-    ///   is carried as itself and never run. A skipped position holds no
+    ///   and is defined as it; one owed its body is carried as itself; one the
+    ///   checker refused has its lowered body focused, run only as the root of
+    ///   [`Self::evaluate_refused`]; one refused by the lowering, or by the
+    ///   checker with no body that focuses, or whose body does not focus, is
+    ///   carried as itself and never run. A skipped position holds no
     ///   declaration and an opaque definition; a position met again keeps its
     ///   first declaration. Each member a module matched against a signature
     ///   keeps out of its interface is hidden at that module's path, and each
@@ -618,7 +642,8 @@ impl<'source> Program<'source>
     /// - fails: never; a body that does not focus is the declaration's
     ///   standing, not a failure of the program.
     /// - panics: none.
-    /// - intension: one focusing per accepted declaration; nothing runs.
+    /// - intension: one focusing per accepted or checker-refused declaration;
+    ///   nothing runs.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — sources holding an accepted, an owed, a refused and
@@ -639,7 +664,7 @@ impl<'source> Program<'source>
             && (0..usize::from(ret.definitions.len())).all(|position| {
                 let constant = ConstantIndex::from(position);
                 match (ret.definitions.get(constant), ret.declarations.get(&constant).map(|declared| &declared.slot)) {
-                    (Some(Definition::Transparent(producer)), Some(&Slot::Defined(_))) => ret.arena.producer(producer).is_some(),
+                    (Some(Definition::Transparent(producer)), Some(&(Slot::Defined(_) | Slot::Refused(_)))) => ret.arena.producer(producer).is_some(),
                     (Some(Definition::Opaque), Some(&Slot::Opaque(_)) | None) => true,
                     _ => false,
                 }
@@ -721,13 +746,31 @@ impl<'source> Program<'source>
                 (Some(Verdict::Owed(_) | Verdict::Suspended(_)), _) => {
                     (Definition::Opaque, Slot::Opaque(Opacity::Owed))
                 },
-                (
-                    Some(
-                        Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Refused(_),
-                    )
-                    | None,
-                    _,
-                ) => (Definition::Opaque, Slot::Opaque(Opacity::Refused)),
+                (Some(Verdict::Refused(_)), _) => match lowered.outcome() {
+                    DeclarationOutcome::Completed { body, .. }
+                    | DeclarationOutcome::Bodied { body } => {
+                        focus_value(core, body, &mut arena, &mut provenance).map_or(
+                            (Definition::Opaque, Slot::Opaque(Opacity::Refused)),
+                            |producer| {
+                                (
+                                    Definition::Transparent(producer),
+                                    Slot::Refused(references(core, body)),
+                                )
+                            },
+                        )
+                    },
+                    DeclarationOutcome::Uncompleted { .. }
+                    | DeclarationOutcome::Data(_)
+                    | DeclarationOutcome::Codata(_)
+                    | DeclarationOutcome::Abstract(_)
+                    | DeclarationOutcome::World
+                    | DeclarationOutcome::Refused(_) => {
+                        (Definition::Opaque, Slot::Opaque(Opacity::Refused))
+                    },
+                },
+                (Some(Verdict::Checked { .. } | Verdict::Synthesised { .. }) | None, _) => {
+                    (Definition::Opaque, Slot::Opaque(Opacity::Refused))
+                },
             };
             while usize::from(definitions.len()) < usize::from(constant) {
                 let _skipped = definitions.push(Definition::Opaque);
@@ -936,6 +979,7 @@ impl<'source> Program<'source>
             .filter_map(|declared| match declared.slot {
                 Slot::Opaque(Opacity::Unfocused(refusal)) => Some((declared.name, refusal)),
                 Slot::Defined(_)
+                | Slot::Refused(_)
                 | Slot::Opaque(Opacity::Data | Opacity::Owed | Opacity::Refused) => None,
             })
     }
@@ -1001,7 +1045,7 @@ impl<'source> Program<'source>
             watermark = self.arena.watermark(), blocked = match self.declarations.get(&constant) {
                 None => Some(Unrunnable::Undeclared(constant)),
                 Some(&Declared {name,slot:Slot::Opaque(Opacity::Data)}) => Some(Unrunnable::Data(name)),
-                Some(&Declared { name, slot: Slot::Opaque(Opacity::Refused) }) => Some(Unrunnable::Refused(name)),
+                Some(&Declared { name, slot: Slot::Opaque(Opacity::Refused) | Slot::Refused(_) }) => Some(Unrunnable::Refused(name)),
                 Some(&Declared { name, slot: Slot::Opaque(Opacity::Unfocused(refusal)) }) =>
                     Some(Unrunnable::Unfocused { declaration: name, refusal }),
                 Some(&Declared { slot: Slot::Defined(_) | Slot::Opaque(Opacity::Owed), .. }) => None,
@@ -1015,7 +1059,7 @@ impl<'source> Program<'source>
                     declared.name == name && matches!(declared.slot, Slot::Opaque(Opacity::Owed))),
                 Evaluation::Unrunnable(Unrunnable::Undeclared(index)) => !self.declarations.contains_key(&index),
                 Evaluation::Unrunnable(Unrunnable::Refused(name)) => self.declarations.values().any(|declared|
-                    declared.name == name && matches!(declared.slot, Slot::Opaque(Opacity::Refused))),
+                    declared.name == name && matches!(declared.slot, Slot::Opaque(Opacity::Refused) | Slot::Refused(_))),
                 Evaluation::Unrunnable(Unrunnable::Unfocused { declaration, .. }) =>
                     self.declarations.values().any(|declared| declared.name == declaration),
                 Evaluation::Unfinished(Unfinished::Inconsistent(index)) => self.declarations.get(&index)
@@ -1032,7 +1076,44 @@ impl<'source> Program<'source>
         constant: ConstantIndex,
     ) -> Evaluation<'source>
     {
-        let (returned, forced) = match self.prepare(constant) {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted) {
+            Ok(entries) => entries,
+            Err(evaluation) => return evaluation,
+        };
+        self.tiered(constant, returned, forced, Choice::Policy)
+            .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
+    }
+
+    /// Run the declaration at `constant` though the checker refused it, read
+    /// its terminal back and spell it.
+    ///
+    /// # Specification
+    /// - requires: nothing; a position the program does not hold is an outcome
+    ///   of its own.
+    /// - ensures: what [`Self::evaluate`] gives, but for a declaration the
+    ///   checker refused whose lowered body focused: that body runs as an
+    ///   accepted one would, its references to itself included, and any other
+    ///   refused declaration it reaches is [`Unrunnable::Refused`], decided
+    ///   before any command runs.
+    /// - provides: the run a `runs` beside a `refuses` compares, so a refusal's
+    ///   witness can also state what the refused program does.
+    /// - fails: never; every failure is an outcome.
+    /// - panics: none.
+    /// - executable: none — the walk's clauses are [`Self::unrunnable`]'s and
+    ///   the run's [`Self::evaluate`]'s; agreeing with them is the witnesses'.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refused declaration runs to its value, one reaching
+    ///   another refused declaration stays unrunnable, and the strict run of
+    ///   the same declaration still refuses it.
+    /// - witness: `evaluate::tests::a_refused_declaration_runs_only_as_its_own_root`
+    #[inline]
+    pub fn evaluate_refused(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> Evaluation<'source>
+    {
+        let (returned, forced) = match self.prepare(constant, Start::Refused) {
             Ok(entries) => entries,
             Err(evaluation) => return evaluation,
         };
@@ -1069,7 +1150,7 @@ impl<'source> Program<'source>
         engine: Engine,
     ) -> Result<Evaluation<'source>, Declined>
     {
-        let (returned, forced) = match self.prepare(constant) {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted) {
             Ok(entries) => entries,
             Err(evaluation) => return Ok(evaluation),
         };
@@ -1080,8 +1161,8 @@ impl<'source> Program<'source>
         self.tiered(constant, returned, forced, Choice::Tier(tier))
     }
 
-    /// The two commands that run the declaration at `constant`: the one
-    /// returning it and the one forcing it.
+    /// The two commands that run the declaration at `constant`, started as
+    /// `start` allows: the one returning it and the one forcing it.
     ///
     /// # Specification
     /// trivial.
@@ -1091,9 +1172,10 @@ impl<'source> Program<'source>
     fn prepare(
         &mut self,
         constant: ConstantIndex,
+        start: Start,
     ) -> Result<(CommandId, CommandId), Evaluation<'source>>
     {
-        if let Maybe::Present(unrunnable) = self.unrunnable(constant) {
+        if let Maybe::Present(unrunnable) = self.unrunnable(constant, start) {
             return Err(Evaluation::Unrunnable(unrunnable));
         }
         self.entries(constant).map_err(|refusal| {
@@ -1232,15 +1314,18 @@ impl<'source> Program<'source>
     }
 
     /// The first declaration reachable from `constant` through references
-    /// that the machine cannot carry, as the reason it never runs.
+    /// that the machine cannot carry, as the reason it never runs, the run
+    /// started as `start` allows.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `constant` itself when it did not focus, else the first
     ///   reached absent, refused or code declaration, with its exact identity;
     ///   an owed declaration, and a referenced one whose body did not focus, is
-    ///   carried. Absence means the reachable reference graph contains no such
-    ///   obstacle.
+    ///   carried. A checker-refused declaration whose body focused is carried
+    ///   only as the root of a [`Start::Refused`] run, each reference back to
+    ///   it included. Absence means the reachable reference graph contains no
+    ///   such obstacle.
     /// - fails: an undeclared reference reports its own index, not the run
     ///   target.
     /// - panics: none.
@@ -1254,6 +1339,7 @@ impl<'source> Program<'source>
     /// - witness: `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`
     /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
     /// - witness: `evaluate::tests::a_body_that_did_not_focus_is_carried_until_reached`
+    /// - witness: `evaluate::tests::a_refused_declaration_runs_only_as_its_own_root`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -1266,6 +1352,7 @@ impl<'source> Program<'source>
             None => ret == Maybe::Present(Unrunnable::Undeclared(constant)),
             Some(&Declared {name,slot:Slot::Opaque(Opacity::Data)}) => ret == Maybe::Present(Unrunnable::Data(name)),
             Some(&Declared { name, slot: Slot::Opaque(Opacity::Refused) }) => ret == Maybe::Present(Unrunnable::Refused(name)),
+            Some(&Declared { name, slot: Slot::Refused(_) }) => start == Start::Refused || ret == Maybe::Present(Unrunnable::Refused(name)),
             Some(&Declared { name, slot: Slot::Opaque(Opacity::Unfocused(refusal)) }) =>
                 ret == Maybe::Present(Unrunnable::Unfocused { declaration: name, refusal }),
             Some(&Declared { slot: Slot::Opaque(Opacity::Owed), .. }) => matches!(ret, Maybe::Absent(carried::Absent::Carried)),
@@ -1275,7 +1362,7 @@ impl<'source> Program<'source>
             Maybe::Present(Unrunnable::Data(name)) => self.declarations.values().any(|declared| declared.name == name && matches!(declared.slot,Slot::Opaque(Opacity::Data))),
             Maybe::Present(Unrunnable::Undeclared(index)) => !self.declarations.contains_key(&index),
             Maybe::Present(Unrunnable::Refused(name)) => self.declarations.values().any(|declared|
-                declared.name == name && matches!(declared.slot, Slot::Opaque(Opacity::Refused))),
+                declared.name == name && matches!(declared.slot, Slot::Opaque(Opacity::Refused) | Slot::Refused(_))),
             Maybe::Present(Unrunnable::Unfocused { declaration, refusal }) => self.declarations.values().any(|declared|
                 declared.name == declaration && matches!(declared.slot, Slot::Opaque(Opacity::Unfocused(actual)) if actual == refusal)),
             Maybe::Absent(carried::Absent::Carried) => true,
@@ -1284,6 +1371,7 @@ impl<'source> Program<'source>
     fn unrunnable(
         &self,
         constant: ConstantIndex,
+        start: Start,
     ) -> Maybe<Unrunnable<'source>, carried::Absent>
     {
         let mut seen = BTreeSet::new();
@@ -1301,6 +1389,12 @@ impl<'source> Program<'source>
                     return Maybe::Present(Unrunnable::Data(declared.name));
                 },
                 Slot::Defined(ref referred) => pending.extend(referred.iter().copied()),
+                Slot::Refused(ref referred) => {
+                    if reached != constant || start == Start::Accepted {
+                        return Maybe::Present(Unrunnable::Refused(declared.name));
+                    }
+                    pending.extend(referred.iter().copied());
+                },
                 Slot::Opaque(Opacity::Owed) => {},
                 Slot::Opaque(Opacity::Refused) => {
                     return Maybe::Present(Unrunnable::Refused(declared.name));
@@ -1491,10 +1585,10 @@ impl<'source> Program<'source>
     ///
     /// # Specification
     /// - requires: nothing; missing and even defined positions are classified.
-    /// - ensures: owed positions blame their name, refused and unfocused ones
-    ///   remain unrunnable with their identity, a defined position is
-    ///   inconsistent, and an absent position reports that exact undeclared
-    ///   index.
+    /// - ensures: owed positions blame their name, refused and unfocused ones —
+    ///   a checker-refused one whose body focused included — remain unrunnable
+    ///   with their identity, a defined position is inconsistent, and an absent
+    ///   position reports that exact undeclared index.
     /// - fails: every classification is an evaluation, never a panic.
     /// - panics: none.
     ///
@@ -1505,7 +1599,7 @@ impl<'source> Program<'source>
     #[spec(ensures: |ref ret| match self.declarations.get(&constant) {
         Some(&Declared {name,slot:Slot::Opaque(Opacity::Data)}) => matches!(*ret,Evaluation::Unrunnable(Unrunnable::Data(actual)) if actual == name),
         Some(&Declared { name, slot: Slot::Opaque(Opacity::Owed) }) => matches!(*ret, Evaluation::Blamed(actual) if actual == name),
-        Some(&Declared { name, slot: Slot::Opaque(Opacity::Refused) }) => matches!(*ret, Evaluation::Unrunnable(Unrunnable::Refused(actual)) if actual == name),
+        Some(&Declared { name, slot: Slot::Opaque(Opacity::Refused) | Slot::Refused(_) }) => matches!(*ret, Evaluation::Unrunnable(Unrunnable::Refused(actual)) if actual == name),
         Some(&Declared { name, slot: Slot::Opaque(Opacity::Unfocused(refusal)) }) => matches!(*ret,
             Evaluation::Unrunnable(Unrunnable::Unfocused { declaration, refusal: actual }) if declaration == name && actual == refusal),
         Some(&Declared { slot: Slot::Defined(_), .. }) => matches!(*ret, Evaluation::Unfinished(Unfinished::Inconsistent(actual)) if actual == constant),
@@ -1527,7 +1621,7 @@ impl<'source> Program<'source>
             }) => Evaluation::Blamed(name),
             Some(&Declared {
                 name,
-                slot: Slot::Opaque(Opacity::Refused),
+                slot: Slot::Opaque(Opacity::Refused) | Slot::Refused(_),
             }) => Evaluation::Unrunnable(Unrunnable::Refused(name)),
             Some(&Declared {
                 name,
@@ -1707,6 +1801,20 @@ impl Runner for Program<'_>
     ) -> RunSpelling
     {
         RunSpelling::from(self.evaluate(constant).to_string())
+    }
+
+    /// Spells the outcome of running the declaration at `constant` though
+    /// the checker refused it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run_refused(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        RunSpelling::from(self.evaluate_refused(constant).to_string())
     }
 }
 
@@ -2261,6 +2369,54 @@ def later : Integer ; def lost = missing ; def answer = 42 ;"#,
         assert_eq!(
             run(&mut carried, SurfaceName::from("answer")).to_string(),
             "42"
+        );
+    }
+
+    #[test]
+    fn a_refused_declaration_runs_only_as_its_own_root()
+    {
+        let mut refused = program(
+            r#"def wrong : String ; def wrong = 42 ;
+def bad : Integer ; def bad = "text" ;
+def leans : String ; def leans = bad ;
+def lost = missing ; def answer = 42 ;"#,
+        );
+        let at = |program: &Program<'_>, name: &str| {
+            program
+                .declarations
+                .iter()
+                .find(|&(_, declared)| declared.name == SurfaceName::from(name))
+                .map(|(&constant, _)| constant)
+                .expect("the program declares the name")
+        };
+        let wrong = at(&refused, "wrong");
+        assert_eq!(
+            refused.evaluate_refused(wrong).to_string(),
+            "42",
+            "the refused body runs as its own root"
+        );
+        assert_eq!(
+            refused.evaluate(wrong),
+            Evaluation::Unrunnable(Unrunnable::Refused(SurfaceName::from("wrong"))),
+            "the strict run still refuses it"
+        );
+        let leans = at(&refused, "leans");
+        assert_eq!(
+            refused.evaluate_refused(leans),
+            Evaluation::Unrunnable(Unrunnable::Refused(SurfaceName::from("bad"))),
+            "another refused declaration it reaches stops the run"
+        );
+        let lost = at(&refused, "lost");
+        assert_eq!(
+            refused.evaluate_refused(lost),
+            Evaluation::Unrunnable(Unrunnable::Refused(SurfaceName::from("lost"))),
+            "a body the lowering refused has nothing to run"
+        );
+        let answer = at(&refused, "answer");
+        assert_eq!(
+            refused.evaluate_refused(answer).to_string(),
+            "42",
+            "an accepted declaration runs alike either way"
         );
     }
 

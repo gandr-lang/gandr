@@ -1099,10 +1099,12 @@ impl fmt::Display for NoteText<'_>
     /// # Specification
     /// - requires: the declaration produced a refusal.
     /// - ensures: names the declaration; says it is expected to check, to check
-    ///   owing its stated count, to be refused with its stated refusal, or to
-    ///   run to its stated outcome, or that its expectation states nothing and
-    ///   why; says the refusal is what leaves it unsettled; then the surviving
-    ///   obligations exactly when the ledger is nonempty.
+    ///   owing its stated count, to be refused with its stated refusal, to run
+    ///   to its stated outcome, or to be refused and run, or that its
+    ///   expectation states nothing and why; says the refusal is what leaves it
+    ///   unsettled, or for a refusal and a run what it was refused with and ran
+    ///   to; then the surviving obligations exactly when the ledger is
+    ///   nonempty.
     /// - provides: the note after a refused declaration's snippet.
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
@@ -1145,6 +1147,25 @@ impl fmt::Display for NoteText<'_>
                 f,
                 "`{name}` is expected to read {spelled}, and this refusal leaves it unsettled"
             )?,
+            Stated::Verdict(Outcome::RefusesRunning(expected, ref spelled)) => {
+                match self.0.outcome() {
+                    Outcome::RefusesRunning(refused, ref ran) => write!(
+                        f,
+                        "`{name}` is expected to be refused with {expected} and run to {spelled}, and \
+                     it is refused with {refused} and runs to {ran}"
+                    )?,
+                    Outcome::Checks(_)
+                    | Outcome::Refuses(_)
+                    | Outcome::Runs(_)
+                    | Outcome::Normalizes(_) => {
+                        write!(
+                            f,
+                            "`{name}` is expected to be refused with {expected} and run to {spelled}, \
+                         and this refusal leaves nothing to run"
+                        )?;
+                    },
+                }
+            },
             Stated::Malformed(fault) => {
                 write!(f, "`{name}` states no verdict to settle against: {fault}")?;
             },

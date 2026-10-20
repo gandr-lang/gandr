@@ -680,7 +680,8 @@ pub fn encode_submission(
                         &(Outcome::Checks(_)
                         | Outcome::Refuses(_)
                         | Outcome::Runs(_)
-                        | Outcome::Normalizes(_)),
+                        | Outcome::Normalizes(_)
+                        | Outcome::RefusesRunning(..)),
                     ) => {},
                 }
             }

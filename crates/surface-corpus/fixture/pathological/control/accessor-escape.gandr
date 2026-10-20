@@ -7,8 +7,11 @@ def leak() -> -F Integer {
   pure c
 }
 
-/// A held value captured by a thunk would outlive its hold the same way.
-@[ refuses("HeldCaptured") ]
+/// A held value captured by a thunk would outlive its hold the same way. The
+/// thunk here is forced inside the hold, so the refused body still runs to the
+/// value it read: the refusal is the checker's caution, not a fault the run
+/// meets (#1132).
+@[ runs("0"), refuses("HeldCaptured") ]
 def stash() -> -F Integer {
   hold c = 0;
   force thunk { pure c }

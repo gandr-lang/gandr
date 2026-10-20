@@ -124,6 +124,10 @@ quenchant_shape::reason_enum! {
             /// It states one, but was refused, owes its body, or is not of
             /// the verdict that has one, so there is nothing to run or read.
             Unaccepted,
+            /// It states a run beside a refusal, but the checker did not
+            /// refuse it: it checked, owes, or the lowering or the root refused
+            /// it first, so there is no checker-refused body to run.
+            Unrefused,
         }
     }
 }
@@ -544,9 +548,10 @@ impl<'source> DeclarationReport<'source>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the produced refusal's name when one was produced; else the
-    ///   outcome its run or its normal form produced, in the stated schema,
-    ///   when it states one and was accepted; else checks owing the
+    /// - ensures: the produced refusal's name when one was produced, beside the
+    ///   run's spelling when a run beside the refusal is stated and was run;
+    ///   else the outcome its run or its normal form produced, in the stated
+    ///   schema, when it states one and was accepted; else checks owing the
     ///   declaration's own obligations.
     /// - provides: the side the settle comparison holds the stated verdict
     ///   against.
@@ -555,16 +560,26 @@ impl<'source> DeclarationReport<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — checked, owed, refused, guarded and requested-run
-    ///   declarations beside mismatching expectations. Exact outcome variants,
-    ///   counts and text distinguish changed precedence, erased obligations and
-    ///   altered run spelling; the predicate borrows text rather than cloning a
-    ///   second outcome.
+    ///   declarations beside mismatching expectations, and a refused one run
+    ///   beside its refusal. Exact outcome variants, counts and text
+    ///   distinguish changed precedence, erased obligations and altered run
+    ///   spelling; the predicate borrows text rather than cloning a second
+    ///   outcome.
     /// - witness: `settle::tests::a_wrong_stated_verdict_is_unsettled_either_way`
     /// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
     /// - witness: `settle::tests::the_strict_root_refuses_an_expectation_outside_the_fixture_root`
+    /// - witness: `settle::tests::a_run_beside_a_refusal_settles_only_when_both_hold`
     #[spec(
         ensures: |ret| match self.produced.refusal() {
-    Maybe::Present(refusal) => ret == Outcome::Refuses(refusal.name()),
+    Maybe::Present(refusal) => match (&self.stated, &self.ran) {
+        (&Stated::Verdict(Outcome::RefusesRunning(..)), &Maybe::Present(ref spelled)) => {
+            matches!(ret, Outcome::RefusesRunning(name, ref actual) if name == refusal.name() && actual == spelled)
+        }
+        (&Stated::Verdict(Outcome::RefusesRunning(..)), &Maybe::Absent(_))
+        | (&(Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_) | Outcome::Runs(_) | Outcome::Normalizes(_)) | Stated::Malformed(_)), _) => {
+            ret == Outcome::Refuses(refusal.name())
+        }
+    },
     Maybe::Absent(produced_refusal::Absent::Unrefused) => {
         match self.ran {
             Maybe::Present(ref spelled) => match self.stated {
@@ -583,12 +598,20 @@ impl<'source> DeclarationReport<'source>
     pub fn outcome(&self) -> Outcome
     {
         match (self.produced.refusal(), &self.ran) {
+            (Maybe::Present(refusal), &Maybe::Present(ref spelled))
+                if matches!(self.stated, Stated::Verdict(Outcome::RefusesRunning(..))) =>
+            {
+                Outcome::RefusesRunning(refusal.name(), spelled.clone())
+            },
             (Maybe::Present(refusal), _) => Outcome::Refuses(refusal.name()),
             (Maybe::Absent(produced_refusal::Absent::Unrefused), &Maybe::Present(ref spelled)) => {
                 match self.stated {
                     Stated::Verdict(Outcome::Normalizes(_)) => Outcome::Normalizes(spelled.clone()),
                     Stated::Verdict(
-                        Outcome::Checks(_) | Outcome::Refuses(_) | Outcome::Runs(_),
+                        Outcome::Checks(_)
+                        | Outcome::Refuses(_)
+                        | Outcome::Runs(_)
+                        | Outcome::RefusesRunning(..),
                     )
                     | Stated::Malformed(_) => Outcome::Runs(spelled.clone()),
                 }
@@ -619,6 +642,7 @@ impl<'source> DeclarationReport<'source>
     /// - witness: `settle::tests::a_refusal_outside_the_vocabulary_fails_the_fixture`
     /// - witness: `settle::tests::a_name_carrying_two_expectations_states_none`
     /// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
+    /// - witness: `settle::tests::a_run_beside_a_refusal_settles_only_when_both_hold`
     #[spec(
         ensures: |ret| {
     (ret == Settlement::Settled)
@@ -639,6 +663,10 @@ impl<'source> DeclarationReport<'source>
                     && matches!(
                         self.ran, Maybe::Present(ref actual) if actual == expected
                     )
+            }
+            Stated::Verdict(Outcome::RefusesRunning(name, ref expected)) => {
+                matches!(self.produced.refusal(), Maybe::Present(refusal) if refusal.name() == name)
+                    && matches!(self.ran, Maybe::Present(ref actual) if actual == expected)
             }
         }
 },
@@ -662,6 +690,10 @@ impl<'source> DeclarationReport<'source>
                 matches!(self.produced.refusal(), Maybe::Absent(_))
                     && matches!(self.ran, Maybe::Present(ref actual) if actual == expected)
             },
+            Stated::Verdict(Outcome::RefusesRunning(name, ref expected)) => {
+                matches!(self.produced.refusal(), Maybe::Present(refusal) if refusal.name() == name)
+                    && matches!(self.ran, Maybe::Present(ref actual) if actual == expected)
+            },
         };
         if agrees {
             Settlement::Settled
@@ -676,10 +708,10 @@ impl<'source> DeclarationReport<'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: with `declared` the count a stated `checks` verdict names,
-    ///   and zero for a stated refusal, a stated run outcome or normal form, or
-    ///   a malformed expectation, the owed obligations past `declared` are
-    ///   undeclared and the declared ones past the owed are unproduced; at most
-    ///   one of the two is nonzero.
+    ///   and zero for a stated refusal, a stated run outcome or normal form, a
+    ///   run beside a refusal, or a malformed expectation, the owed obligations
+    ///   past `declared` are undeclared and the declared ones past the owed are
+    ///   unproduced; at most one of the two is nonzero.
     /// - provides: the surviving count a report sums.
     /// - fails: never.
     /// - panics: none.
@@ -710,7 +742,12 @@ impl<'source> DeclarationReport<'source>
     {
         let declared = match self.stated {
             Stated::Verdict(Outcome::Checks(declared)) => usize::from(declared),
-            Stated::Verdict(Outcome::Refuses(_) | Outcome::Runs(_) | Outcome::Normalizes(_))
+            Stated::Verdict(
+                Outcome::Refuses(_)
+                | Outcome::Runs(_)
+                | Outcome::Normalizes(_)
+                | Outcome::RefusesRunning(..),
+            )
             | Stated::Malformed(_) => 0_usize,
         };
         let owed = usize::from(self.owed);
@@ -906,10 +943,11 @@ impl Error for SettleFault
 ///   checker verdict; other declarations pair with the checker by admission
 ///   position. Root guards override produced verdicts without dropping their
 ///   owed obligations. Only accepted declarations stating a run outcome call
-///   `runner`, once each in order, and only accepted declarations stating a
-///   normal form read one, through [`LoweredModule::normal_form`], under the
-///   rules of the block that holds them; the report preserves the checker
-///   ledger count.
+///   `runner`'s run, and only checker-refused declarations stating a run beside
+///   their refusal call its refused run, once each in order; only accepted
+///   declarations stating a normal form read one, through
+///   [`LoweredModule::normal_form`], under the rules of the block that holds
+///   them; the report preserves the checker ledger count.
 /// - fails: `SettleFault` for the first missing or misaligned verdict, an
 ///   unreadable expectation payload, or a verdict left after the module ends.
 ///   Calls made to the runner before a later fault are not rolled back.
@@ -934,6 +972,7 @@ impl Error for SettleFault
 /// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
 /// - witness: `settle::tests::a_later_alignment_fault_does_not_replay_or_extend_runner_calls`
 /// - witness: `settle::tests::a_normal_form_settles_against_the_engines_reading`
+/// - witness: `settle::tests::a_run_beside_a_refusal_settles_only_when_both_hold`
 #[spec(
     ensures: |ret| match ret {
     Ok(ref report) => {
@@ -982,6 +1021,11 @@ impl Error for SettleFault
                                         declaration.produced, Produced::Judged(Verdict::Data
                                         | Verdict::Checked { .. } | Verdict::Synthesised { .. })
                                     ))
+                                    || (matches!(
+                                        declaration.stated, Stated::Verdict(Outcome::RefusesRunning(..))
+                                    ) && matches!(
+                                        declaration.produced, Produced::Judged(Verdict::Refused(_))
+                                    ))
                             }
                             Maybe::Absent(ran::Absent::Unaccepted) => {
                                 (matches!(
@@ -998,9 +1042,16 @@ impl Error for SettleFault
                                         | Verdict::Checked { .. } | Verdict::Synthesised { .. })
                                     ))
                             }
+                            Maybe::Absent(ran::Absent::Unrefused) => {
+                                matches!(
+                                    declaration.stated, Stated::Verdict(Outcome::RefusesRunning(..))
+                                ) && !matches!(
+                                    declaration.produced, Produced::Judged(Verdict::Refused(_))
+                                )
+                            }
                             Maybe::Absent(ran::Absent::Unstated) => {
                                 !matches!(
-                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Normalizes(_))
+                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Normalizes(_) | Outcome::RefusesRunning(..))
                                 )
                             }
                         }
@@ -1170,6 +1221,22 @@ pub fn settle_after<'source>(
                 &Stated::Verdict(Outcome::Runs(_)),
                 Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
             ) => Maybe::Present(runner.run(lowered.constant())),
+            (
+                &Stated::Verdict(Outcome::RefusesRunning(..)),
+                Produced::Judged(Verdict::Refused(_)),
+            ) => Maybe::Present(runner.run_refused(lowered.constant())),
+            (
+                &Stated::Verdict(Outcome::RefusesRunning(..)),
+                Produced::Judged(
+                    Verdict::Data
+                    | Verdict::Checked { .. }
+                    | Verdict::Synthesised { .. }
+                    | Verdict::Owed(_)
+                    | Verdict::Suspended(_),
+                )
+                | Produced::Unlowered(_)
+                | Produced::Guarded(_),
+            ) => Maybe::Absent(ran::Absent::Unrefused),
             (
                 &Stated::Verdict(Outcome::Normalizes(ref line)),
                 Produced::Judged(
@@ -1492,6 +1559,7 @@ mod tests
     use crate::report::SettleReport;
     use crate::root::CorpusRoot;
     use crate::run::RunSpelling;
+    use crate::run::Runner;
 
     /// The one declaration `report` holds.
     ///
@@ -1898,6 +1966,123 @@ mod tests
             report.declarations().len(),
             5_usize,
             "every name is reported, run or not"
+        );
+    }
+
+    /// A runner recording which of its runs each position asked for.
+    ///
+    /// # Specification
+    /// trivial.
+    #[repr(transparent)]
+    #[derive(Default)]
+    struct Asked(Vec<(&'static str, usize)>);
+
+    impl Runner for Asked
+    {
+        /// Records an accepted run and spells it by position.
+        ///
+        /// # Specification
+        /// trivial.
+        fn run(
+            &mut self,
+            constant: ConstantIndex,
+        ) -> RunSpelling
+        {
+            self.0.push(("run", usize::from(constant)));
+            ran_at(constant)
+        }
+
+        /// Records a refused run and spells it by position.
+        ///
+        /// # Specification
+        /// trivial.
+        fn run_refused(
+            &mut self,
+            constant: ConstantIndex,
+        ) -> RunSpelling
+        {
+            self.0.push(("refused", usize::from(constant)));
+            ran_at(constant)
+        }
+    }
+
+    #[test]
+    fn a_run_beside_a_refusal_settles_only_when_both_hold()
+    {
+        let both = |name, position: &str| {
+            Outcome::RefusesRunning(name, RunSpelling::from(format!("ran at {position}")))
+        };
+        let rows = [
+            (
+                CorpusRoot::Fixture,
+                r#"@[ runs("ran at 0"), refuses("TypeMismatch") ] def a : Integer ; def a = "three" ;"#,
+                both(RefusalName::TypeMismatch, "0"),
+                Settlement::Settled,
+            ),
+            (
+                CorpusRoot::Fixture,
+                r#"@[ refuses("TypeMismatch"), runs("ran at 1") ] def a : Integer ; def a = "three" ;"#,
+                both(RefusalName::TypeMismatch, "0"),
+                Settlement::Unsettled,
+            ),
+            (
+                CorpusRoot::Fixture,
+                r#"@[ runs("ran at 0"), refuses("UnknownConstant") ] def a : Integer ; def a = "three" ;"#,
+                both(RefusalName::TypeMismatch, "0"),
+                Settlement::Unsettled,
+            ),
+            (
+                CorpusRoot::Fixture,
+                r#"@[ runs("ran at 0"), refuses("TypeMismatch") ] def a = 3 ;"#,
+                Outcome::Checks(ObligationCount::from(0_usize)),
+                Settlement::Unsettled,
+            ),
+            (
+                CorpusRoot::Strict,
+                r#"@[ runs("ran at 0"), refuses("TypeMismatch") ] def a : Integer ; def a = "three" ;"#,
+                Outcome::Refuses(RefusalName::ExpectationOutsideFixtureRoot),
+                Settlement::Unsettled,
+            ),
+        ];
+        for (root, source, outcome, settlement) in rows {
+            let report = settled(root, SourceText::from(source));
+            assert_eq!(
+                (only(&report).outcome(), only(&report).settlement()),
+                (outcome, settlement),
+                "`{source}` under the {root} root produces and settles as pinned"
+            );
+        }
+
+        let module = checked(SourceText::from(
+            r#"@[ runs("ran at 0") ] def a = 3 ; @[ runs("ran at 1"), refuses("TypeMismatch") ] def b : Integer ; def b = "three" ; @[ refuses("TypeMismatch") ] def c : Integer ; def c = "four" ; @[ runs("ran at 3"), refuses("TypeMismatch") ] def d = 4 ;"#,
+        ));
+        let mut asked = Asked::default();
+        let report = settle(
+            CorpusRoot::Fixture,
+            &module.arena,
+            &module.module,
+            &module.verdicts,
+            &mut asked,
+        )
+        .expect("the verdicts are the module's own");
+        assert_eq!(
+            asked.0,
+            [("run", 0_usize), ("refused", 1_usize)],
+            "an accepted run is asked as one, a refused run beside its refusal as the other, and nothing else"
+        );
+        assert_eq!(
+            report
+                .declarations()
+                .iter()
+                .map(DeclarationReport::settlement)
+                .collect::<Vec<_>>(),
+            [
+                Settlement::Settled,
+                Settlement::Settled,
+                Settlement::Settled,
+                Settlement::Unsettled
+            ],
+            "each settles on its own verdict; the checked one stating a refusal does not"
         );
     }
 
