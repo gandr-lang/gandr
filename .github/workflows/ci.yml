@@ -945,48 +945,48 @@ jobs:
 
   # A change owes re-verification by every specification naming a changed
   # item (`evidence:obligations`). A pull request reruns only the obligated
-  # witnesses, specifications enforced, and lists the prose clauses to re-read
-  # in one comment it updates in place; the merge queue still runs every test.
-  # Dispatches run the lane too, against the parent commit, so `ci:act`
-  # exercises it. A fork's read-only token cannot comment: its report stays in
-  # the log. The comment is read before the lane and posted after it, from
-  # bare runners, so the job running the change's code holds no write token.
+  # witnesses, specifications enforced, and lists them in one comment it
+  # updates in place; the merge queue still runs every test. The prose
+  # clauses to re-read are the pull request body's `## Re-verification`
+  # section (`pr:open` and `pr:land` write it), and the lane fails while one
+  # of its boxes is unticked. Dispatches run the lane too, against the parent
+  # commit and without a body, so `ci:act` exercises it. A fork's read-only
+  # token cannot comment: its witnesses stay in the log. The comment is found
+  # before the lane and posted after it, from bare runners, so the job running
+  # the change's code holds no write token.
   obligations-comment-read:
-    name: read the obligations comment
+    name: find the obligations comment
     if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && github.actor != 'dependabot[bot]' }}
     runs-on: *linux
     permissions:
       pull-requests: read
     outputs:
       id: ${{ steps.find.outputs.id }}
-      body: ${{ steps.find.outputs.body }}
     env: &obligations-comment-env
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
-      # Only this workflow's own comment carries acknowledgements: a comment
-      # by anyone else that copies the marker is ignored.
+      # Only this workflow's own comment is updated: a comment by anyone else
+      # that copies the marker is ignored.
       - id: find
         name: find this workflow's comment
         shell: bash
         run: |
-          comment=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$PR_NUMBER/comments" |
-            jq -c '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- quenchant-obligations -->")))] | first // {id: "", body: ""}')
-          delimiter=$(openssl rand -hex 16)
-          {
-            printf 'id=%s\n' "$(jq -r .id <<< "$comment")"
-            printf 'body<<%s\n' "$delimiter"
-            jq -r .body <<< "$comment"
-            printf '%s\n' "$delimiter"
-          } >> "$GITHUB_OUTPUT"
+          id=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$PR_NUMBER/comments" |
+            jq -r '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- quenchant-obligations -->")))] | first | .id // ""')
+          printf 'id=%s\n' "$id" >> "$GITHUB_OUTPUT"
 
   obligations:
     name: re-verify obligated specifications (linux)
     needs: [changes, ci-image-ref, obligations-comment-read]
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.rust == 'true' && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
-    permissions: *build-state-read-permissions
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+      pull-requests: read
     container: *ci-image # zizmor: ignore[unpinned-images]
     timeout-minutes: 30
     outputs:
@@ -1000,7 +1000,6 @@ jobs:
       # A pull request checks out its merge commit, whose first parent is the
       # base it merges into; a dispatch compares against its parent commit.
       CI_FETCH_DEPTH: "2"
-      OBLIGATIONS_PREVIOUS: ${{ needs.obligations-comment-read.outputs.body }}
     steps:
       - *git-checkout
       - *trust-workspace
@@ -1013,17 +1012,36 @@ jobs:
       - *restore-policy-state
       - *restore-test-state
       - *unpack-build-state
+      # The body as it reads when the job runs, never the event's copy: a
+      # rerun after the boxes are ticked reads the ticks.
+      - name: read the pull request body
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          mkdir -p target/evidence
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.body // ""' > target/evidence/body.md
+      # Exit 2 is an unticked box: the witnesses still rerun and the comment
+      # is still posted, and the last step fails the lane.
       - name: list the re-verification obligations
         id: obligations
         shell: bash
+        env:
+          OBLIGATIONS_BODY: ${{ github.event_name == 'pull_request' }}
         run: |
-          previous=()
-          if [[ -n $OBLIGATIONS_PREVIOUS ]]; then
-            mkdir -p target/evidence
-            printf '%s\n' "$OBLIGATIONS_PREVIOUS" > target/evidence/previous.md
-            previous=(--previous target/evidence/previous.md)
+          extra=()
+          if [[ $OBLIGATIONS_BODY == true ]]; then
+            extra=(--previous target/evidence/body.md --require-acknowledged)
           fi
-          mise run evidence:obligations "$(git rev-parse --short=12 HEAD^)" "${previous[@]}"
+          status=0
+          mise run evidence:obligations "$(git rev-parse --short=12 HEAD^)" "${extra[@]}" || status=$?
+          if (( status == 2 )); then
+            printf 'open=true\n' >> "$GITHUB_OUTPUT"
+          elif (( status != 0 )); then
+            exit "$status"
+          fi
       - name: rerun the obligated witnesses
         env:
           NEXTEST_PROFILE: ci-enforcing
@@ -1038,13 +1056,19 @@ jobs:
           name: obligations-comment
           path: target/evidence/comment.md
           if-no-files-found: error
+      - name: require every prose obligation acknowledged
+        if: ${{ !cancelled() && steps.obligations.outputs.open == 'true' }}
+        shell: bash
+        run: |
+          printf '::error::a prose obligation is unticked in the body'"'"'s ## Re-verification section; tick its box (`mise run pr:land` writes the section), then rerun this job\n'
+          exit 1
       - *upload-test-report
       - *lane-timing
 
-  # Posted whatever the witnesses' verdict, once the report exists: the prose
-  # obligations stand either way. GitHub refuses a comment body over 65,536
-  # characters, so a longer report is cut at a line boundary below that, and
-  # the comment links the full report's artifact.
+  # Posted whatever the witnesses' verdict and the boxes' state, once the
+  # report exists: the comment lists the witnesses rerun. GitHub refuses a
+  # comment body over 65,536 characters, so a longer report is cut at a line
+  # boundary below that, and the comment links the full report's artifact.
   obligations-comment:
     name: post the obligations comment
     needs: [obligations-comment-read, obligations]

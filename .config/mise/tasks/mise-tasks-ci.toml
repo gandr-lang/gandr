@@ -549,16 +549,40 @@ echo "#$pr: ledger #$ledger"
 cat "$scratch/rows"
 {% endraw %}'''
 
+# The pull request's title becomes the header of its merge commit on main,
+# and the PR title workflow lints it with the commit rules: a conventional
+# header of at most 72 characters, its type and scope from
+# commitlint.config.mjs. The body carries the change's prose obligations as
+# its `## Re-verification` section, written into the body file here
+# (`evidence:obligations --body`) with any ticks the file already holds;
+# `gh pr create` waits until every box is ticked, so the pull request's first
+# obligations lane reads them. Tick one box per obligation in the file and run
+# `pr:open` again.
+["pr:open"]
+description = "Open the pull request once its body acknowledges every prose obligation"
+usage = '''
+arg "<title>" help="the pull request title: a conventional header"
+arg "<body>" help="the body file; its re-verification section is written in place"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+body=$(realpath "${usage_body:?}")
+status=0
+mise run evidence:obligations --body "$body" --require-acknowledged || status=$?
+if (( status == 2 )); then
+  echo "tick one box per prose obligation in $body's ## Re-verification section, then run \`pr:open\` again" >&2
+  exit 2
+fi
+(( status == 0 )) || exit "$status"
+gh pr create --base main --title "${usage_title:?}" --body-file "$body"
+'''
+
 # Head checks and merge-group checks are separate runs. Watch the queue entry
 # as well as the pull request; green head checks alone do not prove landing.
 # The entry runs every workflow with a merge_group trigger; each is reported.
-#
-# The pull request's title becomes the header of its merge commit on main,
-# and the PR title workflow lints it with the commit rules. Open the pull
-# request with `gh pr create --title '<type>(<scope>): <subject>' --body-file
-# <file>`: a conventional header of at most 72 characters, its type and scope
-# from commitlint.config.mjs. Never `--fill` on a branch of several commits:
-# it titles the pull request with the branch name.
+# Open the pull request with `pr:open`; never `gh pr create --fill` on a branch
+# of several commits: it titles the pull request with the branch name.
 #
 # A stack lands whole: `pr:land --stack` restacks the current branch's stack
 # onto `origin/main` (`gh stack rebase`), pushes every branch it moved
@@ -566,6 +590,12 @@ cat "$scratch/rows"
 # waits on the top pull request, as the queue merges the stack all or none.
 # Without `--stack`, a pull request whose base is another branch is refused:
 # it is not the bottom of its stack, and the queue takes main-based ones only.
+#
+# Before queueing, the prose obligations are written into the pull request's
+# body against the rebased branch, its ticks carried, and the landing is
+# refused while a box is unticked; a stack is measured whole against
+# origin/main into its top pull request's body. Once every box is ticked, a
+# failed obligations lane is rerun so it reads the ticks.
 ["pr:land"]
 description = "Enable auto-merge and wait for the merge queue outcome"
 usage = '''
@@ -696,6 +726,31 @@ else
       git push --quiet --force-with-lease
     fi
   fi
+fi
+
+# The obligations are measured on the checked-out tree, so it must be the
+# pull request's own branch: a stack's top branch for `--stack`.
+own=$(gh pr view --json number --jq .number 2> /dev/null) || own=
+if [[ "$own" != "$number" ]]; then
+  echo "PR #$number is not the checked-out branch's pull request; run \`pr:land\` from its branch, a stack from its top branch" >&2
+  exit 2
+fi
+body=$(mktemp)
+gh pr view "$number" -R "$repo" --json body --jq .body > "$body"
+cp "$body" "$body.read"
+status=0
+mise run evidence:obligations --body "$body" --require-acknowledged || status=$?
+if (( status != 0 && status != 2 )); then rm -f "$body" "$body.read"; exit "$status"; fi
+if ! cmp -s "$body" "$body.read"; then gh pr edit "$number" -R "$repo" --body-file "$body" > /dev/null; fi
+rm -f "$body" "$body.read"
+if (( status == 2 )); then
+  echo "PR #$number: tick one box per prose obligation in its body's ## Re-verification section, then run \`pr:land\` again" >&2
+  exit 2
+fi
+lane=$(gh pr checks "$number" -R "$repo" --json name,bucket,link --jq '.[] | select(.name == "re-verify obligated specifications (linux)" and .bucket == "fail") | .link')
+if [[ -n "$lane" ]]; then
+  run_id=${lane#*/runs/}
+  gh run rerun "${run_id%%/*}" -R "$repo" --job "${lane##*/job/}"
 fi
 
 initial=$(pr_state)
