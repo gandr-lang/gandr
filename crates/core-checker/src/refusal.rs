@@ -637,7 +637,7 @@ pub enum CheckRefusal
     /// A universe equivalence the rule does not decide: its translators are
     /// open, its forward classifier is no thunk of a pure non-dependent arrow,
     /// or a code is outside the unit type, the base atoms, sums of at least
-    /// one summand and products.
+    /// one summand, products and lists.
     EquivUnsupported
     {
         /// The `equiv`.
@@ -645,13 +645,15 @@ pub enum CheckRefusal
         /// The forward translator's type, or the code the coverage stopped at.
         classifier: ValueTypeId,
     },
-    /// A universe equivalence over a recursive code: the stratum of unbounded
-    /// codes, whose round trips no finite coverage certifies.
+    /// A universe equivalence one of whose round trips does not convert at a
+    /// list cell whose tail is a fresh variable: the cell is lost, or the
+    /// conversion it lacks is the round trip at the tail, which the rule does
+    /// not assume; with the tail rigid the two are not told apart.
     UncertifiedStratum
     {
         /// The `equiv`.
         at: ValueId,
-        /// The List code the coverage reached.
+        /// The List code whose tail the pattern leaves unobserved.
         code: ValueTypeId,
     },
     /// A universe equivalence one of whose round trips does not return its

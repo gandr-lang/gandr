@@ -620,11 +620,11 @@ fn checked(
         ),
         CheckRefusal::EquivUnsupported { .. } => f.write_str(
             "`equiv` needs two closed pure translators between types built from units, \
-             integers, strings, tuples and sums",
+             integers, strings, tuples, sums and lists",
         ),
-        CheckRefusal::UncertifiedStratum { .. } => {
-            f.write_str("`equiv` cannot certify a recursive type such as a list")
-        },
+        CheckRefusal::UncertifiedStratum { .. } => f.write_str(
+            "`equiv` needs each list cell's round trip to return the cell, its tail unread",
+        ),
         CheckRefusal::RoundTripDistinct { .. } => {
             f.write_str("`equiv` needs each round trip to return its input")
         },

@@ -519,12 +519,13 @@ pub enum Refusal
         /// The forward translator's type, or the code the coverage stopped at.
         classifier: TypeContent,
     },
-    /// A universe equivalence over a recursive code.
+    /// A universe equivalence whose round trip at a list cell does not convert
+    /// with the cell's tail a fresh variable.
     UncertifiedStratum
     {
         /// The universe equivalence.
         at: Site,
-        /// The List code the coverage reached.
+        /// The List code whose tail the pattern leaves unobserved.
         code: TypeContent,
     },
     /// A universe equivalence one of whose round trips does not return its

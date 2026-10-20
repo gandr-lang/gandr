@@ -17,14 +17,18 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_nbe::BinderLevel;
 use gandr_core_nbe::Definitions;
 use gandr_core_nbe::DomainArena;
 use gandr_core_nbe::Fuel;
 use gandr_core_nbe::LoweredChain;
 use gandr_core_nbe::MachineSettings;
 use gandr_core_nbe::MachineVerdict;
+use gandr_core_nbe::NeutralHead;
 use gandr_core_nbe::Problem;
 use gandr_core_nbe::ResharingMemo;
+use gandr_core_nbe::TermFace;
+use gandr_core_nbe::Unfolding;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DefinitionalEnvironment;
 use gandr_core_term::Transparency;
@@ -86,9 +90,9 @@ Value::Constructor {ref fields,..} => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
 Value::PathEquiv { .. } => 3,
 Value::Tuple(ref components) => components.len(),
-Value::StaticApplication(..) | Value::PathProduct(..) => 2,
+Value::StaticApplication(..) | Value::PathProduct(..) | Value::ListCons(..) => 2,
 Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) | Value::Univalence(_) => 1,
-Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Here { .. } | Value::Returned(_) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. } | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) | Value::ListNil | Value::ListCons(..) => 0,
+Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Here { .. } | Value::Returned(_) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. } | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) | Value::ListNil => 0,
 }),
         AnyNode::Computation(id) => arena.computation(id).map_or(0, |matched_native_node| match *matched_native_node {
 Computation::DataCase {ref branches,..} => branches.len().saturating_add(2),
@@ -128,10 +132,7 @@ fn children(
                 .chain(fields.iter().copied().map(V))
                 .collect(),
             Value::Record(ref fields) => fields.values().copied().map(V).collect(),
-            Value::ListNil
-            | Value::ListCons(..)
-            | Value::SessionPath { .. }
-            | Value::SessionFlow { .. } => {
+            Value::SessionPath { .. } | Value::SessionFlow { .. } => {
                 panic!("session evidence has a separate finite producer")
             },
             Value::Here { .. }
@@ -152,7 +153,9 @@ fn children(
                 backward,
                 ..
             } => vec![A(path_type), V(forward), V(backward)],
-            Value::PathProduct(a, b) | Value::StaticApplication(a, b) => vec![V(a), V(b)],
+            Value::PathProduct(a, b) | Value::StaticApplication(a, b) | Value::ListCons(a, b) => {
+                vec![V(a), V(b)]
+            },
             Value::Tuple(ref components) => components.iter().copied().map(V).collect(),
             Value::PathRefl(a)
             | Value::Univalence(a)
@@ -163,7 +166,9 @@ fn children(
             Value::Thunk(a) => vec![M(a)],
             Value::Quote(a) => vec![A(a)],
             Value::QuoteComputation(a) => vec![C(a)],
-            Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => Vec::new(),
+            Value::Variable(_) | Value::Constant(_) | Value::Literal(_) | Value::ListNil => {
+                Vec::new()
+            },
         },
         M(id) => match *arena.computation(id).expect("fixture computation") {
             Computation::DataCase {
@@ -454,10 +459,11 @@ fn translate(
                             .map(|(label, field)| (label.clone(), values[field]))
                             .collect(),
                     ),
-                    Value::ListNil
-                    | Value::ListCons(..)
-                    | Value::SessionPath { .. }
-                    | Value::SessionFlow { .. } => {
+                    Value::ListNil => core.value_list_nil(),
+                    Value::ListCons(head, tail) => {
+                        core.value_list_cons(values[&head], values[&tail])
+                    },
+                    Value::SessionPath { .. } | Value::SessionFlow { .. } => {
                         panic!("session evidence has a separate finite producer")
                     },
                     Value::Here { .. }
@@ -692,14 +698,15 @@ fn engine(
     right: ComputationId,
 ) -> (EngineClaim, Dialogue)
 {
-    defining_engine(arena, (left, right), &[])
+    defining_engine(arena, (left, right), &[], BinderLevel::from(0_u32))
 }
 
 /// Run `NbE` as [`engine`] does with each of `definitions` unfolding, in
-/// admission order, to its body.
+/// admission order, to its body, and `opened` binders read as rigid variables.
 ///
 /// # Specification
-/// - requires: as [`engine`]; every body is closed and in the fixture fragment.
+/// - requires: as [`engine`], save that both computations may stand under
+///   `opened` binders; every body is closed and in the fixture fragment.
 /// - ensures: as [`engine`], the constants unfolding as the machine decides.
 /// - provides: the dialogue a translator naming an admitted definition carries.
 /// - panics: on an operational fixture failure.
@@ -720,6 +727,7 @@ fn defining_engine(
     arena: &TermArena,
     (left, right): (ComputationId, ComputationId),
     definitions: &[(ConstantIndex, ValueId)],
+    opened: BinderLevel,
 ) -> (EngineClaim, Dialogue)
 {
     let bodies: Vec<ValueId> = definitions.iter().map(|&(_, body)| body).collect();
@@ -740,29 +748,43 @@ fn defining_engine(
     let environment = DefinitionalEnvironment::new();
     let definitions = Definitions::new(&chain, &environment, environment.root());
     let mut domain = DomainArena::new();
-    let left = gandr_core_nbe::eval_computation(
-        &core,
-        &mut domain,
-        definitions,
-        Fuel::from(4096_u32),
-        left,
-    )
-    .expect("left evaluation");
-    let right = gandr_core_nbe::eval_computation(
-        &core,
-        &mut domain,
-        definitions,
-        Fuel::from(4096_u32),
-        right,
-    )
-    .expect("right evaluation");
+    let mut bound = gandr_core_nbe::Environment::new();
+    for level in 0 .. u32::from(opened) {
+        let neutral = domain
+            .neutral_node(
+                NeutralHead::Variable {
+                    zone: Zone::Intuitionistic,
+                    level: BinderLevel::from(level),
+                },
+                Vec::new(),
+                Unfolding::Rigid,
+            )
+            .expect("a fixture neutral");
+        let value = domain
+            .value_neutral(neutral, TermFace::Reduced)
+            .expect("a fixture neutral value");
+        bound.extend(Zone::Intuitionistic, value);
+    }
+    let mut evaluate = |term| {
+        gandr_core_nbe::eval_comp_within(
+            &core,
+            &mut domain,
+            definitions,
+            Fuel::from(4096_u32),
+            term,
+            bound.clone(),
+        )
+        .map(|(produced, _remaining)| produced)
+    };
+    let left = evaluate(left).expect("left evaluation");
+    let right = evaluate(right).expect("right evaluation");
     let mut log = TraceLog::new();
     let report = gandr_core_nbe::decide::<_, ResharingMemo>(
         &core,
         &mut domain,
         definitions,
         MachineSettings::default(),
-        Problem::computations(left, right),
+        Problem::computations(left, right).under(opened),
         &mut log,
     )
     .expect("engine verdict");
@@ -817,6 +839,48 @@ pub fn evidence(
             let composite = arena.computation_bind(first, second);
             let identity = arena.computation_return(value);
             let (_, dialogue) = engine(arena, composite, identity);
+            dialogues.push(dialogue.0.into_iter().map(portable).collect());
+        }
+    }
+    Arc::new(evidence)
+}
+
+/// [`evidence`] for patterns that stand under one binder each, a list's tail,
+/// both directions over the same `patterns`.
+///
+/// # Specification
+/// - requires: as [`evidence`], each pattern open in at most its innermost
+///   variable.
+/// - ensures: one dialogue per pattern on each side, the engine's trace with
+///   the variable read as rigid.
+/// - provides: untrusted evidence for a list code's coverage.
+/// - panics: on an operational fixture failure.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the identity's dialogues admit at a rigid tail and the
+///   kernel, not the evidence, fixes the cells.
+/// - witness: `path_universe::tests::a_list_code_covers_one_cell_over_a_rigid_tail`
+#[spec(ensures: |ret| ret.source.len() == patterns.len() && ret.target.len() == patterns.len())]
+fn open_evidence(
+    arena: &mut TermArena,
+    patterns: &[ValueId],
+    forward: ValueId,
+    backward: ValueId,
+) -> Arc<PathEvidence>
+{
+    let mut evidence = PathEvidence::default();
+    for (first, second, dialogues) in [
+        (forward, backward, &mut evidence.source),
+        (backward, forward, &mut evidence.target),
+    ] {
+        for &value in patterns {
+            let first = apply(arena, first, value);
+            let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let second = apply(arena, second, variable);
+            let composite = arena.computation_bind(first, second);
+            let identity = arena.computation_return(value);
+            let (_, dialogue) =
+                defining_engine(arena, (composite, identity), &[], BinderLevel::from(1_u32));
             dialogues.push(dialogue.0.into_iter().map(portable).collect());
         }
     }
@@ -1450,7 +1514,12 @@ fn a_translator_may_name_an_admitted_definition()
                     let second = apply(arena, constant, variable);
                     let composite = arena.computation_bind(first, second);
                     let identity = arena.computation_return(value);
-                    let (_, dialogue) = defining_engine(arena, (composite, identity), definitions);
+                    let (_, dialogue) = defining_engine(
+                        arena,
+                        (composite, identity),
+                        definitions,
+                        BinderLevel::from(0_u32),
+                    );
                     dialogues.push(dialogue.0.into_iter().map(portable).collect());
                 }
             }
@@ -1471,10 +1540,11 @@ fn a_translator_may_name_an_admitted_definition()
 }
 
 #[test]
-fn a_recursive_code_is_an_uncertified_stratum()
+fn a_list_code_covers_one_cell_over_a_rigid_tail()
 {
+    // Reflexivity at lists of booleans, and the code inside a product.
     let mut environment = Environment::new();
-    let refused = offer(&mut environment, |arena| {
+    let refl = offer(&mut environment, |arena| {
         let boolean = boolean(arena);
         let list = arena.value_type_list(boolean.ty);
         let code = arena.value_quote(list);
@@ -1483,20 +1553,60 @@ fn a_recursive_code_is_an_uncertified_stratum()
             arena.value_path_refl(code),
         )
     });
-    assert!(matches!(
-        refused,
-        Err(KernelError::Path(PathError::UncertifiedStratum(_)))
-    ));
-    // The refusal names the recursive node, not the code around it.
+    assert!(refl.is_ok(), "{refl:?}");
     let mut arena = TermArena::new();
-    let boolean = boolean(&mut arena);
-    let list = arena.value_type_list(boolean.ty);
-    let pair = arena.value_type_product(&[boolean.ty, list]);
+    let bools = boolean(&mut arena);
+    let list = arena.value_type_list(bools.ty);
+    let pair = arena.value_type_product(&[bools.ty, list]);
     let code = arena.value_quote(pair);
-    assert_eq!(
-        super::code(&arena, code, ReplayBudget::DEFAULT),
-        Err(PathError::UncertifiedStratum(list))
-    );
+    assert_eq!(super::code(&arena, code, ReplayBudget::DEFAULT), Ok(pair));
+
+    // The empty list, then one cell per boolean over the same rigid tail: the
+    // identity's round trips replay there, so the path admits.
+    let lists =
+        |environment: &mut Environment, forward: fn(&mut TermArena) -> ValueId, cells: usize| {
+            offer(environment, |arena| {
+                let boolean = boolean(arena);
+                let list = arena.value_type_list(boolean.ty);
+                let code = arena.value_quote(list);
+                let empty = arena.value_list_nil();
+                let tail = arena.value_variable(DeBruijnIndex::from(0_u32));
+                let first = arena.value_list_cons(boolean.truth, tail);
+                let second = arena.value_list_cons(boolean.falsity, tail);
+                let patterns = [empty, first, second];
+                let patterns = patterns.get(.. cells).unwrap_or(patterns.as_slice());
+                let forward = forward(arena);
+                let backward = identity_map(arena);
+                let evidence = open_evidence(arena, patterns, forward, backward);
+                let classifier = arena.value_type_path_universe(code, code);
+                let path = arena.value_path_equiv(classifier, forward, backward, evidence);
+                (classifier, path)
+            })
+        };
+    let admitted = lists(&mut environment, identity_map, 3);
+    assert!(admitted.is_ok(), "{admitted:?}");
+    // Two dialogues for three patterns: the kernel's coverage, not the
+    // evidence, chooses the cells.
+    assert!(matches!(
+        lists(&mut environment, identity_map, 2),
+        Err(KernelError::Path(PathError::Coverage(Direction::Source)))
+    ));
+    // A translator to the empty list returns it at the empty pattern and at
+    // no cell.
+    let emptied = |arena: &mut TermArena| {
+        let empty = arena.value_list_nil();
+        let returned = arena.computation_return(empty);
+        let body = arena.computation_lambda(returned);
+        arena.value_thunk(body)
+    };
+    assert!(matches!(
+        lists(&mut environment, emptied, 3),
+        Err(KernelError::Path(PathError::RoundTrip {
+            direction: Direction::Source,
+            pattern: PatternPosition(1),
+            ..
+        }))
+    ));
 }
 
 /// The identity map `thunk (λx. return x)`.
@@ -1561,9 +1671,8 @@ fn identity_at(
 #[test]
 fn univalence_is_admitted_on_its_record()
 {
-    // Lists of booleans: a recursive code, which the decided stratum refuses
-    // (`a_recursive_code_is_an_uncertified_stratum`), admitted by `ua` on the
-    // identity's laws checked against the record its identity names.
+    // Lists of booleans admitted by `ua` on the identity's laws checked
+    // against the record its identity names.
     let mut environment = Environment::new();
     let checked = offer(&mut environment, |arena| {
         let boolean = boolean(arena);

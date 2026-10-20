@@ -31,25 +31,22 @@ use crate::rewrite::shift_value;
 /// # Specification
 /// - requires: the code root belongs to `arena`.
 /// - ensures: outer formers are Base, Product (the unit among them), a Sum of
-///   at least one summand, or Session; session graph structure and guards
-///   check. The empty sum is refused, as the retired empty type was. A List
-///   code is refused as an uncertified stratum: its inhabitants are unbounded,
-///   so no finite constructor coverage certifies a round trip over it. Native
-///   formation separately checks session payload codes in an empty term
-///   context.
+///   at least one summand, a List of a code among them, or Session; session
+///   graph structure and guards check. The empty sum is refused, as the retired
+///   empty type was. Native formation separately checks session payload codes
+///   in an empty term context.
 /// - provides: code-shape inspection, never a checking verdict.
-/// - fails: `UnsupportedCode`, `UnsupportedType`, `UncertifiedStratum`,
-///   `Session`, `Arena` or `Budget`.
+/// - fails: `UnsupportedCode`, `UnsupportedType`, `Session`, `Arena` or
+///   `Budget`.
 /// - panics: none.
 ///
 /// # Errors
 /// As `fails`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — Bool and product codes admit; thunk codes refuse; a list
-///   code refuses by its stratum.
+/// - hypothesis: L3 — Bool, product and list codes admit; thunk codes refuse.
 /// - witness: `path_universe::tests::a_non_equivalence_is_refused`
-/// - witness: `path_universe::tests::a_recursive_code_is_an_uncertified_stratum`
+/// - witness: `path_universe::tests::a_list_code_covers_one_cell_over_a_rigid_tail`
 /// - witness: `session::tests::session_codes_are_closed_and_contractive`
 #[spec(
     captures: before = allowance.0,
@@ -57,7 +54,6 @@ use crate::rewrite::shift_value;
         Ok(root) => allowance.0 < before && matches!(arena.value(code), Some(&Value::Quote(quoted)) if root == quoted),
         Err(PathError::UnsupportedCode(named)) => named == code && !matches!(arena.value(code), Some(&Value::Quote(_))),
         Err(PathError::UnsupportedType(root)) => arena.value_type(root).is_some_and(|node| !matches!(node, &ValueType::Base(_) | &ValueType::Product(..) | &ValueType::Session { .. } | &ValueType::List(_)) && node.summands().is_none_or(<[_]>::is_empty)),
-        Err(PathError::UncertifiedStratum(root)) => matches!(arena.value_type(root), Some(&ValueType::List(_))),
         Err(PathError::Budget) => allowance.0 == 0,
         Err(PathError::Arena | PathError::Session(_)) => true,
         Err(_) => false,
@@ -98,7 +94,7 @@ pub(super) fn code(
             &ValueType::Sum(ref parts) | &ValueType::Product(ref parts) => {
                 pending.extend(parts.iter().rev().copied());
             },
-            &ValueType::List(_) => return Err(PathError::UncertifiedStratum(id)),
+            &ValueType::List(element) => pending.push(element),
             &ValueType::Data { .. }
             | &ValueType::Record(_)
             | &ValueType::PathUniverse(..)
@@ -119,11 +115,12 @@ pub(super) fn code(
     Ok(root)
 }
 
-/// A canonical constructor pattern with fresh rigid variables at base leaves.
+/// A canonical constructor pattern with fresh rigid variables at base leaves
+/// and list tails.
 #[derive(Clone, Copy)]
 struct Pattern
 {
-    /// The symbolic value; base variables occur exactly once each.
+    /// The symbolic value; base and tail variables occur exactly once each.
     value: ValueId,
     /// The number of independent base variables bound outside this pattern.
     binders: BinderDepth,
@@ -141,6 +138,9 @@ enum Cover
     /// Form every tuple of this many components' patterns, renaming base
     /// variables apart.
     Product(usize),
+    /// The empty list, then each element pattern on top consed onto a fresh
+    /// tail.
+    List,
 }
 
 /// Enumerate constructor coverage without enumerating base inhabitants.
@@ -148,11 +148,14 @@ enum Cover
 /// # Specification
 /// - requires: `root` is a validated closed first-order type.
 /// - ensures: exactly one pattern per constructor choice; every base position
-///   is a distinct rigid variable, including repeated base types in products.
+///   is a distinct rigid variable, including repeated base types in products. A
+///   list unfolds one cell: the empty list, then each element pattern consed
+///   onto a fresh rigid tail, the element read past the tail's binder.
 /// - provides: a symbolic universal boundary for a round-trip dialogue.
 /// - fails: `Arena`, `UnsupportedType` or `Budget`.
 /// - panics: none.
-/// - intension: sums are first-summand-first and products are lexicographic.
+/// - intension: sums are first-summand-first, products are lexicographic and a
+///   list's empty pattern precedes its cells.
 ///
 /// # Errors
 /// As `fails`.
@@ -160,9 +163,11 @@ enum Cover
 /// # Adequacy
 /// - hypothesis: L3 — both Bool branches are required; a literal sample cannot
 ///   establish a Base round trip, while a generic product identity is admitted.
-///   A product and a sum of three cover by position with distinct variables.
+///   A product and a sum of three cover by position with distinct variables. A
+///   list of booleans covers as the empty list and two cells over one tail.
 /// - witness: `path_universe::tests::a_non_equivalence_is_refused`
 /// - witness: `path_universe::coverage::tests::n_ary_codes_cover_by_position`
+/// - witness: `path_universe::tests::a_list_code_covers_one_cell_over_a_rigid_tail`
 #[spec(
     captures: before = allowance.0,
     ensures: |ret| allowance.0 <= before && match ret {
@@ -171,6 +176,7 @@ enum Cover
             && match arena.value_type(root) {
 Some(held) if held.product_parts() == Some(&[]) => patterns.len() == 1 && patterns.first().is_some_and(|pattern| u32::from(pattern.binders) == 0 && arena.value(pattern.value).and_then(Value::components) == Some(&[])),
                 Some(&ValueType::Base(_)) => patterns.len() == 1 && patterns.first().is_some_and(|pattern| u32::from(pattern.binders) == 1 && matches!(arena.value(pattern.value), Some(&Value::Variable(index)) if u32::from(index) == 0)),
+                Some(&ValueType::List(_)) => patterns.len() >= 2 && patterns.first().is_some_and(|pattern| u32::from(pattern.binders) == 0 && matches!(arena.value(pattern.value), Some(&Value::ListNil))),
                 Some(&ValueType::Sum(..) | &ValueType::Product(..)) => !patterns.is_empty(),
                 _ => false,
             },
@@ -207,6 +213,10 @@ fn patterns(
                         pending.push(Cover::Product(parts.len()));
                         pending.extend(parts.iter().rev().copied().map(Cover::Visit));
                     },
+                    &ValueType::List(element) => {
+                        pending.push(Cover::List);
+                        pending.push(Cover::Visit(element));
+                    },
                     &ValueType::Data { .. }
                     | &ValueType::Record(_)
                     | &ValueType::Session { .. }
@@ -216,7 +226,6 @@ fn patterns(
                     | &ValueType::Flow { .. }
                     | &ValueType::Bridge { .. }
                     | &ValueType::Sigma { .. }
-                    | &ValueType::List(_)
                     | &ValueType::Thunk(_)
                     | &ValueType::Universe { .. }
                     | &ValueType::Lift { .. }
@@ -278,6 +287,36 @@ fn patterns(
                         binders: BinderDepth::from(binders),
                     })
                     .collect();
+                results.push(joined);
+            },
+            // The element shifts past the tail's binder; the tail is the
+            // innermost variable.
+            Cover::List => {
+                let elements = results.pop().ok_or(PathError::Arena)?;
+                let mut joined = Vec::with_capacity(elements.len().saturating_add(1));
+                joined.push(Pattern {
+                    value: arena.value_list_nil(),
+                    binders: BinderDepth::default(),
+                });
+                for element in elements {
+                    allowance.charge()?;
+                    let binders = u32::from(element.binders)
+                        .checked_add(1)
+                        .ok_or(PathError::Budget)?;
+                    let head = shift_value(
+                        arena,
+                        &mut table,
+                        &mut NullMemo,
+                        element.value,
+                        BinderDepth::default(),
+                        BinderDepth::from(1_u32),
+                    );
+                    let tail = arena.value_variable(DeBruijnIndex::from(0_u32));
+                    joined.push(Pattern {
+                        value: arena.value_list_cons(head, tail),
+                        binders: BinderDepth::from(binders),
+                    });
+                }
                 results.push(joined);
             },
         }

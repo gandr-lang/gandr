@@ -1161,8 +1161,8 @@ impl fmt::Display for Checked
             | CheckRefusal::CompoundEndpoint { .. } => f.write_str("a compound endpoint must return a value without effects"),
             | CheckRefusal::FunextUnsupported { .. } => f.write_str("function extensionality is decided for closed pure functions with a finite first-order coverage, function arguments between first-order types included"),
             | CheckRefusal::PointwiseDistinct { .. } => f.write_str("function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input"),
-            | CheckRefusal::EquivUnsupported { .. } => f.write_str("a universe equivalence is decided for closed pure translators between finite first-order types"),
-            | CheckRefusal::UncertifiedStratum { .. } => f.write_str("a universe equivalence over a recursive type has no finite coverage to certify its round trips"),
+            | CheckRefusal::EquivUnsupported { .. } => f.write_str("a universe equivalence is decided for closed pure translators between first-order types and their lists"),
+            | CheckRefusal::UncertifiedStratum { .. } => f.write_str("a universe equivalence over a list is certified one cell deep: each cell's round trip returns it with the tail unread"),
             | CheckRefusal::RoundTripDistinct { .. } => f.write_str("a universe equivalence requires each round trip to return its input at every pattern"),
             | CheckRefusal::NotOver { .. } => f.write_str("a telescope transport requires its second identity to lie over its path, from the start transported along it"),
             | CheckRefusal::UaUncertified { stratum, .. } => match stratum {

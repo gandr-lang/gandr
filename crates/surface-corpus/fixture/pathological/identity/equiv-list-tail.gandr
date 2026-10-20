@@ -1,0 +1,19 @@
+// A universe equivalence over lists is certified one cell deep: the empty
+// list, then each cell with its tail a fresh variable. A round trip that does
+// not return a cell is refused by the list's stratum, naming the list: with
+// the tail rigid, the rule cannot tell a lost cell from a round trip that
+// needs the tail's own round trip, a hypothesis it does not assume.
+
+// The booleans, lists of them and `keep`, the identity on lists.
+import "../../model/identity/transport-list.gandr" ;
+
+/// Every list of booleans to the empty list.
+@[ checks ]
+def emptied(xs : List(Bool)) -> -F List(Bool) {
+  return nil
+}
+
+/// To the empty list and back by the identity: the empty pattern returns,
+/// the first cell does not, refused at that cell.
+@[ refuses("UncertifiedStratum") ]
+def collapsed = equiv(emptied, keep) ;

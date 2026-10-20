@@ -351,7 +351,8 @@ pub enum RefusalName
     PointwiseDistinct,
     /// A universe equivalence the rule does not decide.
     EquivUnsupported,
-    /// A universe equivalence over a recursive code.
+    /// A universe equivalence whose round trip at a list cell does not return
+    /// it with the tail unread.
     UncertifiedStratum,
     /// A universe equivalence whose round trip does not return its input.
     RoundTripDistinct,
