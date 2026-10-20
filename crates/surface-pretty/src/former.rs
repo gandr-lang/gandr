@@ -480,6 +480,13 @@ pub enum Former<'source, Node>
     Stay(Node),
     /// Directed composition, `f then g`.
     Then(Node, Node),
+    /// A path's inverse, `back(p)`, over the path: the sugared reading of the
+    /// transport the inverse derives.
+    Back(Node),
+    /// A map's action on a path, `cong(f, p)`, over the map as the derived
+    /// transport's motive holds it, one binder deeper, and the path: the
+    /// sugared reading of the transport the action derives.
+    Cong(Node, Node),
     /// The product of two universe flows, `flowProduct(p, q)`.
     FlowProduct(Node, Node),
     /// A forward flow `forward(f)` over its translator.

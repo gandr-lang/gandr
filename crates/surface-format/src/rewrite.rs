@@ -11,6 +11,7 @@
 //! § Two forms, one walk).
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -27,6 +28,7 @@ use crate::Form;
 use crate::composite::Motives;
 use crate::composite::Spaced;
 use crate::composite::Standing;
+use crate::composite::Token;
 use crate::leaf::Copied;
 use crate::leaf::Documentation;
 use crate::leaf::Leaf;
@@ -64,6 +66,12 @@ pub enum RewriteName
     /// The path composite: `transport(\y. Path(A, a, y), q, p)` and
     /// `p then q`.
     PathComposite,
+    /// The path inverse: `transport(\y. Path(A, y, a), p, here(a))` and
+    /// `back(p)`.
+    PathInverse,
+    /// A map's action on a path: `transport(\y. Path(B, f(a), f(y)), p,
+    /// here(f(a)))` and `cong(f, p)`.
+    PathAction,
 }
 
 impl fmt::Display for RewriteName
@@ -85,6 +93,8 @@ impl fmt::Display for RewriteName
             Self::Tuple => "tuple",
             Self::ValueFunction => "value-function",
             Self::PathComposite => "path-composite",
+            Self::PathInverse => "path-inverse",
+            Self::PathAction => "path-action",
         })
     }
 }
@@ -128,7 +138,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 12] = [
+pub const REWRITES: [Rewrite; 16] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -225,6 +235,38 @@ pub const REWRITES: [Rewrite; 12] = [
         to: Spelling("transport(\\y. Path(A, a, y), q, p)"),
         enabled: Enabled::On,
     },
+    Rewrite {
+        name: RewriteName::PathInverse,
+        direction: Direction::Sugar,
+        mold: MoldName("call_expression"),
+        from: Spelling("transport(\\y. Path(A, y, a), p, here(a))"),
+        to: Spelling("back(p)"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::PathInverse,
+        direction: Direction::Desugar,
+        mold: MoldName("call_expression"),
+        from: Spelling("back(p)"),
+        to: Spelling("transport(\\y. Path(A, y, a), p, here(a))"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::PathAction,
+        direction: Direction::Sugar,
+        mold: MoldName("call_expression"),
+        from: Spelling("transport(\\y. Path(B, f(a), f(y)), p, here(f(a)))"),
+        to: Spelling("cong(f, p)"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::PathAction,
+        direction: Direction::Desugar,
+        mold: MoldName("call_expression"),
+        from: Spelling("cong(f, p)"),
+        to: Spelling("transport(\\y. Path(B, f(a), f(y)), p, here(f(a)))"),
+        enabled: Enabled::On,
+    },
 ];
 
 /// Which rewrites a form runs.
@@ -273,18 +315,19 @@ impl Chosen
         }
     }
 
-    /// The rewrite chosen for the form whose rule is `rule`, if any.
+    /// The rewrites chosen for the form whose rule is `rule`, in the table's
+    /// order: the form takes the first that reads its shape.
     ///
     /// # Specification
     /// trivial.
-    fn rewrite(
+    fn rewrites(
         self,
         rule: MoldName,
-    ) -> Option<RewriteName>
+    ) -> impl Iterator<Item = RewriteName>
     {
         REWRITES
             .iter()
-            .find(|rewrite| {
+            .filter(move |rewrite| {
                 rewrite.direction == self.direction
                     && rewrite.mold == rule
                     && match self.selection {
@@ -534,6 +577,9 @@ struct Respelling<'run, 'source>
     changed: Changed,
     /// The spans of the path composites kept, no motive derived for them.
     unspelled: Vec<ByteSpan>,
+    /// The derived path operations the sugared form wrote, by node: those a
+    /// transport kept as written spells as written again.
+    derivations: BTreeSet<NodeIndex>,
 }
 
 /// Whether a respelling changed a form.
@@ -649,6 +695,7 @@ pub fn respell<'source>(
         parents: BTreeMap::new(),
         changed: Changed::No,
         unspelled: Vec::new(),
+        derivations: BTreeSet::new(),
     };
     let mut stack: Vec<(NodeIndex, Visit)> = Vec::from([(form, Visit::Enter)]);
     while let Some((at, visit)) = stack.pop() {
@@ -779,6 +826,90 @@ impl<'source> Respelling<'_, 'source>
             },
             (Some("call_expression"), _) => Context::Argument,
             _ => Context::Value,
+        }
+    }
+
+    /// Spell again as written each derived path operation the sugared form
+    /// wrote among the operands of the call whose parts are `parts`, when
+    /// that call is a `transport(…)` kept as written, and every one each of
+    /// those holds so in turn: the printer writes a derived operation
+    /// standing as a transport's operand as the transport it derives,
+    /// nothing there stating the operation's type. Whether any was.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Termination
+    /// Each node enters the stack only when removed from the derivations, so
+    /// at most once, and leaves it once.
+    fn unsugar_operands(
+        &mut self,
+        parts: &[Part<'source>],
+    ) -> Changed
+    {
+        let mut stack: Vec<(NodeIndex, Visit)> = Vec::new();
+        self.derived_operands(parts, &mut stack);
+        if stack.is_empty() {
+            return Changed::No;
+        }
+        while let Some((at, visit)) = stack.pop() {
+            let (parts, _) = self.parts(at);
+            match visit {
+                Visit::Enter => {
+                    stack.push((at, Visit::Leave));
+                    self.derived_operands(&parts, &mut stack);
+                },
+                Visit::Leave => {
+                    let Some(&extent) = self.extents.get(&at)
+                    else {
+                        continue;
+                    };
+                    let commented = if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+                        Commented::Yes
+                    }
+                    else {
+                        Commented::No
+                    };
+                    let spelled = self.kept(MoldName("call_expression"), &parts, extent, commented);
+                    let _previous = self.spelled.insert(at, spelled);
+                },
+            }
+        }
+        Changed::Yes
+    }
+
+    /// Push onto `stack`, to enter, each derived path operation the sugared
+    /// form wrote among the operands of the call whose parts are `parts`,
+    /// when that call is a `transport(…)`, removing each from the
+    /// derivations.
+    ///
+    /// # Specification
+    /// trivial.
+    fn derived_operands(
+        &mut self,
+        parts: &[Part<'source>],
+        stack: &mut Vec<(NodeIndex, Visit)>,
+    )
+    {
+        let (_, operands) = split(parts);
+        let Some((&callee, arguments)) = operands.split_first()
+        else {
+            return;
+        };
+        if self
+            .tokens(callee)
+            .iter()
+            .map(|&token| <&str>::from(token))
+            .ne(["transport"])
+        {
+            return;
+        }
+        for &argument in arguments {
+            if let Child::Node(node) = argument
+                && self.derivations.remove(&node)
+            {
+                stack.push((node, Visit::Enter));
+            }
         }
     }
 
@@ -913,11 +1044,34 @@ impl<'source> Respelling<'_, 'source>
             .refused
             .iter()
             .any(|span| span.start() <= extent.start() && extent.end() <= span.end());
-        let rewritten = match self.chosen.rewrite(rule) {
-            Some(name) if open => self.rewrite(name, at, &parts, extent),
-            Some(_) | None => None,
+        let chosen = self.chosen;
+        let rewritten = if open {
+            chosen.rewrites(rule).find_map(|name| {
+                self.rewrite(name, at, &parts, extent)
+                    .map(|spelled| (name, spelled))
+            })
+        }
+        else {
+            None
         };
-        let spelled = rewritten.unwrap_or_else(|| self.kept(rule, &parts, extent, commented));
+        let spelled = if let Some((name, spelled)) = rewritten {
+            if chosen.direction == Direction::Sugar
+                && matches!(
+                    name,
+                    RewriteName::PathComposite | RewriteName::PathInverse | RewriteName::PathAction
+                )
+            {
+                let _first = self.derivations.insert(at);
+            }
+            spelled
+        }
+        else {
+            let parts = match self.unsugar_operands(&parts) {
+                Changed::Yes => self.parts(at).0,
+                Changed::No => parts,
+            };
+            self.kept(rule, &parts, extent, commented)
+        };
         let _previous = self.spelled.insert(at, spelled);
     }
 
@@ -1202,21 +1356,77 @@ impl<'source> Respelling<'_, 'source>
                 if self.motives.standing(extent) != Standing::Returned {
                     return None;
                 }
-                let (path, then) = self.composite(parts)?;
-                out.place(&self.operand(path), Band::Atom);
+                let Some(Operation::Composite { first, second }) = self.derived(parts)
+                else {
+                    return None;
+                };
+                out.place(&self.operand(first), Band::Atom);
                 out.spaced(Spelling(" then "));
-                out.place(&self.operand(then), Band::Atom);
+                out.place(&self.operand(second), Band::Atom);
                 Band::Loose
+            },
+            (RewriteName::PathInverse, Direction::Sugar) => {
+                if self.motives.standing(extent) != Standing::Returned {
+                    return None;
+                }
+                let Some(Operation::Inverse { path }) = self.derived(parts)
+                else {
+                    return None;
+                };
+                out.token(BACK);
+                out.token(OPEN_PAREN);
+                out.place(&self.operand(path), Band::Loose);
+                out.token(CLOSE_PAREN);
+                Band::Atom
+            },
+            (RewriteName::PathAction, Direction::Sugar) => {
+                if self.motives.standing(extent) != Standing::Returned {
+                    return None;
+                }
+                let Some(Operation::Action { map, path }) = self.derived(parts)
+                else {
+                    return None;
+                };
+                out.token(CONG);
+                out.token(OPEN_PAREN);
+                out.place(&self.operand(map), Band::Loose);
+                out.token(COMMA);
+                out.gap(Spelling(" "));
+                out.place(&self.operand(path), Band::Loose);
+                out.token(CLOSE_PAREN);
+                Band::Atom
             },
             (RewriteName::PathComposite, Direction::Desugar) => {
                 if self.motives.standing(extent) == Standing::Flows {
                     return None;
                 }
-                if self.motives.of(extent).is_none() {
-                    self.unspelled.push(extent);
+                let (owns, operands) = split(parts);
+                let (&[then], &[first, second]) = (owns.as_slice(), operands.as_slice())
+                else {
+                    return None;
+                };
+                if <&str>::from(then) != "then"
+                    || parts.iter().any(|part| matches!(part.role, Role::Comment))
+                {
                     return None;
                 }
-                self.transport(&mut out, parts, extent)?;
+                self.transport(&mut out, extent, second, Moved::Written(first))?;
+                Band::Atom
+            },
+            (RewriteName::PathInverse, Direction::Desugar) => {
+                let &[path] = self.called(parts, BACK)?.as_slice()
+                else {
+                    return None;
+                };
+                self.transport(&mut out, extent, path, Moved::Derived)?;
+                Band::Atom
+            },
+            (RewriteName::PathAction, Direction::Desugar) => {
+                let &[_, path] = self.called(parts, CONG)?.as_slice()
+                else {
+                    return None;
+                };
+                self.transport(&mut out, extent, path, Moved::Derived)?;
                 Band::Atom
             },
         };
@@ -1555,22 +1765,25 @@ impl<'source> Respelling<'_, 'source>
             .collect()
     }
 
-    /// The path and the composite's second path of the transport call whose
-    /// parts are `parts`, when it is `transport(\y. Path(A, a, y), q, p)`
-    /// with neither `A` nor `a` naming `y`: `p` and `q`.
+    /// The derived path operation the transport call whose parts are `parts`
+    /// spells, when its motive `\y. Path(A, l, r)` is one the lowering
+    /// derives: `p then q` for `transport(\y. Path(A, a, y), q, p)`, `back(p)`
+    /// for `transport(\y. Path(A, y, a), p, here(a))` and `cong(f, p)` for
+    /// `transport(\y. Path(B, f(a), f(y)), p, here(f(a)))`, where neither the
+    /// carrier, the fixed endpoint nor the map names `y`.
     ///
     /// # Specification
     /// trivial.
-    fn composite(
+    fn derived(
         &self,
         parts: &[Part<'source>],
-    ) -> Option<(Child<'source>, Child<'source>)>
+    ) -> Option<Operation<'source>>
     {
         if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
             return None;
         }
         let (_, operands) = split(parts);
-        let &[callee, Child::Node(motive), then, path] = operands.as_slice()
+        let &[callee, Child::Node(motive), along, moved] = operands.as_slice()
         else {
             return None;
         };
@@ -1595,76 +1808,201 @@ impl<'source> Respelling<'_, 'source>
             return None;
         }
         let (typed, _) = self.parts(body);
-        // The endpoints by their tokens, split at the type's own commas: a
-        // carrier the grammar keeps as its own tile, as `Type`, is one too.
-        let mut endpoints: Vec<Vec<SourceFragment<'source>>> = Vec::new();
+        // The endpoints by their tokens and the operands they hold, split at
+        // the type's own commas: a carrier the grammar keeps as its own tile,
+        // as `Type`, is one too.
+        let mut endpoints: Vec<(Vec<SourceFragment<'source>>, Vec<Child<'source>>)> = Vec::new();
         let mut opened = false;
         for part in &typed {
             match part.role {
                 Role::Own(text) => match <&str>::from(text) {
                     "(" if !opened => {
                         opened = true;
-                        endpoints.push(Vec::new());
+                        endpoints.push((Vec::new(), Vec::new()));
                     },
-                    "," => endpoints.push(Vec::new()),
+                    "," => endpoints.push((Vec::new(), Vec::new())),
                     ")" => {},
-                    _ if opened => endpoints.last_mut()?.push(text),
+                    _ if opened => endpoints.last_mut()?.0.push(text),
                     _ => {},
                 },
-                Role::Operand(child) => endpoints.last_mut()?.extend(self.tokens(child)),
+                Role::Operand(child) => {
+                    let endpoint = endpoints.last_mut()?;
+                    endpoint.0.extend(self.tokens(child));
+                    endpoint.1.push(child);
+                },
                 Role::Comment => return None,
             }
         }
-        let &[ref carrier, ref fixed, ref moving] = endpoints.as_slice()
+        let &[(ref carrier, _), (ref left, _), (ref right, ref holds)] = endpoints.as_slice()
         else {
             return None;
         };
-        (moving.as_slice() == [binder] && !carrier.contains(&binder) && !fixed.contains(&binder))
-            .then_some((path, then))
+        if carrier.contains(&binder) {
+            return None;
+        }
+        if right.as_slice() == [binder] && !left.contains(&binder) {
+            return Some(Operation::Composite {
+                first: moved,
+                second: along,
+            });
+        }
+        // An inverse and an action move the reflexivity at the fixed
+        // endpoint.
+        let moved = self.tokens(moved);
+        let reflexive = |fixed: &[SourceFragment<'source>]| match moved.as_slice() {
+            &[here, open, ref inner @ .., close] => {
+                <&str>::from(here) == "here"
+                    && <&str>::from(open) == "("
+                    && <&str>::from(close) == ")"
+                    && inner == fixed
+            },
+            _ => false,
+        };
+        if left.as_slice() == [binder] && !right.contains(&binder) && reflexive(right) {
+            return Some(Operation::Inverse { path: along });
+        }
+        let &[Child::Node(applied)] = holds.as_slice()
+        else {
+            return None;
+        };
+        if self.rule(applied) != Some(MoldName("call_expression")) {
+            return None;
+        }
+        let (call, _) = self.parts(applied);
+        let (_, called) = split(&call);
+        let &[map, argument] = called.as_slice()
+        else {
+            return None;
+        };
+        let mapped = self.tokens(map);
+        // The fixed endpoint is the map applied, `f(a)`, as the action
+        // derives it.
+        let applied = matches!(
+            left.strip_prefix(mapped.as_slice()),
+            Some(&[open, .., close]) if <&str>::from(open) == "(" && <&str>::from(close) == ")"
+        );
+        (self.tokens(argument).as_slice() == [binder]
+            && !mapped.contains(&binder)
+            && applied
+            && !left.contains(&binder)
+            && reflexive(left))
+        .then_some(Operation::Action { map, path: along })
     }
 
-    /// Write the transport the path composite whose parts are `parts`, at
-    /// `extent`, stands for, its motive as the lowering derived it, or
-    /// nothing when the lowering derived none the printer spells.
+    /// The operands after the head of the call whose parts are `parts`, when
+    /// its head is the name `head` alone.
     ///
     /// # Specification
     /// trivial.
-    fn transport(
+    fn called(
         &self,
-        out: &mut Builder<'source>,
         parts: &[Part<'source>],
-        extent: ByteSpan,
-    ) -> Option<()>
+        head: Spelling,
+    ) -> Option<Vec<Child<'source>>>
     {
         if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
             return None;
         }
-        let (owns, operands) = split(parts);
-        let (&[then], &[path, next]) = (owns.as_slice(), operands.as_slice())
+        let (_, operands) = split(parts);
+        let (&callee, arguments) = operands.split_first()?;
+        self.tokens(callee)
+            .iter()
+            .map(|&token| <&str>::from(token))
+            .eq([head.0])
+            .then(|| arguments.to_vec())
+    }
+
+    /// Write the transport the derived path operation at `extent` stands
+    /// for, its motive as the lowering derived it, moving `moved` along
+    /// `along`, or nothing when the lowering derived none the printer spells.
+    ///
+    /// # Specification
+    /// trivial.
+    fn transport(
+        &mut self,
+        out: &mut Builder<'source>,
+        extent: ByteSpan,
+        along: Child<'source>,
+        moved: Moved<'source>,
+    ) -> Option<()>
+    {
+        let motives = self.motives;
+        let (Some(motive), Some(value)) = (motives.of(extent), motives.value(extent))
         else {
+            self.unspelled.push(extent);
             return None;
         };
-        if <&str>::from(then) != "then" {
-            return None;
-        }
-        let motive = self.motives.of(extent)?;
         out.token(Spelling("transport"));
         out.token(OPEN_PAREN);
-        for token in motive {
-            if token.spaced == Spaced::Yes {
-                out.gap(Spelling(" "));
-            }
-            out.fragment(SourceFragment::from(token.text.as_str()));
+        written(out, motive);
+        out.token(COMMA);
+        out.gap(Spelling(" "));
+        out.place(&self.operand(along), Band::Loose);
+        out.token(COMMA);
+        out.gap(Spelling(" "));
+        match moved {
+            Moved::Written(moved) => out.place(&self.operand(moved), Band::Loose),
+            Moved::Derived => written(out, value),
         }
-        out.token(COMMA);
-        out.gap(Spelling(" "));
-        out.place(&self.operand(next), Band::Loose);
-        out.token(COMMA);
-        out.gap(Spelling(" "));
-        out.place(&self.operand(path), Band::Loose);
         out.token(CLOSE_PAREN);
         Some(())
     }
+}
+
+/// Write `tokens`, as the printer spaced them, into `out`.
+///
+/// # Specification
+/// trivial.
+fn written<'source>(
+    out: &mut Builder<'source>,
+    tokens: &'source [Token],
+)
+{
+    for token in tokens {
+        if token.spaced == Spaced::Yes {
+            out.gap(Spelling(" "));
+        }
+        out.fragment(SourceFragment::from(token.text.as_str()));
+    }
+}
+
+/// A derived path operation a transport call spells, by the operands of
+/// the call its sugared spelling writes.
+#[derive(Clone, Copy)]
+enum Operation<'source>
+{
+    /// `p then q`.
+    Composite
+    {
+        /// `p`, the transported value.
+        first: Child<'source>,
+        /// `q`, the path it moves along.
+        second: Child<'source>,
+    },
+    /// `back(p)`.
+    Inverse
+    {
+        /// `p`.
+        path: Child<'source>,
+    },
+    /// `cong(f, p)`.
+    Action
+    {
+        /// `f`.
+        map: Child<'source>,
+        /// `p`.
+        path: Child<'source>,
+    },
+}
+
+/// The value the transport a derived path operation stands for moves.
+#[derive(Clone, Copy)]
+enum Moved<'source>
+{
+    /// An operand as the source writes it: a composite's first path.
+    Written(Child<'source>),
+    /// The reflexivity the lowering derived: an inverse's and an action's.
+    Derived,
 }
 
 /// The operands of an infix chain, with every part of every form in it.
@@ -1732,20 +2070,34 @@ const RULES: [MoldName; 25] = [
 
 /// `#{`.
 const OPEN_TELESCOPE: Spelling = Spelling("#{");
+
 /// `{`.
 const OPEN_BRACE: Spelling = Spelling("{");
+
 /// `}`.
 const CLOSE_BRACE: Spelling = Spelling("}");
+
 /// `(`.
 const OPEN_PAREN: Spelling = Spelling("(");
+
 /// `)`.
 const CLOSE_PAREN: Spelling = Spelling(")");
+
 /// `,`.
 const COMMA: Spelling = Spelling(",");
+
+/// `back`.
+const BACK: Spelling = Spelling("back");
+
+/// `cong`.
+const CONG: Spelling = Spelling("cong");
+
 /// `+`.
 const PLUS: Spelling = Spelling("+");
+
 /// `&`.
 const AMPERSAND: Spelling = Spelling("&");
+
 /// `*`.
 const STAR: Spelling = Spelling("*");
 

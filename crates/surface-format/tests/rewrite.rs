@@ -157,6 +157,82 @@ fn the_path_composite_moves_both_ways()
     }
 }
 
+/// #778: an inverse and a map's action on a path move both ways as the
+/// composite does: desugared, each is the transport whose motive and moved
+/// reflexivity the lowering derived, spelled as the printer spells them;
+/// sugared back, the transport is the operation again, the map as written.
+/// The inverse is taken of a parameter: at the circle's point `here(Base)`
+/// reads as the empty word, which no derived inverse moves.
+#[test]
+fn an_inverse_and_an_action_on_a_path_move_both_ways_778()
+{
+    let grammar = grammar();
+    let sugared = format!(
+        "{CIRCLE}def spin(x : Circle) -> -F Circle {{
+  x
+}}
+
+def undone(x : Circle, p : Path(Circle, x, Base)) -> -F Path(Path(Circle, Base, x), back(p), back(p)) {{
+  here(back(p))
+}}
+
+def spun : Path(Path(Circle, Base, Base), cong(spin, loop), cong(spin, loop)) ;
+"
+    );
+    let explicit = format!(
+        "{CIRCLE}def spin(x : Circle) -> -F Circle {{
+  x
+}}
+
+def undone(x : Circle, p : Path(Circle, x, Base)) -> -F Path(
+  Path(Circle, Base, x),
+  transport(\\a. Path(Circle, a, x), p, here(x)),
+  transport(\\a. Path(Circle, a, x), p, here(x))
+) {{
+  here(transport(\\a. Path(Circle, a, x), p, here(x)))
+}}
+
+def spun : Path(
+  Path(Circle, Base, Base),
+  transport(\\a. Path(Circle, spin(Base), spin(a)), loop, here(spin(Base))),
+  transport(\\a. Path(Circle, spin(Base), spin(a)), loop, here(spin(Base)))
+) ;
+"
+    );
+    let back = format!(
+        "{CIRCLE}def spin(x : Circle) -> -F Circle {{
+  x
+}}
+
+def undone(x : Circle, p : Path(Circle, x, Base)) -> -F Path(
+  Path(Circle, Base, x),
+  back(p),
+  back(p)
+) {{
+  here(back(p))
+}}
+
+def spun : Path(
+  Path(Circle, Base, Base),
+  cong(spin, loop),
+  cong(spin, loop)
+) ;
+"
+    );
+    for (source, form, expected) in [
+        (&sugared, Form::Explicit, &explicit),
+        (&explicit, Form::Sugared, &back),
+        (&back, Form::Sugared, &back),
+        (&explicit, Form::Explicit, &explicit),
+    ] {
+        assert_eq!(
+            spelled(&grammar, source.as_str(), form, Selection::Every),
+            *expected,
+            "{form}"
+        );
+    }
+}
+
 /// A transport standing as a computation keeps its spelling sugared, with
 /// nothing withdrawn: the printer writes `then` only for the transport the
 /// lowering returns at a composite, and spells one a body runs as written.

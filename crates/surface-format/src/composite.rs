@@ -1,15 +1,19 @@
-//! The motives of the path composites a source writes, as its lowering
-//! derived them, for the explicit spelling of `p then q`.
+//! The transports of the derived path operations a source writes, as its
+//! lowering derived them, for the explicit spelling of `p then q`, `back(p)`
+//! and `cong(f, p)`.
 //!
-//! `p then q` is the transport `transport(\y. Path(A, a, y), q, p)`, its
-//! carrier `A` and fixed endpoint `a` the type of `p`, which the lowering
-//! derives from the operands; the syntax does not hold them. So the explicit
-//! spelling reads them from the lowering: the transport the lowering minted
-//! at the composite's span, spelled through the shared printer in the
-//! explicit form, its first argument the motive, under the names the source
-//! writes for the binders around the composite. A composite whose motive the
-//! printer cannot spell faithfully — one standing under a binder the source
-//! names nothing — has none, keeps its spelling and is reported.
+//! `p then q` is the transport `transport(\y. Path(A, a, y), q, p)`, `back(p)`
+//! is `transport(\y. Path(A, y, a), p, here(a))` and `cong(f, p)` is
+//! `transport(\y. Path(B, f(a), f(y)), p, here(f(a)))`: their carrier and
+//! fixed endpoint the type of `p`, which the lowering derives from the
+//! operands; the syntax does not hold them. So the explicit spelling reads
+//! them from the lowering: the transport the lowering minted at the
+//! operation's span, spelled through the shared printer in the explicit
+//! form, its first argument the motive and its third the value it moves,
+//! under the names the source writes for the binders around the operation.
+//! An operation whose transport the printer cannot spell faithfully — one
+//! standing under a binder the source names nothing — has none, keeps its
+//! spelling and is reported.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -73,14 +77,27 @@ pub enum Standing
     Flows,
 }
 
+/// A transport the lowering derived at a span of the source, its arguments
+/// as the printer spells them in the explicit form.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Derived
+{
+    /// The span of the operation that derives it.
+    span: ByteSpan,
+    /// Its motive.
+    motive: Vec<Token>,
+    /// The value it moves.
+    value: Vec<Token>,
+}
+
 /// The motive of each path composite the source writes, by the composite's
 /// span in the source, and the spans of the transports the lowering returns
 /// as values.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Motives
 {
-    /// The motives the lowering derived and the printer spells.
-    derived: Vec<(ByteSpan, Vec<Token>)>,
+    /// The transports the lowering derived and the printer spells.
+    derived: Vec<Derived>,
     /// The spans of the transports, written or derived, the lowering returns
     /// as values: those the printer writes as `p then q`. A transport standing
     /// as a computation, a body's last step, it writes as written.
@@ -144,7 +161,7 @@ impl Motives
         }
     }
 
-    /// The motive's tokens of the composite spanning exactly `span`.
+    /// The motive's tokens of the transport derived at exactly `span`.
     ///
     /// # Specification
     /// trivial.
@@ -153,11 +170,38 @@ impl Motives
         span: ByteSpan,
     ) -> Option<&[Token]>
     {
+        self.read(span, |derived| derived.motive.as_slice())
+    }
+
+    /// The tokens of the value the transport derived at exactly `span`
+    /// moves: the reflexivity an inverse or an action on a path moves.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn value(
+        &self,
+        span: ByteSpan,
+    ) -> Option<&[Token]>
+    {
+        self.read(span, |derived| derived.value.as_slice())
+    }
+
+    /// What `part` reads of the transport derived at exactly `span`; empty
+    /// where none was derived when every composite has one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn read<'motives>(
+        &'motives self,
+        span: ByteSpan,
+        part: impl Fn(&'motives Derived) -> &'motives [Token],
+    ) -> Option<&'motives [Token]>
+    {
         let derived = self
             .derived
             .iter()
-            .find(|&&(at, _)| at == span)
-            .map(|&(_, ref tokens)| tokens.as_slice());
+            .find(|derived| derived.span == span)
+            .map(part);
         match self.reach {
             Reach::Derived => derived,
             Reach::Any => Some(derived.unwrap_or_default()),
@@ -269,9 +313,13 @@ pub fn motives(
             if let Ok(spelled) = spelled
                 && spelled.fidelity() == Fidelity::Faithful
                 && spelled.unspelled().is_empty()
-                && let Some(tokens) = motive(SourceFragment::from(spelled.as_ref()))
+                && let Some((motive, value)) = arguments(SourceFragment::from(spelled.as_ref()))
             {
-                found.push((span, tokens));
+                found.push(Derived {
+                    span,
+                    motive,
+                    value,
+                });
             }
             false
         });
@@ -299,14 +347,16 @@ fn within(
     ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).ok()
 }
 
-/// The tokens of the first argument of `transport(…)` as `text` spells it.
+/// The tokens of the first and the third argument of `transport(…)` as
+/// `text` spells it: the motive and the value it moves.
 ///
 /// # Specification
 /// trivial.
-fn motive(spelled: SourceFragment<'_>) -> Option<Vec<Token>>
+fn arguments(spelled: SourceFragment<'_>) -> Option<(Vec<Token>, Vec<Token>)>
 {
     let text = <&str>::from(spelled);
-    let mut tokens = Vec::new();
+    let mut arguments: [Vec<Token>; 3] = Default::default();
+    let mut index = 0_usize;
     let mut spaced = Spaced::No;
     let mut depth = 0_usize;
     let mut read = label(spelled).into_iter().filter_map(|token| {
@@ -324,16 +374,31 @@ fn motive(spelled: SourceFragment<'_>) -> Option<Vec<Token>>
             continue;
         }
         match written {
-            "," if depth == 0 => return (!tokens.is_empty()).then_some(tokens),
+            "," if depth == 0 => {
+                index = index.checked_add(1_usize)?;
+                spaced = Spaced::No;
+                continue;
+            },
+            ")" | "]" | "}" if depth == 0 => break,
             "(" | "[" | "{" | "#{" | "+{" | "&{" => depth = depth.saturating_add(1),
             ")" | "]" | "}" => depth = depth.checked_sub(1)?,
             _ => {},
         }
-        tokens.push(Token {
+        let argument = arguments.get_mut(index)?;
+        // An argument's first token stands after the separator the
+        // writer places itself.
+        let before = if argument.is_empty() {
+            Spaced::No
+        }
+        else {
+            spaced
+        };
+        argument.push(Token {
             text: String::from(written),
-            spaced,
+            spaced: before,
         });
         spaced = Spaced::No;
     }
-    None
+    let [motive, _, value] = arguments;
+    (!motive.is_empty() && !value.is_empty()).then_some((motive, value))
 }

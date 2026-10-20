@@ -21,10 +21,10 @@
 30:20-30:23 loop ⇒ loop : Path(Circle, Base, Base) @30:20-30:24
 30:25-30:25 } ⇒ () => Path(Circle, Base, Base) @30:12-30:26
 30:27-30:27 ; ⇒ once : () => Path(Circle, Base, Base) @30:1-30:28
-33:1-33:11 @[ checks ] ⇒ unwound : Path(Path(Circle, Base, Base), transport(\a. Path(Circle, a, Base), loop,⏎  here(Base)), back(loop) ∷ here(Base))⏎⏎The inverse of the loop is the letter `back(loop)`, by conversion. @33:1-34:1
-34:1-34:3 def ⇒ unwound : Path(Path(Circle, Base, Base), transport(\a. Path(Circle, a, Base), loop,⏎  here(Base)), back(loop) ∷ here(Base))⏎⏎The inverse of the loop is the letter `back(loop)`, by conversion. @34:1-34:84
-34:5-34:11 unwound ⇒ unwound : Path(Path(Circle, Base, Base), transport(\a. Path(Circle, a, Base), loop,⏎  here(Base)), back(loop) ∷ here(Base))⏎⏎The inverse of the loop is the letter `back(loop)`, by conversion. @34:5-34:12
-34:13-34:13 : ⇒ unwound : Path(Path(Circle, Base, Base), transport(\a. Path(Circle, a, Base), loop,⏎  here(Base)), back(loop) ∷ here(Base))⏎⏎The inverse of the loop is the letter `back(loop)`, by conversion. @34:1-34:84
+33:1-33:11 @[ checks ] ⇒ unwound : Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base))⏎⏎The inverse of the loop is the letter `back(loop)`, by conversion. @33:1-34:1
+34:1-34:3 def ⇒ unwound : Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base))⏎⏎The inverse of the loop is the letter `back(loop)`, by conversion. @34:1-34:84
+34:5-34:11 unwound ⇒ unwound : Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base))⏎⏎The inverse of the loop is the letter `back(loop)`, by conversion. @34:5-34:12
+34:13-34:13 : ⇒ unwound : Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base))⏎⏎The inverse of the loop is the letter `back(loop)`, by conversion. @34:1-34:84
 34:15-34:19 Path( ⇒ Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base)) : Type @34:15-34:82
 34:20-34:24 Path( ⇒ Path(Circle, Base, Base) : Type @34:20-34:44
 34:25-34:30 Circle ⇒ Circle : Type @34:25-34:31
@@ -46,11 +46,11 @@
 34:76-34:79 Base ⇒ Base : Circle @34:76-34:80
 34:80-34:80 ) ⇒ Path(Circle, Base, Base) @34:71-34:81
 34:81-34:81 ) ⇒ Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base)) : Type @34:15-34:82
-34:83-34:83 ; ⇒ unwound : Path(Path(Circle, Base, Base), transport(\a. Path(Circle, a, Base), loop,⏎  here(Base)), back(loop) ∷ here(Base))⏎⏎The inverse of the loop is the letter `back(loop)`, by conversion. @34:1-34:84
-35:1-35:3 def ⇒ unwound : Path(Path(Circle, Base, Base), transport(\a. Path(Circle, a, Base), loop,⏎  here(Base)), back(loop) ∷ here(Base)) @35:1-35:46
-35:5-35:11 unwound ⇒ unwound : Path(Path(Circle, Base, Base), transport(\a. Path(Circle, a, Base), loop,⏎  here(Base)), back(loop) ∷ here(Base)) @35:5-35:12
-35:13-35:13 = ⇒ unwound : Path(Path(Circle, Base, Base), transport(\a. Path(Circle, a, Base), loop,⏎  here(Base)), back(loop) ∷ here(Base)) @35:1-35:46
-35:15-35:19 here( ⇒ Path(Path(Circle, Base, Base), transport(\a. Path(Circle, a, Base), loop,⏎  here(Base)), back(loop) ∷ here(Base)) @35:15-35:44
+34:83-34:83 ; ⇒ unwound : Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base))⏎⏎The inverse of the loop is the letter `back(loop)`, by conversion. @34:1-34:84
+35:1-35:3 def ⇒ unwound : Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base)) @35:1-35:46
+35:5-35:11 unwound ⇒ unwound : Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base)) @35:5-35:12
+35:13-35:13 = ⇒ unwound : Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base)) @35:1-35:46
+35:15-35:19 here( ⇒ Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base)) @35:15-35:44
 35:20-35:24 back( ⇒ back(loop) : Path(Circle, Base, Base) @35:20-35:30
 35:25-35:28 loop ⇒ loop : Path(Circle, Base, Base) @35:25-35:29
 35:29-35:29 ) ⇒ back(loop) : Path(Circle, Base, Base) @35:20-35:30
@@ -58,12 +58,12 @@
 35:33-35:37 here( ⇒ Path(Circle, Base, Base) @35:33-35:43
 35:38-35:41 Base ⇒ Base : Circle @35:38-35:42
 35:42-35:42 ) ⇒ Path(Circle, Base, Base) @35:33-35:43
-35:43-35:43 ) ⇒ Path(Path(Circle, Base, Base), transport(\a. Path(Circle, a, Base), loop,⏎  here(Base)), back(loop) ∷ here(Base)) @35:15-35:44
-35:45-35:45 ; ⇒ unwound : Path(Path(Circle, Base, Base), transport(\a. Path(Circle, a, Base), loop,⏎  here(Base)), back(loop) ∷ here(Base)) @35:1-35:46
-39:1-39:11 @[ checks ] ⇒ cancelled : Path(Path(Circle, Base, Base), loop then transport(\a. Path(Circle, a, Base),⏎  loop, here(Base)), here(Base))⏎⏎The loop then its inverse is the empty word: the minted cancellation, read⏎by conversion. @39:1-40:1
-40:1-40:3 def ⇒ cancelled : Path(Path(Circle, Base, Base), loop then transport(\a. Path(Circle, a, Base),⏎  loop, here(Base)), here(Base))⏎⏎The loop then its inverse is the empty word: the minted cancellation, read⏎by conversion. @40:1-40:83
-40:5-40:13 cancelled ⇒ cancelled : Path(Path(Circle, Base, Base), loop then transport(\a. Path(Circle, a, Base),⏎  loop, here(Base)), here(Base))⏎⏎The loop then its inverse is the empty word: the minted cancellation, read⏎by conversion. @40:5-40:14
-40:15-40:15 : ⇒ cancelled : Path(Path(Circle, Base, Base), loop then transport(\a. Path(Circle, a, Base),⏎  loop, here(Base)), here(Base))⏎⏎The loop then its inverse is the empty word: the minted cancellation, read⏎by conversion. @40:1-40:83
+35:43-35:43 ) ⇒ Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base)) @35:15-35:44
+35:45-35:45 ; ⇒ unwound : Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base)) @35:1-35:46
+39:1-39:11 @[ checks ] ⇒ cancelled : Path(Path(Circle, Base, Base), loop then back(loop), here(Base))⏎⏎The loop then its inverse is the empty word: the minted cancellation, read⏎by conversion. @39:1-40:1
+40:1-40:3 def ⇒ cancelled : Path(Path(Circle, Base, Base), loop then back(loop), here(Base))⏎⏎The loop then its inverse is the empty word: the minted cancellation, read⏎by conversion. @40:1-40:83
+40:5-40:13 cancelled ⇒ cancelled : Path(Path(Circle, Base, Base), loop then back(loop), here(Base))⏎⏎The loop then its inverse is the empty word: the minted cancellation, read⏎by conversion. @40:5-40:14
+40:15-40:15 : ⇒ cancelled : Path(Path(Circle, Base, Base), loop then back(loop), here(Base))⏎⏎The loop then its inverse is the empty word: the minted cancellation, read⏎by conversion. @40:1-40:83
 40:17-40:21 Path( ⇒ Path(Path(Circle, Base, Base), loop then back(loop), here(Base)) : Type @40:17-40:81
 40:22-40:26 Path( ⇒ Path(Circle, Base, Base) : Type @40:22-40:46
 40:27-40:32 Circle ⇒ Circle : Type @40:27-40:33
@@ -83,16 +83,16 @@
 40:75-40:78 Base ⇒ Base : Circle @40:75-40:79
 40:79-40:79 ) ⇒ Path(Circle, Base, Base) @40:70-40:80
 40:80-40:80 ) ⇒ Path(Path(Circle, Base, Base), loop then back(loop), here(Base)) : Type @40:17-40:81
-40:82-40:82 ; ⇒ cancelled : Path(Path(Circle, Base, Base), loop then transport(\a. Path(Circle, a, Base),⏎  loop, here(Base)), here(Base))⏎⏎The loop then its inverse is the empty word: the minted cancellation, read⏎by conversion. @40:1-40:83
-41:1-41:3 def ⇒ cancelled : Path(Path(Circle, Base, Base), loop then transport(\a. Path(Circle, a, Base),⏎  loop, here(Base)), here(Base)) @41:1-41:35
-41:5-41:13 cancelled ⇒ cancelled : Path(Path(Circle, Base, Base), loop then transport(\a. Path(Circle, a, Base),⏎  loop, here(Base)), here(Base)) @41:5-41:14
-41:15-41:15 = ⇒ cancelled : Path(Path(Circle, Base, Base), loop then transport(\a. Path(Circle, a, Base),⏎  loop, here(Base)), here(Base)) @41:1-41:35
-41:17-41:21 here( ⇒ Path(Path(Circle, Base, Base), loop then transport(\a. Path(Circle, a, Base),⏎  loop, here(Base)), here(Base)) @41:17-41:33
+40:82-40:82 ; ⇒ cancelled : Path(Path(Circle, Base, Base), loop then back(loop), here(Base))⏎⏎The loop then its inverse is the empty word: the minted cancellation, read⏎by conversion. @40:1-40:83
+41:1-41:3 def ⇒ cancelled : Path(Path(Circle, Base, Base), loop then back(loop), here(Base)) @41:1-41:35
+41:5-41:13 cancelled ⇒ cancelled : Path(Path(Circle, Base, Base), loop then back(loop), here(Base)) @41:5-41:14
+41:15-41:15 = ⇒ cancelled : Path(Path(Circle, Base, Base), loop then back(loop), here(Base)) @41:1-41:35
+41:17-41:21 here( ⇒ Path(Path(Circle, Base, Base), loop then back(loop), here(Base)) @41:17-41:33
 41:22-41:26 here( ⇒ Path(Circle, Base, Base) @41:22-41:32
 41:27-41:30 Base ⇒ Base : Circle @41:27-41:31
 41:31-41:31 ) ⇒ Path(Circle, Base, Base) @41:22-41:32
-41:32-41:32 ) ⇒ Path(Path(Circle, Base, Base), loop then transport(\a. Path(Circle, a, Base),⏎  loop, here(Base)), here(Base)) @41:17-41:33
-41:34-41:34 ; ⇒ cancelled : Path(Path(Circle, Base, Base), loop then transport(\a. Path(Circle, a, Base),⏎  loop, here(Base)), here(Base)) @41:1-41:35
+41:32-41:32 ) ⇒ Path(Path(Circle, Base, Base), loop then back(loop), here(Base)) @41:17-41:33
+41:34-41:34 ; ⇒ cancelled : Path(Path(Circle, Base, Base), loop then back(loop), here(Base)) @41:1-41:35
 44:1-44:32 @[ refuses("EndpointMism… ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎No rule identifies the loop with the empty word. @44:1-45:1
 45:1-45:3 def ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎No rule identifies the loop with the empty word. @45:1-45:69
 45:5-45:15 around_once ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎No rule identifies the loop with the empty word. @45:5-45:16

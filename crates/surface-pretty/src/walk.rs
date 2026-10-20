@@ -419,7 +419,7 @@ enum Kind
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
         | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..) | Former::Univalence(_)
         | Former::Ua { .. } | Former::Nested(_) | Former::Run(_) | Former::Constructor { .. } | Former::Returned(_)
-        | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::FlowProduct(..) | Former::Forward(_) | Former::FunctionFlow(..) | Former::Recorded { .. }),
+        | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Back(_) | Former::Cong(..) | Former::FlowProduct(..) | Former::Forward(_) | Former::FunctionFlow(..) | Former::Recorded { .. }),
     | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::Force(_)
         | Former::Application(..) | Former::Lambda(_) | Former::Primitive { .. } | Former::Transport(..)
         | Former::PathTransport { .. } | Former::Ride { .. } | Former::TelescopeTransport { .. } | Former::Fixpoint(_) | Former::Case { .. }
@@ -486,6 +486,8 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::SessionRelated(..)
         | Former::Stay(_)
         | Former::Then(..)
+        | Former::Back(_)
+        | Former::Cong(..)
         | Former::FlowProduct(..)
         | Former::Forward(_)
         | Former::FunctionFlow(..)
@@ -1043,6 +1045,11 @@ where
             Slot::of(second, Admits::ValueType, Binds::ONE),
         ]),
         Former::Arrow { domain, codomain } => Vec::from([value_type(domain), comp_type(codomain)]),
+        // The map stands as the derived transport's motive holds it, one
+        // binder deeper; it names no binder there, so it spells as written.
+        Former::Cong(map, path) => {
+            Vec::from([Slot::of(map, Admits::Value, Binds::ONE), value(path)])
+        },
         Former::Pi { domain, codomain } => Vec::from([
             value_type(domain),
             Slot::of(codomain, Admits::CompType, Binds::ONE),
@@ -1096,6 +1103,7 @@ where
         | Former::Here(child)
         | Former::Univalence(child)
         | Former::Stay(child)
+        | Former::Back(child)
         | Former::Forward(child)
         | Former::RunType(child)
         | Former::Return(child)
@@ -1698,6 +1706,10 @@ enum Bracket
     Sim,
     /// Directed reflexivity, `stay(a)`.
     Stay,
+    /// A path's inverse, `back(p)`.
+    Back,
+    /// A map's action on a path, `cong(f, p)`.
+    Cong,
     /// The product of two universe flows, `flowProduct(p, q)`.
     FlowProduct,
     /// A forward flow, `forward(f)`.
@@ -1730,6 +1742,8 @@ impl Bracket
             Self::Bisim => "bisim(",
             Self::Sim => "sim(",
             Self::Stay => "stay(",
+            Self::Back => "back(",
+            Self::Cong => "cong(",
             Self::FlowProduct => "flowProduct(",
             Self::Forward => "forward(",
             Self::Arrow => "arrow(",
@@ -1959,23 +1973,53 @@ where
     matches!(source.read(head), Former::Force(_)).then_some((bound, rest))
 }
 
-/// The transported value and the path of the composite `p then q` that
-/// `body` is the transport of: a path transport whose motive is `Path(A, a,
-/// y)` over its own binder `y`, the carrier `A` and the fixed endpoint `a`
-/// naming no `y`.
+/// A derived path operation a transport is the derivation of
+/// (`gandr_core_term::identity`), over the nodes its spelling writes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Derived<Node>
+{
+    /// `p then q`: `transport(\y. Path(A, a, y), q, p)`.
+    Composite
+    {
+        /// The first path, the transported value.
+        value: Node,
+        /// The second path, along which it moves.
+        path: Node,
+    },
+    /// `back(p)`: `transport(\y. Path(A, y, a), p, here(a))`.
+    Inverse(Node),
+    /// `cong(f, p)`: `transport(\y. Path(B, f(a), f(y)), p, here(f(a)))`.
+    Congruence
+    {
+        /// The map, as the motive holds it, one binder deeper.
+        map: Node,
+        /// The path it acts on.
+        path: Node,
+    },
+}
+
+/// The derived path operation `body` is the transport of: a path transport
+/// whose motive is `Path(A, a, y)` over its own binder `y` (a composite), or
+/// `Path(A, y, a)` moving reflexivity (an inverse), or `Path(B, f(a), f(y))`
+/// moving reflexivity (an action on a path), where every other part of the
+/// motive names no `y`.
 ///
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
-/// - ensures: the transport's value and path exactly when `body` reads as a
-///   path transport whose motive reads as a path type whose right endpoint
-///   reads as the intuitionistic variable of index zero, and whose carrier and
-///   left endpoint, read down through every child [`children`] lists, name no
-///   intuitionistic variable counting out to the motive's binder; absent
-///   otherwise, and absent when that scan reads more than [`VISIT_BUDGET`]
-///   nodes.
-/// - provides: the shape `transport(\y. Path(A, a, y), q, p)` that `p then q`
-///   derives (`gandr_core_term::identity`), which the sugared form writes as
-///   the lowering reads it back (#754).
+/// - ensures: the operation exactly when `body` reads as a path transport whose
+///   motive reads as a path type with one endpoint the intuitionistic variable
+///   of index zero, or for an action the forced map applied to it and returned
+///   and the other endpoint the same map, the same constant or variable,
+///   applied and returned; an inverse and an action move a reflexivity. The
+///   motive's carrier, its other endpoint and an action's map, read down
+///   through every child [`children`] lists, name no intuitionistic variable
+///   counting out to the motive's binder; absent otherwise, and absent when
+///   that scan reads more than [`VISIT_BUDGET`] nodes. A well-typed transport
+///   of these shapes moves the reflexivity at the endpoint the derivation
+///   would, up to conversion, so the operation stands for it.
+/// - provides: the shapes `p then q`, `back(p)` and `cong(f, p)` derive
+///   (`gandr_core_term::identity`), which the sugared form writes as the
+///   lowering reads them back.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1985,14 +2029,16 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a composite of two loops and a transport whose fixed
-///   endpoint names the motive's binder; a scan that skipped the endpoints,
-///   read the wrong index or ignored the binder count fails the golden.
+///   endpoint names the motive's binder, an inverse and an action on a loop; a
+///   scan that skipped the endpoints, read the wrong index or ignored the
+///   binder count fails the goldens.
 /// - witness: `tests::goldens::a_returned_composite_of_paths_is_written_infix_754`
+/// - witness: `tests::goldens::an_inverse_and_an_action_on_a_path_are_written_as_derived_778`
 #[spec(ensures: |ret| ret.is_none() || matches!(source.read(body), Former::PathTransport { .. }))]
-fn composite<S>(
+fn derived<S>(
     source: &S,
     body: S::Node,
-) -> Option<(S::Node, S::Node)>
+) -> Option<Derived<S::Node>>
 where
     S: Source + ?Sized,
 {
@@ -2012,21 +2058,64 @@ where
     else {
         return None;
     };
-    let Former::Variable {
-        zone: Zone::Intuitionistic,
-        index,
-    } = source.read(right)
+    let moving = |node: S::Node| {
+        matches!(
+            source.read(node),
+            Former::Variable {
+                zone: Zone::Intuitionistic,
+                index,
+            } if u32::from(index) == 0_u32
+        )
+    };
+    let reflexive = matches!(source.read(value), Former::Here(_));
+    // The map applied and returned, as an action's endpoints are: `f(x)`.
+    let image = |node: S::Node| {
+        if let Former::Returned(applied) = source.read(node)
+            && let Former::Application(forced, argument) = source.read(applied)
+            && let Former::Force(map) = source.read(forced)
+        {
+            Some((map, argument))
+        }
+        else {
+            None
+        }
+    };
+    // The same map, by what it reads as: a constant or a variable.
+    let same = |one: S::Node, other: S::Node| match (source.read(one), source.read(other)) {
+        (Former::Constant(one), Former::Constant(other)) => one == other,
+        (
+            Former::Variable { zone, index },
+            Former::Variable {
+                zone: other_zone,
+                index: other_index,
+            },
+        ) => zone == other_zone && index == other_index,
+        _ => false,
+    };
+    // The parts of the motive that must not name its binder, with the
+    // operation they make.
+    let (operation, apart) = if moving(right) {
+        (Derived::Composite { value, path }, [carrier, left, carrier])
+    }
+    else if moving(left) && reflexive {
+        (Derived::Inverse(path), [carrier, right, carrier])
+    }
+    else if reflexive
+        && let Some((map, argument)) = image(right)
+        && moving(argument)
+        && let Some((fixed, _)) = image(left)
+        && same(map, fixed)
+    {
+        (Derived::Congruence { map, path }, [carrier, left, map])
+    }
     else {
         return None;
     };
-    if u32::from(index) != 0_u32 {
-        return None;
-    }
-    // Neither the carrier nor the fixed endpoint may name the motive's
-    // binder, which counts out from each at the binders opened above it.
+    let [ty, endpoint, other] = apart;
     let mut pending = Vec::from([
-        (carrier, Admits::ValueType, 0_usize),
-        (left, Admits::Value, 0_usize),
+        (ty, Admits::ValueType, 0_usize),
+        (endpoint, Admits::Value, 0_usize),
+        (other, Admits::Value, 0_usize),
     ]);
     let mut visits = 0_u32;
     while let Some((node, admits, above)) = pending.pop() {
@@ -2056,31 +2145,32 @@ where
             pending.push((child, slot.admits, deeper));
         }
     }
-    Some((value, path))
+    Some(operation)
 }
 
 /// The former the walk reads at `node` in `form`, in a position admitting
 /// `admits`: the source's, but in the sugared form a returned transport that
-/// a composite of paths derives reads as the composite, `p then q`, where the
-/// position states the composite's type.
+/// a derived path operation builds reads as that operation, `p then q`,
+/// `back(p)` or `cong(f, p)`, where the position states its type.
 ///
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
-/// - ensures: [`Former::Then`] over the transported value and the path when
-///   `form` is [`Form::Sugared`], `admits` is not [`Admits::Operand`] and
-///   `node` reads as [`Former::Returned`] over a body [`composite`] answers;
-///   what `source` reads at `node` otherwise.
+/// - ensures: [`Former::Then`], [`Former::Back`] or [`Former::Cong`] over what
+///   [`derived`] answers when `form` is [`Form::Sugared`], `admits` is not
+///   [`Admits::Operand`] and `node` reads as [`Former::Returned`] over a body
+///   [`derived`] answers; what `source` reads at `node` otherwise.
 /// - provides: the one read of each node the walk visits.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the composite's golden in both forms and as a transport's
-///   operand; a read that rewrote the explicit form, a transport standing as a
-///   computation rather than a returned value, or a composite written where
-///   nothing states its type changes a spelling.
+/// - hypothesis: L3 — each operation's golden in both forms and as a
+///   transport's operand; a read that rewrote the explicit form, a transport
+///   standing as a computation rather than a returned value, or an operation
+///   written where nothing states its type changes a spelling.
 /// - witness: `tests::goldens::a_returned_composite_of_paths_is_written_infix_754`
 /// - witness: `tests::goldens::a_composite_a_transport_moves_stays_explicit_815`
+/// - witness: `tests::goldens::an_inverse_and_an_action_on_a_path_are_written_as_derived_778`
 #[spec(ensures: |ref ret| (form == Form::Sugared && admits != Admits::Operand)
     || core::mem::discriminant(ret) == core::mem::discriminant(&source.read(node)))]
 fn reading<S>(
@@ -2096,9 +2186,13 @@ where
     if form == Form::Sugared
         && admits != Admits::Operand
         && let Former::Returned(body) = former
-        && let Some((value, path)) = composite(source, body)
+        && let Some(operation) = derived(source, body)
     {
-        return Former::Then(value, path);
+        return match operation {
+            Derived::Composite { value, path } => Former::Then(value, path),
+            Derived::Inverse(path) => Former::Back(path),
+            Derived::Congruence { map, path } => Former::Cong(map, path),
+        };
     }
     former
 }
@@ -3650,6 +3744,8 @@ impl Walk<'_, '_>
                 | Former::SessionRelated(..)
                 | Former::Stay(_)
                 | Former::Then(..)
+                | Former::Back(_)
+                | Former::Cong(..)
                 | Former::FlowProduct(..)
                 | Former::Forward(_)
                 | Former::FunctionFlow(..)
@@ -4545,6 +4641,12 @@ impl Walk<'_, '_>
             },
             | Former::FlowProduct(..) => {
                 Some(writes(Production("call_expression"), Join::Bracket(Bracket::FlowProduct)))
+            },
+            | Former::Back(_) => {
+                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Back)))
+            },
+            | Former::Cong(..) => {
+                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Cong)))
             },
             | Former::Forward(_) => {
                 Some(writes(Production("call_expression"), Join::Bracket(Bracket::Forward)))
@@ -6150,6 +6252,8 @@ impl Walk<'_, '_>
             | Former::Univalence(_)
             | Former::SessionRelated(..)
             | Former::Stay(_)
+            | Former::Back(_)
+            | Former::Cong(..)
             | Former::FlowProduct(..)
             | Former::Forward(_)
             | Former::FunctionFlow(..)
@@ -6223,12 +6327,12 @@ impl Walk<'_, '_>
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
             Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Lambda | Join::Thunk
-                | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Forward | Bracket::Run) => Some(1_usize),
+                | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Back | Bracket::Forward | Bracket::Run) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
                 | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) => Some(count),
             Join::ValueFunction(Arity(domains), _) => domains.checked_add(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
-            Join::Arrow | Join::Pi | Join::Sigma | Join::Sequence | Join::Received | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Arrow) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::Sigma | Join::Sequence | Join::Received | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
             Join::TypedSequence => Some(3_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
@@ -6574,6 +6678,7 @@ impl Walk<'_, '_>
                     | Bracket::Bisim
                     | Bracket::Sim
                     | Bracket::FlowProduct
+                    | Bracket::Cong
                     | Bracket::Arrow => {
                         let second = self.pop()?;
                         let first = self.pop()?;
@@ -6587,6 +6692,7 @@ impl Walk<'_, '_>
                     | Bracket::PathRefl
                     | Bracket::List
                     | Bracket::Stay
+                    | Bracket::Back
                     | Bracket::Forward
                     | Bracket::Run => {
                         let body = self.pop()?;

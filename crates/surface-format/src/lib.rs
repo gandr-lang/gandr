@@ -61,8 +61,9 @@
 //! the content digest is its check. Either other form runs the rewrites of
 //! its direction from [`REWRITES`], the table of every pair of spellings the
 //! presentation printer (`gandr-surface-pretty`) tells apart — the eager
-//! product, the sum, the lazy product, the tuple, the value function and the
-//! path composite — each moving one form between its two spellings on the
+//! product, the sum, the lazy product, the tuple, the value function, the
+//! path composite, the path inverse and a map's action on a path — each
+//! moving one form between its two spellings on the
 //! concrete syntax
 //! tree: its operands and their comments are kept, its own tiles are the
 //! other spelling's, each comment it owns goes before the operand it
@@ -78,6 +79,8 @@
 //! | `tuple`          | `#{a, b, …}`            | `(a, b, …)`     |
 //! | `value-function` | `+U ((x : A) -> B -> -F C)` | `(x : A, B) => C` |
 //! | `path-composite` | `transport(\y. Path(A, a, y), q, p)` | `p then q` |
+//! | `path-inverse`   | `transport(\y. Path(A, y, a), p, here(a))` | `back(p)` |
+//! | `path-action`    | `transport(\y. Path(B, f(a), f(y)), p, here(f(a)))` | `cong(f, p)` |
 //!
 //! A rewrite changes tokens, so its check is the meaning, never the digest:
 //! the source and the rewritten text are each lowered into one core arena

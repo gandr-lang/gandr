@@ -82,7 +82,8 @@
 //! recorded against it, `F` the family and `x` the point its words spell, so
 //! `back(p)` at `p : Path(A, a, b)` stands at `Path(A, b, a)`, `p then q` at
 //! `Path(A, a, c)` and `cong(f, p)` at `Path(B, ⟨f a⟩, ⟨f b⟩)`, `B` the result
-//! type `f`'s definition writes under no binder of its telescope. An operation
+//! type `f`'s definition writes under no binder of its telescope, or the
+//! codomain of the map its signature states. An operation
 //! whose motive's path — `back`'s and `cong`'s path, `then`'s first — is read
 //! no such way, or whose function did not lower, is refused as unannotated,
 //! and `cong` at a constructor as [`FragmentBoundary::NotAFunction`]. The
@@ -680,6 +681,14 @@ enum Synthesis
     Thunked
     {
         /// The binder's written type.
+        declared: NodeIndex,
+    },
+    /// A declaration's written signature, which states the map whose
+    /// codomain `cong` reads once every node is classified, as it reads a
+    /// function definition's result.
+    Stated
+    {
+        /// The signature's written type.
         declared: NodeIndex,
     },
     /// The codomain of the arrow a parameter's written type thunks, read under
@@ -2171,15 +2180,17 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// What a synthesised `cong` reads its codomain off: the written result
-    /// of the function definition `function` names, or the codomain of the
-    /// arrow a parameter's written type thunks.
+    /// of the function definition `function` names, the codomain of the map
+    /// a declaration's signature states, or the codomain of the arrow a
+    /// parameter's written type thunks.
     ///
     /// # Specification
     /// - requires: `function` is the first operand of the `cong` at `site`,
     ///   which stands under `frame`.
     /// - ensures: the result type node and the frame it is read under, when
     ///   `function` is a bare name resolving to an earlier declaration written
-    ///   as a function tail with a result type, or to a binder whose written
+    ///   as a function tail with a result type, or to one whose signature
+    ///   states a map, `+U (A -> C)` or `A => B`, or to a binder whose written
     ///   type is the thunk of an arrow, `+U (A -> C)`, under any parentheses.
     /// - fails: the unannotated refusal for any other operand; the name's own
     ///   refusal from its resolution.
@@ -2191,12 +2202,14 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a function definition gives its codomain, a parameter
     ///   thunking an arrow gives the arrow's, and a parameter of another type
-    ///   gives none.
+    ///   gives none; a declaration whose signature states a map gives the map's
+    ///   codomain.
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    /// - witness: `lower::identity::tests::cong_reads_a_map_its_signature_states_778`
     #[spec(ensures: |ret| match ret {
         | Ok(Synthesis::Mapped { codomain, frame: read }) => self.reading(codomain.node()).frame() == read,
-        | Ok(Synthesis::Thunked { .. }) | Err(_) => true,
+        | Ok(Synthesis::Thunked { .. } | Synthesis::Stated { .. }) | Err(_) => true,
         | Ok(Synthesis::Paths | Synthesis::Bound { .. }) => false,
     })]
     fn mapped(
@@ -2230,7 +2243,13 @@ impl<'source> Lowerer<'_, 'source>
                         codomain: Codomain::Returner(codomain),
                         frame: self.reading(codomain).frame(),
                     }),
-                    Some(_) | None => Err(unannotated),
+                    Some(_) => Err(unannotated),
+                    // The signature's written type may be classified after
+                    // this operation, so its map is read once the sweep is
+                    // done.
+                    None => self.stated(constant).map_or(Err(unannotated), |declared| {
+                        Ok(Synthesis::Stated { declared })
+                    }),
                 }
             },
             // The binder's written type may be classified after this
@@ -2278,6 +2297,37 @@ impl<'source> Lowerer<'_, 'source>
         match self.plans.get(usize::from(tail)) {
             Some(&Plan::Function(function)) => Some(function),
             _ => None,
+        }
+    }
+
+    /// The written type of the declaration at `constant`'s signature, when
+    /// it is written as `def f : T ;`: the map whose codomain a `cong` by `f`
+    /// reads once every node is classified.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the written type's node when the declaration's signature is
+    ///   written as `def f : T ;`; nothing otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a signature at a thunked arrow and one at a value
+    ///   function give their codomain.
+    /// - witness: `lower::identity::tests::cong_reads_a_map_its_signature_states_778`
+    #[spec(ensures: |ret| ret.is_none() || usize::from(constant) < self.collected.slots.len())]
+    fn stated(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<NodeIndex>
+    {
+        let slot = self.collected.slots.get(usize::from(constant))?;
+        match slot.signature {
+            Maybe::Present(Half {
+                operand: Operand::Written(written),
+                ..
+            }) => Some(written.node),
+            Maybe::Present(_) | Maybe::Absent(_) => None,
         }
     }
 
@@ -2378,12 +2428,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   refusal unless the path its motive is read off — `back`'s and `cong`'s
     ///   path, `then`'s first — reads its type as [`Self::reads_path`] does,
     ///   and `cong`'s codomain is read in a declaration that lowers: a declared
-    ///   function's under no binder of its telescope, a parameter's arrow's
-    ///   under the frame its written type is read under, whose binders all
-    ///   stand where the operation does. An admitted operation reads its own
-    ///   type when every path it reads does, `then`'s second included. The
-    ///   record keeps every site, the innermost first, for the mint sweep to
-    ///   read `cong`'s codomain.
+    ///   function's, or a map's a signature states, under no binder of its
+    ///   telescope, a parameter's arrow's under the frame its written type is
+    ///   read under, whose binders all stand where the operation does. An
+    ///   admitted operation reads its own type when every path it reads does,
+    ///   `then`'s second included. The record keeps every site, the innermost
+    ///   first, for the mint sweep to read `cong`'s codomain.
     /// - provides: the classification-time guarantee that a synthesised
     ///   operation mints its motive.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
@@ -2456,8 +2506,15 @@ impl<'source> Lowerer<'_, 'source>
                         None => synthesis,
                     }
                 },
+                (Synthesis::Stated { declared }, Some(_)) => self
+                    .thunked_codomain(declared)
+                    .map_or(synthesis, |codomain| Synthesis::Mapped {
+                        codomain,
+                        frame: self.reading(codomain.node()).frame(),
+                    }),
                 (
                     Synthesis::Thunked { .. }
+                    | Synthesis::Stated { .. }
                     | Synthesis::Paths
                     | Synthesis::Mapped { .. }
                     | Synthesis::Bound { .. },
@@ -2471,7 +2528,7 @@ impl<'source> Lowerer<'_, 'source>
                         && self.scope.telescope_binders(frame).all(|binds| !binds)
                 },
                 Synthesis::Bound { codomain, .. } => !self.collected.refused(codomain.node()).0,
-                Synthesis::Thunked { .. } => false,
+                Synthesis::Thunked { .. } | Synthesis::Stated { .. } => false,
             };
             let transported = self.reads_path(path, &read)?;
             if !closed || matches!(transported, Maybe::Absent(_)) {
@@ -3399,9 +3456,10 @@ impl<'source> Lowerer<'_, 'source>
                         Maybe::Present(carried) => carried,
                         Maybe::Absent(_) => return Maybe::Absent(lowered::Absent::Unminted),
                     },
-                    Synthesis::Paths | Synthesis::Mapped { .. } | Synthesis::Thunked { .. } => {
-                        result
-                    },
+                    Synthesis::Paths
+                    | Synthesis::Mapped { .. }
+                    | Synthesis::Thunked { .. }
+                    | Synthesis::Stated { .. } => result,
                 };
                 let mut image = |point| {
                     let forced = sink.arena.computation_force(function);
@@ -3417,7 +3475,10 @@ impl<'source> Lowerer<'_, 'source>
                     right: Maybe::Present(right),
                 }
             },
-            (Derivation::Cong { .. }, Synthesis::Paths | Synthesis::Thunked { .. }) => {
+            (
+                Derivation::Cong { .. },
+                Synthesis::Paths | Synthesis::Thunked { .. } | Synthesis::Stated { .. },
+            ) => {
                 return Maybe::Absent(lowered::Absent::Unminted);
             },
         };
