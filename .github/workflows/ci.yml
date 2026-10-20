@@ -351,9 +351,12 @@ jobs:
   # check, whereas a skipped job succeeds. Formatting sees docs-only changes.
   # A push and the scheduled baseline gate nothing; the macOS verdict runs
   # only there, so the queue's required macOS check is a skipped job.
+  # Dependency updates land through a maintainer's pull request, so a
+  # dependabot pull request runs nothing: the entry jobs, formatting and the
+  # obligations read skip, and the rest skip without `changes`' outputs.
   changes:
     name: detect changed-file categories
-    if: &gate-run ${{ !cancelled() && !failure() && github.event_name != 'push' && github.event_name != 'schedule' }}
+    if: &gate-run ${{ !cancelled() && !failure() && github.event_name != 'push' && github.event_name != 'schedule' && github.actor != 'dependabot[bot]' }}
     runs-on: *linux
     outputs:
       # Missing bases and failed fetches/diffs force Rust checks, never skip
@@ -390,6 +393,7 @@ jobs:
   # which fails the image reference rather than rebuilding.
   ci-image-tag:
     name: find the CI image for this checkout
+    if: ${{ github.actor != 'dependabot[bot]' }}
     runs-on: *linux
     permissions: *image-read-permissions
     outputs:
@@ -445,7 +449,7 @@ jobs:
   ci-image-ref:
     name: resolve the CI image reference
     needs: [ci-image-tag, ci-image]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && github.actor != 'dependabot[bot]' }}
     runs-on: *linux
     outputs:
       ref: ${{ steps.resolve.outputs.ref }}
@@ -949,7 +953,7 @@ jobs:
   # bare runners, so the job running the change's code holds no write token.
   obligations-comment-read:
     name: read the obligations comment
-    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork }}
+    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && github.actor != 'dependabot[bot]' }}
     runs-on: *linux
     permissions:
       pull-requests: read
