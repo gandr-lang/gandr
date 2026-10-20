@@ -6146,10 +6146,13 @@ where
                 },
             )?;
             // An operation's rules are decided over the declarations admitted
-            // before it: well formed, oriented and every critical pair joined.
+            // before it: well formed, oriented and every critical pair joined,
+            // and the body their decision tree.
             crate::ruled::admit(
+                arena,
                 judgement.entries,
                 ConstantIndex::from(judgement.entries.len()),
+                (declared, body),
                 declaration.operation_rules(),
             )?;
             Ok(())

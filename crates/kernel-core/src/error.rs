@@ -593,6 +593,10 @@ pub enum KernelError
     /// not oriented by the path order, or one of its critical pairs does not
     /// join.
     OperationRulesRefused(gandr_kernel_term::OperationRuleRefusal),
+    /// A ruled definition's body is not its rules' decision tree: its shape is
+    /// not a fixpoint over cases, or a leaf is the right side of no rule
+    /// whose left side matches it.
+    OperationBodyUnlinked(crate::ruled::OperationBodyFault),
     /// A type of words is not the words its free cells mint: a cell is not a
     /// loop at one closed point of an earlier parameterless data declaration,
     /// or the declaration's table or rules are not the mint, or an earlier type
@@ -916,6 +920,9 @@ impl core::fmt::Display for KernelError
             },
             Self::OperationRulesRefused(_) => {
                 f.write_str("a definition's operation rules did not converge")
+            },
+            Self::OperationBodyUnlinked(_) => {
+                f.write_str("a definition's body is not its operation rules' decision tree")
             },
             Self::WordsRefused(_) => {
                 f.write_str("a type of words was not the words its free cells mint")

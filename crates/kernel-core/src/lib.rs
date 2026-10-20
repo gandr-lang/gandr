@@ -401,6 +401,18 @@
 //! `kernel_export::kernel_presented_readmission::forged_operation_rules_are_refused_by_the_kernel_322`
 //! in the surface corpus.
 //!
+//! A ruled definition's body must then be its rules' decision tree: a thunked
+//! fixpoint over one lambda per input around cases on the inputs and the
+//! fields earlier cases bound, each leaf converting with the right side of a
+//! rule whose left side matches what the cases above it learned, minted as
+//! the lowering mints a leaf. A body that is not is refused
+//! `OperationBodyUnlinked`. With the convergence, the body computes what the
+//! rules compute. The witnesses are
+//! `ruled::tests::a_body_is_admitted_only_as_its_rules_decision_tree` and, on
+//! readmission,
+//! `kernel_export::kernel_presented_readmission::rules_the_body_does_not_compute_are_refused_by_the_kernel_322`
+//! in the surface corpus.
+//!
 //! # Accessibility
 //!
 //! A data declaration's fields may place its family anywhere the stage order
@@ -725,6 +737,7 @@ pub use crate::rewrite::RewriteSupport;
 pub use crate::rewrite::shift_value_type;
 pub use crate::rewrite::substitute_comp_type;
 pub use crate::rewrite::substitute_comp_type_at_call;
+pub use crate::ruled::OperationBodyFault;
 pub use crate::support::LooseDepth;
 pub use crate::support::LooseDepths;
 pub use crate::support::NodeOutcome;
