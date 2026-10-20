@@ -643,7 +643,10 @@ impl Naming
     /// - hypothesis: L3 — the corpus census spells every typed node of a body
     ///   under its binders' names, which this record alone supplies; a binder
     ///   or use left out spells `?`, which the census fails on.
-    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
     fn of(
         module: &LoweredModule<'_>,
         source: SourceText<'_>,
@@ -854,7 +857,10 @@ pub struct TypeTable
 /// - hypothesis: L3 — the corpus census spells each typed node of a body under
 ///   its binders' names; a chain stopping at a linear binder leaves a `?` the
 ///   census fails on.
-/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0`
+/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
+/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
+/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
 #[spec(ensures: |ret| ret.is_none_or(|index| scopes.binder(index).is_some_and(|binder| binder.zone() == Zone::Intuitionistic)))]
 fn intuitionistic(
     scopes: &Scopes<CoreNode>,
@@ -896,7 +902,10 @@ fn intuitionistic(
 ///   names; a binder left unnamed spells `?`, which the census fails on. A
 ///   split component its arm never uses is named all the same, and one a label
 ///   pattern omits by its label, primed apart from a written name.
-/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0`
+/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
+/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
+/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
 /// - witness: `typed::tests::an_unused_split_component_answers_by_its_written_name_665`
 /// - witness: `typed::tests::an_unwritten_field_answers_by_its_label_670`
 #[spec(ensures: |ret| ret.1.len() == ret.0.binders().len())]
@@ -2538,7 +2547,10 @@ impl TypeTable
     ///   binders' names, and an endpoint under its signature's; a theory's
     ///   operation under the sorts before it; a capability inside a scope's
     ///   subject names the scope.
-    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
     /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
     /// - witness: `typed::tests::a_scoped_capability_answers_at_its_scope`
     /// - witness: `typed::tests::an_unused_dependent_part_answers_in_its_arms_context`
@@ -3139,7 +3151,10 @@ impl TypeTable
     ///   otherwise and fails it. A value of a source that imports a sibling
     ///   reprints both ways: as written, and run under its signature, found by
     ///   its name in a component with more members than its imports.
-    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
     /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
     /// - witness: `typed::tests::a_member_s_value_reprints_under_its_own_declaration_610`
     #[inline]
@@ -3232,7 +3247,10 @@ impl TypeTable
     ///   reads to its normal form, and a name that is no block reads nothing;
     ///   the census reads the corpus's family rows as values.
     /// - witness: `typed::tests::a_theory_s_normal_form_reads_back_under_its_rules_669`
-    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
     #[inline]
     #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
     pub fn reprint_normal_form(
@@ -3290,7 +3308,10 @@ impl TypeTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::reprint_value`].
-    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
     /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
     #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
     fn lowered_reprint(
@@ -3359,7 +3380,10 @@ impl TypeTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::reprint_value`].
-    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
+    /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
     /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
     #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
     fn run_reprinted(

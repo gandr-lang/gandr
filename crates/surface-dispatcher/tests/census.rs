@@ -12,6 +12,7 @@ use core::ops::ControlFlow;
 use std::path::Path;
 use std::path::PathBuf;
 
+use anodized::spec;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_corpus::Outcome;
 use gandr_surface_corpus::Stated;
@@ -222,14 +223,68 @@ impl Fixed
     }
 }
 
+/// How many tests share the census, each taking every fourth corpus source:
+/// the whole corpus is nine seconds of one core where specifications are
+/// enforced, past the per-test limit on a loaded machine, and a quarter of it
+/// stays inside.
+const SHARDS: usize = 4;
+
+/// Which of the `SHARDS` tests a corpus source's census runs in.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Shard(usize);
+
 #[test]
-fn every_typed_entry_spells_without_a_dishonest_question_mark()
+fn every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0()
 {
+    spell(Shard(0));
+}
+
+#[test]
+fn every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1()
+{
+    spell(Shard(1));
+}
+
+#[test]
+fn every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2()
+{
+    spell(Shard(2));
+}
+
+#[test]
+fn every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3()
+{
+    spell(Shard(3));
+}
+
+/// Every typed entry, declared type and stated run value of the corpus
+/// sources of `shard` (every fourth source the walk visits), spelled and
+/// counted, and every stated value and normal form printed, read back and
+/// printed again.
+///
+/// # Specification
+/// - requires: `shard` is below `SHARDS`.
+/// - ensures: every `?` written for a source of `shard` is in the honest set,
+///   and every value it states prints as a fixed point.
+/// - panics: when a `?` is dishonest, a value moves, or the sources of `shard`
+///   state no typed entry, no run value or no value to print again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the four shards together take every source the walk
+///   visits, each in one shard; a shard past `SHARDS` would take none.
+/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0`
+/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
+#[spec(requires: shard.0 < SHARDS)]
+fn spell(shard: Shard)
+{
+    let Shard(shard) = shard;
     let grammar = built_in().expect("the built-in grammar builds");
     let page = PageWidth::from(PAGE);
     let mut census = Census::default();
     let mut fixed = Fixed::default();
     let mut values = 0_usize;
+    let mut walked = 0_usize;
     let walk = Walk::new(vec![root(Path::new("strict")), root(Path::new("fixture"))]);
     let ControlFlow::Continue(_report) =
         walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
@@ -244,6 +299,10 @@ fn every_typed_entry_spells_without_a_dishonest_question_mark()
             else {
                 return ControlFlow::Continue(());
             };
+            walked = walked.saturating_add(1);
+            if walked.rem_euclid(SHARDS) != shard {
+                return ControlFlow::Continue(());
+            }
             let table = typed(&grammar, path, root, (text, base));
             if let Some(ref table) = table {
                 for entry in table.entries(page, Form::Sugared.into()) {
@@ -347,8 +406,14 @@ fn every_typed_entry_spells_without_a_dishonest_question_mark()
     for (reason, count) in &census.reasons {
         eprintln!("| {reason} | {count} |");
     }
-    assert!(values > 0_usize, "the corpus states run values");
-    assert!(census.read > 0_usize, "the corpus holds typed entries");
+    assert!(
+        values > 0_usize,
+        "the sources of shard {shard} state run values"
+    );
+    assert!(
+        census.read > 0_usize,
+        "the sources of shard {shard} hold typed entries"
+    );
     assert_eq!(
         census.dishonest,
         Vec::<String>::new(),
@@ -356,7 +421,7 @@ fn every_typed_entry_spells_without_a_dishonest_question_mark()
     );
     assert!(
         fixed.read > 0_usize,
-        "the corpus states values to print again"
+        "the sources of shard {shard} state values to print again"
     );
     assert_eq!(
         fixed.moved,
