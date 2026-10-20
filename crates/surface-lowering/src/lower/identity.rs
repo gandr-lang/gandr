@@ -1608,13 +1608,14 @@ impl<'source> Lowerer<'_, 'source>
     ///   as values reading both operands as values; `ua(e)` stands as a value
     ///   reading its record as a value, its forward map derived from it;
     ///   `transport(\X. T, p, v)` and `ride(\X. T, f, v)` stand as computations
-    ///   reading their motive, path or flow and value as values, and
-    ///   `transport(M, p, z₀, q, v)` as a computation reading its motive as a
-    ///   value type and the other four as values; `back(p)` and `cong(f, p)`
-    ///   stand as computations derived as [`Self::derive`] does; `recorded(m₀,
-    ///   …, mₙ)` stands as a value over its moves, each read as
-    ///   [`Self::recorded_move`] reads it. Every operand is read under the
-    ///   site's frame.
+    ///   reading their motive, path or flow and value as values, the transport
+    ///   read as a value being the value it returns, as a derived operation is,
+    ///   since it runs nothing, and `transport(M, p, z₀, q, v)` as a
+    ///   computation reading its motive as a value type and the other four as
+    ///   values; `back(p)` and `cong(f, p)` stand as computations derived as
+    ///   [`Self::derive`] does; `recorded(m₀, …, mₙ)` stands as a value over
+    ///   its moves, each read as [`Self::recorded_move`] reads it. Every
+    ///   operand is read under the site's frame.
     /// - fails: the wrong-sort refusal where the operation's sort is not read;
     ///   the arity refusal for other than one argument to `here`, `stay`,
     ///   `forward`, `ua` or `back`, two to `funext`, `equiv`, `pathProduct`,
@@ -1642,6 +1643,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::identity::tests::a_path_product_lowers_to_its_former`
     /// - witness: `lower::identity::tests::a_flow_product_lowers_to_its_former`
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
+    /// - witness: `lower::identity::tests::a_written_transport_read_as_a_value_is_the_value_it_returns_985`
     #[spec(
         captures: start = self.operands.len(),
         ensures: |ret| {
@@ -1832,6 +1834,14 @@ impl<'source> Lowerer<'_, 'source>
                     | Operation::FlowProduct
                     | Operation::Recorded => Plan::Transport(motive, path, value),
                 };
+                // A transport is pure: where a value is read it is the value
+                // it returns, as a derived operation's transport is.
+                if operation == Operation::Transport
+                    && let Reading::Value(_) = site.reading
+                    && let Some(held) = self.bridges.get_mut(usize::from(site.at.node))
+                {
+                    *held = super::Bridge::Inserted(Insertion::Endpoint);
+                }
                 self.plan(site, plan);
                 Ok(())
             },
