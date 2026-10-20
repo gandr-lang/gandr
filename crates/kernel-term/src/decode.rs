@@ -40,6 +40,7 @@ use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_strata::LevelVar;
 use gandr_kernel_strata::LevelVarIndex;
+use quenchant_shape::shape::Maybe;
 
 use crate::arena::CompTypeId;
 use crate::arena::ComputationId;
@@ -64,6 +65,7 @@ use crate::budget::MAX_EXPANDED_TERM_WORK;
 use crate::budget::MAX_TABLE_ENTRIES;
 use crate::budget::TableEntryCount;
 use crate::decl::AdmissionMark;
+use crate::decl::AtomInterface;
 use crate::decl::DeclarationBuilder;
 use crate::decl::DeclarationContent;
 use crate::decl::LevelParamCount;
@@ -308,6 +310,9 @@ struct DeclMeta
     /// The representation's global index and the scope's extent, for an
     /// abstract type only.
     sealed: Option<(GlobalIndex, SealExtent)>,
+    /// The relation's and the reflexivity's global indices, for an abstract
+    /// type under [`tags::KIND_ABSTRACT_INTERFACED`] only.
+    interface: Option<(GlobalIndex, GlobalIndex)>,
     /// Parameter roots for a data signature; empty for other declarations.
     parameters: Vec<GlobalIndex>,
     /// Constructor field roots for a data signature.
@@ -877,7 +882,8 @@ fn value_id_at(
         && match meta.kind {
             DeclKind::Def => meta.root_body.is_some_and(|root| value_id_at(&table.nodes, root).is_some()),
             DeclKind::Data => meta.root_body.is_none() && meta.parameters.iter().chain(meta.constructors.iter().flatten()).all(|root| value_type_id_at(&table.nodes, *root).is_some()),
-            DeclKind::AbstractType => meta.root_body.is_none() && meta.sealed.is_some_and(|(root, _)| value_type_id_at(&table.nodes, root).is_some()),
+            DeclKind::AbstractType => meta.root_body.is_none() && meta.sealed.is_some_and(|(root, _)| value_type_id_at(&table.nodes, root).is_some())
+                && meta.interface.is_none_or(|(relation, reflexivity)| value_id_at(&table.nodes, relation).is_some() && value_id_at(&table.nodes, reflexivity).is_some()),
             DeclKind::Axiom => meta.root_body.is_none(),
         }),
     captures: [entry = table.arena.watermark(), related = metas.iter().map(|meta| meta.related.len()).collect::<Vec<_>>()],
@@ -894,10 +900,16 @@ fn value_id_at(
                         && meta.root_body.and_then(|root| value_id_at(&table.nodes, root)) == Some(body),
                     DeclarationContent::Axiom { declared } => matches!(meta.kind, DeclKind::Axiom)
                         && value_type_id_at(&table.nodes, meta.root_declared) == Some(declared),
-                    DeclarationContent::AbstractType { kind, representation, scope } => matches!(meta.kind, DeclKind::AbstractType)
+                    DeclarationContent::AbstractType { kind, representation, scope, interface } => matches!(meta.kind, DeclKind::AbstractType)
                         && value_type_id_at(&table.nodes, meta.root_declared) == Some(kind)
                         && meta.sealed.is_some_and(|(root, extent)| value_type_id_at(&table.nodes, root) == Some(representation)
-                            && scope == SealScope::Closed(extent)),
+                            && scope == SealScope::Closed(extent))
+                        && match (meta.interface, interface) {
+                            (Some((relation, reflexivity)), Maybe::Present(interface)) => value_id_at(&table.nodes, relation) == Some(interface.relation())
+                                && value_id_at(&table.nodes, reflexivity) == Some(interface.reflexivity()),
+                            (None, Maybe::Absent(_)) => true,
+                            (Some(_), Maybe::Absent(_)) | (None, Maybe::Present(_)) => false,
+                        },
                     DeclarationContent::Data { ref parameters, ref constructors, kind } => matches!(meta.kind, DeclKind::Data)
                         && value_type_id_at(&table.nodes, meta.root_declared) == Some(kind)
                         && parameters.len() == meta.parameters.len()
@@ -988,12 +1000,26 @@ fn build_declarations(
                         site: MalformedSite::SealExtent,
                     });
                 }
-                DeclarationBuilder::new(&mut table.arena).abstract_type(
+                let atom = DeclarationBuilder::new(&mut table.arena).abstract_type(
                     meta.levels.clone(),
                     declared,
                     representation,
                     SealScope::Closed(extent),
-                )
+                );
+                match meta.interface {
+                    Some((relation, reflexivity)) => {
+                        let resolve = |root: GlobalIndex| {
+                            value_id_at(&table.nodes, root).ok_or(DecodeError::Malformed {
+                                site: MalformedSite::Polarity,
+                            })
+                        };
+                        atom.interfaced(AtomInterface::new(
+                            resolve(relation)?,
+                            resolve(reflexivity)?,
+                        ))
+                    },
+                    None => atom,
+                }
             },
             DeclKind::Axiom => {
                 DeclarationBuilder::new(&mut table.arena).axiom(meta.levels.clone(), declared)
@@ -1594,8 +1620,9 @@ impl<'bytes> ByteReader<'bytes>
 ///   carries related pairs, each two value roots and a dialogue, only a
 ///   definition under [`tags::KIND_DEF_LAWFUL`] carries laws, only a data
 ///   declaration under [`tags::KIND_DATA_PRESENTED`] or
-///   [`tags::KIND_DATA_WORDS`] carries rules, and only one under the latter
-///   carries cells.
+///   [`tags::KIND_DATA_WORDS`] carries rules, only one under the latter carries
+///   cells, and only an abstract type under [`tags::KIND_ABSTRACT_INTERFACED`]
+///   carries an interface's two value roots.
 /// - provides: segment parsing, not semantic validation of producer claims. On
 ///   failure the cursor and previously completed entries may have advanced;
 ///   this operation does not roll back an entire segment.
@@ -1638,6 +1665,9 @@ impl<'bytes> ByteReader<'bytes>
             (DeclKind::Data | DeclKind::Def | DeclKind::Axiom, None) => true,
             _ => false,
         }
+        && meta.interface.is_none_or(|interface| matches!(meta.kind, DeclKind::AbstractType)
+            && <[_; 2]>::from(interface).iter().all(|root| *root < table.next_index()
+                && table.families.get(root.offset().0) == Some(&Family::Value)))
         && meta.related.iter().all(|&(left, right, _)| matches!(meta.kind, DeclKind::Def)
             && [left, right].iter().all(|root| *root < table.next_index()
                 && table.families.get(root.offset().0) == Some(&Family::Value)))))]
@@ -1662,6 +1692,7 @@ fn decode_declaration(
     let mut parameters = Vec::new();
     let mut constructors = Vec::new();
     let mut sealed = None;
+    let mut interface = None;
     let mut related = Vec::new();
     let mut laws = Vec::new();
     let mut rules = Vec::new();
@@ -1735,11 +1766,17 @@ fn decode_declaration(
         // An abstract type carries its kind root, its representation root and
         // its scope's extent: no body, and therefore no per-definition
         // annotation slots. Whether the extent fits the artifact is decided at
-        // assembly, where the declaration count is known.
+        // assembly, where the declaration count is known. An interfaced atom
+        // closes with its relation's and its reflexivity's roots.
         DeclKind::AbstractType => {
             let representation = decode_root(reader, table, Family::ValueType)?;
             let extent = SealExtent::from(usize::from(reader.read_usize()?));
             sealed = Some((representation, extent));
+            if kind_tag == tags::KIND_ABSTRACT_INTERFACED {
+                let relation = decode_root(reader, table, Family::Value)?;
+                let reflexivity = decode_root(reader, table, Family::Value)?;
+                interface = Some((relation, reflexivity));
+            }
             None
         },
         DeclKind::Axiom => None,
@@ -1752,6 +1789,7 @@ fn decode_declaration(
         root_declared,
         root_body,
         sealed,
+        interface,
         parameters,
         constructors,
         provenance,
@@ -3137,7 +3175,7 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 ///   validity.
 /// - witness: `decode::tests::tag_alphabets_partition_every_byte`
 #[spec(
-    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 => ret.as_ref() == Ok(&DeclKind::Data), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
+    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 | 12 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 => ret.as_ref() == Ok(&DeclKind::Data), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
 )]
 #[inline]
 fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
@@ -3149,7 +3187,7 @@ fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
         // The abstract-type kind is deliberately live here: it was reserved with
         // the other three and sealing made it real, so it is decoded rather than
         // refused.
-        tags::KIND_ABSTRACT_TYPE => Ok(DeclKind::AbstractType),
+        tags::KIND_ABSTRACT_TYPE | tags::KIND_ABSTRACT_INTERFACED => Ok(DeclKind::AbstractType),
         tags::KIND_MODULE_SIG => Err(DecodeError::ReservedDeclarationKind {
             kind: ReservedKind::ModuleSig,
         }),
@@ -4195,7 +4233,7 @@ mod tests
             let kind = match byte {
                 0 | 7 | 9 => Ok(super::DeclKind::Def),
                 1 => Ok(super::DeclKind::Axiom),
-                2 => Ok(super::DeclKind::AbstractType),
+                2 | 12 => Ok(super::DeclKind::AbstractType),
                 3 => Err(DecodeError::ReservedDeclarationKind {
                     kind: super::ReservedKind::ModuleSig,
                 }),
@@ -4608,6 +4646,7 @@ mod tests
                     ),
                     root_body: None,
                     sealed: None,
+                    interface: None,
                     provenance: vec![],
                     related: vec![],
                     laws: vec![],
@@ -4693,6 +4732,7 @@ mod tests
             root_declared: super::GlobalIndex::from(0_u32),
             root_body: Some(super::GlobalIndex::from(5_u32)),
             sealed: None,
+            interface: None,
             provenance: vec![],
             related: vec![(
                 super::GlobalIndex::from(5_u32),
@@ -5506,6 +5546,7 @@ mod tests
                 root_declared: super::GlobalIndex::from(4_u32),
                 root_body: Some(super::GlobalIndex::from(5_u32)),
                 sealed: None,
+                interface: None,
                 provenance: vec![
                     super::ConstantIndex::from(129_usize),
                     super::ConstantIndex::from(0_usize),
@@ -5530,6 +5571,7 @@ mod tests
                 root_declared: super::GlobalIndex::from(0_u32),
                 root_body: None,
                 sealed: None,
+                interface: None,
                 provenance: vec![],
                 related: vec![],
                 laws: vec![],
@@ -5549,6 +5591,7 @@ mod tests
                     super::GlobalIndex::from(0_u32),
                     super::SealExtent::from(0_usize),
                 )),
+                interface: None,
                 provenance: vec![],
                 related: vec![],
                 laws: vec![],
@@ -5567,6 +5610,7 @@ mod tests
                 kind: declared,
                 representation: unit,
                 scope: super::SealScope::Closed(super::SealExtent::from(0_usize)),
+                interface: super::Maybe::Absent(crate::decl::interface::Absent::Unstated),
             },
         ];
         let names: &[&[&str]] = &[&["definition", "é"], &[""], &[]];

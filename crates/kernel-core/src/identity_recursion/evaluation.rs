@@ -102,6 +102,19 @@ pub enum Fiber
         /// The second tail.
         right: IndexId,
     },
+    /// Two elements of a sealed atom, related by its interface: the decode of
+    /// the relation's code at them, `El(⟨R a b⟩)`.
+    Atom
+    {
+        /// The interface's relation.
+        relation: ValueId,
+        /// The atom's kind, the universe the relation's codes inhabit.
+        kind: ValueTypeId,
+        /// The first element.
+        left: IndexId,
+        /// The second element.
+        right: IndexId,
+    },
 }
 
 /// One evaluated fibre, retaining symbolic indices rather than deciding them.
@@ -211,9 +224,9 @@ impl Relation
     )]
     #[spec(ensures: |ret| match ret {
         Ok(ref fibers) => fibers.root.0 < fibers.nodes.len()
-            && fibers.nodes.iter().enumerate().all(|(id, node)| match *node { Fiber::Product(a, b) => a.0 < id && b.0 < id, Fiber::Unit | Fiber::Empty | Fiber::Universe(..) | Fiber::Certificate(..) | Fiber::Discrete(..) | Fiber::Suspended(..) | Fiber::Function { .. } | Fiber::Relation { .. } | Fiber::Recursive { .. } => true })
+            && fibers.nodes.iter().enumerate().all(|(id, node)| match *node { Fiber::Product(a, b) => a.0 < id && b.0 < id, Fiber::Unit | Fiber::Empty | Fiber::Universe(..) | Fiber::Certificate(..) | Fiber::Discrete(..) | Fiber::Suspended(..) | Fiber::Function { .. } | Fiber::Relation { .. } | Fiber::Recursive { .. } | Fiber::Atom { .. } => true })
             && self.node(relation).is_ok_and(|node| matches!((node.clause, fibers.get(fibers.root)),
-                (Clause::Unit, Ok(Fiber::Unit)) | (Clause::Empty, Ok(Fiber::Empty)) | (Clause::Universe, Ok(Fiber::Universe(..))) | (Clause::Certificate, Ok(Fiber::Certificate(..))) | (Clause::Relation, Ok(Fiber::Relation { .. })) | (Clause::Product(..), Ok(Fiber::Product(..))) | (Clause::Function(..), Ok(Fiber::Function { .. }))
+                (Clause::Unit, Ok(Fiber::Unit)) | (Clause::Empty, Ok(Fiber::Empty)) | (Clause::Universe, Ok(Fiber::Universe(..))) | (Clause::Certificate, Ok(Fiber::Certificate(..))) | (Clause::Relation, Ok(Fiber::Relation { .. })) | (Clause::Atom { .. }, Ok(Fiber::Atom { .. })) | (Clause::Product(..), Ok(Fiber::Product(..))) | (Clause::Function(..), Ok(Fiber::Function { .. }))
                 | (Clause::Discrete | Clause::Sum(..) | Clause::List(_) | Clause::CaseLeft(..) | Clause::CaseRight(..), Ok(_)))),
         Err(RelationError::RecursiveObservationRequired) => self.mode == Mode::Identity && self.nodes.iter().any(|node| matches!(node.clause, Clause::List(_))),
         Err(_) => true,
@@ -339,6 +352,12 @@ impl Relation
                             left,
                             right,
                         },
+                        Clause::Atom { relation, kind } => Fiber::Atom {
+                            relation,
+                            kind,
+                            left,
+                            right,
+                        },
                         Clause::Discrete => result.discrete(arena, left, right)?,
                         Clause::List(element) => {
                             if self.mode == Mode::Identity {
@@ -418,6 +437,7 @@ impl Relation
                                 | Clause::Universe
                                 | Clause::Certificate
                                 | Clause::Relation
+                                | Clause::Atom { .. }
                                 | Clause::Product(..)
                                 | Clause::Sum(..)
                                 | Clause::Function(..)
@@ -440,6 +460,7 @@ impl Relation
                                         | Clause::Universe
                                         | Clause::Certificate
                                         | Clause::Relation
+                                        | Clause::Atom { .. }
                                         | Clause::Product(..)
                                         | Clause::Sum(..)
                                         | Clause::Function(..)
@@ -590,7 +611,8 @@ impl Fibers
                 || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Universe(..)), Some(&gandr_kernel_term::ValueType::PathUniverse(..))))
                 || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Function { classifier, .. }), Some(&gandr_kernel_term::ValueType::Path { domain, .. })) if domain == classifier && self.mode == Mode::Identity)
                 || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Function { classifier, .. }), Some(&gandr_kernel_term::ValueType::Bridge { domain, .. })) if domain == classifier && self.mode == Mode::Bridge)
-                || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Relation { .. }), Some(&gandr_kernel_term::ValueType::Thunk(_))))),
+                || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Relation { .. }), Some(&gandr_kernel_term::ValueType::Thunk(_))))
+                || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Atom { .. }), Some(&gandr_kernel_term::ValueType::Element { .. })))),
         Err(RelationError::HigherFieldRequired) => self.nodes.iter().any(|node| matches!(node, &Fiber::Certificate(..))),
         Err(_) => true,
     })]
@@ -661,6 +683,23 @@ impl Fibers
                     let inner = arena.comp_type_arrow(right, valued);
                     let relation = arena.comp_type_arrow(left, inner);
                     arena.value_type_thunk(relation)
+                },
+                Fiber::Atom {
+                    relation,
+                    kind,
+                    left,
+                    right,
+                } => {
+                    let (left, right) = self.native_indices(left, right)?;
+                    let Some(&gandr_kernel_term::ValueType::Universe {
+                        sort: GroundSort::Value,
+                        ref level,
+                    }) = arena.value_type(kind)
+                    else {
+                        return Err(RelationError::Arena);
+                    };
+                    let level = level.clone();
+                    crate::element_identity::related_by(arena, relation, (left, right), level)
                 },
                 Fiber::Recursive {
                     classifier,

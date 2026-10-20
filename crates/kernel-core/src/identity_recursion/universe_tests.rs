@@ -42,8 +42,13 @@ fn universe_clause_is_native()
     let boolean = boolean(&mut arena);
     let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
     let universe_code = arena.value_quote(universe);
-    let Interpretation::Elements(relation) =
-        interpret(&arena, Mode::Identity, Domain::Elements(universe_code)).expect("universe fold")
+    let Interpretation::Elements(relation) = interpret(
+        &arena,
+        crate::identity_recursion::Interfaces::NONE,
+        Mode::Identity,
+        Domain::Elements(universe_code),
+    )
+    .expect("universe fold")
     else {
         panic!("a code of codes contributes an element clause");
     };
@@ -115,8 +120,13 @@ fn universe_clause_is_native()
 
     let nested = arena.value_type_product(&[universe, unit_type]);
     let nested_code = arena.value_quote(nested);
-    let Interpretation::Elements(nested_relation) =
-        interpret(&arena, Mode::Identity, Domain::Elements(nested_code)).expect("nested universe")
+    let Interpretation::Elements(nested_relation) = interpret(
+        &arena,
+        crate::identity_recursion::Interfaces::NONE,
+        Mode::Identity,
+        Domain::Elements(nested_code),
+    )
+    .expect("nested universe")
     else {
         panic!("element clause")
     };
@@ -140,10 +150,15 @@ fn universe_clause_is_native()
     ));
     let sum = arena.value_type_sum(&[universe, unit_type]);
     let sum_code = arena.value_quote(sum);
-    let sums = interpret(&arena, Mode::Identity, Domain::Elements(sum_code))
-        .expect("sum containing codes")
-        .elements()
-        .expect("element clause");
+    let sums = interpret(
+        &arena,
+        crate::identity_recursion::Interfaces::NONE,
+        Mode::Identity,
+        Domain::Elements(sum_code),
+    )
+    .expect("sum containing codes")
+    .elements()
+    .expect("element clause");
     let diagonal = sums
         .reflexivity(&mut arena, &[sum], variable)
         .expect("suspended diagonal");
@@ -154,8 +169,13 @@ fn universe_clause_is_native()
 
     let list_type = arena.value_type_list(universe);
     let list_code = arena.value_quote(list_type);
-    let Interpretation::Elements(lists) =
-        interpret(&arena, Mode::Identity, Domain::Elements(list_code)).expect("list of codes")
+    let Interpretation::Elements(lists) = interpret(
+        &arena,
+        crate::identity_recursion::Interfaces::NONE,
+        Mode::Identity,
+        Domain::Elements(list_code),
+    )
+    .expect("list of codes")
     else {
         panic!("list clause")
     };
@@ -171,8 +191,13 @@ fn universe_clause_is_native()
     ));
 
     let path_code = arena.value_quote(native);
-    let Interpretation::Elements(higher) =
-        interpret(&arena, Mode::Identity, Domain::Elements(path_code)).expect("certificate clause")
+    let Interpretation::Elements(higher) = interpret(
+        &arena,
+        crate::identity_recursion::Interfaces::NONE,
+        Mode::Identity,
+        Domain::Elements(path_code),
+    )
+    .expect("certificate clause")
     else {
         panic!("higher clause")
     };
@@ -235,9 +260,22 @@ fn universe_clause_is_native()
     let unit_code = arena.value_quote(unit_type);
     let paths = arena.value_type_path_universe(unit_code, unit_code);
     let paths_code = arena.value_quote(paths);
-    assert!(interpret(&arena, Mode::Identity, Domain::Elements(paths_code)).is_ok());
+    assert!(
+        interpret(
+            &arena,
+            crate::identity_recursion::Interfaces::NONE,
+            Mode::Identity,
+            Domain::Elements(paths_code)
+        )
+        .is_ok()
+    );
     assert!(matches!(
-        interpret(&arena, Mode::Bridge, Domain::Elements(paths_code)),
+        interpret(
+            &arena,
+            crate::identity_recursion::Interfaces::NONE,
+            Mode::Bridge,
+            Domain::Elements(paths_code)
+        ),
         Err(RelationError::UnsupportedType(found)) if found == paths
     ));
 }

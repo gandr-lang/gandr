@@ -1328,14 +1328,19 @@ where
                         },
                         // A bridge forms as an identity does, at its domain's
                         // level with its endpoints owed, unless its domain
-                        // reaches a sealed atom: the relation there is the
-                        // abstraction's to choose, and is refused by name.
+                        // reaches a sealed atom stating no interface: the
+                        // relation there is the abstraction's to choose, and is
+                        // refused by name.
                         ValueType::Bridge {
                             domain,
                             left,
                             right,
                         } => {
-                            crate::element_identity::require_unsealed(arena, domain)?;
+                            crate::element_identity::require_unsealed(
+                                arena,
+                                crate::identity_recursion::Interfaces::of(judgement.entries),
+                                domain,
+                            )?;
                             owed.push(CodeObligation::Endpoints {
                                 domain,
                                 left,
@@ -3046,7 +3051,13 @@ where
                     if mode == crate::identity_recursion::Mode::Bridge {
                         goal = Goal::CheckValue(
                             id,
-                            crate::element_identity::bridge_fibre(arena, domain, left, right)?,
+                            crate::element_identity::bridge_fibre(
+                                arena,
+                                crate::identity_recursion::Interfaces::of(judgement.entries),
+                                domain,
+                                left,
+                                right,
+                            )?,
                         );
                         continue 'expand;
                     }
@@ -3105,7 +3116,13 @@ where
                         )
                     }
                     else {
-                        crate::element_identity::fibre(arena, domain, left, right)?
+                        crate::element_identity::fibre(
+                            arena,
+                            crate::identity_recursion::Interfaces::of(judgement.entries),
+                            domain,
+                            left,
+                            right,
+                        )?
                     };
                     goal = Goal::CheckValue(id, fibre);
                     continue 'expand;
@@ -3349,8 +3366,11 @@ where
                         ref dialogues,
                     } => {
                         let dialogues = alloc::sync::Arc::clone(dialogues);
-                        let (domain, left, right) =
-                            crate::element_identity::path_parts(arena, expected)?;
+                        let (domain, left, right) = crate::element_identity::reflexive_parts(
+                            arena,
+                            crate::identity_recursion::Interfaces::of(judgement.entries),
+                            expected,
+                        )?;
                         frames.push(Frame::CheckHere {
                             point,
                             left,
@@ -3388,7 +3408,11 @@ where
                         let program = alloc::sync::Arc::clone(program);
                         let evidence = evidence.clone();
                         let mut goals = crate::element_identity::higher_obligations(
-                            arena, expected, &program, &evidence,
+                            arena,
+                            crate::identity_recursion::Interfaces::of(judgement.entries),
+                            expected,
+                            &program,
+                            &evidence,
                         )?
                         .into_iter()
                         .rev()
@@ -3413,7 +3437,10 @@ where
                         let components = components.clone();
                         let mut remaining = crate::element_identity::evaluation_obligations(
                             arena,
-                            &admitted_unfoldings(judgement),
+                            (
+                                &admitted_unfoldings(judgement),
+                                crate::identity_recursion::Interfaces::of(judgement.entries),
+                            ),
                             expected,
                             &dialogues,
                             &components,
@@ -3437,7 +3464,10 @@ where
                         let children = children.clone();
                         let mut remaining = crate::element_identity::quantified_obligations(
                             arena,
-                            &admitted_unfoldings(judgement),
+                            (
+                                &admitted_unfoldings(judgement),
+                                crate::identity_recursion::Interfaces::of(judgement.entries),
+                            ),
                             expected,
                             &steps,
                             &children,
@@ -5666,7 +5696,7 @@ where
         },
     )?;
     check_sealing_provenance(arena, declared, declaration.provenance())?;
-    let verdict = match *declaration.content() {
+    let verdict: Result<(), KernelError> = match *declaration.content() {
         DeclarationContent::Data {
             kind,
             ref parameters,
@@ -5765,12 +5795,13 @@ where
         // of value types — the atom is a value type, so a computation universe
         // is no kind for it — and that its representation forms below that
         // universe's successor, the bound a data declaration's fields meet.
-        // There is no body to check and no inhabitant claimed, so the kernel
-        // takes on nothing further — the property the atom route was chosen
-        // for.
+        // There is no body to check and no inhabitant claimed. An atom stating
+        // an interface owes its relation and its reflexivity, checked here,
+        // over the representation the atom reads as inside its seal.
         DeclarationContent::AbstractType {
             kind,
             representation,
+            interface,
             ..
         } => {
             let kind_node = arena.value_type(kind).ok_or(KernelError::ArenaFault)?;
@@ -5821,7 +5852,34 @@ where
             )?;
             judgement
                 .levels
-                .check_universe_below(&formed, &level.succ()?)
+                .check_universe_below(&formed, &level.succ()?)?;
+            if let Maybe::Present(interface) = interface {
+                let (relations, reflexive) = crate::element_identity::interface_types(
+                    arena,
+                    (kind, level),
+                    representation,
+                    interface.relation(),
+                );
+                for (value, expected) in [
+                    (interface.relation(), relations),
+                    (interface.reflexivity(), reflexive),
+                ] {
+                    let _checked = run(
+                        arena,
+                        judgement,
+                        Vec::new(),
+                        Goal::CheckValue(value, expected),
+                        StageOrder::default(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed: &mut owed,
+                        },
+                    )?;
+                }
+            }
+            Ok(())
         },
     };
     verdict?;

@@ -339,7 +339,12 @@ fn relation(
     code: ValueId,
 ) -> Result<Relation, HigherError>
 {
-    let interpretation = interpret(arena, Mode::Identity, Domain::Elements(code))?;
+    let interpretation = interpret(
+        arena,
+        crate::identity_recursion::Interfaces::NONE,
+        Mode::Identity,
+        Domain::Elements(code),
+    )?;
     let relation = interpretation.elements()?;
     Ok(relation)
 }

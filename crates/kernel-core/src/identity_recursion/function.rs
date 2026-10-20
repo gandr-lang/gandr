@@ -218,6 +218,7 @@ impl Relation
             | Clause::Universe
             | Clause::Certificate
             | Clause::Relation
+            | Clause::Atom { .. }
             | Clause::Product(..)
             | Clause::Sum(..)
             | Clause::List(_)
@@ -337,10 +338,10 @@ impl Relation
                         proof: arena.value_unit(),
                     }])
                 },
-                // A function or universe coordinate binds its two indices and
-                // the fold's own fibre between them, so the premise is the
-                // identity or bridge the fold lowers that fibre to.
-                Clause::Function(..) | Clause::Relation => {
+                // A function, universe or atom coordinate binds its two
+                // indices and the fold's own fibre between them, so the premise
+                // is the identity or bridge the fold lowers that fibre to.
+                Clause::Function(..) | Clause::Relation | Clause::Atom { .. } => {
                     let source = arena.value_variable(DeBruijnIndex::from(1_u32));
                     let target = arena.value_variable(DeBruijnIndex::from(0_u32));
                     let premise = self
@@ -387,6 +388,7 @@ impl Relation
                         | Clause::Universe
                         | Clause::Certificate
                         | Clause::Relation
+                        | Clause::Atom { .. }
                         | Clause::Product(..)
                         | Clause::Function(..)
                         | Clause::List(_)
@@ -586,6 +588,7 @@ impl Relation
                 | RelationError::UnsupportedCode(_)
                 | RelationError::UnsupportedType(_)
                 | RelationError::AbstractInterface(_)
+                | RelationError::AtomTransport(_)
                 | RelationError::Path(_)
                 | RelationError::Boundary
                 | RelationError::NonFibrant
@@ -1042,6 +1045,7 @@ impl Relation
                 | Clause::Universe
                 | Clause::Certificate
                 | Clause::Relation
+                | Clause::Atom { .. }
                 | Clause::Product(..)
                 | Clause::Sum(..)
                 | Clause::Function(..)
@@ -1078,7 +1082,7 @@ impl Relation
     ///   reads higher order beneath its argument.
     /// - witness: `element_identity::tests::a_quantified_evaluation_refuses_what_it_cannot_relate`
     #[spec(ensures: |ret| match ret {
-        Ok(Order::First) => self.node(relation).is_ok_and(|node| !matches!(node.clause, Clause::Function(..) | Clause::Relation)),
+        Ok(Order::First) => self.node(relation).is_ok_and(|node| !matches!(node.clause, Clause::Function(..) | Clause::Relation | Clause::Atom { .. })),
         Ok(Order::Higher) => true,
         Err(ref error) => matches!(*error, RelationError::Arena),
     })]
@@ -1094,7 +1098,9 @@ impl Relation
                 continue;
             }
             match self.node(id)?.clause {
-                Clause::Function(..) | Clause::Relation => return Ok(Order::Higher),
+                Clause::Function(..) | Clause::Relation | Clause::Atom { .. } => {
+                    return Ok(Order::Higher);
+                },
                 Clause::Product(first, second)
                 | Clause::Sum(first, second)
                 | Clause::CaseLeft(first, second)

@@ -892,7 +892,10 @@ fn a_higher_evaluation_proves_function_extensionality()
     assert!(matches!(
         evaluation_obligations(
             &mut arena,
-            &Unfoldings::default(),
+            (
+                &Unfoldings::default(),
+                crate::identity_recursion::Interfaces::NONE
+            ),
             open,
             &dialogues,
             &components
@@ -2475,8 +2478,17 @@ fn a_quantified_evaluation_refuses_either_open_endpoint()
     for (left, right) in [(open, closed), (closed, open)] {
         let expected = arena.value_type_path(domain, left, right);
         assert_eq!(
-            super::quantified_obligations(&mut arena, &Unfoldings::default(), expected, &[], &[])
-                .err(),
+            super::quantified_obligations(
+                &mut arena,
+                (
+                    &Unfoldings::default(),
+                    crate::identity_recursion::Interfaces::NONE
+                ),
+                expected,
+                &[],
+                &[]
+            )
+            .err(),
             Some(KernelError::Identity(IdentityError::OpenFunctions)),
             "one open endpoint is enough to refuse"
         );

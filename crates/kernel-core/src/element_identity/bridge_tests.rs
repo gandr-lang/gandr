@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
+use gandr_kernel_term::AtomInterface;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -33,6 +34,7 @@ use crate::error::ExpectedValueShape;
 use crate::error::KernelError;
 use crate::error::ValueTypeHead;
 use crate::identity_recursion::HigherEvaluation;
+use crate::identity_recursion::Mode;
 use crate::identity_recursion::Quantified;
 use crate::identity_recursion::function_fixtures::apply_to;
 use crate::identity_recursion::function_fixtures::boolean;
@@ -291,7 +293,14 @@ fn a_bridge_at_the_universe_is_a_relation()
 
     // `Br U₀ ⌜Unit⌝ ⌜Bool⌝` is the type of relations `El ⌜Unit⌝ → El ⌜Bool⌝
     // → U₀`, and a relation inhabits it.
-    let fibre = bridge_fibre(&mut arena, kinds, unit_code, bool_code).expect("the universe clause");
+    let fibre = bridge_fibre(
+        &mut arena,
+        crate::identity_recursion::Interfaces::NONE,
+        kinds,
+        unit_code,
+        bool_code,
+    )
+    .expect("the universe clause");
     let expected = relations(&mut arena, LevelConstant::from(0_u64), [
         unit_code, bool_code,
     ]);
@@ -347,7 +356,14 @@ fn a_bridge_at_the_universe_is_a_relation()
     // A nested universe: `Br U₁ ⌜U₀⌝ ⌜U₀⌝` relates into `U₁`.
     let large = universe(&mut arena, LevelConstant::from(1_u64));
     let small = arena.value_quote(kinds);
-    let fibre = bridge_fibre(&mut arena, large, small, small).expect("the universe clause at one");
+    let fibre = bridge_fibre(
+        &mut arena,
+        crate::identity_recursion::Interfaces::NONE,
+        large,
+        small,
+        small,
+    )
+    .expect("the universe clause at one");
     let expected = relations(&mut arena, LevelConstant::from(1_u64), [small, small]);
     assert_eq!(
         convertible_value_types(&arena, fibre, expected),
@@ -469,12 +485,26 @@ fn the_codes_outside_the_bridge_clauses_are_refused_by_name()
     let paths = arena.value_type_path_universe(unit_code, unit_code);
     let refl = arena.value_path_refl(unit_code);
     assert!(outside(
-        bridge_fibre(&mut arena, paths, refl, refl).map(|_| ()),
+        bridge_fibre(
+            &mut arena,
+            crate::identity_recursion::Interfaces::NONE,
+            paths,
+            refl,
+            refl
+        )
+        .map(|_| ()),
         ValueTypeHead::PathUniverse
     ));
     let inner = arena.value_type_bridge(boolean.ty, boolean.truth, boolean.truth);
     assert!(outside(
-        bridge_fibre(&mut arena, inner, unit, unit).map(|_| ()),
+        bridge_fibre(
+            &mut arena,
+            crate::identity_recursion::Interfaces::NONE,
+            inner,
+            unit,
+            unit
+        )
+        .map(|_| ()),
         ValueTypeHead::Bridge
     ));
 }
@@ -563,6 +593,140 @@ fn a_bridge_at_a_sealed_type_is_refused()
     environment
         .add_decl(declaration)
         .expect("reflexivity at a sealed atom");
+}
+
+/// An atom over Integer at the value universe, admitted with the interface
+/// `relate` mints, its relation code and its reflexivity.
+///
+/// # Specification
+/// trivial.
+fn interfaced_atom(
+    environment: &mut Environment,
+    relate: fn(&mut TermArena) -> (ValueId, ValueId),
+) -> Result<ConstantIndex, KernelError>
+{
+    let mut staging = environment.stage();
+    let kind = universe(staging.arena(), LevelConstant::from(0_u64));
+    let integer = staging.arena().value_type_base(BaseType::Integer);
+    let (relation, reflexivity) = relate(staging.arena());
+    let declaration = staging
+        .abstract_type(
+            LevelSignature::monomorphic(),
+            kind,
+            integer,
+            SealScope::Closed(SealExtent::from(0_usize)),
+        )
+        .interfaced(AtomInterface::new(relation, reflexivity));
+    environment
+        .add_decl(declaration)
+        .map(super::super::env::CheckedId::position)
+}
+
+/// A sealed point of `atom`, admitted as an axiom.
+///
+/// # Specification
+/// trivial.
+fn sealed_point(
+    environment: &mut Environment,
+    atom: ConstantIndex,
+) -> ConstantIndex
+{
+    let mut staging = environment.stage();
+    let sealed = staging.arena().value_type_abstract(atom);
+    let declaration = staging.axiom(LevelSignature::monomorphic(), sealed);
+    environment
+        .add_decl(declaration)
+        .expect("a sealed point")
+        .position()
+}
+
+/// The relation constantly at `Unit` and its reflexivity, constantly `()`.
+///
+/// # Specification
+/// trivial.
+fn total(arena: &mut TermArena) -> (ValueId, ValueId)
+{
+    let unit_type = arena.value_type_unit();
+    let unit_code = arena.value_quote(unit_type);
+    let unit = arena.value_unit();
+    (relating_by(arena, unit_code), constant(arena, unit))
+}
+
+#[test]
+fn an_interfaced_atom_bears_its_relation_as_its_bridge()
+{
+    // An atom relating every pair of its elements by `Unit`, and two sealed
+    // points of it.
+    let mut environment = Environment::new();
+    let atom = interfaced_atom(&mut environment, total).expect("an interfaced atom");
+    let first = sealed_point(&mut environment, atom);
+    let second = sealed_point(&mut environment, atom);
+    let at = |environment: &mut Environment,
+              mode: Mode,
+              (left, right): (ConstantIndex, ConstantIndex),
+              evidence: fn(&mut TermArena, ValueId) -> ValueId| {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let sealed = arena.value_type_abstract(atom);
+        let left = arena.value_constant(left);
+        let right = arena.value_constant(right);
+        let ty = match mode {
+            Mode::Bridge => arena.value_type_bridge(sealed, left, right),
+            Mode::Identity => arena.value_type_path(sealed, left, right),
+        };
+        let evidence = evidence(arena, left);
+        let declaration = staging.def(LevelSignature::monomorphic(), ty, evidence);
+        environment.add_decl(declaration).map(|_| ())
+    };
+    let unit: fn(&mut TermArena, ValueId) -> ValueId = |arena, _| arena.value_unit();
+    let here: fn(&mut TermArena, ValueId) -> ValueId = |arena, point| arena.value_here(point);
+
+    // A bridge between the two points is the relation between them, `Unit`,
+    // and a bridge from a point to itself is its reflexivity.
+    at(&mut environment, Mode::Bridge, (first, second), unit).expect("the relation's evidence");
+    at(&mut environment, Mode::Bridge, (first, first), here).expect("the reflexivity");
+
+    // The interface states no transport, so an identity between the two
+    // points has no fibre to read; reflexivity at the atom still forms.
+    let admitted = environment.entries().len();
+    let identity = at(&mut environment, Mode::Identity, (first, second), unit);
+    let Err(KernelError::Identity(error @ IdentityError::AtomTransport(_))) = identity
+    else {
+        panic!("an identity at an interfaced atom read a fibre: {identity:?}");
+    };
+    assert_eq!(
+        error.to_string(),
+        "an identity at a sealed type whose interface states no transport"
+    );
+    assert_eq!(environment.entries().len(), admitted);
+    at(&mut environment, Mode::Identity, (first, first), here).expect("reflexivity at the atom");
+}
+
+#[test]
+fn an_interface_is_checked_where_its_atom_is_admitted()
+{
+    // A relation that is no function into codes, and a reflexivity that
+    // inhabits no diagonal of the relation constantly at `Empty`.
+    let mut environment = Environment::new();
+    let unrelated = interfaced_atom(&mut environment, |arena| {
+        let unit = arena.value_unit();
+        (unit, constant(arena, unit))
+    });
+    assert!(
+        matches!(unrelated, Err(KernelError::ValueShapeMismatch { .. })),
+        "a relation that is no function: {unrelated:?}"
+    );
+    let irreflexive = interfaced_atom(&mut environment, |arena| {
+        let empty = arena.value_type_empty();
+        let empty_code = arena.value_quote(empty);
+        let unit = arena.value_unit();
+        (relating_by(arena, empty_code), constant(arena, unit))
+    });
+    assert!(
+        irreflexive.is_err(),
+        "a reflexivity outside its relation's diagonal"
+    );
+    assert!(environment.entries().is_empty());
 }
 
 /// A bridge's domain and its endpoint, minted from the atom, its point and
