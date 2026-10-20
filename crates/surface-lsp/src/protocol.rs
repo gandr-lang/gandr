@@ -306,8 +306,9 @@ pub struct DocumentIdentifier
 
 /// The parameters of `initialize` the server reads: the client's `gandr`
 /// settings, passed as its initialization options, the HTML tags its
-/// markdown renderer keeps, whether it takes a definition as a link, and
-/// whether it takes a parameter as its place in a signature's label.
+/// markdown renderer keeps, whether it takes a definition as a link, whether
+/// it takes a parameter as its place in a signature's label, and the folders
+/// it opened.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct InitializeParams
@@ -319,10 +320,56 @@ pub struct InitializeParams
     /// renderer's, the definition request's and the signature-help request's.
     #[serde(default)]
     pub capabilities: Option<ClientCapabilities>,
+    /// The folders the client opened, when it names any.
+    #[serde(default)]
+    pub workspace_folders: Option<Vec<WorkspaceFolder>>,
+    /// The one folder the client opened, read when it names no workspace
+    /// folders.
+    #[serde(default)]
+    pub root_uri: Option<DocumentUri>,
+}
+
+/// A folder the client opened.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct WorkspaceFolder
+{
+    /// The folder's URI.
+    pub uri: DocumentUri,
 }
 
 impl InitializeParams
 {
+    /// The paths of the folders the client opened: its workspace folders, or
+    /// its root when it names none, each a `file` URI's path.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the path of each workspace folder a `file` URI names, in
+    ///   order; when the client names no workspace folders, the root's path if
+    ///   a `file` URI names it; nothing otherwise.
+    /// - fails: never; a folder no `file` URI names is left out.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — folders over a root, a root alone, a folder of
+    ///   another scheme and no folder, each at its exact paths.
+    /// - witness: `protocol::tests::the_folders_a_client_opened_are_its_roots`
+    #[spec(ensures: |ret| ret.iter().all(|path| path.is_absolute()))]
+    #[must_use]
+    pub fn roots(&self) -> Vec<PathBuf>
+    {
+        let named = self.workspace_folders.as_ref().map_or_else(
+            || self.root_uri.iter().collect::<Vec<_>>(),
+            |folders| folders.iter().map(|folder| &folder.uri).collect(),
+        );
+        named
+            .into_iter()
+            .map(DocumentUri::path)
+            .filter(|path| path.is_absolute())
+            .collect()
+    }
+
     /// The markup a hover is written in for this client: [`Markup::Html`]
     /// when its markdown renderer keeps the `span`, `pre` and `code` tags,
     /// else [`Markup::Markdown`].
@@ -1013,6 +1060,19 @@ pub struct ReferenceContext
     pub include_declaration: bool,
 }
 
+/// The parameters of `textDocument/rename`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameParams
+{
+    /// The document addressed.
+    pub text_document: DocumentIdentifier,
+    /// The cursor on the name renamed.
+    pub position: Position,
+    /// The name it is renamed to.
+    pub new_name: String,
+}
+
 /// The parameters of `textDocument/selectionRange`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -1083,6 +1143,7 @@ impl InitializeResult
             && ret.capabilities.workspace_symbol_provider.0
             && ret.capabilities.document_highlight_provider.0
             && ret.capabilities.references_provider.0
+            && ret.capabilities.rename_provider.prepare_provider
             && !ret.capabilities.code_lens_provider.resolve_provider
             && !ret.capabilities.completion_provider.resolve_provider)]
     #[inline]
@@ -1127,6 +1188,9 @@ impl InitializeResult
                 workspace_symbol_provider: Provider::ANSWERED,
                 document_highlight_provider: Provider::ANSWERED,
                 references_provider: Provider::ANSWERED,
+                rename_provider: RenameOptions {
+                    prepare_provider: true,
+                },
             },
             server_info: ServerInfo {
                 name: SOURCE,
@@ -1185,6 +1249,19 @@ pub struct ServerCapabilities
     /// References are answered: the uses the open documents make of the name
     /// at a position, and its declaring name when asked.
     pub references_provider: Provider,
+    /// Renaming is answered, a rename prepared first: the name at a position,
+    /// its declaring name and its uses in every source importing it.
+    pub rename_provider: RenameOptions,
+}
+
+/// The rename provider, as advertised.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct RenameOptions
+{
+    /// A rename is prepared before it is asked for.
+    pub prepare_provider: bool,
 }
 
 /// Whether a request is answered, advertised as a provider with no options.
@@ -1301,6 +1378,12 @@ pub enum Answer
     /// What a document-highlight request answers: the name at the position,
     /// where it is declared and every use of it in the document.
     Highlights(Vec<DocumentHighlight>),
+    /// What a prepare-rename request answers: the name a rename at the
+    /// position renames.
+    Renaming(PrepareRename),
+    /// What a rename request answers: the edits renaming the name everywhere
+    /// it is written.
+    Renamed(WorkspaceEdit),
     /// `null`: what `shutdown` answers, a request about a document that is not
     /// open, and a hover over nothing the server knows.
     Nothing,
@@ -1701,6 +1784,17 @@ pub struct WorkspaceEdit
     pub changes: BTreeMap<DocumentUri, Vec<TextEdit>>,
 }
 
+/// The name a rename at a position renames, as `textDocument/prepareRename`
+/// answers it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct PrepareRename
+{
+    /// Where the name is written at the position.
+    pub range: Range,
+    /// The name, offered as the rename's starting text.
+    pub placeholder: String,
+}
+
 /// The code-lens provider, as advertised.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1928,6 +2022,7 @@ mod tests
     use super::DocumentSymbol;
     use super::DocumentSymbols;
     use super::DocumentUri;
+    use super::InitializeParams;
     use super::SymbolKind;
     use crate::position::Range;
 
@@ -1955,6 +2050,38 @@ mod tests
                 "{uri} names {path:?}"
             );
         }
+    }
+
+    #[test]
+    fn the_folders_a_client_opened_are_its_roots()
+    {
+        let roots = |params: serde_json::Value| {
+            serde_json::from_value::<InitializeParams>(params)
+                .expect("the parameters read")
+                .roots()
+        };
+        assert_eq!(
+            roots(serde_json::json!({
+                "rootUri": "file:///root",
+                "workspaceFolders": [
+                    { "uri": "file:///one", "name": "one" },
+                    { "uri": "untitled:two", "name": "two" },
+                    { "uri": "file:///a%20three", "name": "three" },
+                ],
+            })),
+            [PathBuf::from("/one"), PathBuf::from("/a three")],
+            "the workspace folders are the roots, a folder of another scheme left out"
+        );
+        assert_eq!(
+            roots(serde_json::json!({ "rootUri": "file:///root", "workspaceFolders": null })),
+            [PathBuf::from("/root")],
+            "a client naming no workspace folders is rooted at its root"
+        );
+        assert_eq!(
+            roots(serde_json::json!({})),
+            Vec::<PathBuf>::new(),
+            "a client naming no folder has no root"
+        );
     }
 
     #[test]

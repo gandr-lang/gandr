@@ -1,9 +1,9 @@
-//! Uses: where the name at a position is declared and where the open
-//! documents use it.
+//! Uses: where the name at a position is declared and where the documents of
+//! the workspace use it.
 //!
-//! A highlight or reference request finds the name at the position: the use
-//! holding it, read off the referent index the document's type table keeps
-//! ([`TypeTable::referent`]), or else the declaring name holding it
+//! A highlight, reference or rename request finds the name at the position:
+//! the use holding it, read off the referent index the document's type table
+//! keeps ([`TypeTable::referent`]), or else the declaring name holding it
 //! ([`TypeTable::named_at`]). It answers that name's uses from the reverse
 //! index built beside the referent index, once per text
 //! ([`TypeTable::uses_of`]), and the declaring name when the document writes
@@ -12,11 +12,12 @@
 //! binder, is a use of the declaration. No name is resolved again and the text
 //! is never searched for one. A position just past a name answers the name.
 //!
-//! A highlight reads the requesting document alone. A reference request reads
-//! every open document's own uses: a name is the same across documents when
-//! its source's canonical path and its span agree, so an importer finds a
-//! sibling's name at the index its own closure gave that sibling. A source no
-//! document has open is not read, so its uses are not answered.
+//! A highlight reads the requesting document alone. A reference or rename
+//! request reads every open document's own uses, and those of every source
+//! under the workspace's roots that imports the name's source and no editor
+//! holds, read from disk: a name is the same across documents when its
+//! source's canonical path and its span agree, so an importer finds a
+//! sibling's name at the index its own closure gave that sibling.
 //!
 //! [`TypeTable::referent`]: gandr_surface_dispatcher::TypeTable::referent
 //! [`TypeTable::named_at`]: gandr_surface_dispatcher::TypeTable::named_at
@@ -45,17 +46,18 @@ use crate::protocol::DocumentUri;
 use crate::protocol::HighlightKind;
 use crate::protocol::Location;
 
-/// The name a request at `at` of the table's own source means: the referent
-/// of the use holding `at`, else the name declared there, else either of
-/// those at the byte before.
+/// What is written at `at` of the table's own source, and the name it means:
+/// the use holding `at` and its referent, else the declaring name there and
+/// itself, else either of those at the byte before.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the first of the use's referent at `at`, the declaring name at
-///   `at`, the use's referent at the byte before and the declaring name there
-///   that the table answers; none when it answers none of them.
+/// - ensures: the first of the use at `at`, the declaring name at `at`, the use
+///   at the byte before and the declaring name there that the table answers,
+///   each with the span written in the table's own text; none when it answers
+///   none of them.
 /// - provides: what a highlight, a reference search and a rename at a position
-///   are about.
+///   are about, and where a rename at a position starts.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -63,17 +65,20 @@ use crate::protocol::Location;
 /// - hypothesis: L3 — a use, a declaring name and a caret just past either
 ///   answer the name; a keyword answers nothing.
 /// - witness: `server::tests::a_highlight_marks_a_name_s_declaration_and_its_uses`
-#[spec(ensures: |ret| ret.is_none_or(|found| found.source() == table.own_source()
-    || table.uses_of(found.source(), found.named()).next().is_some()))]
-pub fn named(
+/// - witness: `server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
+#[spec(ensures: |ret| ret.is_none_or(|(span, found)| span.start() <= at
+    && usize::from(at) <= usize::from(span.end())
+    && (found.source() == table.own_source()
+        || table.uses_of(found.source(), found.named()).next().is_some())))]
+pub fn found(
     table: &TypeTable,
     at: ByteOffset,
-) -> Option<Referent>
+) -> Option<(ByteSpan, Referent)>
 {
     let probe = |offset: ByteOffset| match table.referent(offset) {
-        Maybe::Present((_, referent)) => Some(referent),
+        Maybe::Present(found) => Some(found),
         Maybe::Absent(_) => match table.named_at(offset) {
-            Maybe::Present(referent) => Some(referent),
+            Maybe::Present(referent) => Some((referent.named(), referent)),
             Maybe::Absent(_) => None,
         },
     };
@@ -83,6 +88,19 @@ pub fn named(
             .map(ByteOffset::from)
             .and_then(probe)
     })
+}
+
+/// The name a request at `at` of the table's own source means, as [`found`]
+/// finds it.
+///
+/// # Specification
+/// trivial.
+pub fn named(
+    table: &TypeTable,
+    at: ByteOffset,
+) -> Option<Referent>
+{
+    found(table, at).map(|(_, referent)| referent)
 }
 
 /// What a highlight request at `position` of `text`, whose copy keeps
@@ -143,7 +161,7 @@ pub fn highlights(
 }
 
 /// Where a name is written: its source's canonical path, its span in that
-/// source's text, and its range there.
+/// source's text, its range there and how it is spelled.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Written
 {
@@ -153,6 +171,8 @@ pub struct Written
     pub named: ByteSpan,
     /// Its range in that source's text, none when the span has none.
     pub range: Option<Range>,
+    /// The text of its span.
+    pub spelled: String,
 }
 
 /// Where the name a request at `position` of `text`, the document whose
@@ -162,10 +182,10 @@ pub struct Written
 /// # Specification
 /// - requires: `hovering` was read off `text`.
 /// - ensures: for the name [`named`] finds at the position's byte, `own` when
-///   the document writes it and its source's path otherwise, with its span and
-///   its range in that source's text; none when no name is found or its source
-///   names no path.
-/// - provides: what a reference request looks for in every open document.
+///   the document writes it and its source's path otherwise, with its span, its
+///   range and its text in that source's text; none when no name is found, its
+///   source names no path, or its span lies outside its source's text.
+/// - provides: what a reference or rename request looks for in every document.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -173,7 +193,8 @@ pub struct Written
 /// - hypothesis: L3 — a name the document declares and a sibling's name used in
 ///   it are each placed in their own source.
 /// - witness: `server::tests::references_find_a_name_s_uses_in_every_open_document`
-#[spec(ensures: |ret| ret.as_ref().is_none_or(|written| written.range.is_none_or(|range| range.start <= range.end)))]
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|written| written.range.is_none_or(|range| range.start <= range.end)
+    && written.spelled.len() == usize::from(written.named.end()).saturating_sub(usize::from(written.named.start()))))]
 #[must_use]
 pub fn placed(
     text: SourceText<'_>,
@@ -185,21 +206,39 @@ pub fn placed(
     let table = hovering.table();
     let index = LineIndex::new(<&str>::from(text).into());
     let referent = named(table, ByteOffset::from(usize::from(position.byte(&index))))?;
-    if referent.source() == table.own_source() {
-        return Some(Written {
-            path: own.to_path_buf(),
-            named: referent.named(),
-            range: ranged(&index, referent.named()),
-        });
+    let (path, source) = if referent.source() == table.own_source() {
+        (own.to_path_buf(), text)
     }
-    let path = hovering.source_path(referent.source())?.to_path_buf();
-    let sibling = table.source_text(referent.source())?;
-    let sibling = LineIndex::new(<&str>::from(sibling).into());
+    else {
+        (
+            hovering.source_path(referent.source())?.to_path_buf(),
+            table.source_text(referent.source())?,
+        )
+    };
+    let named = referent.named();
+    let spelled = spelling(source, named)?;
+    let source = LineIndex::new(<&str>::from(source).into());
     Some(Written {
         path,
-        named: referent.named(),
-        range: ranged(&sibling, referent.named()),
+        named,
+        range: ranged(&source, named),
+        spelled: String::from(<&str>::from(spelled)),
     })
+}
+
+/// The text of `span` in `text`; none when the span lies outside it or splits
+/// a character.
+///
+/// # Specification
+/// trivial.
+pub fn spelling(
+    text: SourceText<'_>,
+    span: ByteSpan,
+) -> Option<SourceText<'_>>
+{
+    <&str>::from(text)
+        .get(usize::from(span.start()) .. usize::from(span.end()))
+        .map(SourceText::from)
 }
 
 /// The locations of the uses that the document at `uri`, whose canonical path

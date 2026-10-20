@@ -46,7 +46,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - The outline: document symbols nesting each declaration inside the one that holds it, folding ranges over multi-line forms, documentation and block comments, and selection ranges growing from the innermost node around a position to the whole document.
 - Hover: the type of the innermost node under the cursor, and a declaration's documentation or refusal.
 - Definitions: what the name under the cursor refers to, and the families its type names, here or in an imported sibling.
-- Document highlights: where the name under the cursor is declared and used in the document; references: its declaration and its uses in every open document.
+- Highlights: where the name under the cursor is declared and used in the document; references and rename: in every open document and importer under the opened folders.
 - Workspace symbols: the names the open documents' import closures declare, each holding the query's characters in order.
 - Formatting: the whole document as one edit trimmed to the span its layout changes, and a range as one edit per top-level form it touches, each from `gandr-surface-format`.
 - Positions in UTF-16 code units, a position past a line's end or past the last line clamped.
@@ -111,7 +111,7 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | Hover | [`hover`](src/hover.rs) |
 | Definitions | [`goto`](src/goto.rs) |
 | Workspace symbols | [`search`](src/search.rs) |
-| Document highlights and references | [`uses`](src/uses.rs) |
+| Highlights, references; rename | [`uses`](src/uses.rs); [`rename`](src/rename.rs) |
 | UTF-16 positions | [`position`](src/position.rs) |
 | The lifecycle, its error codes, document URIs | [`server`](src/server.rs) |
 | Formatting | [`format`](src/format.rs) |

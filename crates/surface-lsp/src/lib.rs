@@ -135,8 +135,9 @@
 //! | definition, type definition | `textDocument/definition`, `typeDefinition` | served: what the use at the position refers to, and the families the type there names, as links when the client takes them |
 //! | declaration, implementation | `textDocument/declaration`, `implementation` | declined: a signature and its definition make one declaration, which definition answers at its first form, and the core has no interfaces to implement |
 //! | document highlight | `textDocument/documentHighlight` | served: the declaring name and every use of the name at a position, within the document, read off the type table's reverse use index, as the `uses` module states; a recursive call's use spans its marker with its name |
-//! | references | `textDocument/references` | served: the declaring name when asked, then every open document's own uses of the name at a position, matched by its source's path and its span, as the `uses` module states; a source no document has open is not read |
-//! | rename, linked editing | `textDocument/prepareRename`, `rename`, `linkedEditingRange` | blocked: a binder's rename is planned on the reverse use index; a declaration's needs the importers of its source, which the path table finds |
+//! | references | `textDocument/references` | served: the declaring name when asked, then the uses of the name at a position in every open document and in every source under the folders the editor opened that imports its source, read from disk, matched by its source's path and its span, as the `uses` module states |
+//! | rename | `textDocument/prepareRename`, `rename` | served: the declaring name and each use the reference request finds, narrowed to the name's spelling; the declaring source is tried with its edits applied and a rename that adds an error is refused, as the `rename` module states |
+//! | linked editing | `textDocument/linkedEditingRange` | blocked: a binder's ranges within its declaration, read off the reverse use index |
 //! | call hierarchy | `textDocument/prepareCallHierarchy`, `callHierarchy/*` | blocked: the declaration enclosing each use |
 //! | type hierarchy | `textDocument/prepareTypeHierarchy`, `typeHierarchy/*` | declined: the core has no subtyping to arrange types by |
 //! | formatting | `textDocument/formatting`, `rangeFormatting` | served |
@@ -352,6 +353,7 @@ mod bus;
 mod complete;
 #[cfg(unix)]
 mod disk;
+mod files;
 mod format;
 mod goto;
 mod hover;
@@ -366,6 +368,7 @@ mod protocol;
 mod quiet;
 mod reading;
 mod recheck;
+mod rename;
 mod rpc;
 mod search;
 mod server;

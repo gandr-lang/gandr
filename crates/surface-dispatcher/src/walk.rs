@@ -780,6 +780,8 @@ impl Traversal
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn new(paths: Vec<PathBuf>) -> Self
     {
         let mut arguments = paths;
@@ -797,6 +799,8 @@ impl Traversal
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn path(&self) -> &Path
     {
         &self.path
@@ -806,6 +810,7 @@ impl Traversal
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn take_path(&mut self) -> PathBuf
     {
         core::mem::take(&mut self.path)
@@ -845,6 +850,7 @@ impl Traversal
             Maybe::Present(Reached::Source | Reached::Unreadable(_)) => self.answered == Answered::Yes,
         },
     )]
+    #[inline]
     pub fn reach(&mut self) -> Maybe<Reached, walk_step::Absent>
     {
         loop {
