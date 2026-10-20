@@ -182,8 +182,11 @@ pub use gandr_core_term::effect::host::AuthorityError;
 
 pub use crate::component::Laid;
 pub use crate::component::ParsedBytes;
+pub use crate::component::Shadows;
+pub use crate::component::Unshadowed;
 pub use crate::component::laid;
 pub use crate::component::lay_out;
+pub use crate::component::lay_out_shadowed;
 pub use crate::component::named_path;
 pub use crate::compose::Admission;
 pub use crate::compose::ComposeFault;

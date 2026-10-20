@@ -52,7 +52,8 @@
 //! session last judged — the import closure's among them, for a document that
 //! imports a sibling — so the table molds only what the recheck before it
 //! molded, never the closure again; the closure is laid out by the
-//! dispatcher's [`lay_out`], which reads each sibling once per process. The
+//! dispatcher's [`lay_out_shadowed`], which reads each sibling an editor holds
+//! as its copy and every other once per process. The
 //! lowering and the typed run still read the whole laid-out text, the
 //! closure with the document.
 //!
@@ -127,11 +128,12 @@ use std::path::PathBuf;
 use anodized::spec;
 use gandr_surface_dispatcher::Declared;
 use gandr_surface_dispatcher::Referent;
+use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::Subject;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::TypedSpan;
 use gandr_surface_dispatcher::classify;
-use gandr_surface_dispatcher::lay_out;
+use gandr_surface_dispatcher::lay_out_shadowed;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::Unit;
 use gandr_surface_pretty::Form;
@@ -305,13 +307,13 @@ impl Hovering
 /// # Specification
 /// - requires: nothing; `session` may have judged any revision.
 /// - ensures: [`TypeTable::of_parsed_unit`] over the import closure the
-///   dispatcher's [`lay_out`] lays `text` out in when it imports a sibling by
-///   path, beside the closure's paths, else [`TypeTable::of_parsed`] over
-///   `text`, beside no path, each parsed through `session`'s form store
-///   ([`Session::parse_held`]), which takes up every form its latest submission
-///   molded — every form of the closure, for a session that judged the document
-///   — and leaves the store as it was; the empty table when the text did not
-///   parse.
+///   dispatcher's [`lay_out_shadowed`] lays `text` out in under `shadows` when
+///   it imports a sibling by path, beside the closure's paths, else
+///   [`TypeTable::of_parsed`] over `text`, beside no path, each parsed through
+///   `session`'s form store ([`Session::parse_held`]), which takes up every
+///   form its latest submission molded — every form of the closure, for a
+///   session that judged the document — and leaves the store as it was; the
+///   empty table when the text did not parse.
 /// - provides: what a document copy keeps for its hovers, its definitions, its
 ///   completions and its signature help: the names read off the table once
 ///   ([`Names::of`]) and the heads read off the same parse
@@ -334,6 +336,7 @@ pub fn hovering<Store, Blocks>(
     text: SourceText<'_>,
     path: &Path,
     session: &Session<Store, Blocks>,
+    shadows: &dyn Shadows,
 ) -> Hovering
 {
     let grammar = session.grammar();
@@ -343,7 +346,7 @@ pub fn hovering<Store, Blocks>(
             |roles| Signatures::of(grammar, roles, tree, unit),
         )
     };
-    let (typed, paths) = match lay_out(grammar, path, classify(path), text) {
+    let (typed, paths) = match lay_out_shadowed(grammar, path, classify(path), text, shadows) {
         Maybe::Present(laid) => (
             session
                 .parse_held(SourceText::from(laid.text.as_str()))
@@ -906,7 +909,12 @@ mod tests
             text,
             &session,
             &Reading::of(text),
-            &hovering(text, std::path::Path::new(""), &session),
+            &hovering(
+                text,
+                std::path::Path::new(""),
+                &session,
+                &gandr_surface_dispatcher::Unshadowed,
+            ),
             position,
             style,
         ) {
@@ -958,7 +966,7 @@ mod tests
             text,
             &session,
             &Reading::of(text),
-            &hovering(text, &path, &session),
+            &hovering(text, &path, &session, &gandr_surface_dispatcher::Unshadowed),
             position,
             PLAIN,
         );
@@ -988,7 +996,7 @@ mod tests
         let index = LineIndex::new(written.as_str().into());
         let session = checked(text);
         let reading = Reading::of(text);
-        let hovering = hovering(text, &path, &session);
+        let hovering = hovering(text, &path, &session, &gandr_surface_dispatcher::Unshadowed);
         let sugared = Style {
             form: Form::Sugared,
             spelling: Spelling::Unicode,

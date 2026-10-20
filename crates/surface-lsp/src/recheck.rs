@@ -163,12 +163,13 @@ use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Laid;
+use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::entries;
 use gandr_surface_dispatcher::laid;
-use gandr_surface_dispatcher::lay_out;
+use gandr_surface_dispatcher::lay_out_shadowed;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::RoleTable;
@@ -519,9 +520,10 @@ pub struct Rechecked
     pub timing: Timing,
 }
 
-/// Judge `text`, the document at `uri`, in its `session`, read its
-/// diagnostics off the judgement at `verbosity`, their types in `spelling`,
-/// and find the form holding `caret` in the tree the judgement parsed.
+/// Judge `text`, the document at `uri`, in its `session`, each import of its
+/// closure read as `shadows` holds it, read its diagnostics off the judgement
+/// at `verbosity`, their types in `spelling`, and find the form holding `caret`
+/// in the tree the judgement parsed.
 ///
 /// # Specification
 /// - requires: `session` was opened for `uri`; any text is admissible input.
@@ -574,6 +576,7 @@ pub fn recheck(
     uri: &DocumentUri,
     session: &mut DocumentSession,
     text: SourceText<'_>,
+    shadows: &dyn Shadows,
     verbosity: Verbosity,
     spelling: Spelling,
     caret: Maybe<gandr_surface_syntax::ByteOffset, formless::Absent>,
@@ -605,7 +608,7 @@ pub fn recheck(
     // A document that imports a sibling is judged over it, laid out as the
     // walk lays its file out; the caret and the form it is in are measured
     // from the document's own start.
-    let mut laid = laid_out(uri, session.root(), text);
+    let mut laid = laid_out(uri, session.root(), text, shadows);
     let (base, named) = match laid {
         Maybe::Present(ref mut laid) => (laid.base, core::mem::take(&mut laid.named)),
         Maybe::Absent(_) => (SyntaxOffset::from(0_usize), Vec::new()),
@@ -786,7 +789,8 @@ pub struct Tried
 }
 
 /// Judge each of `candidates`, revisions of the document at `uri`, in its
-/// `session` without submitting any, best first.
+/// `session` without submitting any, each import of their closures read as
+/// `shadows` holds it, best first.
 ///
 /// # Specification
 /// - requires: `session` was opened for `uri`; any texts are admissible input.
@@ -811,6 +815,7 @@ pub fn trial(
     uri: &DocumentUri,
     session: &DocumentSession,
     candidates: &[SourceText<'_>],
+    shadows: &dyn Shadows,
 ) -> Vec<Tried>
 {
     let session = match *session {
@@ -830,7 +835,7 @@ pub fn trial(
     let root = session.root();
     let laid: Vec<Maybe<Laid, laid::Absent>> = candidates
         .iter()
-        .map(|&candidate| laid_out(uri, root, candidate))
+        .map(|&candidate| laid_out(uri, root, candidate, shadows))
         .collect();
     let members: Vec<(SourceText<'_>, Laying<'_>)> = candidates
         .iter()
@@ -878,12 +883,13 @@ pub fn trial(
 }
 
 /// The import closure the document at `uri`, written as `text` under `root`,
-/// is judged in: the dispatcher's [`lay_out`] under the process's grammar.
+/// is judged in: the dispatcher's [`lay_out_shadowed`] under the process's
+/// grammar, each import read as `shadows` holds it.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: [`lay_out`] of the document's path; [`laid::Absent::Alone`] when
-///   the grammar did not build.
+/// - ensures: [`lay_out_shadowed`] of the document's path under `shadows`;
+///   [`laid::Absent::Alone`] when the grammar did not build.
 /// - provides: the unit a recheck and a trial judge a document in.
 /// - fails: never.
 /// - panics: none.
@@ -900,10 +906,11 @@ fn laid_out(
     uri: &DocumentUri,
     root: SourceRoot,
     text: SourceText<'_>,
+    shadows: &dyn Shadows,
 ) -> Maybe<Laid, laid::Absent>
 {
     grammar().map_or(Maybe::Absent(laid::Absent::Alone), |grammar| {
-        lay_out(grammar, &uri.path(), root, text)
+        lay_out_shadowed(grammar, &uri.path(), root, text, shadows)
     })
 }
 
@@ -1141,6 +1148,7 @@ mod tests
             uri,
             &mut open(uri),
             text,
+            &gandr_surface_dispatcher::Unshadowed,
             Verbosity::User,
             Spelling::Unicode,
             UNCARETED,
@@ -1444,6 +1452,7 @@ mod tests
                 &uri,
                 &mut open(&uri),
                 text,
+                &gandr_surface_dispatcher::Unshadowed,
                 verbosity,
                 Spelling::Unicode,
                 UNCARETED,
@@ -1537,6 +1546,7 @@ mod tests
             &uri,
             &mut session,
             SourceText::from("def a : Integer ;\ndef a = 1 ;\n"),
+            &gandr_surface_dispatcher::Unshadowed,
             Verbosity::User,
             Spelling::Unicode,
             UNCARETED,
@@ -1575,6 +1585,7 @@ mod tests
             &uri,
             &mut session,
             SourceText::from("pure 3\n"),
+            &gandr_surface_dispatcher::Unshadowed,
             Verbosity::User,
             Spelling::Unicode,
             UNCARETED,
@@ -1602,12 +1613,18 @@ mod tests
             &uri,
             &mut session,
             SourceText::from(base),
+            &gandr_surface_dispatcher::Unshadowed,
             Verbosity::User,
             Spelling::Unicode,
             UNCARETED,
         )
         .diagnostics;
-        let tried = trial(&uri, &session, &candidates.map(SourceText::from));
+        let tried = trial(
+            &uri,
+            &session,
+            &candidates.map(SourceText::from),
+            &gandr_surface_dispatcher::Unshadowed,
+        );
         assert_eq!(
             tried
                 .iter()
@@ -1634,6 +1651,7 @@ mod tests
                 &uri,
                 &mut session,
                 SourceText::from(base),
+                &gandr_surface_dispatcher::Unshadowed,
                 Verbosity::User,
                 Spelling::Unicode,
                 UNCARETED

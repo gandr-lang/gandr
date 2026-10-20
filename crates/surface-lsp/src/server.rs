@@ -63,6 +63,7 @@ use std::time::Instant;
 
 use anodized::spec;
 use gandr_surface_diagnostics::Verbosity;
+use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::named_path;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Spelling;
@@ -132,6 +133,7 @@ use crate::protocol::WatchedFilesParams;
 use crate::protocol::WatchesFiles;
 use crate::protocol::WorkTitle;
 use crate::protocol::WorkspaceSymbolParams;
+use crate::quiet::Changes;
 use crate::quiet::Holding;
 use crate::quiet::Inbox;
 use crate::quiet::Met;
@@ -208,6 +210,30 @@ quenchant_shape::reason_enum! {
             Unranged,
         }
     }
+}
+
+/// Where a change to a file was made.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Origin
+{
+    /// On disk: a file an editor holds reads as the editor's copy, so the
+    /// change is not read.
+    Disk,
+    /// In an editor's copy.
+    Editor,
+}
+
+/// Which of a connection's copies a recheck picks.
+#[derive(Clone, Copy, Debug)]
+enum Picks<'changed>
+{
+    /// Every copy.
+    Every,
+    /// Those whose closures, at their last judgement, named a file of these,
+    /// sorted, changed where the origin says.
+    Naming(&'changed [PathBuf], Origin),
+    /// Those whose closures named this file, changed in an editor's copy.
+    File(&'changed Path),
 }
 
 /// One connection's copy of an open document, as that connection last
@@ -357,7 +383,8 @@ impl HeldText
     }
 
     /// What the hovers of the text held, the document at `path` that `session`
-    /// judges, read, made now when no hover has asked since it last changed.
+    /// judges, read, each import of its closure read as `shadows` holds it,
+    /// made now when no hover has asked since it or its closure last changed.
     ///
     /// # Specification
     /// trivial.
@@ -365,10 +392,21 @@ impl HeldText
         &self,
         path: &Path,
         session: &Session<Store, Blocks>,
+        shadows: &dyn Shadows,
     ) -> &Hovering
     {
         self.hovering
-            .get_or_init(|| hovering(self.source(), path, session))
+            .get_or_init(|| hovering(self.source(), path, session, shadows))
+    }
+
+    /// Drop what the hovers read off the text's closure, whose imports
+    /// changed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reclose(&mut self)
+    {
+        self.hovering = OnceCell::new();
     }
 }
 
@@ -411,6 +449,8 @@ struct Held
     document: Document,
     /// Every other holding connection's copy.
     others: BTreeMap<Peer, Document>,
+    /// The path an import names its file by, as [`named_path`] names it.
+    path: PathBuf,
 }
 
 impl Held
@@ -562,6 +602,7 @@ impl Held
                 latest,
                 document,
                 others: self.others,
+                path: self.path,
             }),
             None => Maybe::Absent(unheld::Absent::Forgotten),
         }
@@ -743,6 +784,13 @@ impl From<u64> for Peer
 /// and proposals — and the one a connection holding no copy is answered
 /// from.
 ///
+/// An editor's copy shadows the disk for every face. An import of a document
+/// some connection holds reads the copy the importing connection is answered
+/// from — its own, or the latest when it holds none — and never the file at
+/// its path; a change to a held file on disk changes no judgement. A change to
+/// a copy rechecks every copy, on every connection, whose closure names its
+/// file at its last judgement.
+///
 /// The recorded design held one text and one session per document, applied
 /// every holder's changes to it, and forwarded each publication to every
 /// other holder, so a second connection's open molded nothing. Two clients of
@@ -772,12 +820,51 @@ pub struct Workspace
 {
     /// Every open document, by its URI.
     documents: BTreeMap<DocumentUri, Held>,
+    /// The URI of each open document, by the path an import names its file
+    /// by.
+    paths: BTreeMap<PathBuf, DocumentUri>,
+    /// Where each connection on a hub hears which held files another
+    /// connection's editor changed.
+    editors: BTreeMap<Peer, Changes>,
     /// Where each watching connection hears which document changed.
     watchers: BTreeMap<Peer, Sender<DocumentUri>>,
     /// The spelling its user's configuration names: what a connection writes
     /// types in until its editor's `gandr.presentation.spelling` says
     /// otherwise, and what a query writes them in.
     spelling: Spelling,
+}
+
+/// The copies the editors hold, read by an import in place of the file at
+/// its path: `peer`'s own copy of each document, or the latest when it holds
+/// none.
+struct Shadowing<'held>
+{
+    /// The documents held, those out of the map being judged aside.
+    held: &'held BTreeMap<DocumentUri, Held>,
+    /// The documents a pass over the workspace has yet to come to.
+    pending: Option<&'held BTreeMap<DocumentUri, Held>>,
+    /// The URI of each open document, by the path an import names its file
+    /// by.
+    paths: &'held BTreeMap<PathBuf, DocumentUri>,
+    /// The connection whose imports read.
+    peer: Peer,
+}
+
+impl Shadows for Shadowing<'_>
+{
+    /// The text of `peer`'s view of the document held at `named`, if any.
+    ///
+    /// # Specification
+    /// trivial.
+    fn shadowed(
+        &self,
+        named: &Path,
+    ) -> Option<SourceText<'_>>
+    {
+        let uri = self.paths.get(named)?;
+        let held = self.held.get(uri).or_else(|| self.pending?.get(uri))?;
+        Some(held.view(self.peer).text.source())
+    }
 }
 
 impl Workspace
@@ -814,6 +901,39 @@ impl Workspace
     )
     {
         let _prior = self.watchers.insert(peer, watcher);
+    }
+
+    /// Admit `peer`, a hub connection, as an editor: the paths of the held
+    /// files another connection's editor changed, which `peer`'s copies'
+    /// closures name, go to `changes`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn hear_edits(
+        &mut self,
+        peer: Peer,
+        changes: Changes,
+    )
+    {
+        let _prior = self.editors.insert(peer, changes);
+    }
+
+    /// The copies the editors hold, as `peer`'s imports read them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn shadowing(
+        &self,
+        peer: Peer,
+    ) -> Shadowing<'_>
+    {
+        Shadowing {
+            held: &self.documents,
+            pending: None,
+            paths: &self.paths,
+            peer,
+        }
     }
 
     /// The open documents and the version each one's latest copy is at, in
@@ -947,7 +1067,8 @@ impl Workspace
         changes: &[ContentChange],
     ) -> Option<(DocumentVersion, Vec<Tried>)>
     {
-        let document = &self.documents.get(uri)?.document;
+        let held = self.documents.get(uri)?;
+        let document = &held.document;
         let texts: Vec<String> = changes
             .iter()
             .map(|change| {
@@ -962,7 +1083,12 @@ impl Workspace
             .collect();
         Some((
             document.version,
-            crate::recheck::trial(uri, &document.session, &candidates),
+            crate::recheck::trial(
+                uri,
+                &document.session,
+                &candidates,
+                &self.shadowing(held.latest),
+            ),
         ))
     }
 
@@ -1085,13 +1211,15 @@ impl Workspace
     }
 
     /// Let `peer` go: it holds no copy any more and watches nothing, and a
-    /// document no other connection holds is forgotten with its sessions.
+    /// document no other connection holds is forgotten with its sessions; every
+    /// other connection whose copies' closures name a forgotten document's
+    /// file hears it changed.
     ///
     /// # Specification
     /// - requires: nothing; a peer that never connected or held nothing is
     ///   admitted.
-    /// - ensures: `peer` watches nothing and holds no copy of any document;
-    ///   every document left is held by another connection.
+    /// - ensures: `peer` watches and hears nothing and holds no copy of any
+    ///   document; every document left is held by another connection.
     /// - provides: a connection's end, clean or not.
     /// - panics: none.
     ///
@@ -1106,7 +1234,7 @@ impl Workspace
             reason = "parity: the body lets go of every document once; the check reads each document once"
         )
     )]
-    #[spec(ensures: !self.watchers.contains_key(&peer)
+    #[spec(ensures: !self.watchers.contains_key(&peer) && !self.editors.contains_key(&peer)
         && self.documents.values().all(|held| matches!(held.own(peer), Maybe::Absent(_))))]
     #[inline]
     pub fn depart(
@@ -1115,14 +1243,63 @@ impl Workspace
     )
     {
         let _watcher = self.watchers.remove(&peer);
+        let _editor = self.editors.remove(&peer);
         for (uri, held) in core::mem::take(&mut self.documents) {
-            self.let_go(uri, held, peer);
+            if let Some(forgotten) = self.let_go(uri, held, peer) {
+                self.edited(&forgotten, peer);
+            }
+        }
+    }
+
+    /// `path`, owned, when some copy's closure, at its last judgement, named
+    /// it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn named(
+        &self,
+        path: &Path,
+    ) -> Option<PathBuf>
+    {
+        self.documents
+            .values()
+            .flat_map(|held| core::iter::once(&held.document).chain(held.others.values()))
+            .any(|document| {
+                document
+                    .named
+                    .binary_search_by(|named| named.as_path().cmp(path))
+                    .is_ok()
+            })
+            .then(|| path.to_path_buf())
+    }
+
+    /// Tell every connection but `by` whose copies' closures name `path` that
+    /// the text an import of it reads changed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn edited(
+        &self,
+        path: &Path,
+        by: Peer,
+    )
+    {
+        for (&peer, changes) in &self.editors {
+            let names = peer != by
+                && self.documents.values().any(|held| {
+                    matches!(held.own(peer), Maybe::Present(document)
+                        if document.named.binary_search_by(|named| named.as_path().cmp(path)).is_ok())
+                });
+            if names {
+                changes.edited(Vec::from([path.to_path_buf()]));
+            }
         }
     }
 
     /// Keep `held`, the document at `uri`, without `peer`'s copy, forgetting
     /// it when that copy was the last, and tell every watcher when the copy
-    /// let go was the latest.
+    /// let go was the latest; the path a forgotten document's file is named
+    /// by.
     ///
     /// # Specification
     /// trivial.
@@ -1131,16 +1308,21 @@ impl Workspace
         uri: DocumentUri,
         held: Held,
         peer: Peer,
-    )
+    ) -> Option<PathBuf>
     {
         if held.latest == peer {
             for watcher in self.watchers.values() {
                 let _gone = watcher.send(uri.clone());
             }
         }
+        if held.latest == peer && held.others.is_empty() {
+            let _forgotten = self.paths.remove(&held.path);
+            return Some(held.path);
+        }
         if let Maybe::Present(held) = held.release(peer) {
             let _kept = self.documents.insert(uri, held);
         }
+        None
     }
 
     /// Record `message`, a publication `peer`'s handling made, as the last
@@ -1620,7 +1802,10 @@ impl Server
                 else {
                     return Reported::default();
                 };
-                return self.rechecking(workspace, &changed_paths(&changes));
+                return self.rechecking(
+                    workspace,
+                    Picks::Naming(&changed_paths(&changes), Origin::Disk),
+                );
             },
             _ => return Reported::default(),
         };
@@ -1662,25 +1847,63 @@ impl Server
         if self.phase != Phase::Running || !self.progress.0 {
             return Reported::default();
         }
-        self.rechecking(workspace, changed)
+        self.rechecking(workspace, Picks::Naming(changed, Origin::Disk))
     }
 
-    /// The progress of rechecking the copies whose closures name a file of
-    /// `changed`, on a running connection whose client shows progress.
+    /// The progress of rechecking the copies this connection holds whose
+    /// closures name a file of `changed`, another connection's editor having
+    /// changed its copy of each.
+    ///
+    /// # Specification
+    /// - requires: `changed` is sorted, as [`named_path`] names each file.
+    /// - ensures: as [`Server::reported_on_disk`] states, for the copies
+    ///   [`Server::edited_elsewhere`] rechecks.
+    /// - provides: what a client shows while another editor's change has
+    ///   dependants rechecked.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — through [`Server::reported`]'s witness, the three
+    ///   sharing one body.
+    /// - witness: `server::tests::progress_is_reported_around_the_work_a_message_starts`
+    #[spec(
+        captures: before = self.reported,
+        ensures: |ret| if ret.begin.is_empty() {
+            ret.end.is_empty() && self.reported == before
+        } else {
+            ret.begin.len() == 2 && ret.end.len() == 1 && self.reported == before.saturating_add(1)
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn reported_elsewhere(
+        &mut self,
+        workspace: &Workspace,
+        changed: &[PathBuf],
+    ) -> Reported
+    {
+        if self.phase != Phase::Running || !self.progress.0 {
+            return Reported::default();
+        }
+        self.rechecking(workspace, Picks::Naming(changed, Origin::Editor))
+    }
+
+    /// The progress of rechecking the copies `picks` picks, on a running
+    /// connection whose client shows progress.
     ///
     /// # Specification
     /// trivial.
     fn rechecking(
         &mut self,
         workspace: &Workspace,
-        changed: &[PathBuf],
+        picks: Picks<'_>,
     ) -> Reported
     {
         let rechecked = workspace
             .documents
             .values()
             .filter(|held| match held.own(self.peer) {
-                Maybe::Present(document) => first_named(&document.named, changed).is_some(),
+                Maybe::Present(document) => picked(picks, &workspace.paths, &document.named).0,
                 Maybe::Absent(_) => false,
             })
             .count();
@@ -1741,10 +1964,12 @@ impl Server
             .documents
             .values()
             .filter_map(|held| match held.own(self.peer) {
-                Maybe::Present(document) => Some(document.named.iter().cloned()),
+                Maybe::Present(document) => Some(document.named.iter()),
                 Maybe::Absent(_) => None,
             })
             .flatten()
+            .filter(|named| !workspace.paths.contains_key(*named))
+            .cloned()
             .collect()
     }
 
@@ -1777,39 +2002,111 @@ impl Server
         if self.phase != Phase::Running || self.watching.0 {
             return Outcome::quiet();
         }
-        self.recheck_naming(workspace, changed)
+        self.resynchronise(workspace, Picks::Naming(changed, Origin::Disk))
     }
 
     /// Recheck the copies this connection holds whose closures name a file of
-    /// `changed`, republishing each to this connection alone.
+    /// `changed`, another connection's editor having changed its copy of each.
     ///
     /// # Specification
-    /// trivial.
-    fn recheck_naming(
-        &self,
+    /// - requires: `changed` is sorted, as [`named_path`] names each file.
+    /// - ensures: on a running connection, every copy it holds whose closure,
+    ///   at its last judgement, named a file of `changed` is rechecked, each
+    ///   import read as the editors hold it, and republished in URI order, at
+    ///   its version, to this connection alone, one timing line each; on any
+    ///   other, nothing.
+    /// - provides: another connection's edit, reaching the importers this one
+    ///   holds.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a hub connection holding an importer republishes it
+    ///   when another connection's editor changes the base it imports, and
+    ///   again when that editor closes the base.
+    /// - witness: `hub::tests::an_editor_s_copy_shadows_the_disk_for_every_connection`
+    #[spec(ensures: |ret| ret.messages.is_empty() || self.phase == Phase::Running)]
+    #[inline]
+    #[must_use]
+    pub fn edited_elsewhere(
+        &mut self,
         workspace: &mut Workspace,
         changed: &[PathBuf],
     ) -> Outcome
     {
-        let mut outcome = Outcome::quiet();
+        if self.phase != Phase::Running {
+            return Outcome::quiet();
+        }
+        self.resynchronise(workspace, Picks::Naming(changed, Origin::Editor))
+    }
+
+    /// After the copy of the file at `path` changed or was let go, recheck the
+    /// copies this connection holds whose closures name it, into `outcome`,
+    /// and tell every other connection whose copies name it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reclosed(
+        &self,
+        workspace: &mut Workspace,
+        path: &Path,
+        outcome: &mut Outcome,
+    )
+    {
+        workspace.edited(path, self.peer);
+        let rechecked = self.resynchronise(workspace, Picks::File(path));
+        outcome.messages.extend(rechecked.messages);
+        outcome.log.extend(rechecked.log);
+    }
+
+    /// Recheck the copies this connection holds that `picks` picks,
+    /// republishing each to this connection alone, each import read as the
+    /// editors hold it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn resynchronise(
+        &self,
+        workspace: &mut Workspace,
+        picks: Picks<'_>,
+    ) -> Outcome
+    {
         let peer = self.peer;
-        for (uri, held) in &mut workspace.documents {
-            let Maybe::Present(document) = held.own_mut(peer)
-            else {
-                continue;
-            };
-            if first_named(&document.named, changed).is_none() {
-                continue;
+        let paths = &workspace.paths;
+        let chosen = |document: &Document| picked(picks, paths, &document.named).0;
+        let mut outcome = Outcome::quiet();
+        if !workspace
+            .documents
+            .values()
+            .any(|held| matches!(held.own(peer), Maybe::Present(document) if chosen(document)))
+        {
+            return outcome;
+        }
+        let mut pending = core::mem::take(&mut workspace.documents);
+        while let Some((uri, mut held)) = pending.pop_first() {
+            if let Maybe::Present(document) = held.own_mut(peer)
+                && chosen(document)
+            {
+                if !matches!(picks, Picks::Every) {
+                    document.text.reclose();
+                }
+                let shadows = Shadowing {
+                    held: &workspace.documents,
+                    pending: Some(&pending),
+                    paths,
+                    peer,
+                };
+                let rechecked = synchronised(
+                    &uri,
+                    document,
+                    &shadows,
+                    self.verbosity,
+                    self.style.spelling,
+                    self.quiet,
+                );
+                outcome.messages.extend(rechecked.messages);
+                outcome.log.extend(rechecked.log);
             }
-            let rechecked = synchronised(
-                uri,
-                document,
-                self.verbosity,
-                self.style.spelling,
-                self.quiet,
-            );
-            outcome.messages.extend(rechecked.messages);
-            outcome.log.extend(rechecked.log);
+            let _kept = workspace.documents.insert(uri, held);
         }
         for message in &outcome.messages {
             workspace.published_by(peer, message);
@@ -2241,10 +2538,16 @@ impl Server
     ///   `workspace/didChangeWatchedFiles`; from any other client it sends
     ///   nothing. A running-state watched-files change rechecks every copy this
     ///   connection holds whose closure, at its last judgement, named a changed
-    ///   file, as [`named_path`] names it, and republishes each in URI order,
-    ///   at its version, to this connection alone, logging one timing line
-    ///   each; a copy whose closure names none is untouched. Unknown, malformed
-    ///   and out-of-phase notifications leave documents alone.
+    ///   file no connection holds, as [`named_path`] names it, and republishes
+    ///   each in URI order, at its version, to this connection alone, logging
+    ///   one timing line each; a copy whose closure names none is untouched.
+    ///   Each import is judged as the editors hold it, as [`Workspace`] states:
+    ///   after an open, a change or a close of a copy whose file some copy's
+    ///   closure names, every copy this connection holds whose closure names it
+    ///   is rechecked and republished after the copy's own publication, and
+    ///   every other hub connection whose copies name it hears it changed.
+    ///   Unknown, malformed and out-of-phase notifications leave documents
+    ///   alone.
     /// - provides: document synchronization, configuration, file watching and
     ///   termination.
     /// - fails: unreadable parameters and changes to documents this connection
@@ -2268,29 +2571,34 @@ impl Server
     /// - witness: `server::tests::two_connections_hold_their_own_copies`
     /// - witness: `server::tests::a_watching_client_is_asked_to_watch_every_source`
     /// - witness: `server::tests::a_changed_file_rechecks_the_copies_whose_closure_names_it`
+    /// - witness: `server::tests::an_editor_s_copy_shadows_the_disk_for_its_importers`
     #[spec(
         captures: [phase = self.phase, count = workspace.documents.len()],
         ensures: |ret| self.phase == phase
             && (ret.messages.len() <= 1
-                || matches!(method.as_ref(), "workspace/didChangeConfiguration" | "workspace/didChangeWatchedFiles"))
+                || matches!(method.as_ref(), "textDocument/didOpen" | "textDocument/didChange" | "textDocument/didClose"
+                    | "workspace/didChangeConfiguration" | "workspace/didChangeWatchedFiles"))
             && match method.as_ref() {
-                "textDocument/didOpen" | "textDocument/didChange" => ret.log.len() == usize::from(!ret.messages.is_empty()),
+                "textDocument/didOpen" | "textDocument/didChange" | "workspace/didChangeWatchedFiles" =>
+                    ret.log.len() == ret.messages.len(),
+                "textDocument/didClose" => ret.log.len() == ret.messages.len().saturating_sub(1),
                 "workspace/didChangeConfiguration" => ret.log.len() <= ret.messages.len(),
-                "workspace/didChangeWatchedFiles" => ret.log.len() == ret.messages.len(),
                 _ => ret.log.is_empty(),
             }
             && ret.flow == if method.as_ref() == "exit" { Flow::Exit(self.closed()) } else { Flow::Continue }
             && if ret.messages.is_empty() { workspace.documents.len() == count } else {
                 phase == Phase::Running && ret.messages.iter().all(|message| match *message {
-                    Outgoing::Notification { ref params, .. } => match method.as_ref() {
-                        "textDocument/didOpen" | "textDocument/didChange" | "workspace/didChangeConfiguration"
-                        | "workspace/didChangeWatchedFiles" =>
-                            workspace.documents.get(&params.uri).is_some_and(|held| matches!(held.own(self.peer),
-                                Maybe::Present(document) if params.version == Some(document.version))),
-                        "textDocument/didClose" => params.version.is_none() && params.diagnostics.is_empty()
-                            && workspace.documents.get(&params.uri)
-                                .is_none_or(|held| matches!(held.own(self.peer), Maybe::Absent(_))),
-                        _ => false,
+                    Outgoing::Notification { ref params, .. } => {
+                        let current = workspace.documents.get(&params.uri).is_some_and(|held| matches!(held.own(self.peer),
+                            Maybe::Present(document) if params.version == Some(document.version)));
+                        match method.as_ref() {
+                            "textDocument/didOpen" | "textDocument/didChange" | "workspace/didChangeConfiguration"
+                            | "workspace/didChangeWatchedFiles" => current,
+                            "textDocument/didClose" => current || (params.version.is_none() && params.diagnostics.is_empty()
+                                && workspace.documents.get(&params.uri)
+                                    .is_none_or(|held| matches!(held.own(self.peer), Maybe::Absent(_)))),
+                            _ => false,
+                        }
                     },
                     Outgoing::Request { method: called, .. } => method.as_ref() == "initialized"
                         && called == "client/registerCapability" && self.watching.0,
@@ -2316,30 +2624,49 @@ impl Server
                 else {
                     return Outcome::quiet();
                 };
-                let uri = text_document.uri;
-                let held = workspace
-                    .documents
-                    .entry(uri.clone())
-                    .or_insert_with(|| Held {
+                let version = text_document.version;
+                let (uri, mut held, first) = if let Some((uri, held)) =
+                    workspace.documents.remove_entry(&text_document.uri)
+                {
+                    (uri, held, false)
+                }
+                else {
+                    let uri = text_document.uri;
+                    let path = named_path(&uri.path());
+                    let _indexed = workspace.paths.insert(path.clone(), uri.clone());
+                    let held = Held {
                         latest: self.peer,
-                        document: Document::opened(&uri, text_document.version),
+                        document: Document::opened(&uri, version),
                         others: BTreeMap::new(),
-                    });
-                held.take_up(self.peer, &uri, text_document.version);
+                        path,
+                    };
+                    (uri, held, true)
+                };
+                held.take_up(self.peer, &uri, version);
                 let document = &mut held.document;
-                document.version = text_document.version;
+                document.version = version;
                 document.text.replace(text_document.text);
                 document.caret = Maybe::Absent(uncareted::Absent::Unranged);
                 document.proposals.clear();
-                let outcome = synchronised(
+                let mut outcome = synchronised(
                     &uri,
                     document,
+                    &workspace.shadowing(self.peer),
                     self.verbosity,
                     self.style.spelling,
                     self.quiet,
                 );
+                // The first copy of a file stands in for its disk text, so
+                // what its importers read changes only where the two differ.
+                let named = workspace.named(&held.path).filter(|path| {
+                    !first || differs_from_disk(path, held.document.text.source()).0
+                });
+                let _kept = workspace.documents.insert(uri, held);
                 for message in &outcome.messages {
                     workspace.published_by(self.peer, message);
+                }
+                if let Some(path) = named {
+                    self.reclosed(workspace, &path, &mut outcome);
                 }
                 outcome
             },
@@ -2351,29 +2678,41 @@ impl Server
                 else {
                     return Outcome::quiet();
                 };
-                let Some(held) = workspace.documents.get_mut(&text_document.uri)
+                let Some((uri, mut held)) = workspace.documents.remove_entry(&text_document.uri)
                 else {
                     return Outcome::quiet();
                 };
                 held.promote(self.peer);
-                let Maybe::Present(document) = held.own_mut(self.peer)
-                else {
-                    return Outcome::quiet();
+                let mut outcome = match held.own_mut(self.peer) {
+                    Maybe::Present(document) => {
+                        document.version = text_document.version;
+                        document.proposals.clear();
+                        for change in content_changes {
+                            document.caret = document.text.apply(change);
+                        }
+                        synchronised(
+                            &uri,
+                            document,
+                            &workspace.shadowing(self.peer),
+                            self.verbosity,
+                            self.style.spelling,
+                            self.quiet,
+                        )
+                    },
+                    Maybe::Absent(_) => Outcome::quiet(),
                 };
-                document.version = text_document.version;
-                document.proposals.clear();
-                for change in content_changes {
-                    document.caret = document.text.apply(change);
+                let named = if outcome.messages.is_empty() {
+                    None
                 }
-                let outcome = synchronised(
-                    &text_document.uri,
-                    document,
-                    self.verbosity,
-                    self.style.spelling,
-                    self.quiet,
-                );
+                else {
+                    workspace.named(&held.path)
+                };
+                let _kept = workspace.documents.insert(uri, held);
                 for message in &outcome.messages {
                     workspace.published_by(self.peer, message);
+                }
+                if let Some(path) = named {
+                    self.reclosed(workspace, &path, &mut outcome);
                 }
                 outcome
             },
@@ -2382,14 +2721,28 @@ impl Server
                 else {
                     return Outcome::quiet();
                 };
-                if let Some(held) = workspace.documents.remove(&text_document.uri) {
-                    workspace.let_go(text_document.uri.clone(), held, self.peer);
-                }
-                Outcome::say(publish(PublishParams {
+                let named = match workspace.documents.remove_entry(&text_document.uri) {
+                    Some((uri, held)) => {
+                        // The disk stands in for the last copy, so what its
+                        // importers read changes only where the two differ.
+                        let named = workspace.named(&held.path);
+                        let differs = named.as_deref().map_or(Differs(false), |path| {
+                            differs_from_disk(path, held.document.text.source())
+                        });
+                        let forgotten = workspace.let_go(uri, held, self.peer);
+                        named.filter(|_| forgotten.is_none() || differs.0)
+                    },
+                    None => None,
+                };
+                let mut outcome = Outcome::say(publish(PublishParams {
                     uri: text_document.uri,
                     version: None,
                     diagnostics: Vec::new(),
-                }))
+                }));
+                if let Some(path) = named {
+                    self.reclosed(workspace, &path, &mut outcome);
+                }
+                outcome
             },
             (Phase::Running, "workspace/didChangeConfiguration") => {
                 let Some(settings) = serde_json::from_value::<ConfigurationParams>(params)
@@ -2423,25 +2776,9 @@ impl Server
                 }
                 self.verbosity = verbosity.unwrap_or(self.verbosity);
                 self.style.spelling = spelling.unwrap_or(self.style.spelling);
-                let peer = self.peer;
-                for (uri, held) in &mut workspace.documents {
-                    let Maybe::Present(document) = held.own_mut(peer)
-                    else {
-                        continue;
-                    };
-                    let republished = synchronised(
-                        uri,
-                        document,
-                        self.verbosity,
-                        self.style.spelling,
-                        self.quiet,
-                    );
-                    outcome.messages.extend(republished.messages);
-                    outcome.log.extend(republished.log);
-                }
-                for message in &outcome.messages {
-                    workspace.published_by(peer, message);
-                }
+                let republished = self.resynchronise(workspace, Picks::Every);
+                outcome.messages.extend(republished.messages);
+                outcome.log.extend(republished.log);
                 outcome
             },
             (Phase::Running, "initialized") if self.watching.0 => {
@@ -2452,7 +2789,10 @@ impl Server
                 else {
                     return Outcome::quiet();
                 };
-                self.recheck_naming(workspace, &changed_paths(&changes))
+                self.resynchronise(
+                    workspace,
+                    Picks::Naming(&changed_paths(&changes), Origin::Disk),
+                )
             },
             (Phase::Waiting | Phase::Running | Phase::ShuttingDown, _) => Outcome::quiet(),
         }
@@ -2669,7 +3009,9 @@ impl Workspace
                     document.text.source(),
                     session,
                     document.text.reading(),
-                    document.text.hovering(&uri.path(), session),
+                    document
+                        .text
+                        .hovering(&uri.path(), session, &self.shadowing(peer)),
                     position,
                     style,
                 )
@@ -2731,7 +3073,9 @@ impl Workspace
             grammar,
             forms,
             document.text.source(),
-            document.text.hovering(&uri.path(), session),
+            document
+                .text
+                .hovering(&uri.path(), session, &self.shadowing(peer)),
             position,
         ))
     }
@@ -2767,11 +3111,7 @@ impl Workspace
         query: SourceText<'_>,
     ) -> Answer
     {
-        let held: BTreeSet<PathBuf> = self
-            .documents
-            .keys()
-            .map(|uri| named_path(&uri.path()))
-            .collect();
+        let shadows = self.shadowing(peer);
         let mut siblings: BTreeSet<(DocumentUri, Range)> = BTreeSet::new();
         let mut found: Vec<(String, SymbolInformation)> = Vec::new();
         for uri in self.documents.keys() {
@@ -2783,7 +3123,7 @@ impl Workspace
             else {
                 continue;
             };
-            let hovering = document.text.hovering(&uri.path(), session);
+            let hovering = document.text.hovering(&uri.path(), session, &shadows);
             let own = hovering.table().own_source();
             for entry in hovering.found().matching(query) {
                 let target = if entry.source == own {
@@ -2792,7 +3132,7 @@ impl Workspace
                 else {
                     let Some(path) = hovering
                         .source_path(entry.source)
-                        .filter(|path| !held.contains(*path))
+                        .filter(|path| !self.paths.contains_key(*path))
                     else {
                         continue;
                     };
@@ -2871,7 +3211,9 @@ impl Workspace
                 help(
                     document.text.source(),
                     document.text.reading(),
-                    document.text.hovering(&uri.path(), session),
+                    document
+                        .text
+                        .hovering(&uri.path(), session, &self.shadowing(peer)),
                     position,
                     offsets,
                 )
@@ -2920,7 +3262,9 @@ impl Workspace
                 targets(
                     document.text.source(),
                     uri,
-                    document.text.hovering(&uri.path(), session),
+                    document
+                        .text
+                        .hovering(&uri.path(), session, &self.shadowing(peer)),
                     position,
                     goto,
                     linked,
@@ -2964,7 +3308,9 @@ impl Workspace
             .map_or(Answer::Nothing, |session| {
                 highlights(
                     document.text.source(),
-                    document.text.hovering(&uri.path(), session),
+                    document
+                        .text
+                        .hovering(&uri.path(), session, &self.shadowing(peer)),
                     position,
                 )
             })
@@ -3002,6 +3348,7 @@ impl Workspace
         context: ReferenceContext,
     ) -> Answer
     {
+        let shadows = self.shadowing(peer);
         let Maybe::Present(document) = self.view(uri, peer)
         else {
             return Answer::Nothing;
@@ -3013,7 +3360,7 @@ impl Workspace
         let Some(name) = placed(
             document.text.source(),
             &named_path(&uri.path()),
-            document.text.hovering(&uri.path(), session),
+            document.text.hovering(&uri.path(), session, &shadows),
             position,
         )
         else {
@@ -3023,9 +3370,8 @@ impl Workspace
         if context.include_declaration
             && let Some(range) = name.range
             && let Some(target) = self
-                .documents
-                .keys()
-                .find(|held| named_path(&held.path()) == name.path)
+                .paths
+                .get(&name.path)
                 .cloned()
                 .or_else(|| DocumentUri::of_path(&name.path))
         {
@@ -3044,7 +3390,7 @@ impl Workspace
                 document.text.source(),
                 held,
                 &named_path(&held.path()),
-                document.text.hovering(&held.path(), session),
+                document.text.hovering(&held.path(), session, &shadows),
                 &name.path,
                 name.named,
             ));
@@ -3226,18 +3572,51 @@ fn changed_paths(changes: &[FileEvent]) -> Vec<PathBuf>
     changed
 }
 
-/// The first file of `changed` that `named`, a closure's sorted paths, holds.
+/// Whether a recheck picks a copy.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Picked(bool);
+
+/// Whether `picks` picks a copy whose closure's sorted paths are `named`, the
+/// files the editors hold being `held`.
 ///
 /// # Specification
 /// trivial.
-fn first_named<'changed>(
+fn picked(
+    picks: Picks<'_>,
+    held: &BTreeMap<PathBuf, DocumentUri>,
     named: &[PathBuf],
-    changed: &'changed [PathBuf],
-) -> Option<&'changed PathBuf>
+) -> Picked
 {
-    changed
-        .iter()
-        .find(|path| named.binary_search(path).is_ok())
+    Picked(match picks {
+        Picks::Every => true,
+        Picks::Naming(changed, origin) => changed.iter().any(|path| {
+            (origin == Origin::Editor || !held.contains_key(path))
+                && named.binary_search(path).is_ok()
+        }),
+        Picks::File(path) => named
+            .binary_search_by(|named| named.as_path().cmp(path))
+            .is_ok(),
+    })
+}
+
+/// Whether an import of a file reads other text when an editor's copy of it
+/// stands in for the disk, or the disk for the copy.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Differs(bool);
+
+/// Whether `text` differs from the file at `path`: a file that cannot be
+/// read differs from every copy.
+///
+/// # Specification
+/// trivial.
+fn differs_from_disk(
+    path: &Path,
+    text: SourceText<'_>,
+) -> Differs
+{
+    Differs(std::fs::read(path).map_or(true, |disk| disk != <&str>::from(text).as_bytes()))
 }
 
 /// The range of `form`, the form under `document`'s caret in the revision
@@ -3272,11 +3651,12 @@ fn caret_range(
 /// - requires: nothing.
 /// - ensures: one diagnostic notification naming the supplied URI and held
 ///   version, with the diagnostics the document's session judges for its whole
-///   text, rendered at `verbosity` with their types in `spelling`, less those
-///   [`publishable`] holds for the form under the document's caret while
-///   `quiet` is not zero; the copy records every judged diagnostic as checked.
-///   One log line names the same URI and version, its admission pending when
-///   the judgement left one, and whether the publication held any.
+///   text, each import read as `shadows` holds it, rendered at `verbosity` with
+///   their types in `spelling`, less those [`publishable`] holds for the form
+///   under the document's caret while `quiet` is not zero; the copy records
+///   every judged diagnostic as checked. One log line names the same URI and
+///   version, its admission pending when the judgement left one, and whether
+///   the publication held any.
 /// - provides: the publication shared by open, change and configuration
 ///   notifications.
 /// - fails: never.
@@ -3300,6 +3680,7 @@ fn caret_range(
 fn synchronised(
     uri: &DocumentUri,
     document: &mut Document,
+    shadows: &dyn Shadows,
     verbosity: Verbosity,
     spelling: Spelling,
     quiet: Duration,
@@ -3313,6 +3694,7 @@ fn synchronised(
         uri,
         &mut document.session,
         document.text.source(),
+        shadows,
         verbosity,
         spelling,
         caret,
@@ -3403,8 +3785,8 @@ where
                 }
                 return Ok(ControlFlow::Continue(()));
             },
-            // No watch holds this loop's inbox.
-            Met::Changed(_) => return Ok(ControlFlow::Continue(())),
+            // No watch and no other connection holds this loop's inbox.
+            Met::Changed(_) | Met::Edited(_) => return Ok(ControlFlow::Continue(())),
             Met::Frame { message, later } => (message, later),
         };
         let reported = server.reported(&workspace, &message);
@@ -3570,8 +3952,8 @@ mod tests
     ///
     /// # Specification
     /// - requires: nothing; malformed bodies are admitted.
-    /// - ensures: serialized outgoing messages remain in order, with at most
-    ///   one response or publication and JSON-RPC version 2.0.
+    /// - ensures: serialized outgoing messages remain in order, each a JSON-RPC
+    ///   2.0 message.
     /// - provides: the protocol-visible result of one state-machine step.
     /// - fails: never for the current serializable outgoing variants.
     /// - panics: an unencodable outgoing value violates the serialization
@@ -3582,9 +3964,8 @@ mod tests
     ///   goldens distinguish lost, duplicate and misidentified messages.
     /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
     /// - witness: `server::tests::synchronisation_publishes_and_close_clears`
-    #[spec(ensures: |ret| ret.as_array().is_some_and(|messages|
-        messages.len() <= 1 && messages.iter().all(|message|
-            message.get("jsonrpc").and_then(Value::as_str) == Some("2.0"))))]
+    #[spec(ensures: |ret| ret.as_array().is_some_and(|messages| messages.iter().all(|message|
+        message.get("jsonrpc").and_then(Value::as_str) == Some("2.0"))))]
     fn send(
         server: &mut Connected,
         Json(text): Json<'_>,
@@ -4265,6 +4646,94 @@ mod tests
             changed(&mut server, "elsewhere.gandr", 1),
             [],
             "a file no closure names rechecks nothing"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn an_editor_s_copy_shadows_the_disk_for_its_importers()
+    {
+        let directory = std::env::temp_dir().join(format!("gandr-shadowed-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let declares_one = "def one : Integer ;\ndef one = 1 ;\n";
+        let declares_uno = "def uno : Integer ;\ndef uno = 1 ;\n";
+        let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
+        let base = directory.join("base.gandr");
+        std::fs::write(&base, declares_one).expect("the base is written");
+        std::fs::write(directory.join("importer.gandr"), importer)
+            .expect("the importer is written");
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        let published = |server: &mut Connected, message: &Value| {
+            send(server, Json(&message.to_string()))
+                .as_array()
+                .map(|messages| {
+                    messages
+                        .iter()
+                        .map(|message| {
+                            (
+                                message["params"]["uri"].as_str().map(String::from),
+                                message["params"]["diagnostics"]
+                                    .as_array()
+                                    .map_or(0_usize, Vec::len),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        let open = |file: &str, text: &str| {
+            serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                "textDocument": {"uri": uri(file), "languageId": "gandr", "version": 1_i32, "text": text}}})
+        };
+        let mut server = initialized();
+        assert_eq!(
+            published(&mut server, &open("importer.gandr", importer)),
+            [(Some(uri("importer.gandr")), 0_usize)],
+            "the importer checks against the base on disk"
+        );
+        let opened = published(&mut server, &open("base.gandr", declares_uno));
+        assert!(
+            matches!(opened.as_slice(), [(Some(own), 0_usize), (Some(importing), errors)]
+                if *own == uri("base.gandr") && *importing == uri("importer.gandr") && *errors > 0),
+            "the base opened without `one` republishes its importer, refused: {opened:?}"
+        );
+        let watched = serde_json::json!({"jsonrpc": "2.0", "method": "workspace/didChangeWatchedFiles",
+            "params": {"changes": [{"uri": uri("base.gandr"), "type": 2_u8}]}});
+        assert_eq!(
+            published(&mut server, &watched),
+            [],
+            "a held file changed on disk rechecks nothing"
+        );
+        let edit = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+            "textDocument": {"uri": uri("base.gandr"), "version": 2_i32},
+            "contentChanges": [{"text": declares_one}]}});
+        assert_eq!(
+            published(&mut server, &edit),
+            [
+                (Some(uri("base.gandr")), 0_usize),
+                (Some(uri("importer.gandr")), 0_usize)
+            ],
+            "the base edited back to `one` republishes its importer, clean"
+        );
+        std::fs::write(&base, declares_uno).expect("the base is rewritten");
+        let close = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didClose", "params": {
+            "textDocument": {"uri": uri("base.gandr")}}});
+        let closed = published(&mut server, &close);
+        assert!(
+            matches!(closed.as_slice(), [(Some(own), 0_usize), (Some(importing), errors)]
+                if *own == uri("base.gandr") && *importing == uri("importer.gandr") && *errors > 0),
+            "once the base is closed its importer reads the disk, without `one`: {closed:?}"
+        );
+        assert_eq!(
+            published(&mut server, &open("base.gandr", declares_uno)),
+            [(Some(uri("base.gandr")), 0_usize)],
+            "a copy opened as the disk holds it rechecks no importer"
+        );
+        assert_eq!(
+            published(&mut server, &close),
+            [(Some(uri("base.gandr")), 0_usize)],
+            "a copy closed as the disk holds it rechecks no importer"
         );
         let _removed = std::fs::remove_dir_all(&directory);
     }

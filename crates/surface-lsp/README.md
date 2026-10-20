@@ -36,7 +36,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - The envelope: requests, notifications and responses told apart; a body outside the decoder-supported JSON fragment answered with a parse error, including invalid UTF-8 and exceeded number or nesting limits; a decoded batch or other invalid message refused as an invalid request.
 - Published diagnostics: one per diagnostic the model builds for the document's step, at its lead range, under its code, with its message and related information; republished at every change, cleared at close.
 - The `gandr.diagnostics.verbosity` and `quiet` settings, read at `initialize` and at each `workspace/didChangeConfiguration`: a new verbosity republishes open documents; `quiet` is how long a diagnostic of the form being typed waits ([`quiet`](src/quiet.rs)).
-- File watching: a changed `.gandr` file rechecks every open document whose imports name it, whether the client or the hub watched it.
+- Imports read an editor's copy before the disk: an edit or a changed `.gandr` file rechecks every open document whose imports name it.
 - Semantic tokens for the whole document and for a range, and `TOKEN_TYPES` and `TOKEN_MODIFIERS`, the legend.
 - Completion: the binders in scope, the import closure's names and the keywords the slot at the cursor admits, each starting with the word typed.
 - Cancellation: a request whose `$/cancelRequest`, or a change of the document it reads, was read before the request was handled is answered `RequestCancelled` or `ContentModified` without being run; frames are read ahead of the one being handled, up to `exit` ([`quiet`](src/quiet.rs)).
