@@ -27,7 +27,7 @@ fn advertised_capabilities_name_the_token_legend()
                     "full": true,
                     "range": true,
                 },
-                "completionProvider": {"resolveProvider": false},
+                "completionProvider": {"resolveProvider": true},
                 "inlineCompletionProvider": true,
                 "documentSymbolProvider": true,
                 "foldingRangeProvider": true,
@@ -53,6 +53,7 @@ fn advertised_capabilities_name_the_token_legend()
         "the legend the crate exports, and every request served"
     );
 }
+
 /// A formatter sink refusing every write.
 struct Refuses;
 
