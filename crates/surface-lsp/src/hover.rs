@@ -22,7 +22,12 @@
 //! - **A member a theory, a family or a codata declaration writes** among its
 //!   own tiles — on its name when nothing inside it is typed, and anywhere in
 //!   it when the only entry there is its holder's — as written, without the
-//!   body a rule fills; an `include` likewise.
+//!   body a rule fills.
+//! - **A use of a declaration the document writes that no entry types** — the
+//!   theory an `include` or a `Model(…)` names — as that declaration's name
+//!   answers, about the use; an `include`'s keyword likewise, about the
+//!   `include`, and an `include` of a theory the document does not write as
+//!   written.
 //! - **The innermost typed node holding the cursor**, about its span: a term
 //!   with its type, and, when an outer judgement checked it against a type
 //!   spelled otherwise, that type after it; a binder with its name and the type
@@ -419,22 +424,25 @@ impl Style
 ///   table holds one, else the declaration as written, a theory and a module
 ///   always so; then the documentation the session filed for the form after a
 ///   blank line. On a member's name with no entry inside the member, the member
-///   as written, about the name. Else, in a run a theory writes that declares
-///   nothing, with no entry inside it, the run as written, about it. Else, on
-///   the innermost typed node holding the position: inside a member whose
-///   entries are none of them there, the member as written, about the member;
-///   when the node spans a whole declaration — its body's term written over the
-///   declaration, or a module's instantiation written over the module (#405) —
-///   as on that declaration's name, about its head when the position is there
-///   and the node's range otherwise; else a block of its type — a binder's
-///   name, a written type's text or a term written as one name before ` : ` —
-///   and, for a term checked against a type spelled otherwise, that type in a
-///   second block, about the node's range. Else, in the head of a declaration —
-///   from its form's start to the brace opening its own body, a member's
-///   keyword to its name — as on its name, about the head, and in the
-///   attributes before the head, about them. Absent elsewhere. Every type is
-///   spelled in `style`'s form, and every block is written as [`Code`] writes
-///   it in `style`'s markup.
+///   as written, about the name. Else, on a use of a declaration the text
+///   writes with no entry inside the use — the theory an `include` or a
+///   `Model(…)` names — as on that declaration's name, about the use; in a run
+///   a theory writes that declares nothing, with no entry inside it, the same
+///   for the first such use in the run, about the run, and else the run as
+///   written, about it. Else, on the innermost typed node holding the position:
+///   inside a member whose entries are none of them there, the member as
+///   written, about the member; when the node spans a whole declaration — its
+///   body's term written over the declaration, or a module's instantiation
+///   written over the module (#405) — as on that declaration's name, about its
+///   head when the position is there and the node's range otherwise; else a
+///   block of its type — a binder's name, a written type's text or a term
+///   written as one name before ` : ` — and, for a term checked against a type
+///   spelled otherwise, that type in a second block, about the node's range.
+///   Else, in the head of a declaration — from its form's start to the brace
+///   opening its own body, a member's keyword to its name — as on its name,
+///   about the head, and in the attributes before the head, about them. Absent
+///   elsewhere. Every type is spelled in `style`'s form, and every block is
+///   written as [`Code`] writes it in `style`'s markup.
 /// - provides: the answer to `textDocument/hover`.
 /// - fails: never; an absence names its reason.
 /// - panics: none.
@@ -448,10 +456,11 @@ impl Style
 ///   comment and a position past the last declaration are asserted at their
 ///   exact answers, and so is each position a fixed defect hovered wrongly — a
 ///   decode and a constructor written in a type, a type under a static binder,
-///   a module's instantiation and two pattern tiles; a theory, its `include`, a
-///   module's name and ascription, a type alias, a shape and a circuit rule as
-///   written; a declaration and a written type in HTML, coloured by their
-///   roles.
+///   a module's instantiation and two pattern tiles; a theory, an `include` of
+///   an unwritten theory, a module's name and ascription, a type alias, a shape
+///   and a circuit rule as written; an `include`'s keyword and name and a
+///   `Model(…)`'s theory as the theory they name; a declaration and a written
+///   type in HTML, coloured by their roles.
 /// - witness: `hover::tests::a_declaration_hovers_its_type_and_documentation`
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::each_member_hovers_its_own_type`
@@ -461,6 +470,7 @@ impl Style
 /// - witness: `hover::tests::a_type_under_a_static_binder_hovers_its_text_404`
 /// - witness: `hover::tests::a_module_instantiation_answers_itself_never_a_member_s_type_405`
 /// - witness: `hover::tests::a_theory_and_a_module_hover_as_written_1122_1124`
+/// - witness: `hover::tests::an_include_and_a_model_hover_the_theory_they_name_1123`
 /// - witness: `hover::tests::the_parentheses_around_an_inverted_letter_answer_the_cons_pattern_408`
 /// - witness: `hover::tests::a_sum_pattern_s_positional_label_answers_as_a_label_408`
 #[spec(ensures: |ref ret| match *ret {
@@ -528,8 +538,8 @@ pub fn hover<Store, Blocks>(
             Written::Member => {},
         }
     }
-    // A run a theory writes that declares nothing — an `include` — answers as
-    // written where nothing inside it is typed.
+    // A run a theory writes that declares nothing — an `include` — answers the
+    // theory it names, below, else as written, where nothing inside it is typed.
     let at = usize::from(offset);
     let unnamed = forms()
         .flat_map(|form| form.members.iter())
@@ -543,6 +553,40 @@ pub fn hover<Store, Blocks>(
                         && usize::from(found.symbol.range.start.byte(&index)) == start
                 })
         });
+    // A name that refers to a declaration this document writes and that no
+    // entry types — the theory an `include` or a `Model(…)` names — answers as
+    // that declaration's own name does, about the name; an `include`'s keyword
+    // answers as the name after it, about the run.
+    let referent_at = |byte: usize| match table.referent(ByteOffset::from(byte)) {
+        Maybe::Present(found) => Some(found),
+        Maybe::Absent(_) => None,
+    };
+    let referred = referent_at(at).or_else(|| {
+        let (start, end) = unnamed?;
+        (start .. end).find_map(referent_at)
+    });
+    if let Some((span, referent)) = referred
+        && referent.source() == table.own_source()
+        && !entered.is_some_and(|(from, to)| {
+            usize::from(span.start()) <= from && to <= usize::from(span.end())
+        })
+        && let Ok(named) = Range::of_bytes(
+            &index,
+            RenderOffset::from(usize::from(referent.named().start())),
+            RenderOffset::from(usize::from(referent.named().end())),
+        )
+        && let Some(declaration) = forms().find(|form| form.symbol.selection_range == named)
+        && let Some((start, end)) = if span.start() <= offset && offset <= span.end() {
+            Some((usize::from(span.start()), usize::from(span.end())))
+        }
+        else {
+            unnamed
+        }
+        && let Ok(about) =
+            Range::of_bytes(&index, RenderOffset::from(start), RenderOffset::from(end))
+    {
+        return Maybe::Present(declared(session, table, declaration, about, &quoted, style));
+    }
     if let Some((start, end)) = unnamed
         && let Ok(range) =
             Range::of_bytes(&index, RenderOffset::from(start), RenderOffset::from(end))
@@ -1733,23 +1777,11 @@ mod tests
         let rule = fenced(SourceText::from(
             "rule spin : (data stream : Nat) ==> (out : Nat)",
         ));
-        let rows: [Row<'_>; 10] = [
+        let rows: [Row<'_>; 8] = [
             ("a theory's name", model, (6, 8), Ok(monoid.clone())),
             ("a theory's keyword", model, (6, 2), Ok(monoid)),
-            (
-                "an include's keyword",
-                model,
-                (7, 3),
-                Ok(fenced(SourceText::from("include Semigroup"))),
-            ),
-            (
-                "an include's name",
-                model,
-                (7, 12),
-                Ok(fenced(SourceText::from("include Semigroup"))),
-            ),
             ("a module's name", model, (12, 8), Ok(module.clone())),
-            ("a module's ascription", model, (12, 22), Ok(module)),
+            ("a module's ascription", model, (12, 16), Ok(module)),
             (
                 "a type member",
                 model,
@@ -1759,6 +1791,38 @@ mod tests
             ("a shape's name", shaped, (1, 9), Ok(shape.clone())),
             ("a shape's face", shaped, (2, 5), Ok(shape)),
             ("a circuit rule's name", shaped, (12, 8), Ok(rule)),
+        ];
+        for (position, text, (line, character), expected) in rows {
+            assert_eq!(
+                shown(SourceText::from(text), (line.into(), character.into())),
+                expected,
+                "{position}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_include_and_a_model_hover_the_theory_they_name_1123()
+    {
+        let model = "theory Semigroup {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> \
+                     M;\n}\n\ntheory Monoid {\n  include Semigroup;\n  include Unwritten;\n  \
+                     oper one : () --> M;\n}\n\nmodule Ints : Model(Semigroup) {\n  type M = \
+                     Integer;\n  def mul(x : Integer, y : Integer) -> -F Integer { return y \
+                     }\n}\n";
+        let semigroup = Ok(fenced(SourceText::from(
+            "theory Semigroup {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}",
+        )));
+        let rows: [Row<'_>; 5] = [
+            ("the theory's own name", model, (0, 9), semigroup.clone()),
+            ("an include's name", model, (6, 12), semigroup.clone()),
+            ("an include's keyword", model, (6, 3), semigroup.clone()),
+            ("a model's theory", model, (11, 22), semigroup),
+            (
+                "an include of a theory nowhere written",
+                model,
+                (7, 12),
+                Ok(fenced(SourceText::from("include Unwritten"))),
+            ),
         ];
         for (position, text, (line, character), expected) in rows {
             assert_eq!(
