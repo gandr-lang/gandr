@@ -56,6 +56,7 @@ use crate::outline::Declarer;
 use crate::outline::Skeleton;
 use crate::outline::declarations;
 use crate::outline::folds;
+use crate::outline::runs;
 use crate::position::Position;
 use crate::position::Range;
 use crate::protocol::DocumentLink;
@@ -64,6 +65,7 @@ use crate::protocol::DocumentSymbols;
 use crate::protocol::DocumentUri;
 use crate::protocol::FoldingRange;
 use crate::protocol::SelectionRange;
+use crate::protocol::SymbolKind;
 use crate::protocol::TextEdit;
 use crate::recheck::grammar;
 use crate::recheck::roles;
@@ -100,10 +102,14 @@ pub struct Declaration
     pub symbol: DocumentSymbol,
     /// Its head: from the declaring form's own start — past any attribute
     /// block before it — to the brace opening the form's own body, or to the
-    /// symbol's end for a form without one; a member's whole range.
+    /// symbol's end for a form without one; a member's keyword and name.
     pub head: Range,
     /// Whether a form of its own writes it, or the form holding it.
     pub written: Written,
+    /// For a theory, the span of each member it writes between its braces,
+    /// an `include` among them, in source order; none for another
+    /// declaration.
+    pub members: Vec<ByteSpan>,
 }
 
 /// What writes a declaration.
@@ -249,12 +255,22 @@ impl Reading
                     Declarer::Form(at) => Declaration {
                         key: tree.key(at),
                         head: head(&tree, &index, at, &symbol),
+                        members: match symbol.kind {
+                            SymbolKind::INTERFACE => {
+                                runs(&tree, at).into_iter().map(|run| run.span).collect()
+                            },
+                            _ => Vec::new(),
+                        },
                         symbol,
                         written: Written::Form,
                     },
                     Declarer::Member(..) => Declaration {
                         key: None,
-                        head: symbol.range,
+                        head: Range {
+                            start: symbol.range.start,
+                            end: symbol.selection_range.end,
+                        },
+                        members: Vec::new(),
                         symbol,
                         written: Written::Member,
                     },

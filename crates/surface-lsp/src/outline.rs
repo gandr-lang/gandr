@@ -265,23 +265,110 @@ fn kind_of(
     }
 }
 
-/// Push onto `found` a symbol for each member written between the first `{`
-/// among the own tiles of the form at `at` and the `}` closing it, held by
-/// the symbol last in `found`, the form's own.
+/// One run of a form's own children between its outermost braces.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Run
+{
+    /// From its first child to the `;` ending it, or to its last child
+    /// before the closing `}`.
+    pub span: ByteSpan,
+    /// Its own tiles at the braces' depth, in source order.
+    tiles: Vec<NodeIndex>,
+}
+
+/// The runs of the form at `at`: its own children between the first `{`
+/// among its own tiles and the `}` closing it, cut at each `;` the braces hold
+/// directly.
+///
+/// # Specification
+/// - requires: nothing; a form with no braces has no runs.
+/// - ensures: one run per stretch of the form's own children, layout and
+///   documentation aside, ended by a `;` at the braces' depth — which it
+///   includes — or by the closing `}`, in source order; a brace a run writes
+///   nests, so a `shape`'s faces stay in its run. An empty stretch is no run.
+/// - provides: the members a theory, a family or a codata declaration writes,
+///   for its symbols and its hover.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`declarations`], and a theory's hover lists its
+///   members, an `include` among them.
+/// - witness: `outline::tests::a_theory_holds_its_members`
+/// - witness: `hover::tests::a_theory_and_a_module_hover_as_written_1122_1124`
+#[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(pair, [first, second] if first.span.end() <= second.span.start())))]
+#[must_use]
+pub fn runs(
+    tree: &SyntaxTree<'_>,
+    at: NodeIndex,
+) -> Vec<Run>
+{
+    let mut runs = Vec::new();
+    let mut depth = 0_usize;
+    let mut written: Option<ByteSpan> = None;
+    let mut tiles: Vec<NodeIndex> = Vec::new();
+    for child in tree.children(at) {
+        let Some(node) = tree.node(child)
+        else {
+            continue;
+        };
+        let tile = match node.label() {
+            NodeLabel::Space | NodeLabel::Doc => continue,
+            NodeLabel::Tile(_) => true,
+            NodeLabel::Meld(_)
+            | NodeLabel::Wald
+            | NodeLabel::Grout { .. }
+            | NodeLabel::GhostClose { .. } => false,
+        };
+        let text = tree.fragment(child).filter(|_| tile).map(<&str>::from);
+        match (depth, text) {
+            (0, Some("{")) => {
+                depth = 1;
+                continue;
+            },
+            (0, _) => continue,
+            (1, Some(closer @ (";" | "}"))) => {
+                let span = match closer {
+                    ";" => written.map(|run| run.join(node.span())),
+                    _ => written,
+                };
+                if let Some(span) = span {
+                    runs.push(Run {
+                        span,
+                        tiles: core::mem::take(&mut tiles),
+                    });
+                }
+                written = None;
+                if closer == "}" {
+                    break;
+                }
+                continue;
+            },
+            (_, Some("{")) => depth = depth.saturating_add(1),
+            (_, Some("}")) => depth = depth.saturating_sub(1),
+            _ => {},
+        }
+        let span = node.span();
+        written = Some(written.map_or(span, |run| run.join(span)));
+        if depth == 1 && tile {
+            tiles.push(child);
+        }
+    }
+    runs
+}
+
+/// Push onto `found` a symbol for each member the form at `at` writes among
+/// its own tiles, held by the symbol last in `found`, the form's own.
 ///
 /// # Specification
 /// - requires: the form at `at` declares the symbol last in `found`.
-/// - ensures: the members are the runs of the form's own children between its
-///   outermost braces, each ended by a `;` the braces hold directly or by the
-///   closing `}`; a brace a member writes nests, so a `shape`'s faces stay in
-///   its member. A member's name is its first own tile at the braces' depth
-///   that the highlighter classifies as a definition, a type, a constructor or
-///   a member, and its keyword the first keyword before that name. A named
-///   member pushes one symbol, unless its keyword is `include`, which names a
-///   theory declared elsewhere: its range from its first child to its `;`, its
-///   selection range the name's, its kind [`member_kind`]'s, held by the form's
-///   symbol and beside [`Declarer::Member`] of `at`. Layout and documentation
-///   start no member.
+/// - ensures: one symbol per run of [`runs`] that is named: its name is its
+///   first own tile at the braces' depth that the highlighter classifies as a
+///   definition, a type, a constructor or a member, and its keyword the first
+///   keyword before that name. A run whose keyword is `include`, which names a
+///   theory declared elsewhere, pushes none. A symbol's range is its run's, its
+///   selection range the name's, its kind [`member_kind`]'s; it is held by the
+///   form's symbol and beside [`Declarer::Member`] of `at`.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -313,59 +400,14 @@ fn members(
     else {
         return;
     };
-    let mut depth = 0_usize;
-    let mut written: Option<ByteSpan> = None;
-    let mut keyword: Option<SourceFragment<'_>> = None;
-    let mut name: Option<(NodeIndex, HlRole)> = None;
-    for child in tree.children(at) {
-        let Some(node) = tree.node(child)
-        else {
-            continue;
-        };
-        let tile = match node.label() {
-            NodeLabel::Space | NodeLabel::Doc => continue,
-            NodeLabel::Tile(tile) => Some(tile),
-            NodeLabel::Meld(_)
-            | NodeLabel::Wald
-            | NodeLabel::Grout { .. }
-            | NodeLabel::GhostClose { .. } => None,
-        };
-        let text = tile.and_then(|_| tree.fragment(child)).map(<&str>::from);
-        match (depth, text) {
-            (0, Some("{")) => {
-                depth = 1;
+    for run in runs(tree, at) {
+        let mut keyword: Option<SourceFragment<'_>> = None;
+        let mut name: Option<(NodeIndex, HlRole)> = None;
+        for &child in &run.tiles {
+            let Some(NodeLabel::Tile(tile)) = tree.node(child).map(Node::label)
+            else {
                 continue;
-            },
-            (0, _) => continue,
-            (1, Some(closer @ (";" | "}"))) => {
-                let span = match closer {
-                    ";" => written.map(|run| run.join(node.span())),
-                    _ => written,
-                };
-                if let Some(span) = span
-                    && let Some(symbol) = member(tree, index, span, keyword, name)
-                {
-                    found.push((Declarer::Member(at, span), DocumentSymbol {
-                        holder: Some(holder),
-                        ..symbol
-                    }));
-                }
-                (written, keyword, name) = (None, None, None);
-                if closer == "}" {
-                    break;
-                }
-                continue;
-            },
-            (_, Some("{")) => depth = depth.saturating_add(1),
-            (_, Some("}")) => depth = depth.saturating_sub(1),
-            _ => {},
-        }
-        let span = node.span();
-        written = Some(written.map_or(span, |run| run.join(span)));
-        if depth == 1
-            && name.is_none()
-            && let Some(tile) = tile
-        {
+            };
             match roles.role_of(tile) {
                 Ok(HlRole::Keyword) if keyword.is_none() => keyword = tree.fragment(child),
                 Ok(
@@ -374,9 +416,18 @@ fn members(
                     | HlRole::Type
                     | HlRole::Constructor
                     | HlRole::Member),
-                ) => name = Some((child, role)),
+                ) => {
+                    name = Some((child, role));
+                    break;
+                },
                 Ok(_) | Err(_) => {},
             }
+        }
+        if let Some(symbol) = member(tree, index, run.span, keyword, name) {
+            found.push((Declarer::Member(at, run.span), DocumentSymbol {
+                holder: Some(holder),
+                ..symbol
+            }));
         }
     }
 }
