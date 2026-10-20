@@ -625,7 +625,7 @@ where
 /// - witness: `tests::acceptance::the_collapse_is_a_closed_form_at_three_depths`
 /// - witness: `tests::acceptance::dependent_checking_agrees_memoized_and_memoless`
 #[spec(requires: arena.value_type(declaration.declared_id()).is_some()
-        && match *declaration.content() { DeclarationContent::Def { body, .. } => arena.value(body).is_some(), DeclarationContent::Data { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true })]
+        && match *declaration.content() { DeclarationContent::Def { body, .. } => arena.value(body).is_some(), DeclarationContent::Data { .. } | DeclarationContent::Codata { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true })]
 fn check_with<Memo>(
     arena: &mut TermArena,
     declaration: &Declaration,
@@ -665,7 +665,7 @@ where
 /// - witness: `tests::acceptance::a_poisoned_term_entry_turns_a_refusal_into_an_acceptance`
 /// - witness: `tests::acceptance::a_poisoned_type_entry_turns_admission_into_a_universe_refusal`
 #[spec(requires: arena.value_type(declaration.declared_id()).is_some()
-        && match *declaration.content() { DeclarationContent::Def { body, .. } => arena.value(body).is_some(), DeclarationContent::Data { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true })]
+        && match *declaration.content() { DeclarationContent::Def { body, .. } => arena.value(body).is_some(), DeclarationContent::Data { .. } | DeclarationContent::Codata { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true })]
 fn check_in_session<Memo>(
     arena: &mut TermArena,
     declaration: &Declaration,

@@ -247,6 +247,7 @@ fn children(
             } => vec![A(a), C(b)],
             &CompType::Element { code: a, .. } => vec![V(a)],
             &CompType::With(a, b) => vec![C(a), C(b)],
+            &CompType::Codata { ref arguments, .. } => arguments.iter().copied().map(V).collect(),
         },
     }
 }
@@ -654,6 +655,7 @@ fn translate(
                     CompType::With(first, second) => {
                         core.comp_type_with(comp_types[&first], comp_types[&second])
                     },
+                    CompType::Codata { .. } => panic!("the fixtures name no codata type"),
                 };
                 comp_types.insert(id, ty);
             },

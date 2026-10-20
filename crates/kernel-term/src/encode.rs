@@ -216,7 +216,7 @@ impl Interner
 /// - witness: `tests::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
 #[inline]
 #[must_use]
-#[spec(requires: declarations.iter().all(|marked| { let declaration = marked.declaration(); arena.value_type(declaration.declared_id()).is_some() && match *declaration.content() { DeclarationContent::Def { body, .. } => arena.value(body).is_some(), DeclarationContent::Data { ref parameters, ref constructors, .. } => parameters.iter().chain(constructors.iter().flatten()).all(|id| arena.value_type(*id).is_some()), DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true } }),
+#[spec(requires: declarations.iter().all(|marked| { let declaration = marked.declaration(); arena.value_type(declaration.declared_id()).is_some() && match *declaration.content() { DeclarationContent::Def { body, .. } => arena.value(body).is_some(), DeclarationContent::Data { ref parameters, ref constructors, .. } => parameters.iter().chain(constructors.iter().flatten()).all(|id| arena.value_type(*id).is_some()), DeclarationContent::Codata { ref parameters, ref observations, .. } => parameters.iter().all(|id| arena.value_type(*id).is_some()) && observations.iter().all(|id| arena.comp_type(*id).is_some()), DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true } }),
 ensures: |ret| ret.as_image().as_ref().starts_with(tags::MAGIC.as_slice())
     && ret
         .as_image()
@@ -369,9 +369,11 @@ fn encode_minted_atom_table(
 ///   possibly zero, then the sort's position, the cell count and each cell's
 ///   two endpoints as rule sides; an indexed data declaration writes
 ///   [`tags::KIND_DATA_INDEXED`] and closes with the index count, each index
-///   classifier's root and each constructor's result roots, and no rules;
-///   abstract types write their kind and representation roots and the extent of
-///   their scope, an open scope as `remaining`, and an interfaced one writes
+///   classifier's root and each constructor's result roots, and no rules; a
+///   codata declaration writes [`tags::KIND_CODATA`] and closes with its
+///   parameter count and roots, then its observation count and roots; abstract
+///   types write their kind and representation roots and the extent of their
+///   scope, an open scope as `remaining`, and an interfaced one writes
 ///   [`tags::KIND_ABSTRACT_INTERFACED`] and closes with its relation's and its
 ///   reflexivity's roots; the other kinds write one root and no slots.
 /// - provides: one segment with cross-declaration sharing. The predicate checks
@@ -397,14 +399,15 @@ fn encode_minted_atom_table(
 /// - witness: `encode::tests::a_type_of_words_closes_its_segment_with_its_cells`
 /// - witness: `encode::tests::an_interfaced_atom_closes_its_segment_with_its_interface`
 /// - witness: `encode::tests::an_indexed_data_declaration_closes_its_segment_with_its_indices`
+/// - witness: `encode::tests::a_codata_declaration_closes_its_segment_with_its_observations`
 #[spec(
     captures: entry = (out.as_image().as_ref().len(), interner.by_content.len(), interner.next),
     ensures: |ret| { let image = out.as_image();
         let bytes = image.as_ref();
         bytes.get(entry.0).copied() == Some(u8::from(match marked.mark() { AdmissionMark::Checked => tags::ADMISSION_CHECKED, AdmissionMark::UncheckedBypass => tags::ADMISSION_UNCHECKED }))
-            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { ref indices, .. } if !indices.is_empty() => tags::KIND_DATA_INDEXED, DeclarationContent::Data { .. } if marked.declaration().presentation().cells().is_some() => tags::KIND_DATA_WORDS, DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Def { .. } if !marked.declaration().laws().is_empty() => tags::KIND_DEF_LAWFUL, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { interface: Maybe::Present(_), .. } => tags::KIND_ABSTRACT_INTERFACED, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
+            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { ref indices, .. } if !indices.is_empty() => tags::KIND_DATA_INDEXED, DeclarationContent::Data { .. } if marked.declaration().presentation().cells().is_some() => tags::KIND_DATA_WORDS, DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Codata { .. } => tags::KIND_CODATA, DeclarationContent::Def { .. } if !marked.declaration().laws().is_empty() => tags::KIND_DEF_LAWFUL, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { interface: Maybe::Present(_), .. } => tags::KIND_ABSTRACT_INTERFACED, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
             && interner.by_node.contains_key(&AnyNode::ValueType(marked.declaration().declared_id()))
-            && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => interner.by_node.contains_key(&AnyNode::Value(body)), DeclarationContent::AbstractType { interface: Maybe::Present(interface), .. } => interner.by_node.contains_key(&AnyNode::Value(interface.relation())) && interner.by_node.contains_key(&AnyNode::Value(interface.reflexivity())), DeclarationContent::Data { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true }
+            && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => interner.by_node.contains_key(&AnyNode::Value(body)), DeclarationContent::Codata { ref observations, .. } => observations.iter().all(|id| interner.by_node.contains_key(&AnyNode::CompType(*id))), DeclarationContent::AbstractType { interface: Maybe::Present(interface), .. } => interner.by_node.contains_key(&AnyNode::Value(interface.relation())) && interner.by_node.contains_key(&AnyNode::Value(interface.reflexivity())), DeclarationContent::Data { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true }
             && marked.declaration().related().iter().all(|related| interner.by_node.contains_key(&AnyNode::Value(related.left)) && interner.by_node.contains_key(&AnyNode::Value(related.right)))
             && interner.by_content.len() >= entry.1
             && u32::from(interner.next) == u32::from(entry.2).saturating_add(u32::try_from(interner.by_content.len().saturating_sub(entry.1)).unwrap_or(u32::MAX)) },
@@ -434,6 +437,7 @@ fn encode_declaration(
             tags::KIND_DATA
         },
         DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED,
+        DeclarationContent::Codata { .. } => tags::KIND_CODATA,
         DeclarationContent::Def { .. } if !declaration.laws().is_empty() => tags::KIND_DEF_LAWFUL,
         DeclarationContent::Def { .. } if declaration.related().is_empty() => tags::KIND_DEF,
         DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING,
@@ -452,6 +456,7 @@ fn encode_declaration(
     let mut index_roots = Vec::new();
     let mut related_roots = Vec::new();
     let mut interface_roots = None;
+    let mut observation_roots = Vec::new();
     let (root_declared, root_body, root_sealed) = match *content {
         DeclarationContent::Data {
             kind,
@@ -483,6 +488,27 @@ fn encode_declaration(
                     AnyNode::Value(*result),
                 ));
             }
+            (declared, None, None)
+        },
+        // A codata declaration writes its kind as its declared root, then its
+        // parameter roots in the data roots' first group and its observations'
+        // computation-type roots after them.
+        DeclarationContent::Codata {
+            kind,
+            ref parameters,
+            ref observations,
+        } => {
+            let declared = intern(arena, interner, &mut segment, AnyNode::ValueType(kind));
+            data_roots.push(
+                parameters
+                    .iter()
+                    .map(|id| intern(arena, interner, &mut segment, AnyNode::ValueType(*id)))
+                    .collect::<Vec<_>>(),
+            );
+            observation_roots = observations
+                .iter()
+                .map(|id| intern(arena, interner, &mut segment, AnyNode::CompType(*id)))
+                .collect();
             (declared, None, None)
         },
         DeclarationContent::Def { declared, body } => {
@@ -577,6 +603,17 @@ fn encode_declaration(
         if !indices.is_empty() {
             out.put_uvarint(WireU64::from(WireUsize::from(indices.len())));
             for root in &index_roots {
+                out.put_uvarint(WireU64::from(u64::from(u32::from(*root))));
+            }
+        }
+    }
+    if let DeclarationContent::Codata { .. } = *content {
+        for group in [
+            data_roots.first().map_or(&[][..], Vec::as_slice),
+            &observation_roots,
+        ] {
+            out.put_uvarint(WireU64::from(WireUsize::from(group.len())));
+            for root in group {
                 out.put_uvarint(WireU64::from(u64::from(u32::from(*root))));
             }
         }
@@ -970,6 +1007,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&CompType::Pi { .. }) => tags::NODE_CT_PI,
             Some(&CompType::Element { .. }) => tags::NODE_CT_ELEMENT,
             Some(&CompType::With(..)) => tags::NODE_CT_WITH,
+            Some(&CompType::Codata { .. }) => tags::NODE_CT_CODATA,
         },
         AnyNode::Value(id) => match arena.value(id) {
             Some(&Value::Constructor { .. }) => tags::NODE_V_CONSTRUCTOR,
@@ -1123,6 +1161,14 @@ fn encode_entry(
                 encode_level(&mut out, target);
             },
             Some(&CompType::With(..)) => out.put_tag(tags::NODE_CT_WITH),
+            Some(&CompType::Codata {
+                declaration,
+                ref arguments,
+            }) => {
+                out.put_tag(tags::NODE_CT_CODATA);
+                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(declaration))));
+                out.put_uvarint(WireU64::from(WireUsize::from(arguments.len())));
+            },
         },
         AnyNode::Value(id) => match arena.value(id) {
             None => {
@@ -2506,6 +2552,85 @@ mod tests
             crate::decode::decode(ArtifactImage::from(relating.as_slice())),
             Err(crate::error::DecodeError::Malformed {
                 site: crate::error::MalformedSite::TrailingBytes,
+            })
+        );
+    }
+
+    #[test]
+    fn a_codata_declaration_closes_its_segment_with_its_observations()
+    {
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let kind = builder
+            .arena()
+            .value_type_universe(GroundSort::Computation, Level::zero());
+        let parameter = builder
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        // `Stream(a)`: `head : F Integer` and `tail : Stream(a)`.
+        let integer = builder.arena().value_type_base(BaseType::Integer);
+        let head = builder.arena().comp_type_returner(integer);
+        let own = builder.arena().value_variable(DeBruijnIndex::from(0_u32));
+        let tail = builder
+            .arena()
+            .comp_type_codata(ConstantIndex::from(0_usize), alloc::vec![own]);
+        let codata = builder.codata(
+            LevelSignature::monomorphic(),
+            alloc::vec![parameter],
+            alloc::vec![head, tail],
+            kind,
+        );
+        let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, codata)];
+        let bytes = super::encode(&arena, &declarations);
+        let image = bytes.as_image();
+        // The kind follows the header, the empty atom table and the admission
+        // mark.
+        let kind_at = 9;
+        assert_eq!(
+            image.as_ref().get(kind_at).copied(),
+            Some(u8::from(crate::tags::KIND_CODATA))
+        );
+        let decoded = crate::decode::decode(ArtifactImage::from(image.as_ref()))
+            .expect("a codata declaration decodes");
+        let declaration = decoded.declarations().first().expect("one codata");
+        let crate::decl::DeclarationContent::Codata {
+            ref parameters,
+            ref observations,
+            ..
+        } = *declaration.declaration().content()
+        else {
+            panic!("the declaration decodes as codata");
+        };
+        assert_eq!(parameters.len(), 1);
+        let read = |at: usize| {
+            let id = observations.get(at)?;
+            decoded.arena().comp_type(*id)
+        };
+        assert!(
+            matches!(read(0), Some(&crate::types::CompType::Returner(_)))
+                && matches!(
+                    read(1),
+                    Some(&crate::types::CompType::Codata { declaration, ref arguments })
+                        if usize::from(declaration) == 0 && arguments.len() == 1
+                ),
+            "the observations are read back in order, the second naming the declaration"
+        );
+        assert_eq!(
+            super::encode(decoded.arena(), decoded.declarations())
+                .as_image()
+                .as_ref(),
+            image.as_ref()
+        );
+        // The data kind over the same bytes reads the observation roots as a
+        // constructor's fields, and refuses them as computation types.
+        let mut plain = image.as_ref().to_vec();
+        if let Some(kind) = plain.get_mut(kind_at) {
+            *kind = u8::from(crate::tags::KIND_DATA);
+        }
+        assert_eq!(
+            crate::decode::decode(ArtifactImage::from(plain.as_slice())),
+            Err(crate::error::DecodeError::Malformed {
+                site: crate::error::MalformedSite::Polarity,
             })
         );
     }

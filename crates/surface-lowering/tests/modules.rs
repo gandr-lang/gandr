@@ -9,6 +9,7 @@
 //! them as test code rather than as shipping code.
 
 mod functors;
+
 mod models;
 
 use alloc::sync::Arc;
@@ -1304,6 +1305,7 @@ fn modules_lower_to_named_member_declarations()
                 DeclarationContent::Def { body, .. } => artifact.arena().value(body).cloned(),
                 DeclarationContent::Axiom { .. }
                 | DeclarationContent::Data { .. }
+                | DeclarationContent::Codata { .. }
                 | DeclarationContent::AbstractType { .. } => None,
             };
             let segments = marked

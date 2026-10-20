@@ -4539,6 +4539,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     Some(&CompType::With(left, right)) => {
                         work.extend([AnyNode::CompType(left), AnyNode::CompType(right)]);
                     },
+                    Some(&CompType::Codata { ref arguments, .. }) => {
+                        work.extend(arguments.iter().copied().map(AnyNode::Value));
+                    },
                     None => return Rigidity::Flexible,
                 },
             }

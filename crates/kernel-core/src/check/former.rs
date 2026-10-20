@@ -202,7 +202,8 @@ pub(super) fn resolve<'session>(
                         results,
                         kind,
                     }),
-                    DeclarationContent::Def { .. }
+                    DeclarationContent::Codata { .. }
+                    | DeclarationContent::Def { .. }
                     | DeclarationContent::Axiom { .. }
                     | DeclarationContent::AbstractType { .. } => {
                         Err(KernelError::NotADataType { index })
@@ -215,7 +216,9 @@ pub(super) fn resolve<'session>(
             ))
             | Maybe::Absent(_) => signature(judgement.entries, index),
         },
-        super::Block::Inside { .. } | super::Block::Outside => signature(judgement.entries, index),
+        super::Block::Inside { .. } | super::Block::Codata { .. } | super::Block::Outside => {
+            signature(judgement.entries, index)
+        },
     }
 }
 

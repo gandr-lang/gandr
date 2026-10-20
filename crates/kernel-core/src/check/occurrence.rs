@@ -1123,6 +1123,13 @@ where
                     pending.push((AnyNode::CompType(left), reach));
                     pending.push((AnyNode::CompType(right), reach));
                 },
+                Some(&CompType::Codata { ref arguments, .. }) => {
+                    pending.extend(
+                        arguments
+                            .iter()
+                            .map(|argument| (AnyNode::Value(*argument), reach.term())),
+                    );
+                },
                 None => {},
             },
             AnyNode::Value(id) => match arena.value(id) {

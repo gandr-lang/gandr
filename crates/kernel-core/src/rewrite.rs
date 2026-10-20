@@ -1854,7 +1854,7 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
     AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Tuple(ref components) => components.len(), Value::Higher { ref evidence, .. } => evidence.len(), Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3), Value::QuantifiedEvaluation { ref children, .. } => children.len(), Value::ForwardFlow { ref outputs, .. } => outputs.len().saturating_add(2), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 0, Value::PathEquiv { .. } | Value::FunctionFlow { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::PathProduct(..) | Value::FlowProduct(..) | Value::StaticApplication(..) | Value::Then { .. } => 2, Value::Stay { .. } | Value::PathRefl(_) | Value::Univalence(_) | Value::Here { .. } | Value::Returned(_) | Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) => 1 }),
     AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::SigmaSplit { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) | Computation::With(..) => 2, Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::Project(..) | Computation::Fixpoint { .. } => 1 }),
     AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Data { ref arguments, .. } => arguments.len(), ValueType::Record(ref fields) => fields.len(), ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(), ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Bridge { .. } => 3, ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) | ValueType::StaticPi { .. } | ValueType::Sigma { .. } => 2, ValueType::Session { .. } | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Staged { .. } => 1 }),
-    AnyNode::CompType(id) => arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } | CompType::With(..) => 2, CompType::Returner(_) | CompType::Element { .. } => 1 }),
+    AnyNode::CompType(id) => arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } | CompType::With(..) => 2, CompType::Returner(_) | CompType::Element { .. } => 1, CompType::Codata { ref arguments, .. } => arguments.len() }),
 }
         && added.iter().all(|task| matches!(*task, RewriteTask::Open(_, child_depth, step)
             if step == rewrite && (child_depth == depth || child_depth == depth.deeper() || child_depth == depth.deeper().deeper() || child_depth == depth.deeper().deeper().deeper())))))]
@@ -2370,6 +2370,12 @@ fn push_rewrite_children(
                 tasks.push(RewriteTask::Open(AnyNode::CompType(right), depth, rewrite));
                 tasks.push(RewriteTask::Open(AnyNode::CompType(left), depth, rewrite));
             },
+            Some(&CompType::Codata { ref arguments, .. }) => tasks.extend(
+                arguments
+                    .iter()
+                    .rev()
+                    .map(|id| RewriteTask::Open(AnyNode::Value(*id), depth, rewrite)),
+            ),
         },
     }
 }
@@ -3674,7 +3680,7 @@ fn close_value_type(
 /// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
 /// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
 #[spec(captures: before = results.len(),
-    ensures: |ret| results.len() == before.saturating_sub(arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } | CompType::With(..) => 2, CompType::Returner(_) | CompType::Element { .. } => 1 }))
+    ensures: |ret| results.len() == before.saturating_sub(arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } | CompType::With(..) => 2, CompType::Returner(_) | CompType::Element { .. } => 1, CompType::Codata { ref arguments, .. } => arguments.len() }))
         && arena.comp_type(id).map_or(ret == id, |source| matches!(source, &CompType::Element { .. }) || arena.comp_type(ret).is_some_and(|result|
             core::mem::discriminant(source) == core::mem::discriminant(result))))]
 fn close_comp_type(
@@ -3742,6 +3748,25 @@ fn close_comp_type(
             else {
                 arena.comp_type_with(rewritten_left, rewritten_right)
             }
+        },
+        CompType::Codata {
+            declaration,
+            ref arguments,
+        } => {
+            let mut rewritten = None;
+            for (index, original) in arguments.iter().copied().enumerate().rev() {
+                let result = popped(results, AnyNode::Value(original)).value_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| arguments.clone())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            rewritten.map_or(id, |arguments| {
+                arena.comp_type_codata(declaration, arguments)
+            })
         },
     }
 }

@@ -498,6 +498,7 @@ impl<'entries> Interfaces<'entries>
             } => Some((interface, kind)),
             DeclarationContent::AbstractType { .. }
             | DeclarationContent::Data { .. }
+            | DeclarationContent::Codata { .. }
             | DeclarationContent::Def { .. }
             | DeclarationContent::Axiom { .. } => None,
         }

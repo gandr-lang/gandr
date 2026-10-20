@@ -297,6 +297,7 @@ pub use crate::tags::NODE_C_TRANSPORT;
 pub use crate::tags::NODE_C_TUPLE_PROJECTION;
 pub use crate::tags::NODE_C_WITH;
 pub use crate::tags::NODE_CT_ARROW;
+pub use crate::tags::NODE_CT_CODATA;
 pub use crate::tags::NODE_CT_ELEMENT;
 pub use crate::tags::NODE_CT_PI;
 pub use crate::tags::NODE_CT_RETURNER;

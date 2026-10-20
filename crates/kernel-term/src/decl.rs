@@ -50,6 +50,7 @@ use gandr_kernel_strata::LandmarkConstraint;
 use quenchant_shape::shape::Maybe;
 
 use crate::arena::ArenaWatermark;
+use crate::arena::CompTypeId;
 use crate::arena::TermArena;
 use crate::arena::ValueId;
 use crate::arena::ValueTypeId;
@@ -540,6 +541,19 @@ pub enum DeclarationContent
         /// The relation and reflexivity a bridge at the atom reads.
         interface: Maybe<AtomInterface, interface::Absent>,
     },
+    /// A nominal codata declaration: the greatest fixpoint of its
+    /// observations, identified by its admission position.
+    Codata
+    {
+        /// Classifier telescope, each entry scoped under earlier parameters.
+        parameters: Vec<ValueTypeId>,
+        /// The observations, in order, each a computation type scoped under the
+        /// whole parameter telescope, naming the declaration itself at its
+        /// parameters where the fixpoint recurs.
+        observations: Vec<CompTypeId>,
+        /// Computation-universe classifier bounding every observation.
+        kind: ValueTypeId,
+    },
 }
 
 /// One segment of a declaration's structured name: text holding no `.`.
@@ -954,6 +968,7 @@ impl Declaration
         match self.content {
             DeclarationContent::Def { .. } => Self { related, ..self },
             DeclarationContent::Data { .. }
+            | DeclarationContent::Codata { .. }
             | DeclarationContent::Axiom { .. }
             | DeclarationContent::AbstractType { .. } => self,
         }
@@ -1000,6 +1015,7 @@ impl Declaration
         match self.content {
             DeclarationContent::Def { .. } => Self { laws, ..self },
             DeclarationContent::Data { .. }
+            | DeclarationContent::Codata { .. }
             | DeclarationContent::Axiom { .. }
             | DeclarationContent::AbstractType { .. } => self,
         }
@@ -1042,7 +1058,8 @@ impl Declaration
                 presentation,
                 ..self
             },
-            DeclarationContent::Def { .. }
+            DeclarationContent::Codata { .. }
+            | DeclarationContent::Def { .. }
             | DeclarationContent::Axiom { .. }
             | DeclarationContent::AbstractType { .. } => self,
         }
@@ -1072,7 +1089,7 @@ impl Declaration
     #[spec(
         captures: entry = (match self.content {
             DeclarationContent::AbstractType { kind, representation, interface, .. } => Some((kind, representation, interface)),
-            DeclarationContent::Data { .. } | DeclarationContent::Def { .. } | DeclarationContent::Axiom { .. } => None,
+            DeclarationContent::Data { .. } | DeclarationContent::Codata { .. } | DeclarationContent::Def { .. } | DeclarationContent::Axiom { .. } => None,
         }, core::mem::discriminant(&self.content), self.provenance.len(), self.name.0.len()),
         ensures: |ret| ret.provenance.len() == entry.2 && ret.name.0.len() == entry.3
             && match entry.0 {
@@ -1104,6 +1121,7 @@ impl Declaration
                 ..self
             },
             DeclarationContent::Data { .. }
+            | DeclarationContent::Codata { .. }
             | DeclarationContent::Def { .. }
             | DeclarationContent::Axiom { .. } => self,
         }
@@ -1128,7 +1146,7 @@ impl Declaration
     #[spec(
         captures: entry = (match self.content {
             DeclarationContent::AbstractType { kind, representation, scope, .. } => Some((kind, representation, scope)),
-            DeclarationContent::Data { .. } | DeclarationContent::Def { .. } | DeclarationContent::Axiom { .. } => None,
+            DeclarationContent::Data { .. } | DeclarationContent::Codata { .. } | DeclarationContent::Def { .. } | DeclarationContent::Axiom { .. } => None,
         }, core::mem::discriminant(&self.content), self.provenance.len(), self.name.0.len()),
         ensures: |ret| ret.provenance.len() == entry.2 && ret.name.0.len() == entry.3
             && match entry.0 {
@@ -1160,6 +1178,7 @@ impl Declaration
                 ..self
             },
             DeclarationContent::Data { .. }
+            | DeclarationContent::Codata { .. }
             | DeclarationContent::Def { .. }
             | DeclarationContent::Axiom { .. } => self,
         }
@@ -1760,6 +1779,37 @@ impl DeclarationBuilder<'_>
                 indices,
                 constructors,
                 results,
+                kind,
+            },
+            provenance: Vec::new(),
+            name: StructuredName::default(),
+            related: Vec::new(),
+            presentation: crate::presented::Presentation::default(),
+            laws: Vec::new(),
+        }
+    }
+
+    /// Finish a codata declaration with a parameter telescope and
+    /// observations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn codata(
+        self,
+        levels: LevelSignature,
+        parameters: Vec<ValueTypeId>,
+        observations: Vec<CompTypeId>,
+        kind: ValueTypeId,
+    ) -> Declaration
+    {
+        let _kept = ManuallyDrop::new(self);
+        Declaration {
+            levels,
+            content: DeclarationContent::Codata {
+                parameters,
+                observations,
                 kind,
             },
             provenance: Vec::new(),

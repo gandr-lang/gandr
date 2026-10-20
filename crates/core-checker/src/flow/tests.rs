@@ -397,6 +397,7 @@ fn statements_decide_by_the_engine_and_replay()
         .filter_map(|marked| match *marked.declaration().content() {
             DeclarationContent::Def { body, .. } => artifact.arena().value(body).cloned(),
             DeclarationContent::Data { .. }
+            | DeclarationContent::Codata { .. }
             | DeclarationContent::Axiom { .. }
             | DeclarationContent::AbstractType { .. } => None,
         })
