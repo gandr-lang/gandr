@@ -25,7 +25,8 @@ path = "tests/lib.rs"
 # checkpoints out through the presentation printer, echoes the buffer through
 # the grammar's role table, and encodes everything onto the renderer seam's
 # transcript blocks. The session's checkpoints and kernel records live in
-# memory. The terminal face edits lines with rustyline.
+# memory. The terminal face edits lines with rustyline, and watches the files
+# the loop loaded through notify.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled.
 [dependencies]
@@ -45,6 +46,7 @@ gandr-surface-render-remote.workspace = true
 gandr-surface-render-terminal.workspace = true
 gandr-surface-session.workspace = true
 gandr-surface-syntax.workspace = true
+notify.workspace = true
 quenchant-shape.workspace = true
 rustyline.workspace = true
 

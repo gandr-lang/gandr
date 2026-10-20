@@ -23,6 +23,7 @@
 use alloc::string::String;
 use std::io;
 use std::io::Write;
+use std::path::Path;
 
 use anodized::spec;
 use gandr_surface_grammar::Spelling;
@@ -30,6 +31,7 @@ use gandr_surface_render_terminal::RenderStyle;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 use rustyline::DefaultEditor;
+use rustyline::ExternalPrinter as _;
 use rustyline::error::ReadlineError;
 
 use crate::batch::Ended;
@@ -38,6 +40,8 @@ use crate::batch::write_block;
 use crate::session_loop::LoopEvent;
 use crate::session_loop::Prompt;
 use crate::session_loop::SessionLoop;
+use crate::session_loop::disk_notice;
+use crate::watch::DiskWatch;
 
 /// What one read from a line source answered.
 #[derive(Debug)]
@@ -76,6 +80,20 @@ pub trait LineSource
         &mut self,
         prompt: Prompt,
     ) -> Read;
+
+    /// Follow `loaded`, the files the loop holds, after a line was offered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn watch<'path, Loaded>(
+        &mut self,
+        loaded: Loaded,
+    ) where
+        Loaded: Iterator<Item = &'path Path>,
+    {
+        drop(loaded);
+    }
 }
 
 /// The text a terminal prompt shows.
@@ -95,12 +113,14 @@ const fn prompt_text(prompt: Prompt) -> PromptText
     })
 }
 
-/// A terminal read through the line editor, with in-memory history.
-#[repr(transparent)]
+/// A terminal read through the line editor, with in-memory history, and the
+/// watch over the files the loop loaded when one started.
 struct Terminal
 {
     /// The editor.
     editor: DefaultEditor,
+    /// The watch noticing a loaded file changed on disk.
+    watch: Option<DiskWatch>,
 }
 
 impl LineSource for Terminal
@@ -137,6 +157,21 @@ impl LineSource for Terminal
             Err(ReadlineError::Interrupted) => Read::Interrupted,
             Err(ReadlineError::Eof) => Read::End,
             Err(error) => Read::Failed(Fault::Editor(error)),
+        }
+    }
+
+    /// Follow the files the loop holds, so a change to one is noticed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn watch<'path, Loaded>(
+        &mut self,
+        loaded: Loaded,
+    ) where
+        Loaded: Iterator<Item = &'path Path>,
+    {
+        if let Some(ref mut watch) = self.watch {
+            watch.follow(loaded);
         }
     }
 }
@@ -219,14 +254,18 @@ where
     };
     loop {
         match source.read(repl.prompt()) {
-            Read::Line(line) => match repl.offer(SourceText::from(line.as_str())) {
-                Ok(LoopEvent::Continue) => {},
-                Ok(LoopEvent::Block(block)) => {
-                    write_block(output, &block)?;
-                    output.flush()?;
-                },
-                Ok(LoopEvent::Quit) => break,
-                Err(error) => return Ok(Ended::Faulted(Fault::Session(error))),
+            Read::Line(line) => {
+                let offered = repl.offer(SourceText::from(line.as_str()));
+                source.watch(repl.loaded());
+                match offered {
+                    Ok(LoopEvent::Continue) => {},
+                    Ok(LoopEvent::Block(block)) => {
+                        write_block(output, &block)?;
+                        output.flush()?;
+                    },
+                    Ok(LoopEvent::Quit) => break,
+                    Err(error) => return Ok(Ended::Faulted(Fault::Session(error))),
+                }
             },
             Read::Interrupted => repl.discard(),
             Read::End => break,
@@ -250,7 +289,10 @@ where
 /// - ensures: as [`drive`] states, over the editor's reads: `gandr> ` prompts a
 ///   fresh line and `  ...> ` a continued buffer; the editor's keys edit the
 ///   line; history lives for the run and is never written to disk. An editor
-///   that cannot start ends the run faulted.
+///   that cannot start ends the run faulted. Each file the loop loaded is
+///   watched: a change to one on disk prints, above the line being edited, the
+///   notice naming it and asking for `:reload`, once until the next line; when
+///   no watch starts, that is said once and the run goes on unwatched.
 /// - provides: `gandr repl` on a terminal.
 /// - fails: the writer's error.
 /// - panics: none.
@@ -260,9 +302,11 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the face is asserted over a scripted source through
-///   [`drive`]; the editor on a terminal, which the test runner lacks, was
-///   exercised by hand on a pseudo-terminal.
+///   [`drive`], and the watch by its own witness; the editor and the printed
+///   notice on a terminal, which the test runner lacks, were exercised by hand
+///   on a pseudo-terminal.
 /// - witness: `tests::repl_loop::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
+/// - witness: `watch::tests::a_loaded_file_rewritten_is_noticed_once_per_line`
 #[spec(ensures: |ret| !matches!(ret, Ok(Ended::Faulted(Fault::Input(_)))))]
 #[inline]
 pub fn run_interactive<Output>(
@@ -273,9 +317,28 @@ pub fn run_interactive<Output>(
 where
     Output: Write,
 {
-    let editor = match DefaultEditor::new() {
+    let mut editor = match DefaultEditor::new() {
         Ok(editor) => editor,
         Err(error) => return Ok(Ended::Faulted(Fault::Editor(error))),
     };
-    drive(&mut Terminal { editor }, output, style, spelling)
+    let watch = editor
+        .create_external_printer()
+        .map_err(|error| error.to_string())
+        .and_then(|mut printer| {
+            DiskWatch::new(move |path: &Path| {
+                let mut notice = Vec::new();
+                if write_block(&mut notice, &disk_notice(path)).is_ok() {
+                    let _printed = printer.print(String::from_utf8_lossy(&notice).into_owned());
+                }
+            })
+            .map_err(|error| error.to_string())
+        });
+    let watch = match watch {
+        Ok(watch) => Some(watch),
+        Err(error) => {
+            writeln!(output, "loaded files are not watched for changes: {error}")?;
+            None
+        },
+    };
+    drive(&mut Terminal { editor, watch }, output, style, spelling)
 }

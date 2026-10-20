@@ -662,6 +662,55 @@ fn a_loaded_file_is_one_chunk()
     ]);
 }
 
+/// `:reload` resubmits a loaded file rewritten on disk in place of its
+/// chunk, judging the declarations typed after it again; a rewrite one of
+/// them refuses keeps the earlier chunk; an unchanged file is left alone.
+#[test]
+fn a_reloaded_file_replaces_its_chunk()
+{
+    let integer = base(BaseType::Integer);
+    let path = std::env::temp_dir().join(format!("gandr-reload-{}.gandr", std::process::id()));
+    let named = path.display().to_string();
+    std::fs::write(&path, "def a = 1 ;\n").expect("the file writes");
+    let mut repl = repl();
+    drop(lines(&mut repl, format!(":load {named}").as_str()));
+    drop(lines(&mut repl, "def g : Integer ;"));
+    drop(lines(&mut repl, "def g = a ;"));
+    assert_eq!(lines(&mut repl, ":reload"), [(
+        OutKind::Info,
+        "no loaded file changed on disk".to_owned()
+    )]);
+    std::fs::write(&path, "def a = 2 ;\n").expect("the file writes");
+    assert_eq!(
+        lines(&mut repl, ":reload"),
+        [
+            (OutKind::Info, format!("`{named}` resubmitted")),
+            (OutKind::Type, format!("a : {integer}")),
+            (OutKind::Value, "2".to_owned()),
+            (OutKind::Type, format!("g : {integer}")),
+            (OutKind::Value, "2".to_owned()),
+        ],
+        "the declaration after the file is judged again over its new text"
+    );
+    std::fs::write(&path, "def a = \"s\" ;\n").expect("the file writes");
+    let refused = lines(&mut repl, ":reload");
+    assert!(
+        matches!(refused.as_slice(), [(OutKind::Diag, text), (OutKind::Info, kept)]
+            if text.contains("expected `Integer`, found `String`")
+                && *kept == format!("`{named}` keeps its earlier chunk")),
+        "{refused:?}"
+    );
+    assert_eq!(
+        lines(&mut repl, "def d = a ;"),
+        [
+            (OutKind::Type, format!("d : {integer}")),
+            (OutKind::Value, "2".to_owned()),
+        ],
+        "the refused rewrite left the earlier chunk in place"
+    );
+    drop(std::fs::remove_file(&path));
+}
+
 /// A function whose later parameter's type reads an earlier type
 /// parameter answers a type line in the dependent alias's spelling: the
 /// binder named, its universe, and the decodes written as the binder they

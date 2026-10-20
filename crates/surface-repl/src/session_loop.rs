@@ -23,6 +23,8 @@ use alloc::string::String;
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
 use core::fmt;
+use std::path::Path;
+use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_core_incremental::BackendArtifact;
@@ -190,6 +192,48 @@ fn answer(
     }
 }
 
+/// A file `:load` kept, and the bytes of the accepted text its chunk is, its
+/// closing newline left out.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Loaded
+{
+    /// The file, as `:load` named it.
+    path: PathBuf,
+    /// Where its chunk starts in the accepted text.
+    start: ByteOffset,
+    /// Where its chunk ends, before its newline.
+    end: ByteOffset,
+}
+
+/// What judging a revision did with its chunk.
+#[derive(Debug)]
+enum Revision
+{
+    /// The chunk was kept, and the accepted text is the revision.
+    Kept(TranscriptBlock),
+    /// The chunk was refused, and the accepted text is unchanged.
+    Refused(TranscriptBlock),
+}
+
+/// The notice a face shows when `path`, a file the loop loaded, changes on
+/// disk.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn disk_notice(path: &Path) -> TranscriptBlock
+{
+    TranscriptBlock {
+        source: String::new(),
+        source_hl: Vec::new(),
+        lines: Vec::from([(
+            OutKind::Info,
+            format!("`{}` changed on disk; :reload to resubmit", path.display()),
+        )]),
+    }
+}
+
 /// The read-evaluate loop over one session.
 ///
 /// The loop owns the accepted text — every chunk kept so far, each ended by a
@@ -204,6 +248,8 @@ pub struct SessionLoop
     roles: RoleTable,
     /// Every chunk kept so far.
     accepted: String,
+    /// Each file `:load` kept, in the order loaded, with its chunk's bytes.
+    loaded: Vec<Loaded>,
     /// What each declaration of the accepted text produced.
     standings: Standings,
     /// The lines waiting to be submitted.
@@ -238,7 +284,7 @@ impl SessionLoop
     /// - witness: `tests::repl_loop::finishing_an_empty_loop_yields_nothing`
     /// - witness: `tests::repl_loop::an_open_form_continues`
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|repl|
-        repl.accepted.is_empty() && repl.pending.is_empty() && repl.standings == Standings::default()
+        repl.accepted.is_empty() && repl.loaded.is_empty() && repl.pending.is_empty() && repl.standings == Standings::default()
             && repl.style == style && repl.spelling == Spelling::Unicode && matches!(repl.session.last(), Maybe::Absent(_))))]
     #[inline]
     pub fn new(style: RenderStyle) -> Result<Self, PbgError>
@@ -249,6 +295,7 @@ impl SessionLoop
             session: fresh(grammar),
             roles,
             accepted: String::new(),
+            loaded: Vec::new(),
             standings: Standings::default(),
             pending: String::new(),
             style,
@@ -305,6 +352,16 @@ impl SessionLoop
         else {
             Prompt::Continuing
         }
+    }
+
+    /// Each file `:load` kept, in the order loaded.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn loaded(&self) -> impl Iterator<Item = &Path>
+    {
+        self.loaded.iter().map(|loaded| loaded.path.as_path())
     }
 
     /// Drop the waiting buffer, as an interrupt at the prompt does.
@@ -486,7 +543,7 @@ impl SessionLoop
             Ok(LoopEvent::Block(ref block)) => block.source == <&str>::from(line).trim()
                 && block.source_hl.is_empty() && match command {
                     Command::Quit => false,
-                    Command::Reset => self.accepted.is_empty() && self.standings == Standings::default()
+                    Command::Reset => self.accepted.is_empty() && self.loaded.is_empty() && self.standings == Standings::default()
                         && matches!(self.session.last(), Maybe::Absent(_))
                         && matches!(block.lines.as_slice(), [(OutKind::Info, _)]),
                     Command::Help => self.accepted.len() == accepted && block.lines.len() == HELP.len()
@@ -496,8 +553,10 @@ impl SessionLoop
                         && matches!(block.lines.as_slice(), [(OutKind::Info, _)]),
                     Command::TypeOf(_) => self.accepted.len() == accepted,
                     Command::Load(_) => self.accepted.len() >= accepted,
+                    Command::Reload => !block.lines.is_empty(),
                 },
-            Err(_) => self.accepted.len() == accepted && matches!(command, Command::TypeOf(_) | Command::Load(_)),
+            Err(_) => matches!(command, Command::TypeOf(_) | Command::Load(_) | Command::Reload)
+                && (self.accepted.len() == accepted || matches!(command, Command::Reload)),
         })]
     fn meta(
         &mut self,
@@ -519,6 +578,7 @@ impl SessionLoop
             Command::Reset => {
                 self.session = fresh(self.session.grammar().clone());
                 self.accepted.clear();
+                self.loaded.clear();
                 self.standings = Standings::default();
                 answer(
                     echo,
@@ -527,17 +587,29 @@ impl SessionLoop
                 )
             },
             Command::Load(path) => match std::fs::read_to_string(path) {
-                Ok(text) => self.submit(
-                    Echo::new(echo.to_string(), Vec::new()),
-                    SourceText::from(text.as_str()),
-                    Subject::Declarations,
-                )?,
+                Ok(text) => {
+                    let start = ByteOffset::from(self.accepted.len());
+                    let block = self.submit(
+                        Echo::new(echo.to_string(), Vec::new()),
+                        SourceText::from(text.as_str()),
+                        Subject::Declarations,
+                    )?;
+                    if self.accepted.len() > usize::from(start) {
+                        self.loaded.push(Loaded {
+                            path: path.to_path_buf(),
+                            start,
+                            end: ByteOffset::from(usize::from(start).saturating_add(text.len())),
+                        });
+                    }
+                    block
+                },
                 Err(error) => answer(
                     echo,
                     OutKind::Diag,
                     format!("cannot read `{}`: {error}", path.display()),
                 ),
             },
+            Command::Reload => self.reload(echo)?,
             Command::TypeOf(expression) => {
                 let probe = self.probe_name();
                 let chunk = format!("def {probe} = {expression} ;");
@@ -710,11 +782,71 @@ impl SessionLoop
         subject: Subject<'_>,
     ) -> Result<TranscriptBlock, LoopError>
     {
+        let end = ByteOffset::from(self.accepted.len());
+        Ok(match self.revise(echo, end, end, chunk, subject)? {
+            Revision::Kept(block) | Revision::Refused(block) => block,
+        })
+    }
+
+    /// Submit the accepted text with `chunk` in place of the bytes from
+    /// `start` to `end`, and keep the revision when the encoder says so.
+    ///
+    /// # Specification
+    /// - requires: `start` and `end` are character boundaries of the accepted
+    ///   text, `start` no later than `end`, and `end` is its length or the
+    ///   offset of the newline closing a chunk.
+    /// - ensures: the session judges the accepted text with `chunk` in place of
+    ///   those bytes, the text after them following it; the encoder reads every
+    ///   report from `start` on as the chunk's, so the declarations after it
+    ///   are judged again with it. When the encoder keeps it, the accepted text
+    ///   becomes the revision, closed by a newline, and the standings the
+    ///   revision's; otherwise both are unchanged.
+    /// - provides: the one path every submission and resubmission takes.
+    /// - fails: [`LoopError::Fault`] when the session faults; the accepted text
+    ///   is then unchanged.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoopError::Fault`] when the session faults.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a chunk kept at the end and one dropped, each
+    ///   asserted by what the next submission sees, and a reloaded file's chunk
+    ///   replaced in the middle with the declaration after it judged again.
+    /// - witness: `tests::repl_loop::a_refused_chunk_is_not_kept`
+    /// - witness: `tests::repl_loop::a_definition_is_visible_on_the_next_line`
+    /// - witness: `tests::repl_loop::a_reloaded_file_replaces_its_chunk`
+    #[spec(requires: start <= end && usize::from(end) <= self.accepted.len(),
+        captures: [accepted = self.accepted.clone()],
+        ensures: |ret| match ret {
+            Ok(Revision::Kept(_)) => !matches!(subject, Subject::Probe { .. })
+                && self.accepted.ends_with('\n')
+                && self.accepted.get(usize::from(start)..).is_some_and(|after| after.starts_with(<&str>::from(chunk))),
+            Ok(Revision::Refused(_)) | Err(_) => self.accepted == accepted,
+        })]
+    fn revise(
+        &mut self,
+        echo: Echo,
+        start: ByteOffset,
+        end: ByteOffset,
+        chunk: SourceText<'_>,
+        subject: Subject<'_>,
+    ) -> Result<Revision, LoopError>
+    {
         let chunk = <&str>::from(chunk);
-        let mut revision = String::with_capacity(self.accepted.len().saturating_add(chunk.len()));
-        revision.push_str(&self.accepted);
-        let start = ByteOffset::from(revision.len());
+        let before = self.accepted.get(.. usize::from(start)).unwrap_or_default();
+        let after = self.accepted.get(usize::from(end) ..).unwrap_or_default();
+        let after = after.strip_suffix('\n').unwrap_or(after);
+        let mut revision = String::with_capacity(
+            before
+                .len()
+                .saturating_add(chunk.len())
+                .saturating_add(after.len())
+                .saturating_add(1),
+        );
+        revision.push_str(before);
         revision.push_str(chunk);
+        revision.push_str(after);
         let encoded = {
             let submission = self
                 .session
@@ -733,11 +865,124 @@ impl SessionLoop
                 self.spelling,
             )
         };
-        if let Disposition::Kept(standings) = encoded.disposition {
-            revision.push('\n');
-            self.accepted = revision;
-            self.standings = standings;
+        Ok(match encoded.disposition {
+            Disposition::Kept(standings) => {
+                revision.push('\n');
+                self.accepted = revision;
+                self.standings = standings;
+                Revision::Kept(encoded.block)
+            },
+            Disposition::Dropped => Revision::Refused(encoded.block),
+        })
+    }
+
+    /// Resubmit each loaded file whose text on disk differs from its chunk, in
+    /// the order loaded, in place of that chunk; answer `echo`.
+    ///
+    /// # Specification
+    /// - requires: no buffer waits.
+    /// - ensures: each loaded file is read again; one that cannot be read
+    ///   answers why and keeps its chunk; one whose text is its chunk's is left
+    ///   alone; any other is submitted as [`Self::revise`] states, in place of
+    ///   its chunk, the declarations after it judged again. A kept file answers
+    ///   that it was resubmitted, then the encoder's lines, and the chunks
+    ///   after it move by the change in its length; a refused one answers the
+    ///   encoder's lines, then that it keeps its earlier chunk. With nothing to
+    ///   resubmit, the answer says so.
+    /// - provides: `:reload`.
+    /// - fails: [`LoopError::Fault`] when a resubmission faults; the files
+    ///   resubmitted before it stay resubmitted.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoopError::Fault`] when a resubmission faults.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a loaded file rewritten on disk, reloaded, answers
+    ///   its new type with the declaration after it judged again; a rewrite the
+    ///   declaration after it refuses keeps the earlier chunk; reloading an
+    ///   unchanged file answers that nothing changed.
+    /// - witness: `tests::repl_loop::a_reloaded_file_replaces_its_chunk`
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|block|
+        block.source == <&str>::from(echo) && !block.lines.is_empty()))]
+    fn reload(
+        &mut self,
+        echo: SourceText<'_>,
+    ) -> Result<TranscriptBlock, LoopError>
+    {
+        let mut lines: Vec<(OutKind, String)> = Vec::new();
+        let mut index = 0_usize;
+        while let Some(loaded) = self.loaded.get(index).cloned() {
+            index = index.saturating_add(1);
+            let text = match std::fs::read_to_string(&loaded.path) {
+                Ok(text) => text,
+                Err(error) => {
+                    lines.push((
+                        OutKind::Diag,
+                        format!("cannot read `{}`: {error}", loaded.path.display()),
+                    ));
+                    continue;
+                },
+            };
+            if self
+                .accepted
+                .get(usize::from(loaded.start) .. usize::from(loaded.end))
+                == Some(text.as_str())
+            {
+                continue;
+            }
+            let echoed = Echo::new(echo.to_string(), Vec::new());
+            match self.revise(
+                echoed,
+                loaded.start,
+                loaded.end,
+                SourceText::from(text.as_str()),
+                Subject::Declarations,
+            )? {
+                Revision::Kept(block) => {
+                    lines.push((
+                        OutKind::Info,
+                        format!("`{}` resubmitted", loaded.path.display()),
+                    ));
+                    lines.extend(block.lines);
+                    let end = usize::from(loaded.start).saturating_add(text.len());
+                    for later in &mut self.loaded {
+                        if later.start >= loaded.end {
+                            later.start = ByteOffset::from(
+                                usize::from(later.start)
+                                    .saturating_sub(usize::from(loaded.end))
+                                    .saturating_add(end),
+                            );
+                            later.end = ByteOffset::from(
+                                usize::from(later.end)
+                                    .saturating_sub(usize::from(loaded.end))
+                                    .saturating_add(end),
+                            );
+                        }
+                    }
+                    if let Some(reloaded) = self.loaded.get_mut(index.saturating_sub(1)) {
+                        reloaded.end = ByteOffset::from(end);
+                    }
+                },
+                Revision::Refused(block) => {
+                    lines.extend(block.lines);
+                    lines.push((
+                        OutKind::Info,
+                        format!("`{}` keeps its earlier chunk", loaded.path.display()),
+                    ));
+                },
+            }
         }
-        Ok(encoded.block)
+        if lines.is_empty() {
+            lines.push((
+                OutKind::Info,
+                String::from("no loaded file changed on disk"),
+            ));
+        }
+        Ok(TranscriptBlock {
+            source: echo.to_string(),
+            source_hl: Vec::new(),
+            lines,
+        })
     }
 }

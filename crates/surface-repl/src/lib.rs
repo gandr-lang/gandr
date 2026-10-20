@@ -148,6 +148,7 @@ mod remote;
 mod render;
 mod rows;
 mod session_loop;
+mod watch;
 
 pub use gandr_surface_parser::CompletionStatus;
 
@@ -182,4 +183,6 @@ pub use crate::session_loop::LoopError;
 pub use crate::session_loop::LoopEvent;
 pub use crate::session_loop::Prompt;
 pub use crate::session_loop::SessionLoop;
+pub use crate::session_loop::disk_notice;
 pub use crate::session_loop::finished;
+pub use crate::watch::DiskWatch;

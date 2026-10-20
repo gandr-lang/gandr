@@ -132,6 +132,7 @@ use crate::protocol::WatchedFilesParams;
 use crate::protocol::WatchesFiles;
 use crate::protocol::WorkspaceSymbolParams;
 use crate::quiet::Holding;
+use crate::quiet::Inbox;
 use crate::quiet::Met;
 use crate::quiet::QUIET;
 use crate::quiet::formless;
@@ -1618,29 +1619,201 @@ impl Server
                 else {
                     return Reported::default();
                 };
-                let changed = changed_paths(&changes);
-                let rechecked = workspace
-                    .documents
-                    .values()
-                    .filter(|held| match held.own(self.peer) {
-                        Maybe::Present(document) => names_any(&document.named, &changed),
-                        Maybe::Absent(_) => false,
-                    })
-                    .count();
-                match rechecked {
-                    0 => return Reported::default(),
-                    1 => ("Rechecking", String::from("1 open document")),
-                    many => ("Rechecking", format!("{many} open documents")),
-                }
+                return self.rechecking(workspace, &changed_paths(&changes));
             },
             _ => return Reported::default(),
         };
+        self.piece(title, about)
+    }
+
+    /// The progress of rechecking the copies this connection holds whose
+    /// closures name a file of `changed`, the hub's watch having seen them
+    /// change on disk.
+    ///
+    /// # Specification
+    /// - requires: `changed` is sorted, as [`named_path`] names each file.
+    /// - ensures: as [`Server::reported`] states for a watched-files change
+    ///   naming `changed`.
+    /// - provides: what a client shows while the hub's watch has dependants
+    ///   rechecked.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — through [`Server::reported`]'s witness, the two
+    ///   sharing one body.
+    /// - witness: `server::tests::progress_is_reported_around_the_work_a_message_starts`
+    #[spec(
+        captures: before = self.reported,
+        ensures: |ret| if ret.begin.is_empty() {
+            ret.end.is_empty() && self.reported == before
+        } else {
+            ret.begin.len() == 2 && ret.end.len() == 1 && self.reported == before.saturating_add(1)
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn reported_on_disk(
+        &mut self,
+        workspace: &Workspace,
+        changed: &[PathBuf],
+    ) -> Reported
+    {
+        if self.phase != Phase::Running || !self.progress.0 {
+            return Reported::default();
+        }
+        self.rechecking(workspace, changed)
+    }
+
+    /// The progress of rechecking the copies whose closures name a file of
+    /// `changed`, on a running connection whose client shows progress.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rechecking(
+        &mut self,
+        workspace: &Workspace,
+        changed: &[PathBuf],
+    ) -> Reported
+    {
+        let rechecked = workspace
+            .documents
+            .values()
+            .filter(|held| match held.own(self.peer) {
+                Maybe::Present(document) => names_any(&document.named, changed),
+                Maybe::Absent(_) => false,
+            })
+            .count();
+        match rechecked {
+            0 => Reported::default(),
+            1 => self.piece("Rechecking", String::from("1 open document")),
+            many => self.piece("Rechecking", format!("{many} open documents")),
+        }
+    }
+
+    /// One piece of work titled `title` on `about`, under a token no earlier
+    /// piece used.
+    ///
+    /// # Specification
+    /// trivial.
+    fn piece(
+        &mut self,
+        title: &'static str,
+        about: String,
+    ) -> Reported
+    {
         self.reported = self.reported.saturating_add(1);
         let token = ProgressToken(format!("gandr/{}/{}", self.peer.0, self.reported));
         Reported {
             begin: Vec::from(progress_begun(&token, title, about)),
             end: Vec::from([progress_ended(token)]),
         }
+    }
+
+    /// The files the closures of the copies this connection holds named at
+    /// their last judgement, for the hub's watch to follow; none when its
+    /// client watches files itself.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: empty unless the connection is running and its client does
+    ///   not watch files; otherwise every path the closure of a copy it holds
+    ///   named, as [`named_path`] names it.
+    /// - provides: what the hub's watch follows for a connection.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a hub connection whose client watches nothing is told
+    ///   of a rewritten import; one whose client watches is left to its client.
+    /// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
+    #[spec(ensures: |ret| ret.is_empty() || (self.phase == Phase::Running && !self.watching.0))]
+    #[inline]
+    #[must_use]
+    pub fn followed(
+        &self,
+        workspace: &Workspace,
+    ) -> BTreeSet<PathBuf>
+    {
+        if self.phase != Phase::Running || self.watching.0 {
+            return BTreeSet::new();
+        }
+        workspace
+            .documents
+            .values()
+            .filter_map(|held| match held.own(self.peer) {
+                Maybe::Present(document) => Some(document.named.iter().cloned()),
+                Maybe::Absent(_) => None,
+            })
+            .flatten()
+            .collect()
+    }
+
+    /// Recheck the copies this connection holds whose closures name a file of
+    /// `changed`, the hub's watch having seen them change on disk.
+    ///
+    /// # Specification
+    /// - requires: `changed` is sorted, as [`named_path`] names each file.
+    /// - ensures: on a running connection whose client does not watch files, as
+    ///   [`Server::handle`] states for a watched-files change naming `changed`;
+    ///   on any other, nothing.
+    /// - provides: the hub's watch's change, handled as the client's own
+    ///   notification would be.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a hub connection whose client watches nothing
+    ///   republishes an open document when a file it imports is rewritten on
+    ///   disk.
+    /// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
+    #[spec(ensures: |ret| ret.messages.is_empty() || (self.phase == Phase::Running && !self.watching.0))]
+    #[inline]
+    #[must_use]
+    pub fn changed_on_disk(
+        &mut self,
+        workspace: &mut Workspace,
+        changed: &[PathBuf],
+    ) -> Outcome
+    {
+        if self.phase != Phase::Running || self.watching.0 {
+            return Outcome::quiet();
+        }
+        self.recheck_naming(workspace, changed)
+    }
+
+    /// Recheck the copies this connection holds whose closures name a file of
+    /// `changed`, republishing each to this connection alone.
+    ///
+    /// # Specification
+    /// trivial.
+    fn recheck_naming(
+        &self,
+        workspace: &mut Workspace,
+        changed: &[PathBuf],
+    ) -> Outcome
+    {
+        let mut outcome = Outcome::quiet();
+        let peer = self.peer;
+        for (uri, held) in &mut workspace.documents {
+            let Maybe::Present(document) = held.own_mut(peer)
+            else {
+                continue;
+            };
+            if !names_any(&document.named, changed) {
+                continue;
+            }
+            let rechecked = synchronised(
+                uri,
+                document,
+                self.verbosity,
+                self.style.spelling,
+                self.quiet,
+            );
+            outcome.messages.extend(rechecked.messages);
+            outcome.log.extend(rechecked.log);
+        }
+        for message in &outcome.messages {
+            workspace.published_by(peer, message);
+        }
+        outcome
     }
 
     /// The response to the request `id` calling `method` with `params`.
@@ -2278,31 +2451,7 @@ impl Server
                 else {
                     return Outcome::quiet();
                 };
-                let changed = changed_paths(&changes);
-                let mut outcome = Outcome::quiet();
-                let peer = self.peer;
-                for (uri, held) in &mut workspace.documents {
-                    let Maybe::Present(document) = held.own_mut(peer)
-                    else {
-                        continue;
-                    };
-                    if !names_any(&document.named, &changed) {
-                        continue;
-                    }
-                    let rechecked = synchronised(
-                        uri,
-                        document,
-                        self.verbosity,
-                        self.style.spelling,
-                        self.quiet,
-                    );
-                    outcome.messages.extend(rechecked.messages);
-                    outcome.log.extend(rechecked.log);
-                }
-                for message in &outcome.messages {
-                    workspace.published_by(peer, message);
-                }
-                outcome
+                self.recheck_naming(workspace, &changed_paths(&changes))
             },
             (Phase::Waiting | Phase::Running | Phase::ShuttingDown, _) => Outcome::quiet(),
         }
@@ -3242,7 +3391,7 @@ where
 {
     let mut workspace = Workspace::spelled(spelling);
     let mut server = Server::default();
-    paced(input, |met, deadlines| {
+    paced(input, Inbox::default(), |met, deadlines| {
         let (message, later) = match met {
             Met::Closed => return Ok(ControlFlow::Break(server.closed())),
             Met::Quiet(uri) => {
@@ -3251,6 +3400,8 @@ where
                 }
                 return Ok(ControlFlow::Continue(()));
             },
+            // No watch holds this loop's inbox.
+            Met::Changed(_) => return Ok(ControlFlow::Continue(())),
             Met::Frame { message, later } => (message, later),
         };
         let reported = server.reported(&workspace, &message);

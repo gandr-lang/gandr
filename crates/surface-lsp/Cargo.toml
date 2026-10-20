@@ -45,6 +45,7 @@ gandr-surface-render-remote = { workspace = true, features = ["serde"] }
 gandr-surface-session.workspace = true
 gandr-surface-syntax.workspace = true
 hotpath = { workspace = true, optional = true }
+notify.workspace = true
 percent-encoding.workspace = true
 quenchant-shape.workspace = true
 serde.workspace = true
