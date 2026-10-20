@@ -569,6 +569,9 @@ fn checked(
         CheckRefusal::NonExhaustiveDataCase(_) => {
             f.write_str("the case must handle every constructor exactly once")
         },
+        CheckRefusal::UndecidedCoverage(_) => {
+            f.write_str("a pattern hole leaves which arm runs undecided")
+        },
         CheckRefusal::AbsentRecordField(_) => f.write_str("the record has no such field"),
         CheckRefusal::AbsentTupleComponent(_) => f.write_str("the tuple has no such component"),
         CheckRefusal::MissingRecordField { .. } => f.write_str("the record is missing a field"),
@@ -1216,6 +1219,7 @@ mod tests
             },
             CheckRefusal::ConstructorArity(value),
             CheckRefusal::NonExhaustiveDataCase(computation),
+            CheckRefusal::UndecidedCoverage(computation),
             CheckRefusal::AbsentRecordField(computation),
             CheckRefusal::AbsentTupleComponent(computation),
             CheckRefusal::MissingRecordField {

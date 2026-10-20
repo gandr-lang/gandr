@@ -401,6 +401,7 @@ fn kind(typing: &Typing) -> Key
         Typing::Refused(Refusal::UnknownConstructor { .. }) => "unknown-constructor",
         Typing::Refused(Refusal::ConstructorArity(_)) => "constructor-arity",
         Typing::Refused(Refusal::NonExhaustiveDataCase(_)) => "non-exhaustive-data-case",
+        Typing::Refused(Refusal::UndecidedCoverage(_)) => "undecided-coverage",
         Typing::Refused(Refusal::AbsentRecordField(_)) => "absent-record-field",
         Typing::Refused(Refusal::AbsentTupleComponent(_)) => "absent-tuple-component",
         Typing::Refused(Refusal::MissingRecordField { .. }) => "missing-record-field",

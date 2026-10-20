@@ -78,6 +78,7 @@
 //! an enclosing seal, which needs a stack of extents rather than one per atom.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -92,6 +93,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::hole::HoleId;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
@@ -180,6 +182,18 @@ quenchant_shape::reason_enum! {
             /// No admitted declaration and no forming block names the
             /// position.
             Unknown,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a hole stands in no pattern's place.
+    pub mod pattern_hole {
+        /// The reason it does not.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The hole was written in a term, not in place of a pattern.
+            Term,
         }
     }
 }
@@ -396,6 +410,9 @@ pub struct CheckingContext<'arena>
     /// The worlds declared, each declaration's home, the entries, the host's
     /// entry and the entry under way.
     worlds: crate::worlds::Worlds,
+    /// The holes the module's matches were written with in place of a
+    /// pattern: a tree leaf that is one of them leaves an arm undecided.
+    pattern_holes: BTreeSet<HoleId>,
 }
 
 /// Whether a typed run is recording the judgements it holds as they finish.
@@ -536,6 +553,7 @@ impl<'arena> CheckingContext<'arena>
                 Maybe::Absent(own::Absent::Unopened),
             ),
             worlds: crate::worlds::Worlds::default(),
+            pattern_holes: BTreeSet::new(),
         }
     }
 
@@ -827,6 +845,48 @@ impl<'arena> CheckingContext<'arena>
     )
     {
         self.grants = grants;
+    }
+
+    /// Read `holes` as the holes the module's matches were written with in
+    /// place of a pattern, so a match tree whose leaf is one of them is
+    /// refused rather than checked.
+    ///
+    /// # Specification
+    /// - ensures: every later judgement of a hole among `holes` is refused as
+    ///   [`CheckRefusal::UndecidedCoverage`]; a hole outside them still checks
+    ///   against any type.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the same hole node is refused once its id is a
+    ///   pattern hole and checks while it is not.
+    /// - witness: `judgement::tests::a_pattern_hole_at_a_leaf_leaves_the_match_undecided`
+    #[spec(ensures: holes.iter().all(|hole| self.pattern_holes.contains(hole)))]
+    #[inline]
+    pub fn keep_pattern_holes(
+        &mut self,
+        holes: &[HoleId],
+    )
+    {
+        self.pattern_holes.extend(holes.iter().copied());
+    }
+
+    /// `hole` when it was written in place of a pattern.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn pattern_hole(
+        &self,
+        hole: HoleId,
+    ) -> Maybe<HoleId, pattern_hole::Absent>
+    {
+        if self.pattern_holes.contains(&hole) {
+            Maybe::Present(hole)
+        }
+        else {
+            Maybe::Absent(pattern_hole::Absent::Term)
+        }
     }
 
     /// The authority the host grants the module's held capabilities.

@@ -1,0 +1,32 @@
+// A match whose every arm is written covers its scrutinee, and a hole in an
+// arm's body leaves it covering: the term is owed, the arm is decided. The
+// twin in `pathological/holes/` leaves an arm to a pattern hole.
+
+/// Three colours, one arm each.
+@[ checks ]
+data Color : Type {
+  Red : Color;
+  Green : Color;
+  Blue : Color;
+}
+
+/// Every colour has its arm.
+@[ checks ]
+def classify(c : Color) -> -F Integer {
+  case c {
+    Red => return 0,
+    Green => return 1,
+    Blue => return 2
+  }
+}
+
+/// `Green`'s arm is written and its body is a hole: the arm that runs is
+/// decided, only its result is not.
+@[ checks ]
+def sketch(c : Color) -> -F Integer {
+  case c {
+    Red => return 0,
+    Green => ?,
+    Blue => return 2
+  }
+}

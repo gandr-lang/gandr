@@ -514,6 +514,7 @@ fn fault(refusal: CheckRefusal) -> Refusal
         | CheckRefusal::UnknownConstructor { .. }
         | CheckRefusal::ConstructorArity(_)
         | CheckRefusal::NonExhaustiveDataCase(_)
+        | CheckRefusal::UndecidedCoverage(_)
         | CheckRefusal::AbsentRecordField(_)
         | CheckRefusal::AbsentTupleComponent(_)
         | CheckRefusal::MissingRecordField { .. }

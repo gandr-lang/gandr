@@ -431,6 +431,8 @@ pub enum Refusal
     ConstructorArity(Site),
     /// A case has the wrong branch count.
     NonExhaustiveDataCase(Site),
+    /// A leaf of a match's tree is one of its pattern holes.
+    UndecidedCoverage(Site),
     /// A projection names no field in its operand's type.
     AbsentRecordField(Site),
     /// A tuple projection names a component past its operand's arity.
@@ -1272,6 +1274,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::UnknownConstructor {at,tag} = matched_left_value && let Refusal::UnknownConstructor {at:projected,tag:stored} = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == tag }
  else if let CheckRefusal::ConstructorArity(at) = matched_left_value && let Refusal::ConstructorArity(projected) = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::NonExhaustiveDataCase(at) = matched_left_value && let Refusal::NonExhaustiveDataCase(projected) = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
+ else if let CheckRefusal::UndecidedCoverage(at) = matched_left_value && let Refusal::UndecidedCoverage(projected) = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::AbsentRecordField(at) = matched_left_value && let Refusal::AbsentRecordField(projected) = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::AbsentTupleComponent(at) = matched_left_value && let Refusal::AbsentTupleComponent(projected) = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::MissingRecordField {at,expected} = matched_left_value && let Refusal::MissingRecordField {at:projected,expected:ref stored} = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && *stored == self.value_type(expected) }
@@ -1477,6 +1480,9 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             },
             CheckRefusal::NonExhaustiveDataCase(at) => {
                 Refusal::NonExhaustiveDataCase(self.site(ArenaNode::Computation(at)))
+            },
+            CheckRefusal::UndecidedCoverage(at) => {
+                Refusal::UndecidedCoverage(self.site(ArenaNode::Computation(at)))
             },
             CheckRefusal::AbsentRecordField(at) => {
                 Refusal::AbsentRecordField(self.site(ArenaNode::Computation(at)))

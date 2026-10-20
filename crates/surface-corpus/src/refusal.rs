@@ -304,6 +304,8 @@ pub enum RefusalName
     ConstructorArity,
     /// The checker reports `NonExhaustiveDataCase`.
     NonExhaustiveDataCase,
+    /// The checker reports `UndecidedCoverage`.
+    UndecidedCoverage,
     /// The checker reports `AbsentRecordField`.
     AbsentRecordField,
     /// The checker reports `AbsentTupleComponent`.
@@ -620,7 +622,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 158_usize] = [
+    pub const VOCABULARY: [Self; 159_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -637,6 +639,7 @@ impl RefusalName
         Self::UnknownConstructor,
         Self::ConstructorArity,
         Self::NonExhaustiveDataCase,
+        Self::UndecidedCoverage,
         Self::AbsentRecordField,
         Self::AbsentTupleComponent,
         Self::MissingRecordField,
@@ -864,6 +867,7 @@ impl RefusalName
         | (Self::UnknownConstructor, b"UnknownConstructor")
         | (Self::ConstructorArity, b"ConstructorArity")
         | (Self::NonExhaustiveDataCase, b"NonExhaustiveDataCase")
+        | (Self::UndecidedCoverage, b"UndecidedCoverage")
         | (Self::AbsentRecordField, b"AbsentRecordField")
         | (Self::AbsentTupleComponent, b"AbsentTupleComponent")
         | (Self::MissingRecordField, b"MissingRecordField")
@@ -965,6 +969,7 @@ impl RefusalName
             Self::UnknownConstructor => "UnknownConstructor",
             Self::ConstructorArity => "ConstructorArity",
             Self::NonExhaustiveDataCase => "NonExhaustiveDataCase",
+            Self::UndecidedCoverage => "UndecidedCoverage",
             Self::AbsentRecordField => "AbsentRecordField",
             Self::AbsentTupleComponent => "AbsentTupleComponent",
             Self::MissingRecordField => "MissingRecordField",
@@ -1345,6 +1350,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::UnknownConstructor { .. }), RefusalName::UnknownConstructor)
         | (Self::Checking(CheckRefusal::ConstructorArity(_)), RefusalName::ConstructorArity)
         | (Self::Checking(CheckRefusal::NonExhaustiveDataCase(_)), RefusalName::NonExhaustiveDataCase)
+        | (Self::Checking(CheckRefusal::UndecidedCoverage(_)), RefusalName::UndecidedCoverage)
         | (Self::Checking(CheckRefusal::AbsentRecordField(_)), RefusalName::AbsentRecordField)
         | (Self::Checking(CheckRefusal::AbsentTupleComponent(_)), RefusalName::AbsentTupleComponent)
         | (Self::Checking(CheckRefusal::MissingRecordField { .. }), RefusalName::MissingRecordField)
@@ -1614,6 +1620,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::UnknownConstructor { .. }, RefusalName::UnknownConstructor)
         | (CheckRefusal::ConstructorArity(_), RefusalName::ConstructorArity)
         | (CheckRefusal::NonExhaustiveDataCase(_), RefusalName::NonExhaustiveDataCase)
+        | (CheckRefusal::UndecidedCoverage(_), RefusalName::UndecidedCoverage)
         | (CheckRefusal::AbsentRecordField(_), RefusalName::AbsentRecordField)
         | (CheckRefusal::AbsentTupleComponent(_), RefusalName::AbsentTupleComponent)
         | (CheckRefusal::MissingRecordField { .. }, RefusalName::MissingRecordField)
@@ -1715,6 +1722,7 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::UnknownConstructor { .. } => RefusalName::UnknownConstructor,
         CheckRefusal::ConstructorArity(_) => RefusalName::ConstructorArity,
         CheckRefusal::NonExhaustiveDataCase(_) => RefusalName::NonExhaustiveDataCase,
+        CheckRefusal::UndecidedCoverage(_) => RefusalName::UndecidedCoverage,
         CheckRefusal::AbsentRecordField(_) => RefusalName::AbsentRecordField,
         CheckRefusal::AbsentTupleComponent(_) => RefusalName::AbsentTupleComponent,
         CheckRefusal::MissingRecordField { .. } => RefusalName::MissingRecordField,

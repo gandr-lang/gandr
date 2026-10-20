@@ -701,6 +701,7 @@ impl Machine<'_, '_>
             | CheckRefusal::UnknownConstructor { .. }
             | CheckRefusal::ConstructorArity(_)
             | CheckRefusal::NonExhaustiveDataCase(_)
+            | CheckRefusal::UndecidedCoverage(_)
             | CheckRefusal::AbsentRecordField(_)
             | CheckRefusal::AbsentTupleComponent(_)
             | CheckRefusal::MissingRecordField { .. }

@@ -2680,6 +2680,39 @@ fn a_hole_synthesises_the_unknown_type_and_checks_against_any()
 }
 
 #[test]
+fn a_pattern_hole_at_a_leaf_leaves_the_match_undecided()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer);
+    let pattern = arena.computation_hole(HoleId::from(4_u32));
+    let written = arena.computation_hole(HoleId::from(5_u32));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let returns_integer = form_comp_type(&mut context, returns_integer).unwrap();
+    assert_eq!(
+        check_comp(&mut context, pattern, returns_integer).map(|evidence| evidence.conversions()),
+        Ok(ConversionCount::default()),
+        "a hole no pattern was written with checks"
+    );
+    context.keep_pattern_holes(&[HoleId::from(4_u32)]);
+    assert_eq!(
+        check_comp(&mut context, pattern, returns_integer).map(|evidence| evidence.conversions()),
+        Err(CheckRefusal::UndecidedCoverage(pattern)),
+        "the leaf of a pattern hole is refused in checking"
+    );
+    assert_eq!(
+        synthesise_comp(&mut context, pattern).map(|found| found.produced().id()),
+        Err(CheckRefusal::UndecidedCoverage(pattern)),
+        "and in synthesis"
+    );
+    assert_eq!(
+        check_comp(&mut context, written, returns_integer).map(|evidence| evidence.conversions()),
+        Ok(ConversionCount::default()),
+        "a term hole still checks beside it"
+    );
+}
+
+#[test]
 fn an_introduction_against_the_unknown_type_checks_its_parts()
 {
     let mut arena = CoreArena::new();

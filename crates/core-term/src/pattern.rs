@@ -202,6 +202,37 @@ impl Patterns
     {
         self.nodes.get(usize::try_from(id.0).ok()?)
     }
+
+    /// The holes the table's patterns were written with, in mint order.
+    ///
+    /// # Specification
+    /// - ensures: one id per [`Pattern::Hole`] in the table, in the order the
+    ///   patterns were minted.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a table holding a hole beside written patterns
+    ///   answers that hole alone.
+    /// - witness: `pattern::tests::a_table_names_its_holes`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.len() <= self.nodes.len())]
+    pub fn holes(&self) -> Vec<HoleId>
+    {
+        self.nodes
+            .iter()
+            .filter_map(|node| match *node {
+                Pattern::Hole(hole) => Some(hole),
+                Pattern::Wildcard
+                | Pattern::Binder
+                | Pattern::Unit
+                | Pattern::Literal(_)
+                | Pattern::Pair(..)
+                | Pattern::Injection(..)
+                | Pattern::Constructor { .. } => None,
+            })
+            .collect()
+    }
 }
 
 /// How one branch of a match stands against its scrutinee.

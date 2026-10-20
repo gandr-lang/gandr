@@ -5028,6 +5028,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Computation::Session(_) => self.session(term, Direction::Synthesise),
             Computation::Memory(_) => self.memory(term, Direction::Synthesise),
             Computation::World(_) => self.world(term, Direction::Synthesise),
+            Computation::Hole(hole)
+                if matches!(self.context.pattern_hole(hole), Maybe::Present(_)) =>
+            {
+                Err(CheckRefusal::UndecidedCoverage(term))
+            },
             Computation::Hole(_) | Computation::Mark { .. } => {
                 let unknown = self.context.arena_mut().comp_type_unknown();
                 Ok(Step::Ascend(Produced::CompType(unknown)))
@@ -5068,6 +5073,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::an_introduction_against_the_wrong_former_is_a_shape_mismatch`
     /// - witness: `judgement::tests::a_bind_checks_against_the_expected_computation`
     /// - witness: `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`
+    /// - witness: `judgement::tests::a_pattern_hole_at_a_leaf_leaves_the_match_undecided`
     /// - witness: `tests::recursive_data::a_fixpoint_checks_at_every_computation_type`
     /// - witness: `recursion::tests::a_recursion_descends_on_its_first_parameter`
     #[spec(
@@ -5233,6 +5239,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | gandr_core_term::memory::MemoryForm::Access { .. },
             ) => self.memory(term, Direction::Check(expected)),
             Computation::World(_) => self.world(term, Direction::Check(expected)),
+            Computation::Hole(hole)
+                if matches!(self.context.pattern_hole(hole), Maybe::Present(_)) =>
+            {
+                Err(CheckRefusal::UndecidedCoverage(term))
+            },
             Computation::Hole(_) | Computation::Mark { .. } => Ok(Step::Ascend(Produced::Checked)),
         }
     }
@@ -7710,6 +7721,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CheckRefusal::UnknownConstructor { .. }
                     | CheckRefusal::ConstructorArity(_)
                     | CheckRefusal::NonExhaustiveDataCase(_)
+                    | CheckRefusal::UndecidedCoverage(_)
                     | CheckRefusal::AbsentRecordField(_)
                     | CheckRefusal::AbsentTupleComponent(_)
                     | CheckRefusal::MissingRecordField { .. }
