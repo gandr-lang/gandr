@@ -37,6 +37,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::relocate::Moves;
 use crate::server::Peer;
 
 /// A source's place in the table, stable while the table lives.
@@ -355,6 +356,50 @@ impl Files
         paths.sort_unstable();
         paths
     }
+
+    /// Every source under the roots that `moves` moves, or whose file imports
+    /// a file `moves` moves, the roots reached first, ascending.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each source the last walk reached whose path, or a path its
+    ///   file imports, [`Moves::moved`] moves, ascending and once each; a
+    ///   source reaching a moved file only through another source is not
+    ///   listed.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one walk of the roots, then one pass over the table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source importing a moved file, the moved file
+    ///   itself and a source importing it only through another are each
+    ///   answered as stated.
+    /// - witness: `files::tests::a_move_touches_its_file_and_the_files_importing_it`
+    #[spec(ensures: |ret| ret.windows(2).all(|pair| pair.first() < pair.get(1)))]
+    pub fn touching(
+        &mut self,
+        grammar: &Pbg,
+        moves: &Moves,
+    ) -> Vec<PathBuf>
+    {
+        self.refreshed(grammar);
+        let moved = |id: &FileId| {
+            self.named
+                .get(id.0)
+                .is_some_and(|named| moves.moved(&named.path).is_some())
+        };
+        let mut paths: Vec<PathBuf> = self
+            .named
+            .iter()
+            .enumerate()
+            .filter(|&(index, named)| {
+                named.stamp.is_some() && (moved(&FileId(index)) || named.imports.iter().any(&moved))
+            })
+            .map(|(_, named)| named.path.clone())
+            .collect();
+        paths.sort_unstable();
+        paths
+    }
 }
 
 #[cfg(test)]
@@ -366,6 +411,9 @@ mod tests
     use gandr_surface_grammar::built_in;
 
     use super::Files;
+    use crate::protocol::DocumentUri;
+    use crate::protocol::FileRename;
+    use crate::relocate::Moves;
     use crate::server::Peer;
 
     #[test]
@@ -436,6 +484,57 @@ mod tests
             "a source removed imports nothing"
         );
         let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_move_touches_its_file_and_the_files_importing_it()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let directory = std::env::temp_dir().join(format!("gandr-touching-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(directory.join("deeper")).expect("the scratch tree is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        let at = |file: &str| directory.join(file);
+        for (file, text) in [
+            ("base.gandr", "def one : Integer ;\ndef one = 1 ;\n"),
+            (
+                "deeper/mid.gandr",
+                "import \"../base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n",
+            ),
+            (
+                "top.gandr",
+                "import \"./deeper/mid.gandr\" ;\ndef three : Integer ;\ndef three = two ;\n",
+            ),
+            ("lone.gandr", "def four : Integer ;\ndef four = 4 ;\n"),
+        ] {
+            std::fs::write(at(file), text).expect("the source is written");
+        }
+        let renamed = |from: &str, to: &str| {
+            let uri = |file: &str| DocumentUri::of_path(&at(file)).expect("the path is a URI");
+            Moves::of(&[FileRename {
+                old_uri: uri(from),
+                new_uri: uri(to),
+            }])
+        };
+        let mut files = Files::default();
+        files.root(Peer::from(1_u64), &directory);
+        assert_eq!(
+            files.touching(&grammar, &renamed("base.gandr", "moved.gandr")),
+            [at("base.gandr"), at("deeper/mid.gandr")],
+            "the moved file and its importer are touched, its importer's importer not"
+        );
+        assert_eq!(
+            files.touching(&grammar, &renamed("deeper", "renamed")),
+            [at("deeper/mid.gandr"), at("top.gandr")],
+            "a file under a moved folder and its importer are touched"
+        );
+        assert_eq!(
+            files.touching(&grammar, &renamed("lone.gandr", "alone.gandr")),
+            [at("lone.gandr")],
+            "a moved file nothing imports touches itself alone"
+        );
+        let _cleared = std::fs::remove_dir_all(&directory);
     }
 
     #[test]

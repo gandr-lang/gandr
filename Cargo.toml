@@ -935,6 +935,16 @@ version = "1.21.4"
 default-features = false
 features = ["alloc"]
 
+# Relative paths between two absolute ones: the address an import writes for
+# a file that moved, relative to the importer's directory.
+# features:
+# - none: `camino` stays off; the paths are the standard library's.
+# consumers:
+# - surface-lsp
+[workspace.dependencies.pathdiff]
+version = "0.2.3"
+default-features = false
+
 # Percent-decoding: the path a `file` URI names. The choice and its reversal
 # are in the language server's README.
 # features:

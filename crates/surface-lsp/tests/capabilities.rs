@@ -14,6 +14,10 @@ use serde_json::json;
 fn advertised_capabilities_name_the_token_legend()
 {
     let line = Capabilities.to_string();
+    let sources = json!({"filters": [
+        {"scheme": "file", "pattern": {"glob": "**/*.gandr", "matches": "file"}},
+        {"scheme": "file", "pattern": {"glob": "**", "matches": "folder"}},
+    ]});
     assert_eq!(line.lines().count(), 1_usize, "one line: {line}");
     let advertised: Value = serde_json::from_str(&line).expect("the line is JSON");
     assert_eq!(
@@ -46,7 +50,15 @@ fn advertised_capabilities_name_the_token_legend()
                 "renameProvider": {"prepareProvider": true},
                 "documentLinkProvider": {"resolveProvider": true},
                 "linkedEditingRangeProvider": true,
-                "workspace": {"workspaceFolders": {"supported": true, "changeNotifications": true}},
+                "workspace": {
+                    "workspaceFolders": {"supported": true, "changeNotifications": true},
+                    "fileOperations": {
+                        "didCreate": sources,
+                        "didRename": sources,
+                        "didDelete": sources,
+                        "willRename": sources,
+                    },
+                },
             },
             "serverInfo": {"name": "gandr", "version": env!("CARGO_PKG_VERSION")},
         }),

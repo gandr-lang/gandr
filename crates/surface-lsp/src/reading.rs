@@ -62,8 +62,11 @@ use crate::protocol::DocumentSymbols;
 use crate::protocol::DocumentUri;
 use crate::protocol::FoldingRange;
 use crate::protocol::SelectionRange;
+use crate::protocol::TextEdit;
 use crate::recheck::grammar;
 use crate::recheck::roles;
+use crate::relocate::Moves;
+use crate::relocate::PathImport;
 use crate::signature::Argument;
 use crate::signature::Calls;
 
@@ -131,17 +134,6 @@ fn head(
         start,
         end: brace.unwrap_or(symbol.range.end),
     }
-}
-
-/// A path import a read text writes: where its address is written and the
-/// address, its escapes decoded.
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct PathImport
-{
-    /// The bytes between the address's quotes.
-    addressed: ByteSpan,
-    /// The address.
-    address: String,
 }
 
 /// What one parse of a text answers: its highlighter spans, declarations,
@@ -331,6 +323,36 @@ impl Reading
                 Some(DocumentLink {
                     range: ranged(index, import.addressed)?,
                     target: DocumentUri::of_path(&named_path(&directory.join(&import.address)))?,
+                })
+            })
+            .collect()
+    }
+
+    /// The edits rewriting each path import's address that `moves` changes,
+    /// the text being the document at `path`, ranged through `index`, as
+    /// [`Moves::readdressed`] states; none when the text was not read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn readdressed(
+        &self,
+        index: &LineIndex<'_>,
+        path: &Path,
+        moves: &Moves,
+    ) -> Vec<TextEdit>
+    {
+        let Maybe::Present(ref readout) = self.0
+        else {
+            return Vec::new();
+        };
+        moves
+            .readdressed(path, &readout.imports)
+            .into_iter()
+            .filter_map(|readdressed| {
+                Some(TextEdit {
+                    range: ranged(index, readdressed.addressed)?,
+                    new_text: readdressed.written,
                 })
             })
             .collect()
