@@ -351,7 +351,7 @@ struct Typer<'arena>
 #[spec(ensures: |ret| !by.is_empty() || ret.eq(term))]
 fn substitute(
     term: &FreeTerm,
-    by: &BTreeMap<&Name, &FreeTerm>,
+    by: &BTreeMap<&Name, FreeTerm>,
 ) -> FreeTerm
 {
     let mut pending = Vec::from([Rebuild::Read(term.to_node())]);
@@ -365,7 +365,7 @@ fn substitute(
             Rebuild::Read(node) => match node.view() {
                 TermView::Var(name) => built.push(
                     by.get(name)
-                        .map_or_else(|| FreeTerm::var(name.clone()), |&image| image.clone()),
+                        .map_or_else(|| FreeTerm::var(name.clone()), Clone::clone),
                 ),
                 TermView::Op { name, args } => {
                     let args: Vec<TermNode<'_>> = args.collect();
@@ -483,8 +483,8 @@ impl Typer<'_>
                 },
                 Step::Apply(name, count) => {
                     let start = built.len().checked_sub(count)?;
-                    let arguments: Vec<ValueId> = built.drain(start ..).collect();
-                    let applied = self.apply(scope, name, &arguments)?;
+                    let applied = self.apply(scope, name, built.get(start ..)?)?;
+                    built.truncate(start);
                     built.push(applied);
                 },
             }
@@ -1000,6 +1000,9 @@ impl Typer<'_>
         let mut pending: Vec<(TermNode<'_>, Option<TermNode<'_>>)> =
             Vec::from([(side.to_node(), elaborated.map(FreeTerm::to_node))]);
         let mut at = nodes.nodes.iter();
+        // The elaborated arguments by the binder each instantiates, refilled
+        // per application.
+        let mut by: BTreeMap<&Name, FreeTerm> = BTreeMap::new();
         while let Some((node, image)) = pending.pop() {
             let Some(written) = at.next()
             else {
@@ -1039,13 +1042,13 @@ impl Typer<'_>
                     if let (Some((binders, result)), Some(images)) = (single, images.as_deref())
                         && binders.len() == images.len()
                     {
-                        let owned: Vec<FreeTerm> =
-                            images.iter().map(|image| image.to_term()).collect();
-                        let by: BTreeMap<&Name, &FreeTerm> = binders
-                            .iter()
-                            .map(|binder| &binder.name)
-                            .zip(&owned)
-                            .collect();
+                        by.clear();
+                        by.extend(
+                            binders
+                                .iter()
+                                .map(|binder| &binder.name)
+                                .zip(images.iter().map(|image| image.to_term())),
+                        );
                         let sort = SortTerm {
                             sort: result.sort.clone(),
                             indices: result

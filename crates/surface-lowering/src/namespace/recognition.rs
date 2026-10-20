@@ -398,9 +398,10 @@ impl SeedTable
     pub fn prelude() -> Self
     {
         let mut entries: Vec<SeedEntry> = Vec::new();
+        let mut segments = Vec::new();
         for &primitive in gandr_core_term::primitive::PRELUDE {
             let spelling: &'static str = primitive.name().into();
-            let mut segments = Vec::new();
+            segments.clear();
             let mut parts = spelling.split('.').peekable();
             while let Some(part) = parts.next() {
                 segments.push(Segment::from(part));
@@ -1079,24 +1080,27 @@ mod tests
         let table = SeedTable::prelude();
         let entries = table.entries();
         let mut prefixed = 0_usize;
+        let mut seeded: Vec<usize> = Vec::new();
         for (at, entry) in entries.iter().enumerate() {
             let segments = entry.path.segments();
             for length in 1 .. segments.len() {
                 let prefix =
                     super::NamePath::from(segments.get(.. length).unwrap_or_default().to_vec());
-                let seeded: Vec<usize> = entries
-                    .iter()
-                    .enumerate()
-                    .filter(|&(_, seed)| seed.path == prefix)
-                    .map(|(position, seed)| {
-                        assert_eq!(
-                            seed.kind,
-                            super::SeedKind::Namespace,
-                            "a prefix seeds a namespace"
-                        );
-                        position
-                    })
-                    .collect();
+                seeded.clear();
+                seeded.extend(
+                    entries
+                        .iter()
+                        .enumerate()
+                        .filter(|&(_, seed)| seed.path == prefix)
+                        .map(|(position, seed)| {
+                            assert_eq!(
+                                seed.kind,
+                                super::SeedKind::Namespace,
+                                "a prefix seeds a namespace"
+                            );
+                            position
+                        }),
+                );
                 assert!(
                     matches!(*seeded, [position] if position < at),
                     "the prefix of entry {at} is seeded once, before it: {seeded:?}"

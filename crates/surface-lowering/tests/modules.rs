@@ -897,12 +897,16 @@ fn strata(lowered: &Lowered<'_>) -> Vec<Stratum>
         .structures()
         .iter()
         .map(|structure| Stratum {
-            path: structure
-                .path()
-                .iter()
-                .map(|segment| String::from(segment.as_ref()))
-                .collect::<Vec<String>>()
-                .join("."),
+            path: {
+                let mut path = String::new();
+                for (index, segment) in structure.path().iter().enumerate() {
+                    if index > 0 {
+                        path.push('.');
+                    }
+                    path.push_str(AsRef::<str>::as_ref(segment));
+                }
+                path
+            },
             values: structure
                 .values()
                 .iter()

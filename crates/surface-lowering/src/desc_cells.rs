@@ -247,13 +247,16 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
         declarations: Vec::with_capacity(declarations.len()),
         diagnostics: Vec::new(),
     };
+    let mut orientations = Vec::new();
     for declaration in declarations {
-        let orientations: Vec<_> = declaration
-            .written
-            .faces
-            .iter()
-            .map(|face| face.orientation)
-            .collect();
+        orientations.clear();
+        orientations.extend(
+            declaration
+                .written
+                .faces
+                .iter()
+                .map(|face| face.orientation),
+        );
         let oriented = orient_block(&declaration.description, &orientations).ok();
         let reading = oriented
             .as_ref()

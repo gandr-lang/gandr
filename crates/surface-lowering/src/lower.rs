@@ -13063,8 +13063,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         arena: &CoreArena,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        let mut seen: Vec<(RegisteredAttribute, ByteSpan)> = Vec::new();
         for module in decorated {
-            let mut seen: Vec<(RegisteredAttribute, ByteSpan)> = Vec::new();
+            seen.clear();
             for written in &module.attributes {
                 self.fuel.spend()?;
                 match self.read_attribute(written, &mut seen, arena) {
@@ -13153,8 +13154,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         arena: &CoreArena,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        let mut seen: Vec<(RegisteredAttribute, ByteSpan)> = Vec::new();
         for (index, slot) in slots.iter_mut().enumerate() {
-            let mut seen: Vec<(RegisteredAttribute, ByteSpan)> = Vec::new();
+            seen.clear();
             for written in core::mem::take(&mut slot.attributes) {
                 self.fuel.spend()?;
                 match self.read_attribute(&written, &mut seen, arena) {

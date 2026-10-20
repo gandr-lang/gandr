@@ -95,17 +95,20 @@ pub(in crate::lower) fn assert_surveyed(
     lowerer
         .survey()
         .expect("the survey stays within the allowance");
+    let mut surveyed: Vec<Leaves> = Vec::new();
     for &(needle, leaves) in expected {
         let at = spelled(source, needle);
-        let surveyed: Vec<Leaves> = (0 .. usize::from(tree.node_count()))
-            .map(NodeIndex::from)
-            .filter(|&position| {
-                tree.node(position).is_some_and(|node| {
-                    node.span() == at && matches!(shape_of(&pbg, node), Ok(Shape::Form { .. }))
+        surveyed.clear();
+        surveyed.extend(
+            (0 .. usize::from(tree.node_count()))
+                .map(NodeIndex::from)
+                .filter(|&position| {
+                    tree.node(position).is_some_and(|node| {
+                        node.span() == at && matches!(shape_of(&pbg, node), Ok(Shape::Form { .. }))
+                    })
                 })
-            })
-            .map(|position| lowerer.leaves_at(position))
-            .collect();
+                .map(|position| lowerer.leaves_at(position)),
+        );
         assert!(!surveyed.is_empty(), "`{needle}` is a form");
         assert!(
             surveyed.iter().all(|&held| held == leaves),
