@@ -5,6 +5,7 @@
 
 use alloc::collections::BTreeMap;
 use core::convert::Infallible;
+use core::fmt::Write as _;
 use core::ops::ControlFlow;
 use std::path::Path;
 
@@ -172,6 +173,8 @@ fn the_corpus_runs_items_agree_on_both_executors()
     let mut stated = 0_usize;
     let mut answered = 0_usize;
     let mut declined: BTreeMap<String, usize> = BTreeMap::new();
+    let mut item = String::new();
+    let mut rendered = String::new();
     let ControlFlow::Continue(_report) =
         walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
             let Step::Source {
@@ -201,7 +204,8 @@ fn the_corpus_runs_items_agree_on_both_executors()
                 };
                 stated = stated.saturating_add(1);
                 let constant = declaration.constant();
-                let item = format!("{} {}", path.display(), declaration.name());
+                item.clear();
+                write!(item, "{} {}", path.display(), declaration.name()).expect("an item writes");
                 let expected = program.evaluate_on(constant, Engine::Executor);
                 if PATCHER {
                     assert_eq!(
@@ -212,9 +216,11 @@ fn the_corpus_runs_items_agree_on_both_executors()
                 }
                 match expected {
                     Ok(ref evaluation) => {
+                        rendered.clear();
+                        write!(rendered, "{evaluation}").expect("an evaluation writes");
                         assert_eq!(
                             spelled.as_ref(),
-                            evaluation.to_string(),
+                            rendered,
                             "{item}: the executor against the run it states"
                         );
                         answered = answered.saturating_add(1);
