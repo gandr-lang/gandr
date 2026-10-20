@@ -124,4 +124,19 @@ fn a_groups_certificate_replays_in_the_kernel()
         );
         assert_eq!(verdict, Ok(()));
     });
+    let pointed = r#"theory Pointed {
+    sort P : Type;
+    oper e : P;
+    oper twice : (x : P) --> P;
+}"#;
+    lowered(SourceText::from(pointed), |module| {
+        let (certificate, verdict) = certified(module);
+        assert!(
+            certificate.turns.is_empty()
+                && certificate.derived.is_empty()
+                && certificate.ranks.is_empty(),
+            "a block with no rule carries nothing: {certificate:?}"
+        );
+        assert_eq!(verdict, Ok(()));
+    });
 }
