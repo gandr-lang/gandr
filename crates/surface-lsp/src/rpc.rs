@@ -11,11 +11,16 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::protocol::Answer;
+use crate::protocol::ChoiceParams;
 use crate::protocol::CreateProgressParams;
+use crate::protocol::MessageParams;
 use crate::protocol::ProgressParams;
 use crate::protocol::ProgressToken;
 use crate::protocol::PublishParams;
+use crate::protocol::PullParams;
 use crate::protocol::RegistrationParams;
+use crate::protocol::TraceParams;
+use crate::protocol::UnregistrationParams;
 use crate::protocol::WorkDone;
 use crate::protocol::WorkTitle;
 use crate::transport::Body;
@@ -29,6 +34,25 @@ const PUBLISH_DIAGNOSTICS: &str = "textDocument/publishDiagnostics";
 /// The method a server registers a capability with the client under, and the
 /// identifier of the one such request it sends.
 const REGISTER_CAPABILITY: &str = "client/registerCapability";
+
+/// The method a server withdraws a registration under, and the identifier of
+/// the one such request it sends.
+const UNREGISTER_CAPABILITY: &str = "client/unregisterCapability";
+
+/// The method a server pulls the client's settings with.
+const PULL_CONFIGURATION: &str = "workspace/configuration";
+
+/// The method a server puts a choice to the user with.
+const CHOOSE: &str = "window/showMessageRequest";
+
+/// The method a server traces its exchanges under.
+const LOG_TRACE: &str = "$/logTrace";
+
+/// The method a server shows the user a message under.
+const SHOW_MESSAGE: &str = "window/showMessage";
+
+/// The method a server writes to the client's log under.
+const LOG_MESSAGE: &str = "window/logMessage";
 
 /// The method a server asks the client to request its code lenses again with.
 const REFRESH_LENSES: &str = "workspace/codeLens/refresh";
@@ -168,9 +192,14 @@ pub enum Incoming
         /// Its parameters; `null` when the message carries none.
         params: Value,
     },
-    /// The client's answer to a request of the server's; the server sends
-    /// none, so it is read and dropped.
-    Response,
+    /// The client's answer to a request of the server's.
+    Response
+    {
+        /// The identifier of the request it answers.
+        id: RequestId,
+        /// What the client answered; none when it answered an error.
+        result: Option<Value>,
+    },
 }
 
 /// Why a body is not a message.
@@ -373,10 +402,10 @@ pub enum Outgoing
         /// The method notified.
         method: &'static str,
         /// Its parameters.
-        params: PublishParams,
+        params: Notified,
     },
     /// A request of the server's to the client, whose response the server
-    /// reads as a response and leaves.
+    /// reads as an [`Incoming::Response`] under the same identifier.
     Request
     {
         /// Always `2.0`.
@@ -387,10 +416,38 @@ pub enum Outgoing
         method: &'static str,
         /// Its parameters; none for a request that takes none.
         #[serde(skip_serializing_if = "Option::is_none")]
-        params: Option<RegistrationParams>,
+        params: Option<Asked>,
     },
     /// A report of the progress of work the server started.
     Progress(Progress),
+}
+
+/// The parameters of a notification of the server's.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum Notified
+{
+    /// `textDocument/publishDiagnostics`.
+    Published(PublishParams),
+    /// `$/logTrace`.
+    Traced(TraceParams),
+    /// `window/showMessage` and `window/logMessage`.
+    Told(MessageParams),
+}
+
+/// The parameters of a request of the server's.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum Asked
+{
+    /// `client/registerCapability`.
+    Registering(RegistrationParams),
+    /// `client/unregisterCapability`.
+    Unregistering(UnregistrationParams),
+    /// `workspace/configuration`.
+    Pulling(PullParams),
+    /// `window/showMessageRequest`.
+    Choosing(ChoiceParams),
 }
 
 /// A message reporting the progress of work the server started.
@@ -471,7 +528,8 @@ pub struct Refusal
     Ok(Incoming::Notification { ref params, .. }) =>
         params.is_null() || params.is_object() || params.is_array(),
     Err(Malformed::Invalid(ref id)) => id.0.is_null() || id.0.is_number() || id.0.is_string(),
-    Ok(Incoming::Response) | Err(Malformed::Parse) => true,
+    Ok(Incoming::Response { ref id, .. }) => id.0.is_number() || id.0.is_string(),
+    Err(Malformed::Parse) => true,
 })]
 #[inline]
 pub fn classify(body: &Body) -> Result<Incoming, Malformed>
@@ -506,8 +564,13 @@ pub fn classify(body: &Body) -> Result<Incoming, Malformed>
             method: Method(method),
             params,
         }),
-        (None, Some(_)) if object.contains_key("result") || object.contains_key("error") => {
-            Ok(Incoming::Response)
+        (None, Some(id)) if object.contains_key("result") || object.contains_key("error") => {
+            Ok(Incoming::Response {
+                id,
+                result: object
+                    .remove("result")
+                    .filter(|_| !object.contains_key("error")),
+            })
         },
         (Some(_) | None, _) => Err(invalid()),
     }
@@ -561,8 +624,54 @@ pub const fn publish(params: PublishParams) -> Outgoing
     Outgoing::Notification {
         jsonrpc: VERSION,
         method: PUBLISH_DIAGNOSTICS,
-        params,
+        params: Notified::Published(params),
     }
+}
+
+/// The notification tracing `params` to the client.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub const fn trace(params: TraceParams) -> Outgoing
+{
+    Outgoing::Notification {
+        jsonrpc: VERSION,
+        method: LOG_TRACE,
+        params: Notified::Traced(params),
+    }
+}
+
+/// The notification telling the client `params`, where `told` says.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub const fn tell(
+    told: Told,
+    params: MessageParams,
+) -> Outgoing
+{
+    Outgoing::Notification {
+        jsonrpc: VERSION,
+        method: match told {
+            Told::Shown => SHOW_MESSAGE,
+            Told::Logged => LOG_MESSAGE,
+        },
+        params: Notified::Told(params),
+    }
+}
+
+/// Where a message the server tells the client goes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Told
+{
+    /// Shown to the user: `window/showMessage`.
+    Shown,
+    /// Written to the client's log: `window/logMessage`.
+    Logged,
 }
 
 /// The request registering `params` with the client, its identifier the
@@ -578,14 +687,127 @@ pub fn register(params: RegistrationParams) -> Outgoing
         jsonrpc: VERSION,
         id: RequestId(Value::from(REGISTER_CAPABILITY)),
         method: REGISTER_CAPABILITY,
-        params: Some(params),
+        params: Some(Asked::Registering(params)),
     }
 }
 
-/// How many times a connection asked its client for an answer again.
+/// The request withdrawing `params` from the client, its identifier the
+/// method's own name.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn unregister(params: UnregistrationParams) -> Outgoing
+{
+    Outgoing::Request {
+        jsonrpc: VERSION,
+        id: RequestId(Value::from(UNREGISTER_CAPABILITY)),
+        method: UNREGISTER_CAPABILITY,
+        params: Some(Asked::Unregistering(params)),
+    }
+}
+
+/// How many numbered requests of its own a connection sent its client.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Refreshes(pub u64);
+pub struct Requests(pub u64);
+
+/// A method a numbered request calls.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Called(&'static str);
+
+/// The identifier of the `sent`th numbered request, calling `method`: the
+/// method's own name and that count.
+///
+/// # Specification
+/// trivial.
+fn numbered(
+    Called(method): Called,
+    Requests(sent): Requests,
+) -> RequestId
+{
+    RequestId(Value::from(alloc::format!("{method}/{sent}")))
+}
+
+/// The request asking the client for its `gandr` settings, the `sent`th
+/// numbered request this connection sent.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn pull(sent: Requests) -> Outgoing
+{
+    Outgoing::Request {
+        jsonrpc: VERSION,
+        id: numbered(Called(PULL_CONFIGURATION), sent),
+        method: PULL_CONFIGURATION,
+        params: Some(Asked::Pulling(PullParams::gandr())),
+    }
+}
+
+/// The request putting the choice `params` to the user, the `sent`th
+/// numbered request this connection sent.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn choose(
+    params: ChoiceParams,
+    sent: Requests,
+) -> Outgoing
+{
+    Outgoing::Request {
+        jsonrpc: VERSION,
+        id: numbered(Called(CHOOSE), sent),
+        method: CHOOSE,
+        params: Some(Asked::Choosing(params)),
+    }
+}
+
+/// What a response's identifier names: the request of the server's it
+/// answers, by the method the identifier is numbered under.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Answered
+{
+    /// A `workspace/configuration` pull.
+    Pulled,
+    /// A `window/showMessageRequest` choice.
+    Chosen,
+    /// Any other request: a registration, a refresh, a progress token.
+    Other,
+}
+
+impl Answered
+{
+    /// The request `id` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn of(id: &RequestId) -> Self
+    {
+        let numbered_under = |method: &str| {
+            id.0.as_str()
+                .and_then(|id| id.strip_prefix(method))
+                .and_then(|rest| rest.strip_prefix('/'))
+                .is_some_and(|count| count.parse::<u64>().is_ok())
+        };
+        if numbered_under(PULL_CONFIGURATION) {
+            Self::Pulled
+        }
+        else if numbered_under(CHOOSE) {
+            Self::Chosen
+        }
+        else {
+            Self::Other
+        }
+    }
+}
 
 /// An answer a client requests again when the server asks.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -600,8 +822,7 @@ pub enum Refreshed
 }
 
 /// The request asking the client to request every `answer` again, the
-/// `asked`th this connection sent, its identifier the method's own name and
-/// that count.
+/// `sent`th numbered request this connection sent.
 ///
 /// # Specification
 /// trivial.
@@ -609,7 +830,7 @@ pub enum Refreshed
 #[must_use]
 pub fn refresh(
     answer: Refreshed,
-    Refreshes(asked): Refreshes,
+    sent: Requests,
 ) -> Outgoing
 {
     let method = match answer {
@@ -619,7 +840,7 @@ pub fn refresh(
     };
     Outgoing::Request {
         jsonrpc: VERSION,
-        id: RequestId(Value::from(alloc::format!("{method}/{asked}"))),
+        id: numbered(Called(method), sent),
         method,
         params: None,
     }
@@ -731,8 +952,21 @@ mod tests
         );
         assert_eq!(
             classified(Json(r#"{"jsonrpc":"2.0","id":"x","result":null}"#)),
-            Ok(Incoming::Response),
-            "an id with a result is the client's response"
+            Ok(Incoming::Response {
+                id: RequestId(json!("x")),
+                result: Some(Value::Null),
+            }),
+            "an id with a result is the client's response, carrying its result"
+        );
+        assert_eq!(
+            classified(Json(
+                r#"{"jsonrpc":"2.0","id":3,"error":{"code":-32601,"message":"no"}}"#
+            )),
+            Ok(Incoming::Response {
+                id: RequestId(json!(3_i32)),
+                result: None,
+            }),
+            "an id with an error is a response carrying no result"
         );
         assert_eq!(
             classified(Json(

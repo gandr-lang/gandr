@@ -1000,7 +1000,7 @@ mod tests
                             crate::rpc::Incoming::Request { method, .. }
                             | crate::rpc::Incoming::Notification { method, .. },
                         ) => String::from(method.as_ref()),
-                        Ok(crate::rpc::Incoming::Response) | Err(_) => String::new(),
+                        Ok(crate::rpc::Incoming::Response { .. }) | Err(_) => String::new(),
                     };
                     handed.push((method, later.len()));
                     core::ops::ControlFlow::Continue(())

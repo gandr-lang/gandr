@@ -104,6 +104,7 @@ use crate::proposal::lenses;
 use crate::proposal::notes;
 use crate::protocol::Answer;
 use crate::protocol::CancelProgressParams;
+use crate::protocol::ChoiceParams;
 use crate::protocol::CompletionItem;
 use crate::protocol::ConfigurationParams;
 use crate::protocol::ContentChange;
@@ -124,22 +125,31 @@ use crate::protocol::LabelOffsets;
 use crate::protocol::Linked;
 use crate::protocol::Location;
 use crate::protocol::MarkupContent;
+use crate::protocol::MessageAction;
+use crate::protocol::MessageParams;
+use crate::protocol::MessageType;
 use crate::protocol::PositionParams;
 use crate::protocol::ProgressToken;
 use crate::protocol::PublishParams;
+use crate::protocol::PullsConfiguration;
 use crate::protocol::RangeParams;
 use crate::protocol::ReferenceContext;
 use crate::protocol::ReferenceParams;
 use crate::protocol::Refreshing;
 use crate::protocol::RegistrationParams;
 use crate::protocol::RenameParams;
+use crate::protocol::Sections;
 use crate::protocol::SelectionRangeParams;
 use crate::protocol::SemanticTokens;
+use crate::protocol::SetTraceParams;
 use crate::protocol::Settings;
 use crate::protocol::Severity;
 use crate::protocol::ShowsProgress;
 use crate::protocol::StringValue;
 use crate::protocol::SymbolInformation;
+use crate::protocol::Trace;
+use crate::protocol::TraceParams;
+use crate::protocol::UnregistrationParams;
 use crate::protocol::Unresolved;
 use crate::protocol::WatchedFilesParams;
 use crate::protocol::WatchesFiles;
@@ -170,23 +180,31 @@ use crate::rename::prepared;
 use crate::rename::sites;
 use crate::rename::spliced;
 use crate::rename::text_edits;
+use crate::rpc::Answered;
 use crate::rpc::Classified;
 use crate::rpc::ErrorCode;
 use crate::rpc::Incoming;
 use crate::rpc::Method;
+use crate::rpc::Notified;
 use crate::rpc::Outgoing;
 use crate::rpc::Refreshed;
-use crate::rpc::Refreshes;
 use crate::rpc::RequestId;
+use crate::rpc::Requests;
+use crate::rpc::Told;
 use crate::rpc::Withdrawn;
+use crate::rpc::choose;
 use crate::rpc::classify;
 use crate::rpc::failure;
 use crate::rpc::progress_begun;
 use crate::rpc::progress_ended;
 use crate::rpc::publish;
+use crate::rpc::pull;
 use crate::rpc::refresh;
 use crate::rpc::register;
 use crate::rpc::success;
+use crate::rpc::tell;
+use crate::rpc::trace;
+use crate::rpc::unregister;
 use crate::search::FOUND_HELD;
 use crate::search::kind_of;
 use crate::signature::help;
@@ -1248,15 +1266,18 @@ impl Workspace
             progress: ShowsProgress(false),
             reported: 0_u64,
             refreshing: Refreshing::NONE,
-            refreshed: Refreshes(0_u64),
+            sent: Requests(0_u64),
             cancelled: Vec::new(),
+            trace: Trace::Off,
+            pulling: PullsConfiguration(false),
+            choices: Vec::new(),
         };
         let answer = match classify(request) {
             Err(malformed) => malformed.response(),
             Ok(Incoming::Request { id, method, params }) => {
                 reader.request(self, id, &method, params)
             },
-            Ok(Incoming::Notification { .. } | Incoming::Response) => return Value::Null,
+            Ok(Incoming::Notification { .. } | Incoming::Response { .. }) => return Value::Null,
         };
         serde_json::to_value(answer).unwrap_or(Value::Null)
     }
@@ -1403,7 +1424,10 @@ impl Workspace
         message: &Outgoing,
     )
     {
-        let Outgoing::Notification { ref params, .. } = *message
+        let Outgoing::Notification {
+            params: Notified::Published(ref params),
+            ..
+        } = *message
         else {
             return;
         };
@@ -1469,12 +1493,33 @@ pub struct Server
     /// Which answers its client requests again when asked, read at
     /// `initialize`.
     refreshing: Refreshing,
-    /// How many times its client was asked to; the next request is numbered
-    /// after them.
-    refreshed: Refreshes,
+    /// How many numbered requests of its own it sent its client; the next is
+    /// numbered after them.
+    sent: Requests,
     /// The tokens of the work this connection reported progress for that its
     /// client asked to cancel, in the order it asked.
     cancelled: Vec<ProgressToken>,
+    /// How much of its exchanges its client has it trace, read at
+    /// `initialize` and at each `$/setTrace`.
+    trace: Trace,
+    /// Whether its client answers a pull of its settings, read at
+    /// `initialize`.
+    pulling: PullsConfiguration,
+    /// Each choice this connection put to its user, by the request that put
+    /// it, with the answer once read.
+    choices: Vec<(RequestId, Choice)>,
+}
+
+/// Where a choice put to the user stands.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Choice
+{
+    /// Not yet answered.
+    Pending,
+    /// Dismissed, or answered with an error.
+    Dismissed,
+    /// Answered with this choice.
+    Chose(MessageAction),
 }
 
 /// Whether a client asked to cancel the work under a progress token.
@@ -1525,8 +1570,11 @@ impl Server
             progress: ShowsProgress(false),
             reported: 0_u64,
             refreshing: Refreshing::NONE,
-            refreshed: Refreshes(0_u64),
+            sent: Requests(0_u64),
             cancelled: Vec::new(),
+            trace: Trace::Off,
+            pulling: PullsConfiguration(false),
+            choices: Vec::new(),
         }
     }
 
@@ -1594,8 +1642,67 @@ impl Server
         answer: Refreshed,
     ) -> Outgoing
     {
-        self.refreshed = Refreshes(self.refreshed.0.saturating_add(1_u64));
-        refresh(answer, self.refreshed)
+        refresh(answer, self.next_request())
+    }
+
+    /// The number of the next numbered request this connection sends,
+    /// counted.
+    ///
+    /// # Specification
+    /// trivial.
+    fn next_request(&mut self) -> Requests
+    {
+        self.sent = Requests(self.sent.0.saturating_add(1_u64));
+        self.sent
+    }
+
+    /// The request putting `params` to this connection's user, recorded as
+    /// pending until the client answers it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a `window/showMessageRequest` under a fresh numbered
+    ///   identifier, recorded last as [`Choice::Pending`] under it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a choice asked, answered with an action, with null
+    ///   and with an error, and one never asked, read back as chosen,
+    ///   dismissed, dismissed and unknown.
+    /// - witness: `server::tests::a_choice_put_to_the_user_reads_its_answer`
+    #[spec(ensures: |ret| matches!(ret, Outgoing::Request { ref id, .. }
+        if matches!(self.choices.last(), Some(&(ref asked, Choice::Pending)) if asked == id)))]
+    #[inline]
+    #[must_use]
+    pub fn ask(
+        &mut self,
+        params: ChoiceParams,
+    ) -> Outgoing
+    {
+        let asked = choose(params, self.next_request());
+        if let Outgoing::Request { ref id, .. } = asked {
+            self.choices.push((id.clone(), Choice::Pending));
+        }
+        asked
+    }
+
+    /// Where the choice put by the request `id` stands; none when this
+    /// connection put no such choice.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn chosen(
+        &self,
+        id: &RequestId,
+    ) -> Option<&Choice>
+    {
+        self.choices
+            .iter()
+            .find(|&&(ref asked, _)| asked == id)
+            .map(|&(_, ref choice)| choice)
     }
 
     /// Whether this connection's client asked to cancel the work under
@@ -1773,7 +1880,9 @@ impl Server
     /// - ensures: as [`Server::handle`], except that a request of a running
     ///   session other than `shutdown` that [`Withdrawn::of`] withdraws by
     ///   `later` is answered with the error the withdrawal owes, under its own
-    ///   identifier, and not run.
+    ///   identifier, and not run; a `shutdown` of a running session whose
+    ///   client watches files for it is answered after the request withdrawing
+    ///   the watcher; a response is handled as `Server::response` states.
     /// - provides: the step of [`serve`] and of each hub connection, which read
     ///   ahead of the message they handle.
     /// - fails: never; every refusal is a message to the client.
@@ -1784,6 +1893,7 @@ impl Server
     ///   document a later change edits, one with neither, and a `shutdown`
     ///   cancelled after it, are each asserted at their answer.
     /// - witness: `server::tests::a_request_withdrawn_by_a_later_message_is_not_run`
+    /// - witness: `server::tests::a_watching_client_is_asked_to_watch_every_source`
     #[spec(
         captures: phase = self.phase,
         ensures: |ret| ret.log.len() <= ret.messages.len()
@@ -1803,7 +1913,7 @@ impl Server
     {
         match message {
             Err(malformed) => Outcome::say(malformed.response()),
-            Ok(Incoming::Response) => Outcome::quiet(),
+            Ok(Incoming::Response { id, result }) => self.response(workspace, &id, result),
             Ok(Incoming::Request { id, method, params }) => {
                 let withdrawn = match (self.phase, method.as_ref()) {
                     (Phase::Running, name) if name != "shutdown" => {
@@ -1811,10 +1921,26 @@ impl Server
                     },
                     _ => None,
                 };
-                Outcome::say(match withdrawn {
+                let unwatching = self.phase == Phase::Running
+                    && method.as_ref() == "shutdown"
+                    && self.watching.0;
+                let answered = match withdrawn {
                     Some(withdrawn) => withdrawn.response(id),
                     None => self.request(workspace, id, &method, params),
-                })
+                };
+                if unwatching {
+                    Outcome {
+                        messages: Vec::from([
+                            unregister(UnregistrationParams::watched_files()),
+                            answered,
+                        ]),
+                        log: Vec::new(),
+                        flow: Flow::Continue,
+                    }
+                }
+                else {
+                    Outcome::say(answered)
+                }
             },
             Ok(Incoming::Notification { method, params }) => {
                 self.notification(workspace, &method, params)
@@ -1884,7 +2010,7 @@ impl Server
     #[spec(ensures: |ret| ret.len() <= log.len() && {
         let mut lines = log.iter();
         ret.iter().all(|message| matches!(*message,
-            Outgoing::Notification { method: "textDocument/publishDiagnostics", ref params, .. }
+            Outgoing::Notification { method: "textDocument/publishDiagnostics", params: Notified::Published(ref params), .. }
                 if params.diagnostics.len() == 1 && lines.any(|logged|
                     logged.uri == params.uri && Some(logged.version) == params.version)))
     })]
@@ -2496,6 +2622,8 @@ impl Server
                 self.watching = initial_watching(&params);
                 self.progress = initial_progress(&params);
                 self.refreshing = initial_refreshing(&params);
+                self.trace = initial_trace(&params);
+                self.pulling = initial_pulling(&params);
                 workspace.rooted(self.peer, &initial_roots(&params));
                 success(
                     id,
@@ -2889,7 +3017,7 @@ impl Server
         ensures: |ret| self.phase == phase
             && (ret.messages.len() <= 1
                 || matches!(method.as_ref(), "textDocument/didOpen" | "textDocument/didChange" | "textDocument/didClose"
-                    | "workspace/didChangeConfiguration" | "workspace/didChangeWatchedFiles"))
+                    | "workspace/didChangeConfiguration" | "workspace/didChangeWatchedFiles" | "initialized"))
             && match method.as_ref() {
                 "textDocument/didOpen" | "textDocument/didChange" | "workspace/didChangeWatchedFiles" =>
                     ret.log.len() == ret.messages.len(),
@@ -2900,7 +3028,7 @@ impl Server
             && ret.flow == if method.as_ref() == "exit" { Flow::Exit(self.closed()) } else { Flow::Continue }
             && if ret.messages.is_empty() { workspace.documents.len() == count } else {
                 phase == Phase::Running && ret.messages.iter().all(|message| match *message {
-                    Outgoing::Notification { ref params, .. } => {
+                    Outgoing::Notification { params: Notified::Published(ref params), .. } => {
                         let current = workspace.documents.get(&params.uri).is_some_and(|held| matches!(held.own(self.peer),
                             Maybe::Present(document) if params.version == Some(document.version)));
                         match method.as_ref() {
@@ -2912,9 +3040,16 @@ impl Server
                             _ => false,
                         }
                     },
-                    Outgoing::Request { method: called, .. } => method.as_ref() == "initialized"
-                        && called == "client/registerCapability" && self.watching.0,
-                    Outgoing::Success { .. } | Outgoing::Failure { .. } | Outgoing::Progress(_) => false,
+                    Outgoing::Notification { params: Notified::Told(_), .. } =>
+                        matches!(method.as_ref(), "initialized" | "workspace/didChangeConfiguration"),
+                    Outgoing::Request { method: called, .. } => match method.as_ref() {
+                        "initialized" => (called == "client/registerCapability" && self.watching.0)
+                            || (called == "workspace/configuration" && self.pulling.0),
+                        "workspace/didChangeConfiguration" => called == "workspace/configuration" && self.pulling.0,
+                        _ => false,
+                    },
+                    Outgoing::Notification { params: Notified::Traced(_), .. } | Outgoing::Success { .. }
+                    | Outgoing::Failure { .. } | Outgoing::Progress(_) => false,
                 })
             },
     )]
@@ -3057,44 +3192,44 @@ impl Server
                 outcome
             },
             (Phase::Running, "workspace/didChangeConfiguration") => {
-                let Some(settings) = serde_json::from_value::<ConfigurationParams>(params)
-                    .ok()
-                    .and_then(|params| params.settings)
-                    .and_then(|sections| sections.gandr)
-                else {
-                    return Outcome::quiet();
-                };
-                if let Some(quiet) = settings.quiet() {
-                    self.quiet = quiet;
+                match serde_json::from_value::<ConfigurationParams>(params) {
+                    Err(error) => Outcome::say(unread_settings(&error)),
+                    Ok(ConfigurationParams {
+                        settings:
+                            Some(Sections {
+                                gandr: Some(settings),
+                            }),
+                    }) => self.configured(workspace, settings),
+                    Ok(_) if self.pulling.0 => Outcome::say(pull(self.next_request())),
+                    Ok(_) => Outcome::quiet(),
                 }
-                if let Some(form) = settings.form() {
-                    self.style.form = form;
-                }
+            },
+            (Phase::Running, "initialized") => {
                 let mut outcome = Outcome::quiet();
-                let verbosity = settings
-                    .verbosity()
-                    .filter(|&verbosity| verbosity != self.verbosity);
-                let spelling = settings
-                    .spelling()
-                    .filter(|&spelling| spelling != self.style.spelling);
-                if verbosity.is_none() && spelling.is_none() {
-                    if settings.quiet().is_some_and(|quiet| quiet.is_zero()) {
-                        let uris: Vec<DocumentUri> = workspace.documents.keys().cloned().collect();
-                        for uri in &uris {
-                            outcome.messages.extend(self.release(workspace, uri));
-                        }
-                    }
-                    return outcome;
+                if self.watching.0 {
+                    outcome
+                        .messages
+                        .push(register(RegistrationParams::watched_files()));
                 }
-                self.verbosity = verbosity.unwrap_or(self.verbosity);
-                self.style.spelling = spelling.unwrap_or(self.style.spelling);
-                let republished = self.resynchronise(workspace, Picks::Every);
-                outcome.messages.extend(republished.messages);
-                outcome.log.extend(republished.log);
+                if self.pulling.0 {
+                    let sent = self.next_request();
+                    outcome.messages.push(pull(sent));
+                }
+                if let Err(error) = grammar().and_then(|_| forms()) {
+                    outcome.messages.push(tell(Told::Shown, MessageParams {
+                        kind: MessageType::ERROR,
+                        message: format!(
+                            "gandr's grammar did not build, so no request is answered: {error}"
+                        ),
+                    }));
+                }
                 outcome
             },
-            (Phase::Running, "initialized") if self.watching.0 => {
-                Outcome::say(register(RegistrationParams::watched_files()))
+            (Phase::Running, "$/setTrace") => {
+                if let Ok(SetTraceParams { value }) = serde_json::from_value(params) {
+                    self.trace = value;
+                }
+                Outcome::quiet()
             },
             (Phase::Running, "workspace/didChangeWatchedFiles") => {
                 let Ok(WatchedFilesParams { changes }) = serde_json::from_value(params)
@@ -3123,6 +3258,162 @@ impl Server
             },
             (Phase::Waiting | Phase::Running | Phase::ShuttingDown, _) => Outcome::quiet(),
         }
+    }
+
+    /// Apply the `gandr` `settings` this connection's client gave, pushed or
+    /// pulled: the quiet interval and the form at once, and the verbosity and
+    /// spelling by republishing every copy it holds when either changed.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each setting `settings` names is this connection's; the
+    ///   copies are republished when the verbosity or the spelling changed, and
+    ///   released of what they hold back when the quiet interval is zero;
+    ///   nothing is written otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as `workspace/didChangeConfiguration`, and a pulled
+    ///   section applied as a pushed one.
+    /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
+    /// - witness: `server::tests::a_pulled_setting_applies_as_a_pushed_one`
+    #[spec(ensures: |ret| ret.log.len() <= ret.messages.len()
+        && settings.verbosity().is_none_or(|verbosity| self.verbosity == verbosity))]
+    fn configured(
+        &mut self,
+        workspace: &mut Workspace,
+        settings: Settings,
+    ) -> Outcome
+    {
+        if let Some(quiet) = settings.quiet() {
+            self.quiet = quiet;
+        }
+        if let Some(form) = settings.form() {
+            self.style.form = form;
+        }
+        let mut outcome = Outcome::quiet();
+        let verbosity = settings
+            .verbosity()
+            .filter(|&verbosity| verbosity != self.verbosity);
+        let spelling = settings
+            .spelling()
+            .filter(|&spelling| spelling != self.style.spelling);
+        if verbosity.is_none() && spelling.is_none() {
+            if settings.quiet().is_some_and(|quiet| quiet.is_zero()) {
+                let uris: Vec<DocumentUri> = workspace.documents.keys().cloned().collect();
+                for uri in &uris {
+                    outcome.messages.extend(self.release(workspace, uri));
+                }
+            }
+            return outcome;
+        }
+        self.verbosity = verbosity.unwrap_or(self.verbosity);
+        self.style.spelling = spelling.unwrap_or(self.style.spelling);
+        let republished = self.resynchronise(workspace, Picks::Every);
+        outcome.messages.extend(republished.messages);
+        outcome.log.extend(republished.log);
+        outcome
+    }
+
+    /// Handle the client's answer `result` to the request of this
+    /// connection's that `id` names: a pull's settings applied, a choice
+    /// recorded, every other answer read and left.
+    ///
+    /// # Specification
+    /// - requires: nothing; any response is admissible input.
+    /// - ensures: a pull answered with a `gandr` section that reads applies it
+    ///   as [`Server::configured`] does, and one that does not read is logged
+    ///   to the client as a warning; a pull answered with null or an error
+    ///   applies nothing; a choice this connection put is recorded as chosen
+    ///   when the answer names an action, dismissed otherwise; nothing else
+    ///   changes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pull answered with settings, with a section that
+    ///   does not read, with null and with an error; a choice answered with an
+    ///   action, null and an error; a registration's answer.
+    /// - witness: `server::tests::a_pulled_setting_applies_as_a_pushed_one`
+    /// - witness: `server::tests::a_choice_put_to_the_user_reads_its_answer`
+    #[spec(ensures: |ret| ret.log.len() <= ret.messages.len() && ret.flow == Flow::Continue)]
+    fn response(
+        &mut self,
+        workspace: &mut Workspace,
+        id: &RequestId,
+        result: Option<Value>,
+    ) -> Outcome
+    {
+        match Answered::of(id) {
+            Answered::Pulled => {
+                let Some(result) = result.filter(|result| !result.is_null())
+                else {
+                    return Outcome::quiet();
+                };
+                match serde_json::from_value::<Vec<Option<Settings>>>(result) {
+                    Err(error) => Outcome::say(unread_settings(&error)),
+                    Ok(sections) => sections
+                        .into_iter()
+                        .next()
+                        .flatten()
+                        .map_or_else(Outcome::quiet, |settings| {
+                            self.configured(workspace, settings)
+                        }),
+                }
+            },
+            Answered::Chosen => {
+                let answer = result
+                    .and_then(|result| serde_json::from_value::<Option<MessageAction>>(result).ok())
+                    .flatten();
+                if let Some(&mut (_, ref mut choice)) = self
+                    .choices
+                    .iter_mut()
+                    .find(|&&mut (ref asked, _)| asked == id)
+                {
+                    *choice = answer.map_or(Choice::Dismissed, Choice::Chose);
+                }
+                Outcome::quiet()
+            },
+            Answered::Other => Outcome::quiet(),
+        }
+    }
+
+    /// The traces of `log` this connection's client asked for: one
+    /// `$/logTrace` per line at [`Trace::Messages`], naming the document and
+    /// the version it reached, with what rechecking it cost besides at
+    /// [`Trace::Verbose`]; none at [`Trace::Off`].
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: no trace at `off`; one per line, in order, otherwise, its
+    ///   detail present exactly at `verbose`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an open traced at each level, and after the client
+    ///   sets another.
+    /// - witness: `server::tests::the_server_log_is_traced_at_the_level_the_client_sets`
+    #[spec(ensures: |ret| ret.len() == if self.trace == Trace::Off { 0 } else { log.len() })]
+    #[inline]
+    #[must_use]
+    pub fn traced(
+        &self,
+        log: &[Logged],
+    ) -> Vec<Outgoing>
+    {
+        if self.trace == Trace::Off {
+            return Vec::new();
+        }
+        log.iter()
+            .map(|line| {
+                trace(TraceParams {
+                    message: format!("{} at version {}", line.uri, line.version),
+                    verbose: (self.trace == Trace::Verbose).then(|| line.timing.to_string()),
+                })
+            })
+            .collect()
     }
 }
 
@@ -4346,6 +4637,43 @@ fn initial_refreshing(params: &Value) -> Refreshing
         .unwrap_or_default()
 }
 
+/// How much of its exchanges the client `initialize` names in `params` has
+/// the server trace; `off` when the parameters do not read.
+///
+/// # Specification
+/// trivial.
+fn initial_trace(params: &Value) -> Trace
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.trace())
+        .unwrap_or_default()
+}
+
+/// Whether the client `initialize` names in `params` answers a pull of its
+/// settings; not when the parameters do not read.
+///
+/// # Specification
+/// trivial.
+fn initial_pulling(params: &Value) -> PullsConfiguration
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.pulls_configuration())
+        .unwrap_or_default()
+}
+
+/// The warning logged to the client when its `gandr` settings do not read:
+/// what `error` says, and that none of them is applied.
+///
+/// # Specification
+/// trivial.
+fn unread_settings(error: &serde_json::Error) -> Outgoing
+{
+    tell(Told::Logged, MessageParams {
+        kind: MessageType::WARNING,
+        message: format!("the `gandr` settings do not read, so none is applied: {error}"),
+    })
+}
+
 /// The folders the client `initialize` names in `params` opened, each a
 /// `file` URI's path; none when the parameters do not read.
 ///
@@ -4475,7 +4803,8 @@ fn caret_range(
 /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
 /// - witness: `tests::editor::scenarios::typing_a_declaration_holds_its_diagnostics_until_its_terminator`
 #[spec(ensures: |ret| ret.flow == Flow::Continue
-    && matches!(*ret.messages.as_slice(), [Outgoing::Notification { method: "textDocument/publishDiagnostics", ref params, .. }]
+    && matches!(*ret.messages.as_slice(), [Outgoing::Notification { method: "textDocument/publishDiagnostics",
+        params: Notified::Published(ref params), .. }]
         if params.uri == *uri && params.version == Some(document.version)
             && params.diagnostics.len() <= document.checked.len())
     && matches!(*ret.log.as_slice(), [ref logged] if logged.uri == *uri && logged.version == document.version))]
@@ -4611,6 +4940,9 @@ where
         for line in &outcome.log {
             let _unlogged = writeln!(log, "{line}");
         }
+        for message in &server.traced(&outcome.log) {
+            written(output, message)?;
+        }
         Ok(match outcome.flow {
             Flow::Exit(served) => ControlFlow::Break(served),
             Flow::Continue => ControlFlow::Continue(()),
@@ -4652,10 +4984,12 @@ mod tests
     use std::sync::mpsc::channel;
 
     use anodized::spec;
+    use gandr_surface_diagnostics::Verbosity;
     use gandr_surface_dispatcher::named_path;
     use serde_json::Value;
 
     use super::Cancelled;
+    use super::Choice;
     use super::Flow;
     use super::Outcome;
     use super::Peer;
@@ -4669,12 +5003,16 @@ mod tests
     use crate::position::Range;
     use crate::proposal::Proposal;
     use crate::proposal::ProposalRefusal;
+    use crate::protocol::ChoiceParams;
     use crate::protocol::ContentChange;
     use crate::protocol::DocumentUri;
     use crate::protocol::Linked;
+    use crate::protocol::MessageAction;
+    use crate::protocol::MessageType;
     use crate::protocol::ProgressToken;
     use crate::rpc::Classified;
     use crate::rpc::Outgoing;
+    use crate::rpc::RequestId;
     use crate::server::Logged;
     use crate::transport::Body;
 
@@ -5666,10 +6004,277 @@ mod tests
             wire(Json("[]")),
             "the client's answer is read and left"
         );
+        let shutdown = Json(r#"{"jsonrpc":"2.0","id":9,"method":"shutdown"}"#);
         assert_eq!(
-            send(&mut started("false"), initialized),
+            send(&mut watching, shutdown),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":"client/unregisterCapability","method":"client/unregisterCapability",
+                    "params":{"unregisterations":[{"id":"workspace/didChangeWatchedFiles",
+                        "method":"workspace/didChangeWatchedFiles"}]}},
+                    {"jsonrpc":"2.0","id":9,"result":null}]"#
+            )),
+            "at shutdown the watcher is withdrawn before the answer"
+        );
+        let mut unwatched = started("false");
+        assert_eq!(
+            send(&mut unwatched, initialized),
             wire(Json("[]")),
             "a client that does not is asked nothing"
+        );
+        assert_eq!(
+            send(&mut unwatched, shutdown),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":null}]"#)),
+            "nor is anything withdrawn from it at shutdown"
+        );
+    }
+
+    #[test]
+    fn the_server_log_is_traced_at_the_level_the_client_sets()
+    {
+        let mut server = Connected::default();
+        let _answered = send(
+            &mut server,
+            Json(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"trace":"messages"}}"#),
+        );
+        let mut version = 0_u32;
+        let mut traced = |server: &mut Connected| {
+            version = version.saturating_add(1);
+            let change = serde_json::json!({"jsonrpc": "2.0", "method": if version == 1 { "textDocument/didOpen" }
+                else { "textDocument/didChange" }, "params": {"textDocument": {"uri": "file:///tmp/traced.gandr",
+                "languageId": "gandr", "version": version, "text": "def one : Integer ;\ndef one = 1 ;\n"},
+                "contentChanges": []}});
+            let classified = crate::rpc::classify(&Body::from(change.to_string().into_bytes()));
+            let outcome = server.server.answer(&mut server.workspace, classified, &[]);
+            serde_json::to_value(server.server.traced(&outcome.log)).expect("the traces encode")
+        };
+        let set = |server: &mut Connected, value: &str| {
+            let message = serde_json::json!({"jsonrpc": "2.0", "method": "$/setTrace", "params": {"value": value}});
+            send(server, Json(&message.to_string()))
+        };
+        let trace = |message: &str| serde_json::json!([{"jsonrpc": "2.0", "method": "$/logTrace", "params": {"message": message}}]);
+        assert_eq!(
+            traced(&mut server),
+            trace("file:///tmp/traced.gandr at version 1"),
+            "at `messages` the open is traced by its document and version"
+        );
+        assert_eq!(
+            set(&mut server, "verbose"),
+            serde_json::json!([]),
+            "setting the level is answered with nothing"
+        );
+        let verbose = traced(&mut server);
+        assert_eq!(
+            verbose.pointer("/0/params/message"),
+            Some(&serde_json::json!("file:///tmp/traced.gandr at version 2")),
+            "at `verbose` the change is traced by its document and version {verbose}"
+        );
+        assert!(
+            verbose
+                .pointer("/0/params/verbose")
+                .and_then(Value::as_str)
+                .is_some_and(|detail| !detail.is_empty()),
+            "with what rechecking it cost besides: {verbose}"
+        );
+        let _unread = set(&mut server, "loud");
+        assert_eq!(
+            traced(&mut server).as_array().map(Vec::len),
+            Some(1),
+            "a level that does not read leaves the level as it was"
+        );
+        let _off = set(&mut server, "off");
+        assert_eq!(
+            traced(&mut server),
+            serde_json::json!([]),
+            "at `off` nothing is traced"
+        );
+    }
+
+    #[test]
+    fn a_pulled_setting_applies_as_a_pushed_one()
+    {
+        let started = |pulling: &str| {
+            let mut server = Connected::default();
+            let initialize = format!(
+                r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
+                {{"workspace":{{"configuration":{pulling}}}}}}}}}"#
+            );
+            let _answered = send(&mut server, Json(&initialize));
+            server
+        };
+        let pulled = |number: u32| {
+            serde_json::json!([{"jsonrpc": "2.0", "id": format!("workspace/configuration/{number}"),
+                "method": "workspace/configuration", "params": {"items": [{"section": "gandr"}]}}])
+        };
+        let answered = |server: &mut Connected, number: u32, result: &Value| {
+            let response = serde_json::json!({"jsonrpc": "2.0", "id": format!("workspace/configuration/{number}"),
+                "result": result});
+            send(server, Json(&response.to_string()))
+        };
+        let pushed = |server: &mut Connected, settings: &Value| {
+            let message = serde_json::json!({"jsonrpc": "2.0", "method": "workspace/didChangeConfiguration",
+                "params": {"settings": settings}});
+            send(server, Json(&message.to_string()))
+        };
+        let warned = |answer: &Value| {
+            answer.pointer("/0/method") == Some(&serde_json::json!("window/logMessage"))
+                && answer.pointer("/0/params/type") == Some(&serde_json::json!(2_i32))
+                && answer
+                    .pointer("/0/params/message")
+                    .and_then(Value::as_str)
+                    .is_some_and(|message| message.contains("`gandr` settings do not read"))
+        };
+        let mut pulling = started("true");
+        assert_eq!(
+            send(
+                &mut pulling,
+                Json(r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#)
+            ),
+            pulled(1),
+            "a client that answers pulls is asked for its `gandr` settings once initialised"
+        );
+        assert_eq!(
+            answered(
+                &mut pulling,
+                1,
+                &serde_json::json!([{"diagnostics": {"verbosity": "debug"}}])
+            ),
+            serde_json::json!([]),
+            "its answer is read"
+        );
+        assert_eq!(
+            pulling.server.verbosity,
+            Verbosity::Debug,
+            "and applied as a push is"
+        );
+        assert_eq!(
+            pushed(&mut pulling, &Value::Null),
+            pulled(2),
+            "a push carrying no `gandr` section is followed by a pull"
+        );
+        assert_eq!(
+            pushed(
+                &mut pulling,
+                &serde_json::json!({"gandr": {"diagnostics": {"verbosity": "detailed"}}})
+            ),
+            serde_json::json!([]),
+            "a push carrying one is read as it came"
+        );
+        assert_eq!(pulling.server.verbosity, Verbosity::Detailed);
+        let unread = answered(
+            &mut pulling,
+            2,
+            &serde_json::json!([{"diagnostics": {"verbosity": "loud"}}]),
+        );
+        assert!(
+            warned(&unread) && pulling.server.verbosity == Verbosity::Detailed,
+            "a pulled section that does not read is logged as a warning, none of it applied: {unread}"
+        );
+        let unpushed = pushed(
+            &mut pulling,
+            &serde_json::json!({"gandr": {"diagnostics": {"verbosity": "loud"}}}),
+        );
+        assert!(
+            warned(&unpushed) && pulling.server.verbosity == Verbosity::Detailed,
+            "and so is a pushed one: {unpushed}"
+        );
+        assert_eq!(
+            answered(&mut pulling, 2, &Value::Null),
+            serde_json::json!([]),
+            "a pull answered with null applies nothing"
+        );
+        assert_eq!(
+            send(
+                &mut pulling,
+                Json(
+                    r#"{"jsonrpc":"2.0","id":"workspace/configuration/2","error":{"code":-32601,"message":"no"}}"#
+                )
+            ),
+            serde_json::json!([]),
+            "nor one answered with an error"
+        );
+        assert_eq!(pulling.server.verbosity, Verbosity::Detailed);
+        let mut pushing = started("false");
+        assert_eq!(
+            send(
+                &mut pushing,
+                Json(r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#)
+            ),
+            serde_json::json!([]),
+            "a client that does not answer pulls is asked nothing"
+        );
+        assert_eq!(
+            pushed(&mut pushing, &Value::Null),
+            serde_json::json!([]),
+            "nor after a push carrying no section"
+        );
+    }
+
+    #[test]
+    fn a_choice_put_to_the_user_reads_its_answer()
+    {
+        let mut server = initialized();
+        let choice = || ChoiceParams {
+            kind: MessageType::INFO,
+            message: String::from("Recheck every open document?"),
+            actions: Vec::from([
+                MessageAction {
+                    title: String::from("Recheck"),
+                },
+                MessageAction {
+                    title: String::from("Leave"),
+                },
+            ]),
+        };
+        let asked = server.server.ask(choice());
+        assert_eq!(
+            serde_json::to_value(&asked).expect("the request encodes"),
+            serde_json::json!({"jsonrpc": "2.0", "id": "window/showMessageRequest/1",
+                "method": "window/showMessageRequest", "params": {"type": 3_i32,
+                    "message": "Recheck every open document?",
+                    "actions": [{"title": "Recheck"}, {"title": "Leave"}]}}),
+            "the choice is put under a numbered identifier of its own"
+        );
+        let id = |number: u32| {
+            RequestId::from(serde_json::json!(format!(
+                "window/showMessageRequest/{number}"
+            )))
+        };
+        assert_eq!(server.server.chosen(&id(1)), Some(&Choice::Pending));
+        let answer = |server: &mut Connected, response: &str| send(server, Json(response));
+        assert_eq!(
+            answer(
+                &mut server,
+                r#"{"jsonrpc":"2.0","id":"window/showMessageRequest/1","result":{"title":"Recheck"}}"#
+            ),
+            serde_json::json!([]),
+            "an answer is read, answered with nothing"
+        );
+        assert_eq!(
+            server.server.chosen(&id(1)),
+            Some(&Choice::Chose(MessageAction {
+                title: String::from("Recheck")
+            })),
+            "an action chosen is recorded"
+        );
+        let _second = server.server.ask(choice());
+        let _third = server.server.ask(choice());
+        let _dismissed = answer(
+            &mut server,
+            r#"{"jsonrpc":"2.0","id":"window/showMessageRequest/2","result":null}"#,
+        );
+        let _refused = answer(
+            &mut server,
+            r#"{"jsonrpc":"2.0","id":"window/showMessageRequest/3","error":{"code":-32800,"message":"no"}}"#,
+        );
+        assert_eq!(
+            (server.server.chosen(&id(2)), server.server.chosen(&id(3))),
+            (Some(&Choice::Dismissed), Some(&Choice::Dismissed)),
+            "a choice dismissed, or answered with an error, is recorded as dismissed"
+        );
+        assert_eq!(
+            server.server.chosen(&id(4)),
+            None,
+            "a choice never put is unknown"
         );
     }
 
@@ -7104,7 +7709,6 @@ mod tests
         );
         for (unchanged, why) in [
             (configure(r#""json""#), "the level already held"),
-            (configure(r#""loud""#), "a value that names no level"),
             (configure("null"), "a section that names none"),
         ] {
             assert!(
@@ -7112,6 +7716,14 @@ mod tests
                 "{why} republishes nothing"
             );
         }
+        let unread = server.handle(&configure(r#""loud""#)).messages;
+        assert!(
+            matches!(unread.as_slice(), [Outgoing::Notification {
+                method: "window/logMessage",
+                ..
+            }]),
+            "a value that names no level republishes nothing, and is logged as a warning: {unread:?}"
+        );
     }
 
     #[test]
