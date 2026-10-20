@@ -34,7 +34,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 - **The item source.** `program`, `SurfaceItems` (an `ItemSource`), `Revision`, `RevisionFault`, `fault_span::Absent`.
 - **Evaluation.** `Submission::evaluate`, `evaluate`, `evaluation::Absent`: a hole-free item run on the dispatcher's run stage.
 - **Types and documentation.** `type_of`, `spelled::Absent`, `Session::documentation`: a declaration's type spelled at a page width from the latest resume, by name, and its documentation by its form's identity.
-- **Edit-action reconstruction.** `Snapshot` (`of`, `items`, `node`, `span`, `localize`, `edit_locus`), `diff`, `apply`, `EditScript`, `Action`, `CorePath`, `ChildSlot`, `Tree`, `ItemTree`, `SourceEdit`, the reasons `addressed`, `spanned`, `located` and `body_path`; `Submission::edits`, `Session::snapshot`.
+- **Edit-action reconstruction.** `Snapshot` (`of`, `of_after`, `leading`, `items`, `node`, `span`, `localize`, `edit_locus`), `diff`, `apply`, `EditScript`, `Action`, `CorePath`, `ChildSlot`, `Tree`, `ItemTree`, `SourceEdit`, the reasons `addressed`, `spanned`, `located` and `body_path`; `Submission::edits`, `Session::snapshot`. A document laid after an import closure the process lowered shares the closure's items' images, so its snapshot and its edits read its own items alone.
 
 ## Expected features
 

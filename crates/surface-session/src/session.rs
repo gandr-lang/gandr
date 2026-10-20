@@ -295,6 +295,7 @@ use gandr_core_incremental::CheckpointStoreError;
 use gandr_core_incremental::Checkpoints;
 use gandr_core_incremental::IncrementalSession;
 use gandr_core_incremental::ItemCount;
+use gandr_core_incremental::ItemOrdinal;
 use gandr_core_incremental::ProgramError;
 use gandr_core_incremental::Resume;
 use gandr_core_incremental::ResumeCensus;
@@ -2285,7 +2286,6 @@ impl<Store, Blocks> Session<Store, Blocks>
         let mut items = program(&module, arena.clone()).map_err(SessionFault::Unordered)?;
         let imports = Imports::of(&module, own);
         let documentation = documentation_of(&module, own);
-        let snapshot = Snapshot::of(&items, module.origins());
         // The closure's declarations — those written before the revision's own
         // source — lead the judged ones, a declaration the lowering refused
         // being judged nowhere.
@@ -2295,6 +2295,15 @@ impl<Store, Blocks> Session<Store, Blocks>
             .filter(|declaration| !matches!(declaration.outcome(), DeclarationOutcome::Refused(_)))
             .take_while(|declaration| declaration.span().start() < base)
             .count();
+        // The closure's items read alike in every revision laid after it, so
+        // their images are read once and shared.
+        let snapshot = closure.and_then(Closure::snapshot).map_or_else(
+            || Snapshot::of(&items, module.origins()),
+            |leading| Snapshot::of_after(&items, module.origins(), leading),
+        );
+        if let Some(closure) = closure {
+            closure.keep_snapshot(|| snapshot.leading(ItemOrdinal::from(boundary)));
+        }
         let (settled, admission) = judge_member_after(
             self.root.corpus_root(),
             (module, revision),

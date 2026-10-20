@@ -45,6 +45,13 @@
 //! child slots from its body's root; an action anchored in the old revision
 //! carries the old ordinal, an insertion the new one.
 //!
+//! A snapshot holds each item's image behind a shared pointer. The leading
+//! items of a document laid after an import closure read alike in every
+//! revision, so `Snapshot::of_after` takes their images from the closure's
+//! `Snapshot::leading` rather than reading them out of the arena again, and
+//! `diff` passes over the leading items whose images two snapshots share
+//! without reading them: the cost of both follows the document's own items.
+//!
 //! Over a named surface core the contract would carry actions for grades,
 //! injection sides, binder names and annotations, and align items by a longest
 //! common subsequence of their names in an `n·m` table. The core here carries
@@ -132,6 +139,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;
+use alloc::sync::Arc;
 use core::mem;
 
 use anodized::spec;
@@ -666,10 +674,11 @@ struct Visited(usize);
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Snapshot
 {
-    /// The items, in source order.
-    items: Vec<ItemTree>,
+    /// The items, in source order, each image shared with every snapshot
+    /// holding it.
+    items: Vec<Arc<ItemTree>>,
     /// Per item, the extent of each body node, by table index.
-    spans: Vec<Vec<Maybe<ByteSpan, spanned::Absent>>>,
+    spans: Vec<Arc<[Maybe<ByteSpan, spanned::Absent>]>>,
     /// Each body root's span beside its item, ascending by start; the bodies
     /// of distinct declarations do not overlap.
     bodies: Vec<(ByteSpan, ItemOrdinal)>,
@@ -777,11 +786,67 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
         origins: &OriginTable,
     ) -> Self
     {
+        Self::of_after(program, origins, &Self::default())
+    }
+
+    /// The snapshot of `program`, its nodes located through `origins`, the
+    /// images of the items `leading` holds taken from it.
+    ///
+    /// # Specification
+    /// - requires: `leading` holds the images [`Self::of`] reads for the items
+    ///   leading `program` through `origins`: it is [`Self::leading`] of the
+    ///   snapshot of a program whose items lead `program`'s, lowered into
+    ///   `program`'s arena.
+    /// - ensures: [`Self::of`] of `program` and `origins`, each image `leading`
+    ///   holds shared rather than read again.
+    /// - provides: a snapshot whose reading follows the items after
+    ///   `leading`'s, and whose leading images [`diff`] passes over by
+    ///   identity.
+    /// - panics: none.
+    /// - economy: the items after `leading`'s are read out of the arena; the
+    ///   leading ones cost a reference count each.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a revision's snapshot after the leading images of an
+    ///   earlier revision of the same leading items, against the snapshot read
+    ///   whole, and the diff of two revisions sharing them.
+    /// - witness: `edit::tests::a_snapshot_after_leading_images_is_the_whole_snapshot_776`
+    #[spec(
+        requires: leading.items.len() <= program.items().len()
+            && leading.items.iter().zip(program.references()).all(|(item, reference)| item.reference == *reference),
+        ensures: |ret| {
+            ret.items.len() == program.items().len()
+                && ret.spans.len() == ret.items.len()
+                && ret.items.iter().zip(&leading.items).all(|(item, kept)| Arc::ptr_eq(item, kept))
+                && ret.items.iter().zip(program.references()).all(|(item, reference)| item.reference == *reference)
+                && ret.bodies.windows(2).all(|pair| matches!(pair, [(left, _), (right, _)] if left.start() <= right.start()))
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn of_after(
+        program: &Program,
+        origins: &OriginTable,
+        leading: &Self,
+    ) -> Self
+    {
+        let held = leading.items.len().min(program.items().len());
         let mut items = Vec::with_capacity(program.items().len());
         let mut spans = Vec::with_capacity(program.items().len());
-        let mut bodies = Vec::new();
-        for (ordinal, (item, reference)) in
-            program.items().iter().zip(program.references()).enumerate()
+        items.extend(leading.items.iter().take(held).cloned());
+        spans.extend(leading.spans.iter().take(held).cloned());
+        let mut bodies: Vec<(ByteSpan, ItemOrdinal)> = leading
+            .bodies
+            .iter()
+            .filter(|&&(_, item)| usize::from(item) < held)
+            .copied()
+            .collect();
+        for (ordinal, (item, reference)) in program
+            .items()
+            .iter()
+            .zip(program.references())
+            .enumerate()
+            .skip(held)
         {
             let (declaration, located) = match *(item.declaration().content()) {
                 gandr_core_checker::DeclarationContent::Value {
@@ -850,11 +915,11 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
             if let Some(&Maybe::Present(span)) = located.first() {
                 bodies.push((span, ItemOrdinal::from(ordinal)));
             }
-            items.push(ItemTree {
+            items.push(Arc::new(ItemTree {
                 reference: reference.clone(),
                 declaration,
-            });
-            spans.push(located);
+            }));
+            spans.push(Arc::from(located));
         }
         bodies.sort_by_key(|&(span, _)| span.start());
         Self {
@@ -864,13 +929,54 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
         }
     }
 
+    /// The snapshot of the items before `end`, sharing their images.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the items before `end` and their extents, each image shared
+    ///   with `self`, and the bodies of those items in `self`'s order; every
+    ///   item when `self` holds fewer.
+    /// - provides: the leading images [`Self::of_after`] takes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::of_after`].
+    /// - witness: `edit::tests::a_snapshot_after_leading_images_is_the_whole_snapshot_776`
+    #[spec(
+        ensures: |ret| {
+            ret.items.len() == usize::from(end).min(self.items.len())
+                && ret.spans.len() == ret.items.len()
+                && ret.items.iter().zip(&self.items).all(|(item, kept)| Arc::ptr_eq(item, kept))
+                && ret.bodies.iter().all(|&(_, item)| item < end)
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn leading(
+        &self,
+        end: ItemOrdinal,
+    ) -> Self
+    {
+        let kept = usize::from(end).min(self.items.len());
+        Self {
+            items: self.items.get(.. kept).unwrap_or_default().to_vec(),
+            spans: self.spans.get(.. kept).unwrap_or_default().to_vec(),
+            bodies: self
+                .bodies
+                .iter()
+                .filter(|&&(_, item)| item < end)
+                .copied()
+                .collect(),
+        }
+    }
+
     /// The items, in source order.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn items(&self) -> &[ItemTree]
+    pub fn items(&self) -> &[Arc<ItemTree>]
     {
         &self.items
     }
@@ -1001,7 +1107,7 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
             }),
             Some(spans),
         ) = (
-            self.items.get(usize::from(path.item)),
+            self.items.get(usize::from(path.item)).map(|item| &**item),
             self.spans.get(usize::from(path.item)),
         )
         else {
@@ -1216,7 +1322,7 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
             Some(spans),
         ) = (
             encloses(root_span),
-            self.items.get(usize::from(item)),
+            self.items.get(usize::from(item)).map(|item| &**item),
             self.spans.get(usize::from(item)),
         )
         else {
@@ -1372,8 +1478,8 @@ pub enum Action
     {
         /// The item's ordinal in the new revision.
         at: ItemOrdinal,
-        /// The item.
-        item: ItemTree,
+        /// The item, shared with the new revision's snapshot.
+        item: Arc<ItemTree>,
     },
     /// An item removed, at its ordinal in the old revision.
     DeleteItem
@@ -1577,8 +1683,10 @@ impl EditScript
 ///   exactly when the revisions are equal.
 /// - provides: the localized edit a consumer reads instead of a text diff.
 /// - panics: none.
-/// - intension: alignment in time `n log n` over items by patience sorting;
-///   each body pair is walked once, and a path is built only for an action.
+/// - intension: the leading items whose images the two snapshots share are
+///   passed over by identity, unread; the rest align in time `n log n` by
+///   patience sorting, each body pair is walked once, and a path is built only
+///   for an action.
 ///
 /// # Adequacy
 /// - hypothesis: L2 over generated revision pairs: replay is compared with the
@@ -1683,10 +1791,21 @@ pub fn diff(
     new: &Snapshot,
 ) -> EditScript
 {
-    let kept = align(&old.items, &new.items);
+    // The leading images the two snapshots share are one item each: equal,
+    // and so without an action.
+    let shared = old
+        .items
+        .iter()
+        .zip(&new.items)
+        .take_while(|&(before, after)| Arc::ptr_eq(before, after))
+        .count();
+    let old_rest = old.items.get(shared ..).unwrap_or_default();
+    let new_rest = new.items.get(shared ..).unwrap_or_default();
+    let ordinal = |at: usize| ItemOrdinal::from(at.saturating_add(shared));
+    let kept = align(old_rest, new_rest);
     let mut actions = Vec::new();
-    let mut kept_old = vec![false; old.items.len()];
-    let mut kept_new = vec![false; new.items.len()];
+    let mut kept_old = vec![false; old_rest.len()];
+    let mut kept_new = vec![false; new_rest.len()];
     for &(old_at, new_at) in &kept {
         if let Some(slot) = kept_old.get_mut(usize::from(old_at)) {
             *slot = true;
@@ -1697,27 +1816,29 @@ pub fn diff(
     }
     for (at, &is_kept) in kept_old.iter().enumerate() {
         if !is_kept {
-            actions.push(Action::DeleteItem {
-                at: ItemOrdinal::from(at),
-            });
+            actions.push(Action::DeleteItem { at: ordinal(at) });
         }
     }
-    for ((at, &is_kept), item) in kept_new.iter().enumerate().zip(&new.items) {
+    for ((at, &is_kept), item) in kept_new.iter().enumerate().zip(new_rest) {
         if !is_kept {
             actions.push(Action::InsertItem {
-                at: ItemOrdinal::from(at),
-                item: item.clone(),
+                at: ordinal(at),
+                item: Arc::clone(item),
             });
         }
     }
     for (at, new_at) in kept {
         let (Some(before), Some(after)) = (
-            old.items.get(usize::from(at)),
-            new.items.get(usize::from(new_at)),
+            old_rest.get(usize::from(at)),
+            new_rest.get(usize::from(new_at)),
         )
         else {
             continue;
         };
+        if Arc::ptr_eq(before, after) {
+            continue;
+        }
+        let (at, new_at) = (ordinal(usize::from(at)), ordinal(usize::from(new_at)));
         let DeclarationTree::Value {
             signature: ref before_signature,
             body: ref before_body,
@@ -1727,7 +1848,7 @@ pub fn diff(
                 actions.push(Action::DeleteItem { at });
                 actions.push(Action::InsertItem {
                     at: new_at,
-                    item: after.clone(),
+                    item: Arc::clone(after),
                 });
             }
             continue;
@@ -1741,7 +1862,7 @@ pub fn diff(
                 actions.push(Action::DeleteItem { at });
                 actions.push(Action::InsertItem {
                     at: new_at,
-                    item: after.clone(),
+                    item: Arc::clone(after),
                 });
             }
             continue;
@@ -1827,13 +1948,14 @@ pub fn diff(
 #[inline]
 #[must_use]
 pub fn apply(
-    old: &[ItemTree],
+    old: &[Arc<ItemTree>],
     script: &EditScript,
-) -> Vec<ItemTree>
+) -> Vec<Arc<ItemTree>>
 {
-    let mut items: Vec<Option<ItemTree>> = old.iter().cloned().map(Some).collect();
+    // An item no action touches stays the image `old` holds.
+    let mut items: Vec<Option<Arc<ItemTree>>> = old.iter().cloned().map(Some).collect();
     let mut grafts: BTreeMap<ItemOrdinal, Vec<(&CorePath, Graft<'_>)>> = BTreeMap::new();
-    let mut inserted: Vec<(ItemOrdinal, &ItemTree)> = Vec::new();
+    let mut inserted: Vec<(ItemOrdinal, &Arc<ItemTree>)> = Vec::new();
     for action in script.actions() {
         match *action {
             Action::InsertItem { at, ref item } => inserted.push((at, item)),
@@ -1846,21 +1968,23 @@ pub fn apply(
                 if let Some(&mut Some(ref mut item)) = items.get_mut(usize::from(at))
                     && let DeclarationTree::Value {
                         ref mut signature, ..
-                    } = item.declaration
+                    } = Arc::make_mut(item).declaration
                 {
                     signature.clone_from(to);
                 }
             },
             Action::FillHole { at, ref to } => {
                 if let Some(&mut Some(ref mut item)) = items.get_mut(usize::from(at))
-                    && let DeclarationTree::Value { ref mut body, .. } = item.declaration
+                    && let DeclarationTree::Value { ref mut body, .. } =
+                        Arc::make_mut(item).declaration
                 {
                     *body = Maybe::Present(to.clone());
                 }
             },
             Action::EraseToHole { at } => {
                 if let Some(&mut Some(ref mut item)) = items.get_mut(usize::from(at))
-                    && let DeclarationTree::Value { ref mut body, .. } = item.declaration
+                    && let DeclarationTree::Value { ref mut body, .. } =
+                        Arc::make_mut(item).declaration
                 {
                     *body = Maybe::Absent(body::Absent::Hole);
                 }
@@ -1904,16 +2028,16 @@ pub fn apply(
             && let DeclarationTree::Value {
                 body: Maybe::Present(ref mut body),
                 ..
-            } = item.declaration
+            } = Arc::make_mut(item).declaration
         {
             *body = graft(body, &edits);
         }
     }
-    let mut result: Vec<ItemTree> = items.into_iter().flatten().collect();
+    let mut result: Vec<Arc<ItemTree>> = items.into_iter().flatten().collect();
     inserted.sort_by_key(|&(at, _)| at);
     for (at, item) in inserted {
         let position = usize::from(at).min(result.len());
-        result.insert(position, item.clone());
+        result.insert(position, Arc::clone(item));
     }
     result
 }
@@ -2122,8 +2246,8 @@ fn graft(
 },
 )]
 fn align(
-    old: &[ItemTree],
-    new: &[ItemTree],
+    old: &[Arc<ItemTree>],
+    new: &[Arc<ItemTree>],
 ) -> Vec<(ItemOrdinal, ItemOrdinal)>
 {
     let by_reference: BTreeMap<&Reference, usize> = old
@@ -3967,6 +4091,7 @@ fn hull(
 mod tests
 {
     use alloc::string::String;
+    use alloc::sync::Arc;
     use alloc::vec;
     use alloc::vec::Vec;
     use core::fmt::Write as _;
@@ -4008,7 +4133,7 @@ mod tests
         ensures: |ret| {
     ret.spans
         .iter()
-        .flatten()
+        .flat_map(|spans| spans.iter())
         .all(|span| match *span {
             Maybe::Present(span) => span.end() <= text.end(),
             Maybe::Absent(_) => true,
@@ -4079,7 +4204,7 @@ mod tests
                         ..
                     },
                 ..
-            } = item
+            } = &**item
             else {
                 continue;
             };
@@ -4154,7 +4279,7 @@ mod tests
             let snapshot = snapshot_of(SourceText::from(source));
 
             for spans in &snapshot.spans {
-                for &span in spans {
+                for &span in spans.iter() {
                     let Maybe::Present(span) = span
                     else {
                         continue;
@@ -4207,8 +4332,11 @@ def body = 1 ;
         }
         let body = CorePath::new(ItemOrdinal::from(1_usize), Vec::new());
         let mut unrecorded = snapshot.clone();
-        for span in unrecorded.spans.iter_mut().flatten() {
-            *span = Maybe::Absent(spanned::Absent::Unrecorded);
+        for spans in &mut unrecorded.spans {
+            *spans = spans
+                .iter()
+                .map(|_| Maybe::Absent(spanned::Absent::Unrecorded))
+                .collect();
         }
         unrecorded.bodies.clear();
         assert_eq!(unrecorded.node(&body), snapshot.node(&body));
@@ -4659,6 +4787,83 @@ def body = 1 ;
         }
     }
 
+    /// A revision's snapshot taken after the leading images of an earlier
+    /// revision's is the snapshot read whole, those images shared rather than
+    /// read again, and the diff from the earlier revision is the diff of the
+    /// two read whole, every action anchored after the shared items (#776).
+    #[test]
+    fn a_snapshot_after_leading_images_is_the_whole_snapshot_776()
+    {
+        let read = |text: &'static str| {
+            let grammar = built_in().expect("the built-in grammar builds");
+            let mut lowerings = LoweringCount::default();
+            let lowering = lower_source(&grammar, SourceText::from(text), &mut lowerings)
+                .expect("the revision lowers");
+            let Lowered::Module { module, arena } = lowering.into_lowered()
+            else {
+                panic!("the lowering reads a module: {text:?}");
+            };
+            let program = program(&module, arena).expect("positions ascend");
+            (program, module)
+        };
+        let (first, first_module) = read(
+            "data Color : Type { Red : Color; Green : Color; }\ndef a = 1 ;\ndef b = thunk { \
+             return a } ;\ndef c = 2 ;\n",
+        );
+        let (second, second_module) = read(
+            "data Color : Type { Red : Color; Green : Color; }\ndef a = 1 ;\ndef b = thunk { \
+             return a } ;\ndef c = 3 ;\ndef d = c ;\n",
+        );
+        let shared = ItemOrdinal::from(3_usize);
+        let before = Snapshot::of(&first, first_module.origins());
+        let kept = before.leading(shared);
+        assert_eq!(
+            kept.items(),
+            before.items().get(.. 3).expect("three leading items")
+        );
+        let after = Snapshot::of_after(&second, second_module.origins(), &kept);
+        let whole = Snapshot::of(&second, second_module.origins());
+        assert_eq!(
+            after, whole,
+            "the leading images read as the whole snapshot reads them"
+        );
+        assert!(
+            after
+                .items()
+                .iter()
+                .zip(kept.items())
+                .all(|(item, kept)| Arc::ptr_eq(item, kept)),
+            "the leading images are shared, not read again"
+        );
+        let script = super::diff(&before, &after);
+        assert_eq!(
+            script,
+            super::diff(&before, &whole),
+            "passing over the shared images changes no action"
+        );
+        let anchor = |action: &super::Action| match *action {
+            super::Action::InsertItem { at, .. }
+            | super::Action::DeleteItem { at }
+            | super::Action::SetSignature { at, .. }
+            | super::Action::FillHole { at, .. }
+            | super::Action::EraseToHole { at } => at,
+            super::Action::Replace { ref path, .. }
+            | super::Action::SetLiteral { ref path, .. }
+            | super::Action::SetVariable { ref path, .. }
+            | super::Action::SetConstant { ref path, .. } => path.item,
+        };
+        assert!(
+            !script.actions().is_empty()
+                && script
+                    .actions()
+                    .iter()
+                    .all(|action| anchor(action) >= shared),
+            "the edits are the document's own: {:?}",
+            script.actions()
+        );
+        assert_eq!(super::apply(before.items(), &script), after.items());
+    }
+
     #[test]
     fn a_value_declaration_reports_its_signature_and_an_unsigned_one_none()
     {
@@ -4723,7 +4928,7 @@ def body = 1 ;
             let (body, spans) =
                 super::read(&program, &OriginTable::default(), super::Root::Value(code));
             Snapshot {
-                items: vec![ItemTree {
+                items: vec![Arc::new(ItemTree {
                     reference: Reference::Item {
                         key: ItemKey::from("row"),
                         occurrence: Occurrence::from(0_usize),
@@ -4732,8 +4937,8 @@ def body = 1 ;
                         signature: Maybe::Absent(super::signature::Absent::Unsigned),
                         body: Maybe::Present(body),
                     },
-                }],
-                spans: vec![spans],
+                })],
+                spans: vec![Arc::from(spans)],
                 bodies: Vec::new(),
             }
         };
@@ -4816,7 +5021,7 @@ def body = 1 ;
                 let (body, spans) =
                     super::read(&program, &OriginTable::default(), super::Root::Value(value));
                 Snapshot {
-                    items: vec![ItemTree {
+                    items: vec![Arc::new(ItemTree {
                         reference: Reference::Item {
                             key: ItemKey::from("control"),
                             occurrence: Occurrence::from(0_usize),
@@ -4825,8 +5030,8 @@ def body = 1 ;
                             signature: Maybe::Absent(super::signature::Absent::Unsigned),
                             body: Maybe::Present(body),
                         },
-                    }],
-                    spans: vec![spans],
+                    })],
+                    spans: vec![Arc::from(spans)],
                     bodies: Vec::new(),
                 }
             };
@@ -4948,7 +5153,7 @@ def body = 1 ;
         );
 
         let old = Snapshot {
-            items: vec![ItemTree {
+            items: vec![Arc::new(ItemTree {
                 reference: Reference::Item {
                     key: ItemKey::from("equivalence"),
                     occurrence: Occurrence::from(0_usize),
@@ -4957,8 +5162,8 @@ def body = 1 ;
                     signature: Maybe::Present(signature),
                     body: Maybe::Present(body),
                 },
-            }],
-            spans: vec![spans],
+            })],
+            spans: vec![Arc::from(spans)],
             bodies: Vec::new(),
         };
         for replacement in [
@@ -4972,7 +5177,7 @@ def body = 1 ;
             },
         ] {
             let mut new = old.clone();
-            let item = new.items.first_mut().expect("one item");
+            let item = Arc::make_mut(new.items.first_mut().expect("one item"));
             let super::DeclarationTree::Value {
                 body: Maybe::Present(Tree { ref mut nodes }),
                 ..
@@ -5018,7 +5223,7 @@ def c = 3 ;
                 let new: Vec<_> = permutation
                     .into_iter()
                     .filter(|&index| selected & (1_u8 << index) != 0_u8)
-                    .map(|index| old.get(index).expect("three fixture items").clone())
+                    .map(|index| Arc::clone(old.get(index).expect("three fixture items")))
                     .collect();
                 let pairs = super::align(old, &new);
                 let maximum = (0_u8 .. 8_u8)
@@ -5186,7 +5391,13 @@ def c = 3 ;
         let wide_text = deep_then_shallow(depth, Breadth(40_usize));
         let narrow = snapshot_of(SourceText::from(narrow_text.as_str()));
         let wide = snapshot_of(SourceText::from(wide_text.as_str()));
-        let nodes = |snapshot: &Snapshot| snapshot.spans.iter().map(Vec::len).sum::<usize>();
+        let nodes = |snapshot: &Snapshot| {
+            snapshot
+                .spans
+                .iter()
+                .map(|spans| spans.len())
+                .sum::<usize>()
+        };
         assert!(
             nodes(&wide) > nodes(&narrow),
             "the wide snapshot holds more nodes: {} against {}",

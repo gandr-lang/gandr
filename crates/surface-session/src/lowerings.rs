@@ -37,6 +37,8 @@ use gandr_surface_lowering::UnitSource;
 use gandr_surface_syntax::GrammarFingerprint;
 use gandr_surface_syntax::SourceText;
 
+use crate::edit::Snapshot;
+
 /// The most closures [`LOWERINGS`] holds before it lets the one asked for
 /// longest ago go: the closures of the few documents an editor has open.
 const LOWERINGS_HELD: usize = 8;
@@ -55,8 +57,8 @@ pub enum Held
 }
 
 /// A closure's lowering, with its own declarations' judgement under each root
-/// once a document laid after it asks for it, and the checkpoints of its
-/// declarations' items once a submission has judged them.
+/// once a document laid after it asks for it, and the checkpoints and the
+/// snapshot images of its declarations' items once a submission has made them.
 ///
 /// # Specification
 /// trivial.
@@ -74,6 +76,9 @@ pub struct Closure
     /// The checkpoints of the items its declarations lead a submitted program
     /// with, kept by the first submission that judged them.
     checkpoints: OnceLock<Checkpoints>,
+    /// The snapshot of the items its declarations lead a submitted program
+    /// with, kept by the first submission that read them.
+    snapshot: OnceLock<Snapshot>,
 }
 
 impl Closure
@@ -90,6 +95,7 @@ impl Closure
             strict: OnceLock::new(),
             fixture: OnceLock::new(),
             checkpoints: OnceLock::new(),
+            snapshot: OnceLock::new(),
         }
     }
 
@@ -171,6 +177,42 @@ impl Closure
         Make: FnOnce() -> Checkpoints,
     {
         let _kept = self.checkpoints.get_or_init(checkpoints);
+    }
+
+    /// The snapshot of the items the closure's declarations lead a submitted
+    /// program with, once a submission has kept it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn snapshot(&self) -> Option<&Snapshot>
+    {
+        self.snapshot.get()
+    }
+
+    /// Keep `snapshot` as the snapshot of the closure's items, unless a
+    /// submission kept one before.
+    ///
+    /// # Specification
+    /// - requires: `snapshot` is [`Snapshot::leading`] of a submission's
+    ///   snapshot, ending where the closure's declarations' items end.
+    /// - ensures: the closure holds a snapshot, the first kept.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each revision of a document laid after the closure
+    ///   shares the closure's items' images, and its edits are the document's
+    ///   own.
+    /// - witness: `tests::session::a_document_after_its_closure_shares_the_closure_s_images_776`
+    #[spec(ensures: self.snapshot.get().is_some())]
+    pub fn keep_snapshot<Make>(
+        &self,
+        snapshot: Make,
+    ) where
+        Make: FnOnce() -> Snapshot,
+    {
+        let _kept = self.snapshot.get_or_init(snapshot);
     }
 }
 
