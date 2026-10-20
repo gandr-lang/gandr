@@ -436,8 +436,10 @@ impl<'source> Lowerer<'_, 'source>
                     Some(TheoryValue::encode_certified(&parts, &certificate))
                 });
             let value = certified.as_ref().unwrap_or(&presentation.value);
-            let before = sink.arena.watermark();
+            // The block writes the presentation's value, not `Theory`, the
+            // code it is a value of: only the value takes the block's origin.
             let declared = sink.arena.value_type_data(constant, Vec::new());
+            let before = sink.arena.watermark();
             let body = presentation_term(sink.arena, value.as_value(), declared);
             self.record_since(sink, before, block.node);
             match body {
