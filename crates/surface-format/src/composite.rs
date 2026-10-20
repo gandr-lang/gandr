@@ -4,23 +4,25 @@
 //! `p then q` is the transport `transport(\y. Path(A, a, y), q, p)`, its
 //! carrier `A` and fixed endpoint `a` the type of `p`, which the lowering
 //! derives from the operands; the syntax does not hold them. So the explicit
-//! spelling reads them from the lowering: the returned transport the lowering
-//! minted at the composite's span, spelled through the shared printer in the
-//! explicit form, its first argument the motive. A composite whose motive the
-//! printer cannot spell faithfully — one naming a binder the source opened
-//! around it — has none, keeps its spelling and is reported (#803).
+//! spelling reads them from the lowering: the transport the lowering minted
+//! at the composite's span, spelled through the shared printer in the
+//! explicit form, its first argument the motive, under the names the source
+//! writes for the binders around the composite. A composite whose motive the
+//! printer cannot spell faithfully — one standing under a binder the source
+//! names nothing — has none, keeps its spelling and is reported.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_surface_diagnostics::Families;
+use gandr_surface_diagnostics::Naming;
 use gandr_surface_diagnostics::constant_names;
-use gandr_surface_lowering::Insertion;
 use gandr_surface_lowering::LoweredModule;
-use gandr_surface_lowering::Provenance;
 use gandr_surface_parser::Lexeme;
 use gandr_surface_parser::label;
 use gandr_surface_pretty::CoreNode;
@@ -31,10 +33,11 @@ use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_pretty::Style;
-use gandr_surface_pretty::present_value;
+use gandr_surface_pretty::present_computation;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceFragment;
+use gandr_surface_syntax::SourceText;
 
 /// One token of a spelled motive.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -56,15 +59,18 @@ pub enum Spaced
     No,
 }
 
-/// How the lowering holds a transport the source writes.
+/// How the lowering holds a composite the source writes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Standing
 {
-    /// Returned as a value: the printer writes it `p then q`.
+    /// A transport returned as a value: the printer writes it `p then q`.
     Returned,
-    /// Otherwise, a body's last step among them: the printer writes it as
-    /// written.
+    /// A transport otherwise, a body's last step among them: the printer
+    /// writes it as written.
     Run,
+    /// A composite of flows, which the core holds as written: its explicit
+    /// spelling is its own.
+    Flows,
 }
 
 /// The motive of each path composite the source writes, by the composite's
@@ -79,6 +85,8 @@ pub struct Motives
     /// as values: those the printer writes as `p then q`. A transport standing
     /// as a computation, a body's last step, it writes as written.
     returned: Vec<ByteSpan>,
+    /// The spans of the flow composites, which the core holds as written.
+    flows: Vec<ByteSpan>,
     /// Which composites have one.
     reach: Reach,
 }
@@ -107,11 +115,12 @@ impl Motives
         Self {
             derived: Vec::new(),
             returned: Vec::new(),
+            flows: Vec::new(),
             reach: Reach::Any,
         }
     }
 
-    /// How the lowering holds the transport spanning exactly `span`.
+    /// How the lowering holds the composite spanning exactly `span`.
     ///
     /// # Specification
     /// trivial.
@@ -120,6 +129,9 @@ impl Motives
         span: ByteSpan,
     ) -> Standing
     {
+        if self.flows.contains(&span) {
+            return Standing::Flows;
+        }
         let returned = match self.reach {
             Reach::Derived => self.returned.contains(&span),
             Reach::Any => true,
@@ -153,17 +165,40 @@ impl Motives
     }
 }
 
-/// The motives of the path composites `module`, lowered into `arena` from a
-/// unit whose source starts at `base`, derived: each returned transport the
-/// lowering inserted as a composite's endpoint, spelled in the explicit form,
-/// by its span in the source; and the span of every transport it returns as
-/// a value.
+/// The motives of the path composites `module`, lowered into `arena` from
+/// `text`, of which the formatted source starts at `base`, derived: each
+/// transport the lowering minted at a span of the source, spelled in the
+/// explicit form under the binders the source opens around it, by that span;
+/// and the span of every transport it returns as a value.
 ///
 /// # Specification
-/// trivial.
+/// - requires: `module` was lowered from `text` into `arena`.
+/// - ensures: a motive for each transport the printer spells faithfully under
+///   the names the source writes for the binders around it, in a type or a body
+///   alike; none for one standing under a binder the source names nothing, or
+///   outside every value declaration's roots.
+/// - provides: the motives the explicit form writes.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a motive spelled outside its binders names them `?` and
+///   is withheld, so the explicit form keeps `then`; the test spells one under
+///   a declaration's parameter, in its type and its body.
+/// - witness: `tests::rewrite::a_composite_under_a_parameter_takes_its_motive_803`
+#[spec(ensures: |ret| ret.reach == Reach::Derived)]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        allocation_in_repeated_body,
+        reason = "one binder buffer per declaration, reused across its composites: its names \
+                  borrow that declaration's scopes, which the next pass replaces"
+    )
+)]
 pub fn motives(
     module: &LoweredModule<'_>,
     arena: &CoreArena,
+    text: SourceText<'_>,
     base: ByteOffset,
 ) -> Motives
 {
@@ -171,63 +206,97 @@ pub fn motives(
     let names: Vec<Name<'_>> = owned.iter().map(|name| Name::from(name.as_str())).collect();
     let families = Families::of(module);
     let constructors = families.naming(&names);
-    let source = CoreSource::new(arena, &names).naming(&constructors);
     let style = Style {
         form: Form::Explicit,
         spelling: Spelling::Ascii,
     };
-    let mut found = Vec::new();
+    let origins = module.origins();
     let mut returned = Vec::new();
-    for &(id, origin) in module.origins().values() {
-        let span = origin.span();
-        let (Some(start), Some(end)) = (
-            usize::from(span.start()).checked_sub(usize::from(base)),
-            usize::from(span.end()).checked_sub(usize::from(base)),
-        )
+    let mut flows = Vec::new();
+    for &(id, origin) in origins.values() {
+        let Some(span) = within(origin.span(), base)
         else {
             continue;
         };
-        let Some(&Value::Returned(transport)) = arena.value(id)
-        else {
-            continue;
-        };
-        let Ok(span) = ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end))
-        else {
-            continue;
-        };
-        if !matches!(
-            arena.computation(transport),
-            Some(&Computation::PathTransport { .. })
-        ) {
-            continue;
+        match arena.value(id) {
+            Some(&Value::Returned(transport))
+                if matches!(
+                    arena.computation(transport),
+                    Some(&Computation::PathTransport { .. })
+                ) =>
+            {
+                returned.push(span);
+            },
+            Some(&Value::Then(..)) => flows.push(span),
+            Some(_) | None => {},
         }
-        returned.push(span);
-        if origin.provenance() != Provenance::Inserted(Insertion::Endpoint) {
-            continue;
+    }
+    let mut composites: Vec<(ByteSpan, ComputationId)> = origins
+        .computations()
+        .iter()
+        .filter(|&&(id, _)| {
+            matches!(
+                arena.computation(id),
+                Some(&Computation::PathTransport { .. })
+            )
+        })
+        .filter_map(|&(id, origin)| Some((within(origin.span(), base)?, id)))
+        .collect();
+    let naming = Naming::of(module, text);
+    let mut found = Vec::new();
+    for (_, roots) in naming.declarations() {
+        if composites.is_empty() {
+            break;
         }
-        let Ok(spelled) = present_value(
-            &source,
-            CoreNode::Value(id),
-            PageWidth::from(u32::MAX),
-            style,
-        )
-        else {
-            continue;
-        };
-        if spelled.fidelity() != Fidelity::Faithful || !spelled.unspelled().is_empty() {
-            continue;
-        }
-        let Some(tokens) = motive(SourceFragment::from(spelled.as_ref()))
-        else {
-            continue;
-        };
-        found.push((span, tokens));
+        let scoped = naming.scoped(arena, &owned, roots);
+        let mut binders: Vec<Option<Name<'_>>> = Vec::new();
+        composites.retain(|&(span, transport)| {
+            let Some(around) = scoped.around(CoreNode::Computation(transport))
+            else {
+                return true;
+            };
+            binders.clear();
+            binders.extend(around.iter().map(|binder| binder.name.map(Name::from)));
+            let source = CoreSource::new(arena, &names)
+                .naming(&constructors)
+                .within(&binders);
+            let spelled = present_computation(
+                &source,
+                CoreNode::Computation(transport),
+                PageWidth::from(u32::MAX),
+                style,
+            );
+            if let Ok(spelled) = spelled
+                && spelled.fidelity() == Fidelity::Faithful
+                && spelled.unspelled().is_empty()
+                && let Some(tokens) = motive(SourceFragment::from(spelled.as_ref()))
+            {
+                found.push((span, tokens));
+            }
+            false
+        });
     }
     Motives {
         derived: found,
         returned,
+        flows,
         reach: Reach::Derived,
     }
+}
+
+/// `span`, of a unit's text, as a span of the source starting at `base` in
+/// it; none when it starts before the source.
+///
+/// # Specification
+/// trivial.
+fn within(
+    span: ByteSpan,
+    base: ByteOffset,
+) -> Option<ByteSpan>
+{
+    let start = usize::from(span.start()).checked_sub(usize::from(base))?;
+    let end = usize::from(span.end()).checked_sub(usize::from(base))?;
+    ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).ok()
 }
 
 /// The tokens of the first argument of `transport(…)` as `text` spells it.

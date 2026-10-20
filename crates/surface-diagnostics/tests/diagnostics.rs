@@ -31,6 +31,7 @@ use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::Fix;
 use gandr_surface_diagnostics::Identifier;
 use gandr_surface_diagnostics::Lint;
+use gandr_surface_diagnostics::Naming;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::Subject;
 use gandr_surface_diagnostics::Unsettlement;
@@ -595,6 +596,62 @@ fn a_body_names_its_match_arms_by_their_constructors_809()
         "each arm is written under the constructor it matches: {:?}",
         presentation.unspelled()
     );
+}
+
+/// The binders a node inside a declaration stands under are named as the
+/// source writes them, outermost first: a recursive function's own name, its
+/// parameter, and the pattern variable an arm binds (#803: the formatter
+/// spells a composite's motive under these names).
+#[test]
+fn a_declaration_s_binders_are_named_as_written_803()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let text = SourceText::from(
+        "data Nat : Type {\n  Zero : Nat;\n  Succ : (p : Nat) --> Nat;\n}\ndef rec down(n : Nat) \
+         -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(m) => become down[<](m)\n  \
+         }\n}\n",
+    );
+    let Lowered::Module { module, arena } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is one module");
+    };
+    let written = <&str>::from(text);
+    let used = written
+        .rfind('m')
+        .expect("the arm uses its pattern variable");
+    let variables: Vec<_> = module
+        .origins()
+        .values()
+        .iter()
+        .filter(|&&(_, origin)| usize::from(origin.span().start()) == used)
+        .map(|&(variable, _)| variable)
+        .collect();
+    let naming = Naming::of(&module, text);
+    let names = constant_names(&module);
+    let around: Vec<Vec<Option<String>>> = naming
+        .declarations()
+        .flat_map(|(_, roots)| {
+            let scoped = naming.scoped(&arena, &names, roots);
+            variables
+                .iter()
+                .filter_map(|&variable| scoped.around(CoreNode::Value(variable)))
+                .map(|around| {
+                    around
+                        .into_iter()
+                        .map(|binder| binder.name.map(String::from))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert_eq!(around, [[
+        Some(String::from("down")),
+        Some(String::from("n")),
+        Some(String::from("m"))
+    ]]);
 }
 
 /// A match over a family with a loop writes the loop's arm under the loop's
