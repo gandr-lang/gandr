@@ -1681,3 +1681,115 @@ fn a_coherence_between_composites_is_a_higher_cell()
     );
     assert_eq!(report.declarations[0].description.rules.len(), 1_usize);
 }
+
+/// The presentation the theory block `declaration` presents.
+///
+/// # Specification
+/// trivial.
+fn presented(declaration: &DescribedDeclaration) -> &Presentation
+{
+    let Maybe::Present(ref presentation) = declaration.presentation
+    else {
+        panic!("a theory presents")
+    };
+    presentation
+}
+
+#[test]
+fn an_included_theory_is_the_extension_restricted()
+{
+    let source = "theory Mag {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));\n}\ntheory Pointed {\n  include Mag;\n  oper one : () --> M;\n  rule unitL : mul(one(), x) ==> x;\n}\ntheory Comm {\n  include Mag;\n  oper zero : () --> M;\n}\ntheory Both {\n  include Pointed;\n  include Comm;\n}\n";
+    let report = described(source);
+    assert_eq!(report.diagnostics, []);
+    let magma = presented(&report.declarations[0]).value.decode().unwrap();
+    let pointed = presented(&report.declarations[1]);
+    let [ref included] = *pointed.inclusions.as_slice()
+    else {
+        panic!("one inclusion")
+    };
+    assert_eq!(included.theory, report.declarations[0].description.id);
+    let pointed_parts = pointed.value.decode().unwrap();
+    assert_eq!(pointed_parts.restrict(&included.inclusion), magma);
+    assert_eq!(
+        report.declarations[1]
+            .description
+            .opers
+            .iter()
+            .map(|operation| operation.name.as_ref())
+            .collect::<Vec<_>>(),
+        ["mul", "one"],
+        "the included operation comes first"
+    );
+    let [mul_tile, _] = *pointed.placement.operations.as_slice()
+    else {
+        panic!("two placed operations")
+    };
+    assert_eq!(
+        mul_tile,
+        presented(&report.declarations[0]).placement.operations[0],
+        "an included member keeps the tile of the block that wrote it"
+    );
+    let both = presented(&report.declarations[3]);
+    let both_parts = both.value.decode().unwrap();
+    assert_eq!(both_parts.sorts.len(), 1, "the shared sort is one sort");
+    assert_eq!(
+        both_parts
+            .operations
+            .iter()
+            .map(|operation| operation.name.as_ref())
+            .collect::<Vec<_>>(),
+        ["mul", "one", "zero"],
+        "two inclusions meet along the magma they share"
+    );
+    assert_eq!(
+        both.inclusions
+            .iter()
+            .map(|included| both_parts.restrict(&included.inclusion))
+            .collect::<Vec<_>>(),
+        [
+            pointed_parts,
+            presented(&report.declarations[2]).value.decode().unwrap()
+        ]
+    );
+}
+
+#[test]
+fn an_include_is_refused_at_its_member()
+{
+    let source = "theory Pointed {\n  include Mag;\n  sort M : Type;\n}\ntheory Mag {\n  sort M : Type;\n  oper e : () --> M;\n}\ntheory Unary {\n  sort M : Type;\n  oper e : (x : M) --> M;\n}\ntheory Both {\n  include Mag;\n  include Unary;\n}\n";
+    let report = described(source);
+    let faults = report
+        .diagnostics
+        .iter()
+        .map(|diagnostic| {
+            (
+                diagnostic.fault.clone(),
+                source
+                    .get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end()))
+                    .unwrap_or_default(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(faults, [
+        (
+            DescriptionFault::Signature(SignatureFault::UnknownInclude(Name::from("Mag"))),
+            "include Mag"
+        ),
+        (
+            DescriptionFault::Signature(SignatureFault::IncludeClash(
+                gandr_theory_levitation::IncludeClash::Operation(Name::from("e"))
+            )),
+            "include Unary"
+        ),
+    ]);
+    assert_eq!(
+        presented(&report.declarations[0])
+            .value
+            .decode()
+            .unwrap()
+            .sorts
+            .len(),
+        1,
+        "a block included before its declaration is unknown, and the rest reads"
+    );
+}

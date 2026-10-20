@@ -2,6 +2,7 @@
 
 use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::CircuitDerivationError;
+use gandr_theory_levitation::IncludeClash;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::PortInstantiationError;
 
@@ -69,6 +70,10 @@ pub enum SignatureFault
     /// A port name written twice on an operation's boundary: two ports, not
     /// one wire.
     SharedPort(Name),
+    /// An `include` names no `theory` block read before the including one.
+    UnknownInclude(Name),
+    /// The included theory's members do not extend the block's.
+    IncludeClash(IncludeClash),
 }
 
 pub mod embed;

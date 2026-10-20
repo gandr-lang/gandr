@@ -156,6 +156,20 @@
 //! `Oper`'s fields. The constructor is appended to the table, so a
 //! presentation that declares no observation keeps the bytes it had.
 //!
+//! # Inclusion
+//!
+//! [`TheoryParts::include`] is `include` on presentations: it extends a
+//! presentation by another's members, the included members first, and
+//! returns the inclusion as a [`TheoryInclusion`], the position of each
+//! included member among the extended presentation's. A member already
+//! present under its name is the same member, so two included presentations
+//! that share a sub-presentation meet along it: the extension is their
+//! pushout over the members they share. A member present under its name with
+//! another definition is an [`IncludeClash`]. [`TheoryParts::restrict`] reads
+//! a presentation back along an inclusion, and the inclusion is a morphism
+//! exactly because restricting the extension along it gives back the
+//! included presentation.
+//!
 //! # What waits
 //!
 //! The constructors above are the part of the code grammar the fragment
@@ -170,6 +184,7 @@
 //! presentation's circuit rules are kept beside its value by the reader that
 //! reads them.
 
+use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec;
@@ -550,6 +565,247 @@ impl Default for TheoryParts
             rules: Vec::new(),
         }
     }
+}
+
+/// A member's position in its list of a presentation: its sorts, operations
+/// or rules.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MemberPosition(usize);
+
+impl From<MemberPosition> for usize
+{
+    /// The position as an index.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: MemberPosition) -> Self
+    {
+        position.0
+    }
+}
+
+/// The inclusion of one presentation in another: where each member of the
+/// included presentation stands among the including one's, each list in the
+/// included presentation's order.
+///
+/// # Specification
+/// - requires: nothing to construct this data; [`TheoryParts::include`] returns
+///   one.
+/// - ensures: one position per included member.
+/// - executable: none — a data carrier; [`TheoryParts::restrict`] reads along
+///   it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`TheoryParts::include`].
+/// - witness: `theory::tests::an_extension_restricts_to_what_it_includes`
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct TheoryInclusion
+{
+    /// Where each included sort stands.
+    pub sorts: Vec<MemberPosition>,
+    /// Where each included operation stands.
+    pub operations: Vec<MemberPosition>,
+    /// Where each included rule stands.
+    pub rules: Vec<MemberPosition>,
+}
+
+/// Why one presentation does not extend another.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: each variant names the first member, sorts before operations
+///   before rules, that blocks the extension.
+/// - executable: none — a data carrier with no invocation boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`TheoryParts::include`].
+/// - witness: `theory::tests::a_member_defined_twice_blocks_the_extension_by_name`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IncludeClash
+{
+    /// The included presentation states a shape parameter, which is a
+    /// parameter of the presentation, not a member it shares.
+    Shaped,
+    /// A sort of this name is present with another index telescope or
+    /// representability.
+    Sort(Name),
+    /// An operation of this name is present with other ports.
+    Operation(Name),
+    /// A rule of this name is present with other sides.
+    Rule(Name),
+}
+
+impl TheoryParts
+{
+    /// Extend these parts by `included`'s members and return the inclusion.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success each included member stands at its position in the
+    ///   inclusion, a member already present under its name at that member's
+    ///   position and every other one appended after these parts' members in
+    ///   `included`'s order; [`Self::restrict`] along the inclusion is
+    ///   `included`. On failure these parts are unchanged.
+    /// - fails: a shaped `included` is [`IncludeClash::Shaped`]; a member
+    ///   present under its name with another definition is the clash naming it.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns the first clash, sorts before operations before rules.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an extension restricts to what it includes, two
+    ///   extensions of one presentation included together share its members,
+    ///   and a member defined twice or a shaped presentation blocks the
+    ///   extension by name, leaving the parts as they were.
+    /// - witness: `theory::tests::an_extension_restricts_to_what_it_includes`
+    /// - witness: `theory::tests::two_extensions_of_one_presentation_meet_along_it`
+    /// - witness: `theory::tests::a_member_defined_twice_blocks_the_extension_by_name`
+    #[inline]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |inclusion| inclusion.sorts.len() == included.sorts.len() && inclusion.operations.len() == included.operations.len() && inclusion.rules.len() == included.rules.len()))]
+    pub fn include(
+        &mut self,
+        included: &Self,
+    ) -> Result<TheoryInclusion, IncludeClash>
+    {
+        if matches!(included.shape, Maybe::Present(_)) {
+            return Err(IncludeClash::Shaped);
+        }
+        let (sorts, fresh_sorts) = placed(
+            &self.sorts,
+            &included.sorts,
+            |sort| &sort.name,
+            IncludeClash::Sort,
+        )?;
+        let (operations, fresh_operations) = placed(
+            &self.operations,
+            &included.operations,
+            |operation| &operation.name,
+            IncludeClash::Operation,
+        )?;
+        let (rules, fresh_rules) = placed(
+            &self.rules,
+            &included.rules,
+            |rule| &rule.name,
+            IncludeClash::Rule,
+        )?;
+        self.sorts.extend(fresh_sorts.into_iter().cloned());
+        self.operations
+            .extend(fresh_operations.into_iter().cloned());
+        self.rules.extend(fresh_rules.into_iter().cloned());
+        Ok(TheoryInclusion {
+            sorts,
+            operations,
+            rules,
+        })
+    }
+
+    /// The presentation these parts restrict to along `inclusion`: the
+    /// members at its positions, in its order, with no shape.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each list holds the member at each of the inclusion's
+    ///   positions these parts hold, in the inclusion's order; a position past
+    ///   a list contributes nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::include`].
+    /// - witness: `theory::tests::an_extension_restricts_to_what_it_includes`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.sorts.len() <= inclusion.sorts.len() && ret.operations.len() <= inclusion.operations.len() && ret.rules.len() <= inclusion.rules.len())]
+    pub fn restrict(
+        &self,
+        inclusion: &TheoryInclusion,
+    ) -> Self
+    {
+        Self {
+            shape: Maybe::Absent(shape_parameter::Absent::Unshaped),
+            sorts: at_positions(&self.sorts, &inclusion.sorts),
+            operations: at_positions(&self.operations, &inclusion.operations),
+            rules: at_positions(&self.rules, &inclusion.rules),
+        }
+    }
+}
+
+/// Where each of `included` stands once appended to `own`: at the position of
+/// the member of its name in `own`, or after `own` in `included`'s order; and
+/// the members appended.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one position per member of `included`; the appended members are
+///   those of `included` whose name `own` does not hold, in order.
+/// - fails: a member whose name `own` holds with another definition is `clash`
+///   of its name.
+/// - panics: none.
+///
+/// # Errors
+/// Returns the first clash in `included`'s order.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`TheoryParts::include`].
+/// - witness: `theory::tests::two_extensions_of_one_presentation_meet_along_it`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&(ref positions, ref fresh)| positions.len() == included.len() && fresh.len() <= included.len()))]
+fn placed<'members, M>(
+    own: &[M],
+    included: &'members [M],
+    name: impl Fn(&M) -> &Name,
+    clash: impl Fn(Name) -> IncludeClash,
+) -> Result<(Vec<MemberPosition>, Vec<&'members M>), IncludeClash>
+where
+    M: PartialEq,
+{
+    let held: BTreeMap<&Name, (usize, &M)> = own
+        .iter()
+        .enumerate()
+        .map(|(at, mine)| (name(mine), (at, mine)))
+        .collect();
+    let mut positions = Vec::with_capacity(included.len());
+    let mut fresh = Vec::new();
+    for member in included {
+        let position = match held.get(name(member)) {
+            Some(&(at, mine)) if mine == member => at,
+            Some(_) => return Err(clash(name(member).clone())),
+            None => {
+                fresh.push(member);
+                own.len().saturating_add(fresh.len()).saturating_sub(1)
+            },
+        };
+        positions.push(MemberPosition(position));
+    }
+    Ok((positions, fresh))
+}
+
+/// The members of `members` at `positions`, in their order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the member at each position `members` holds, in order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`TheoryParts::restrict`].
+/// - witness: `theory::tests::an_extension_restricts_to_what_it_includes`
+#[spec(ensures: |ret| ret.len() <= positions.len())]
+fn at_positions<M>(
+    members: &[M],
+    positions: &[MemberPosition],
+) -> Vec<M>
+where
+    M: Clone,
+{
+    positions
+        .iter()
+        .filter_map(|&MemberPosition(at)| members.get(at).cloned())
+        .collect()
 }
 
 /// Why a value of `Theory`'s description codes no presentation.

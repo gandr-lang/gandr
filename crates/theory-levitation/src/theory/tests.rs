@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 
 use quenchant_shape::shape::Maybe;
 
+use super::IncludeClash;
 use super::OperationKind;
 use super::Tag;
 use super::TheoryBinder;
@@ -697,4 +698,154 @@ fn a_binder_outside_an_operation_port_is_misplaced()
         Err(TheoryFault::Misplaced(ConstructorTag::from(1_usize))),
         "a bound port binds at least one variable"
     );
+}
+
+/// A magma: one sort and one binary operation, associative by its one rule.
+///
+/// # Specification
+/// trivial.
+fn semigroup() -> TheoryParts
+{
+    let m = |name: &str| port(name, "M", []);
+    let mul = |left: FreeTerm, right: FreeTerm| FreeTerm::op("mul", [left, right]);
+    let v = FreeTerm::var;
+    TheoryParts {
+        sorts: vec![sort("M", Representability::Ordinary)],
+        operations: vec![TheoryOperation {
+            name: Name::from("mul"),
+            kind: OperationKind::Operation,
+            inputs: vec![m("x"), m("y")],
+            outputs: vec![m("")],
+        }],
+        rules: vec![TheoryRule {
+            name: Name::from("assoc"),
+            left: mul(mul(v("x"), v("y")), v("z")),
+            right: mul(v("x"), mul(v("y"), v("z"))),
+        }],
+        ..TheoryParts::default()
+    }
+}
+
+/// One nullary operation on `M` of the given name, and the rule of the given
+/// name making it a left unit of `mul`.
+///
+/// # Specification
+/// trivial.
+fn unit_named(
+    operation: Name,
+    rule: Name,
+) -> (TheoryOperation, TheoryRule)
+{
+    (
+        TheoryOperation {
+            name: operation.clone(),
+            kind: OperationKind::Operation,
+            inputs: Vec::new(),
+            outputs: vec![port("", "M", [])],
+        },
+        TheoryRule {
+            name: rule,
+            left: FreeTerm::op("mul", [FreeTerm::op(operation, []), FreeTerm::var("x")]),
+            right: FreeTerm::var("x"),
+        },
+    )
+}
+
+#[test]
+fn an_extension_restricts_to_what_it_includes()
+{
+    let (one, unit_left) = unit_named(Name::from("one"), Name::from("unitL"));
+    let mut monoid = TheoryParts {
+        operations: vec![one.clone()],
+        rules: vec![unit_left.clone()],
+        ..TheoryParts::default()
+    };
+    let included = semigroup();
+    let inclusion = monoid.include(&included).unwrap();
+    assert_eq!(monoid.restrict(&inclusion), included);
+    assert_eq!(
+        monoid.sorts, included.sorts,
+        "the included sort is appended"
+    );
+    assert_eq!(
+        monoid.operations,
+        [one, included.operations[0].clone()],
+        "the included operation follows the parts' own"
+    );
+    assert_eq!(monoid.rules, [unit_left, included.rules[0].clone()]);
+    let positions = |list: &[super::MemberPosition]| {
+        list.iter()
+            .map(|&position| usize::from(position))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(positions(&inclusion.sorts), [0]);
+    assert_eq!(positions(&inclusion.operations), [1]);
+    assert_eq!(positions(&inclusion.rules), [1]);
+    let value = TheoryValue::encode(&monoid);
+    assert_eq!(
+        value.decode().unwrap().restrict(&inclusion),
+        included,
+        "the extension's value restricts as its parts do"
+    );
+}
+
+#[test]
+fn two_extensions_of_one_presentation_meet_along_it()
+{
+    let (one, unit_left) = unit_named(Name::from("one"), Name::from("unitL"));
+    let (zero, zero_left) = unit_named(Name::from("zero"), Name::from("zeroL"));
+    let mut pointed = semigroup();
+    pointed.operations.push(one);
+    pointed.rules.push(unit_left);
+    let mut copointed = semigroup();
+    copointed.operations.push(zero);
+    copointed.rules.push(zero_left);
+    let mut both = TheoryParts::default();
+    let first = both.include(&pointed).unwrap();
+    let second = both.include(&copointed).unwrap();
+    assert_eq!(both.sorts.len(), 1, "the shared sort is one sort");
+    assert_eq!(
+        both.operations
+            .iter()
+            .map(|operation| operation.name.as_ref())
+            .collect::<Vec<_>>(),
+        ["mul", "one", "zero"]
+    );
+    assert_eq!(
+        both.rules
+            .iter()
+            .map(|rule| rule.name.as_ref())
+            .collect::<Vec<_>>(),
+        ["assoc", "unitL", "zeroL"]
+    );
+    assert_eq!(both.restrict(&first), pointed);
+    assert_eq!(both.restrict(&second), copointed);
+    assert_eq!(
+        first.operations.first(),
+        second.operations.first(),
+        "both inclusions send the shared operation to one position"
+    );
+}
+
+#[test]
+fn a_member_defined_twice_blocks_the_extension_by_name()
+{
+    let mut other = semigroup();
+    other.rules[0].right = FreeTerm::var("x");
+    let mut parts = semigroup();
+    assert_eq!(
+        parts.include(&other),
+        Err(IncludeClash::Rule(Name::from("assoc")))
+    );
+    assert_eq!(parts, semigroup(), "a refused extension leaves the parts");
+    let mut indexed = semigroup();
+    indexed.sorts[0].indices = vec![port("n", "M", [])];
+    assert_eq!(
+        parts.include(&indexed),
+        Err(IncludeClash::Sort(Name::from("M")))
+    );
+    let mut shaped = semigroup();
+    shaped.shape = Maybe::Present(TheoryShape::new("Line", ShapeSize::from(2_usize), []));
+    assert_eq!(parts.include(&shaped), Err(IncludeClash::Shaped));
+    assert_eq!(parts, semigroup());
 }

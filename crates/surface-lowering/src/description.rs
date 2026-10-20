@@ -607,6 +607,9 @@ pub(crate) fn elaborate_roots<'source>(
 ) -> Result<(), LoweringRefusal<'source>>
 {
     let reader = Reader { grammar, tree };
+    // The declarations this document reads start here: an `include` names a
+    // block of the same document.
+    let read_before = report.declarations.len();
     // The declarations in source order: a mutual block's members are read in
     // its place, as declarations of their own.
     let mut pending: Vec<_> = roots.iter().flat_map(|&root| tree.children(root)).collect();
@@ -653,7 +656,13 @@ pub(crate) fn elaborate_roots<'source>(
         }
         else if run.eat(Spelling("theory")).0 {
             reader
-                .signature(at, &mut run, serial, &mut report.diagnostics)
+                .signature(
+                    at,
+                    &mut run,
+                    serial,
+                    report.declarations.get(read_before ..).unwrap_or_default(),
+                    &mut report.diagnostics,
+                )
                 .map(|declaration| Read::Described(alloc::boxed::Box::new(declaration)))
         }
         else if run.eat(Spelling("oper")).0 {

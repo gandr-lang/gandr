@@ -157,9 +157,9 @@ const KEYWORDS: &[&str] = &[
     "+U", "-F", "abort", "access", "acquire", "as", "at", "become", "break", "case", "close", "co",
     "codata", "continue", "data", "def", "drop", "dup", "else", "end", "extern", "feed", "fn",
     "for", "forall", "force", "fork", "from", "glob", "handle", "hold", "if", "import", "in",
-    "infix", "infixl", "infixr", "leta", "loop", "migrate", "mobile", "module", "mu", "node",
-    "obs", "offer", "op", "oper", "pack", "package", "pi+", "postfix", "prefix", "pure", "rec",
-    "recv", "release", "resume", "return", "rule", "run", "select", "send", "shape", "sort",
+    "include", "infix", "infixl", "infixr", "leta", "loop", "migrate", "mobile", "module", "mu",
+    "node", "obs", "offer", "op", "oper", "pack", "package", "pi+", "postfix", "prefix", "pure",
+    "rec", "recv", "release", "resume", "return", "rule", "run", "select", "send", "shape", "sort",
     "tail", "then", "theory", "thunk", "type", "unit", "unpack", "unwind", "val", "while", "with",
     "world",
 ];
