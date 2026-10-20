@@ -4966,11 +4966,12 @@ where
                         *state = MintState::Open;
                         frames.push(MintFrame::Exit(index));
                         let children = node.minted_former().children();
-                        let first = frames.len();
-                        frames.extend(children.iter().map(|(child, _)| MintFrame::Enter(child)));
-                        if let Some(pushed) = frames.get_mut(first ..) {
-                            pushed.reverse();
-                        }
+                        frames.extend(
+                            children
+                                .iter()
+                                .rev()
+                                .map(|(child, _)| MintFrame::Enter(child)),
+                        );
                     },
                 }
             },

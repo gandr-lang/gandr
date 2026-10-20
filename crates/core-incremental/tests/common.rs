@@ -786,14 +786,15 @@ fn lowering_handles_numeric_and_binding_boundaries()
     ];
     assert_eq!(resumed.checkpoints().items().len(), expected.len());
     for (checkpoint, expected) in resumed.checkpoints().items().iter().zip(expected) {
-        let formers: Vec<gandr_core_incremental::ContentNode> = checkpoint
-            .content()
-            .nodes()
-            .iter()
-            .map(gandr_core_incremental::SupportedNode::former)
-            .cloned()
-            .collect();
-        assert_eq!(formers, expected);
+        assert!(
+            checkpoint
+                .content()
+                .nodes()
+                .iter()
+                .map(gandr_core_incremental::SupportedNode::former)
+                .eq(expected.iter()),
+            "each checkpoint holds the formers its item lowers to"
+        );
     }
 }
 

@@ -242,8 +242,9 @@ fn empty_and_unchanged_splices_have_exact_censuses()
                     if key.as_ref() == name.0.as_bytes() && usize::from(occurrence) == 0)
             );
         }
+        let kept: std::collections::HashSet<_> = after.iter().collect();
         for old in before {
-            if !after.contains(&old) {
+            if !kept.contains(&old) {
                 assert_eq!(order.reference(old), Maybe::Absent(handle::Absent::Stale));
             }
         }

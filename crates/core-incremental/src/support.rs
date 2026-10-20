@@ -631,7 +631,7 @@ pub fn factor(raw: &[ContentNode]) -> Factored
     // a segment is pushed on entry and popped once the entry is factored.
     let mut pending: Vec<(NodeIndex, Sort, Crossing)> = Vec::new();
     // Scratch reused across entries: each entry's stray leaves.
-    let mut strays: Vec<(NodeIndex, NodeIndex)> = Vec::new();
+    let mut strays: BTreeMap<NodeIndex, NodeIndex> = BTreeMap::new();
     for start in 0 .. raw.len() {
         work.push(Visit::Enter(NodeIndex::from(start)));
         while let Some(visit) = work.pop() {
@@ -670,7 +670,7 @@ pub fn factor(raw: &[ContentNode]) -> Factored
                     strays.clear();
                     for &(child, sort, _) in children {
                         if marks.get(usize::from(child)) != Some(&Mark::Closed)
-                            && !strays.iter().any(|&(stray, _)| stray == child)
+                            && !strays.contains_key(&child)
                         {
                             let leaf = interner.intern(
                                 ContentNode::Unresolved(sort),
@@ -678,7 +678,7 @@ pub fn factor(raw: &[ContentNode]) -> Factored
                                 Scope::default(),
                                 core::iter::empty(),
                             );
-                            strays.push((child, leaf));
+                            let _first = strays.insert(child, leaf);
                         }
                     }
                     let support_of = |child: NodeIndex| match marks.get(usize::from(child)) {
@@ -698,11 +698,8 @@ pub fn factor(raw: &[ContentNode]) -> Factored
                             .map(|&(child, _, crossing)| (support_of(child), crossing)),
                     );
                     let (support, edges) = cover.into_parts();
-                    let image = |child: NodeIndex| match strays
-                        .iter()
-                        .find(|&&(stray, _)| stray == child)
-                    {
-                        Some(&(_, leaf)) => leaf,
+                    let image = |child: NodeIndex| match strays.get(&child) {
+                        Some(&leaf) => leaf,
                         None => placements
                             .get(usize::from(child))
                             .map_or(child, |placed| placed.node),
@@ -910,13 +907,16 @@ pub fn expand(
     let _root = numbered.insert((root, placement.clone()), NodeIndex::from(0_usize));
     queue.push_back((root, placement.clone()));
     let mut output = Vec::new();
+    // One slot buffer for every node's children, refilled per node.
+    let mut slots: Vec<(NodeIndex, NodeIndex, bool)> = Vec::new();
     while let Some((index, ambient)) = queue.pop_front() {
         let Some(node) = nodes.get(usize::from(index))
         else {
             output.push(ContentNode::Unresolved(Sort::Value));
             continue;
         };
-        let mut slots: Vec<(NodeIndex, NodeIndex, bool)> = Vec::with_capacity(node.cover.len());
+        slots.clear();
+        slots.reserve(node.cover.len());
         for ((child, _, crossing), edge) in node.former.children().crossed().zip(&node.cover) {
             let placed = ambient.place(edge, crossing)?;
             let next = NodeIndex::from(numbered.len());
