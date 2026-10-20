@@ -213,6 +213,7 @@ fn walk(
 fn assert_footprints(program: &mut Program)
 {
     let checked = check_program(program, CheckBudget::DEFAULT).expect("ordered program");
+    let mut found = BTreeSet::new();
     for (item, checkpoint) in program.items().iter().zip(checked.checkpoints().items()) {
         let DeclarationContent::Value { signature, body } = *item.declaration().content()
         else {
@@ -220,18 +221,12 @@ fn assert_footprints(program: &mut Program)
         };
         let (reads, type_reads, opacity) = walk(program, signature, body);
         let footprint = footprint_of(checkpoint.content());
-        assert_eq!(
-            footprint.reads().cloned().collect::<BTreeSet<_>>(),
-            reads,
-            "reads of {:?}",
-            item.key()
-        );
-        assert_eq!(
-            footprint.type_reads().cloned().collect::<BTreeSet<_>>(),
-            type_reads,
-            "type reads of {:?}",
-            item.key()
-        );
+        found.clear();
+        found.extend(footprint.reads().cloned());
+        assert_eq!(found, reads, "reads of {:?}", item.key());
+        found.clear();
+        found.extend(footprint.type_reads().cloned());
+        assert_eq!(found, type_reads, "type reads of {:?}", item.key());
         assert_eq!(footprint.opacity(), opacity, "opacity of {:?}", item.key());
         assert_eq!(
             footprint.hole(),

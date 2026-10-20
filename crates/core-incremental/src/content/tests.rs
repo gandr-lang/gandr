@@ -1126,14 +1126,18 @@ fn probed(former: &ContentNode) -> Vec<ContentNode>
         table.push(node);
         NodeIndex::from(table.len().saturating_sub(1))
     };
-    let crossed: Vec<(NodeIndex, Sort, Crossing)> = former.children().crossed().collect();
+    let mut crossed: alloc::collections::BTreeMap<NodeIndex, (Sort, Crossing)> =
+        alloc::collections::BTreeMap::new();
+    for (child, sort, crossing) in former.children().crossed() {
+        let _first = crossed.entry(child).or_insert((sort, crossing));
+    }
     let mut placeholders = Vec::new();
     let _named = super::map_children(former, &mut |child| {
         placeholders.push(child);
         child
     });
     for placeholder in placeholders {
-        let Some(&(_, sort, crossing)) = crossed.iter().find(|&&(child, ..)| child == placeholder)
+        let Some(&(sort, crossing)) = crossed.get(&placeholder)
         else {
             // A child the crossed walk omits: a closed leaf no probe spells,
             // so wherever the projection wires it instead shows.
@@ -1491,17 +1495,18 @@ fn assert_projects_back(cases: impl IntoIterator<Item = ProjectionCase>)
             unfolded(&table),
             "{name}: every index projects back to itself"
         );
-        assert_eq!(
+        assert!(
             content
                 .root()
                 .indices(Zone::Intuitionistic)
-                .collect::<Vec<_>>(),
-            intuitionistic.iter().copied().map(at).collect::<Vec<_>>(),
+                .eq(intuitionistic.iter().copied().map(at)),
             "{name}: only the ambient intuitionistic variable is free"
         );
-        assert_eq!(
-            content.root().indices(Zone::Linear).collect::<Vec<_>>(),
-            linear.iter().copied().map(at).collect::<Vec<_>>(),
+        assert!(
+            content
+                .root()
+                .indices(Zone::Linear)
+                .eq(linear.iter().copied().map(at)),
             "{name}: only the ambient linear variable is free"
         );
     }
