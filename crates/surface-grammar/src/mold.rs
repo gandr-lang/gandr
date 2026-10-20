@@ -1115,28 +1115,31 @@ impl MoldTable
             .filter(|&(list, _bit)| list.binary_search(&id).is_ok())
             .fold(0_u8, |bits, (_list, bit)| bits | bit);
             let owner = self.owners.get(position).copied().unwrap_or(usize::MAX);
-            let closing = self.closing.get(position).copied().flatten().map_or_else(
-                || String::from("None"),
-                |class| format!("Some(ClosingClass::{class:?})"),
-            );
+            let twin = self.twins.get(position).copied().unwrap_or(id);
+            write!(
+                out,
+                "    FrozenMold({:?}, {}, {owner}, ",
+                mold.label,
+                u32::from(mold.rctx),
+            )?;
+            match self.closing.get(position).copied().flatten() {
+                Some(class) => write!(out, "Some(ClosingClass::{class:?})")?,
+                None => out.push_str("None"),
+            }
+            write!(out, ", {membership}, &[")?;
             let successors = self
                 .successor_starts
                 .get(position)
                 .zip(self.successor_starts.get(position.saturating_add(1)))
                 .and_then(|(&start, &end)| self.adjacencies.get(start .. end))
-                .unwrap_or(&[])
-                .iter()
-                .map(|&(_left, right)| format!("{}", u32::from(right)))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let twin = self.twins.get(position).copied().unwrap_or(id);
-            writeln!(
-                out,
-                "    FrozenMold({:?}, {}, {owner}, {closing}, {membership}, &[{successors}], {}),",
-                mold.label,
-                u32::from(mold.rctx),
-                u32::from(twin),
-            )?;
+                .unwrap_or(&[]);
+            for (at, &(_left, right)) in successors.iter().enumerate() {
+                if at > 0 {
+                    out.push_str(", ");
+                }
+                write!(out, "{}", u32::from(right))?;
+            }
+            writeln!(out, "], {}),", u32::from(twin))?;
         }
         writeln!(out, "];")?;
         writeln!(out)?;
@@ -1166,15 +1169,17 @@ impl MoldTable
         writeln!(out, "#[rustfmt::skip]")?;
         writeln!(out, "static STEPS: [&[StepSym]; {}] = [", order.len())?;
         for steps in order {
-            let symbols = steps
-                .iter()
-                .map(|step| match step.crossed {
-                    StepSym::Sort(sort) => format!("StepSym::Sort(Sort::{sort:?})"),
-                    StepSym::Tile(label) => format!("StepSym::Tile({label:?})"),
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            writeln!(out, "    &[{symbols}],")?;
+            out.push_str("    &[");
+            for (at, step) in steps.iter().enumerate() {
+                if at > 0 {
+                    out.push_str(", ");
+                }
+                match step.crossed {
+                    StepSym::Sort(sort) => write!(out, "StepSym::Sort(Sort::{sort:?})")?,
+                    StepSym::Tile(label) => write!(out, "StepSym::Tile({label:?})")?,
+                }
+            }
+            writeln!(out, "],")?;
         }
         writeln!(out, "];")?;
         Ok(out)
@@ -2343,6 +2348,12 @@ fn walk_regex(
         path: String::from(path.0),
     }];
     let mut values = Vec::new();
+    // Per-frame scratch, refilled by each sequence and alternation.
+    let mut child_faces: Vec<FaceCtx> = Vec::new();
+    let mut child_canons: Vec<String> = Vec::new();
+    let mut before_face: Vec<FaceCtx> = Vec::new();
+    let mut after_face: Vec<FaceCtx> = Vec::new();
+    let mut order: Vec<usize> = Vec::new();
 
     while let Some(frame) = frames.pop() {
         match frame {
@@ -2368,19 +2379,20 @@ fn walk_regex(
                     // Each child's face and canonical form once, up front;
                     // recomputing them per position is quadratic in the
                     // sequence length.
-                    let child_faces = items.iter().map(|&item| face_of(item)).collect::<Vec<_>>();
-                    let child_canons = items.iter().map(|&item| canon(item)).collect::<Vec<_>>();
+                    child_faces.clear();
+                    child_faces.extend(items.iter().map(|&item| face_of(item)));
+                    child_canons.clear();
+                    child_canons.extend(items.iter().map(|&item| canon(item)));
                     // Entry `i` of each table folds the faces before and after
                     // child `i`; composition is associative with the empty
                     // face as identity, so prefixes and suffixes are shared.
-                    let capacity = items.len().saturating_add(1);
-                    let mut before_face = Vec::with_capacity(capacity);
+                    before_face.clear();
                     before_face.push(FaceCtx::empty());
                     for face in &child_faces {
                         let previous = before_face.last().cloned().unwrap_or_else(FaceCtx::empty);
                         before_face.push(compose_seq(&previous, face));
                     }
-                    let mut after_face = Vec::with_capacity(capacity);
+                    after_face.clear();
                     after_face.push(FaceCtx::empty());
                     for face in child_faces.iter().rev() {
                         let previous = after_face.last().cloned().unwrap_or_else(FaceCtx::empty);
@@ -2398,19 +2410,37 @@ fn walk_regex(
                             .unwrap_or_else(FaceCtx::empty);
                         let child_left = compose_seq(&node_left, &before);
                         let child_right = compose_seq(&after, &node_right);
-                        let frame_tag = format!(
-                            "Q{}\x1e{}",
-                            child_canons.get(.. index).unwrap_or(&[]).join(","),
-                            child_canons
-                                .get(index.saturating_add(1) ..)
-                                .unwrap_or(&[])
-                                .join(",")
-                        );
+                        // The path tags the child with its siblings' canonical
+                        // forms, those before and those after it.
+                        let mut child_path = String::with_capacity(node_path.len());
+                        for part in [node_path.as_str(), "\x1fQ"] {
+                            child_path.push_str(part);
+                        }
+                        for (at, sibling) in
+                            child_canons.get(.. index).unwrap_or(&[]).iter().enumerate()
+                        {
+                            if at > 0 {
+                                child_path.push(',');
+                            }
+                            child_path.push_str(sibling);
+                        }
+                        child_path.push('\x1e');
+                        for (at, sibling) in child_canons
+                            .get(index.saturating_add(1) ..)
+                            .unwrap_or(&[])
+                            .iter()
+                            .enumerate()
+                        {
+                            if at > 0 {
+                                child_path.push(',');
+                            }
+                            child_path.push_str(sibling);
+                        }
                         frames.push(WalkFrame::Enter {
                             regex: item,
                             left: child_left,
                             right: child_right,
-                            path: format!("{node_path}\x1f{frame_tag}"),
+                            path: child_path,
                         });
                     }
                 },
@@ -2418,21 +2448,33 @@ fn walk_regex(
                     frames.push(WalkFrame::FinishAlt { count: items.len() });
                     // A branch's tag is the sorted join of its siblings'
                     // canonical forms: branches are unordered.
-                    let child_canons = items.iter().map(|&item| canon(item)).collect::<Vec<_>>();
+                    child_canons.clear();
+                    child_canons.extend(items.iter().map(|&item| canon(item)));
+                    order.clear();
+                    order.extend(0 .. items.len());
+                    order.sort_unstable_by(|&one, &other| {
+                        child_canons.get(one).cmp(&child_canons.get(other))
+                    });
                     for (index, &item) in items.iter().enumerate().rev() {
-                        let mut siblings: Vec<&str> = child_canons
+                        let mut child_path = String::with_capacity(node_path.len());
+                        for part in [node_path.as_str(), "\x1fA"] {
+                            child_path.push_str(part);
+                        }
+                        let siblings = order
                             .iter()
-                            .enumerate()
-                            .filter(|&(other_index, _)| other_index != index)
-                            .map(|(_, child)| child.as_str())
-                            .collect();
-                        siblings.sort_unstable();
-                        let frame_tag = format!("A{}", siblings.join("\x1d"));
+                            .filter(|&&other_index| other_index != index)
+                            .filter_map(|&other_index| child_canons.get(other_index));
+                        for (at, sibling) in siblings.enumerate() {
+                            if at > 0 {
+                                child_path.push('\x1d');
+                            }
+                            child_path.push_str(sibling);
+                        }
                         frames.push(WalkFrame::Enter {
                             regex: item,
                             left: node_left.clone(),
                             right: node_right.clone(),
-                            path: format!("{node_path}\x1f{frame_tag}"),
+                            path: child_path,
                         });
                     }
                 },

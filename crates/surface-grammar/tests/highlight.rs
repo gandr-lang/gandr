@@ -437,6 +437,9 @@ fn spans_partition_the_tile_bytes() -> Result<(), Box<dyn Error>>
 {
     let pbg = built_in()?;
     let table = RoleTable::build(&pbg)?;
+    let mut tiles: Vec<(usize, usize)> = Vec::new();
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    let mut grouted: Vec<(usize, usize)> = Vec::new();
     for path in corpus_sources() {
         let source = std::fs::read_to_string(&path)?;
         let parsed = parse(&pbg, SourceText::from(source.as_str()))?;
@@ -449,7 +452,7 @@ fn spans_partition_the_tile_bytes() -> Result<(), Box<dyn Error>>
                 .is_some_and(|gap| gap.chars().all(char::is_whitespace))
         };
 
-        let mut tiles: Vec<(usize, usize)> = Vec::new();
+        tiles.clear();
         let mut layout: BTreeSet<(usize, usize)> = BTreeSet::new();
         for position in tree.positions() {
             let Some(node) = tree.node(position)
@@ -475,15 +478,13 @@ fn spans_partition_the_tile_bytes() -> Result<(), Box<dyn Error>>
             }
         }
         tiles.sort_unstable();
-        let ranges: Vec<(usize, usize)> = spans
-            .iter()
-            .map(|span| {
-                (
-                    usize::from(span.range.start()),
-                    usize::from(span.range.end()),
-                )
-            })
-            .collect();
+        ranges.clear();
+        ranges.extend(spans.iter().map(|span| {
+            (
+                usize::from(span.range.start()),
+                usize::from(span.range.end()),
+            )
+        }));
         assert_eq!(
             tiles, ranges,
             "{shown}: one span per tile and per comment, in order"
@@ -508,17 +509,18 @@ fn spans_partition_the_tile_bytes() -> Result<(), Box<dyn Error>>
                 bytes.1
             );
         }
-        let grouted: Vec<(usize, usize)> = tree
-            .positions()
-            .filter_map(|position| tree.node(position))
-            .filter(|node| matches!(node.label(), NodeLabel::Grout { .. }))
-            .map(|node| {
-                (
-                    usize::from(node.span().start()),
-                    usize::from(node.span().end()),
-                )
-            })
-            .collect();
+        grouted.clear();
+        grouted.extend(
+            tree.positions()
+                .filter_map(|position| tree.node(position))
+                .filter(|node| matches!(node.label(), NodeLabel::Grout { .. }))
+                .map(|node| {
+                    (
+                        usize::from(node.span().start()),
+                        usize::from(node.span().end()),
+                    )
+                }),
+        );
         let unpainted = |from: usize, to: usize| {
             source.get(from .. to).is_some_and(|gap| {
                 gap.char_indices().all(|(at, written)| {
