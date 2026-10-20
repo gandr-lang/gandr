@@ -70,7 +70,7 @@ use crate::model::Sym;
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow", "item.singleton", "expression.atom", "expression.postfix", "expression.and", "expression.or"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 57 && rules.iter().take(36).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(36).take(3).all(|rule| rule.sort() == Sort::Item) && rules.iter().skip(39).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "forall_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow", "item.singleton", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 52 && rules.iter().take(36).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(36).take(2).all(|rule| rule.sort() == Sort::Item) && rules.iter().skip(38).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "forall_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let mut rules = Vec::new();
@@ -723,7 +723,7 @@ fn add_type_rules(
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name: "item.singleton" }) && precs.get(PrecName("item.singleton")).is_none(), |&()| rules.get(before..).is_some_and(|added| added.len() == 3 && added.iter().zip(["line_comment", "block_comment", "shebang"]).all(|(rule, name)| rule.name().0 == name && rule.provenance().0 == name && rule.sort() == Sort::Item && precs.get(PrecName("item.singleton")) == Some(rule.prec())))))]
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name: "item.singleton" }) && precs.get(PrecName("item.singleton")).is_none(), |&()| rules.get(before..).is_some_and(|added| added.len() == 2 && added.iter().zip(["line_comment", "shebang"]).all(|(rule, name)| rule.name().0 == name && rule.provenance().0 == name && rule.sort() == Sort::Item && precs.get(PrecName("item.singleton")) == Some(rule.prec())))))]
 fn add_lexical_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -738,25 +738,18 @@ fn add_lexical_rules(
     // Pattern-sort twins). A second declaration here would give each lexeme
     // two identical Expression-atom molds that tie on the molder's local key at
     // every operand position.
-    rules.push(rule(
+    let mut line_comment = rule(
         RuleName("line_comment"),
         item,
         item_singleton,
         tile(TileLabel("line_comment")),
+    );
+    line_comment.adaptations.push(Adaptation::new(
+        RuleName("line_comment"),
+        SurfaceForm("block_comment"),
+        AdaptationReason("the labeler reads a `/* … */` comment, nested ones included, as layout between tokens, so no form holds one: the `block_comment` named kind is realised as trivia beside the forms, as a line comment between tokens is"),
     ));
-    rules.push(rule(
-        RuleName("block_comment"),
-        item,
-        item_singleton,
-        Regex::seq([
-            tile(TileLabel("/*")),
-            Regex::repeat(Regex::alt([
-                tile(TileLabel("block_comment")),
-                tile(TileLabel("block_comment_content")),
-            ])),
-            tile(TileLabel("*/")),
-        ]),
-    ));
+    rules.push(line_comment);
     rules.push(rule(
         RuleName("shebang"),
         item,
@@ -808,21 +801,18 @@ fn add_lexical_rules(
 /// control / history. Each is a later shell-stage widening, and each
 /// parse-and-declines or lexes as an ordinary word today.
 ///
-/// The placeholder rules kept for named-kind coverage — `shell_list`,
-/// `and_expression` / `or_expression` (shell), `negation` — each need at
-/// least one tile the labeler never emits (`shell_or`, `pipeline_operand`,
-/// `shell_and`, `negation`), so none of them can fire; they cover their kind
-/// by provenance.
+/// The tree-sitter shell composites `shell_list`, `and_expression`,
+/// `or_expression` and `negation` have no rule. A list is the juxtaposition
+/// of commands and `list_operator` separators in the block's hole, `&&` and
+/// `||` mold as the expression binaries, and command negation is out with the
+/// POSIX tail; each kind is recorded as an adaptation.
 ///
-/// `environment_assignment` is not one of them: the labeler reads
-/// `NAME=value` as one token, and this rule molds it as one Expression atom.
-/// Only the prefix semantics are left out, and they are declined by name
-/// after parsing.
+/// `environment_assignment` is a rule: the labeler reads `NAME=value` as one
+/// token, and this rule molds it as one Expression atom. Only the prefix
+/// semantics are left out, and they are declined by name after parsing.
 ///
-/// `command_substitution` is not one of them either. Its `list_operator` /
-/// `shell_list` tiles are never emitted, but both are optional, so `$!{ … }`
-/// molds on the `command_substitution_start` and `}` tiles the labeler emits,
-/// and is declined by name after parsing.
+/// `command_substitution` molds on the `command_substitution_start` and `}`
+/// tiles the labeler emits, and is declined by name after parsing.
 ///
 /// The `command` / `command_name` / `argument` / `redirection` kinds have no
 /// rule: a composite over placeholder tiles would add fresh-menu molds that
@@ -848,7 +838,7 @@ fn add_lexical_rules(
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["expression.atom", "expression.postfix", "expression.and", "expression.or"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 18 && added.iter().all(|rule| rule.sort() == Sort::Expression && ["expression.atom", "expression.postfix", "expression.and", "expression.or"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "shell_list") && added.last().is_some_and(|rule| rule.name().0 == "redirection_operator"))))]
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 14 && added.iter().all(|rule| rule.sort() == Sort::Expression && ["expression.atom", "expression.postfix"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "list_operator") && added.last().is_some_and(|rule| rule.name().0 == "redirection_operator"))))]
 fn add_shell_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -857,23 +847,8 @@ fn add_shell_rules(
     let expr = Sort::Expression;
     let atom = precs.prec(PrecName("expression.atom"))?;
     let postfix = precs.prec(PrecName("expression.postfix"))?;
-    let and_prec = precs.prec(PrecName("expression.and"))?;
-    let or_prec = precs.prec(PrecName("expression.or"))?;
 
-    rules.push(rule(
-        RuleName("shell_list"),
-        expr,
-        atom,
-        Regex::seq([
-            tile(TileLabel("shell_or")),
-            Regex::repeat(Regex::seq([
-                tile(TileLabel("list_operator")),
-                tile(TileLabel("shell_or")),
-            ])),
-            Regex::optional(tile(TileLabel("list_operator"))),
-        ]),
-    ));
-    rules.push(rule(
+    let mut list_operator = rule(
         RuleName("list_operator"),
         expr,
         atom,
@@ -882,31 +857,23 @@ fn add_shell_rules(
             tile(TileLabel("&")),
             tile(TileLabel("newline")),
         ]),
+    );
+    list_operator.adaptations.push(Adaptation::new(
+        RuleName("list_operator"),
+        SurfaceForm("shell_list"),
+        AdaptationReason("a shell list is the juxtaposition of commands and `list_operator` separators in the shell block's expression hole, so it has no composite of its own; grouping the commands between separators is the semantic stage's job"),
     ));
-    rules.push(rule(
-        RuleName("or_expression"),
-        expr,
-        or_prec,
-        Regex::seq([
-            tile(TileLabel("shell_and")),
-            Regex::repeat(Regex::seq([
-                tile(TileLabel("||")),
-                tile(TileLabel("shell_and")),
-            ])),
-        ]),
+    list_operator.adaptations.push(Adaptation::new(
+        RuleName("list_operator"),
+        SurfaceForm("or_expression"),
+        AdaptationReason("a shell `a || b` molds as the expression binary `binary_expression.or` between two commands, so the shell has no `||` composite of its own"),
     ));
-    rules.push(rule(
-        RuleName("and_expression"),
-        expr,
-        and_prec,
-        Regex::seq([
-            tile(TileLabel("pipeline_operand")),
-            Regex::repeat(Regex::seq([
-                tile(TileLabel("&&")),
-                tile(TileLabel("pipeline_operand")),
-            ])),
-        ]),
+    list_operator.adaptations.push(Adaptation::new(
+        RuleName("list_operator"),
+        SurfaceForm("and_expression"),
+        AdaptationReason("a shell `a && b` molds as the expression binary `binary_expression.and` between two commands, so the shell has no `&&` composite of its own"),
     ));
+    rules.push(list_operator);
     // A shell pipeline `cmd | cmd` (and stderr-merging `cmd |& cmd`) is a binary
     // infix between two command expressions, exactly the shape the term binaries
     // (`&&`, `||`) take: a single `|` / `|&` tile with a recursive-sort hole on
@@ -929,18 +896,18 @@ fn add_shell_rules(
         postfix,
         TileLabel("|&"),
     ));
-    rules.push(rule(
-        RuleName("negation"),
-        expr,
-        atom,
-        tile(TileLabel("negation")),
-    ));
-    rules.push(rule(
+    let mut environment_assignment = rule(
         RuleName("environment_assignment"),
         expr,
         atom,
         tile(TileLabel("environment_assignment")),
+    );
+    environment_assignment.adaptations.push(Adaptation::new(
+        RuleName("environment_assignment"),
+        SurfaceForm("negation"),
+        AdaptationReason("command negation `! cmd` is left out with the POSIX tail, so the shell has no negation form; the kind is recorded here, beside the other command-prefix form the surface keeps"),
     ));
+    rules.push(environment_assignment);
     // ONE shell-word atom class. The tree-sitter grammar distinguishes
     // `command_name` / `argument` / `shell_word` — a distinction with no
     // PBG-parse-level content (all three are the same juxtaposed Expression
@@ -1059,8 +1026,6 @@ fn add_shell_rules(
         atom,
         Regex::seq([
             tile(TileLabel("command_substitution_start")),
-            Regex::optional(tile(TileLabel("list_operator"))),
-            Regex::optional(tile(TileLabel("shell_list"))),
             tile(TileLabel("}")),
         ]),
     ));
@@ -1387,7 +1352,7 @@ mod tests
             ("type.atom", add_types),
             ("type.arrow", add_type_rules),
             ("item.singleton", add_lexical_rules),
-            ("expression.or", add_shell_rules),
+            ("expression.postfix", add_shell_rules),
         ] {
             let complete = built_in_prec_table().expect("built-in bands");
             let mut spec = PrecSpec::new();

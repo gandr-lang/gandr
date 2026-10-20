@@ -5952,10 +5952,7 @@ impl Walk<'_, '_>
                     Production("case_expression"),
                     writes(
                         Production("constructor_pattern"),
-                        writes(
-                            Production("cons_pattern"),
-                            writes(Production("constructor.pattern"), Binding::Prefix),
-                        ),
+                        writes(Production("cons_pattern"), Binding::Prefix),
                     ),
                 )
             },
