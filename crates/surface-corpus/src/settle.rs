@@ -1251,7 +1251,7 @@ fn waits<'source>(
 /// - hypothesis: L3 — the circle's winding number into the native integers owes
 ///   its two laws and each law owes itself; a declaration decoding an owed code
 ///   hole owes that hole.
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
 /// - witness: `settle::tests::a_suspended_declaration_owes_its_blockers`
 #[spec(ensures: |ret| match answer.verdict() {
     | Verdict::Owed(_) => usize::from(ret) == 1,
