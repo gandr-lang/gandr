@@ -49,13 +49,13 @@ use gandr_theory_graphs::WalkChainLength;
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
 /// the access's mode word: two molds, `shared` and `exclusive`, between
 /// `access` and the held slot's name.
-const BUILT_IN_FINGERPRINT: u64 = 0xf15d_14f7_b874_89a0;
+const BUILT_IN_FINGERPRINT: u64 = 0xdcb3_9f03_f749_1bf0;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2841);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2842);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 81;
@@ -137,7 +137,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("co", 1),
     ("codata", 1),
     ("command_substitution_start", 1),
-    ("constructor", 5),
+    ("constructor", 6),
     ("continue", 1),
     ("data", 12),
     ("def", 4),

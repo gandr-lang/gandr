@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0xf15d14f7b87489a0`
+- Grammar fingerprint: `0xdcb39f03f7491bf0`
 - Rules: 152 — 151 committed, 1 internal
-- Molds: 2841
+- Molds: 2842
 - Attributes: 11
 
 ## Reading a form
@@ -89,7 +89,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`pack_expression`](exemplars/syntax/pack_expression.gandr) | `pack [ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ] EXPRESSION` | `expression.pure` | `pack_expression` * | Keyword, Other |
 | [`call_expression`](exemplars/syntax/call_expression.gandr) | `EXPRESSION ( ⦅ EXPRESSION ⦅ , EXPRESSION ⦆* ⦅ , ⦆? ⦆? )` | `expression.postfix` | `call_expression` | Other |
 | [`instantiation_expression`](exemplars/syntax/instantiation_expression.gandr) | `EXPRESSION [ INSTANTIATION ⦅ , INSTANTIATION ⦆* ⦅ , ⦆? ]` | `expression.postfix` | `instantiation_expression` | Other |
-| [`projection_expression`](exemplars/syntax/projection_expression.gandr) | `EXPRESSION . ⦅ ‹identifier› ‖ ‹number› ⦆` | `expression.postfix` | `projection_expression` | Other, Member, Number |
+| [`projection_expression`](exemplars/syntax/projection_expression.gandr) | `EXPRESSION . ⦅ ‹identifier› ‖ ‹constructor› ‖ ‹number› ⦆` | `expression.postfix` | `projection_expression` | Other, Member, Constructor, Number |
 | [`hole`](exemplars/syntax/hole.gandr) | `? ⦅ ‹hole_name› ⦆?` | `expression.atom` | `hole` | Hole, Label |
 | [`parenthesized_expression`](exemplars/syntax/parenthesized_expression.gandr) | `( ⦅ ) ‖ EXPRESSION ⦅ ) ‖ , ⦅ EXPRESSION ⦅ , EXPRESSION ⦅ , EXPRESSION ⦆* ⦆? ⦅ , ⦆? ⦆? ) ‖ : TYPE ) ⦆ ⦆` | `expression.atom` | `parenthesized_expression` | Other |
 | [`type_quote_expression`](exemplars/syntax/type_quote_expression.gandr) | `type( TYPE )` | `expression.atom` | `type_quote_expression` * | Keyword, Other |

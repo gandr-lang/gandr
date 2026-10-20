@@ -8275,8 +8275,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   the outermost scope at the depth that binds it: a path ending at an
     ///   exported value component stands as that member's constant when the
     ///   member is declared strictly before the declaration the path is written
-    ///   in. The chain is walked by an explicit loop, and its links are left
-    ///   unread.
+    ///   in, and a path ending at a type component stands as its stated type,
+    ///   as [`Self::module_type`] reads it. The chain is walked by an explicit
+    ///   loop, and its links are left unread.
     /// - provides: the governed reading of a module path.
     /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
     ///   the path spells it and the member, for a selection a governing module
@@ -8311,7 +8312,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Data(..) | Plan::Codata(..)))
+                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Data(..) | Plan::Codata(..) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..)))
                 )
         },
     )]
@@ -8415,6 +8416,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.plan(site, Plan::Primitive(primitive));
                 Ok(())
             },
+            PathResolution::Complete(Recognized::ModuleType) => {
+                let Some(&(_, member)) = links.first()
+                else {
+                    return Err(site.out(FragmentBoundary::Unadmitted));
+                };
+                self.module_type(site, &path, member)
+            },
             PathResolution::Complete(Recognized::ModuleComponent) => {
                 let Some(&exported) = self.exported.get(&path)
                 else {
@@ -8477,11 +8485,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             ..
                         })
                     )
-                    && pieces.get(2)
-                        == Some(&Piece::Tile {
-                            label: TileName::IDENTIFIER,
-                            at: selected,
-                        })
+                    && matches!(
+                        pieces.get(2),
+                        Some(&Piece::Tile {
+                            label: TileName::IDENTIFIER | TileName::CONSTRUCTOR,
+                            at,
+                        }) if at == selected
+                    )
             })
         },
     )]
@@ -8496,14 +8506,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
-        let (Maybe::Present(_dot), Maybe::Present(selected)) = (
-            cursor.tile(TileName::DOT),
-            cursor.tile(TileName::IDENTIFIER),
-        )
+        let Maybe::Present(_dot) = cursor.tile(TileName::DOT)
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
-
+        let selected = match cursor.tile(TileName::IDENTIFIER) {
+            Maybe::Present(selected) => selected,
+            Maybe::Absent(_) => match cursor.tile(TileName::CONSTRUCTOR) {
+                Maybe::Present(selected) => selected,
+                Maybe::Absent(_) => {
+                    return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+                },
+            },
+        };
         Ok((target, selected))
     }
 
@@ -9017,21 +9032,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let path = NamePath::from(segments);
         match self.recognition.resolve_path(&path) {
             PathResolution::Complete(Recognized::ModuleType) => {
-                let Some(&stated) = self.exported_types.get(&path)
-                else {
-                    return Err(site.out(FragmentBoundary::Unadmitted));
-                };
-                if let Maybe::Present(own) = self.collected.owner_of(site.at.node)
-                    && own <= stated.held
-                    && let Some(held) = self.collected.slots.get(usize::from(stated.held))
-                {
-                    return Err(LoweringRefusal::ForwardMemberReference {
-                        span: site.at.span,
-                        name: self.name_at(member),
-                        declared: held.named.span,
-                    });
-                }
-                self.stated_type(site, stated)
+                self.module_type(site, &path, member)
             },
             PathResolution::UnknownMember { depth, .. } => {
                 let Some(&(prefix, selected)) = links
@@ -9054,6 +9055,53 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }),
             PathResolution::Complete(_) => Err(site.out(FragmentBoundary::WrongSort)),
         }
+    }
+
+    /// Read the module's type component at `path`, the one `member` names, as
+    /// its stated type.
+    ///
+    /// # Specification
+    /// - requires: `path` resolves to a module's type component.
+    /// - ensures: the stated type, read at `site`'s own reading, when the
+    ///   component is declared strictly before the declaration `site` belongs
+    ///   to.
+    /// - provides: a type path's reading, in a type and where a value is read.
+    /// - fails: yields the unadmitted refusal for a component the exports do
+    ///   not hold, and [`LoweringRefusal::ForwardMemberReference`] for one
+    ///   declared at or after the referring declaration.
+    /// - panics: none.
+    /// - executable: none — the plan is the stated type's, which
+    ///   [`Self::stated_type`] makes and its own predicate checks.
+    ///
+    /// # Errors
+    /// The component's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a qualified type in a type and as an argument lower
+    ///   to the code the type's unqualified alias lowers to.
+    /// - witness: `lower::tests::a_qualified_type_argument_is_the_code_its_alias_is_1126`
+    fn module_type(
+        &mut self,
+        site: Site,
+        path: &NamePath,
+        member: Placed,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Some(&stated) = self.exported_types.get(path)
+        else {
+            return Err(site.out(FragmentBoundary::Unadmitted));
+        };
+        if let Maybe::Present(own) = self.collected.owner_of(site.at.node)
+            && own <= stated.held
+            && let Some(held) = self.collected.slots.get(usize::from(stated.held))
+        {
+            return Err(LoweringRefusal::ForwardMemberReference {
+                span: site.at.span,
+                name: self.name_at(member),
+                declared: held.named.span,
+            });
+        }
+        self.stated_type(site, stated)
     }
 
     /// The target and the selected type name of one link of a type path,
@@ -17546,6 +17594,39 @@ mod tests
         assert!(
             matches!(&sum, (Some(ValueType::Sum(components)), None, _) if components.len() == 1_usize),
             "a labelled sum no expression reads bare is quoted as the sum's code: {sum:?}"
+        );
+    }
+
+    /// #1126: a module's type read where a value stands, `M.T`, is the code
+    /// of the type it names, as the type written bare there is.
+    #[test]
+    fn a_qualified_type_argument_is_the_code_its_alias_is_1126()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "module M {\n  type T = Integer ;\n}\ndef a = Integer ;\ndef b = M.T ;",
+            ),
+            &mut arena,
+        );
+        let outcomes = outcomes(&module);
+        let quoted = |declaration: usize| {
+            let body = body_of(outcomes[declaration]);
+            match arena.value(body) {
+                Some(&Value::Quote(inner)) => arena.value_type(inner).cloned(),
+                _ => None,
+            }
+        };
+        let last = outcomes.len().saturating_sub(1);
+        assert_eq!(
+            quoted(last),
+            quoted(last.saturating_sub(1)),
+            "a qualified type where a value is read is the code its bare spelling is"
+        );
+        assert_eq!(
+            quoted(last),
+            Some(ValueType::Base(BaseType::Integer)),
+            "and that code is the type the module states"
         );
     }
 
