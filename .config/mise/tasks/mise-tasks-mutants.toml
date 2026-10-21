@@ -113,7 +113,8 @@ MUTANTS_OUTPUT="mutants.out/$crate/named" exec mise run mutants -- -p "$crate" \
 # unrelated corpus sweep catches reads caught and costs the sweep's time; here
 # a mutant is caught only when a witness of its function fails. The index is
 # the obligations report's: each function's `- witness:` bullets in the
-# crate's rustdoc JSON (`.config/mutants/items.jq`). The mutants group by
+# rustdoc JSON of the crate's library and each binary, #1611
+# (`.config/mutants/items.jq`). The mutants group by
 # function (`.config/mutants/groups.jq`), and each group runs as one
 # cargo-mutants invocation selecting exactly its mutants, with the nextest
 # filterset of the function's witnesses. A function no witness names runs
@@ -193,10 +194,17 @@ if [[ -z "$package" ]]; then
   printf 'no workspace crate named %s\n' "$crate" >&2
   exit 2
 fi
-documented=$(jq -r '[.targets[] | select(.kind | index("lib") or index("bin"))] | first | .name // empty | gsub("-"; "_")' <<< "$package")
+# Every library and binary target's rustdoc JSON holds witnesses: a binary's
+# functions name theirs in its own JSON, which the library's does not hold.
+# A binary named as its library is not documented by `cargo doc`, which
+# keeps the library's.
+mapfile -t docs < <(jq -r '[.targets[] | select(.kind | index("lib")) | .name] as $libs
+  | .targets[] | select((.kind | index("lib")) or ((.kind | index("bin")) and (.name | IN($libs[]) | not)))
+  | .name | gsub("-"; "_") | "target/evidence/doc/\(.).json"' <<< "$package")
 targets=$(jq -c '[.targets[] | select(.kind | index("test")) | .name]' <<< "$package")
-doc=target/evidence/doc/$documented.json
-[[ -f "$doc" ]] || { printf 'no rustdoc JSON for %s at %s\n' "$crate" "$doc" >&2; exit 2; }
+for doc in "${docs[@]}"; do
+  [[ -f "$doc" ]] || { printf 'no rustdoc JSON for %s at %s\n' "$crate" "$doc" >&2; exit 2; }
+done
 host=$(rustc -vV | sed -n 's/^host: //p')
 triple=$(tr '[:lower:]-' '[:upper:]_' <<< "$host")
 export "CARGO_TARGET_${triple}_RUSTFLAGS=-Ctarget-cpu=native --cap-lints=warn"
@@ -220,7 +228,7 @@ if [[ "$iterate" == true ]]; then
     "$output/list.json" > "$output/listed.json"
   mv "$output/listed.json" "$output/list.json"
 fi
-jq -f .config/mutants/items.jq "$doc" > "$output/items.json"
+for doc in "${docs[@]}"; do jq -f .config/mutants/items.jq "$doc"; done | jq -s 'add // []' > "$output/items.json"
 jq -n --slurpfile mutants "$output/list.json" --slurpfile items "$output/items.json" \
   --arg package "$crate" --argjson targets "$targets" \
   '{mutants: $mutants[0], items: $items[0], package: $package, targets: $targets}' \
