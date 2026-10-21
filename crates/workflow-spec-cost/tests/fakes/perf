@@ -1,0 +1,13 @@
+#!/bin/sh
+printf 'perf %s | %s\n' "$*" "$(pwd)" >> "$FAKE_LOG"
+case "$1" in
+  record)
+    [ "$FAKE_PERF_MODE" = fail ] && exit 1
+    while [ "$1" != -o ]; do shift; done
+    : > "$2" ;;
+  script)
+    printf '\n\t    1 helper\n  crates/a/src/lib.rs:6 (inlined)\n\t    1 {closure#0}\n  crates/a/src/lib.rs:2\n\t    2 outer\n  crates/a/src/lib.rs:3\n'
+    printf '\n\t    3 work\n  crates/a/src/lib.rs:9\n\t    3 anodized::__::eval_once::<u8, outer::{closure#1}>\n  ??:0\n\t    4 outer\n  crates/a/src/lib.rs:2\n'
+    printf '\n\t    5 helper\n  crates/a/src/lib.rs:6\n'
+    printf '\n\t    5 helper\n  crates/a/src/lib.rs:6\n\t    6 main\n  /rust/library/std/src/rt.rs:120\n' ;;
+esac

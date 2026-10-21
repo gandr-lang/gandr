@@ -1,0 +1,26 @@
+#!/bin/sh
+printf '%s\n' "$*" >> "$FAKE_GH_LOG"
+if [ "$FAKE_GH_MODE" = fail ]; then echo 'HTTP 401: Bad credentials' >&2; exit 1; fi
+case "$1 $2" in
+  'api --method')
+    case "$4" in
+      */workflows/ci.yml/runs) printf '3\n2\n1\n' ;;
+      */runs/*/jobs) run=${4%/jobs}; run=${run##*/}; printf '%s00\tcheck Clippy wall\n5\tdetect changed-file categories\n' "$run" ;;
+      */actions/runs/3) printf 'merge_group\t3333333333333333333333333333333333333333\t\tgh-readonly-queue/main/pr-9-1111111111111111111111111111111111111111' ;;
+      */actions/runs/2) printf 'merge_group\t4444444444444444444444444444444444444444\t\tgh-readonly-queue/main/pr-10-2222222222222222222222222222222222222222' ;;
+      */actions/runs/1) printf 'merge_group\t5555555555555555555555555555555555555555\t\tgh-readonly-queue/main/pr-11-3333333333333333333333333333333333333333' ;;
+      *compare/*)
+        base=${4##*compare/}; base=$(printf '%s' "$base" | cut -c1-40)
+        if [ "$FAKE_GH_CONE" = mixed ] && [ "$base" = 1111111111111111111111111111111111111111 ]; then
+          printf 'crates/kernel-core/src/lib.rs\n'
+        else
+          printf 'README.md\n'
+        fi ;;
+      *) echo "unexpected route: $4" >&2; exit 2 ;;
+    esac ;;
+  'issue list') printf '%s' "${FAKE_GH_ISSUES:-[]}" ;;
+  'issue create') cat > "$FAKE_GH_BODY"; echo 'https://example.invalid/issues/7' ;;
+  'issue edit') cat > "$FAKE_GH_BODY" ;;
+  'issue reopen'|'issue close') ;;
+  *) echo "unexpected: $*" >&2; exit 2 ;;
+esac

@@ -1,5 +1,5 @@
 //! The report, the issue filing and the exit codes, observed by spawning the
-//! binary with a fake `gh` first on the path.
+//! binary with the fake `gh` of `tests/fakes` first on the path.
 //!
 //! The fake answers the check-run query with `FAKE_CHECKS`, one JSON object a
 //! line, and the pull-request query with `FAKE_PULLS`. Its issue listing is
@@ -7,24 +7,15 @@
 //! body it was fed to `FAKE_GH_BODY`, and fails every invocation under
 //! `FAKE_GH=fail`.
 //!
+//! The fake is a file of the tree, never written per case: macOS assesses an
+//! executable the first time it runs, one at a time across the machine, and a
+//! fresh fake per case queued past the 30-second limit in a whole-workspace
+//! test run (#1574).
+//!
 //! The process-level cases, in a `cfg(test)` module so the crate's lint wall
 //! reads them as test code rather than as shipping code.
 
 use std::process::Command;
-
-/// The fake `gh`.
-const FAKE_GH: &str = r#"#!/bin/sh
-printf '%s\n' "$*" >> "$FAKE_GH_LOG"
-if [ "$FAKE_GH" = fail ]; then echo 'HTTP 401: Bad credentials' >&2; exit 1; fi
-case "$1 $2" in
-  'api --paginate') printf '%s\n' "$FAKE_CHECKS" ;;
-  'api repos/'*) printf '%s' "${FAKE_PULLS:-[]}" ;;
-  'issue list') printf '%s' "${FAKE_GH_ISSUES:-[]}" ;;
-  'issue create') cat > "$FAKE_GH_BODY"; echo 'https://example.invalid/issues/7' ;;
-  'issue edit') cat > "$FAKE_GH_BODY" ;;
-  *) echo "unexpected: $*" >&2; exit 2 ;;
-esac
-"#;
 
 /// The head of a pull request whose hotpath checks failed.
 const HEAD: &str = "914a768fb32501be92e5cb4d28ce6613dfa01022";
@@ -115,7 +106,7 @@ macro_rules! checks {
 /// labelled `area:theory` and `kind:feature`.
 const PULLS: &str = r#"[{"number":1358,"html_url":"https://github.com/gandr-lang/gandr/pull/1358","head":{"ref":"theory-model-record","sha":"914a768fb32501be92e5cb4d28ce6613dfa01022"},"labels":[{"name":"area:theory"},{"name":"kind:feature"}]}]"#;
 
-/// A fresh scratch directory for the case `$name` holding the fake.
+/// A fresh scratch directory for the case `$name`, holding the fake's log.
 macro_rules! scratch {
     ($name:literal) => {{
         let root =
@@ -124,26 +115,19 @@ macro_rules! scratch {
             std::fs::remove_dir_all(&root).unwrap();
         }
         std::fs::create_dir_all(&root).unwrap();
-        let path = root.join("gh");
-        std::fs::write(&path, FAKE_GH).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
         std::fs::write(root.join("log"), "").unwrap();
         root
     }};
 }
 
 /// Runs the binary over `$sha` with `$args` after the repository and the
-/// commit, the fake in `$root` first on the path, and each `($key, $value)`
-/// of `$env` set.
+/// commit, the fake first on the path, its log and body in `$root`, and each
+/// `($key, $value)` of `$env` set.
 macro_rules! run {
     ($root:expr, $sha:expr, $args:expr, $env:expr) => {{
         let root: &std::path::Path = &$root;
         let path = std::env::var_os("PATH").unwrap_or_default();
-        let mut paths = vec![root.to_path_buf()];
+        let mut paths = vec![std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fakes")];
         paths.extend(std::env::split_paths(&path));
         let mut command = Command::new(env!("CARGO_BIN_EXE_hotpath-guard"));
         command

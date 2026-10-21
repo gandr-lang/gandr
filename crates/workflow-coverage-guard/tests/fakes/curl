@@ -1,0 +1,33 @@
+#!/bin/sh
+for url; do :; done
+if [ "$FAKE_CURL" = fail ]; then echo 'curl: (22) The requested URL returned error: 404' >&2; exit 22; fi
+A=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+B=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+C=cccccccccccccccccccccccccccccccccccccccc
+if [ "$FAKE_COVERAGE" = drop ]; then HITS=879; else HITS=946; fi
+case "$url" in
+  https://api.codecov.io/api/v2/github/gandr-lang/repos/gandr/commits/$B/)
+    if [ "$FAKE_HEAD" = pending ]; then
+      printf '{"commitid":"%s","state":"pending","totals":null}' "$B"
+    else
+      printf '{"commitid":"%s","state":"complete","totals":{"files":3,"lines":1000,"hits":%s,"misses":1}}' "$B" "$HITS"
+    fi ;;
+  'https://api.codecov.io/api/v2/github/gandr-lang/repos/gandr/commits/?branch=main&page_size=50')
+    head="{\"commitid\":\"$B\",\"state\":\"complete\",\"totals\":{\"files\":3,\"lines\":1000,\"hits\":$HITS}}"
+    pending="{\"commitid\":\"$C\",\"state\":\"pending\",\"totals\":null}"
+    base="{\"commitid\":\"$A\",\"state\":\"complete\",\"totals\":{\"files\":3,\"lines\":1000,\"hits\":945}}"
+    case "$FAKE_LISTING" in
+      unlisted) printf '{"count":2,"results":[%s,%s]}' "$pending" "$base" ;;
+      nobase) printf '{"count":2,"results":[%s,%s]}' "$head" "$pending" ;;
+      *) printf '{"count":3,"results":[%s,%s,%s]}' "$head" "$pending" "$base" ;;
+    esac ;;
+  "https://api.codecov.io/api/v2/github/gandr-lang/repos/gandr/report/?sha=$A")
+    printf '{"totals":{},"files":[{"name":"crates/a/src/lib.rs","totals":{"lines":400,"hits":380}},{"name":"crates/b/src/lib.rs","totals":{"lines":300,"hits":285}},{"name":"crates/gone/src/lib.rs","totals":{"lines":300,"hits":280}}]}' ;;
+  "https://api.codecov.io/api/v2/github/gandr-lang/repos/gandr/report/?sha=$B")
+    if [ "$FAKE_COVERAGE" = drop ]; then
+      printf '{"files":[{"name":"crates/a/src/lib.rs","totals":{"lines":400,"hits":300}},{"name":"crates/b/src/lib.rs","totals":{"lines":300,"hits":290}},{"name":"crates/new/src/lib.rs","totals":{"lines":300,"hits":289}}]}'
+    else
+      printf '{"files":[{"name":"crates/a/src/lib.rs","totals":{"lines":400,"hits":381}},{"name":"crates/b/src/lib.rs","totals":{"lines":300,"hits":285}},{"name":"crates/gone/src/lib.rs","totals":{"lines":300,"hits":280}}]}'
+    fi ;;
+  *) echo "unexpected address: $url" >&2; exit 2 ;;
+esac
