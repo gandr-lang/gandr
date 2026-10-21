@@ -601,6 +601,32 @@ done < <(jq -c '.[]' .config/claims/cases.json)
 echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals"
 '''
 
+# The witnessed mutation run's readings (#1456): `items.jq` reads each
+# function's witnesses from rustdoc JSON, and `groups.jq` places each mutant
+# in its function and builds the group's regex and filterset. Each case in
+# `.config/mutants/cases.json` names its program, its input and the compact
+# JSON it must give.
+["check:mutants"]
+description = "The witnessed mutation run's readings give each recorded case its output"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+failed=0
+while IFS= read -r case; do
+  name=$(jq -r .name <<< "$case")
+  program=$(jq -r .program <<< "$case")
+  got=$(jq .input <<< "$case" | jq -c -f ".config/mutants/$program")
+  want=$(jq -r .output <<< "$case")
+  if [[ "$got" != "$want" ]]; then
+    printf 'mutants case FAILED (%s): %s\n  gave:   %s\n  wanted: %s\n' "$program" "$name" "$got" "$want" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/mutants/cases.json)
+(( failed == 0 )) || exit 1
+echo "mutants check OK: $(jq length .config/mutants/cases.json) cases read as recorded"
+'''
+
 # A clone may wire a merge driver for Rust sources. A driver that merges a
 # rebase "cleanly" into something else than the line merge reaches CI unseen,
 # because `pr:land` pushes a conflict-free rebase without re-running the gates
