@@ -6,6 +6,8 @@ use gandr_core_session::DialogueRefusal;
 use gandr_core_session::Event;
 use gandr_core_session::Move;
 use gandr_core_session::MoveIndex;
+use gandr_core_session::Node;
+use gandr_core_session::NodeId;
 use gandr_core_session::Payload;
 use gandr_core_session::PayloadDigest;
 use gandr_core_session::Refusal;
@@ -20,6 +22,7 @@ use crate::common::REPORT;
 use crate::common::operator;
 use crate::common::payload;
 use crate::common::seat;
+use crate::common::session;
 
 /// The operator's move, the left endpoint's.
 ///
@@ -177,4 +180,72 @@ fn a_move_off_its_protocol_is_refused_by_its_replay()
         panic!("the seat's replay refuses the label its protocol lacks");
     };
     assert_eq!((MoveIndex(1), Refusal::WrongLabel), (at, reason));
+}
+
+#[test]
+fn the_left_endpoint_replays_first()
+{
+    let mut wrong = retired();
+    let dispatch = wrong.get_mut(0).expect("the operator dispatches");
+    dispatch.movement = Move::Send(payload(REPORT));
+    let choice = wrong.get_mut(2).expect("the seat chooses to report");
+    choice.movement = Move::Select("resign".into());
+    let Err(DialogueRefusal::Replay {
+        side: Side::Left,
+        error: ReplayError::Refused { at, reason, .. },
+    }) = admit((&operator(), &seat()), &wrong)
+    else {
+        panic!("the operator's replay refuses before the seat's is read");
+    };
+    assert_eq!((MoveIndex(0), Refusal::WrongPayloadIdentity), (at, reason));
+}
+
+#[test]
+fn a_message_without_its_counterpart_is_unmatched()
+{
+    let sends = session(vec![Node::Send(REPORT, NodeId(1)), Node::End]);
+    let receives = session(vec![Node::Receive(REPORT, NodeId(1)), Node::End]);
+    let offers = session(vec![
+        Node::Offer([("report".into(), NodeId(1))].into()),
+        Node::End,
+    ]);
+    let closes = session(vec![Node::End]);
+    let sent = vec![
+        operator_moves(Move::Send(payload(REPORT))),
+        operator_moves(Move::End),
+    ];
+    for (protocols, dialogue, unmatched, what) in [
+        (
+            (&sends, &closes),
+            [sent.as_slice(), &[seat_moves(Move::End)]].concat(),
+            event(Side::Left, MoveIndex(0)),
+            "a send nobody receives",
+        ),
+        (
+            (&closes, &receives),
+            vec![
+                operator_moves(Move::End),
+                seat_moves(Move::Receive(payload(REPORT))),
+                seat_moves(Move::End),
+            ],
+            event(Side::Right, MoveIndex(0)),
+            "a receipt nobody sent",
+        ),
+        (
+            (&sends, &offers),
+            [sent.as_slice(), &[
+                seat_moves(Move::Offer("report".into())),
+                seat_moves(Move::End),
+            ]]
+            .concat(),
+            event(Side::Left, MoveIndex(0)),
+            "a send observed as an offer",
+        ),
+    ] {
+        assert_eq!(
+            Err(DialogueRefusal::Unmatched { event: unmatched }),
+            admit(protocols, &dialogue),
+            "{what} is unmatched"
+        );
+    }
 }
