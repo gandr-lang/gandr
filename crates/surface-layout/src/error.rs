@@ -204,6 +204,8 @@ pub enum RenderAllocationSite
     VmStack,
     /// The final output buffer.
     Output,
+    /// The places of the marks the render reached.
+    Marks,
 }
 
 /// Which checked render arithmetic operation overflowed.
@@ -605,6 +607,7 @@ impl fmt::Display for RenderAllocationSite
             Self::ResolverStack => "the resolver work stack",
             Self::VmStack => "the render machine stack",
             Self::Output => "the output buffer",
+            Self::Marks => "the reached marks",
         })
     }
 }
@@ -918,6 +921,7 @@ mod tests
             RenderAllocationSite::ResolverStack,
             RenderAllocationSite::VmStack,
             RenderAllocationSite::Output,
+            RenderAllocationSite::Marks,
         ] {
             render.push(RenderError::AllocationFailed { site });
         }

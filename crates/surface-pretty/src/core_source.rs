@@ -1777,6 +1777,51 @@ impl Source for CoreSource<'_>
         }
     }
 
+    /// The constant whose name the printer writes for `node` in the arena.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: of the node `node` restores to, a held constant value's or
+    ///   abstract type's constant when the naming table names it, and a held
+    ///   data or codata family's declaration, a staged type read at the type it
+    ///   refines as [`Source::read`] reads it; none for another former or a
+    ///   missing handle.
+    /// - provides: the declaration behind each name [`Source::read`] writes
+    ///   from the naming table.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type naming a family, an abstract type and a
+    ///   declared value lists each name it writes at the bytes it wrote it, and
+    ///   a bound variable sharing a family's name lists nothing.
+    /// - witness: `tests::goldens::each_written_constant_name_is_listed_where_it_stands_1441`
+    #[spec(ensures: |ret| ret.is_none()
+        || !matches!(self.restoration.restored(node), CoreNode::Computation(_)))]
+    #[inline]
+    fn declaration(
+        &self,
+        node: CoreNode,
+    ) -> Option<ConstantIndex>
+    {
+        match self.restoration.restored(node) {
+            CoreNode::Value(id) => match self.arena.value(id) {
+                Some(&Value::Constant(constant)) if self.name(constant).is_some() => Some(constant),
+                Some(_) | None => None,
+            },
+            CoreNode::ValueType(id) => match self.arena.value_type(self.unstaged(id)) {
+                Some(&ValueType::Data { declaration, .. }) => Some(declaration),
+                Some(&ValueType::Abstract(atom)) if self.name(atom).is_some() => Some(atom),
+                Some(_) | None => None,
+            },
+            CoreNode::CompType(id) => match self.arena.comp_type(id) {
+                Some(&CompType::Codata { declaration, .. }) => Some(declaration),
+                Some(_) | None => None,
+            },
+            CoreNode::Computation(_) => None,
+        }
+    }
+
     /// The handle of component `index` of the n-ary former `node` names in
     /// the arena.
     ///

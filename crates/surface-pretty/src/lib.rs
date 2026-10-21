@@ -16,7 +16,8 @@
 //! | [`present_computation_line`]  | the same body on one line, never laid out                |
 //! | [`Form`]                      | sugared or explicit: which spelling a former takes       |
 //! | [`Spelling`], [`Style`]       | Unicode or ASCII glyphs; a form and a spelling together  |
-//! | [`Presentation`]              | the laid-out text and whether it says the whole node     |
+//! | [`Presentation`]              | the laid-out text, whether it says the whole node, its names |
+//! | [`WrittenName`]               | a declaration's name the text writes, and where          |
 //! | [`Source`], [`Former`]        | the one question the printer asks of its input           |
 //! | [`CoreSource`]                | the core arena as a source                               |
 //! | [`ContentSource`]             | a checkpoint's content table as a source                 |
@@ -292,6 +293,7 @@ use core::fmt;
 use anodized::spec;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_kernel_term::ConstantIndex;
 pub use gandr_surface_grammar::Spelling;
 use gandr_surface_layout::ComputationWidth;
 use gandr_surface_layout::LayoutOptions;
@@ -305,6 +307,7 @@ use gandr_surface_layout::limits::BuildLimits;
 use gandr_surface_layout::limits::BuildMeter;
 use gandr_surface_layout::render::RenderedText;
 use gandr_surface_layout::render::render;
+use gandr_surface_layout::units::OutputBytes;
 use quenchant_shape::shape::Maybe;
 
 use crate::compose::Compose;
@@ -455,6 +458,143 @@ impl From<Form> for Style
     }
 }
 
+/// A declaration's name a presentation writes: the bytes of its text the name
+/// stands at, and the constant it names.
+///
+/// # Specification
+/// - requires: built by the printer from a [`Source::declaration`] answer.
+/// - ensures: `start .. end` are the bytes of the presentation's text that
+///   spell the name, on character boundaries.
+/// - provides: what links a written name to its declaration without matching
+///   its text, which a bound variable may share.
+/// - panics: none.
+/// - executable: none — a carrier; the presentation entry points state where
+///   each comes from.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a type naming a family, an abstract type and a declared
+///   value lists each name it writes at the bytes it wrote it, laid out at a
+///   page and on one line; a bound variable sharing a family's name lists
+///   nothing.
+/// - witness: `tests::goldens::each_written_constant_name_is_listed_where_it_stands_1441`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct WrittenName
+{
+    /// The byte of the text the name starts at.
+    start: OutputBytes,
+    /// The byte past the name's end.
+    end: OutputBytes,
+    /// The declaration the name stands for.
+    constant: ConstantIndex,
+}
+
+impl WrittenName
+{
+    /// A name of `constant` `length` bytes long, written from the byte
+    /// `start`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the name ends `length` past `start`, saturating.
+    /// - panics: none.
+    /// - executable: none — a constructor; the printer's witness reads its
+    ///   ranges back out of the text.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`WrittenName`].
+    /// - witness: `tests::goldens::each_written_constant_name_is_listed_where_it_stands_1441`
+    pub(crate) fn new(
+        start: OutputBytes,
+        length: OutputBytes,
+        constant: ConstantIndex,
+    ) -> Self
+    {
+        Self {
+            start,
+            end: past(start, length),
+            constant,
+        }
+    }
+
+    /// The byte of the text the name starts at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn start(&self) -> OutputBytes
+    {
+        self.start
+    }
+
+    /// The byte past the name's end.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn end(&self) -> OutputBytes
+    {
+        self.end
+    }
+
+    /// The declaration the name stands for.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn constant(&self) -> ConstantIndex
+    {
+        self.constant
+    }
+
+    /// This name, written `by` bytes further into a text.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: both ends moved `by`, saturating; the constant kept.
+    /// - panics: none.
+    /// - executable: none — the printer's witness reads each moved range back
+    ///   out of the text it moved into.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`WrittenName`].
+    /// - witness: `tests::goldens::each_written_constant_name_is_listed_where_it_stands_1441`
+    pub(crate) fn shifted(
+        self,
+        by: OutputBytes,
+    ) -> Self
+    {
+        Self {
+            start: past(self.start, by),
+            end: past(self.end, by),
+            constant: self.constant,
+        }
+    }
+}
+
+/// How many bytes `glyphs` take, saturating at the largest count.
+///
+/// # Specification
+/// trivial.
+pub(crate) fn written_bytes(glyphs: Glyphs<'_>) -> OutputBytes
+{
+    OutputBytes::from(u64::try_from(glyphs.0.len()).unwrap_or(u64::MAX))
+}
+
+/// The byte `by` bytes past `from`, saturating at the largest count.
+///
+/// # Specification
+/// trivial.
+fn past(
+    from: OutputBytes,
+    by: OutputBytes,
+) -> OutputBytes
+{
+    OutputBytes::from(u64::from(from).saturating_add(u64::from(by)))
+}
+
 /// A node laid out at a page width.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Presentation
@@ -465,6 +605,8 @@ pub struct Presentation
     fidelity: Fidelity,
     /// Why each `?` the text holds was written.
     unspelled: BTreeSet<Unspelled>,
+    /// Each declaration's name the text writes, in the order written.
+    names: Vec<WrittenName>,
 }
 
 impl Presentation
@@ -489,6 +631,22 @@ impl Presentation
     pub const fn unspelled(&self) -> &BTreeSet<Unspelled>
     {
         &self.unspelled
+    }
+
+    /// Each declaration's name the text writes, where it stands and the
+    /// constant it names, in the order written.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`WrittenName`].
+    /// - witness: `tests::goldens::each_written_constant_name_is_listed_where_it_stands_1441`
+    #[inline]
+    #[must_use]
+    pub fn names(&self) -> &[WrittenName]
+    {
+        &self.names
     }
 }
 
@@ -1037,18 +1195,15 @@ pub fn present_whole(
     // A type stands under the binders of the dependent arrows before it;
     // the body under the parameters, the definition's own binder among them
     // where it recurses, after the uniform ones.
-    let mut header: Vec<String> = Vec::with_capacity(arrows.len());
     let mut bound: Vec<Option<Name<'_>>> = Vec::new();
     let mut parts: Vec<Presentation> = Vec::with_capacity(arrows.len().saturating_add(2_usize));
     for (&(_, domain, dependent), parameter) in arrows.iter().zip(&names) {
         let typed = present_type(&source.within(&bound), domain, page, style)?;
-        header.push(format!("{parameter} : {typed}"));
         parts.push(typed);
         if dependent {
             bound.push(Some(Name::from(parameter.as_str())));
         }
     }
-    let header = header.join(", ");
     let returned = present_type(&source.within(&bound), codomain, page, style)?;
     let own = fixpoint.map(|recursive| usize::from(recursive.uniform));
     let context: Vec<Option<Name<'_>>> = names
@@ -1077,16 +1232,39 @@ pub fn present_whole(
             .collect();
         format!(" @[{}] ", regions.join(", "))
     };
-    let mut text = format!(
-        "{opener} {}{telescope}({header}) -> {returned} {{",
-        name.as_ref()
-    );
+    let mut text = format!("{opener} {}{telescope}(", name.as_ref());
+    let mut written = Vec::new();
+    for (at, (parameter, typed)) in names.iter().zip(&parts).enumerate() {
+        if at > 0_usize {
+            text.push_str(", ");
+        }
+        text.push_str(parameter);
+        text.push_str(" : ");
+        appended(&mut text, &mut written, typed);
+    }
+    text.push_str(") -> ");
+    appended(&mut text, &mut written, &returned);
+    text.push_str(" {");
+    // The body is written a line at a time, two columns in: a name moves by
+    // where its line lands.
+    let mut line_from = 0_u64;
     for line in spelled.as_ref().lines() {
         text.push('\n');
         if !line.is_empty() {
             text.push_str("  ");
-            text.push_str(line);
         }
+        let line_end = line_from.saturating_add(u64::from(written_bytes(Glyphs(line))));
+        let moved =
+            OutputBytes::from(u64::from(written_bytes(Glyphs(&text))).saturating_sub(line_from));
+        written.extend(
+            spelled
+                .names
+                .iter()
+                .filter(|name| (line_from .. line_end).contains(&u64::from(name.start())))
+                .map(|name| name.shifted(moved)),
+        );
+        text.push_str(line);
+        line_from = line_end.saturating_add(1_u64);
     }
     text.push_str("\n}");
     parts.push(returned);
@@ -1103,7 +1281,24 @@ pub fn present_whole(
             .iter()
             .flat_map(|part| part.unspelled.iter().copied())
             .collect(),
+        names: written,
     }))
+}
+
+/// Append `part`'s text to `text`, and its names, moved past what `text`
+/// held, to `names`.
+///
+/// # Specification
+/// trivial.
+fn appended(
+    text: &mut String,
+    names: &mut Vec<WrittenName>,
+    part: &Presentation,
+)
+{
+    let before = written_bytes(Glyphs(text));
+    names.extend(part.names.iter().map(|name| name.shifted(before)));
+    text.push_str(part.as_ref());
 }
 
 /// Where a presentation is written: laid out at a page, or on as few lines
@@ -1184,34 +1379,34 @@ where
             ),
         })
     };
-    let (text, fidelity, unspelled) = match layout {
+    let (text, fidelity, unspelled, names) = match layout {
         Layout::Page(page) => {
             let mut meter = BuildMeter::new(BuildLimits::default());
             let mut builder = DocBuilder::try_new(&mut meter)?;
             let mut paged = Paged::new(&mut builder);
             let (doc, fidelity, unspelled) = spelled(&mut paged)?;
             let doc = paged.handle(doc)?;
+            let named = paged.into_names();
             let arena = builder.finish()?;
             let computation = ComputationWidth::from(u32::from(page).saturating_mul(2_u32));
             let options = LayoutOptions::try_new(page, computation, PhysicalLineEnding::Lf)?;
             let mut render_meter = RenderMeter::new(RenderLimits::default());
             let rendered = render(&arena, doc, &options, &mut render_meter)?;
-            (rendered.text, fidelity, unspelled)
+            let names = named.placed(&rendered.marks);
+            (rendered.text, fidelity, unspelled, names)
         },
         Layout::Line => {
             let mut line = OneLine::new();
             let (doc, fidelity, unspelled) = spelled(&mut line)?;
-            (
-                RenderedText::from(line.into_text(doc)?),
-                fidelity,
-                unspelled,
-            )
+            let (text, names) = line.into_parts(doc)?;
+            (RenderedText::from(text), fidelity, unspelled, names)
         },
     };
     Ok(Presentation {
         text,
         fidelity,
         unspelled,
+        names,
     })
 }
 

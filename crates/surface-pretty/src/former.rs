@@ -37,6 +37,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::memory::AccessMode;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Literal;
 
@@ -1265,6 +1266,38 @@ pub trait Source
     ) -> Option<(Name<'_>, Arity, Placement)>
     {
         let _ = (node, index);
+        None
+    }
+
+    /// The constant whose name the printer writes for `node`: a declared
+    /// value, a data or codata family, an abstract type.
+    ///
+    /// # Specification
+    /// - requires: nothing; any handle is admissible.
+    /// - ensures: the constant `node` names when [`read`] answers a
+    ///   [`Former::Constant`], a [`Former::Data`], a [`Former::Codata`] or a
+    ///   [`Former::Abstract`] for it and the source keeps constants; none
+    ///   otherwise. The default keeps none.
+    /// - provides: which declaration a written name stands for, which the name
+    ///   alone does not say: a bound variable may share it.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type naming a family, an abstract type and a
+    ///   declared value lists each name it writes at the bytes it wrote it, and
+    ///   a bound variable sharing a family's name lists nothing.
+    /// - witness: `tests::goldens::each_written_constant_name_is_listed_where_it_stands_1441`
+    #[inline]
+    fn declaration(
+        &self,
+        node: Self::Node,
+    ) -> Option<ConstantIndex>
+    {
+        let _ = node;
         None
     }
 

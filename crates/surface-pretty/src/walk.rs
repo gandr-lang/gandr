@@ -205,6 +205,7 @@ use gandr_core_term::session::ProtocolState;
 use gandr_core_term::session::SessionRelation;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Literal;
@@ -3009,6 +3010,8 @@ enum Part
 {
     /// Text, written as it stands.
     Text(Cow<'static, str>),
+    /// The name of the declaration `.1`, written as it stands.
+    Named(Cow<'static, str>, ConstantIndex),
     /// The next child's piece, bare when it binds at most this loosely, a
     /// block when it is a bind's statements, parenthesized otherwise.
     Piece(Binding),
@@ -3073,6 +3076,19 @@ impl Parts
     ) -> &mut Self
     {
         self.part(Part::Text(text.into()))
+    }
+
+    /// Appends `text`, the name of the declaration `constant`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn named(
+        &mut self,
+        text: impl Into<Cow<'static, str>>,
+        constant: ConstantIndex,
+    ) -> &mut Self
+    {
+        self.part(Part::Named(text.into(), constant))
     }
 
     /// Appends the next child's piece, bare up to `loosest`.
@@ -4248,10 +4264,12 @@ impl Walk<'_, '_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: an atom holding the name; `?`, approximate, for an empty
-    ///   name, one holding a line feed, a carriage return or a tab, and in
-    ///   ASCII one holding the prime.
-    /// - provides: the spelling of constants and abstract types.
+    /// - ensures: an atom holding the name, written as the name of `declared`
+    ///   when one is given; `?`, approximate, for an empty name, one holding a
+    ///   line feed, a carriage return or a tab, and in ASCII one holding the
+    ///   prime.
+    /// - provides: the spelling of constants, abstract types and bound
+    ///   variables.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
     ///
@@ -4262,10 +4280,12 @@ impl Walk<'_, '_>
     /// - hypothesis: L3 — ordinary names, a literal question mark, empty names
     ///   and each forbidden control distinguish content from approximation; a
     ///   primed name in each spelling distinguishes the ASCII refusal. Other
-    ///   Unicode names are outside these finite fixtures.
+    ///   Unicode names are outside these finite fixtures. A declared name is
+    ///   listed at the bytes it stands at, a bound one is not.
     /// - witness: `tests::goldens::fidelity_follows_nodes_not_the_characters_of_a_name`
     /// - witness: `tests::goldens::a_primed_name_has_no_ascii_spelling_782`
     /// - witness: `walk::tests::unprintable_names_are_approximate_atoms`
+    /// - witness: `tests::goldens::each_written_constant_name_is_listed_where_it_stands_1441`
     #[spec(
         captures: [entry = self.pieces.len(), fidelity = self.fidelity],
         ensures: |ref ret| {
@@ -4282,21 +4302,27 @@ impl Walk<'_, '_>
     fn name(
         &mut self,
         name: Name<'_>,
+        declared: Option<ConstantIndex>,
     ) -> Result<(), PresentationError>
     {
         let text: &str = name.as_ref();
         if let Some(reason) = unwritable(name, self.spelling) {
             return self.unspell(reason);
         }
-        if text.contains('.') {
-            let doc = self.leaf(Glyphs(text))?;
-            self.pieces.push(Piece {
-                doc,
-                binding: Binding::Qualified,
-            });
-            return Ok(());
-        }
-        self.atom(Glyphs(text))
+        let doc = match declared {
+            Some(constant) => self.builder.named(Glyphs(text), constant)?,
+            None => self.leaf(Glyphs(text))?,
+        };
+        self.pieces.push(Piece {
+            doc,
+            binding: if text.contains('.') {
+                Binding::Qualified
+            }
+            else {
+                Binding::Atom
+            },
+        });
+        Ok(())
     }
 
     /// Pushes the label an entry of a braced former is written after: `l : `
@@ -4799,7 +4825,7 @@ impl Walk<'_, '_>
     ) -> Result<(), PresentationError>
     {
         match self.context.get(position.0).copied().flatten() {
-            Some(name) => self.name(name),
+            Some(name) => self.name(name, None),
             None => self.unspell(Unspelled::Unbound),
         }
     }
@@ -5916,7 +5942,10 @@ impl Walk<'_, '_>
             Former::Abstract(name) => {
                 return writes(
                     Production("type_identifier"),
-                    writes(Production("type_path"), self.name(name)),
+                    writes(
+                        Production("type_path"),
+                        self.name(name, source.declaration(node)),
+                    ),
                 );
             },
             Former::Constant(name) => {
@@ -5924,7 +5953,10 @@ impl Walk<'_, '_>
                     Production("identifier.expression"),
                     writes(
                         Production("constructor.expression"),
-                        writes(Production("projection_expression"), self.name(name)),
+                        writes(
+                            Production("projection_expression"),
+                            self.name(name, source.declaration(node)),
+                        ),
                     ),
                 );
             },
@@ -7776,8 +7808,14 @@ impl Walk<'_, '_>
                 writes(Production("binary_expression.cons"), Binding::Cons)
             },
             Former::Data { name, arity } | Former::Codata { name, arity } => {
+                let declared = name
+                    .filter(|&written| unwritable(written, self.spelling).is_none())
+                    .and_then(|_| source.declaration(node));
                 let name = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
-                let _ = parts.text(name);
+                let _ = match declared {
+                    Some(constant) => parts.named(name, constant),
+                    None => parts.text(name),
+                };
                 if usize::from(arity) > 0_usize {
                     let _ = parts.arguments(Arity(usize::from(arity)));
                     writes(Production("type_application"), Binding::Atom)
@@ -8919,6 +8957,9 @@ impl Walk<'_, '_>
                 for part in parts {
                     match part {
                         Part::Text(text) => current.push(self.leaf(Glyphs(text.as_ref()))?),
+                        Part::Named(text, constant) => {
+                            current.push(self.builder.named(Glyphs(text.as_ref()), constant)?);
+                        },
                         Part::Piece(loosest) => {
                             let piece = children.pop().ok_or(PresentationError::Unbalanced)?;
                             current.push(self.bare_or_block(piece, loosest)?);

@@ -171,6 +171,7 @@ use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Scopes;
 use gandr_surface_pretty::Style;
+use gandr_surface_pretty::WrittenName;
 use gandr_surface_pretty::present_computation_line;
 use gandr_surface_pretty::present_type;
 use gandr_surface_syntax::ByteOffset;
@@ -2463,6 +2464,45 @@ impl TypeTable
             .collect()
     }
 
+    /// The declaration each name `presented` writes stands for, beside where
+    /// the name stands in `presented`'s text.
+    ///
+    /// # Specification
+    /// - requires: `presented` was spelled by this table — a [`TypedSpan`]'s
+    ///   type or expectation it answered — so its constants are the table's.
+    /// - ensures: one pair per name the presentation writes whose constant the
+    ///   table declares, in the order written; a bound variable's name is never
+    ///   among them, whatever it is spelled.
+    /// - provides: what links a printed type's names to their declarations
+    ///   without matching its text: a type hint's label parts.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function's use spells its type with each family it
+    ///   writes linked to the family's declaration, at the bytes of the name,
+    ///   and its binders' names unlisted.
+    /// - witness: `typed::tests::a_presented_type_links_each_name_it_writes_1441`
+    #[spec(ensures: |ret| ret.len() <= presented.names().len()
+        && ret.iter().zip(ret.iter().skip(1_usize)).all(|(before, after)| before.0.start() < after.0.start()))]
+    #[inline]
+    #[must_use]
+    pub fn written_referents(
+        &self,
+        presented: &Presentation,
+    ) -> Vec<(WrittenName, Referent)>
+    {
+        presented
+            .names()
+            .iter()
+            .filter_map(|&name| {
+                self.referents
+                    .declared(name.constant())
+                    .map(|referent| (name, referent))
+            })
+            .collect()
+    }
+
     /// The source of the table's unit that the table types.
     ///
     /// # Specification
@@ -2737,7 +2777,12 @@ impl TypeTable
             return Maybe::Absent(typing::Absent::Unspelled);
         };
         let expected = match self.spell(entry.last, &binders, page, style) {
-            Maybe::Present(other) if entry.last != entry.ty && other != ty => Maybe::Present(other),
+            Maybe::Present(other)
+                if entry.last != entry.ty
+                    && <Presentation as AsRef<str>>::as_ref(&other) != ty.as_ref() =>
+            {
+                Maybe::Present(other)
+            },
             Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(checked_against::Absent::Agreed),
         };
         Maybe::Present(TypedSpan {
@@ -5030,6 +5075,53 @@ mod tests
         );
         assert_eq!(at("Nat ;"), nat, "a written family, at itself");
         assert_eq!(at("\ndef two : Nat"), Vec::new(), "no node, no family");
+    }
+
+    /// #1441: the type a use is presented at links each family name it
+    /// writes to the family's declaration, at the bytes of that name; the
+    /// binders it names are not listed.
+    #[test]
+    fn a_presented_type_links_each_name_it_writes_1441()
+    {
+        let referred = SourceText::from(REFERRED);
+        let table = table(referred);
+        let Maybe::Present(typed) = table.at(
+            found(referred, SourceText::from("plus[<]")),
+            PageWidth::from(80_u32),
+            Form::Sugared.into(),
+        )
+        else {
+            panic!("the recursive call's head is typed");
+        };
+        let presented = typed.ty();
+        let text: &str = presented.as_ref();
+        let linked: Vec<(Option<&str>, Option<Site>)> = table
+            .written_referents(presented)
+            .into_iter()
+            .map(|(name, referent)| {
+                let start = usize::try_from(u64::from(name.start())).expect("a byte");
+                let end = usize::try_from(u64::from(name.end())).expect("a byte");
+                (text.get(start .. end), written(&table, referent))
+            })
+            .collect();
+        let nat = (
+            Some("Nat"),
+            Some(site(
+                referred,
+                SourceText::from("Nat : Type"),
+                SourceText::from("Nat"),
+            )),
+        );
+        assert!(!linked.is_empty(), "the type names its family: {text:?}");
+        assert_eq!(
+            linked.len(),
+            text.matches("Nat").count(),
+            "each `Nat` of {text:?} is listed"
+        );
+        assert!(
+            linked.iter().all(|entry| *entry == nat),
+            "each `Nat` of {text:?}, at the family's declaration: {linked:?}"
+        );
     }
 
     /// #795: a name a sibling declares refers to the sibling's own text.

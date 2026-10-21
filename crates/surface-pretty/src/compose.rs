@@ -14,6 +14,11 @@
 //!   selects at a page no line overflows, without building the document or
 //!   searching it for breaks.
 //!
+//! A declaration's name ([`Compose::named`]) is recorded where it lands. The
+//! paged composer stores it as a marked text, whose byte in the layout chosen
+//! the render reports; the one-line composer carries each name's bytes
+//! through its own joins.
+//!
 //! The decision: one walk and two receivers, rather than a second printer for
 //! values or a flat render of the built document. A second printer would spell
 //! every former twice and drift; a flat render still pays for the document's
@@ -24,12 +29,18 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use gandr_kernel_term::ConstantIndex;
 use gandr_surface_layout::arena::DocId;
+use gandr_surface_layout::arena::MarkTag;
 use gandr_surface_layout::arena::TextSource;
 use gandr_surface_layout::build::DocBuilder;
+use gandr_surface_layout::render::Marked;
 use gandr_surface_layout::units::NestAmount;
+use gandr_surface_layout::units::OutputBytes;
 
 use crate::PresentationError;
+use crate::WrittenName;
+use crate::written_bytes;
 
 /// One document the walk composed, by the composer's own count.
 #[repr(transparent)]
@@ -74,6 +85,17 @@ pub trait Compose
     fn text(
         &mut self,
         glyphs: Glyphs<'_>,
+    ) -> Result<Doc, PresentationError>;
+
+    /// The leaf `glyphs`, the name of the declaration `constant`, recorded
+    /// where it lands.
+    ///
+    /// # Specification
+    /// trivial.
+    fn named(
+        &mut self,
+        glyphs: Glyphs<'_>,
+        constant: ConstantIndex,
     ) -> Result<Doc, PresentationError>;
 
     /// `left`, then `right`.
@@ -175,6 +197,56 @@ fn numbered<T>(
     Ok(doc)
 }
 
+/// A name the paged composer wrote: its declaration and its length, its place
+/// left to the layout.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Named
+{
+    /// The declaration the name stands for.
+    constant: ConstantIndex,
+    /// The bytes the name takes.
+    length: OutputBytes,
+}
+
+/// The names a paged composer wrote, by the tag of the mark before each.
+#[derive(Debug, Default)]
+#[repr(transparent)]
+pub struct Names(Vec<Named>);
+
+impl Names
+{
+    /// Each name `marks` reached, where it stands in the rendered text.
+    ///
+    /// # Specification
+    /// - requires: `marks` are a render of a document this composer's names
+    ///   were marked in.
+    /// - ensures: one written name per mark whose tag numbers a name, in output
+    ///   order, starting at the mark's byte and as long as the name.
+    /// - panics: none.
+    /// - executable: none — the printer's witness reads each range back out of
+    ///   the text.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type naming a family, an abstract type and a
+    ///   declared value lists each name it writes at the bytes it wrote it.
+    /// - witness: `tests::goldens::each_written_constant_name_is_listed_where_it_stands_1441`
+    pub fn placed(
+        &self,
+        marks: &[Marked],
+    ) -> Vec<WrittenName>
+    {
+        marks
+            .iter()
+            .filter_map(|mark| {
+                let named = usize::try_from(u32::from(mark.tag))
+                    .ok()
+                    .and_then(|at| self.0.get(at))?;
+                Some(WrittenName::new(mark.at, named.length, named.constant))
+            })
+            .collect()
+    }
+}
+
 /// The layout engine's builder as a composer: every document the walk
 /// composes is the builder's, numbered in the order composed.
 #[derive(Debug)]
@@ -184,6 +256,8 @@ pub struct Paged<'builder, 'meter>
     builder: &'builder mut DocBuilder<'meter>,
     /// The builder's handle of each document, by position.
     docs: Vec<DocId>,
+    /// Each declaration's name written, by its mark's tag.
+    names: Names,
 }
 
 impl<'builder, 'meter> Paged<'builder, 'meter>
@@ -195,7 +269,20 @@ impl<'builder, 'meter> Paged<'builder, 'meter>
     pub fn new(builder: &'builder mut DocBuilder<'meter>) -> Self
     {
         let docs = Vec::from([builder.empty(), builder.line(), builder.hard_line()]);
-        Self { builder, docs }
+        Self {
+            builder,
+            docs,
+            names: Names::default(),
+        }
+    }
+
+    /// The names written, to place once the document is rendered.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn into_names(self) -> Names
+    {
+        self.names
     }
 
     /// The builder's handle of `doc`.
@@ -245,6 +332,38 @@ impl Compose for Paged<'_, '_>
     ) -> Result<Doc, PresentationError>
     {
         let handle = self.builder.text(TextSource::from(glyphs.0))?;
+        self.keep(handle)
+    }
+
+    /// The builder's leaf `glyphs`, marked with the name's number.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one marked leaf; the name numbered by its tag.
+    /// - fails: the builder's refusal, or [`PresentationError::Unbalanced`]
+    ///   past `u32::MAX` names.
+    /// - panics: none.
+    /// - executable: none — the printer's witness reads each range back out of
+    ///   the text.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Names::placed`].
+    /// - witness: `tests::goldens::each_written_constant_name_is_listed_where_it_stands_1441`
+    fn named(
+        &mut self,
+        glyphs: Glyphs<'_>,
+        constant: ConstantIndex,
+    ) -> Result<Doc, PresentationError>
+    {
+        let tag =
+            u32::try_from(self.names.0.len()).map_err(|_overflow| PresentationError::Unbalanced)?;
+        let handle = self
+            .builder
+            .marked_text(TextSource::from(glyphs.0), MarkTag::from(tag))?;
+        self.names.0.push(Named {
+            constant,
+            length: written_bytes(glyphs),
+        });
         self.keep(handle)
     }
 
@@ -325,7 +444,7 @@ impl Compose for Paged<'_, '_>
     }
 }
 
-/// One composed text and the hard line breaks it holds.
+/// One composed text, the hard line breaks it holds and the names it writes.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct Written
 {
@@ -333,6 +452,8 @@ struct Written
     text: String,
     /// How many line breaks it holds.
     breaks: u32,
+    /// Each declaration's name the text writes, in order.
+    names: Vec<WrittenName>,
 }
 
 /// The text itself as a composer, on as few lines as the document admits.
@@ -375,20 +496,22 @@ impl OneLine
                 Written {
                     text: String::from(" "),
                     breaks: 0_u32,
+                    names: Vec::new(),
                 },
                 Written {
                     text: String::from("\n"),
                     breaks: 1_u32,
+                    names: Vec::new(),
                 },
             ]),
         }
     }
 
-    /// The text of `doc`.
+    /// The text of `doc` and the names it writes.
     ///
     /// # Specification
     /// - requires: `doc` came from this composer.
-    /// - ensures: the composed text.
+    /// - ensures: the composed text, and each name it writes where it stands.
     /// - fails: [`PresentationError::Unbalanced`] for a document this composer
     ///   never numbered.
     /// - panics: none.
@@ -397,16 +520,18 @@ impl OneLine
     /// # Adequacy
     /// - hypothesis: L3 — as [`OneLine`].
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
-    pub fn into_text(
+    /// - witness: `compose::tests::a_name_moves_with_the_text_written_before_it`
+    pub fn into_parts(
         mut self,
         doc: Doc,
-    ) -> Result<String, PresentationError>
+    ) -> Result<(String, Vec<WrittenName>), PresentationError>
     {
         let at = usize::try_from(doc.0).map_err(|_overflow| PresentationError::Unbalanced)?;
         if at >= self.docs.len() {
             return Err(PresentationError::Unbalanced);
         }
-        Ok(self.docs.swap_remove(at).text)
+        let written = self.docs.swap_remove(at);
+        Ok((written.text, written.names))
     }
 
     /// The composed text and breaks of `doc`.
@@ -448,6 +573,33 @@ impl Compose for OneLine
         self.keep(Written {
             text: String::from(glyphs.0),
             breaks: 0_u32,
+            names: Vec::new(),
+        })
+    }
+
+    /// The glyphs as they stand, the name of `constant` from their first
+    /// byte.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`OneLine`].
+    /// - witness: `compose::tests::a_name_moves_with_the_text_written_before_it`
+    fn named(
+        &mut self,
+        glyphs: Glyphs<'_>,
+        constant: ConstantIndex,
+    ) -> Result<Doc, PresentationError>
+    {
+        self.keep(Written {
+            text: String::from(glyphs.0),
+            breaks: 0_u32,
+            names: Vec::from([WrittenName::new(
+                OutputBytes::from(0_u64),
+                written_bytes(glyphs),
+                constant,
+            )]),
         })
     }
 
@@ -464,7 +616,8 @@ impl Compose for OneLine
         self.concat_all(&[left, right])
     }
 
-    /// Each document's text in order, the line breaks summed.
+    /// Each document's text in order, the line breaks summed, each name
+    /// moved past the text before it.
     ///
     /// # Specification
     /// trivial.
@@ -483,26 +636,36 @@ impl Compose for OneLine
         }
         let mut text = String::new();
         let mut breaks = 0_u32;
+        let mut names = Vec::new();
         for &doc in docs {
             let held = self.written(doc)?;
+            let before = written_bytes(Glyphs(&text));
+            names.extend(held.names.iter().map(|name| name.shifted(before)));
             text.push_str(&held.text);
             breaks = breaks.saturating_add(held.breaks);
         }
         if text.is_empty() {
             return Ok(Doc::EMPTY);
         }
-        self.keep(Written { text, breaks })
+        self.keep(Written {
+            text,
+            breaks,
+            names,
+        })
     }
 
-    /// `doc` with each line feed followed by `amount` more spaces.
+    /// `doc` with each line feed followed by `amount` more spaces, each name
+    /// moved by the spaces added before it.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a flat document is its own nest; a broken one gains
-    ///   the indentation after each line feed.
+    ///   the indentation after each line feed, and a name after a line feed
+    ///   moves with it.
     /// - witness: `compose::tests::a_nest_indents_each_line_feed_and_leaves_a_flat_document_itself`
+    /// - witness: `compose::tests::a_name_moves_with_the_text_written_before_it`
     fn nest(
         &mut self,
         amount: NestAmount,
@@ -513,12 +676,31 @@ impl Compose for OneLine
         if written.breaks == 0_u32 {
             return Ok(doc);
         }
-        let indentation = " ".repeat(usize::try_from(u32::from(amount)).unwrap_or(usize::MAX));
+        let width = usize::try_from(u32::from(amount)).unwrap_or(usize::MAX);
+        let indentation = " ".repeat(width);
         let text = written
             .text
             .replace('\n', &alloc::format!("\n{indentation}"));
+        let names = written
+            .names
+            .iter()
+            .map(|name| {
+                let before = usize::try_from(u64::from(name.start()))
+                    .ok()
+                    .and_then(|start| written.text.get(.. start))
+                    .unwrap_or_default()
+                    .matches('\n')
+                    .count();
+                let added = u64::try_from(before.saturating_mul(width)).unwrap_or(u64::MAX);
+                name.shifted(OutputBytes::from(added))
+            })
+            .collect();
         let breaks = written.breaks;
-        self.keep(Written { text, breaks })
+        self.keep(Written {
+            text,
+            breaks,
+            names,
+        })
     }
 
     /// The alternative with fewer line breaks, `left` on a tie.
@@ -555,6 +737,9 @@ impl Compose for OneLine
 #[cfg(test)]
 mod tests
 {
+    use alloc::vec::Vec;
+
+    use gandr_kernel_term::ConstantIndex;
     use gandr_surface_layout::units::NestAmount;
 
     use super::Compose as _;
@@ -583,8 +768,47 @@ mod tests
             .expect("a nest composes");
         assert_eq!(
             "x\n  y",
-            one.into_text(nested).expect("the nest is numbered")
+            one.into_parts(nested).expect("the nest is numbered").0
         );
+    }
+
+    /// A name moves past the text a concatenation writes before it, and past
+    /// the indentation a nest adds after each line feed before it; a name
+    /// before every line feed stays where it stands.
+    #[test]
+    fn a_name_moves_with_the_text_written_before_it()
+    {
+        let mut one = OneLine::new();
+        let head = one
+            .named(Glyphs("Nat"), ConstantIndex::from(3_usize))
+            .expect("a name composes");
+        let middle = one.text(Glyphs(" ->")).expect("a leaf composes");
+        let tail = one
+            .named(Glyphs("List"), ConstantIndex::from(5_usize))
+            .expect("a name composes");
+        let broken = one
+            .concat_all(&[head, middle, Doc::HARD_LINE, tail])
+            .expect("a concatenation composes");
+        let nested = one
+            .nest(NestAmount::from(2_u32), broken)
+            .expect("a nest composes");
+        let (text, names) = one.into_parts(nested).expect("the nest is numbered");
+        assert_eq!("Nat ->\n  List", text);
+        let placed: Vec<(&str, ConstantIndex)> = names
+            .iter()
+            .map(|name| {
+                let start = usize::try_from(u64::from(name.start())).expect("a byte");
+                let end = usize::try_from(u64::from(name.end())).expect("a byte");
+                (
+                    text.get(start .. end).expect("a name's bytes"),
+                    name.constant(),
+                )
+            })
+            .collect();
+        assert_eq!(placed, [
+            ("Nat", ConstantIndex::from(3_usize)),
+            ("List", ConstantIndex::from(5_usize))
+        ]);
     }
 
     #[test]

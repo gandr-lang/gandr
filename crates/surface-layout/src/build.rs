@@ -96,6 +96,7 @@ use crate::arena::CheckedText;
 use crate::arena::DocArena;
 use crate::arena::DocId;
 use crate::arena::DocNode;
+use crate::arena::MarkTag;
 use crate::arena::NodeId;
 use crate::arena::TextId;
 use crate::arena::TextOwned;
@@ -206,6 +207,8 @@ pub struct DocBuilder<'meter>
     nodes: Vec<DocNode>,
     /// The grow-only text store.
     texts: Vec<CheckedText>,
+    /// Each text stored marked, with its tag, in the order stored.
+    marks: Vec<(TextId, MarkTag)>,
     /// The grow-only verbatim store.
     verbatim: Vec<VerbatimText>,
     /// The singleton empty node identity.
@@ -273,6 +276,7 @@ impl<'meter> DocBuilder<'meter>
             meter,
             nodes: Vec::new(),
             texts: Vec::new(),
+            marks: Vec::new(),
             verbatim: Vec::new(),
             empty: NodeId::from(0u32),
             line: NodeId::from(0u32),
@@ -507,6 +511,56 @@ impl<'meter> DocBuilder<'meter>
     pub fn hard_line(&self) -> DocId
     {
         self.handle(self.hard_line)
+    }
+
+    /// Stores borrowed newline-free text as a document node marked `tag`: the
+    /// render reports the byte the chosen layout writes it at.
+    ///
+    /// # Specification
+    /// - requires: nothing; any tag is admissible, and a tag may repeat.
+    /// - ensures: as [`Self::text`], and the stored text is marked `tag`.
+    /// - provides: a text leaf whose place in the output the render reports, at
+    ///   no node beyond the text's own.
+    /// - fails: as [`Self::text`], or `AllocationFailed` at the text store when
+    ///   the mark cannot be kept, storing nothing.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `InvalidText`, `AllocationFailed`, `ArithmeticOverflow`, or
+    /// `LimitExceeded` as applicable.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a marked text reports the byte the chosen layout
+    ///   writes it at, in a broken and a flat layout of the same document.
+    /// - witness: `tests::algebra::a_marked_text_is_reported_where_the_chosen_layout_writes_it`
+    #[spec(
+        captures: before = (self.nodes.len(), self.marks.len()),
+        ensures: |ret| ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0
+                && self.marks.len() == before.1,
+            |_handle| self.marks.len() == before.1.saturating_add(1)
+                && self.marks.last().is_some_and(|&(text, marked)| marked == tag
+                    && self.nodes.last() == Some(&DocNode::Text(text))))
+    )]
+    #[inline]
+    #[must_use = "the text handle is the stored document leaf"]
+    pub fn marked_text(
+        &mut self,
+        text: TextSource<'_>,
+        tag: MarkTag,
+    ) -> Result<DocId, BuildError>
+    {
+        if self.marks.try_reserve(1usize).is_err() {
+            return Err(BuildError::AllocationFailed {
+                site: BuildAllocationSite::TextArena,
+            });
+        }
+        let handle = self.store_text(CheckedText::try_from(text)?)?;
+        let Some(&DocNode::Text(stored)) = self.nodes.last()
+        else {
+            return Err(BuildError::UnknownDoc);
+        };
+        self.marks.push((stored, tag));
+        Ok(handle)
     }
 
     /// Stores an unaligned concatenation of two existing documents.
@@ -1023,7 +1077,7 @@ impl<'meter> DocBuilder<'meter>
         Ok(DocArena::from_parts(
             self.arena,
             self.nodes,
-            self.texts,
+            (self.texts, self.marks),
             self.verbatim,
             self.flattened,
         ))

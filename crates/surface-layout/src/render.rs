@@ -6,17 +6,20 @@
 //! complete output; taint reports theorem scope rather than truncation.
 
 use alloc::string::String;
+use alloc::vec::Vec;
 
 use anodized::spec;
 
 use crate::arena::DocArena;
 use crate::arena::DocId;
+use crate::arena::MarkTag;
 use crate::error::RenderError;
 use crate::limits::RenderMeter;
 use crate::measure::LayoutCost;
 use crate::measure::LayoutOptions;
 use crate::measure::WidthTaint;
 use crate::resolve::resolve_for_render;
+use crate::units::OutputBytes;
 use crate::vm;
 
 /// Complete rendered UTF-8 output.
@@ -127,12 +130,36 @@ impl PartialEq<RenderedText> for &str
     }
 }
 
+/// A marked text the chosen layout wrote: its tag, and how many bytes of the
+/// output stand before it.
+///
+/// # Specification
+/// - requires: the value comes from a successful render.
+/// - ensures: `at` is a byte offset of the rendered text, on a character
+///   boundary: the start of the text marked.
+/// - provides: where a client's named text landed in the laid-out text.
+/// - panics: none.
+/// - executable: none — a carrier; [`render`] constructs it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a marked text reports the byte the chosen layout writes
+///   it at, in a broken and a flat layout of the same document.
+/// - witness: `tests::algebra::a_marked_text_is_reported_where_the_chosen_layout_writes_it`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Marked
+{
+    /// The tag the mark was stored with.
+    pub tag: MarkTag,
+    /// The bytes of the output before the mark.
+    pub at: OutputBytes,
+}
+
 /// A complete render result and its selected-layout metadata.
 ///
 /// # Specification
 /// - requires: the value comes from a successful render.
-/// - ensures: the complete UTF-8 text, cost and width-taint status describe the
-///   same selected layout.
+/// - ensures: the complete UTF-8 text, cost, width-taint status and reached
+///   marks describe the same selected layout.
 /// - provides: the state represented by this item.
 /// - panics: none.
 /// - executable: none — this result is a data carrier; render constructs its
@@ -158,6 +185,8 @@ pub struct Rendered
     pub cost: LayoutCost,
     /// Whether the selected layout required width taint.
     pub width_tainted: WidthTaint,
+    /// Each mark the selected layout holds, in output order.
+    pub marks: Vec<Marked>,
 }
 
 /// Resolves and renders one document without exposing partial output.
@@ -168,7 +197,8 @@ pub struct Rendered
 ///   cases.
 /// - ensures: the selected output byte count is checked and reserved once,
 ///   every VM append is metered before mutation, and success returns all bytes.
-/// - provides: exact rendered text, selected cost, and width-taint status.
+/// - provides: exact rendered text, selected cost, width-taint status, and
+///   where each mark of the selected layout stands in the text.
 /// - fails: returns a typed render error without returning partial output.
 /// - panics: none.
 ///
@@ -187,6 +217,7 @@ pub struct Rendered
 /// - witness: `tests::algebra::render_tainted_root_preserves_promise_columns_and_indentation`
 /// - witness: `tests::algebra::render_limits_fail_without_partial_output`
 /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+/// - witness: `tests::algebra::a_marked_text_is_reported_where_the_chosen_layout_writes_it`
 #[spec(
     captures: before = meter.usage(),
     ensures: |ret| if arena.contains(root) == crate::arena::DocHandleStatus::Absent { matches!(ret, Err(RenderError::UnknownDoc))
@@ -214,10 +245,12 @@ pub fn render(
         expected,
         meter,
     )?;
+    let (text, marks) = output.into_parts();
     Ok(Rendered {
-        text: output.into_text(),
+        text,
         cost: resolved.cost(),
         width_tainted: resolved.width_taint(),
+        marks,
     })
 }
 
