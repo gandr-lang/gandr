@@ -619,10 +619,21 @@ gh pr create --base main --title "${usage_title:?}" --body-file "$body"
 #
 # A stack lands whole: `pr:land --stack` restacks the current branch's stack
 # onto `origin/main` (`gh stack rebase`), pushes every branch it moved
-# (`gh stack push`), and queues the stack as one unit (`gh stack merge`), then
-# waits on the top pull request, as the queue merges the stack all or none.
-# Without `--stack`, a pull request whose base is another branch is refused:
-# it is not the bottom of its stack, and the queue takes main-based ones only.
+# (`gh stack push`), and queues the stack as one unit (`gh stack merge` by its
+# top pull request), then waits on the top pull request, as the queue merges
+# the stack all or none.
+#
+# The stack is the server's: the pull request's base chain down to the trunk
+# and the open pull requests based on it up to the top. The clone's gh-stack
+# record only drives the restack, so it must name the server's open branches
+# in order. A stack linked with `gh stack link` has no record, and a reused
+# branch name can keep the record of an earlier landing (#1238); either is
+# refreshed from the server (`gh stack unstack --local`, then
+# `gh stack checkout`), and a record that still disagrees is refused by name.
+# `.config/pr-stack/decide.jq` makes the decision and `check:pr-stack` holds
+# its cases. Without `--stack`, a pull request in a server stack of two or
+# more is refused, and so is one whose base is another branch: the queue takes
+# main-based ones only.
 #
 # Before queueing, the prose obligations are written into the pull request's
 # body against the rebased branch, its ticks carried, and the landing is
@@ -721,6 +732,51 @@ conflicts() {
   echo "rebase onto main once they merge, then run \`pr:land\` again"
 }
 
+# The landing's shape is the server's stack (#1238): one pull request lands
+# alone, a stack of two or more lands whole from its top, and a local record
+# that disagrees with the server is refreshed once, then refused by name.
+trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
+# The open pull requests of the stack holding `$1`, bottom to top, as a JSON
+# array of `{number, head}`: its base chain down to the trunk, then the pull
+# requests based on it up to the top.
+server_stack() {
+  local head base row n h chain
+  IFS=$'\t' read -r head base < <(gh pr view "$1" -R "$repo" --json headRefName,baseRefName --jq '[.headRefName, .baseRefName] | @tsv')
+  chain=$(jq -cn --argjson n "$1" --arg h "$head" '[{number: $n, head: $h}]')
+  while [[ "$base" != "$trunk" ]]; do
+    row=$(gh pr list -R "$repo" --state open --head "$base" --json number,headRefName,baseRefName --jq '.[0] // empty | [.number, .headRefName, .baseRefName] | @tsv')
+    [[ -n "$row" ]] || break
+    IFS=$'\t' read -r n h base <<< "$row"
+    chain=$(jq -c --argjson n "$n" --arg h "$h" '[{number: $n, head: $h}] + .' <<< "$chain")
+  done
+  while row=$(gh pr list -R "$repo" --state open --base "$head" --json number,headRefName --jq '.[0] // empty | [.number, .headRefName] | @tsv') && [[ -n "$row" ]]; do
+    IFS=$'\t' read -r n head <<< "$row"
+    chain=$(jq -c --argjson n "$n" --arg h "$head" '. + [{number: $n, head: $h}]' <<< "$chain")
+  done
+  printf '%s\n' "$chain"
+}
+decide() {
+  local recorded
+  recorded=$(gh stack view --json 2> /dev/null) && jq -e . > /dev/null 2>&1 <<< "$recorded" || recorded=null
+  jq -rn --argjson stack "$stack" --argjson refreshed "$1" --argjson server "$server" --argjson local "$recorded" \
+    '{stack: $stack, refreshed: $refreshed, server: $server, local: $local}' \
+    | jq -r -f "$(git rev-parse --show-toplevel)/.config/pr-stack/decide.jq"
+}
+server=$(server_stack "$number")
+decision=$(decide false)
+if [[ "$decision" == refresh ]]; then
+  top=$(jq -r '.[-1].number' <<< "$server")
+  if gh stack view --json > /dev/null 2>&1; then gh stack unstack --local; fi
+  gh stack checkout "$top"
+  decision=$(decide true)
+fi
+case "$decision" in
+  refuse$'\t'*) echo "${decision#*$'\t'}" >&2; exit 2 ;;
+  stack$'\t'*) number=${decision#*$'\t'} ;;
+  single) stack=false ;;
+  *) echo "unexpected stack decision: $decision" >&2; exit 2 ;;
+esac
+
 # A branch behind main enters the queue only to come back UNMERGEABLE or to
 # fail on what landed ahead of it, so the current branch is rebased onto
 # `origin/main` and pushed before the queue sees it. The queue then runs CI on
@@ -731,28 +787,14 @@ conflicts() {
 if [[ "$stack" == true ]]; then
   gh stack rebase || { gh stack rebase --abort; echo 'the restack onto origin/main conflicts; resolve it, run the hooks, and run `pr:land --stack` again' >&2; exit 1; }
   gh stack push
-  layout=$(gh stack view --json)
-  top=$(jq -r '.branches[-1].name' <<< "$layout")
-  number=$(gh pr view "$top" -R "$repo" --json number --jq .number)
-  # GitHub holds no stack of one branch, so its pull request lands alone.
-  if (( $(jq '[.branches[] | select(.isMerged | not)] | length' <<< "$layout") > 1 )); then
-    gh stack merge --yes --merge
-  else
-    stack=false
-  fi
+  gh stack merge "$number" --yes --merge
 else
   base=$(gh pr view "$number" -R "$repo" --json baseRefName --jq .baseRefName)
-  trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
   if [[ "$base" != "$trunk" ]]; then
     echo "PR #$number is not the bottom of the stack: its base is $base; land the stack with \`pr:land --stack\`" >&2
     exit 2
   fi
   if [[ -z "${usage_number:-}" ]]; then
-    layers=$(gh stack view --json 2> /dev/null | jq '[.branches[] | select(.isMerged | not)] | length') || layers=0
-    if (( ${layers:-0} > 1 )); then
-      echo "the current branch is in a stack of $layers; land it with \`pr:land --stack\`" >&2
-      exit 2
-    fi
     git fetch --quiet origin main
     if ! git merge-base --is-ancestor origin/main HEAD; then
       git rebase --quiet --update-refs origin/main || { git rebase --abort; echo 'the rebase onto origin/main conflicts; resolve it, run the hooks, and run `pr:land` again' >&2; exit 1; }

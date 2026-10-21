@@ -1,0 +1,119 @@
+[
+  {
+    "name": "one pull request lands alone, with or without --stack",
+    "input": {
+      "stack": true,
+      "refreshed": false,
+      "server": [{ "number": 1242, "head": "triage-1167-receive" }],
+      "local": null
+    },
+    "decision": "single"
+  },
+  {
+    "name": "a local stack that names the server's open branches lands from its top",
+    "input": {
+      "stack": true,
+      "refreshed": false,
+      "server": [
+        { "number": 1232, "head": "theory-recovery-records" },
+        { "number": 1234, "head": "triage-1229-receive-parse" },
+        { "number": 1237, "head": "theory-include" }
+      ],
+      "local": {
+        "trunk": "main",
+        "currentBranch": "theory-include",
+        "branches": [
+          { "name": "surface-1171", "isMerged": true, "pr": { "number": 1211, "state": "MERGED" } },
+          {
+            "name": "theory-recovery-records",
+            "isMerged": false,
+            "pr": { "number": 1232, "state": "OPEN" }
+          },
+          {
+            "name": "triage-1229-receive-parse",
+            "isMerged": false,
+            "pr": { "number": 1234, "state": "OPEN" }
+          },
+          { "name": "theory-include", "isMerged": false, "pr": { "number": 1237, "state": "OPEN" } }
+        ]
+      }
+    },
+    "decision": "stack\t1237"
+  },
+  {
+    "name": "a stack linked on the server with no local record is refreshed",
+    "input": {
+      "stack": true,
+      "refreshed": false,
+      "server": [
+        { "number": 1232, "head": "theory-recovery-records" },
+        { "number": 1234, "head": "triage-1229-receive-parse" },
+        { "number": 1237, "head": "theory-include" }
+      ],
+      "local": null
+    },
+    "decision": "refresh"
+  },
+  {
+    "name": "a reused branch name's record of an earlier landing is refreshed",
+    "input": {
+      "stack": true,
+      "refreshed": false,
+      "server": [
+        { "number": 1232, "head": "theory-recovery-records" },
+        { "number": 1234, "head": "triage-1229-receive-parse" },
+        { "number": 1237, "head": "theory-include" }
+      ],
+      "local": {
+        "trunk": "main",
+        "currentBranch": "theory-include",
+        "branches": [
+          {
+            "name": "theory-include",
+            "isMerged": true,
+            "pr": { "number": 1094, "state": "MERGED" }
+          }
+        ]
+      }
+    },
+    "decision": "refresh"
+  },
+  {
+    "name": "a record that still disagrees after the refresh is refused by name",
+    "input": {
+      "stack": true,
+      "refreshed": true,
+      "server": [
+        { "number": 1232, "head": "theory-recovery-records" },
+        { "number": 1234, "head": "triage-1229-receive-parse" },
+        { "number": 1237, "head": "theory-include" }
+      ],
+      "local": {
+        "trunk": "main",
+        "currentBranch": "theory-include",
+        "branches": [
+          {
+            "name": "theory-include",
+            "isMerged": true,
+            "pr": { "number": 1094, "state": "MERGED" }
+          }
+        ]
+      }
+    },
+    "decision": "refuse\tlocal gh-stack record maps theory-include to merged #1094; the open PR is #1237 in the server stack #1232 ← #1234 ← #1237; refresh it with `gh stack unstack --local` and `gh stack checkout 1237`"
+  },
+  {
+    "name": "the bottom of a server stack without --stack is refused, never auto-merged",
+    "input": {
+      "stack": false,
+      "refreshed": false,
+      "server": [
+        { "number": 1232, "head": "theory-recovery-records" },
+        { "number": 1234, "head": "triage-1229-receive-parse" },
+        { "number": 1237, "head": "theory-include" }
+      ],
+      "local": null
+    },
+    "decision": "refuse\tPR #1232 is in a stack of 3 on the server (#1232 ← #1234 ← #1237); land it with `pr:land --stack` from #1237's branch"
+  }
+]
