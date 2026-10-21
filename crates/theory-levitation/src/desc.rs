@@ -129,13 +129,16 @@ pub enum DeclPolarity
     Codata,
 }
 
-/// Whether a sort lives in the representable sub-universe `U⁺ ⊆ U`: the bit
-/// that admits a sort as the domain of a π⁺ binder.
+/// Where a sort lives: the representable sub-universe `U⁺ ⊆ U`, whose bit
+/// admits a sort as the domain of a π⁺ binder, the rest of `U`, or the atoms.
 ///
 /// A representable sort is one a context can be extended by, so an operation
 /// may bind a variable of it; in the first-order model it generates context
 /// extension, weakening, a newest variable, single substitution and lifting.
-/// An ordinary sort generates only its substitution action.
+/// An ordinary sort generates only its substitution action. An atom sort is
+/// orbit-infinite, with equality and swapping its only structure (Pitts,
+/// _Nominal Sets_, CUP 2013): an operation may take an atom, and none returns
+/// one.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Representability
 {
@@ -144,6 +147,8 @@ pub enum Representability
     /// A representable sort: a π⁺ domain, with context extension in the
     /// first-order model.
     Representable,
+    /// An atom sort: never a π⁺ domain and never an operation's result.
+    Atom,
 }
 
 /// A declared sort of a signature (a 0-cell), with the fixpoint its

@@ -1,0 +1,21 @@
+// The twin of `model/desc/atom-sorts.gandr`: an operation returning an atom,
+// and an atom sort as the domain of a `pi+` binder.
+
+/// `fresh` returns a `Name`: an atom is compared and swapped, never produced,
+/// so the description check refuses the output by name (`AtomResult`).
+@[ refuses("MalformedForm") ]
+theory Minting {
+  sort Name : Atom;
+  sort Tm : Type;
+  oper fresh : (t : Tm) --> Name;
+}
+
+/// A port binds a variable of the atom sort `Name`: `pi+` binds a variable of
+/// a representable sort (`NonRepresentableBinder`); an atom is abstracted by
+/// the nominal binding port instead (#1426).
+@[ refuses("MalformedForm") ]
+theory AtomBinder {
+  sort Name : Atom;
+  sort Tm : Type;
+  oper abs : (t : pi+ (x : Name) . Tm) --> Tm;
+}
