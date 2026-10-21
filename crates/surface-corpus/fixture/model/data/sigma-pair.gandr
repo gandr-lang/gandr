@@ -73,6 +73,37 @@ def rebuilt(p : #{
   }
 }
 
+/// A record of three over a type parameter, split under a motive reading the
+/// scrutinee: each arm answers it at the pair its entries rebuild, and the
+/// rest of the record after its first entry is named by the label it starts
+/// at.
+@[ checks ]
+def againAt(
+  b : Type,
+  w : #{ x : b, y : b, p : Path(b, x, y) }
+) -> -F Path(#{ x : b, y : b, p : Path(b, x, y) }, w, w) {
+  case w {
+    #{.x = u, .y = v, .p = q} => here((u, (v, q)))
+  }
+}
+
+/// A record of three over a type parameter is equivalent to itself; each
+/// entry reads the ones before it on both sides.
+@[ checks ]
+def selfEquiv(b : Type) -> -F (#{ x : b, y : b, p : Path(b, x, y) } ≃ #{
+  x : b,
+  y : b,
+  p : Path(b, x, y)
+}) {
+  (
+    thunk { fn (w) { w } },
+    (
+      (thunk { fn (w) { w } }, thunk { fn (w) { here(w) } }),
+      (thunk { fn (w) { w } }, thunk { fn (w) { here(w) } })
+    )
+  )
+}
+
 /// A record of three nests its links; a labelled pattern binds the entries it
 /// names, the later one's type reading the earlier.
 @[ checks ]

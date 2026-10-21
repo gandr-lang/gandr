@@ -1300,7 +1300,8 @@ enum Test
         /// Whether the split reads its motive at the scrutinee.
         dependent: Dependent,
         /// The label of each component some row leaves unwritten under a
-        /// label pattern, by component, ascending.
+        /// label pattern, or that holds the rest of a dependent record from
+        /// that label's field on, by component, ascending.
         unwritten: Vec<(usize, FieldLabel)>,
         /// The child under them.
         child: TestAt,
@@ -1467,7 +1468,9 @@ struct Written
     /// key, an or-pattern.
     spelled: Vec<(PatternAt, ByteSpan, PatternReading)>,
     /// Each wildcard a labelled pattern leaves for a field it does not
-    /// write, with the field's label, in the order read.
+    /// write, with the field's label, and each place holding the rest of a
+    /// dependent record, with the label of the field the rest starts at, in
+    /// the order read.
     unwritten: Vec<(PatternAt, FieldLabel)>,
     /// Whether a sum pattern under no stated sum reads its index as a summand
     /// of the sum the case's arms settle: set where the patterns are a case's
@@ -4280,7 +4283,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   inner one a part after its parent: the link's entry, then the next
     ///   link or the last entry; a split of a link that binds is dependent; a
     ///   place no entry names is a wildcard, kept with its field's label when
-    ///   the record labels it; each written entry queued with its place's
+    ///   the record labels it, and the rest a link nests is kept with the label
+    ///   of the field it starts at; each written entry queued with its place's
     ///   written type, or unstated at a relation's or a model's record, in
     ///   written order.
     /// - fails: the unresolved-name refusal for a label the record lacks.
@@ -4376,8 +4380,19 @@ impl<'source> Lowerer<'_, 'source>
                 part(patterns, link.saturating_add(1))
             }
             else {
+                // The rest of the record from the next field on: a binder the
+                // pattern writes no name for, named by the label it starts at.
                 let slot = PatternAt(patterns.shapes.len());
                 patterns.shapes.push((here.at, Matcher::Wild));
+                if let Some(&arity::Entry {
+                    key: arity::Key::Label(label, _),
+                    ..
+                }) = typed.get(link.saturating_add(1))
+                {
+                    patterns
+                        .unwritten
+                        .push((slot, FieldLabel::from(String::from(label.as_ref()))));
+                }
                 slot
             };
             let start = patterns.parts.len();
@@ -6747,7 +6762,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   the same name; each component `c` of a minted split under `d` tree
     ///   binders likewise, at the variable the leaves under the split settle at
     ///   level `d + c + 1`, or else at the label of the field a labelled
-    ///   pattern leaves unwritten there; any other binder keeps no name.
+    ///   pattern leaves unwritten there, or of the field the rest of a
+    ///   dependent record held there starts at; any other binder keeps no name.
     /// - provides: the source's name for a pattern variable, which a type
     ///   printed inside an arm reads its field binder by, whether or not the
     ///   arm uses it.
@@ -6759,7 +6775,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a field a single arm names, and one two arms name
     ///   alike, each answer under the written name; a relation's record split
-    ///   names a component its arm never uses, and one a label pattern omits.
+    ///   names a component its arm never uses, and one a label pattern omits; a
+    ///   dependent record's rest is named by the label it starts at.
     /// - witness: `lower::native::tests::a_pattern_variable_names_its_field_binder`
     /// - witness: `lower::identity::tests::a_relation_split_names_each_written_component_665`
     /// - witness: `lower::identity::tests::an_unwritten_field_is_named_by_its_label_670`
