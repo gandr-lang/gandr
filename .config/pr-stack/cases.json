@@ -1,5 +1,23 @@
 [
   {
+    "name": "a chain whose stack kept its merged bottoms is linked by the stack's number",
+    "program": "link.jq",
+    "input": { "chain": [1272, 1273], "stacks": [1269, 1269] },
+    "output": "1269\n1272\n1273"
+  },
+  {
+    "name": "a chain gaining a new top is linked into the stack its lower members hold",
+    "program": "link.jq",
+    "input": { "chain": [1272, 1273, 1276], "stacks": [1269, 1269, null] },
+    "output": "1269\n1272\n1273\n1276"
+  },
+  {
+    "name": "a chain in no stack is linked by its numbers",
+    "program": "link.jq",
+    "input": { "chain": [1272, 1273], "stacks": [null, null] },
+    "output": "1272\n1273"
+  },
+  {
     "name": "a stack is read from its middle down to main and up to its top",
     "program": "chain.jq",
     "args": { "n": 1258, "trunk": "main" },

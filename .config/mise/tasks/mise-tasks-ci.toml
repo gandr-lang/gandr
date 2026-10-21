@@ -655,11 +655,10 @@ echo "$url"
 if [[ "$base" != "$trunk" ]]; then
   number=${url##*/}
   if [[ $(in_queue "$top_number") == true ]]; then
-    echo "#$top_number is in the merge queue, so #$number waits on $base as the next stack's bottom; GitHub retargets it to $trunk when #$top_number merges"
+    echo "#$top_number is queued to land on its own, so #$number waits on $base as the next stack's bottom; GitHub retargets it to $trunk when #$top_number merges"
   else
     stack=$(server_stack "$number")
-    mapfile -t members < <(jq -r '.[].number' <<< "$stack")
-    gh stack link "${members[@]}" > /dev/null
+    stack_link "$stack"
     echo "#$number stacked on #$top_number: $(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$stack")"
   fi
 fi
