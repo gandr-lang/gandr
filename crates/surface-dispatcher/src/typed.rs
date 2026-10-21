@@ -1998,6 +1998,40 @@ impl TypeTable
             &hidden,
             &described.uses,
         );
+        // A recursive call's head is written with its claim, `plus[<]`: the
+        // force runs the whole head, while the use is the name alone, which no
+        // entry of its own covers. Such a use reads as the force it begins.
+        let headed: Vec<(ByteSpan, Reading)> = entries
+            .iter()
+            .filter(|entry| {
+                entry.subject == Subject::Term
+                    && matches!(entry.provenance, Provenance::Inserted(Insertion::Force))
+            })
+            .filter_map(|entry| {
+                let &(used, _) = referents.at(entry.span.start())?;
+                (used.start() == entry.span.start()
+                    && used != entry.span
+                    && readings
+                        .binary_search_by_key(&used, |&(span, _)| span)
+                        .is_err())
+                .then_some((used, Reading {
+                    binding: Binding::Uses,
+                    polarity: match entry.ty {
+                        TypeNode::Value(_) => Polarity::Value,
+                        TypeNode::Computation(_) => Polarity::Computation,
+                    },
+                }))
+            })
+            .collect();
+        readings.extend(headed);
+        readings.sort_unstable_by_key(|&(span, _)| span);
+        readings.dedup_by(|later, kept| {
+            let same = later.0 == kept.0;
+            if same {
+                kept.1.polarity = kept.1.polarity.max(later.1.polarity);
+            }
+            same
+        });
         let documented = module
             .source_documentations()
             .iter()
@@ -2295,7 +2329,9 @@ impl TypeTable
     ///   binder is read at the type it binds and a function's lambda is located
     ///   at its parameter, and any term entry otherwise, as the force of a
     ///   called name. Any other insertion — an arm's inferred `return`, a
-    ///   function's thunk, a match's binding — reads nothing.
+    ///   function's thunk, a match's binding — reads nothing. A use no such
+    ///   entry covers that begins an inserted force's wider span, as a
+    ///   recursive call's name begins `plus[<]`, reads as that force.
     /// - provides: the modifiers a face marks a written name with.
     /// - fails: never.
     /// - panics: none.
@@ -2303,8 +2339,10 @@ impl TypeTable
     /// # Adequacy
     /// - hypothesis: L3 — a lambda binder, a `run` binder, a parameter, a
     ///   constructor's own name, a called name, the argument passed to it, a
-    ///   binder's use and a value a body answers are each read apart.
+    ///   binder's use, a value a body answers and a recursive call's name are
+    ///   each read apart.
     /// - witness: `typed::tests::a_called_name_runs_and_a_binder_binds`
+    /// - witness: `typed::tests::a_recursive_call_s_name_runs_as_its_force_1487`
     #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [(first, _), (second, _)] if first < second)))]
     #[inline]
     #[must_use]
@@ -5638,6 +5676,37 @@ mod tests
             "a constructor's name, a telescope binder, a lambda binder, a `run` binder and a \
              parameter bind; a called name runs as a computation, the values passed to it are \
              values, and so is the value a body answers, its inferred `return` read as nothing"
+        );
+    }
+
+    /// #1487: the name of a recursive call, written with its claim as
+    /// `plus[<]`, reads as the force that runs the call, as any called name
+    /// does.
+    #[test]
+    fn a_recursive_call_s_name_runs_as_its_force_1487()
+    {
+        let written = include_str!("../../surface-corpus/fixture/model/data/data-base.gandr");
+        let table = table(SourceText::from(written));
+        let start = written
+            .find("plus[<]")
+            .expect("the recursive call is written");
+        let name = gandr_surface_syntax::ByteSpan::new(
+            gandr_surface_syntax::ByteOffset::from(start),
+            gandr_surface_syntax::ByteOffset::from(start.saturating_add(4_usize)),
+        )
+        .expect("the name is a span");
+        let readings = table.readings();
+        assert_eq!(
+            readings
+                .binary_search_by_key(&name, |&(span, _)| span)
+                .ok()
+                .and_then(|found| readings.get(found))
+                .map(|&(_, reading)| reading),
+            Some(super::Reading {
+                binding: super::Binding::Uses,
+                polarity: super::Polarity::Computation,
+            }),
+            "the recursive call's name is a use run as a computation"
         );
     }
 

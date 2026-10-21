@@ -7547,6 +7547,24 @@ mod tests
             "a dependent pair's labels bind; the called `tag_of` is run as a computation and \
              the `tagged` passed to it is a value; both halves of `tag` declare"
         );
+        assert_eq!(
+            read("data-base.gandr", 22 ..= 25),
+            [
+                "22:8 `plus` function declaration+value",
+                "22:13 `n` parameter declaration+value",
+                "22:22 `m` parameter declaration+value",
+                "23:7 `m` parameter value",
+                "24:4 `Zero` enumMember value",
+                "24:12 `n` parameter value",
+                "25:4 `Succ` enumMember value",
+                "25:9 `p` variable declaration+value",
+                "25:20 `plus` function computation",
+                "25:28 `n` parameter value",
+                "25:31 `p` variable value",
+            ],
+            "#1487: the recursive call's name, written with its claim as `plus[<]`, is run as a \
+             computation as any called name is; the arguments passed to it are values"
+        );
     }
 
     #[test]
