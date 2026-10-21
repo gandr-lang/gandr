@@ -84,17 +84,17 @@
 //!   immortal, so a read shares it uncounted.
 //! - **Every owner is counted.** A pure command — no effect, capture, reified
 //!   stack, memory form or fold, each named by [`Uncounted`] — inserts the
-//!   counting its ownership reading (`Ownership`, its root and each constant's
-//!   definition read apart) places: before a node runs it duplicates each name
-//!   two of its children use, and on entry to a child it drops each name the
-//!   child ignores. A use of a name moves its owner into what reads it. A match
-//!   duplicates the matched object's fields into its binders, then drops the
-//!   object; a selection duplicates the field and drops the record; a closure's
-//!   entry duplicates each producer capture into its window, then drops the
-//!   closure it entered, which a fixpoint's own binder keeps; a primitive's
-//!   host drops its operands. A command holding any other form inserts nothing
-//!   and names the first such form: a value left uncounted only leaks, while
-//!   one dropped early is read after it is freed.
+//!   counting its ownership reading (`Ownership`, read once with the root and
+//!   each constant's definition a root of its own) places: before a node runs
+//!   it duplicates each name two of its children use, and on entry to a child
+//!   it drops each name the child ignores. A use of a name moves its owner into
+//!   what reads it. A match duplicates the matched object's fields into its
+//!   binders, then drops the object; a selection duplicates the field and drops
+//!   the record; a closure's entry duplicates each producer capture into its
+//!   window, then drops the closure it entered, which a fixpoint's own binder
+//!   keeps; a primitive's host drops its operands. A command holding any other
+//!   form inserts nothing and names the first such form: a value left uncounted
+//!   only leaks, while one dropped early is read after it is freed.
 //!
 //! A closure site is recorded for every closure the function creates: the
 //! producer it suspends and its capture positions of the producer bindings
@@ -108,7 +108,6 @@
 //! What the lowering refuses is named by [`Form`], and the run declines with
 //! it.
 
-use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 
 use gandr_core_sequent::CommandArena;
@@ -128,6 +127,7 @@ use gandr_core_sequent::ProducerNode;
 use gandr_core_sequent::Route;
 use gandr_core_sequent::Selector;
 use gandr_core_sequent::Suspension;
+use gandr_core_sequent::reach;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::FieldLabel;
 use gandr_core_term::Zone;
@@ -1003,8 +1003,6 @@ struct Lowering<'run>
     /// The constants unfolded so far, by word, each with its unfolding's
     /// entry.
     globals: Vec<(ConstantIndex, Label)>,
-    /// Whether a suspended capture has been created.
-    captured: bool,
     /// Whether a cut delivering a variable or a constant tests for a
     /// suspended capture first.
     checked: bool,
@@ -1029,16 +1027,12 @@ struct Lowering<'run>
     unwinds: Vec<(Label, Label)>,
     /// The consumer of each unmatched exit so far.
     unmatched: Vec<ConsumerId>,
-    /// Whether this pass inserts counting: a counted pass until it meets a
+    /// Whether this lowering inserts counting: whether its command holds no
     /// form outside the counted fragment.
     counting: bool,
-    /// The first form met outside the counted fragment.
-    uncounted: Option<Uncounted>,
-    /// The ownership readings of the root and of each constant unfolded so
-    /// far, each its own root.
-    ownerships: Vec<Ownership>,
-    /// The names each node drops on entry, recorded by its parent.
-    drops: BTreeMap<NodeAddress, Box<[DeBruijnIndex]>>,
+    /// The ownership reading of the root and of each constant it unfolds,
+    /// each its own root; empty for a lowering that does not count.
+    ownership: Ownership,
 }
 
 impl Lowering<'_>
@@ -1098,42 +1092,6 @@ impl Lowering<'_>
         (inner, slot)
     }
 
-    /// Record `reason` as why the lowering counts nothing and stop counting,
-    /// unless an earlier form already did.
-    ///
-    /// # Specification
-    /// trivial.
-    fn uncount(
-        &mut self,
-        reason: Uncounted,
-    )
-    {
-        if self.counting {
-            self.uncounted = Some(reason);
-            self.counting = false;
-        }
-    }
-
-    /// Read the ownership of the closed `root` as its own root.
-    ///
-    /// # Specification
-    /// trivial.
-    ///
-    /// # Errors
-    /// [`Form::Dangling`] for a node the arena does not hold.
-    fn own(
-        &mut self,
-        root: NodeAddress,
-    ) -> Result<(), Form>
-    {
-        if self.counting {
-            let ownership =
-                Ownership::of(self.arena, &[root]).map_err(|_dangling| Form::Dangling)?;
-            self.ownerships.push(ownership);
-        }
-        Ok(())
-    }
-
     /// Emit `stencil` over the slot of each producer name `indices` reads in
     /// `scope`.
     ///
@@ -1159,16 +1117,15 @@ impl Lowering<'_>
     }
 
     /// Enter `node` in `scope` counted: duplicate each name two of its
-    /// children use, drop each name it ignores that its parent recorded, and
-    /// record what each child drops on its own entry.
+    /// children use, then drop each name it ignores that the edge reaching it
+    /// gives it.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Errors
     /// [`Form::Unbound`] for a counted name no slot of `scope` holds;
-    /// [`Form::Unowned`] for a node the ownership readings do not hold, or a
-    /// child an earlier parent recorded other drops for.
+    /// [`Form::Unowned`] for a node the ownership reading does not place.
     fn enter(
         &mut self,
         node: NodeAddress,
@@ -1178,26 +1135,15 @@ impl Lowering<'_>
         if !self.counting {
             return Ok(());
         }
-        let entry = self
-            .ownerships
-            .iter()
-            .find_map(|ownership| ownership.entry(node))
-            .ok_or(Form::Unowned)?;
-        let dups = entry.dups.clone();
-        for child in &entry.children {
-            match self.drops.get(&child.node) {
-                Some(held) if *held != child.drops => return Err(Form::Unowned),
-                Some(_) => {},
-                None => {
-                    self.drops.insert(child.node, child.drops.clone());
-                },
-            }
-        }
-        self.each_name(StencilId::Dup, scope, &dups)?;
-        if let Some(drops) = self.drops.get(&node).cloned() {
-            self.each_name(StencilId::Drop, scope, &drops)?;
-        }
-        Ok(())
+        // reason: the reading is set aside while its names are emitted, which
+        // needs the lowering mutably.
+        let ownership = core::mem::take(&mut self.ownership);
+        let entered = ownership.entry(node).map_or(Err(Form::Unowned), |entry| {
+            self.each_name(StencilId::Dup, scope, entry.dups)?;
+            self.each_name(StencilId::Drop, scope, entry.drops)
+        });
+        self.ownership = ownership;
+        entered
     }
 
     /// Allocate a closure over what `producer` names in `scope`, entered by
@@ -2073,13 +2019,10 @@ impl Lowering<'_>
     ///
     /// # Specification
     /// trivial.
-    ///
-    /// # Errors
-    /// [`Form::Dangling`] for a definition the arena does not hold.
     fn open(
         &mut self,
         body: Body,
-    ) -> Result<Position, Form>
+    ) -> Position
     {
         self.function.bind(body.label);
         let depth = self.scopes.depth(body.scope);
@@ -2109,10 +2052,7 @@ impl Lowering<'_>
                 closure = Some(slot);
             }
         }
-        if let Entry::Unfold(definition, _) = body.entry {
-            self.own(NodeAddress::Producer(definition))?;
-        }
-        else if self.counting {
+        if self.counting && !matches!(body.entry, Entry::Unfold(..)) {
             for capture in self.scopes.producers(body.scope).into_iter().flatten() {
                 self.emit(StencilId::Dup, capture.operand(), Operand::Unused);
             }
@@ -2135,7 +2075,7 @@ impl Lowering<'_>
                 self.tasks.push(Task::Producer(definition, scope));
             },
         }
-        Ok(at)
+        at
     }
 
     /// Run one task.
@@ -2269,19 +2209,13 @@ impl Lowering<'_>
                 producer,
                 consumer,
             } => (polarity, producer, consumer),
-            CommandNode::Memory { .. } => {
-                self.uncount(Uncounted::Memory);
-                return self.control(id, scope);
-            },
-            CommandNode::Perform { .. }
+            CommandNode::Memory { .. }
+            | CommandNode::Perform { .. }
             | CommandNode::Handle { .. }
             | CommandNode::Resume { .. }
             | CommandNode::Abandon { .. }
             | CommandNode::Reset { .. }
-            | CommandNode::Shift { .. } => {
-                self.uncount(Uncounted::Control);
-                return self.control(id, scope);
-            },
+            | CommandNode::Shift { .. } => return self.control(id, scope),
         };
         self.enter(NodeAddress::Command(id), scope)?;
         let target = arena.consumer(consumer).ok_or(Form::Dangling)?;
@@ -2399,7 +2333,6 @@ impl Lowering<'_>
                 zone: Zone::Linear,
                 index,
             } => {
-                self.uncount(Uncounted::Memory);
                 // A linear slot holds a cell, whose first field is the value.
                 let cell = self
                     .scopes
@@ -2441,8 +2374,6 @@ impl Lowering<'_>
                 }
             },
             ProducerNode::Mu { body } => {
-                self.uncount(Uncounted::Capture);
-                self.captured = true;
                 self.closure(id, scope, Entry::Force(body), Flavour::Capture)?;
             },
             ProducerNode::Thunk { body } => {
@@ -2512,7 +2443,6 @@ impl Lowering<'_>
                 }
             },
             ProducerNode::Reify(ref frames) => {
-                self.uncount(Uncounted::Stack);
                 let mut shape = Vec::with_capacity(frames.len());
                 let mut arguments = Vec::new();
                 for frame in frames.iter() {
@@ -2737,7 +2667,6 @@ impl Lowering<'_>
                 self.tasks.push(Task::Deliver(then, scope));
             },
             ConsumerNode::ListFold { continuation, .. } => {
-                self.uncount(Uncounted::Fold);
                 let (held, list) = self.bind(scope, Binding::Temporary);
                 self.emit(StencilId::Bind, list.operand(), Operand::Unused);
                 self.tasks.push(Task::Fold(id, scope));
@@ -2907,11 +2836,12 @@ pub fn lower(
 ///   delivering its answer to the halt exit: each transparent constant unfolded
 ///   once per run at its first read, each closure site recorded with the
 ///   producer it suspends, and every owner counted where the command holds no
-///   form [`Uncounted`] names. A command holding one is lowered again counting
-///   nothing, the first such form recorded; one that suspends a capture is
-///   lowered with every cut delivering a variable or a constant to anything but
-///   a binder testing for one first, which runs it against that consumer. The
-///   trace of fusions is empty.
+///   form [`Uncounted`] names. A command holding one counts nothing and records
+///   the first such form; one that suspends a capture is lowered with every cut
+///   delivering a variable or a constant to anything but a binder testing for
+///   one first, which runs it against that consumer. Which of the three the
+///   lowering is, one visit over the nodes the command reaches decides before
+///   it starts, and the command is lowered once. The trace of fusions is empty.
 /// - executable: none — running as the source means is observed only by running
 ///   both tiers against stated answers.
 ///
@@ -2934,51 +2864,14 @@ pub fn lower_unfused(
     root: CommandId,
 ) -> Result<Lowered, Form>
 {
-    let (counted, fallback) = lower_pass(arena, definitions, root, Pass::Counted)?;
-    let Some(reason) = counted.uncounted
+    let survey = survey(arena, definitions, root)?;
+    let ownership = if survey.pass == Pass::Counted {
+        Ownership::of(arena, &survey.roots, &survey.reached).map_err(|_dangling| Form::Dangling)?
+    }
     else {
-        return Ok(counted);
+        Ownership::default()
     };
-    let (mut lowered, _) = lower_pass(arena, definitions, root, fallback)?;
-    lowered.uncounted = Some(reason);
-    Ok(lowered)
-}
-
-/// A pass of the lowering: whether it counts owners, and whether a cut
-/// delivering a variable or a constant tests it for a suspended capture
-/// first.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Pass
-{
-    /// Counted, with no delivery tests; the pass a pure function needs.
-    Counted,
-    /// Uncounted, with no delivery tests; the pass a function that holds a
-    /// form outside the counted fragment but creates no suspended capture
-    /// needs.
-    Uncounted,
-    /// Uncounted, every such delivery testing; the pass a function that
-    /// creates a suspended capture needs.
-    Checked,
-}
-
-/// Lower `root` as [`lower`] does in `pass`, answering with the pass a
-/// fallback from it needs.
-///
-/// # Specification
-/// trivial.
-///
-/// # Errors
-/// As [`lower`].
-fn lower_pass(
-    arena: &CommandArena,
-    definitions: &Definitions,
-    root: CommandId,
-    pass: Pass,
-) -> Result<(Lowered, Pass), Form>
-{
+    let (pass, uncounted) = (survey.pass, survey.uncounted);
     let mut lowering = Lowering {
         arena,
         definitions,
@@ -2991,7 +2884,6 @@ fn lower_pass(
         bodies: Vec::new(),
         window: 0,
         globals: Vec::new(),
-        captured: false,
         checked: pass == Pass::Checked,
         heads: Vec::new(),
         literals: Vec::new(),
@@ -3004,11 +2896,8 @@ fn lower_pass(
         pending: Vec::new(),
         unwinds: Vec::new(),
         counting: pass == Pass::Counted,
-        uncounted: None,
-        ownerships: Vec::new(),
-        drops: BTreeMap::new(),
+        ownership,
     };
-    lowering.own(NodeAddress::Command(root))?;
     let mut entry: Option<Position> = None;
     loop {
         while let Some(task) = lowering.tasks.pop() {
@@ -3034,7 +2923,7 @@ fn lower_pass(
         else {
             break;
         };
-        entry = Some(lowering.open(body)?);
+        entry = Some(lowering.open(body));
     }
     let mut table = Vec::with_capacity(lowering.heads.len().saturating_add(1));
     for (at, label) in core::mem::take(&mut lowering.selections) {
@@ -3077,15 +2966,147 @@ fn lower_pass(
             .into_iter()
             .map(|(constant, _)| constant)
             .collect(),
-        uncounted: lowering.uncounted,
+        uncounted,
     };
-    let fallback = if lowering.captured {
-        Pass::Checked
+    Ok(lowered)
+}
+
+/// A pass of the lowering: whether it counts owners, and whether a cut
+/// delivering a variable or a constant tests it for a suspended capture
+/// first.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Pass
+{
+    /// Counted, with no delivery tests; the pass a pure function needs.
+    Counted,
+    /// Uncounted, with no delivery tests; the pass a function that holds a
+    /// form outside the counted fragment but creates no suspended capture
+    /// needs.
+    Uncounted,
+    /// Uncounted, every such delivery testing; the pass a function that
+    /// creates a suspended capture needs.
+    Checked,
+}
+
+/// What one visit over a command finds before it is lowered.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+struct Survey
+{
+    /// The pass lowering it needs.
+    pass: Pass,
+    /// The first form outside the counted fragment it holds.
+    uncounted: Option<Uncounted>,
+    /// The roots its ownership is read from: the command, then each
+    /// transparent constant's definition in the order the visit meets it.
+    roots: Vec<NodeAddress>,
+    /// Every node the roots reach, each once, in first-visit order.
+    reached: Vec<NodeAddress>,
+}
+
+/// Visit each node `root` reaches, and each node the definition of a
+/// transparent constant it reads reaches, once, in first-visit order.
+///
+/// The visit reads at least every node the lowering does, so a command it
+/// finds pure holds no form the counted lowering would have to give up on;
+/// and its walk is the one the ownership reading reads over.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Form::Dangling`] for a node the arena does not hold.
+fn survey(
+    arena: &CommandArena,
+    definitions: &Definitions,
+    root: CommandId,
+) -> Result<Survey, Form>
+{
+    let mut first = None;
+    let mut captured = false;
+    let mut seen = BTreeSet::new();
+    let mut unfolded = BTreeSet::new();
+    let mut reached = Vec::new();
+    let mut roots = Vec::from([NodeAddress::Command(root)]);
+    let mut walked = 0;
+    while walked < roots.len() {
+        let from = reached.len();
+        reach(
+            arena,
+            roots.get(walked ..).unwrap_or_default(),
+            &mut seen,
+            &mut reached,
+        )
+        .map_err(|_dangling| Form::Dangling)?;
+        walked = roots.len();
+        for &node in reached.get(from ..).unwrap_or_default() {
+            let form = match node {
+                NodeAddress::Command(id) => match *arena.command(id).ok_or(Form::Dangling)? {
+                    CommandNode::Cut { .. } => None,
+                    CommandNode::Memory { .. } => Some(Uncounted::Memory),
+                    CommandNode::Perform { .. }
+                    | CommandNode::Handle { .. }
+                    | CommandNode::Resume { .. }
+                    | CommandNode::Abandon { .. }
+                    | CommandNode::Reset { .. }
+                    | CommandNode::Shift { .. } => Some(Uncounted::Control),
+                },
+                NodeAddress::Producer(id) => match *arena.producer(id).ok_or(Form::Dangling)? {
+                    ProducerNode::Variable {
+                        zone: Zone::Linear, ..
+                    } => Some(Uncounted::Memory),
+                    ProducerNode::Mu { .. } => {
+                        captured = true;
+                        Some(Uncounted::Capture)
+                    },
+                    ProducerNode::Reify(_) => Some(Uncounted::Stack),
+                    ProducerNode::Constant(constant) => {
+                        if let Some(Definition::Transparent(definition)) = definitions.get(constant)
+                            && unfolded.insert(definition)
+                        {
+                            roots.push(NodeAddress::Producer(definition));
+                        }
+                        None
+                    },
+                    ProducerNode::Primitive { .. }
+                    | ProducerNode::Variable { .. }
+                    | ProducerNode::Literal(_)
+                    | ProducerNode::Code(_)
+                    | ProducerNode::Constructor { .. }
+                    | ProducerNode::Thunk { .. }
+                    | ProducerNode::Fixpoint { .. }
+                    | ProducerNode::Cocase { .. } => None,
+                },
+                NodeAddress::Consumer(id) => match *arena.consumer(id).ok_or(Form::Dangling)? {
+                    ConsumerNode::ListFold { .. } => Some(Uncounted::Fold),
+                    ConsumerNode::Covariable(_)
+                    | ConsumerNode::MuTilde { .. }
+                    | ConsumerNode::Destructor { .. }
+                    | ConsumerNode::Case { .. }
+                    | ConsumerNode::DataCase { .. }
+                    | ConsumerNode::Select { .. }
+                    | ConsumerNode::Top => None,
+                },
+            };
+            first = first.or(form);
+        }
     }
-    else {
-        Pass::Uncounted
+    let pass = match (first, captured) {
+        (None, _) => Pass::Counted,
+        (Some(_), false) => Pass::Uncounted,
+        (Some(_), true) => Pass::Checked,
     };
-    Ok((lowered, fallback))
+    Ok(Survey {
+        pass,
+        uncounted: first,
+        roots,
+        reached,
+    })
 }
 
 #[cfg(test)]
