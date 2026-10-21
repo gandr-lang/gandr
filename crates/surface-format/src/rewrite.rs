@@ -83,6 +83,9 @@ pub enum RewriteName
     /// value, and `v`; only the sugared form moves it, leaving out the
     /// keyword the lowering infers.
     TailReturn,
+    /// The value-function alias at its shortest: `(A) => B` and `A => B`, a
+    /// binder nothing later reads left out; only the sugared form moves it.
+    ShortAlias,
 }
 
 impl fmt::Display for RewriteName
@@ -108,6 +111,7 @@ impl fmt::Display for RewriteName
             Self::PathInverse => "path-inverse",
             Self::PathAction => "path-action",
             Self::TailReturn => "tail-return",
+            Self::ShortAlias => "short-alias",
         })
     }
 }
@@ -151,7 +155,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 19] = [
+pub const REWRITES: [Rewrite; 20] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -302,6 +306,14 @@ pub const REWRITES: [Rewrite; 19] = [
         mold: MoldName("return_expression"),
         from: Spelling("return v"),
         to: Spelling("v"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::ShortAlias,
+        direction: Direction::Sugar,
+        mold: MoldName("value_function_type"),
+        from: Spelling("(x : A) => B"),
+        to: Spelling("A => B"),
         enabled: Enabled::On,
     },
 ];
@@ -1482,7 +1494,11 @@ impl<'source> Respelling<'_, 'source>
                 }
                 self.unreturned(&mut out, parts)?
             },
-            (RewriteName::TailReturn, Direction::Desugar) => return None,
+            (RewriteName::ShortAlias, Direction::Sugar) => {
+                self.shortened(&mut out, parts, self.context(at))?;
+                Band::Loose
+            },
+            (RewriteName::TailReturn | RewriteName::ShortAlias, Direction::Desugar) => return None,
         };
         self.changed = Changed::Yes;
         Some(Spelled {
@@ -1624,13 +1640,6 @@ impl<'source> Respelling<'_, 'source>
     ///
     /// # Specification
     /// trivial.
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            linear_search_in_loop,
-            reason = "bounded: `named` holds the tokens of one binder's name, searched once per token of one arrow's later domains"
-        )
-    )]
     fn alias(
         &self,
         out: &mut Builder<'source>,
@@ -1683,6 +1692,31 @@ impl<'source> Respelling<'_, 'source>
                 _ => return None,
             }
         };
+        self.aliased(out, domains, result, context)
+    }
+
+    /// Write the value-function alias over `domains` and `result`, as
+    /// [`Self::alias`] says: a domain's binder kept where a later domain or
+    /// the result reads it, one bare domain unparenthesised, and outside a
+    /// type only that one-domain alias, never as a call's argument.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `named` holds the tokens of one binder's name, searched once per token of one arrow's later domains"
+        )
+    )]
+    fn aliased(
+        &self,
+        out: &mut Builder<'source>,
+        mut domains: Vec<Domain<'source>>,
+        result: Child<'source>,
+        context: Context,
+    ) -> Option<()>
+    {
         for index in 0 .. domains.len() {
             let Some(&Domain {
                 name: Some(name), ..
@@ -1733,6 +1767,84 @@ impl<'source> Respelling<'_, 'source>
         out.spaced(Spelling(" => "));
         out.place(&self.operand(result), Band::Loose);
         Some(())
+    }
+
+    /// Write the value-function alias whose parts are `parts` at its shortest,
+    /// as [`Self::aliased`] writes it: one domain unparenthesised and a binder
+    /// nothing later reads left out; or nothing when it is already so
+    /// written, or a comment stands among its parts or its domains.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `named` holds the tokens of one binder's name, searched once per token of one alias's domains"
+        )
+    )]
+    fn shortened(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+        context: Context,
+    ) -> Option<()>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let (owns, operands) = split(parts);
+        let (&[arrow], &[domain, result]) = (owns.as_slice(), operands.as_slice())
+        else {
+            return None;
+        };
+        if <&str>::from(arrow) != "=>" {
+            return None;
+        }
+        let domains: Vec<Domain<'source>> = match self.shape_of(domain) {
+            Some((
+                &Shape::Parenthesized {
+                    ref entries,
+                    binder: Binder::None,
+                    ..
+                },
+                Commented::No,
+            )) => entries
+                .iter()
+                .map(|&ty| Domain {
+                    name: None,
+                    ty: self.stripped(ty),
+                })
+                .collect(),
+            Some((
+                &Shape::Parenthesized {
+                    binder: Binder::Some,
+                    ref domains,
+                    ..
+                },
+                Commented::No,
+            )) => domains.clone(),
+            Some(_) | None => return None,
+        };
+        let unread = domains.iter().any(|domain| {
+            domain.name.is_some_and(|name| {
+                let named = self.tokens(name);
+                !domains
+                    .iter()
+                    .map(|later| later.ty)
+                    .chain([result])
+                    .any(|later| {
+                        self.tokens(later)
+                            .iter()
+                            .any(|&token| named.contains(&token))
+                    })
+            })
+        });
+        let bare = matches!(domains.as_slice(), &[Domain { name: None, .. }]);
+        if !bare && !unread {
+            return None;
+        }
+        self.aliased(out, domains, result, context)
     }
 
     /// Write the thunk type whose parts are `parts`, written at the default

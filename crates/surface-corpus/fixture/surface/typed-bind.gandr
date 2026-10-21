@@ -23,7 +23,7 @@ def three = thunk { become next(Succ(Zero)) } ;
 /// A suspended function is named at its written type and called.
 @[ checks ]
 def apply(n : Nat) -> -F Nat {
-  run f : (Nat) => Nat <- pure thunk { fn (x) { Succ(x) } } ;
+  run f : Nat => Nat <- pure thunk { fn (x) { Succ(x) } } ;
   f(n)
 }
 
