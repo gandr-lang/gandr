@@ -51,6 +51,7 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_surface_syntax::SourceText;
+use serde::Deserialize as _;
 use serde_json::Value;
 
 use crate::markup::Code;
@@ -85,6 +86,25 @@ pub struct Proposal
     pub text: String,
     /// What the model says the fill does, when it said anything.
     pub explanation: Option<String>,
+    /// Whether the fill leaves the document without an error, as its trial
+    /// judged it when it was kept.
+    pub settles: Settles,
+}
+
+/// Whether a kept fill leaves its document without an error.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Settles(pub bool);
+
+/// Whether a fill whose trial published `diagnostics` leaves its document
+/// without an error.
+///
+/// # Specification
+/// trivial.
+#[must_use]
+pub fn settles(diagnostics: &[Diagnostic]) -> Settles
+{
+    Settles(errors(diagnostics) == ErrorCount::default())
 }
 
 /// Why a proposal was not kept.
@@ -374,40 +394,61 @@ pub fn applied(
 }
 
 /// One action per proposal of the document at `uri` whose range meets
-/// `asked`: the edit applying it.
+/// `asked`: the edit applying it, with the diagnostics of `diagnostics` it
+/// answers.
 ///
 /// # Specification
-/// - requires: nothing.
+/// - requires: nothing; a diagnostic whose `range` does not read answers no
+///   fill.
 /// - ensures: one quick fix per proposal whose range meets the asked range
 ///   (neither ends before the other starts), in the order kept, each the one
-///   edit replacing that proposal's range with its text.
+///   edit replacing that proposal's range with its text, naming each of
+///   `diagnostics` whose range meets the proposal's, as the client sent it, and
+///   preferred when the fill settles the document.
 /// - provides: the answer to `textDocument/codeAction`.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a range over a proposal offers its edit; a range
+/// - hypothesis: L3 — a range over a proposal offers its edit, naming the
+///   diagnostic at the fill's range and not one elsewhere, preferred for a fill
+///   that settles the document and not for one that leaves an error; a range
 ///   elsewhere offers nothing.
 /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
+/// - witness: `server::tests::a_fill_that_settles_its_document_is_the_preferred_fix`
 #[spec(ensures: |ret| ret.len() <= proposals.len()
     && ret.iter().all(|action| action.kind == "quickfix"
+        && action.diagnostics.len() <= diagnostics.len()
         && action.edit.changes.as_ref().is_some_and(|changes| changes.len() == 1)))]
 #[must_use]
 pub fn actions(
     uri: &DocumentUri,
     proposals: &[Proposal],
     asked: Range,
+    diagnostics: &[Value],
 ) -> Vec<CodeAction>
 {
+    let meets = |range: Range, other: Range| range.start <= other.end && other.start <= range.end;
     proposals
         .iter()
-        .filter(|proposal| proposal.range.start <= asked.end && asked.start <= proposal.range.end)
+        .filter(|proposal| meets(proposal.range, asked))
         .map(|proposal| CodeAction {
             title: alloc::format!(
                 "Apply the checked fill `{}`",
                 proposal.text.lines().next().unwrap_or_default()
             ),
             kind: "quickfix",
+            diagnostics: diagnostics
+                .iter()
+                .filter(|diagnostic| {
+                    diagnostic
+                        .get("range")
+                        .and_then(|range| Range::deserialize(range).ok())
+                        .is_some_and(|range| meets(range, proposal.range))
+                })
+                .cloned()
+                .collect(),
+            is_preferred: proposal.settles.0,
             edit: WorkspaceEdit::of(BTreeMap::from([(
                 uri.clone(),
                 Vec::from([TextEdit {

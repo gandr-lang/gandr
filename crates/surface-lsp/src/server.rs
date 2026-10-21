@@ -104,6 +104,7 @@ use crate::proposal::check;
 use crate::proposal::ghosts;
 use crate::proposal::lenses;
 use crate::proposal::notes;
+use crate::proposal::settles;
 use crate::protocol::APPLY_FILL;
 use crate::protocol::Answer;
 use crate::protocol::AppliedEdit;
@@ -112,6 +113,7 @@ use crate::protocol::ApplyEditParams;
 use crate::protocol::CancelProgressParams;
 use crate::protocol::ChoiceParams;
 use crate::protocol::CodeAction;
+use crate::protocol::CodeActionParams;
 use crate::protocol::CompletionItem;
 use crate::protocol::ConfigurationParams;
 use crate::protocol::ContentChange;
@@ -1290,7 +1292,10 @@ impl Workspace
             .get_mut(uri)
             .ok_or(ProposalRefusal::NotHeld)?;
         let diagnostics = check(tried, &holding.document.published)?;
-        holding.document.proposals.push(proposal);
+        holding.document.proposals.push(Proposal {
+            settles: settles(&diagnostics),
+            ..proposal
+        });
         if let Some(changes) = self.editors.get(&holding.latest) {
             changes.proposed();
         }
@@ -3483,7 +3488,7 @@ impl Server
                 }
             },
             (Phase::Running, "textDocument/codeAction") => {
-                match serde_json::from_value::<RangeParams>(params) {
+                match serde_json::from_value::<CodeActionParams>(params) {
                     Ok(params) => success(
                         id,
                         match workspace.view(&params.text_document.uri, self.peer) {
@@ -3493,6 +3498,7 @@ impl Server
                                     &params.text_document.uri,
                                     &document.proposals,
                                     params.range,
+                                    &params.context.diagnostics,
                                 )),
                             ),
                             Maybe::Absent(_) => Answer::Nothing,
@@ -5969,6 +5975,7 @@ mod tests
     use crate::position::Range;
     use crate::proposal::Proposal;
     use crate::proposal::ProposalRefusal;
+    use crate::proposal::Settles;
     use crate::protocol::ChoiceParams;
     use crate::protocol::ContentChange;
     use crate::protocol::DocumentUri;
@@ -10200,6 +10207,7 @@ mod tests
             range,
             text: String::from(text.0),
             explanation: explanation.map(|Json(explanation)| String::from(explanation)),
+            settles: Settles::default(),
         }
     }
 
@@ -10292,7 +10300,14 @@ mod tests
                 .get(&uri)
                 .map(|held| held.document.proposals.clone())
         };
-        assert_eq!(kept(&workspace), Some(vec![fill(hole, Json("42"), None)]));
+        assert_eq!(
+            kept(&workspace),
+            Some(vec![Proposal {
+                settles: Settles(true),
+                ..fill(hole, Json("42"), None)
+            }]),
+            "the kept fill records that it settles the document"
+        );
         let mut met = Vec::new();
         let mut nothing: &[u8] = &[];
         let _ended = crate::quiet::paced(&mut nothing, inbox, |seen, _deadlines| {
@@ -10457,6 +10472,75 @@ mod tests
                 .and_then(Value::as_str)
                 .is_some_and(|value| value.contains("**Checked fill** `42`: the answer")),
             "{hovered}"
+        );
+    }
+
+    #[test]
+    fn a_fill_that_settles_its_document_is_the_preferred_fix()
+    {
+        let (mut workspace, [mut first, _second]) = two_connections();
+        let uri = crate::protocol::DocumentUri::from("file:///tmp/shared.gandr");
+        drop(first.handle(
+            &mut workspace,
+            &shared(
+                Json("textDocument/didOpen"),
+                Json(
+                    r#","version":1,"text":"def f : Integer ;\ndef f = missing ;\ndef g : Integer ;\ndef g = absent ;\n"}"#,
+                ),
+            ),
+        ));
+        let held = workspace
+            .documents
+            .get(&uri)
+            .map(|held| held.document.version)
+            .expect("the document is held");
+        let partial = on_line(
+            Line::from(1_u32),
+            Character::from(8_u32),
+            Character::from(15_u32),
+        );
+        let whole = Range {
+            start: partial.start,
+            end: at(Line::from(3_u32), Character::from(14_u32)),
+        };
+        for proposal in [
+            fill(partial, Json("42"), None),
+            fill(whole, Json("42 ;\ndef g : Integer ;\ndef g = 1"), None),
+        ] {
+            assert!(workspace.propose(&uri, held, proposal).is_ok());
+        }
+        let at_f = serde_json::json!({"range": {"start": {"line": 1_u32, "character": 8_u32},
+            "end": {"line": 1_u32, "character": 15_u32}},
+            "severity": 1_u8, "source": "gandr", "message": "f", "data": {"kept": "as sent"}});
+        let at_g = serde_json::json!({"range": {"start": {"line": 3_u32, "character": 8_u32},
+            "end": {"line": 3_u32, "character": 14_u32}},
+            "severity": 1_u8, "source": "gandr", "message": "g"});
+        let actions = asked(
+            &workspace,
+            Json("textDocument/codeAction"),
+            Json(&format!(
+                r#","range":{{"start":{{"line":1,"character":9}},"end":{{"line":1,"character":9}}}},"context":{{"diagnostics":[{at_f},{at_g}]}}"#
+            )),
+        );
+        assert_eq!(
+            actions.pointer("/0/diagnostics"),
+            Some(&serde_json::json!([at_f])),
+            "a fill names the diagnostic at its range, as the client sent it, and not one elsewhere"
+        );
+        assert_eq!(
+            actions.pointer("/0/isPreferred"),
+            None,
+            "a fill that leaves an error is not preferred"
+        );
+        assert_eq!(
+            actions.pointer("/1/diagnostics"),
+            Some(&serde_json::json!([at_f, at_g])),
+            "a fill over both refusals names both"
+        );
+        assert_eq!(
+            actions.pointer("/1/isPreferred"),
+            Some(&serde_json::json!(true)),
+            "a fill that settles the document is preferred"
         );
     }
 
