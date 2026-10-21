@@ -472,8 +472,10 @@ fn connection<Log>(
             let admitted = server.admit(&mut held, &mut outcome.log);
             // The watch is armed before the client hears the judgement, so a
             // change it makes on hearing it is seen.
-            if let Some(ref mut watch) = *lock(disk) {
-                watch.follow(peer, &changes, server.followed(&held));
+            if let Some(ref mut watch) = *lock(disk)
+                && let Some(watched) = watch.follow(peer, &changes, server.followed(&held))
+            {
+                held.watched_on_disk(watched);
             }
             for message in core::mem::take(&mut outcome.messages) {
                 drop(outbox.send(message));
@@ -500,10 +502,15 @@ fn connection<Log>(
             })
         });
     }
-    if let Some(ref mut watch) = *lock(disk) {
-        watch.follow(peer, &changes, BTreeSet::new());
+    let watched = lock(disk)
+        .as_mut()
+        .and_then(|watch| watch.follow(peer, &changes, BTreeSet::new()));
+    let mut held = lock(workspace);
+    if let Some(watched) = watched {
+        held.watched_on_disk(watched);
     }
-    lock(workspace).depart(peer);
+    held.depart(peer);
+    drop(held);
     drop(outbox);
     if let Ok(writer) = writer {
         drop(writer.join());

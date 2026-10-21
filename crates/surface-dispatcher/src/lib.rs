@@ -174,10 +174,12 @@ pub use gandr_core_checker::worlds::WorldName;
 pub use gandr_core_term::effect::OperationName;
 pub use gandr_core_term::effect::host::AuthorityError;
 
+pub use crate::component::Freshness;
 pub use crate::component::Laid;
 pub use crate::component::ParsedBytes;
 pub use crate::component::Shadows;
 pub use crate::component::Unshadowed;
+pub use crate::component::forget;
 pub use crate::component::imports_named;
 pub use crate::component::laid;
 pub use crate::component::lay_out;
