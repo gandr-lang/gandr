@@ -1,9 +1,10 @@
 // A theory's operation written at its type: `oper next : +U[ω] (T -> -F T)`,
 // a thunk of curried arrows, is the operation of those inputs and that
 // output, `(_ : T) --> T`, as `functor-pair.gandr`'s record signature writes
-// `next`. A port at a builtin type the theory does not declare reads that
-// type, so `read` returns an `Integer`. A model gives each as the function it
-// writes for an operation.
+// `next`, and so is the value-function alias `T => T` standing for it. A port
+// at a builtin type the theory does not declare reads that type, so `read`
+// returns an `Integer`. A model gives each as the function it writes for an
+// operation.
 
 /// A counter, the theory of `functor-pair.gandr`'s signature
 /// `#{ type T, zero : T, next : +U[ω] (T -> -F T), read : +U[ω] (T -> -F Integer) }`.
@@ -56,3 +57,27 @@ module Summed : Model(Summing) {
   @[ checks ]
   def add(x : Integer, y : Integer) -> -F Integer { become x + y }
 }
+
+/// A stepper, its operation written with the value-function alias:
+/// `oper step : T => T` is the operation `+U (T -> -F T)` is (#1329).
+theory Stepping {
+  sort T : Type;
+  oper start : T;
+  oper step : T => T;
+}
+
+/// The integers, stepping by two.
+module Stepped : Model(Stepping) {
+  type T = Integer;
+  /// The start.
+  @[ runs("0") ]
+  def start = 0;
+  /// Two more.
+  @[ checks ]
+  def step(n : Integer) -> -F Integer { become n + 2 }
+}
+
+/// One step from the start, through the model's operation.
+@[ runs("2") ]
+def stepped_once : () => Integer ;
+def stepped_once = thunk { become Stepped.step(Stepped.start) } ;

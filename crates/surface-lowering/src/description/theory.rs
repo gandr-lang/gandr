@@ -1018,10 +1018,13 @@ impl Reader<'_, '_>
             return Err(run.signature_fault(SignatureFault::MissingJudgment));
         }
         // `oper next : +U[ω] (T -> -F T)`, a thunk of curried arrows, is the
-        // operation of those inputs and that output; `oper inner : Model(T)` a
-        // model of the theory `T` nested in this one; `oper zero : T`, a type
-        // alone with no arrow and no port group, a constant of `T`; and
-        // `oper zero : () --> T` an operation of no inputs.
+        // operation of those inputs and that output, as is the value-function
+        // alias standing for it, `oper next : T => T`; `oper inner : Model(T)`
+        // a model of the theory `T` nested in this one; `oper zero : T`, a type
+        // alone with no arrow and no port group, a constant of `T`; and `oper
+        // zero : () --> T` an operation of no inputs. A listed domain opens
+        // the judgment's own port group, so the operation of two inputs the
+        // alias `(T, T) => T` stands for is written `(T, T) --> T` here.
         let thunked = self.thunked(run)?;
         let modeled = match kind {
             OperationKind::Operation if thunked.is_none() => self.modeled(run)?,
@@ -1103,11 +1106,13 @@ impl Reader<'_, '_>
         ))
     }
 
-    /// The thunk type an operation's judgment writes whole, when it writes one.
+    /// The thunk type an operation's judgment writes whole, when it writes one,
+    /// as a thunk or as the value-function alias that stands for one.
     ///
     /// # Specification
     /// - ensures: the one piece left in `run` when it is a type whose first
-    ///   tile is `+U`, and nothing otherwise; `run` is not advanced.
+    ///   tile is `+U`, or whose own tile is `=>`, and nothing otherwise; `run`
+    ///   is not advanced.
     /// - fails: the piece's reading refusal.
     /// - panics: none.
     ///
@@ -1115,9 +1120,10 @@ impl Reader<'_, '_>
     /// The piece's reading refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a thunk, a sort alone and a port group separate the
-    ///   operation, the constant and the boundary readings.
+    /// - hypothesis: L3 — a thunk, an alias, a sort alone and a port group
+    ///   separate the operation, the constant and the boundary readings.
     /// - witness: `description::theory::tests::a_thunk_type_reads_as_the_operation_it_curries_1226`
+    /// - witness: `description::theory::tests::the_value_function_alias_reads_as_its_thunk_1329`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|at| matches!(*run.remaining(), [Piece::Operand(only)] if only.span == at.span))))]
     fn thunked(
         &self,
@@ -1129,7 +1135,15 @@ impl Reader<'_, '_>
             return Ok(None);
         };
         let pieces = self.pieces(at)?;
-        let thunk = matches!(pieces.first(), Some(&Piece::Tile { ref label, .. }) if label.as_ref() == "+U");
+        let thunk = match *pieces.as_slice() {
+            [
+                Piece::Operand(_),
+                Piece::Tile { ref label, .. },
+                Piece::Operand(_),
+            ] => label.as_ref() == "=>",
+            [Piece::Tile { ref label, .. }, ..] => label.as_ref() == "+U",
+            _ => false,
+        };
         Ok(thunk.then_some(at))
     }
 
@@ -1212,19 +1226,23 @@ impl Reader<'_, '_>
         }
     }
 
-    /// Read a thunk of curried arrows, `+U[ω] (A1 -> … -> An -> -F R)`, as the
-    /// boundary `(_ : A1, …, _ : An) --> R`, beside the type formers written:
-    /// the thunk, each arrow and the returner.
+    /// Read a thunk of curried arrows, `+U[ω] (A1 -> … -> An -> -F R)`, or the
+    /// value-function alias `A => R` over one bare domain, as the boundary
+    /// `(_ : A1, …, _ : An) --> R`, beside the type formers written: the
+    /// thunk, each arrow and the returner, or the alias alone.
     ///
     /// # Specification
-    /// - requires: `thunk` is a type whose first tile is `+U`.
+    /// - requires: `thunk` is a type whose first tile is `+U`, or the alias.
     /// - ensures: one unnamed input per arrow's domain, in written order, and
     ///   the one output the returner returns, each at its written sort;
     ///   parentheses around the body or a codomain are read through; the grade
     ///   is `ω` or unwritten; the formers are the thunk's node at the value
     ///   sort, then each arrow's and the returner's at the computation sort.
+    ///   The alias reads as its thunk `+U (A -> -F R)`: its domain the one
+    ///   unnamed input, its result the one output, its node the one former, at
+    ///   the value sort.
     /// - fails: any other grade, and a body that is not arrows ending in a
-    ///   returner, is malformed.
+    ///   returner, are malformed.
     /// - panics: none.
     /// - executable: none — the written type is source syntax the boundary does
     ///   not retain.
@@ -1235,14 +1253,27 @@ impl Reader<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — one and two arrows, a builtin result and a grade
     ///   other than `ω` separate the inputs read, the output read and the
-    ///   refusal.
+    ///   refusal; the alias and its thunk read as the same operation.
     /// - witness: `description::theory::tests::a_thunk_type_reads_as_the_operation_it_curries_1226`
+    /// - witness: `description::theory::tests::the_value_function_alias_reads_as_its_thunk_1329`
     fn thunk_boundary(
         &self,
         thunk: Placed,
     ) -> Result<(Boundary, Vec<(ByteSpan, GroundSort)>), DescriptionDiagnostic>
     {
         let pieces = self.pieces(thunk)?;
+        if let [
+            Piece::Operand(domain),
+            Piece::Tile { ref label, .. },
+            Piece::Operand(result),
+        ] = *pieces.as_slice()
+            && label.as_ref() == "=>"
+        {
+            return Ok((
+                Self::curried(&[domain], result, |sort| self.text(sort).0),
+                Vec::from([(thunk.span, GroundSort::Value)]),
+            ));
+        }
         let mut run = Run::new(&pieces, thunk.span);
         let _former = run.eat(Spelling("+U"));
         if run.eat(Spelling("[")).0 && !(run.eat(Spelling("ω")).0 && run.eat(Spelling("]")).0) {
@@ -1278,23 +1309,38 @@ impl Reader<'_, '_>
             run.end()?;
             inputs.push(domain);
         };
-        let port = |sort: Placed| SortRef::new(fresh_port(sort), self.text(sort).0);
-        let unnamed = |_| Maybe::Absent(port_name::Absent::Unnamed);
         Ok((
-            Boundary {
-                inputs: inputs.iter().copied().map(port).collect(),
-                outputs: vec![port(result)],
-                input_names: inputs.iter().map(unnamed).collect(),
-                output_names: vec![Maybe::Absent(port_name::Absent::Unnamed)],
-                input_binders: inputs.iter().map(|_| Vec::new()).collect(),
-                output_binders: vec![Vec::new()],
-                input_sorts: inputs,
-                output_sorts: vec![result],
-                rewrites: Vec::new(),
-                written_rewrites: Vec::new(),
-            },
+            Self::curried(&inputs, result, |sort| self.text(sort).0),
             formers,
         ))
+    }
+
+    /// The boundary of an operation whose unnamed inputs are at the sorts
+    /// `inputs` and whose one unnamed output is at the sort `result`, each
+    /// spelled by `text`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn curried<'text>(
+        inputs: &[Placed],
+        result: Placed,
+        text: impl Fn(Placed) -> &'text str,
+    ) -> Boundary
+    {
+        let port = |sort: Placed| SortRef::new(fresh_port(sort), text(sort));
+        let unnamed = |_| Maybe::Absent(port_name::Absent::Unnamed);
+        Boundary {
+            inputs: inputs.iter().copied().map(port).collect(),
+            outputs: vec![port(result)],
+            input_names: inputs.iter().map(unnamed).collect(),
+            output_names: vec![Maybe::Absent(port_name::Absent::Unnamed)],
+            input_binders: inputs.iter().map(|_| Vec::new()).collect(),
+            output_binders: vec![Vec::new()],
+            input_sorts: inputs.to_vec(),
+            output_sorts: vec![result],
+            rewrites: Vec::new(),
+            written_rewrites: Vec::new(),
+        }
     }
 
     /// Each port of one side as `Theory` codes it, its written sort and each of
