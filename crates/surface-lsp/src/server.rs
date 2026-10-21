@@ -50,6 +50,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use core::cell::Cell;
 use core::cell::OnceCell;
 use core::cell::RefCell;
 use core::convert::Infallible;
@@ -68,10 +69,12 @@ use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::Freshness;
 use gandr_surface_dispatcher::Laid;
 use gandr_surface_dispatcher::Shadows;
+use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::forget;
 use gandr_surface_dispatcher::imports_named;
 use gandr_surface_dispatcher::laid;
 use gandr_surface_dispatcher::named_path;
+use gandr_surface_dispatcher::tabled;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_render_remote::DocId;
@@ -79,6 +82,7 @@ use gandr_surface_render_remote::LineIndex;
 use gandr_surface_render_remote::RenderFrame;
 use gandr_surface_session::CandidateIndex;
 use gandr_surface_session::Session;
+use gandr_surface_session::Tables;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
@@ -392,12 +396,15 @@ impl Document
 }
 
 /// A copy's text and, once a request has asked, the one [`Reading`] of it, its
-/// printed syntax tree and the [`Hovering`] its hovers read.
+/// printed syntax tree and the [`Hovering`] its hovers read, beside whether
+/// its next judgement keeps a type table.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a reading, a printed tree, a lay-out or a hover table, once made,
-///   is of the text as it stands: every change to the text drops all four.
+/// - ensures: a reading, a printed tree, a lay-out, a judged table or a hover
+///   table, once made, is of the text as it stands: every change to the text
+///   drops all five. The next judgement keeps a table exactly when a request
+///   has read the hover table since the latest did.
 /// - panics: none.
 /// - executable: none — the text and what is read off it are private and change
 ///   only together, so the structure states the invariant and no call boundary
@@ -425,6 +432,14 @@ struct HeldText
     /// it was judged alone; none until a recheck since the text or its
     /// closure last changed.
     laid: Option<Maybe<Laid, laid::Absent>>,
+    /// The type table the latest recheck of `text` kept, until the hover table
+    /// is made from it; none until a recheck since the text or its closure
+    /// last changed.
+    judged: Cell<Option<TypeTable>>,
+    /// Whether the next judgement of `text` keeps its type table: kept once a
+    /// request has read the hover table since the latest judgement, so a
+    /// client that reads none pays for none. A change to the text leaves it.
+    wanted: Cell<Tables>,
 }
 
 impl HeldText
@@ -441,6 +456,8 @@ impl HeldText
             tree: OnceCell::new(),
             hovering: OnceCell::new(),
             laid: None,
+            judged: Cell::new(None),
+            wanted: Cell::new(Tables::Unkept),
         }
     }
 
@@ -467,6 +484,7 @@ impl HeldText
         self.tree = OnceCell::new();
         self.hovering = OnceCell::new();
         self.laid = None;
+        self.judged = Cell::new(None);
     }
 
     /// Apply `change` to the text held, as [`apply`] does, drop what was read
@@ -484,6 +502,7 @@ impl HeldText
         self.tree = OnceCell::new();
         self.hovering = OnceCell::new();
         self.laid = None;
+        self.judged = Cell::new(None);
         caret
     }
 
@@ -511,8 +530,9 @@ impl HeldText
 
     /// What the hovers of the text held, the document at `path` that `session`
     /// judges, read, made now when no hover has asked since it or its closure
-    /// last changed: over the lay-out the text's latest recheck made, else laid
-    /// out now, each import of its closure read as `shadows` holds it.
+    /// last changed: from the table the text's latest recheck kept over the
+    /// lay-out it made, else over that lay-out, else laid out now, each import
+    /// of its closure read as `shadows` holds it.
     ///
     /// # Specification
     /// trivial.
@@ -523,25 +543,33 @@ impl HeldText
         shadows: &dyn Shadows,
     ) -> &Hovering
     {
+        self.wanted.set(Tables::Kept);
         self.hovering.get_or_init(|| {
             self.laid.as_ref().map_or_else(
                 || hovering(self.source(), path, session, shadows),
-                |laid| hovering_laid(self.source(), path, session, laid),
+                |laid| hovering_laid(self.source(), path, session, (laid, self.judged.take())),
             )
         })
     }
 
-    /// Hold `laid`, the lay-out a recheck of the text held judged, for the
-    /// hovers to read.
+    /// Hold `laid`, the lay-out a recheck of the text held judged, and
+    /// `table`, the type table its judgement kept, for the hovers to read; the
+    /// next judgement keeps none unless a request reads the hover table first.
     ///
     /// # Specification
     /// trivial.
     fn judged_over(
         &mut self,
         laid: Maybe<Laid, laid::Absent>,
+        table: Maybe<TypeTable, tabled::Absent>,
     )
     {
         self.laid = Some(laid);
+        self.wanted.set(Tables::Unkept);
+        self.judged = Cell::new(match table {
+            Maybe::Present(table) => Some(table),
+            Maybe::Absent(_) => None,
+        });
     }
 
     /// Drop what the hovers read off the text's closure, whose imports
@@ -553,6 +581,7 @@ impl HeldText
     {
         self.hovering = OnceCell::new();
         self.laid = None;
+        self.judged = Cell::new(None);
     }
 }
 
@@ -6260,6 +6289,9 @@ fn synchronised(
         Maybe::Present(caret) if !quiet.is_zero() => Maybe::Present(caret),
         Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(formless::Absent::Uncareted),
     };
+    if let Ok(session) = document.session.as_mut() {
+        session.keep(document.text.wanted.get());
+    }
     let mut rechecked = recheck(
         uri,
         &mut document.session,
@@ -6277,7 +6309,7 @@ fn synchronised(
     let (published, holding) = publishable(&rechecked.diagnostics, &form);
     document.checked = rechecked.diagnostics;
     document.named = rechecked.named;
-    document.text.judged_over(rechecked.laid);
+    document.text.judged_over(rechecked.laid, rechecked.table);
     Outcome {
         messages: vec![publish(PublishParams {
             uri: uri.clone(),
@@ -11732,6 +11764,64 @@ mod tests
                 ]}},
             }]),
             "the brace the parser expects, inserted where the refusal stands"
+        );
+    }
+
+    /// #1521: a copy's judgement keeps the type table its hovers read only
+    /// while requests read it: the opening judgement keeps none; a hover since
+    /// the latest judgement has the next keep one, which the next hover reads;
+    /// a change past which no request read the table keeps none again.
+    #[test]
+    fn a_judgement_keeps_a_table_while_requests_read_them_1521()
+    {
+        let (mut workspace, [mut first, _second]) = two_connections();
+        let uri = crate::protocol::DocumentUri::from("file:///tmp/shared.gandr");
+        let kept = |workspace: &Workspace| {
+            workspace.documents.get(&uri).is_some_and(|held| {
+                let table = held.document.text.judged.take();
+                let kept = table.is_some();
+                held.document.text.judged.set(table);
+                kept
+            })
+        };
+        let rewrite = |version: Json<'_>, text: Json<'_>| {
+            let (Json(version), Json(text)) = (version, text);
+            shared(
+                Json("textDocument/didChange"),
+                Json(&format!(
+                    r#","version":{version}}},"contentChanges":[{{"text":"{text}"}}]"#
+                )),
+            )
+        };
+        drop(first.handle(
+            &mut workspace,
+            &shared(
+                Json("textDocument/didOpen"),
+                Json(r#","version":1,"text":"def f = 42 ;\n"}"#),
+            ),
+        ));
+        assert!(!kept(&workspace), "the opening judgement keeps none");
+        assert_eq!(
+            hovered(&mut first, &mut workspace),
+            serde_json::json!("```gandr\nf : Integer\n```"),
+            "a hover over a revision whose judgement kept no table types one"
+        );
+        drop(first.handle(&mut workspace, &rewrite(Json("2"), Json(r"def f = 4 ;\n"))));
+        assert!(
+            kept(&workspace),
+            "a hover since the latest judgement has the next keep one"
+        );
+        assert_eq!(
+            hovered(&mut first, &mut workspace),
+            serde_json::json!("```gandr\nf : Integer\n```"),
+            "and the hover reads the table it kept"
+        );
+        assert!(!kept(&workspace), "which the hover table took");
+        drop(first.handle(&mut workspace, &rewrite(Json("3"), Json(r"def f = 43 ;\n"))));
+        drop(first.handle(&mut workspace, &rewrite(Json("4"), Json(r"def f = 44 ;\n"))));
+        assert!(
+            !kept(&workspace),
+            "a change past which no request read the table keeps none"
         );
     }
 

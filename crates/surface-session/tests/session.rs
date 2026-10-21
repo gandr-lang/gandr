@@ -1213,8 +1213,9 @@ fn a_document_after_its_closure_shares_the_closure_s_images_776()
 /// to the same composition; every judgement reports what the dispatcher
 /// composes of the laid-out text, its closure lowered and judged fresh and the
 /// document judged after it; and the session's held parse of each revision is
-/// the tree its judgement read. #776: the second session's first submission
-/// adopts the closure's items the first session judged, judging the
+/// the tree its judgement read, read beside the key of its closure's lowering
+/// when it is typed and when it is only read. #776: the second session's first
+/// submission adopts the closure's items the first session judged, judging the
 /// document's own, to the first session's typings.
 #[test]
 fn an_importer_lowers_its_closure_once_1033()
@@ -1267,6 +1268,26 @@ fn an_importer_lowers_its_closure_once_1033()
             Some(held.tree()),
             read.as_ref(),
             "the held parse is the tree the judgement read"
+        );
+        let mut reread = None;
+        session
+            .read_held_unit(text, (&laid.unit, laid.base), |tree, key| {
+                reread = Some((tree.clone(), key));
+            })
+            .expect("the revision parses held");
+        let mut typed = None;
+        let _table = session.type_held_unit(text, (&laid.unit, laid.base), |_, key| {
+            typed = Some(key);
+        });
+        let (tree, key) = reread.expect("the reader is handed the held parse");
+        assert_eq!(
+            Some(&tree),
+            read.as_ref(),
+            "a read of the held parse reads the tree the judgement read"
+        );
+        assert!(
+            key.is_some() && typed == Some(key),
+            "beside the key of the closure's lowering a typing is handed"
         );
         (
             LoweringCount::from(lowered),

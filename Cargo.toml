@@ -390,6 +390,7 @@ default-features = false
 # - kernel-core
 # - kernel-term
 # - storage-artifact (dev)
+# - surface-dispatcher
 # - surface-lowering
 # - surface-pretty
 # - surface-session (dev)

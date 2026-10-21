@@ -906,6 +906,7 @@ dependencies = [
  "gandr-core-nbe",
  "gandr-core-sequent",
  "gandr-core-term",
+ "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-runtime-emitter",
  "gandr-surface-corpus",

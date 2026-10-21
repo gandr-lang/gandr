@@ -335,11 +335,13 @@ use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::judge_member;
 use gandr_surface_dispatcher::judge_member_after;
+use gandr_surface_dispatcher::judge_member_tabled;
 use gandr_surface_dispatcher::lower_closure;
 use gandr_surface_dispatcher::lower_onto_closure;
 use gandr_surface_dispatcher::lower_parsed;
 use gandr_surface_dispatcher::lower_parsed_unit;
 use gandr_surface_dispatcher::lower_resumed_unit;
+use gandr_surface_dispatcher::tabled;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationCount;
 use gandr_surface_lowering::DeclarationOutcome;
@@ -911,6 +913,9 @@ pub struct Submission<'text>
     obligations: Vec<ObligationInstance>,
     /// How the parse was assembled from the form store.
     forms: FormCensus,
+    /// The type table the judgement kept of the revision's own source, or why
+    /// it holds none.
+    table: Maybe<TypeTable, tabled::Absent>,
 }
 
 impl<'text> Submission<'text>
@@ -1176,6 +1181,20 @@ impl<'text> Submission<'text>
                 Maybe::Absent(evaluation::Absent::Unaccepted),
                 |declaration| evaluate(declaration, program),
             )
+    }
+
+    /// Hand on the type table the judgement kept of the revision's own
+    /// source, leaving [`tabled::Absent::Taken`] in its place: the table
+    /// [`TypeTable::of_parsed_after`] or [`TypeTable::of_parsed_unit`] types
+    /// of the same text, made by the judgement's own run. A session asked to
+    /// keep no tables ([`Session::keep`]) keeps none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn take_table(&mut self) -> Maybe<TypeTable, tabled::Absent>
+    {
+        core::mem::replace(&mut self.table, Maybe::Absent(tabled::Absent::Taken))
     }
 }
 
@@ -1529,6 +1548,23 @@ pub struct Session<Store, Blocks>
     threads: Threads,
     /// The kernel admission the latest judgement left to run.
     admission: Maybe<Pending, admission::Absent>,
+    /// Whether each judgement keeps the type table of its revision.
+    tables: Tables,
+}
+
+/// Whether a session's judgements keep the type table of each revision.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Tables
+{
+    /// No judgement keeps a table: what a check that answers no position
+    /// reads.
+    Unkept,
+    /// Each judgement types the revision's bodies as written beside checking
+    /// them, and keeps the table ([`Submission::take_table`]).
+    Kept,
 }
 
 /// A kernel admission a judgement left to run, beside the import closure its
@@ -1629,6 +1665,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             forms: FormStore::default(),
             threads: Width::PerformanceCores.threads(),
             admission: Maybe::Absent(admission::Absent::Idle),
+            tables: Tables::Unkept,
         }
     }
 
@@ -1788,6 +1825,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 forms,
                 threads,
                 admission: Maybe::Absent(admission::Absent::Idle),
+                tables: Tables::Unkept,
             },
             restored,
         })
@@ -2308,6 +2346,10 @@ impl<Store, Blocks> Session<Store, Blocks>
                     kernel: Maybe::Absent(admitted::Absent::RefusedWhole),
                     obligations,
                     forms,
+                    table: Maybe::Absent(match self.tables {
+                        Tables::Kept => tabled::Absent::RefusedWhole,
+                        Tables::Unkept => tabled::Absent::Untabled,
+                    }),
                 });
             },
         };
@@ -2335,14 +2377,29 @@ impl<Store, Blocks> Session<Store, Blocks>
         if let Some(closure) = closure {
             closure.keep_snapshot(|| snapshot.leading(ItemOrdinal::from(boundary)));
         }
-        let (settled, admission) = judge_member_after(
-            self.root.corpus_root(),
-            (module, revision),
-            arena,
-            (&HostGrant::UNBOUNDED, checking),
-            base,
-        )
-        .into_parts();
+        let ((settled, admission), table) = match self.tables {
+            Tables::Kept => {
+                let (judged, table) = judge_member_tabled(
+                    self.root.corpus_root(),
+                    (module, revision),
+                    arena,
+                    (&HostGrant::UNBOUNDED, checking),
+                    (unit, base),
+                );
+                (judged.into_parts(), table)
+            },
+            Tables::Unkept => (
+                judge_member_after(
+                    self.root.corpus_root(),
+                    (module, revision),
+                    arena,
+                    (&HostGrant::UNBOUNDED, checking),
+                    base,
+                )
+                .into_parts(),
+                Maybe::Absent(tabled::Absent::Untabled),
+            ),
+        };
         let composed = match settled {
             Ok(composed) => composed,
             // The readmission ran before the settle comparison once; a kernel
@@ -2401,6 +2458,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             kernel: Maybe::Absent(admitted::Absent::Pending),
             obligations,
             forms,
+            table,
         })
     }
 
@@ -2662,6 +2720,22 @@ impl<Store, Blocks> Session<Store, Blocks>
         self.root
     }
 
+    /// Have every judgement from here on keep the type table of its revision
+    /// or not, as `tables` says: a table is what a client answering positions
+    /// after a change reads, for the cost of typing the revision's bodies as
+    /// written beside checking them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn keep(
+        &mut self,
+        tables: Tables,
+    )
+    {
+        self.tables = tables;
+    }
+
     /// The grammar every revision is parsed under.
     ///
     /// # Specification
@@ -2793,6 +2867,53 @@ impl<Store, Blocks> Session<Store, Blocks>
             Some(judged) => TypeTable::of_parsed_after(judged, parsed, unit, base).ok(),
             None => TypeTable::of_parsed_unit(&self.grammar, parsed, unit, base).ok(),
         }
+    }
+
+    /// Parse `revision` as [`type_held_unit`](Self::type_held_unit) does and
+    /// hand `read` its tree and closure key, typing nothing: what a reader
+    /// whose revision's table the judgement already kept
+    /// ([`Submission::take_table`]) parses.
+    ///
+    /// # Specification
+    /// - requires: as [`judge_unit_reading`](Self::judge_unit_reading).
+    /// - ensures: `read` is called once, with the tree and key
+    ///   [`type_held_unit`](Self::type_held_unit) hands it, when the text
+    ///   parses.
+    /// - fails: the parse's fault, `read` then not called.
+    /// - panics: only by propagating a panic of `read` or a molding thread's.
+    /// - executable: none — a parse handed to a reader.
+    ///
+    /// # Errors
+    /// The [`MeldError`] the parse faulted with.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an importer's heads read off this parse are the heads
+    ///   read off the parse its table is typed from.
+    /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
+    #[inline]
+    pub fn read_held_unit<'text, Read>(
+        &self,
+        revision: SourceText<'text>,
+        (unit, base): (&Unit, ByteOffset),
+        read: Read,
+    ) -> Result<(), MeldError>
+    where
+        Read: FnOnce(&SyntaxTree<'text>, Option<ClosureKey>),
+    {
+        let (parsed, _census, closure) = parse_held_laid(
+            &self.grammar,
+            &self.forms,
+            revision,
+            Some((unit, base)),
+            self.threads,
+        )?;
+        read(
+            parsed.tree(),
+            closure
+                .as_ref()
+                .map(|closure| ClosureKey(Arc::downgrade(closure))),
+        );
+        Ok(())
     }
 
     /// The lowering the process holds for `revision`'s closure — its text
@@ -3443,6 +3564,7 @@ fn try_candidate<'text>(
         kernel,
         obligations,
         forms: census,
+        table: Maybe::Absent(tabled::Absent::Untabled),
     })
 }
 

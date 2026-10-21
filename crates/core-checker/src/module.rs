@@ -1703,6 +1703,8 @@ pub struct ModuleRun
     open: Maybe<ConstantIndex, open::Absent>,
     /// Each mutual block opened, by its first position and its end.
     blocks: Vec<(ConstantIndex, ConstantIndex)>,
+    /// What the run keeps of each declaration's typed run, once asked to.
+    typed: Option<TypedModule>,
 }
 
 impl ModuleRun
@@ -1723,6 +1725,7 @@ impl ModuleRun
             suspensions: BTreeMap::new(),
             open: Maybe::Absent(open::Absent::Lone),
             blocks: Vec::new(),
+            typed: None,
         }
     }
 
@@ -1769,7 +1772,19 @@ impl ModuleRun
             {
                 self.blocks.push((declaration.constant(), end));
             }
-            let decision = decide(context, declaration, Run::Judged);
+            let kind = match self.typed {
+                Some(_) => Run::Typed,
+                None => Run::Judged,
+            };
+            let decision = decide(context, declaration, kind);
+            if let Some(ref mut typed) = self.typed {
+                if let Verdict::Refused(refusal) = decision.verdict {
+                    let _replaced = typed.refused.insert(declaration.constant(), refusal);
+                }
+                if let Maybe::Present(typings) = decision.typings {
+                    let _replaced = typed.typings.insert(declaration.constant(), typings);
+                }
+            }
             if let Maybe::Present(failure) = decision.failure {
                 self.failures.insert(declaration.constant(), failure);
             }
@@ -1800,6 +1815,32 @@ impl ModuleRun
                 verdict: decision.verdict,
             });
         }
+    }
+
+    /// Keep, from here on, what [`type_module`] keeps of each declaration
+    /// judged: the types its typed run formed and judged, and its refusal.
+    /// Each declaration is then decided as [`type_module`] decides it, which
+    /// judges it as [`check_module`] does and then types its body as written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn keep_typings(&mut self)
+    {
+        self.typed = Some(TypedModule::default());
+    }
+
+    /// What the run kept of the declarations judged since
+    /// [`keep_typings`](Self::keep_typings), or nothing if it was never asked;
+    /// the run keeps nothing more after.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn take_typings(&mut self) -> Option<TypedModule>
+    {
+        self.typed.take()
     }
 
     /// The report of every declaration judged: the mutual block left open
@@ -1835,6 +1876,7 @@ impl ModuleRun
             suspensions,
             open,
             blocks,
+            typed: _,
         } = self;
         if let Maybe::Present(_) = open {
             context.close_mutual();

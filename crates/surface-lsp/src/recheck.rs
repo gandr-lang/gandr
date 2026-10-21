@@ -167,11 +167,13 @@ use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::entries;
 use gandr_surface_dispatcher::laid;
 use gandr_surface_dispatcher::lay_out_shadowed;
+use gandr_surface_dispatcher::tabled;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::RoleTable;
@@ -511,7 +513,8 @@ impl fmt::Display for Timing
 
 /// What one recheck produced: the diagnostics to publish, the binders left
 /// unused, the form under the caret it was asked about, the paths its closure
-/// named, the lay-out it judged, and its timing.
+/// named, the lay-out it judged, the type table its judgement kept, and its
+/// timing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Rechecked
 {
@@ -530,6 +533,9 @@ pub struct Rechecked
     /// The import closure the text was laid out in and judged over, its
     /// named paths moved to `named`, or why it was judged alone.
     pub laid: Maybe<Laid, laid::Absent>,
+    /// The type table the judgement kept of the document's own text, which
+    /// the document's hovers read, or why it kept none.
+    pub table: Maybe<TypeTable, tabled::Absent>,
     /// What the recheck cost.
     pub timing: Timing,
 }
@@ -614,6 +620,7 @@ pub fn recheck(
         form: Maybe::Absent(formless::Absent::Unparsed),
         named,
         laid,
+        table: Maybe::Absent(tabled::Absent::Untabled),
         timing: Timing {
             forms: FormCensus::default(),
             judged: Maybe::Absent(judged::Absent::Unchecked),
@@ -664,13 +671,14 @@ pub fn recheck(
         ),
         Maybe::Absent(_) => session.judge_reading(text, read),
     };
-    let submission = match outcome {
+    let mut submission = match outcome {
         Ok(submission) => submission,
         Err(fault) => {
             let fault = fault.to_string();
             return unchecked(Diagnostic::at_origin(fault), named, laid);
         },
     };
+    let table = submission.take_table();
     let forms = submission.forms();
     let (judged, pending) = match submission.resumed() {
         Maybe::Present(resumed) => (Maybe::Present(resumed.census()), admitted::Absent::Pending),
@@ -700,6 +708,7 @@ pub fn recheck(
         form,
         named,
         laid,
+        table,
         timing: Timing {
             forms,
             judged,
@@ -1333,6 +1342,121 @@ mod tests
             UNCARETED,
         )
         .diagnostics
+    }
+
+    /// The sweep of a recheck's kept table against a hover's. A run visits the
+    /// sources [`Sweep::visit`] names: under a pull-request profile, plain or
+    /// enforcing, a sample of the sources importing a sibling, a sample of the
+    /// sources standing alone and every source the change adds or modifies;
+    /// under `sweeps` and `nightly`, every source.
+    mod sweeps
+    {
+        use gandr_surface_dispatcher::TypeTable;
+        use gandr_surface_pretty::Form;
+        use gandr_surface_pretty::PageWidth;
+        use gandr_workflow_sweep::Sample;
+        use gandr_workflow_sweep::SampleName;
+        use gandr_workflow_sweep::SampleSize;
+        use gandr_workflow_sweep::Sweep;
+        use gandr_workflow_sweep::corpus;
+
+        use super::*;
+
+        /// The sample of sources importing a sibling, each laid out after its
+        /// closure's lowering (`gandr-workflow-sweep`).
+        const LAID: Sample = Sample {
+            name: SampleName("a_recheck_keeps_the_table_its_hover_types_1521_laid"),
+            size: SampleSize(16),
+        };
+
+        /// The sample of sources standing alone (`gandr-workflow-sweep`).
+        const ALONE: Sample = Sample {
+            name: SampleName("a_recheck_keeps_the_table_its_hover_types_1521_alone"),
+            size: SampleSize(16),
+        };
+
+        /// #1521: a corpus source, rechecked, keeps the table its hovers would
+        /// otherwise type — after its closure's lowering when it imports a
+        /// sibling, alone otherwise: every entry, declaration and declared
+        /// name answers as the table [`hovering`](crate::hover::hovering)
+        /// types over the same lay-out does.
+        #[test]
+        fn a_recheck_keeps_the_table_its_hover_types_1521()
+        {
+            let page = PageWidth::from(80_u32);
+            let style = Form::Explicit.into();
+            let answers = |table: &TypeTable| {
+                (
+                    table.entries(page, style).collect::<Vec<_>>(),
+                    table.declarations(page, style).collect::<Vec<_>>(),
+                    table.declared_names().to_vec(),
+                )
+            };
+            let (mut written, mut spelled) = (String::new(), String::new());
+            let sweep = Sweep::asked().expect("the run's sweep resolves");
+            let (importing, alone): (Vec<_>, Vec<_>) = corpus::sources()
+                .expect("the corpus reads")
+                .into_iter()
+                .partition(|source| {
+                    written.clear();
+                    std::fs::File::open(&source.path)
+                        .and_then(|mut file| std::io::Read::read_to_string(&mut file, &mut written))
+                        .is_ok_and(|_| written.contains("\nimport "))
+                });
+            let mut sources = sweep.visit(LAID, &importing);
+            sources.extend(sweep.visit(ALONE, &alone));
+            let (mut kept, mut laid) = (0_usize, 0_usize);
+            let mut differing = Vec::new();
+            for source in sources {
+                written.clear();
+                std::fs::File::open(&source.path)
+                    .and_then(|mut file| std::io::Read::read_to_string(&mut file, &mut written))
+                    .expect("a corpus source reads");
+                let text = SourceText::from(written.as_str());
+                spelled.clear();
+                core::fmt::Write::write_fmt(
+                    &mut spelled,
+                    format_args!("file://{}", source.path.display()),
+                )
+                .expect("a path spells");
+                let uri = DocumentUri::from(spelled.as_str());
+                let mut session = open(&uri);
+                if let Ok(judging) = session.as_mut() {
+                    judging.keep(gandr_surface_session::Tables::Kept);
+                }
+                let rechecked = recheck(
+                    &uri,
+                    &mut session,
+                    text,
+                    &gandr_surface_dispatcher::Unshadowed,
+                    Verbosity::User,
+                    Spelling::Unicode,
+                    UNCARETED,
+                );
+                let Maybe::Present(table) = rechecked.table
+                else {
+                    continue;
+                };
+                kept = kept.saturating_add(1);
+                if let Maybe::Present(_) = rechecked.laid {
+                    laid = laid.saturating_add(1);
+                }
+                let session = session.expect("the grammar builds");
+                let typed = crate::hover::hovering(
+                    text,
+                    &source.path,
+                    &session,
+                    &gandr_surface_dispatcher::Unshadowed,
+                );
+                if answers(&table) != answers(typed.table()) {
+                    differing.push(source.path);
+                }
+            }
+            assert!(
+                laid > 0 && kept > laid && differing.is_empty(),
+                "over {kept} sources, {laid} laid after a closure, a recheck's table answers as a hover's; differing: {differing:?}"
+            );
+        }
     }
 
     /// A range from one line and character to another.
