@@ -693,13 +693,14 @@ macro_rules! entry {
 
 entry!(
     stencil_enter_apply,
-    "Enter an application arm: the argument at slot B, the return mark above.",
+    "Enter an application arm: the argument at slot B, the return mark above, \
+     and the closure entered above that, which the body drops once it has \
+     counted its captures.",
     "- ensures: the environment register is a fresh window holding the \
-     captures, the argument at slot B and the frame region's top at B + 1; or \
-     the heap exit is taken.",
+     captures, the argument at slot B, the frame region's top at B + 1 and the \
+     closure at B + 2; or the heap exit is taken.",
     |window, closure, value, frames, at| {
-        let _ = closure;
-        // SAFETY: the window has A slots, A above B + 1.
+        // SAFETY: the window has A slots, A above B + 2.
         unsafe {
             *window.wrapping_add(at) = value;
         }
@@ -707,18 +708,28 @@ entry!(
         unsafe {
             *window.wrapping_add(at.wrapping_add(1)) = Word::from_pointer(frames);
         }
+        // SAFETY: as above.
+        unsafe {
+            *window.wrapping_add(at.wrapping_add(2)) = Word::from_pointer(closure);
+        }
     }
 );
 entry!(
     stencil_enter_force,
-    "Enter a thunk or a force arm: the return mark at slot B.",
+    "Enter a thunk or a force arm: the return mark at slot B, and the closure \
+     entered above it, which the body drops once it has counted its captures.",
     "- ensures: the environment register is a fresh window holding the \
-     captures and the frame region's top at slot B; or the heap exit is taken.",
+     captures, the frame region's top at slot B and the closure at B + 1; or \
+     the heap exit is taken.",
     |window, closure, value, frames, at| {
-        let _ = (closure, value);
-        // SAFETY: the window has A slots, A above B.
+        let _ = value;
+        // SAFETY: the window has A slots, A above B + 1.
         unsafe {
             *window.wrapping_add(at) = Word::from_pointer(frames);
+        }
+        // SAFETY: as above.
+        unsafe {
+            *window.wrapping_add(at.wrapping_add(1)) = Word::from_pointer(closure);
         }
     }
 );
@@ -1244,11 +1255,14 @@ pub extern "rust-preserve-none" fn stencil_unfold(
     become hole_next(runtime, heap, frames, environment, value)
 }
 
-/// End unfolding constant A: its word takes the value in hand.
+/// End unfolding constant A: its word takes the value in hand, which becomes
+/// immortal, since every later read of the word shares it uncounted.
 ///
 /// # Specification
-/// - requires: the record's constant table holds word A.
-/// - ensures: word A is the value register.
+/// - requires: the record's constant table holds word A; the value register
+///   addresses an object.
+/// - ensures: word A is the value register, and the object's count reads
+///   [`layout::COUNT_IMMORTAL`].
 /// - executable: none — a stencil runs only inside a chain of tail calls whose
 ///   state no predicate can observe.
 ///
@@ -1271,6 +1285,17 @@ pub extern "rust-preserve-none" fn stencil_set_global(
     // SAFETY: the table holds word A.
     unsafe {
         *slot = value;
+    }
+    let count = value.to_pointer::<Word>().wrapping_sub(1);
+    // SAFETY: an object is preceded by its count word.
+    let held = unsafe { *count };
+    // A constant of the function's data is immortal already, its page
+    // read-only.
+    if held != layout::COUNT_IMMORTAL {
+        // SAFETY: as above; a heap object's count word is the run's.
+        unsafe {
+            *count = layout::COUNT_IMMORTAL;
+        }
     }
     become hole_next(runtime, heap, frames, environment, value)
 }
@@ -1840,11 +1865,11 @@ pub extern "rust-preserve-none" fn stencil_call(
     become hole_stuck(runtime, top, frames, environment, Word::ZERO)
 }
 
-/// Count one more owner of the object in hand: its count word grows by one,
+/// Count one more owner of the object in slot A: its count word grows by one,
 /// unless it is [`layout::COUNT_IMMORTAL`].
 ///
 /// # Specification
-/// - requires: the value register addresses an object.
+/// - requires: slot A lies inside the window and addresses an object.
 /// - ensures: the object's count is one higher, or unchanged when immortal; the
 ///   value in hand is unchanged.
 /// - executable: none — a stencil runs only inside a chain of tail calls whose
@@ -1864,7 +1889,10 @@ pub extern "rust-preserve-none" fn stencil_dup(
     value: Word,
 ) -> Word
 {
-    let count = value.to_pointer::<Word>().wrapping_sub(1);
+    let slot = environment.wrapping_add(operand!(runtime, A));
+    // SAFETY: the lowering assigned slot A inside the window.
+    let object = unsafe { *slot };
+    let count = object.to_pointer::<Word>().wrapping_sub(1);
     // SAFETY: an object is preceded by its count word.
     let held = unsafe { *count };
     if held != layout::COUNT_IMMORTAL {
@@ -1876,16 +1904,74 @@ pub extern "rust-preserve-none" fn stencil_dup(
     become hole_next(runtime, heap, frames, environment, value)
 }
 
-/// Give up one owner of the object in hand: its count word shrinks by one,
+/// Count one more owner of each field of the object in slot A, when its
+/// fields are values — a tuple's, an injection's, a constructor's or a head's
+/// — as a match does before its binders take the fields.
+///
+/// # Specification
+/// - requires: slot A lies inside the window and addresses an object.
+/// - ensures: each field of a tuple, injection, constructor or head counts one
+///   owner more, unless immortal; any other object is unchanged; the value in
+///   hand is unchanged.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the agreement differential over counted corpus programs
+///   matching constructors whose scrutinee dies in the arm: a field left
+///   uncounted is freed with its scrutinee and read after.
+/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_dup_fields(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    let slot = environment.wrapping_add(operand!(runtime, A));
+    // SAFETY: the lowering assigned slot A inside the window.
+    let object = unsafe { *slot }.to_pointer::<Word>();
+    // SAFETY: a value addresses its header.
+    let header = usize::from(unsafe { *object });
+    let kind = header & layout::KIND_MASK;
+    if kind == layout::KIND_TUPLE
+        || kind == layout::KIND_INJECTION
+        || kind == layout::KIND_DATA
+        || kind == layout::KIND_HEAD
+    {
+        let arity = header.wrapping_shr(layout::ARITY_SHIFT) & layout::ARITY_MASK;
+        let mut index = 1_usize;
+        while index <= arity {
+            // SAFETY: the object holds `arity` fields after its header.
+            let field = unsafe { *object.wrapping_add(index) };
+            let count = field.to_pointer::<Word>().wrapping_sub(1);
+            // SAFETY: a field of these kinds is an object, preceded by its
+            // count word.
+            let held = unsafe { *count };
+            if held != layout::COUNT_IMMORTAL {
+                // SAFETY: as above.
+                unsafe {
+                    *count = Word(held.0.wrapping_add(1));
+                }
+            }
+            index = index.wrapping_add(1);
+        }
+    }
+    become hole_next(runtime, heap, frames, environment, value)
+}
+
+/// Give up one owner of the object in slot A: its count word shrinks by one,
 /// and at its last owner the host's [`layout::RELEASE`] entry frees it and
 /// drops what it holds. An immortal object is left alone.
 ///
 /// # Specification
-/// - requires: the value register addresses an object; the record's host entry
-///   answers [`layout::RELEASE`].
+/// - requires: slot A lies inside the window and addresses an object; the
+///   record's host entry answers [`layout::RELEASE`].
 /// - ensures: the object's count is one lower, or the object is released when
 ///   the count was one, or unchanged when immortal; the value in hand is
-///   unchanged, and a released one is dead.
+///   unchanged.
 /// - executable: none — a stencil runs only inside a chain of tail calls whose
 ///   state no predicate can observe.
 ///
@@ -1903,7 +1989,10 @@ pub extern "rust-preserve-none" fn stencil_drop(
     value: Word,
 ) -> Word
 {
-    let count = value.to_pointer::<Word>().wrapping_sub(1);
+    let slot = environment.wrapping_add(operand!(runtime, A));
+    // SAFETY: the lowering assigned slot A inside the window.
+    let object = unsafe { *slot };
+    let count = object.to_pointer::<Word>().wrapping_sub(1);
     // SAFETY: an object is preceded by its count word.
     let held = unsafe { *count };
     if held == layout::COUNT_ONE {
@@ -1921,7 +2010,7 @@ pub extern "rust-preserve-none" fn stencil_drop(
         }
         // SAFETY: as above.
         let host = unsafe { (*runtime).host };
-        let _released = host(runtime, layout::RELEASE, value, Word::ZERO);
+        let _released = host(runtime, layout::RELEASE, object, Word::ZERO);
         become hole_next(runtime, heap, frames, environment, value)
     }
     if held != layout::COUNT_IMMORTAL {
