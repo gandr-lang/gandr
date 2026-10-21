@@ -178,6 +178,7 @@ use crate::protocol::ShowsDocuments;
 use crate::protocol::ShowsProgress;
 use crate::protocol::StringValue;
 use crate::protocol::SymbolInformation;
+use crate::protocol::TakesSnippets;
 use crate::protocol::TextEdit;
 use crate::protocol::Trace;
 use crate::protocol::TraceParams;
@@ -1347,6 +1348,7 @@ impl Workspace
             linked: Linked(true),
             offsets: LabelOffsets(true),
             detailing: LabelsDetailed(true),
+            snipping: TakesSnippets(true),
             collapsing: FoldsCollapsed(true),
             watching: WatchesFiles(false),
             progress: ShowsProgress(false),
@@ -1579,6 +1581,9 @@ pub struct Server
     /// Whether its client shows a completion's label details, read at
     /// `initialize`.
     detailing: LabelsDetailed,
+    /// Whether its client takes a completion's text as a snippet, read at
+    /// `initialize`.
+    snipping: TakesSnippets,
     /// Whether its client shows the text a fold names, read at `initialize`.
     collapsing: FoldsCollapsed,
     /// Whether its client watches files for it once asked, read at
@@ -1704,6 +1709,7 @@ impl Server
             linked: Linked(false),
             offsets: LabelOffsets(false),
             detailing: LabelsDetailed(false),
+            snipping: TakesSnippets(false),
             collapsing: FoldsCollapsed(false),
             watching: WatchesFiles(false),
             progress: ShowsProgress(false),
@@ -3115,6 +3121,7 @@ impl Server
                 self.linked = initial_links(&params);
                 self.offsets = initial_offsets(&params);
                 self.detailing = initial_detailing(&params);
+                self.snipping = initial_snipping(&params);
                 self.collapsing = initial_collapsing(&params);
                 self.watching = initial_watching(&params);
                 self.progress = initial_progress(&params);
@@ -3194,7 +3201,7 @@ impl Server
                             &params.text_document.uri,
                             self.peer,
                             params.position,
-                            (self.style.printed(), self.detailing),
+                            (self.style.printed(), self.detailing, self.snipping),
                         ),
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
@@ -4498,7 +4505,7 @@ impl Workspace
         uri: &DocumentUri,
         peer: Peer,
         position: Position,
-        presented: (gandr_surface_pretty::Style, LabelsDetailed),
+        presented: (gandr_surface_pretty::Style, LabelsDetailed, TakesSnippets),
     ) -> Answer
     {
         let Maybe::Present(document) = self.view(uri, peer)
@@ -5639,6 +5646,18 @@ fn initial_detailing(params: &Value) -> LabelsDetailed
 {
     InitializeParams::deserialize(params)
         .map(|params| params.label_details())
+        .unwrap_or_default()
+}
+
+/// Whether the client `initialize` names in `params` takes a completion's
+/// text as a snippet; not when the parameters do not read.
+///
+/// # Specification
+/// trivial.
+fn initial_snipping(params: &Value) -> TakesSnippets
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.snippets())
         .unwrap_or_default()
 }
 

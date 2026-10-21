@@ -1253,12 +1253,12 @@ impl Forms
     }
 
     /// The keywords that open a form filling a hole of `category`: the
-    /// opening tile of each form of its sort that is spelled as a word, in
-    /// mold order.
+    /// opening tile of each form of its sort that is spelled as a word, with
+    /// that form, in mold order.
     ///
     /// # Specification
     /// - ensures: the opening tile of each form of `category`'s sort whose
-    ///   label starts with a letter, in mold order.
+    ///   label starts with a letter, with the form's material, in mold order.
     /// - panics: none.
     /// - executable: none — the answer is a lazy iterator over the forms.
     ///
@@ -1270,13 +1270,70 @@ impl Forms
     pub fn keywords(
         &self,
         category: Category,
-    ) -> impl Iterator<Item = &'static str> + '_
+    ) -> impl Iterator<Item = KeywordForm<'_>> + '_
     {
         self.of(category.sort())
             .filter_map(|form| match form.material.first() {
-                Some(&Part::Tile(tile)) if tile.0.starts_with(char::is_alphabetic) => Some(tile.0),
+                Some(&Part::Tile(tile)) if tile.0.starts_with(char::is_alphabetic) => {
+                    Some(KeywordForm {
+                        word: tile.0,
+                        material: &form.material,
+                    })
+                },
                 Some(&(Part::Tile(_) | Part::Hole(_))) | None => None,
             })
+    }
+}
+
+/// A keyword and the form it opens: what a completion of the keyword inserts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct KeywordForm<'forms>
+{
+    /// The keyword.
+    word: &'static str,
+    /// The form's material: the keyword's tile, then its cheapest closing.
+    material: &'forms [Part],
+}
+
+impl KeywordForm<'_>
+{
+    /// The keyword.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn word(&self) -> SourceText<'static>
+    {
+        SourceText::from(self.word)
+    }
+
+    /// The form spelled as a snippet to insert where `before` ends and
+    /// `after` begins, its holes tab stops; none when the keyword is the whole
+    /// form, which inserts as its word.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: none exactly when the form is its keyword alone; otherwise
+    ///   the material spelled as an inline completion spells it in code.
+    /// - provides: what a keyword's completion inserts to a client that takes
+    ///   snippets.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `def` inserts its declaration with a tab stop per
+    ///   hole, and a keyword that is its whole form inserts no snippet.
+    /// - witness: `complete::tests::a_keyword_inserts_its_form_as_a_snippet`
+    #[must_use]
+    #[spec(ensures: |ret| ret.is_some() == (self.material.len() > 1_usize))]
+    pub fn snippet(
+        &self,
+        before: SourceText<'_>,
+        after: SourceText<'_>,
+    ) -> Option<Snippet>
+    {
+        (self.material.len() > 1_usize).then(|| spell(self.material, Lead::Code, before, after))
     }
 }
 
@@ -1841,11 +1898,12 @@ pub fn ghost(
 ///   [`Lead::Block`] — then each part in order: a tile as the text
 ///   [`tile_spelling`] gives it, escaped for the snippet syntax; a lexical
 ///   class as a tab stop naming the class; a hole as a tab stop naming its
-///   category. Tab stops are numbered from 1 in order. Parts are separated by
-///   one space, and the first from what precedes it by one, except after a line
-///   end, an opening bracket or whitespace and before a closing bracket, a
-///   comma, a semicolon or a quote; one space ends the snippet when `after`
-///   begins with text the same rule would space from its last part.
+///   category; a string the closing leaves empty, a tab stop naming its content
+///   between its quotes. Tab stops are numbered from 1 in order. Parts are
+///   separated by one space, and the first from what precedes it by one, except
+///   after a line end, an opening bracket or whitespace and before a closing
+///   bracket, a comma, a semicolon or a quote; one space ends the snippet when
+///   `after` begins with text the same rule would space from its last part.
 /// - provides: one ghost text's snippet.
 /// - fails: never.
 /// - panics: none.
@@ -1890,6 +1948,9 @@ fn spell(
     }
     let mut stop = 0_u32;
     let mut quoting = Quoting::Outside;
+    // Whether the last piece opened a string, which a closing quote next would
+    // leave empty.
+    let mut hollow = false;
     for &part in parts {
         let piece = match part {
             Part::Tile(tile) => match tile_spelling(CandidateLabel::from(tile.0)) {
@@ -1908,6 +1969,11 @@ fn spell(
         if joint == Spacing::Spaced && spacing == Spacing::Spaced {
             snippet.push(' ');
         }
+        if quote && hollow {
+            stop = stop.saturating_add(1);
+            let _written = write!(snippet, "${{{stop}:string_fragment}}");
+        }
+        hollow = matches!(piece, Piece::Text("\"")) && quoting == Quoting::Outside;
         match piece {
             Piece::Text(text) => {
                 for character in text.chars() {
@@ -2526,9 +2592,9 @@ mod tests
               "data ${1:type_identifier} { \\}"
               "codata ${1:type_identifier} { \\}"
               "module ${1:type_identifier} { ${2:member} \\}"
-              "import \"\";"
+              "import \"${1:string_fragment}\";"
               "world ${1:identifier};"
-              "op infixl ${1:number} \"\";"
+              "op infixl ${1:number} \"${2:string_fragment}\";"
               "rec { ${1:item} \\}"
         "#]]
         .assert_eq(&rendered);

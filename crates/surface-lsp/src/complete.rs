@@ -65,9 +65,11 @@ use crate::protocol::CompletionItem;
 use crate::protocol::CompletionItemKind;
 use crate::protocol::CompletionList;
 use crate::protocol::DocumentUri;
+use crate::protocol::InsertTextFormat;
 use crate::protocol::LabelDetails;
 use crate::protocol::LabelsDetailed;
 use crate::protocol::MarkupContent;
+use crate::protocol::TakesSnippets;
 use crate::protocol::TextEdit;
 
 /// The page width a binder's type is laid out at in a completion: wide enough
@@ -275,8 +277,12 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
 ///   whose head [`Signatures`] keeps carries that head's label, unless it is
 ///   the name alone; a keyword carries none. When `labels` holds, an item with
 ///   a detail carries it beside its label too: the rest after the name when the
-///   detail starts with it, the detail whole as the description otherwise. No
-///   item for a filled slot.
+///   detail starts with it, the detail whole as the description otherwise. When
+///   `snippets` holds, a keyword whose form writes more than the keyword
+///   inserts the form as [`KeywordForm::snippet`] spells it between the text
+///   before the word and the text after the cursor, read as a snippet and
+///   filtered by the keyword; every other item inserts its label. No item for a
+///   filled slot.
 /// - provides: the answer to `textDocument/completion` for a held document.
 /// - fails: never.
 /// - panics: none.
@@ -291,16 +297,22 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
 ///   inside a declaration the lowering refused; a sibling's declaration offers
 ///   in an importer; a binder, a function, a constructor, a family and a value
 ///   whose head is its name alone carry their exact details, with and without
-///   label details.
+///   label details; a keyword inserts its form as a snippet to a client that
+///   takes snippets and its word to one that does not.
 /// - witness: `complete::tests::each_slot_offers_its_own_names`
 /// - witness: `complete::tests::a_prefix_offers_only_what_starts_with_it`
 /// - witness: `complete::tests::a_binder_offers_only_where_it_is_in_scope_806`
 /// - witness: `complete::tests::each_item_carries_its_type_in_the_list`
+/// - witness: `complete::tests::a_keyword_inserts_its_form_as_a_snippet`
 /// - witness: `tests::session::a_completion_offers_what_a_sibling_declares_806`
 ///
 /// [`Signatures`]: crate::signature::Signatures
+/// [`KeywordForm::snippet`]: crate::inline::KeywordForm::snippet
 #[spec(ensures: |ret| !ret.is_incomplete && ret.items.iter().all(|item| item.text_edit.range.end == position
-    && item.label_details.is_some() == (labels.0 && item.detail.is_some())))]
+    && item.label_details.is_some() == (labels.0 && item.detail.is_some())
+    && item.insert_text_format.is_some() == item.filter_text.is_some()
+    && (snippets.0 || item.insert_text_format.is_none())
+    && (item.insert_text_format.is_some() || item.text_edit.new_text == item.label)))]
 #[must_use]
 pub fn completions(
     grammar: &Pbg,
@@ -308,7 +320,7 @@ pub fn completions(
     text: SourceText<'_>,
     hovering: &Hovering,
     (uri, position): (&DocumentUri, Position),
-    (printer, labels): (Style, LabelsDetailed),
+    (printer, labels, snippets): (Style, LabelsDetailed, TakesSnippets),
 ) -> CompletionList
 {
     let index = LineIndex::new(<&str>::from(text).into());
@@ -331,7 +343,7 @@ pub fn completions(
     };
     let table = hovering.table();
     let mut seen: BTreeSet<&str> = BTreeSet::new();
-    let mut offered: Vec<(&str, CompletionItemKind, Option<String>)> = Vec::new();
+    let mut offered: Vec<(&str, CompletionItemKind, Option<String>, Option<String>)> = Vec::new();
     if matches!(
         category,
         Category::Value | Category::Computation | Category::Type
@@ -347,7 +359,7 @@ pub fn completions(
                     },
                     Maybe::Present(_) | Maybe::Absent(_) => None,
                 };
-                offered.push((name, CompletionItemKind::VARIABLE, typed));
+                offered.push((name, CompletionItemKind::VARIABLE, typed, None));
             }
         }
     }
@@ -361,12 +373,27 @@ pub fn completions(
                 .map(|signature| <&str>::from(signature.label()))
                 .filter(|head| *head != name.as_str())
                 .map(String::from);
-            offered.push((name.as_str(), as_kind, head));
+            offered.push((name.as_str(), as_kind, head, None));
         }
     }
+    let before = SourceText::from(
+        <&str>::from(text)
+            .get(.. usize::from(start))
+            .unwrap_or_default(),
+    );
+    let after = SourceText::from(
+        <&str>::from(text)
+            .get(usize::from(at) ..)
+            .unwrap_or_default(),
+    );
     for keyword in forms.keywords(category) {
-        if keyword.starts_with(prefix) && seen.insert(keyword) {
-            offered.push((keyword, CompletionItemKind::KEYWORD, None));
+        let word = <&str>::from(keyword.word());
+        if word.starts_with(prefix) && seen.insert(word) {
+            let form = keyword
+                .snippet(before, after)
+                .filter(|_| snippets.0)
+                .map(String::from);
+            offered.push((word, CompletionItemKind::KEYWORD, None, form));
         }
     }
     let width = offered.len().to_string().len();
@@ -375,13 +402,15 @@ pub fn completions(
         items: offered
             .into_iter()
             .enumerate()
-            .map(|(rank, (name, kind, head))| CompletionItem {
+            .map(|(rank, (name, kind, head, form))| CompletionItem {
                 label: String::from(name),
                 kind,
                 sort_text: format!("{rank:0width$}"),
+                insert_text_format: form.as_ref().map(|_| InsertTextFormat::SNIPPET),
+                filter_text: form.as_ref().map(|_| String::from(name)),
                 text_edit: TextEdit {
                     range,
-                    new_text: String::from(name),
+                    new_text: form.unwrap_or_else(|| String::from(name)),
                 },
                 label_details: head
                     .as_deref()
@@ -498,7 +527,9 @@ mod tests
     use crate::protocol::CompletionItem;
     use crate::protocol::CompletionItemKind;
     use crate::protocol::DocumentUri;
+    use crate::protocol::InsertTextFormat;
     use crate::protocol::LabelsDetailed;
+    use crate::protocol::TakesSnippets;
     use crate::protocol::TextEdit;
     use crate::recheck::forms;
     use crate::recheck::grammar;
@@ -545,14 +576,14 @@ mod tests
 
     /// The list a completion answers in `before` followed by `after`, at the
     /// end of `before`, to a client that shows label details when `labels`
-    /// holds.
+    /// holds and takes snippets when `snippets` does.
     ///
     /// # Specification
     /// trivial.
     fn listed(
         before: SourceText<'_>,
         after: SourceText<'_>,
-        labels: LabelsDetailed,
+        (labels, snippets): (LabelsDetailed, TakesSnippets),
     ) -> Vec<CompletionItem>
     {
         let text = format!("{}{}", <&str>::from(before), <&str>::from(after));
@@ -572,6 +603,7 @@ mod tests
                     spelling: gandr_surface_pretty::Spelling::Unicode,
                 },
                 labels,
+                snippets,
             ),
         )
         .items
@@ -588,7 +620,7 @@ mod tests
     ) -> Offered
     {
         let mut offered = Offered::default();
-        for item in listed(before, after, LabelsDetailed(false)) {
+        for item in listed(before, after, (LabelsDetailed(false), TakesSnippets(false))) {
             if item.kind == CompletionItemKind::KEYWORD {
                 offered.keywords.push(item.label);
             }
@@ -764,22 +796,155 @@ mod tests
         );
     }
 
+    /// The snippet table over the identity subject's base source: every
+    /// keyword offered at the slot after its last declaration and at the
+    /// computation `up` returns, each with the form it inserts.
+    #[test]
+    #[expect(
+        clippy::literal_string_with_formatting_args,
+        reason = "a snippet's tab stop is spelled `${n:name}`, which reads as a format argument"
+    )]
+    fn a_keyword_inserts_its_form_as_a_snippet()
+    {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../surface-corpus/fixture/model/identity/circle-base.gandr");
+        let written = std::fs::read_to_string(&path).expect("the corpus source is read");
+        let table = |before: &str, after: &str, snippets: bool| {
+            listed(
+                SourceText::from(before),
+                SourceText::from(after),
+                (LabelsDetailed(false), TakesSnippets(snippets)),
+            )
+            .into_iter()
+            .filter(|item| item.kind == CompletionItemKind::KEYWORD)
+            .map(|item| {
+                assert_eq!(
+                    item.filter_text.as_deref(),
+                    item.insert_text_format.map(|_| item.label.as_str()),
+                    "a snippet filters on its keyword alone"
+                );
+                (
+                    item.label,
+                    item.text_edit.new_text,
+                    item.insert_text_format == Some(InsertTextFormat::SNIPPET),
+                )
+            })
+            .collect::<Vec<_>>()
+        };
+        let row = |label: &str, text: &str| (String::from(label), String::from(text), true);
+        let item = [
+            row("def", "def ${1:identifier} : ${2:type};"),
+            row("data", "data ${1:type_identifier} { \\}"),
+            row("codata", "codata ${1:type_identifier} { \\}"),
+            row("module", "module ${1:type_identifier} { ${2:member} \\}"),
+            row("import", "import \"${1:string_fragment}\";"),
+            row("world", "world ${1:identifier};"),
+            row("op", "op infixl ${1:number} \"${2:string_fragment}\";"),
+            row("rec", "rec { ${1:item} \\}"),
+            row(
+                "extern",
+                "extern \"${1:string_fragment}\" from \"${2:string_fragment}\" { \\}",
+            ),
+            row("theory", "theory ${1:type_identifier} { \\}"),
+            row("oper", "oper ${1:identifier} : (${2:type})"),
+            row("rule", "rule ${1:identifier} : (${2:type})"),
+        ];
+        assert_eq!(
+            table(&written, "", true),
+            item,
+            "after the last declaration: each declaration form, its holes tab stops"
+        );
+        let body = written.find("  S(n)\n").expect("`up` returns a successor") + 2;
+        let word = |label: &str| (String::from(label), String::from(label), false);
+        let computation = [
+            row("pure", "pure ${1:value}"),
+            row("return", "return ${1:value}"),
+            row("become", "become ${1:computation}"),
+            row("force", "force ${1:value}"),
+            row("run", "run ${1:computation}"),
+            row("hold", "hold ${1:value}"),
+            row("type(", "type(${1:type})"),
+            row("fn", "fn () { ${1:computation} \\}"),
+            row("thunk", "thunk { ${1:computation} \\}"),
+            row("case", "case ${1:value} { \\}"),
+            row(
+                "handle",
+                "handle ${1:identifier} : ${2:type_identifier} { ${3:computation} \\} with { \
+                 pure (${4:identifier}) => ${5:computation} \\}",
+            ),
+            row(
+                "if",
+                "if ${1:value} { ${2:computation} \\} else { ${3:computation} \\}",
+            ),
+            row(
+                "for",
+                "for ${1:identifier} in ${2:value} { ${3:computation} \\}",
+            ),
+            row("while", "while ${1:value} { ${2:computation} \\}"),
+            word("break"),
+            word("continue"),
+            row("co", "co { ${1:identifier} = ${2:value} \\}"),
+            row(
+                "offer",
+                "offer (${1:value}) { ${2:pattern} => ${3:computation} \\}",
+            ),
+            row(
+                "migrate",
+                "migrate [${1:identifier}] { ${2:computation} \\}",
+            ),
+            row("send", "send (${1:value}, ${2:value})"),
+            row("close", "close (${1:value})"),
+            row("select", "select (${1:value}, ${2:identifier})"),
+            row("dup", "dup (${1:value})"),
+            row("drop", "drop (${1:value})"),
+            row(
+                "access",
+                "access ${1:identifier} as ${2:identifier} { ${3:computation} \\}",
+            ),
+            row("resume", "resume (${1:identifier}, ${2:value})"),
+            row("abort", "abort (${1:identifier})"),
+            word("true"),
+            word("false"),
+            word("unit"),
+        ];
+        assert_eq!(
+            table(
+                written.get(.. body).unwrap_or_default(),
+                written.get(body + 4 ..).unwrap_or_default(),
+                true
+            ),
+            computation,
+            "where `up` returns: each computation form, a closing brace escaped, and a \
+             keyword that is its whole form inserted alone"
+        );
+        assert!(
+            table(&written, "", false)
+                .iter()
+                .all(|&(ref label, ref text, snippet)| label == text && !snippet),
+            "a client that takes no snippet is given each keyword alone"
+        );
+    }
+
     #[test]
     fn each_item_carries_its_type_in_the_list()
     {
         let details = |before: &str, after: &str, labels: LabelsDetailed| {
-            listed(SourceText::from(before), SourceText::from(after), labels)
-                .into_iter()
-                .filter(|item| item.kind != CompletionItemKind::KEYWORD)
-                .map(|item| {
-                    (
-                        item.label,
-                        item.detail,
-                        item.label_details
-                            .map(|beside| (beside.detail, beside.description)),
-                    )
-                })
-                .collect::<Vec<_>>()
+            listed(
+                SourceText::from(before),
+                SourceText::from(after),
+                (labels, TakesSnippets(false)),
+            )
+            .into_iter()
+            .filter(|item| item.kind != CompletionItemKind::KEYWORD)
+            .map(|item| {
+                (
+                    item.label,
+                    item.detail,
+                    item.label_details
+                        .map(|beside| (beside.detail, beside.description)),
+                )
+            })
+            .collect::<Vec<_>>()
         };
         let at = |marker: &str, labels: LabelsDetailed| {
             let (before, after) = cut(SourceText::from(marker));
@@ -858,6 +1023,8 @@ mod tests
                     label: String::from(label),
                     kind,
                     sort_text: String::from("0"),
+                    insert_text_format: None,
+                    filter_text: None,
                     text_edit: TextEdit {
                         range: crate::position::Range::default(),
                         new_text: String::from(label),
