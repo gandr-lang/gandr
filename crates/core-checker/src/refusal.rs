@@ -173,9 +173,6 @@ pub enum CheckingForm
     List(ValueId),
     /// A sum case or a list case is checked against a common result type.
     Case(ComputationId),
-    /// A split is checked against its body's type, which may read the
-    /// components it binds.
-    Split(ComputationId),
     /// A thunk value.
     Thunk(ValueId),
     /// A lambda.

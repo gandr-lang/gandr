@@ -205,19 +205,21 @@
 //! computations, which needs the linearity discipline the core does not have.
 //! Either reverses only with that discipline.
 //!
-//! # A split checks, and a split under a motive synthesises
+//! # A split takes its body's type, and a split under a motive its motive's
 //!
 //! A split's scrutinee synthesises a product of exactly the split's arity, the
-//! unit for a split of none, and its body checks against the expected type
-//! under one binder per component, component zero outermost, each typed by its
-//! component shifted past the binders before it; the expected type is shifted
-//! past all of them. A split of another arity or of anything but a product is a
-//! `ShapeMismatch` wanting a product, at the scrutinee. A split in synthesis
-//! position is `NotSynthesisable`, the checking form `CheckingForm::Split`: its
-//! body's type may read the components it binds, and strengthening them out is
-//! the bind's rule, not this one.
-//! `judgement::tests::a_split_binds_every_component_of_its_product` asserts
-//! each arm.
+//! unit for a split of none, and its body is judged under one binder per
+//! component, component zero outermost, each typed by its component shifted
+//! past the binders before it. Checked, the body checks against the expected
+//! type shifted past all of them. Synthesised, the body's type is strengthened
+//! out from under them, as a bind's is, and a type that reads a component is
+//! the bind's refusal, `DependentBind`, at the split. A split of another arity
+//! or of anything but a product is a `ShapeMismatch` wanting a product, at the
+//! scrutinee. A statement `e;` is a split of its unit result, so it synthesises
+//! wherever what follows it does.
+//! `judgement::tests::a_split_binds_every_component_of_its_product` and
+//! `judgement::tests::a_split_synthesises_its_body_type_outside_its_binders`
+//! assert each arm.
 //!
 //! A split under a motive is the dependent pair's eliminator. Its scrutinee
 //! synthesises `Σ (x : A). B` and its arity is two; the motive `C`, written
@@ -1916,11 +1918,19 @@ enum Frame
         at: ComputationId,
         /// The scrutinee.
         scrutinee: ValueId,
-        /// The body's type, outside the split's binders.
-        expected: CompTypeId,
+        /// The direction the body is judged in: synthesised, or checked
+        /// against a type outside the split's binders.
+        direction: Direction<CompTypeId>,
     },
-    /// Await the split body's check, then close one binder per component.
-    SplitBody(gandr_core_term::ComponentCount),
+    /// Await the split body's judgement, then close one binder per component;
+    /// a synthesised type is strengthened past them first.
+    SplitBody
+    {
+        /// The split.
+        at: ComputationId,
+        /// Its component count: the binders the body is judged under.
+        arity: gandr_core_term::ComponentCount,
+    },
     /// Once the previous branch has checked, check `branch` under a binder of
     /// its summand.
     CaseBranch
@@ -2387,7 +2397,7 @@ impl Frame
             Self::TelescopeOver { .. } => FrameRole::TelescopeOver,
             Self::CaseScrutinee { .. } => FrameRole::CaseScrutinee,
             Self::SplitScrutinee { .. } => FrameRole::SplitScrutinee,
-            Self::SplitBody(_) => FrameRole::SplitBody,
+            Self::SplitBody { .. } => FrameRole::SplitBody,
             Self::CaseBranch { .. } => FrameRole::CaseBranch,
             Self::ListCaseScrutinee { .. } => FrameRole::ListCaseScrutinee,
             Self::ListCaseNil { .. } => FrameRole::ListCaseNil,
@@ -2471,7 +2481,7 @@ impl Frame
     /// - hypothesis: L3 — a refusal under a bind attributes its one hypothesis
     ///   to the bind body; a miscount drops or misplaces it.
     /// - witness: `judgement::tests::a_refusal_under_a_bind_keeps_its_hypothesis`
-    #[spec(ensures: |ret| usize::from(ret) <= 2 || matches!(self, Self::SplitBody(_)))]
+    #[spec(ensures: |ret| usize::from(ret) <= 2 || matches!(self, Self::SplitBody { .. }))]
     fn opens(self) -> BinderDepth
     {
         BinderDepth::from(match self {
@@ -2485,7 +2495,7 @@ impl Frame
             | Self::ScopeSubject { .. }
             | Self::LetaBody { .. } => 1_usize,
             Self::HandlerClause { .. } | Self::ListCaseCons => 2_usize,
-            Self::SplitBody(arity) => usize::from(arity),
+            Self::SplitBody { arity, .. } => usize::from(arity),
             Self::NativeNext(_)
             | Self::NativeYield(_)
             | Self::NativeCollect
@@ -2999,7 +3009,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::TelescopeOver { .. }
                 | Frame::CaseScrutinee { .. }
                 | Frame::SplitScrutinee { .. }
-                | Frame::SplitBody(_)
+                | Frame::SplitBody { .. }
                 | Frame::CaseBranch { .. }
                 | Frame::ListCaseScrutinee { .. }
                 | Frame::ListCaseNil { .. }
@@ -5403,11 +5413,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             Computation::Split {
+                scrutinee,
                 motive: SplitMotive::Ambient,
                 ..
-            } => Err(CheckRefusal::NotSynthesisable {
-                form: CheckingForm::Split(term),
-            }),
+            } => {
+                self.wait(Frame::SplitScrutinee {
+                    at: term,
+                    scrutinee,
+                    direction: Direction::Synthesise,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: scrutinee,
+                    direction: Direction::Synthesise,
+                }))
+            },
             Computation::Session(_) => self.session(term, Direction::Synthesise),
             Computation::Memory(_) => self.memory(term, Direction::Synthesise),
             Computation::World(_) => self.world(term, Direction::Synthesise),
@@ -5656,7 +5675,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.wait(Frame::SplitScrutinee {
                     at: term,
                     scrutinee,
-                    expected,
+                    direction: Direction::Check(expected),
                 });
                 Ok(Step::Descend(Goal::Value {
                     term: scrutinee,
@@ -8058,18 +8077,35 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Frame::SplitScrutinee {
                     at,
                     scrutinee,
-                    expected,
+                    direction,
                 },
                 Produced::ValueType(classifier),
             ) => {
                 let classifier = classifier.settle(self.context.arena_mut());
-                self.split(at, scrutinee, classifier, expected)
+                self.split(at, scrutinee, classifier, direction)
             },
-            (Frame::SplitBody(arity), Produced::Checked) => {
+            (Frame::SplitBody { arity, .. }, Produced::Checked) => {
                 for _ in 0_usize .. usize::from(arity) {
                     self.close()?;
                 }
                 Ok(Step::Ascend(Produced::Checked))
+            },
+            (Frame::SplitBody { at, arity }, Produced::CompType(synthesised)) => {
+                // Every binder stays open until the type has left them all, so a
+                // refusal attributes each to this frame.
+                let mut lowered = synthesised;
+                for _ in 0_usize .. usize::from(arity) {
+                    let Maybe::Present(outer) =
+                        strengthen_comp_type(self.context.arena_mut(), lowered)
+                    else {
+                        return Err(CheckRefusal::DependentBind { at, synthesised });
+                    };
+                    lowered = outer.settle(self.context.arena_mut());
+                }
+                for _ in 0_usize .. usize::from(arity) {
+                    self.close()?;
+                }
+                Ok(Step::Ascend(Produced::CompType(lowered)))
             },
             (
                 Frame::CaseBranch {
@@ -8626,7 +8662,6 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::CaseBranch { .. }
                 | Frame::ListCaseNil { .. }
                 | Frame::ListCaseCons
-                | Frame::SplitBody(_)
                 | Frame::ApplicationArgument { .. }
                 | Frame::LambdaBody
                 | Frame::FormBinder
@@ -8671,21 +8706,21 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::NativeProjection(_),
                 _,
             )
-            | (Frame::BindBody { .. }, Produced::ValueType(_))
+            | (Frame::BindBody { .. } | Frame::SplitBody { .. }, Produced::ValueType(_))
             | (Frame::ReturnValue, Produced::CompType(_)) => Err(CheckRefusal::MachineInvariant),
         }
     }
     /// Open one binder per component of the split `at`'s scrutinee, whose
-    /// classifier is `classifier`, and check its body against `expected`.
+    /// classifier is `classifier`, and judge its body in `direction`.
     ///
     /// # Specification
     /// - requires: `at` is a split of `scrutinee`, and `classifier` its
     ///   synthesised type.
     /// - ensures: one binder per component is open, component zero outermost,
     ///   each typed by its component shifted past the binders before it, and
-    ///   the body is the next goal, checked against `expected` shifted past all
-    ///   of them; a split of no components checks its body against `expected`
-    ///   itself.
+    ///   the body is the next goal, synthesised, or checked against the
+    ///   expected type shifted past all of them; a split of no components
+    ///   checks its body against the expected type itself.
     /// - fails: [`CheckRefusal::ShapeMismatch`] at the scrutinee, wanting a
     ///   product, for a classifier that is no product or a product of another
     ///   arity; the unfolding's refusal.
@@ -8697,14 +8732,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Adequacy
     /// - hypothesis: L3 — a split reading each of three components, a split of
     ///   the unit, a split of another arity and a split of a non-product
-    ///   separate the binder order, the shift and both refusals.
+    ///   separate the binder order, the shift and both refusals; a split
+    ///   synthesising its body's type, and one whose body's type mentions a
+    ///   component, separate the strengthening past the binders from its
+    ///   refusal.
     /// - witness: `judgement::tests::a_split_binds_every_component_of_its_product`
-    ///
-    /// # Judgement
-    /// - expected: `expected`
+    /// - witness: `judgement::tests::a_split_synthesises_its_body_type_outside_its_binders`
     #[spec(
         captures: before = usize::from(self.context.depth(Zone::Intuitionistic)),
-        ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(Goal::Computation { .. })))
+        ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(Goal::Computation { direction: judged, .. }))
+                if matches!((direction, judged), (Direction::Synthesise, Direction::Synthesise) | (Direction::Check(_), Direction::Check(_))))
             && self.context.arena().computation(at).is_some_and(|node| matches!(*node,
                 Computation::Split { arity, .. } if usize::from(self.context.depth(Zone::Intuitionistic)) == before.saturating_add(usize::from(arity))))),
     )]
@@ -8713,7 +8750,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         at: ComputationId,
         scrutinee: ValueId,
         classifier: ValueTypeId,
-        expected: CompTypeId,
+        direction: Direction<CompTypeId>,
     ) -> Result<Step, CheckRefusal>
     {
         let Some(&Computation::Split { arity, body, .. }) = self.context.arena().computation(at)
@@ -8730,8 +8767,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
             });
         }
         let binders = u32::try_from(count).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
-        let expected = shift_comp_type(self.context.arena_mut(), expected, Binders::from(binders))
-            .settle(self.context.arena_mut());
+        let judged = match direction {
+            Direction::Synthesise => Direction::Synthesise,
+            Direction::Check(expected) => {
+                let arena = self.context.arena_mut();
+                Direction::Check(
+                    shift_comp_type(arena, expected, Binders::from(binders)).settle(arena),
+                )
+            },
+        };
         for (index, shift) in (0_u32 .. binders).enumerate() {
             let component = match components {
                 Components::Known(ref parts) => {
@@ -8744,10 +8788,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     .settle(self.context.arena_mut());
             self.context.binders().open(Zone::Intuitionistic, component);
         }
-        self.wait(Frame::SplitBody(arity));
+        self.wait(Frame::SplitBody { at, arity });
         Ok(Step::Descend(Goal::Computation {
             term: body,
-            direction: Direction::Check(expected),
+            direction: judged,
         }))
     }
 

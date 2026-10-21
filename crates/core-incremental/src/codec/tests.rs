@@ -2631,7 +2631,6 @@ fn every_refusal() -> Vec<Refusal>
             Form::Reset(at),
             Form::Shift(at),
             Form::With(at),
-            Form::Split(at),
             Form::Nested(at),
             Form::Offer(at),
             Form::Scope(at),

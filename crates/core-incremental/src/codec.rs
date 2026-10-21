@@ -6312,10 +6312,6 @@ where
                     writer.tag(Tag(6));
                     write_site(writer, site)?;
                 },
-                Form::Split(site) => {
-                    writer.tag(Tag(14));
-                    write_site(writer, site)?;
-                },
                 Form::Nested(site) => {
                     writer.tag(Tag(15));
                     write_site(writer, site)?;
@@ -6896,7 +6892,6 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 11 => Form::Reset(read_site(reader)?),
                 12 => Form::Shift(read_site(reader)?),
                 13 => Form::With(read_site(reader)?),
-                14 => Form::Split(read_site(reader)?),
                 15 => Form::Nested(read_site(reader)?),
                 16 => Form::Offer(read_site(reader)?),
                 17 => Form::Scope(read_site(reader)?),
