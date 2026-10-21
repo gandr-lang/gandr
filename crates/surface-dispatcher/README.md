@@ -42,6 +42,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `Script`, `ScriptRun`, `Ran`, `execute` and `run_source`: the run verb.
 - `ProgramSpec`, `SpecError`, `Staging`, `StageRun`, `Staged`, `StageFault`, `StageVerdict`, `PoolFault` and `RunDigest`: the stage verb.
 - `Formatting`, `FormatStep`, `FormatFault`, `Rewrite` and `walk_step::Absent`: the format verb, and why its traversal reaches nothing further.
+- `Generations`, `Watch`, `Retired`, `Submitted`, `Delivered`, `delivery::Absent`: keyed jobs on the pool; a newer key retires a slot's older generation ([generation](src/generation.rs)).
 - The corpus's two roots, run through the walk, and their witnesses: [`src/lib.rs`](src/lib.rs) § The corpus runs through the walk.
 
 Each nontrivial operation states an executable contract or a local exemption, plus a bounded adequacy claim pointing to its witnesses. The boundary evidence includes:

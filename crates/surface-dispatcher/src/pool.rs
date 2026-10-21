@@ -260,6 +260,38 @@ impl Pool
             Err(ref fault) => Err(fault.clone()),
         }
     }
+
+    /// The threads standing work is spawned on, whatever its count.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: at two threads or more, the started pool.
+    /// - provides: [`alone::Absent::Serial`] at one thread and
+    ///   [`alone::Absent::Refused`] when the host refused the pool's threads;
+    ///   the work then runs on the calling thread.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a submission at one thread runs on the caller, and
+    ///   one on four threads runs beside it.
+    /// - witness: `generation::tests::a_serial_pool_runs_each_job_on_the_caller`
+    /// - witness: `generation::tests::a_conflicting_submission_retires_the_older_generation`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(alone::Absent::Serial)) == (self.width.threads() == Threads::ONE))]
+    pub(crate) fn standing(&self) -> Maybe<&rayon::ThreadPool, alone::Absent>
+    {
+        match *self.started() {
+            Ok(Started {
+                pool: Maybe::Present(ref pool),
+                ..
+            }) => Maybe::Present(pool),
+            Ok(Started {
+                pool: Maybe::Absent(_),
+                ..
+            }) => Maybe::Absent(alone::Absent::Serial),
+            Err(_) => Maybe::Absent(alone::Absent::Refused),
+        }
+    }
 }
 
 /// Where a staged check's jobs run.
