@@ -11041,9 +11041,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.inherited
                 .iter()
                 .filter(|&(position, _)| owns(position))
-                .filter_map(|(_, inherited)| match *inherited {
+                .filter_map(|(position, inherited)| match *inherited {
                     native::Classifier::Written(written) => Some(written),
-                    native::Classifier::Answered { .. }
+                    // A field's declared type is read where a constructor
+                    // classified by it waits for the constructor around it.
+                    native::Classifier::Field(native::FieldOf { declared, .. })
+                        if self.awaiting.contains(position) =>
+                    {
+                        Some(declared)
+                    },
+                    native::Classifier::Field(_)
+                    | native::Classifier::Answered { .. }
                     | native::Classifier::Slot(_)
                     | native::Classifier::Inserted => None,
                 }),
@@ -11230,10 +11238,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   capture [`Self::unwind`] writes, and that capture recorded as the
     ///   exit; a `break`'s returner is recorded as a break; a loop end written
     ///   without an exit is bound and its loop run again, as [`Self::rerun`]
-    ///   writes it; a constructor awaiting its data family's application is
-    ///   left for that application, which mints it first; a node with no plan,
-    ///   or whose plan was carried out, or under a refused declaration outside
-    ///   a payload, is left as it is.
+    ///   writes it; a constructor awaiting its data family's application, or
+    ///   the constructor a field it stands in belongs to, is left for that
+    ///   node, which mints it first; a node with no plan, or whose plan was
+    ///   carried out, or under a refused declaration outside a payload, is left
+    ///   as it is.
     /// - provides: the per-position half of [`Self::mint`].
     /// - fails: never.
     /// - panics: none.
@@ -11281,21 +11290,77 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return;
         }
         // A constructor classified by its place in a data family's application
-        // waits for the application, which mints it once every argument
+        // waits for the application, and one classified by a field for the
+        // constructor the field belongs to: each mints it once everything
         // before it is minted.
         if self.awaiting.contains(&position) {
             return;
         }
-        if let Some(&Plan::Data(_, arguments)) = self.plans.get(usize::from(position)) {
-            for place in arguments.start .. arguments.end {
-                if let Some(&argument) = self.operands.get(place)
-                    && self.awaiting.remove(&argument)
-                {
-                    self.mint_planned(argument, sink);
+        self.mint_released(position, sink);
+    }
+
+    /// Mint the node at `position` after each constructor waiting on it.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::mint_planned`], but for the constructors that
+    ///   wait on the node.
+    /// - ensures: each argument of a data family's application and each field
+    ///   of a constructor that waits on it minted first, left to right, each
+    ///   after the constructors waiting on it in turn; then the node, as
+    ///   [`Self::mint_planned`].
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the order is the claim, and the minted nodes keep
+    ///   no record of it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor written as a family's argument, and one
+    ///   written in a field typed by its family's parameter, each minted before
+    ///   the node it waits on.
+    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
+    /// - witness: `lower::native::tests::a_field_classifies_the_constructor_written_in_it_1171`
+    fn mint_released(
+        &mut self,
+        position: NodeIndex,
+        sink: &mut Sink<'_>,
+    )
+    {
+        // A node something waits on is visited twice: first to queue the
+        // constructors waiting on it, leftmost on top, then, once those are
+        // minted, to mint it. A node nothing waits on, nearly every node, is
+        // minted at once, and the queue allocates only when something waits.
+        let mut work: Vec<(NodeIndex, bool)> = Vec::new();
+        let mut next = Some((position, false));
+        while let Some((at, released)) = next {
+            let waiting = match self.plans.get(usize::from(at)) {
+                Some(&Plan::Data(_, arguments)) if !released => Some(arguments),
+                Some(&Plan::Constructor(constructed)) if !released => Some(constructed.fields),
+                Some(_) | None => None,
+            };
+            let waited = waiting.is_some_and(|waiting| {
+                stretch(&self.operands, waiting)
+                    .iter()
+                    .any(|operand| self.awaiting.contains(operand))
+            });
+            if let (true, Some(waiting)) = (waited, waiting) {
+                work.push((at, true));
+                let first = work.len();
+                for place in waiting.start .. waiting.end {
+                    if let Some(&operand) = self.operands.get(place)
+                        && self.awaiting.remove(&operand)
+                    {
+                        work.push((operand, false));
+                    }
+                }
+                if let Some(queued) = work.get_mut(first ..) {
+                    queued.reverse();
                 }
             }
+            else {
+                self.mint_planned(at, sink);
+            }
+            next = work.pop();
         }
-        self.mint_planned(position, sink);
     }
 
     /// Mint the node at `position` by its plan, once, whatever declaration or

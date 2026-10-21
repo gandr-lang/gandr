@@ -982,9 +982,39 @@ pub(super) enum Classifier
     /// The constructor is written as an argument of a data family: the
     /// family's parameter at its place, under the arguments before it.
     Slot(Argued),
+    /// The constructor is written in a field of another: the field's declared
+    /// type, read under the family's parameters and the fields before it, with
+    /// those replaced by the arguments of the other's classifier and the fields
+    /// it is written with.
+    Field(FieldOf),
     /// The family's one classifier, which the lowering inserts: the family
     /// has no parameters.
     Inserted,
+}
+
+/// A field of a written constructor, as [`Classifier::Field`] reads it.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `around` is the constructor's node and `declared` the field's
+///   declared type, read under the family's `parameters` and the `index` fields
+///   before it.
+/// - executable: none — the coordinates hold no tree to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Classifier::Field`].
+/// - witness: `lower::native::tests::a_field_classifies_the_constructor_written_in_it_1171`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct FieldOf
+{
+    /// The constructor the field belongs to.
+    pub around: NodeIndex,
+    /// The field's declared type.
+    pub declared: NodeIndex,
+    /// How many parameters the family declares.
+    pub parameters: usize,
+    /// The field's place among its constructor's fields.
+    pub index: usize,
 }
 
 /// A form with its parentheses stripped, as [`Lowerer::unwrapped`] reads it.
@@ -1942,7 +1972,15 @@ impl<'source> Lowerer<'_, 'source>
                 let _first = self.awaiting.insert(site.at.node);
                 Classifier::Slot(argued)
             },
-            (None, None, None, Some(&inherited)) => inherited,
+            (None, None, None, Some(&inherited)) => {
+                // A field's classifier reads the constructor around it, which
+                // mints this one once that classifier and the fields before
+                // it are.
+                if let Classifier::Field(_) = inherited {
+                    let _first = self.awaiting.insert(site.at.node);
+                }
+                inherited
+            },
             (None, None, None, None) => return Err(site.out(FragmentBoundary::Unannotated)),
         };
         let family = self
@@ -1953,8 +1991,19 @@ impl<'source> Lowerer<'_, 'source>
         for (index, position) in (fields.start .. fields.end).enumerate() {
             if let Some(&field) = self.operands.get(position) {
                 self.read(field, Reading::Value(frame));
-                if let Generators::Written(form) = constructor.form
-                    && classifier != Classifier::Inserted
+                // Only a constructor written in the field, bare or applied,
+                // reads the classifier the field gives.
+                let constructed = self.tree.node(field).is_some_and(|node| {
+                    matches!(
+                        shape_of(self.pbg, node),
+                        Ok(Shape::Form {
+                            former: Former::Constructor | Former::Call,
+                            ..
+                        })
+                    )
+                });
+                if constructed
+                    && let Generators::Written(form) = constructor.form
                     && let Maybe::Present(inherited) = self.field_classifier(
                         FieldAt {
                             form,
@@ -1962,6 +2011,7 @@ impl<'source> Lowerer<'_, 'source>
                             index,
                         },
                         classifier,
+                        site.at.node,
                     )?
                 {
                     let _first = self.inherited.insert(field, inherited);
@@ -1981,17 +2031,21 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// The classifier the field `at` names takes from its constructor's,
+    /// The classifier the field `at` of the constructor written at `around`
+    /// gives a constructor written in it, from the constructor's own,
     /// `classifier`.
     ///
     /// # Specification
     /// - requires: `at.form` and `at.tag` name a generator the collection read.
-    /// - ensures: `classifier` itself when the field's written type, its
-    ///   parentheses stripped, is the family applied to its own parameters in
-    ///   order, or the family bare when it has none; the argument a written
-    ///   classifier, an application of the family, gives the parameter when the
-    ///   field's type is that parameter; the unclassified absence otherwise,
-    ///   and whenever a field before it binds a parameter's name.
+    /// - ensures: while no field before it binds a parameter's name,
+    ///   `classifier` itself when the field's written type, its parentheses
+    ///   stripped, is the family applied to its own parameters in order, or the
+    ///   family bare when it has none, and the argument a written classifier,
+    ///   an application of the family, gives the parameter when the field's
+    ///   type is that parameter; otherwise the field's declared type with the
+    ///   family's parameters and the fields before it replaced, a
+    ///   [`Classifier::Field`]; the unclassified absence when `at` names no
+    ///   field.
     /// - provides: the classifier a constructor written in a field takes.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
     ///   allowance; the refusals the tree's molds yield.
@@ -2001,10 +2055,15 @@ impl<'source> Lowerer<'_, 'source>
     /// The walk's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a list's tail and head, written and answered.
+    /// - hypothesis: L3 — a list's tail and head, written and answered; a field
+    ///   typed by another family over a closed type, and over the family's
+    ///   parameter.
     /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
+    /// - witness: `lower::native::tests::a_field_classifies_the_constructor_written_in_it_1171`
     #[spec(ensures: |ret| match ret {
-        | Ok(Maybe::Present(found)) => found == classifier || matches!(found, Classifier::Written(_)),
+        | Ok(Maybe::Present(found)) => found == classifier
+            || matches!(found, Classifier::Written(_))
+            || matches!(found, Classifier::Field(of) if of.around == around),
         | Ok(Maybe::Absent(_)) | Err(_) => true,
     })]
     #[cfg_attr(
@@ -2018,6 +2077,7 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         at: FieldAt,
         classifier: Classifier,
+        around: NodeIndex,
     ) -> Result<Maybe<Classifier, inherited::Absent>, LoweringRefusal<'source>>
     {
         let unclassified = Maybe::Absent(inherited::Absent::Unclassified);
@@ -2033,6 +2093,13 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(unclassified);
         };
+        let declared = field.ty.node;
+        let substituted = Maybe::Present(Classifier::Field(FieldOf {
+            around,
+            declared,
+            parameters: data.parameters.len(),
+            index: at.index,
+        }));
         let named: Vec<SurfaceName<'source>> = data
             .parameters
             .iter()
@@ -2044,16 +2111,16 @@ impl<'source> Lowerer<'_, 'source>
             matches!(earlier.named, Maybe::Present(binder) if named.contains(&self.name_at(binder)))
         });
         if shadowed {
-            return Ok(unclassified);
+            return Ok(substituted);
         }
         let family = self
             .collected
             .slots
             .get(usize::from(data.slot))
             .map(|slot| slot.name);
-        let Maybe::Present(typed) = self.unwrapped(field.ty.node)?
+        let Maybe::Present(typed) = self.unwrapped(declared)?
         else {
-            return Ok(unclassified);
+            return Ok(substituted);
         };
         let spelled = |lowerer: &Self, node: NodeIndex| {
             SurfaceName::from(
@@ -2080,23 +2147,20 @@ impl<'source> Lowerer<'_, 'source>
         if uniform {
             return Ok(Maybe::Present(classifier));
         }
-        let Some(parameter) = named.iter().position(|name| *name == own)
+        let (Some(parameter), Classifier::Written(written)) =
+            (named.iter().position(|name| *name == own), classifier)
         else {
-            return Ok(unclassified);
-        };
-        let Classifier::Written(written) = classifier
-        else {
-            return Ok(unclassified);
+            return Ok(substituted);
         };
         let Maybe::Present(applied) = self.unwrapped(written)?
         else {
-            return Ok(unclassified);
+            return Ok(substituted);
         };
         Ok(match applied.operands.get(parameter) {
             Some(&argument) if applied.former == Former::TypeApplication => {
                 Maybe::Present(Classifier::Written(argument))
             },
-            Some(_) | None => unclassified,
+            Some(_) | None => substituted,
         })
     }
 
@@ -5918,8 +5982,68 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
+        let classifier =
+            match self.classifier_type(constructed.classifier, constructed.family, sink, origin) {
+                Maybe::Present(id) => id,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+        let id = sink
+            .arena
+            .value_constructor(classifier, constructed.tag, fields);
+
+        Maybe::Present(sink.value(id, origin))
+    }
+
+    /// The value type `classifier` names for a constructor of the family
+    /// `family`, minted in the term context of the constructor's frame.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::mint_constructor`]; for a field's classifier, the
+    ///   field's declared type, the constructor it belongs to, that
+    ///   constructor's classifier and its fields before the field are minted or
+    ///   absent.
+    /// - ensures: the annotation's type — or the type a family's argument
+    ///   quotes — carried into the term's binders; the value type the answer's
+    ///   returner returns carried from the answer's frame to the constructor's;
+    ///   for a slot, the family's parameter at the constructor's place with the
+    ///   parameters before it replaced by the arguments written for them; for a
+    ///   field, its declared type with the family's parameters replaced by the
+    ///   arguments of its constructor's classifier and the fields before it by
+    ///   the values written for them; or the family over no arguments; every
+    ///   node minted recorded at the classifier's inserted origin; nothing when
+    ///   a type or a value it reads did not lower, or the answer is no
+    ///   returner.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::construct`].
+    /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
+    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
+    /// - witness: `lower::native::tests::a_field_classifies_the_constructor_written_in_it_1171`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+    fn classifier_type(
+        &self,
+        classifier: Classifier,
+        family: ConstantIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
         let classified = origin.inserted(Insertion::Classifier);
-        let classifier = match constructed.classifier {
+        // A field's classifier reads the classifier of the constructor around
+        // it: follow those out to the first that is no field's.
+        let (mut classifier, mut family) = (classifier, family);
+        let mut fields = Vec::new();
+        while let Classifier::Field(field) = classifier {
+            let Some(&Plan::Constructor(outer)) = self.plans.get(usize::from(field.around))
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            fields.push(field);
+            (classifier, family) = (outer.classifier, outer.family);
+        }
+        let outermost = match classifier {
             Classifier::Written(written) => {
                 // A type written as a family's argument is read as its code;
                 // the classifier is the type it quotes.
@@ -5979,16 +6103,106 @@ impl<'source> Lowerer<'_, 'source>
                 result
             },
             Classifier::Inserted => {
-                let id = sink.arena.value_type_data(constructed.family, Vec::new());
+                let id = sink.arena.value_type_data(family, Vec::new());
                 sink.origins.record_value_type(id, classified);
                 id
             },
+            // The loop above leaves no field's classifier.
+            Classifier::Field(_) => return Maybe::Absent(lowered::Absent::Unminted),
         };
-        let id = sink
-            .arena
-            .value_constructor(classifier, constructed.tag, fields);
+        let mut ty = outermost;
+        for field in fields.into_iter().rev() {
+            ty = match self.field_type(field, ty, sink, origin) {
+                Maybe::Present(id) => id,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+        }
 
-        Maybe::Present(sink.value(id, origin))
+        Maybe::Present(ty)
+    }
+
+    /// The type `field` gives a constructor written in it, given `applied`,
+    /// the classifier of the constructor the field belongs to.
+    ///
+    /// # Specification
+    /// - requires: the field's declared type and the constructor's fields
+    ///   before it are minted or absent; `applied` is minted in the
+    ///   constructor's frame.
+    /// - ensures: the field's declared type with the family's parameters
+    ///   replaced by `applied`'s arguments and the fields before it by the
+    ///   values the constructor is written with, every node the substitution
+    ///   mints recorded at the classifier's inserted origin; nothing when the
+    ///   field's constructor plans no constructor, `applied` is no application
+    ///   of a family to at least the family's parameters, or a type or a value
+    ///   it reads did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a list written in a field typed `List(Integer)`, in
+    ///   one typed `List(a)` of a family applied to `Integer`, and in one
+    ///   naming the field before it.
+    /// - witness: `lower::native::tests::a_field_classifies_the_constructor_written_in_it_1171`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+    fn field_type(
+        &self,
+        field: FieldOf,
+        applied: ValueTypeId,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        let Some(&Plan::Constructor(outer)) = self.plans.get(usize::from(field.around))
+        else {
+            return unminted;
+        };
+        let Some(&gandr_core_term::ValueType::Data { ref arguments, .. }) =
+            sink.arena.value_type(applied)
+        else {
+            return unminted;
+        };
+        let mut environment: Vec<ValueId> =
+            arguments.iter().take(field.parameters).copied().collect();
+        if environment.len() != field.parameters {
+            return unminted;
+        }
+        for position in outer.fields.start .. outer.fields.start.saturating_add(field.index) {
+            let Some(&written) = self.operands.get(position)
+            else {
+                return unminted;
+            };
+            match self.value_at(written) {
+                Maybe::Present(value) => environment.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let declared = match self.value_type_at(field.declared) {
+            Maybe::Present(declared) => declared,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        // The innermost binder is the last field before this one.
+        environment.reverse();
+        let mark = sink.arena.watermark();
+        let code = sink.arena.value_quote(declared);
+        let mut carried = Vec::new();
+        let substituted = gandr_core_term::substitute_environment_traced(
+            sink.arena,
+            TermId::Value(code),
+            &environment,
+            &mut carried,
+        );
+        exits::record_copies(sink, mark, &carried, origin.inserted(Insertion::Classifier));
+        let TermId::Value(substituted) = substituted
+        else {
+            return unminted;
+        };
+        let Some(&Value::Quote(ty)) = sink.arena.value(substituted)
+        else {
+            return unminted;
+        };
+
+        Maybe::Present(ty)
     }
 
     /// The type a data family's application gives the argument at `argued`'s
