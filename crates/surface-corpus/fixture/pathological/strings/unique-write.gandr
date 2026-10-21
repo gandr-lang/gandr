@@ -1,0 +1,22 @@
+// The write that reads no holder count, kept from a string that may have been
+// copied: a grade-one hold takes only a string made where it stands, so a copy,
+// whose buffer the original holds too, is refused before any write reaches it.
+
+// The lists; the byte lists; the owned bytes; where they live; the long string,
+// its copy and the write that counts holders; the write that does not.
+import "../../model/data/data-base.gandr" ;
+import "../../model/strings/string-base.gandr" ;
+import "../../model/strings/nul-terminated.gandr" ;
+import "../../model/strings/small-string.gandr" ;
+import "../../model/strings/copy-on-write.gandr" ;
+import "../../model/strings/unique-write.gandr" ;
+
+/// A copy held at grade one: the copy shares its buffer with the string it was
+/// copied from, so the hold would hold a string another string holds.
+@[ refuses("HeldShared") ]
+def heldCopy() -> -F [Div] Integer {
+  run s <- force long ;
+  run c <- copy(s) ;
+  hold[1] h = c;
+  access h as v { run w <- pushInPlace(v, 33) ; run t <- written(w) ; resume(v, t) ; copies(w) }
+}
