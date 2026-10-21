@@ -64,7 +64,7 @@
 //!
 //! # One sort, chained
 //!
-//! `Theory` is one self-recursive sort of twenty-two constructors, in tag
+//! `Theory` is one self-recursive sort of twenty-three constructors, in tag
 //! order:
 //!
 //! | tag | constructor | fields |
@@ -91,6 +91,7 @@
 //! | 19 | `Const` | as `Oper`, for a constant |
 //! | 20 | `Nested` | as `Oper`, for a model of another theory |
 //! | 21 | `Inst` | a metavariable's name, its arguments |
+//! | 22 | `Atom` | as `Sort`, for an atom sort |
 //!
 //! Every list a presentation holds is a chain of its member constructor ended
 //! by `End`, and every name is a `String` field; an unnamed port carries the
@@ -134,6 +135,15 @@
 //! - **Reversal.** The typed split above, which re-keys every presentation
 //!   anyway, carries representability and binding as fields of its sort and
 //!   port families.
+//!
+//! # Atom sorts
+//!
+//! A sort declared `Atom` is an atom sort: orbit-infinite, with equality and
+//! swapping its only structure (Pitts, _Nominal Sets_, CUP 2013). It is an
+//! `Atom` member of the sort chain, appended to the table like `Inst`, so a
+//! presentation that declares none keeps the bytes it had. A port may sit at
+//! an atom sort; no operation's output does, which [`crate::check_desc`]
+//! refuses.
 //!
 //! # The shape parameter
 //!
@@ -280,7 +290,7 @@ use crate::wellformed::derive_cell_var_meta;
 
 /// The names of `Theory`'s constructors, in tag order: the names a program that
 /// matches on a presentation writes.
-pub const THEORY_CONSTRUCTORS: [&str; 22] = [
+pub const THEORY_CONSTRUCTORS: [&str; 23] = [
     "Presents",
     "End",
     "Sort",
@@ -303,11 +313,12 @@ pub const THEORY_CONSTRUCTORS: [&str; 22] = [
     "Const",
     "Nested",
     "Inst",
+    "Atom",
 ];
 
 /// Each constructor of `Theory`, in tag order, with its count of `String`
 /// fields, which come first, and its count of recursive fields after them.
-const CONSTRUCTORS: [(&str, usize, usize); 22] = [
+const CONSTRUCTORS: [(&str, usize, usize); 23] = [
     (THEORY_CONSTRUCTORS[0], 0, 3),
     (THEORY_CONSTRUCTORS[1], 0, 0),
     (THEORY_CONSTRUCTORS[2], 1, 2),
@@ -330,6 +341,7 @@ const CONSTRUCTORS: [(&str, usize, usize); 22] = [
     (THEORY_CONSTRUCTORS[19], 1, 3),
     (THEORY_CONSTRUCTORS[20], 1, 3),
     (THEORY_CONSTRUCTORS[21], 1, 1),
+    (THEORY_CONSTRUCTORS[22], 1, 2),
 ];
 
 /// One constructor of `Theory`, by its tag.
@@ -380,6 +392,8 @@ enum Tag
     Nested,
     /// A metavariable's instantiation.
     Inst,
+    /// An atom sort and the rest of the sorts.
+    Atom,
 }
 
 impl Tag
@@ -414,11 +428,12 @@ impl Tag
             Self::Const => 19,
             Self::Nested => 20,
             Self::Inst => 21,
+            Self::Atom => 22,
         })
     }
 }
 
-/// The description of `Theory`, one data sort of twenty-two constructors.
+/// The description of `Theory`, one data sort of twenty-three constructors.
 ///
 /// The constructors stand in the order the module documentation tables; every
 /// name is a `String` field and every other field a recursive occurrence.
@@ -427,11 +442,11 @@ impl Tag
 /// - ensures: no parameters, one data sort `Theory`, and the constructors
 ///   `Presents`, `End`, `Sort`, `Oper`, `Port`, `Rule`, `Var`, `App`, `Con`,
 ///   `Tuple`, `Arg`, `Representable`, `Bound`, `Shape`, `Face`, `Obs`,
-///   `Turned`, `Derived`, `Rank`, `Const`, `Nested` and `Inst` in that order,
-///   each at the result sort `Theory`; a constructor's `String` fields carry
-///   `grade` and come first, three for `Derived`, two for `Port`, `Bound`,
-///   `Shape`, `Face` and `Rank` and one for every other constructor that names
-///   something, and its remaining fields are `Theory`.
+///   `Turned`, `Derived`, `Rank`, `Const`, `Nested`, `Inst` and `Atom` in that
+///   order, each at the result sort `Theory`; a constructor's `String` fields
+///   carry `grade` and come first, three for `Derived`, two for `Port`,
+///   `Bound`, `Shape`, `Face` and `Rank` and one for every other constructor
+///   that names something, and its remaining fields are `Theory`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1089,11 +1104,12 @@ impl TheoryValue
     /// - ensures: the root is `Presents` over the sort, operation and rule
     ///   chains, each member in order, a shape as a `Shape` at the head of the
     ///   sort chain over its `Face` chain, a representable sort as
-    ///   `Representable` and a port with binders as `Bound`; the rule chain
-    ///   holds each written rule as a `Turned` where `certificate` turns it and
-    ///   a `Rule` otherwise, then each derived rule as a `Derived`, then each
-    ///   rank as a `Rank`. [`Self::decode`] reads `parts` back and
-    ///   [`Self::certificate`] the certificate, its turns one per written rule.
+    ///   `Representable`, an atom sort as `Atom` and a port with binders as
+    ///   `Bound`; the rule chain holds each written rule as a `Turned` where
+    ///   `certificate` turns it and a `Rule` otherwise, then each derived rule
+    ///   as a `Derived`, then each rank as a `Rank`. [`Self::decode`] reads
+    ///   `parts` back and [`Self::certificate`] the certificate, its turns one
+    ///   per written rule.
     /// - panics: none.
     /// - intension: every chain is folded from its end and every term built
     ///   from a post-order worklist, so no step recurses.
@@ -1112,6 +1128,7 @@ impl TheoryValue
     /// - witness: `theory::tests::a_presentation_encodes_to_its_exact_identity_bytes`
     /// - witness: `theory::tests::a_second_order_presentation_encodes_its_binders`
     /// - witness: `theory::tests::a_shaped_presentation_codes_its_faces`
+    /// - witness: `theory::tests::an_atom_sort_takes_its_own_tag`
     #[inline]
     #[must_use]
     #[spec(
@@ -1129,6 +1146,7 @@ impl TheoryValue
             let tag = match sort.representability {
                 Representability::Ordinary => Tag::Sort,
                 Representability::Representable => Tag::Representable,
+                Representability::Atom => Tag::Atom,
             };
             sorts = value(tag, vec![leaf(&sort.name), rec(indices), rec(sorts)]);
         }
@@ -1257,6 +1275,7 @@ impl TheoryValue
     /// - witness: `theory::tests::a_value_outside_the_grammar_is_refused_by_name`
     /// - witness: `theory::tests::a_binder_outside_an_operation_port_is_misplaced`
     /// - witness: `theory::tests::a_shaped_presentation_codes_its_faces`
+    /// - witness: `theory::tests::an_atom_sort_takes_its_own_tag`
     #[inline]
     #[spec(ensures: |ref ret| ret.is_err() || self.0.ctor == Tag::Presents.constructor())]
     pub fn decode(&self) -> Result<TheoryParts, TheoryFault>
@@ -1274,15 +1293,14 @@ impl TheoryValue
             at = nested(rest)?;
         }
         loop {
-            let representability = if at.ctor == Tag::Representable.constructor() {
-                Representability::Representable
+            let (representability, tag) = if at.ctor == Tag::Representable.constructor() {
+                (Representability::Representable, Tag::Representable)
+            }
+            else if at.ctor == Tag::Atom.constructor() {
+                (Representability::Atom, Tag::Atom)
             }
             else {
-                Representability::Ordinary
-            };
-            let tag = match representability {
-                Representability::Ordinary => Tag::Sort,
-                Representability::Representable => Tag::Representable,
+                (Representability::Ordinary, Tag::Sort)
             };
             let next = member::<3>(at, tag)?;
             let Maybe::Present([name, indices, rest]) = next
@@ -2277,9 +2295,9 @@ impl TheoryValue
                         .map(|index| SortIndex::new(index.name.clone(), spelled(index)))
                         .collect::<Vec<_>>(),
                 );
-                match sort.representability {
-                    Representability::Ordinary => family,
-                    Representability::Representable => family.representable(),
+                SortDesc {
+                    representability: sort.representability,
+                    ..family
                 }
             })
             .collect();

@@ -794,6 +794,7 @@ pub fn serialize_desc<G>(desc: &TheoryDesc<G>) -> SerializedDescText
         let universe = match sort.representability {
             crate::desc::Representability::Ordinary => "Type",
             crate::desc::Representability::Representable => "Type+",
+            crate::desc::Representability::Atom => "Atom",
         };
         members.push(format!("sort {}{telescope} : {universe}", sort.name));
     }
