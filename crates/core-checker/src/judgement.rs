@@ -6610,7 +6610,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             .collect();
         let context = &*self.context;
         let at = crate::quantified::instantiation(
-            context.arena(),
+            (context.arena(), context.stages()),
             (declared, &signature),
             &spine,
             |index| context.hypothesis(index),

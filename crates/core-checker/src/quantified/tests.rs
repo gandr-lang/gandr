@@ -311,6 +311,104 @@ fn a_call_at_no_stage_reads_its_result_plain()
     );
 }
 
+/// `boundedAt @[j : Size, k : Size, k < j] (x : Nat[j], y : Nat[k]) : F
+/// Nat[<j] = return y` at position 1.
+///
+/// # Specification
+/// trivial.
+fn bounded_at(arena: &mut CoreArena) -> Declaration
+{
+    let nat = nat(arena);
+    let at_j = arena.value_type_staged(nat, Stage::At(StageId::from(0_usize)));
+    let at_k = arena.value_type_staged(nat, Stage::At(StageId::from(1_usize)));
+    let below_j = arena.value_type_staged(nat, Stage::Below {
+        anchor: StageId::from(0_usize),
+        depth: StageDepth::from(core::num::NonZeroU32::MIN),
+    });
+    let returner = arena.comp_type_returner(below_j);
+    let inner = arena.comp_type_arrow(at_k, returner);
+    let outer = arena.comp_type_arrow(at_j, inner);
+    let declared = arena.value_type_thunk(outer);
+    let y = var(arena, DeBruijnIndex::from(0));
+    let returned = arena.computation_return(y);
+    let second = arena.computation_lambda(returned);
+    let first = arena.computation_lambda(second);
+    let body = arena.value_thunk(first);
+    define(ConstantIndex::from(1), declared, body).staged(vec![
+        StageBound::Unbounded,
+        StageBound::Below(StageBinder::from(0_usize)),
+    ])
+}
+
+/// `looping : U (Nat → F Nat) = fix h. λn. case n { Zero ⇒ return Zero ; Succ
+/// ⇒ λp. bind ((force boundedAt) p a) λq. (force h) q }` at position 2, `a`
+/// the variable `handed` under `p` 0, `n` 1, `h` 2.
+///
+/// # Specification
+/// trivial.
+fn looping(
+    arena: &mut CoreArena,
+    handed: DeBruijnIndex,
+) -> Declaration
+{
+    let nat = nat(arena);
+    let declared = function_of(arena, nat);
+    let returner = arena.comp_type_returner(nat);
+    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), vec![]);
+    let on_zero = arena.computation_return(zero);
+    let bounded = arena.value_constant(ConstantIndex::from(1));
+    let p = var(arena, DeBruijnIndex::from(0));
+    let handed = var(arena, handed);
+    let called = call(arena, bounded, &[p, handed]);
+    // Under λq: `q` 0, `h` 3.
+    let own = var(arena, DeBruijnIndex::from(3));
+    let q = var(arena, DeBruijnIndex::from(0));
+    let recursed = call(arena, own, &[q]);
+    let bound = arena.computation_bind(called, recursed);
+    let on_successor = arena.computation_lambda(bound);
+    let n = var(arena, DeBruijnIndex::from(0));
+    let case = arena.computation_data_case(n, returner, vec![on_zero, on_successor]);
+    let lambda = arena.computation_lambda(case);
+    let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
+    let body = arena.value_thunk(fixpoint);
+    define(ConstantIndex::from(2), declared, body)
+}
+
+#[test]
+fn a_bounded_binder_read_above_its_bound_is_refused_1241()
+{
+    // `boundedAt p n` reads `j` at `p`'s stage and `k` at `n`'s, which is not
+    // below it; `boundedAt p p` reads `k` at `j`'s own stage. Either would
+    // type its result below the recursion's stage and `h` would take it, so
+    // both are refused at the argument `k` is read off.
+    for (handed, read_off) in [(1_u32, 1_u32), (0, 0)] {
+        let mut arena = CoreArena::new();
+        let declarations = vec![
+            declare_nat(&mut arena),
+            bounded_at(&mut arena),
+            looping(&mut arena, DeBruijnIndex::from(handed)),
+        ];
+        let (verdicts, _) = judge(&mut arena, &declarations);
+        assert!(
+            matches!(verdicts[1], Verdict::Checked { .. }),
+            "{:?}",
+            verdicts[1]
+        );
+        assert!(
+            matches!(
+                verdicts[2],
+                Verdict::Refused(CheckRefusal::StageNotBelow { at, .. })
+                    if arena.value(at) == Some(&gandr_core_term::Value::Variable {
+                        zone: Zone::Intuitionistic,
+                        index: DeBruijnIndex::from(read_off),
+                    })
+            ),
+            "handing {handed}: {:?}",
+            verdicts[2]
+        );
+    }
+}
+
 #[test]
 fn a_bound_naming_a_later_binder_is_refused()
 {

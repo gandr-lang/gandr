@@ -3763,11 +3763,11 @@ where
                         let signature = entry.declaration().stages();
                         let declared = entry.declared_id();
                         let at = quantified::instantiation(
-                            arena,
+                            (arena, &stages),
                             context.as_slice(),
                             (declared, signature),
                             &arguments,
-                        );
+                        )?;
                         let staged = quantified::restaged(arena, declared, signature, &at)?;
                         let staged =
                             seal::unseal(arena, judgement.entries, judgement.manifest, staged)?;

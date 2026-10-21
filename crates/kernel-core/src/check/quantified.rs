@@ -33,6 +33,7 @@ use super::recursion::Part;
 use super::recursion::placed;
 use super::recursion::rebuild;
 use crate::error::KernelError;
+use crate::stage_order::Fit;
 use crate::stage_order::StageOrder;
 use crate::stage_order::below;
 
@@ -265,33 +266,42 @@ fn wrapped(
 ///
 /// # Specification
 /// - requires: `spine` holds the call's arguments, first applied first;
-///   `declared` is the thunk of the definition's arrows.
+///   `declared` is the thunk of the definition's arrows; `order` holds every
+///   stage the arguments' types name.
 /// - ensures: one entry per binder: a stage read off an argument, a bounded
 ///   binder no argument shows read one step below its bound's stage, and no
 ///   stage otherwise. A mark at `<i` reads `i` off an argument bound `<s` at
 ///   `s`, and off nothing at a stage itself.
-/// - fails: never.
+/// - fails: [`KernelError::StageNotBelow`] when `order` does not place the
+///   stage a bounded binder is read at off an argument below its bound's, where
+///   the body was checked with it.
 /// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a recursion's claim handed to a helper typed at a stage
 ///   instantiates it at the recursion's own; a call on a value at no stage
-///   instantiates nothing.
+///   instantiates nothing; a bounded binder read at its bound's own stage is
+///   refused.
 /// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
 /// - witness: `tests::quantified::a_call_at_no_stage_reads_its_result_plain`
-#[spec(ensures: |ret| ret.len() == signature.bounds().len())]
+/// - witness: `tests::quantified::a_bounded_binder_read_above_its_bound_is_refused_1241`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |read| read.len() == signature.bounds().len()))]
 pub(super) fn instantiation(
-    arena: &TermArena,
+    (arena, order): (&TermArena, &StageOrder),
     context: &[ValueTypeId],
     (declared, signature): (ValueTypeId, &StageSignature),
     spine: &[ValueId],
-) -> Vec<Maybe<Stage, Unread>>
+) -> Result<Vec<Maybe<Stage, Unread>>, KernelError>
 {
     let mut read: Vec<Maybe<Stage, Unread>> = signature
         .bounds()
         .iter()
         .map(|_| Maybe::Absent(Unread::Plain))
         .collect();
+    let mut shown: Vec<bool> = signature.bounds().iter().map(|_| false).collect();
     for mark in signature.marks() {
         let binder = usize::from(mark.binder());
         if !matches!(read.get(binder), Some(&Maybe::Absent(_))) {
@@ -338,17 +348,37 @@ pub(super) fn instantiation(
         if let Some(slot) = read.get_mut(binder) {
             *slot = instance;
         }
-    }
-    for (binder, &bound) in signature.bounds().iter().enumerate() {
-        if let StageBound::Below(over) = bound
-            && let Some(&Maybe::Absent(_)) = read.get(binder)
-            && let Some(&Maybe::Present(stage)) = read.get(usize::from(over))
-            && let Some(slot) = read.get_mut(binder)
-        {
-            *slot = Maybe::Present(below(stage));
+        if let Some(slot) = shown.get_mut(binder) {
+            *slot = true;
         }
     }
-    read
+    for (binder, &bound) in signature.bounds().iter().enumerate() {
+        let StageBound::Below(over) = bound
+        else {
+            continue;
+        };
+        let Some(&Maybe::Present(above)) = read.get(usize::from(over))
+        else {
+            continue;
+        };
+        match (read.get(binder), shown.get(binder)) {
+            (Some(&Maybe::Present(stage)), Some(&true)) => {
+                if order.fit(stage, below(above)) == Fit::NotBelow {
+                    return Err(KernelError::StageNotBelow {
+                        found: gandr_kernel_term::Standing::Staged(stage),
+                        bound: below(above),
+                    });
+                }
+            },
+            (Some(&Maybe::Absent(_)), _) => {
+                if let Some(slot) = read.get_mut(binder) {
+                    *slot = Maybe::Present(below(above));
+                }
+            },
+            (Some(&Maybe::Present(_)), Some(&false) | None) | (None, _) => {},
+        }
+    }
+    Ok(read)
 }
 
 /// The argument of `spine` whose domain a mark's path enters, and the rest of

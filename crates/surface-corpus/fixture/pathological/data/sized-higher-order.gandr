@@ -87,3 +87,16 @@ def rec halved_through_pred(n : Nat) -> -F Nat {
     Succ(p) => { run q <- pred(p); Succ(halved_through_pred[<](q)) }
   }
 }
+
+/// The number itself handed to `boundedAt` as its `k` beside its predecessor
+/// as its `j`: `k` would stand at the number's stage, not below `j`, and the
+/// result would type the number below its own stage for
+/// `looping_through_bound[<]` to take, recursing on the number forever. The
+/// call is refused where `k` is read (#1241).
+@[ refuses("StageNotBelow") ]
+def rec looping_through_bound(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(p) => { run q <- boundedAt(p, n); looping_through_bound[<](q) }
+  }
+}
