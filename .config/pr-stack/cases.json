@@ -186,6 +186,76 @@
     "output": "wait\t1349"
   },
   {
+    "name": "a pull request retargeted off a branch that lands on its own waits for it, though alone on main (#1420)",
+    "program": "decide.jq",
+    "input": {
+      "server": [{ "number": 1417, "head": "witness-storage-artifact" }],
+      "own": "witness-storage-artifact",
+      "queued": [],
+      "carried": [1415]
+    },
+    "output": "wait\t1415"
+  },
+  {
+    "name": "a bottom landing on its own retargets the pull request on its branch, not the one above that (#1420)",
+    "program": "retarget.jq",
+    "args": { "landing": [1415] },
+    "input": [
+      {
+        "number": 1415,
+        "head": "witness-storage-values",
+        "base": "main",
+        "created": "2026-10-21T11:00:00Z"
+      },
+      {
+        "number": 1417,
+        "head": "witness-storage-artifact",
+        "base": "witness-storage-values",
+        "created": "2026-10-21T11:30:00Z"
+      },
+      {
+        "number": 1418,
+        "head": "surface-module-types",
+        "base": "witness-storage-artifact",
+        "created": "2026-10-21T12:00:00Z"
+      }
+    ],
+    "output": "[{\"number\":1417,\"base\":\"witness-storage-values\"}]"
+  },
+  {
+    "name": "a stack landing whole retargets what stands on any of its branches outside it, and none of its own (#1420)",
+    "program": "retarget.jq",
+    "args": { "landing": [1262, 1258] },
+    "input": [
+      { "number": 1262, "head": "theory-solve", "base": "main", "created": "2026-10-21T03:50:00Z" },
+      {
+        "number": 1258,
+        "head": "pending-diag-1248",
+        "base": "theory-solve",
+        "created": "2026-10-21T04:00:00Z"
+      },
+      { "number": 1270, "head": "late", "base": "theory-solve", "created": "2026-10-21T05:00:00Z" },
+      {
+        "number": 1264,
+        "head": "triage-1264-stack-tasks",
+        "base": "pending-diag-1248",
+        "created": "2026-10-21T05:30:00Z"
+      },
+      { "number": 1240, "head": "chore-mise", "base": "main", "created": "2026-10-21T01:00:00Z" }
+    ],
+    "output": "[{\"number\":1264,\"base\":\"pending-diag-1248\"},{\"number\":1270,\"base\":\"theory-solve\"}]"
+  },
+  {
+    "name": "a landing with nothing on its branches retargets nothing (#1420)",
+    "program": "retarget.jq",
+    "args": { "landing": [1240] },
+    "input": [
+      { "number": 1240, "head": "chore-mise", "base": "main", "created": "2026-10-21T01:00:00Z" },
+      { "number": 1262, "head": "theory-solve", "base": "main", "created": "2026-10-21T03:50:00Z" }
+    ],
+    "output": "[]"
+  },
+  {
     "name": "a restacked head re-runs the newer of its twins, cancelled by the older, and leaves an older cancelled one (#1381)",
     "program": "twins.jq",
     "input": [

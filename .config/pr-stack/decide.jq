@@ -2,29 +2,34 @@
 # the only record (#1264).
 #
 # Input: an object with
-#   server  the pull request's stack, bottom to top, each `{number, head}`
-#           (`chain.jq`);
-#   own     the checked-out branch;
-#   queued  the numbers of the stack's pull requests already in the merge
-#           queue.
+#   server   the pull request's stack, bottom to top, each `{number, head}`
+#            (`chain.jq`);
+#   own      the checked-out branch;
+#   queued   the numbers of the stack's pull requests already in the merge
+#            queue;
+#   carried  the numbers of the pull requests outside the stack, queued on
+#            their own, whose branch the stack's top holds
+#            (`carried_queued`); absent reads as none.
 #
 # Output: one tab-separated line:
 #   single              land the one pull request;
-#   wait<TAB>N          #N below is queued on its own; land once it merges,
-#                       when the stack is read again;
+#   wait<TAB>N          #N below, or carried, is queued on its own; land once
+#                       it merges, when the stack is read again;
 #   stack<TAB>N         restack and queue the stack whose top is #N;
 #   refuse<TAB>MESSAGE  stop, naming why.
 #
 # A stack lands whole from its top: the obligations are measured on the
-# checked-out tree, which is the top's.
+# checked-out tree, which is the top's. A stack that holds the commits of a
+# pull request queued on its own, below it or retargeted off its branch
+# (#1420), waits for that one to merge before it lands.
 
 def chain: [.server[] | "#\(.number)"] | join(" ← ");
 . as $in
-| [$in.server[:-1][] | .number | select(. as $n | $in.queued | index($n))] as $waiting
-| if ($in.server | length) <= 1 then
-    "single"
-  elif ($waiting | length) > 0 then
+| (($in.carried // []) + [$in.server[:-1][] | .number | select(. as $n | $in.queued | index($n))]) as $waiting
+| if ($waiting | length) > 0 then
     "wait\t\($waiting | last)"
+  elif ($in.server | length) <= 1 then
+    "single"
   elif $in.own != $in.server[-1].head then
     "refuse\tthe checked-out branch is not the top of the server stack \($in | chain); land it with `pr:land` from #\($in.server[-1].number)'s branch"
   else

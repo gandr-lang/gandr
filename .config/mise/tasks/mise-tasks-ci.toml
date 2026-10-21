@@ -664,11 +664,13 @@ cat "$scratch/rows"
 # already carries (`own_fork`, #1298), so a rerun after the top moved never
 # carries another pull request's change. Its obligations are measured against
 # the top's head, and it opens with the top's branch as its base, linked into
-# the top's stack (`gh stack link`). A chain with a pull
-# request below that lands on its own, in the merge queue or set to auto-merge,
-# cannot take a link (#1353); the pull request then opens unlinked on the top,
-# GitHub retargets each base as the one below it merges, and `pr:land` from the
-# top links and queues the chain once that pull request has merged.
+# the top's stack (`gh stack link`). A chain with a pull request below that
+# lands on its own, in the merge queue or set to auto-merge, cannot take a link
+# (#1353); the pull request then opens unlinked on the top. GitHub closes an
+# unlinked pull request, unmerged, when a merge deletes its base branch
+# (#1420), so every open pull request on the branch of one that lands on its
+# own is retargeted to main (`retarget_landing`), and `pr:land` from the top
+# waits for that one to merge, then restacks and queues the chain.
 # `decide.jq` reads which, as it does for `pr:land`. The task prints which path
 # it took. With nothing open it opens against main.
 #
@@ -751,7 +753,8 @@ if [[ "$base" != "$trunk" ]]; then
     '{server: $server, own: $own, queued: $queued}' | jq -r -f "$pr_stack_dir/decide.jq")
   case "$decision" in
     wait$'\t'*)
-      echo "#${decision#*$'\t'} below lands on its own, so #$number waits unlinked on $base; GitHub retargets each base as the one below merges, and \`pr:land\` from the top links and queues the chain once #${decision#*$'\t'} has merged"
+      retarget_landing "$(queued_of "$stack")"
+      echo "#${decision#*$'\t'} below lands on its own, so #$number waits unlinked, and every pull request on its branch is retargeted to $trunk; \`pr:land\` from the top lands the chain once #${decision#*$'\t'} has merged"
       ;;
     *)
       stack_link "$stack"
@@ -775,9 +778,14 @@ fi
 # the server, pushed in one atomic push, linked (`gh stack link`), and queued
 # as one group (`gh stack merge` by the top), and the task waits on the top.
 # A chain whose lower pull request is already queued on its own waits for it
-# to merge and reads the chain again. Run from a branch that is not the top,
-# the landing is refused, naming the top. `.config/pr-stack/decide.jq` makes
-# the decision and `check:pr-stack` holds its cases.
+# to merge and reads the chain again, and so does a chain whose top holds the
+# branch of one queued on its own outside it (`carried_queued`). Before any
+# queueing and before such a wait, every open pull request on a branch the
+# landing deletes, outside it, is retargeted to main (`retarget_landing`):
+# GitHub closes an unlinked pull request, unmerged, when a merge deletes its
+# base branch (#1420). Run from a branch that is not the top, the landing is
+# refused, naming the top. `.config/pr-stack/decide.jq` makes the decision
+# and `check:pr-stack` holds its cases.
 #
 # Before queueing, the prose obligations are written into the pull request's
 # body against the rebased branch, its ticks carried, and the landing is
@@ -785,6 +793,11 @@ fi
 # origin/main into its top pull request's body, whose own labels join its
 # targets' for the lint assessment. Once every box is ticked, a failed
 # obligations lane is rerun so it reads the ticks.
+#
+# A queued stack member leaves the queue alone only by being closed and
+# reopened: `dequeuePullRequest` looks for a queue on the member's own base
+# branch and finds none, a push to a queued branch is refused, and a stack
+# member's base cannot be edited. The members below it stay queued.
 ["pr:land"]
 description = "Restack, queue and wait for the merge queue outcome of the pull request's stack"
 usage = '''
@@ -876,18 +889,23 @@ conflicts() {
 
 # The landing's shape is the server's stack (#1264): one pull request lands
 # alone, a longer chain lands whole from its top, and a chain whose lower pull
-# request is queued on its own waits for it to merge.
+# request is queued on its own, or whose top holds the branch of one, waits
+# for it to merge, after every pull request on that one's branch is
+# retargeted to main.
 trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 own_head=$(git branch --show-current)
 while :; do
   server=$(server_stack "$number")
   [[ $(jq length <<< "$server") != 0 ]] || { echo "PR #$number is not open" >&2; exit 2; }
-  decision=$(jq -rn --argjson server "$server" --arg own "$own_head" --argjson queued "$(queued_of "$server")" \
-    '{server: $server, own: $own, queued: $queued}' | jq -r -f "$pr_stack_dir/decide.jq")
+  in_stack=$(queued_of "$server")
+  decision=$(jq -rn --argjson server "$server" --arg own "$own_head" --argjson queued "$in_stack" \
+    --argjson carried "$(carried_queued "$server")" \
+    '{server: $server, own: $own, queued: $queued, carried: $carried}' | jq -r -f "$pr_stack_dir/decide.jq")
   case "$decision" in
     wait$'\t'*)
       (( SECONDS < deadline )) || { echo "timed out waiting on #${decision#*$'\t'} below" >&2; exit 2; }
+      retarget_landing "$in_stack"
       echo "#${decision#*$'\t'} below is queued on its own; landing once it merges"
       sleep 60
       ;;
@@ -956,7 +974,7 @@ entry=$(queue_state)
 IFS=$'\t' read -r in_queue queue_status position <<< "$entry"
 if [[ "$in_queue" == true ]]; then queued=true; fi
 if [[ "$state" == OPEN && "$auto" == false && "$in_queue" == false ]]; then
-  if [[ "$stack" == true ]]; then queue_stack "$server"; else gh pr merge "$number" -R "$repo" --merge --auto; fi
+  queue_stack "$server"
 fi
 # The seat's wake-up: run as a deferred job, `pr:watch` exits with one line
 # the moment the pull request needs a hand or has landed.

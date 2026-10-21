@@ -159,17 +159,50 @@ rerun_twins() {
   (( ${#ids[@]} > 0 ))
 }
 
+# Retarget to the trunk every open pull request the landing of `$1`, a JSON
+# array of pull request numbers, would close (`retarget.jq`, #1420): GitHub
+# deletes a merged branch and closes, unmerged, every open pull request still
+# based on it that no linked stack carries. Each survives on the trunk, and
+# `pr:land` from its top rebases it. Prints one line on stderr for each.
+retarget_landing() {
+  local number base
+  while IFS=$'\t' read -r number base; do
+    [[ -n "$number" ]] || continue
+    gh pr edit "$number" -R "$repo" --base "$trunk" > /dev/null
+    echo "#$number retargeted from $base to $trunk: the landing deletes its base" >&2
+  done < <(open_prs | jq -r --argjson landing "$1" -f "$pr_stack_dir/retarget.jq" | jq -r '.[] | [.number, .base] | @tsv')
+}
+
+# The open pull requests outside the stack `$1` that are in the merge queue,
+# or set to enter it, and whose branch the stack's top holds, as a JSON array
+# of numbers. A pull request retargeted off a branch that lands on its own
+# (`retarget_landing`) still carries that branch's commits, so its stack
+# lands only once they have merged.
+carried_queued() {
+  local top number head members=()
+  top=$(jq -r '.[-1].head' <<< "$1")
+  git fetch --quiet origin "$top"
+  while IFS=$'\t' read -r number head; do
+    [[ -n "$number" && $(in_queue "$number") == true ]] || continue
+    git fetch --quiet origin "$head" || continue
+    if git merge-base --is-ancestor "origin/$head" "origin/$top"; then members+=("$number"); fi
+  done < <(open_prs | jq -r --argjson stack "$1" '.[] | select(.number | IN($stack[].number) | not) | [.number, .head] | @tsv')
+  jq -cn '$ARGS.positional | map(tonumber)' --args "${members[@]}"
+}
+
 # Link the stack `$1` on the server and queue it as one group; a stack of one
-# is a plain landing, queued by auto-merge once its checks pass. An atomic
-# stack merge refuses a pull request whose required checks are still
-# expected, so each one's required checks are waited on first, and a red one
-# stops the landing, naming it. A restack gives each head above the bottom
-# two runs per workflow, one cancelled by the other; a cancelled one the
-# rollup reads is re-run (`rerun_twins`), at most three times for a pull
-# request, and its checks waited on again.
+# is a plain landing, queued by auto-merge once its checks pass. Every open
+# pull request on one of its branches outside it is retargeted to the trunk
+# first (`retarget_landing`). An atomic stack merge refuses a pull request
+# whose required checks are still expected, so each one's required checks are
+# waited on first, and a red one stops the landing, naming it. A restack gives
+# each head above the bottom two runs per workflow, one cancelled by the
+# other; a cancelled one the rollup reads is re-run (`rerun_twins`), at most
+# three times for a pull request, and its checks waited on again.
 queue_stack() {
   local stack=$1 numbers number reruns watched
   mapfile -t numbers < <(jq -r '.[].number' <<< "$stack")
+  retarget_landing "$(jq -c 'map(.number)' <<< "$stack")"
   if (( ${#numbers[@]} == 1 )); then
     gh pr merge "${numbers[0]}" -R "$repo" --merge --auto
     return
