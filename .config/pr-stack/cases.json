@@ -184,5 +184,99 @@
       "queued": [1349]
     },
     "output": "wait\t1349"
+  },
+  {
+    "name": "a restacked head re-runs the newer of its twins, cancelled by the older, and leaves an older cancelled one (#1381)",
+    "program": "twins.jq",
+    "input": [
+      {
+        "databaseId": 39581619497,
+        "workflowName": "PR title",
+        "startedAt": "2026-10-21T10:02:36Z",
+        "conclusion": "success"
+      },
+      {
+        "databaseId": 39581595024,
+        "workflowName": "CI",
+        "startedAt": "2026-10-21T10:02:25Z",
+        "conclusion": "success"
+      },
+      {
+        "databaseId": 39581594890,
+        "workflowName": "PR title",
+        "startedAt": "2026-10-21T10:02:25Z",
+        "conclusion": "cancelled"
+      },
+      {
+        "databaseId": 39581595108,
+        "workflowName": "CI",
+        "startedAt": "2026-10-21T10:02:25Z",
+        "conclusion": "cancelled"
+      },
+      {
+        "databaseId": 39581594567,
+        "workflowName": "PR title",
+        "startedAt": "2026-10-21T10:02:24Z",
+        "conclusion": "success"
+      }
+    ],
+    "output": "[39581595108]"
+  },
+  {
+    "name": "a cancelled run whose twin was re-run since is not re-run (#1381)",
+    "program": "twins.jq",
+    "input": [
+      {
+        "databaseId": 39581595024,
+        "workflowName": "CI",
+        "startedAt": "2026-10-21T10:40:00Z",
+        "conclusion": "success"
+      },
+      {
+        "databaseId": 39581595108,
+        "workflowName": "CI",
+        "startedAt": "2026-10-21T10:02:25Z",
+        "conclusion": "cancelled"
+      }
+    ],
+    "output": "[]"
+  },
+  {
+    "name": "a cancelled run whose twin failed is not re-run: the failure is the head's own (#1381)",
+    "program": "twins.jq",
+    "input": [
+      {
+        "databaseId": 39581595024,
+        "workflowName": "CI",
+        "startedAt": "2026-10-21T10:02:25Z",
+        "conclusion": "failure"
+      },
+      {
+        "databaseId": 39581595108,
+        "workflowName": "CI",
+        "startedAt": "2026-10-21T10:02:25Z",
+        "conclusion": "cancelled"
+      }
+    ],
+    "output": "[]"
+  },
+  {
+    "name": "a run still in flight is the newest, and nothing is re-run (#1381)",
+    "program": "twins.jq",
+    "input": [
+      {
+        "databaseId": 39581595108,
+        "workflowName": "CI",
+        "startedAt": "2026-10-21T10:02:25Z",
+        "conclusion": "cancelled"
+      },
+      {
+        "databaseId": 39581599999,
+        "workflowName": "CI",
+        "startedAt": "2026-10-21T10:02:30Z",
+        "conclusion": ""
+      }
+    ],
+    "output": "[]"
   }
 ]
