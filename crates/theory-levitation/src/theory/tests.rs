@@ -19,8 +19,11 @@ use super::TheoryPort;
 use super::TheoryRule;
 use super::TheorySort;
 use super::TheoryValue;
+use super::UndescribedTheory;
 use super::theory_desc;
+use crate::arity::SortRef;
 use crate::boundary::ConstructorTag;
+use crate::boundary::NominalSerial;
 use crate::boundary::RuleIndex;
 use crate::boundary::ShapePoint;
 use crate::boundary::ShapeSize;
@@ -28,8 +31,11 @@ use crate::code::CodeView;
 use crate::code::Name;
 use crate::code::PrimTy;
 use crate::code::ValueTypeRef;
+use crate::desc::NominalId;
 use crate::desc::Representability;
 use crate::desc::ShapeFace;
+use crate::desc::SortIndex;
+use crate::desc::SurfaceSpan;
 use crate::desc::TheoryShape;
 use crate::desc::shape_parameter;
 use crate::generic::DescValue;
@@ -951,4 +957,163 @@ fn a_member_defined_twice_blocks_the_extension_by_name()
     shaped.shape = Maybe::Present(TheoryShape::new("Line", ShapeSize::from(2_usize), []));
     assert_eq!(parts.include(&shaped), Err(IncludeClash::Shaped));
     assert_eq!(parts, semigroup());
+}
+
+/// The span `[start, end)`.
+///
+/// # Specification
+/// trivial.
+fn span<At>(
+    start: At,
+    end: At,
+) -> SurfaceSpan
+where
+    At: Into<usize>,
+{
+    SurfaceSpan::new(start.into().into(), end.into().into())
+}
+
+/// The identity a description is read under.
+///
+/// # Specification
+/// trivial.
+fn named<Named>(name: Named) -> NominalId
+where
+    Named: Into<Name>,
+{
+    NominalId::new(NominalSerial::from(7_u64), name)
+}
+
+#[test]
+fn the_description_is_read_off_the_value()
+{
+    let parts = cat_like();
+    let faces = [span(10_usize, 30_usize), span(40_usize, 60_usize)];
+    let description = TheoryValue::encode(&parts)
+        .description::<Grade>(named("CatLike"), &faces)
+        .expect("a coded presentation reads as its table");
+    assert_eq!(description.id, named("CatLike"));
+    assert_eq!(
+        description
+            .sorts
+            .iter()
+            .map(|sort| (
+                sort.name.clone(),
+                sort.indices.to_vec(),
+                sort.representability
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (Name::from("Ob"), Vec::new(), Representability::Ordinary),
+            (
+                Name::from("Hom"),
+                vec![SortIndex::new("dom", "Ob"), SortIndex::new("cod", "Ob")],
+                Representability::Ordinary
+            ),
+        ],
+        "each sort the value codes, over its index telescope"
+    );
+    assert_eq!(
+        description
+            .opers
+            .iter()
+            .map(|operation| (
+                operation.name.clone(),
+                operation.arity.inputs.to_vec(),
+                operation.arity.outputs.to_vec()
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (Name::from("id"), vec![SortRef::new("a", "Ob")], vec![
+                SortRef::new("_1", "Hom(a, a)")
+            ]),
+            (
+                Name::from("dom"),
+                vec![SortRef::new("f", "Hom(a, b)")],
+                vec![SortRef::new("_1", "Ob")]
+            ),
+            (Name::from("split"), vec![SortRef::new("m", "Ob")], vec![
+                SortRef::new("q", "Ob"),
+                SortRef::new("r", "Ob")
+            ]),
+        ],
+        "each operation's ports in order, an unnamed one at its placeholder, its sort \
+         spelled from the value"
+    );
+    assert_eq!(
+        description
+            .rules
+            .iter()
+            .map(|face| (face.lhs.clone(), face.rhs.clone(), face.provenance))
+            .collect::<Vec<_>>(),
+        parts
+            .rules
+            .iter()
+            .zip(faces)
+            .map(|(rule, at)| (rule.left.clone(), rule.right.clone(), at))
+            .collect::<Vec<_>>(),
+        "each face is the value's rule at the span in its place"
+    );
+    assert_eq!(
+        description.shape,
+        Maybe::Absent(shape_parameter::Absent::Unshaped)
+    );
+
+    let second_order = TheoryValue::encode(&lambda())
+        .description::<Grade>(named("Lambda"), &[])
+        .expect("a second-order presentation reads as its table");
+    assert_eq!(
+        second_order
+            .sorts
+            .iter()
+            .map(|sort| sort.representability)
+            .collect::<Vec<_>>(),
+        [Representability::Representable]
+    );
+    assert_eq!(
+        second_order
+            .opers
+            .first()
+            .map(|lam| lam.arity.inputs.to_vec()),
+        Some(vec![
+            SortRef::new("t", "Tm").pi_plus([SortIndex::new("x", "Tm")])
+        ]),
+        "a bound port is its sort under its binders"
+    );
+
+    let square = TheoryShape::new("Square", ShapeSize::from(4_usize), [ShapeFace::new(
+        "left",
+        [ShapePoint::from(0_usize), ShapePoint::from(2_usize)],
+    )]);
+    let shaped = TheoryParts {
+        shape: Maybe::Present(square.clone()),
+        sorts: vec![sort("M", Representability::Ordinary)],
+        ..TheoryParts::default()
+    };
+    assert_eq!(
+        TheoryValue::encode(&shaped)
+            .description::<Grade>(named("Shaped"), &[])
+            .map(|description| description.shape),
+        Ok(Maybe::Present(square)),
+        "the shape the value codes"
+    );
+}
+
+#[test]
+fn a_rule_no_span_places_is_refused()
+{
+    assert_eq!(
+        TheoryValue::encode(&cat_like())
+            .description::<Grade>(named("CatLike"), &[span(10_usize, 30_usize)]),
+        Err(UndescribedTheory::Unplaced),
+        "two rules and one span"
+    );
+    assert_eq!(
+        TheoryValue::from_value(node(Tag::End, Payload::unit()))
+            .description::<Grade>(named("Nothing"), &[]),
+        Err(UndescribedTheory::Value(TheoryFault::Misplaced(
+            ConstructorTag::from(1_usize)
+        ))),
+        "a value outside the grammar is refused with its fault"
+    );
 }

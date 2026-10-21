@@ -43,13 +43,14 @@
 //! ([`first_order`](crate::first_order())) and the cell layer read; every
 //! `data` declaration and retrofitted former shares it, so it also has fields
 //! no presentation fills: parameters, constructors as graded and attributed
-//! codes, a polarity. The `theory` reader encodes the value once and decodes
-//! the table from it, adding three things the value cannot hold. The first is
-//! the minted nominal identity: the value's identity is structural, so two
-//! blocks that state the same members share one identity yet stay two
-//! declarations. The second is the members' spans, which are provenance and
-//! would tie identity to layout. The third is the circuit rules, which `Theory`
-//! does not code yet (§ What waits) and which travel beside the value.
+//! codes, a polarity. The `theory` reader encodes the value once, and
+//! [`TheoryValue::description`] reads the table off it given two things the
+//! value cannot hold. The first is the minted nominal identity: the value's
+//! identity is structural, so two blocks that state the same members share one
+//! identity yet stay two declarations. The second is the faces' spans, which
+//! are provenance and would tie identity to layout. The reader then adds the
+//! circuit rules, which `Theory` does not code yet (§ What waits) and which
+//! travel beside the value.
 //!
 //! - **Choice.** The table is a reading of the value, not a second record of
 //!   the block: one reading of the block, one identity, and the consumers of
@@ -59,9 +60,7 @@
 //!   moves the cell layer onto a code that does not yet hold circuit rules.
 //! - **Reversal.** Once `Theory` codes circuit rules, a `theory` block's table
 //!   is wholly a reading of its value, and its consumers can read the value
-//!   itself. The decoding lives in the `theory` reader today; moving it here,
-//!   as the one function from a value, its nominal identity and its spans to a
-//!   table, is the step before.
+//!   itself.
 //!
 //! # One sort, chained
 //!
@@ -231,12 +230,15 @@
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
+use alloc::string::ToString as _;
 use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
+use crate::arity::BridgeArity;
+use crate::arity::SortRef;
 use crate::boundary::ConstructorTag;
 use crate::boundary::NominalSerial;
 use crate::boundary::RuleIndex;
@@ -251,9 +253,12 @@ use crate::code::ValueTypeRef;
 use crate::desc::CtorDesc;
 use crate::desc::DeclPolarity;
 use crate::desc::NominalId;
+use crate::desc::OperDesc;
 use crate::desc::Representability;
 use crate::desc::ShapeFace;
 use crate::desc::SortDesc;
+use crate::desc::SortIndex;
+use crate::desc::SurfaceSpan;
 use crate::desc::TheoryDesc;
 use crate::desc::TheoryShape;
 use crate::desc::shape_parameter;
@@ -263,8 +268,10 @@ use crate::generic::PayloadNode;
 use crate::generic::PayloadView;
 use crate::generic::serialize_value;
 use crate::rule::FreeTerm;
+use crate::rule::RuleFace;
 use crate::rule::TermNode;
 use crate::rule::TermView;
+use crate::wellformed::derive_cell_var_meta;
 
 /// The names of `Theory`'s constructors, in tag order: the names a program that
 /// matches on a presentation writes.
@@ -2171,6 +2178,237 @@ fn read_term(root: Node<'_>) -> Result<FreeTerm, TheoryFault>
         }
     }
     read.pop().ok_or(TheoryFault::Payload)
+}
+
+/// Why a theory's value reads as no description.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the value's own fault, or a rule no span places.
+/// - executable: none — a fault is data.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`TheoryValue::description`].
+/// - witness: `theory::tests::a_rule_no_span_places_is_refused`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UndescribedTheory
+{
+    /// The value codes no presentation.
+    Value(TheoryFault),
+    /// The value codes a rule no span places.
+    Unplaced,
+}
+
+impl TheoryValue
+{
+    /// The declaration table the value reads as under `id`, each face at the
+    /// span of `faces` in the same place: the table the cell gate, the rules
+    /// check and coincidence read.
+    ///
+    /// # Specification
+    /// - ensures: the shape parameter the value codes, when it codes one; one
+    ///   data sort per sort the value codes, its index telescope each index
+    ///   port's name over its sort's spelling, representable when the value
+    ///   codes it so; one operation per operation, its arity the ports in
+    ///   order, each under the name [`presented_names`] gives it and each under
+    ///   its binders, a binder's domain its sort's name over its index terms;
+    ///   one face per rule, its variables derived from its left side and its
+    ///   provenance the span of `faces` at its place; no parameter, constructor
+    ///   or circuit.
+    /// - fails: [`UndescribedTheory::Value`] for a value that codes no
+    ///   presentation; [`UndescribedTheory::Unplaced`] when the value codes
+    ///   more rules than `faces` places.
+    /// - panics: none.
+    /// - executable: none — the table is a reading of the value; a predicate
+    ///   would decode the value a second time.
+    ///
+    /// # Errors
+    /// As stated.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a presentation exercising every constructor reads as
+    ///   its sorts over their index telescopes, its operations with an unnamed
+    ///   port at its placeholder and its sort spelled from the value, and its
+    ///   faces at their spans; a second-order presentation's representable sort
+    ///   and binder, and a shaped one's shape; a value with a rule no span
+    ///   places, and one outside the grammar, are refused.
+    /// - witness: `theory::tests::the_description_is_read_off_the_value`
+    /// - witness: `theory::tests::a_rule_no_span_places_is_refused`
+    #[inline]
+    pub fn description<G>(
+        &self,
+        id: NominalId,
+        faces: &[SurfaceSpan],
+    ) -> Result<TheoryDesc<G>, UndescribedTheory>
+    {
+        let parts = self.decode().map_err(UndescribedTheory::Value)?;
+        if parts.rules.len() > faces.len() {
+            return Err(UndescribedTheory::Unplaced);
+        }
+        let sorts: Vec<SortDesc> = parts
+            .sorts
+            .iter()
+            .map(|sort| {
+                let family = SortDesc::family(
+                    sort.name.clone(),
+                    DeclPolarity::Data,
+                    sort.indices
+                        .iter()
+                        .map(|index| SortIndex::new(index.name.clone(), spelled(index)))
+                        .collect::<Vec<_>>(),
+                );
+                match sort.representability {
+                    Representability::Ordinary => family,
+                    Representability::Representable => family.representable(),
+                }
+            })
+            .collect();
+        let operations: Vec<OperDesc> = parts
+            .operations
+            .iter()
+            .map(TheoryOperation::description)
+            .collect();
+        let faces: Vec<RuleFace> = parts
+            .rules
+            .into_iter()
+            .zip(faces)
+            .map(|(rule, &span)| {
+                let variables = derive_cell_var_meta(&rule.left);
+                RuleFace::new(rule.left, rule.right, variables, span)
+            })
+            .collect();
+        let description = TheoryDesc::new(
+            id,
+            [],
+            [],
+            operations,
+            faces,
+            DeclPolarity::Data,
+            Attrs::empty(),
+        );
+        let description = if sorts.is_empty() {
+            description
+        }
+        else {
+            description.with_sorts(sorts)
+        };
+        Ok(match parts.shape {
+            Maybe::Present(shape) => description.with_shape(shape),
+            Maybe::Absent(shape_parameter::Absent::Unshaped) => description,
+        })
+    }
+}
+
+/// The names a member's ports present under, `inputs` then `outputs`.
+///
+/// Each port keeps its own name; an unnamed one takes the placeholder
+/// `_position` of its position among all of them, which the named-port normal
+/// form reads as anonymous.
+///
+/// # Specification
+/// - ensures: one name per port, in order; a named port's own name.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an unnamed output after one input presents as `_1`, and a
+///   named port as itself.
+/// - witness: `theory::tests::the_description_is_read_off_the_value`
+#[inline]
+#[must_use]
+#[spec(ensures: |ref names| names.len() == inputs.len().saturating_add(outputs.len()))]
+pub fn presented_names(
+    inputs: &[TheoryPort],
+    outputs: &[TheoryPort],
+) -> Vec<Name>
+{
+    inputs
+        .iter()
+        .chain(outputs)
+        .enumerate()
+        .map(|(position, port)| {
+            if port.name.as_ref().is_empty() {
+                Name::from(format!("_{position}"))
+            }
+            else {
+                port.name.clone()
+            }
+        })
+        .collect()
+}
+
+impl TheoryOperation
+{
+    /// The operation as a description declares it: its arity its ports in
+    /// order, each under the name [`presented_names`] gives it and each under
+    /// its binders, a binder's domain its sort's name over its index terms.
+    ///
+    /// # Specification
+    /// - ensures: one input per input port and one output per output port, in
+    ///   order, an unnamed port at its placeholder and each sort spelled from
+    ///   the value; no attribute.
+    /// - panics: none.
+    /// - executable: none — the arity is a reading of the ports; a predicate
+    ///   would read them a second time.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`TheoryValue::description`].
+    /// - witness: `theory::tests::the_description_is_read_off_the_value`
+    #[inline]
+    #[must_use]
+    pub fn description(&self) -> OperDesc
+    {
+        let mut names = presented_names(&self.inputs, &self.outputs).into_iter();
+        let inputs: Vec<SortRef> = self
+            .inputs
+            .iter()
+            .zip(names.by_ref())
+            .map(|(port, name)| port_ref(port, name))
+            .collect();
+        let outputs: Vec<SortRef> = self
+            .outputs
+            .iter()
+            .zip(names)
+            .map(|(port, name)| port_ref(port, name))
+            .collect();
+        let arity = BridgeArity::tupled(inputs, outputs);
+        OperDesc::new(self.name.clone(), arity, Attrs::empty())
+    }
+}
+
+/// The port `port` codes, under `name`: its sort spelled, and each binder as
+/// its name over its domain, the domain's sort name applied to its index
+/// terms, which is how `check_desc` resolves a binder's representability.
+///
+/// # Specification
+/// trivial.
+fn port_ref(
+    port: &TheoryPort,
+    name: Name,
+) -> SortRef
+{
+    let reference = SortRef::new(name, spelled(port));
+    if port.bindings.is_empty() {
+        return reference;
+    }
+    reference.pi_plus(
+        port.bindings
+            .iter()
+            .map(|binder| {
+                SortIndex::new(binder.name.clone(), binder.sort.clone())
+                    .applied(binder.indices.clone())
+            })
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// A port's sort as the description spells it: its name, applied to its
+/// index terms when it has any.
+///
+/// # Specification
+/// trivial.
+fn spelled(port: &TheoryPort) -> Name
+{
+    Name::from(FreeTerm::op(port.sort.clone(), port.indices.iter().cloned()).to_string())
 }
 
 #[cfg(test)]

@@ -97,8 +97,9 @@
 //! (`TheoryParts`): each sort with its index ports, each operation with its
 //! input and output ports, each face as its two terms. Those parts are encoded
 //! once, as a `TheoryValue`, and everything after reads the value: the block's
-//! description is decoded from it, `Model(S)` derives from it, and the core
-//! definition `S : Theory` is it, node for node. Beside the value the reader
+//! description is `TheoryValue::description` of it at the faces' spans,
+//! `Model(S)` derives from it, and the core definition `S : Theory` is it, node
+//! for node. Beside the value the reader
 //! keeps only provenance — the name tile of each member and the span of each
 //! face — and the circuit rules `Theory` does not code yet. An unnamed port
 //! carries the empty name in the value, so where it was written leaves the
@@ -137,7 +138,6 @@
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::format;
-use alloc::string::ToString as _;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -145,7 +145,6 @@ use anodized::spec;
 use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::Attrs;
-use gandr_theory_levitation::BridgeArity;
 use gandr_theory_levitation::CircuitBody;
 use gandr_theory_levitation::CircuitFeed;
 use gandr_theory_levitation::CircuitFrame;
@@ -157,7 +156,6 @@ use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::NominalId;
 use gandr_theory_levitation::NominalSerial;
-use gandr_theory_levitation::OperDesc;
 use gandr_theory_levitation::OperationKind;
 use gandr_theory_levitation::Representability;
 use gandr_theory_levitation::RewritePort;
@@ -165,8 +163,6 @@ use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::ShapeFace;
 use gandr_theory_levitation::ShapePoint;
 use gandr_theory_levitation::ShapeSize;
-use gandr_theory_levitation::SortDesc;
-use gandr_theory_levitation::SortIndex;
 use gandr_theory_levitation::SortRef;
 use gandr_theory_levitation::SurfaceSpan;
 use gandr_theory_levitation::TheoryBinder;
@@ -180,13 +176,11 @@ use gandr_theory_levitation::TheorySort;
 use gandr_theory_levitation::TheoryValue;
 use gandr_theory_levitation::derive_boundaries;
 use gandr_theory_levitation::derive_cell_var_meta;
-use gandr_theory_levitation::shape_parameter;
 use quenchant_shape::shape::Maybe;
 
 use super::DescribedDeclaration;
 use super::DescriptionDiagnostic;
 use super::DescriptionFault;
-use super::DescriptionGrade;
 use super::Reader;
 use super::Run;
 use super::Spelling;
@@ -219,11 +213,9 @@ use crate::form::Placed;
 use crate::model::Included;
 use crate::model::Placement;
 use crate::model::Presentation;
-use crate::model::PresentationFault;
 use crate::model::PresentedCircuit;
 use crate::model::SortTerm;
 use crate::model::presentation;
-use crate::model::presented_names;
 use crate::unit::SourceIndex;
 
 /// The two sides of a signature and its rewrite-sorted binders.
@@ -341,12 +333,12 @@ impl Reader<'_, '_>
     /// # Specification
     /// - ensures: an unreadable member does not consume a following member;
     ///   every member read enters the presentation's value, its circuits beside
-    ///   it, and the description is [`described`] of that value with the
-    ///   circuits added. The included presentations come first, in written
-    ///   order, each by [`TheoryParts::include`], with the inclusion kept
-    ///   beside the value and each included member's provenance its own
-    ///   block's. An `ext` member's generated operations and laws follow the
-    ///   written ones, each placed at the member's keyword.
+    ///   it, and the description is the value's [`TheoryValue::description`] at
+    ///   its faces' spans, with the circuits added. The included presentations
+    ///   come first, in written order, each by [`TheoryParts::include`], with
+    ///   the inclusion kept beside the value and each included member's
+    ///   provenance its own block's. An `ext` member's generated operations and
+    ///   laws follow the written ones, each placed at the member's keyword.
     /// - fails: a malformed signature head refuses the whole declaration; an
     ///   `include` that names no visible block, names two, or whose members
     ///   clash with the presentation's, and an `ext` member the block cannot
@@ -624,7 +616,15 @@ impl Reader<'_, '_>
             circuits: presented_circuits,
             inclusions,
         };
-        let description = described(&presentation, NominalId::new(serial, self.text(named).0))
+        let faces: Vec<SurfaceSpan> = presentation
+            .placement
+            .faces
+            .iter()
+            .map(|&span| surface_span(span))
+            .collect();
+        let description = presentation
+            .value
+            .description(NominalId::new(serial, self.text(named).0), &faces)
             .map_err(|_unread| DescriptionDiagnostic {
                 span: at.span,
                 fault: DescriptionFault::Malformed,
@@ -771,7 +771,7 @@ impl Reader<'_, '_>
         let mut operation_spans = Vec::new();
         match self.signature_operation(run, &[], OperationKind::Operation) {
             Ok((operation, _tile, _written)) => {
-                operations.push(operation_desc(&operation));
+                operations.push(operation.description());
                 operation_spans.push(at.span);
             },
             Err(diagnostic) => diagnostics.push(diagnostic),
@@ -2159,158 +2159,6 @@ fn fresh_port(at: Placed) -> Name
 {
     format!("{FRESH_PORT}{}", usize::from(at.span.start())).into()
 }
-
-/// The description a presentation's value reads as, under `id`: the
-/// declaration table the cell gate, the rules check and coincidence read.
-///
-/// # Specification
-/// - ensures: the shape parameter the value codes, when it codes one; one data
-///   sort per sort the value codes, its index telescope each index port's name
-///   over its sort's spelling, representable when the value codes it so; one
-///   operation per operation, its arity the ports in order, an unnamed one at
-///   its placeholder, each port under its binders, each binder's domain its
-///   sort's name over its index terms; one face per rule, its variables derived
-///   from its left side and its provenance the whole member the placement
-///   records; no parameter, constructor or circuit.
-/// - fails: as [`Presentation::members`]: a value that codes no presentation,
-///   or a rule no member places.
-/// - panics: none.
-/// - executable: none — the table is a reading of the value; a predicate would
-///   decode the value a second time.
-///
-/// # Errors
-/// As stated.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a block's description agrees with the value it defines,
-///   member for member, an unnamed port at its placeholder and a face at its
-///   member's span; a rule the placement does not place is refused; a rendered
-///   second-order signature's representable sorts and binders read back, and a
-///   rendered shaped signature's shape and faces.
-/// - witness: `description::theory::tests::the_description_is_read_off_the_value`
-/// - witness: `description::theory::tests::the_cat_shape_laws_are_written_faces`
-/// - witness: `description::theory::tests::a_rendered_signature_reparses_to_itself`
-fn described(
-    presentation: &Presentation,
-    id: NominalId,
-) -> Result<TheoryDesc<DescriptionGrade>, PresentationFault>
-{
-    let parts = presentation
-        .value
-        .decode()
-        .map_err(PresentationFault::Value)?;
-    if parts.rules.len() > presentation.placement.faces.len() {
-        return Err(PresentationFault::Unplaced);
-    }
-    let sorts: Vec<SortDesc> = parts
-        .sorts
-        .iter()
-        .map(|sort| {
-            let family = SortDesc::family(
-                sort.name.clone(),
-                DeclPolarity::Data,
-                sort.indices
-                    .iter()
-                    .map(|index| SortIndex::new(index.name.clone(), spelled(index)))
-                    .collect::<Vec<_>>(),
-            );
-            match sort.representability {
-                Representability::Ordinary => family,
-                Representability::Representable => family.representable(),
-            }
-        })
-        .collect();
-    let operations: Vec<OperDesc> = parts.operations.iter().map(operation_desc).collect();
-    let faces: Vec<RuleFace> = parts
-        .rules
-        .into_iter()
-        .zip(&presentation.placement.faces)
-        .map(|(rule, &span)| {
-            let variables = derive_cell_var_meta(&rule.left);
-            RuleFace::new(rule.left, rule.right, variables, surface_span(span))
-        })
-        .collect();
-    let description = TheoryDesc::new(
-        id,
-        [],
-        [],
-        operations,
-        faces,
-        DeclPolarity::Data,
-        Attrs::empty(),
-    );
-    let description = if sorts.is_empty() {
-        description
-    }
-    else {
-        description.with_sorts(sorts)
-    };
-    Ok(match parts.shape {
-        Maybe::Present(shape) => description.with_shape(shape),
-        Maybe::Absent(shape_parameter::Absent::Unshaped) => description,
-    })
-}
-
-/// The operation `operation` codes, its arity its ports in order, an unnamed
-/// one at its placeholder, each under its binders.
-///
-/// # Specification
-/// trivial.
-fn operation_desc(operation: &TheoryOperation) -> OperDesc
-{
-    let mut names = presented_names(&operation.inputs, &operation.outputs).into_iter();
-    let inputs: Vec<SortRef> = operation
-        .inputs
-        .iter()
-        .zip(names.by_ref())
-        .map(|(port, name)| port_ref(port, name))
-        .collect();
-    let outputs: Vec<SortRef> = operation
-        .outputs
-        .iter()
-        .zip(names)
-        .map(|(port, name)| port_ref(port, name))
-        .collect();
-    let arity = BridgeArity::tupled(inputs, outputs);
-    OperDesc::new(operation.name.clone(), arity, Attrs::empty())
-}
-
-/// The port `port` codes, under `name`: its sort spelled, and each binder as
-/// its name over its domain, the domain's sort name applied to its index
-/// terms, which is how `check_desc` resolves a binder's representability.
-///
-/// # Specification
-/// trivial.
-fn port_ref(
-    port: &TheoryPort,
-    name: Name,
-) -> SortRef
-{
-    let reference = SortRef::new(name, spelled(port));
-    if port.bindings.is_empty() {
-        return reference;
-    }
-    reference.pi_plus(
-        port.bindings
-            .iter()
-            .map(|binder| {
-                SortIndex::new(binder.name.clone(), binder.sort.clone())
-                    .applied(binder.indices.clone())
-            })
-            .collect::<Vec<_>>(),
-    )
-}
-
-/// A port's sort as the description spells it: its name, applied to its
-/// index terms when it has any.
-///
-/// # Specification
-/// trivial.
-fn spelled(port: &TheoryPort) -> Name
-{
-    Name::from(FreeTerm::op(port.sort.clone(), port.indices.iter().cloned()).to_string())
-}
-
 mod extension;
 
 #[cfg(test)]
