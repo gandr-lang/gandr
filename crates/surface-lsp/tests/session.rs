@@ -1137,98 +1137,101 @@ fn judged(Line(line): Line<'_>) -> Judged
     Judged(judged.parse().expect("a judged count"))
 }
 
+/// A change to nothing, whole or ranged, republishes the bytes opening
+/// published and judges no item. Each change is served in its own session: two
+/// changes read together are judged once, at the later (#1547).
 #[test]
 fn an_edit_that_changes_nothing_republishes_the_same_bytes()
 {
     let uri = "file:///tmp/unchanged.gandr";
     let text =
         "def a : Integer ;\ndef a = 1 ;\ndef b : Integer ;\ndef b = \"text\" ;\ndef c = a ;\n";
-    let mut messages = opening();
-    if let Some(params) = messages
-        .first_mut()
-        .and_then(|initialize| initialize.get_mut("params"))
-    {
-        params["initializationOptions"] = json!({"diagnostics": {"quiet": 0_i32}});
-    }
-    messages.push(open(&Source {
-        uri: uri.to_owned(),
-        text: text.to_owned(),
-    }));
-    // The whole text replaced by itself, then one character by itself.
-    messages.push(
-        json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
-            "textDocument": {"uri": uri, "version": 2_i32},
-            "contentChanges": [{"text": text}],
-        }}),
-    );
-    messages.push(
-        json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
-            "textDocument": {"uri": uri, "version": 3_i32},
-            "contentChanges": [{
-                "range": {
-                    "start": {"line": 1_i32, "character": 8_i32},
-                    "end": {"line": 1_i32, "character": 9_i32},
-                },
-                "text": "1",
-            }],
-        }}),
-    );
-    messages.extend(closing());
-    let input = frames(&messages);
-    let mut stream = input.as_ref();
-    let mut output = Vec::new();
-    let mut log = Vec::new();
-    let served = serve(&mut stream, &mut output, &mut log, Spelling::Unicode)
-        .expect("the streams carry the session");
-    assert_eq!(served, Served::Clean);
-
-    // Each publication's bytes as the server wrote them, its version written
-    // as zero: everything else the frame carries is the verdict.
-    let mut frames_written = output.as_slice();
-    let mut publications = Vec::new();
-    while let Maybe::Present(body) =
-        read_frame(&mut frames_written).expect("the server writes frames")
-    {
-        let message: Value = serde_json::from_slice(body.as_ref()).expect("each frame is JSON");
-        if message.get("method").and_then(Value::as_str) == Some("textDocument/publishDiagnostics")
+    // The session opening `text` and changing it by `change`: each
+    // publication's bytes as the server wrote them, its version written as
+    // zero, and the log's lines.
+    let served = |change: Value| {
+        let mut messages = opening();
+        if let Some(params) = messages
+            .first_mut()
+            .and_then(|initialize| initialize.get_mut("params"))
         {
-            let version = message
-                .pointer("/params/version")
-                .and_then(Value::as_i64)
-                .expect("a publication names its version");
-            let bytes = core::str::from_utf8(body.as_ref()).expect("a frame is UTF-8");
-            let (before, after) = bytes
-                .split_once("\"version\":")
-                .expect("a publication writes its version");
-            let rest = after.trim_start_matches(|c: char| c.is_ascii_digit());
-            publications.push((version, [before, "\"version\":0", rest].concat()));
+            params["initializationOptions"] = json!({"diagnostics": {"quiet": 0_i32}});
         }
-    }
-    let [(1_i64, ref opened), (2_i64, ref whole), (3_i64, ref ranged)] = *publications.as_slice()
-    else {
-        panic!("one publication per synchronisation: {publications:?}");
+        messages.push(open(&Source {
+            uri: uri.to_owned(),
+            text: text.to_owned(),
+        }));
+        messages.push(
+            json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+                "textDocument": {"uri": uri, "version": 2_i32},
+                "contentChanges": [change],
+            }}),
+        );
+        messages.extend(closing());
+        let input = frames(&messages);
+        let mut stream = input.as_ref();
+        let mut output = Vec::new();
+        let mut log = Vec::new();
+        let served = serve(&mut stream, &mut output, &mut log, Spelling::Unicode)
+            .expect("the streams carry the session");
+        assert_eq!(served, Served::Clean);
+        let mut frames_written = output.as_slice();
+        let mut publications = Vec::new();
+        while let Maybe::Present(body) =
+            read_frame(&mut frames_written).expect("the server writes frames")
+        {
+            let message: Value = serde_json::from_slice(body.as_ref()).expect("each frame is JSON");
+            if message.get("method").and_then(Value::as_str)
+                == Some("textDocument/publishDiagnostics")
+            {
+                let version = message
+                    .pointer("/params/version")
+                    .and_then(Value::as_i64)
+                    .expect("a publication names its version");
+                let bytes = core::str::from_utf8(body.as_ref()).expect("a frame is UTF-8");
+                let (before, after) = bytes
+                    .split_once("\"version\":")
+                    .expect("a publication writes its version");
+                let rest = after.trim_start_matches(|c: char| c.is_ascii_digit());
+                publications.push((version, [before, "\"version\":0", rest].concat()));
+            }
+        }
+        (
+            publications,
+            String::from_utf8(log).expect("the log is UTF-8"),
+        )
     };
-    assert!(
-        opened.contains("TypeMismatch"),
-        "the document publishes its mismatch: {opened}"
-    );
-    assert_eq!(
-        (whole, ranged),
-        (opened, opened),
-        "a change to nothing publishes the bytes opening published"
-    );
-
-    let log = String::from_utf8(log).expect("the log is UTF-8");
-    let lines: Vec<&str> = log.lines().collect();
-    let [_, replaced, retyped] = *lines.as_slice()
-    else {
-        panic!("one timing line per synchronisation: {log}");
-    };
-    for line in [replaced, retyped] {
+    let whole = json!({"text": text});
+    let ranged = json!({
+        "range": {
+            "start": {"line": 1_i32, "character": 8_i32},
+            "end": {"line": 1_i32, "character": 9_i32},
+        },
+        "text": "1",
+    });
+    for (change, kind) in [(whole, "whole"), (ranged, "ranged")] {
+        let (publications, log) = served(change);
+        let [(1_i64, ref opened), (2_i64, ref changed)] = *publications.as_slice()
+        else {
+            panic!("{kind}: one publication per synchronisation: {publications:?}");
+        };
+        assert!(
+            opened.contains("TypeMismatch"),
+            "the document publishes its mismatch: {opened}"
+        );
+        assert_eq!(
+            changed, opened,
+            "a {kind} change to nothing publishes the bytes opening published"
+        );
+        let lines: Vec<&str> = log.lines().collect();
+        let [_, line] = *lines.as_slice()
+        else {
+            panic!("{kind}: one timing line per synchronisation: {log}");
+        };
         assert_eq!(
             (census(Line(line)).molded, judged(Line(line))),
             (0_usize, Judged(0)),
-            "a change to nothing molds no form and judges no item: {line}"
+            "a {kind} change to nothing molds no form and judges no item: {line}"
         );
     }
 }

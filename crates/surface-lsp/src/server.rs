@@ -241,6 +241,7 @@ use crate::rpc::Outgoing;
 use crate::rpc::Refreshed;
 use crate::rpc::RequestId;
 use crate::rpc::Requests;
+use crate::rpc::Superseded;
 use crate::rpc::Told;
 use crate::rpc::Withdrawn;
 use crate::rpc::apply_edit;
@@ -2348,10 +2349,13 @@ impl Server
     ///   client watches files for it is answered after the request withdrawing
     ///   the watcher; a `workspace/executeCommand` of a running session is run
     ///   as `Server::execute` states; a response is handled as
-    ///   `Server::response` states; a change of a document this connection
-    ///   holds and whose syntax tree its client asked for asks the client for
-    ///   the tree again under each URI it asked by, after the change's own
-    ///   messages.
+    ///   `Server::response` states; a `textDocument/didChange` of a running
+    ///   session that [`Superseded::of`] finds changed again in `later` is
+    ///   applied to the copy as `Server::deferred` states, neither judged nor
+    ///   published, so a burst of changes is judged once, at its last; a change
+    ///   of a document this connection holds and whose syntax tree its client
+    ///   asked for asks the client for the tree again under each URI it asked
+    ///   by, after the change's own messages.
     /// - provides: the step of [`serve`] and of each hub connection, which read
     ///   ahead of the message they handle.
     /// - fails: never; every refusal is a message to the client.
@@ -2360,11 +2364,13 @@ impl Server
     /// # Adequacy
     /// - hypothesis: L3 — a hover cancelled by a later message, one whose
     ///   document a later change edits, one with neither, and a `shutdown`
-    ///   cancelled after it, are each asserted at their answer.
+    ///   cancelled after it, are each asserted at their answer; a burst of
+    ///   changes is asserted at its one publication.
     /// - witness: `server::tests::a_request_withdrawn_by_a_later_message_is_not_run`
     /// - witness: `server::tests::a_watching_client_is_asked_to_watch_every_source`
     /// - witness: `server::tests::a_lens_applies_its_one_checked_fill`
     /// - witness: `server::tests::a_viewed_tree_answers_its_document_and_is_asked_again_after_each_change`
+    /// - witness: `server::tests::a_burst_of_changes_is_judged_once_at_its_last_version_1547`
     #[spec(
         captures: phase = self.phase,
         ensures: |ret| ret.log.len() <= ret.messages.len()
@@ -2426,6 +2432,9 @@ impl Server
                     .then(|| params.pointer("/textDocument/uri").and_then(Value::as_str))
                     .flatten()
                     .map(DocumentUri::from);
+                if changed.is_some() && Superseded::of(&params, later) == Superseded::Changed {
+                    return self.deferred(workspace, params);
+                }
                 let mut outcome = self.notification(workspace, &method, params);
                 if let Some(uri) = changed
                     && workspace.documents.contains_key(&uri)
@@ -2435,6 +2444,48 @@ impl Server
                 outcome
             },
         }
+    }
+
+    /// Apply the `textDocument/didChange` carrying `params` to this
+    /// connection's copy without judging it: a later change of the same
+    /// document, already read, judges the text every change of the burst
+    /// leaves.
+    ///
+    /// # Specification
+    /// - requires: a change of the same document follows in what the client
+    ///   sent.
+    /// - ensures: the copy holds the version and the text the change brings it
+    ///   to and no proposal, as a judged change leaves it; nothing is
+    ///   published, logged or asked.
+    /// - fails: never; unreadable parameters and a document this connection
+    ///   holds no copy of are ignored.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a burst of changes in one frame publishes once, at
+    ///   its last version, over the text every change leaves.
+    /// - witness: `server::tests::a_burst_of_changes_is_judged_once_at_its_last_version_1547`
+    #[spec(ensures: |ret| ret.messages.is_empty() && ret.log.is_empty() && ret.flow == Flow::Continue)]
+    fn deferred(
+        &self,
+        workspace: &mut Workspace,
+        params: Value,
+    ) -> Outcome
+    {
+        let Ok(DidChangeParams {
+            text_document,
+            content_changes,
+        }) = serde_json::from_value(params)
+        else {
+            return Outcome::quiet();
+        };
+        if let Some(held) = workspace.documents.get_mut(&text_document.uri) {
+            held.promote(self.peer);
+            if let Maybe::Present(document) = held.own_mut(self.peer) {
+                edited(document, text_document.version, content_changes);
+            }
+        }
+        Outcome::quiet()
     }
 
     /// Run the command `params` names, answering request `id`:
@@ -4005,11 +4056,7 @@ impl Server
                 held.promote(self.peer);
                 let mut outcome = match held.own_mut(self.peer) {
                     Maybe::Present(document) => {
-                        document.version = text_document.version;
-                        document.proposals.clear();
-                        for change in content_changes {
-                            document.caret = document.text.apply(change);
-                        }
+                        edited(document, text_document.version, content_changes);
                         synchronised(
                             &uri,
                             document,
@@ -6237,6 +6284,24 @@ fn caret_range(
         gandr_surface_render_remote::ByteOffset::from(usize::from(span.end())),
     )
     .map_or(Maybe::Absent(formless::Absent::Between), Maybe::Present)
+}
+
+/// Bring `document` to `version` by `changes`, each against the text the ones
+/// before it left, withdrawing the fills it proposed over the text it held.
+///
+/// # Specification
+/// trivial.
+fn edited(
+    document: &mut Document,
+    version: DocumentVersion,
+    changes: Vec<ContentChange>,
+)
+{
+    document.version = version;
+    document.proposals.clear();
+    for change in changes {
+        document.caret = document.text.apply(change);
+    }
 }
 
 /// Recheck `document`, open at `uri`, at `verbosity` and in `spelling`,
@@ -10935,6 +11000,92 @@ mod tests
             "the lifecycle is never withdrawn"
         );
         assert_eq!(server.closed(), Served::Clean);
+    }
+
+    /// #1547: a burst of changes read in one frame is judged once, at its last
+    /// version, over the text every change of it leaves; a request between two
+    /// of its changes is answered `ContentModified`, and a change followed only
+    /// by another document's is judged at once.
+    #[test]
+    fn a_burst_of_changes_is_judged_once_at_its_last_version_1547()
+    {
+        let mut server = server_over_the_known_document();
+        let read = |text: &str| crate::rpc::classify(&Body::from(text.as_bytes().to_vec()));
+        let answer = |server: &mut Connected, message: &str, later: &[&str]| {
+            let later: Vec<Classified> = later.iter().map(|&text| read(text)).collect();
+            let outcome = server
+                .server
+                .answer(&mut server.workspace, read(message), &later);
+            let versions: Vec<String> = outcome
+                .log
+                .iter()
+                .map(|logged| logged.version.to_string())
+                .collect();
+            (
+                Value::Array(
+                    outcome
+                        .messages
+                        .iter()
+                        .map(|outgoing| serde_json::to_value(outgoing).expect("a message encodes"))
+                        .collect(),
+                ),
+                versions,
+            )
+        };
+        let refused = r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+            "textDocument":{"uri":"file:///tmp/example.gandr","version":2},
+            "contentChanges":[{"text":"def f = missing ;\n"}]}}"#;
+        let hover = r#"{"jsonrpc":"2.0","id":5,"method":"textDocument/hover","params":{
+            "textDocument":{"uri":"file:///tmp/example.gandr"},"position":{"line":0,"character":4}}}"#;
+        let repaired = r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+            "textDocument":{"uri":"file:///tmp/example.gandr","version":3},
+            "contentChanges":[{"range":{"start":{"line":0,"character":8},
+                "end":{"line":0,"character":15}},"text":"7"}]}}"#;
+        assert_eq!(
+            answer(&mut server, refused, &[hover, repaired]),
+            (serde_json::json!([]), Vec::new()),
+            "a change another change of its document follows is neither judged nor published"
+        );
+        assert_eq!(
+            answer(&mut server, hover, &[repaired]).0,
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":5,"error":{"code":-32801,"message":"the document changed before the request was read"}}]"#
+            )),
+            "a request between two changes of the burst"
+        );
+        let (published, versions) = answer(&mut server, repaired, &[]);
+        assert_eq!(
+            (
+                published.pointer("/0/params/version"),
+                published.pointer("/0/params/diagnostics"),
+                published.as_array().map(Vec::len),
+                versions,
+            ),
+            (
+                Some(&serde_json::json!(3_i32)),
+                Some(&serde_json::json!([])),
+                Some(1_usize),
+                Vec::from([String::from("3")]),
+            ),
+            "the burst's last change judges once, clean, over the text both changes leave"
+        );
+        assert!(
+            server
+                .workspace
+                .documents
+                .values()
+                .all(|held| held.document.text.source().as_ref() == "def f = 7 ;\n"),
+            "the ranged change applied over the deferred one's text"
+        );
+        let elsewhere = r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+            "textDocument":{"uri":"file:///tmp/other.gandr","version":2},"contentChanges":[]}}"#;
+        let again = r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+            "textDocument":{"uri":"file:///tmp/example.gandr","version":4},"contentChanges":[]}}"#;
+        assert_eq!(
+            answer(&mut server, again, &[elsewhere]).1,
+            Vec::from([String::from("4")]),
+            "a change followed only by another document's is judged at once"
+        );
     }
 
     #[test]

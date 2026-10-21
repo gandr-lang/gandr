@@ -1,4 +1,4 @@
-//! The `gandr` series of the benchmark report: three fixed workloads run once
+//! The `gandr` series of the benchmark report: four fixed workloads run once
 //! each under the hotpath profiler.
 //!
 //! | Workload | What it runs | Measured functions |
@@ -6,6 +6,7 @@
 //! | `closure check` | `gandr check` of the largest model source and its imports | the checker's per-declaration judgement and the kernel bridge's readmission |
 //! | `stage readmission` | `gandr stage pow:0..8 double:0..8` | the kernel's readmission of each staged certificate |
 //! | `lsp keystroke` | a language-server session that opens the same source and erases one line | the server's recheck |
+//! | `lsp burst` | the same session, erasing the end of that line one character per change, every change read in one frame | the server's recheck, once per burst |
 //!
 //! Built with `--features hotpath`, which turns on the profiler in every
 //! measured crate, counts allocations through the profiler's global
@@ -55,6 +56,9 @@ const SOURCE: &str = "../surface-corpus/fixture/model/desc/lc/model-record.gandr
 
 /// The staged programs whose certificates the kernel readmits.
 const PROGRAMS: [&str; 2] = ["pow:0..8", "double:0..8"];
+
+/// How many keystrokes the burst sends, one character erased by each.
+const BURST: usize = 8;
 
 /// The path of [`SOURCE`] from the driver's manifest directory.
 ///
@@ -124,6 +128,45 @@ fn framed(message: &serde_json::Value) -> Vec<u8>
     frame
 }
 
+/// Serve a language-server session that opens [`SOURCE`], changes it to each
+/// of `edits` in order, each a whole text at the next version, then shuts the
+/// session down. Every message is in the input before the server reads it, so
+/// the changes are read together.
+///
+/// # Specification
+/// trivial.
+fn lsp_session(
+    text: &str,
+    edits: &[String],
+)
+{
+    let uri = format!("file://{}", source().display());
+    let mut session = Vec::from([
+        serde_json::json!({"jsonrpc": "2.0", "id": 1_u8, "method": "initialize", "params": {}}),
+        serde_json::json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
+        serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+            "textDocument": {"uri": uri, "languageId": "gandr", "version": 1_u8, "text": text},
+        }}),
+    ]);
+    session.extend(edits.iter().zip(2_u32 ..).map(|(edit, version)| {
+        serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+            "textDocument": {"uri": uri, "version": version},
+            "contentChanges": [{"text": edit}],
+        }})
+    }));
+    session.extend([
+        serde_json::json!({"jsonrpc": "2.0", "id": 2_u8, "method": "shutdown"}),
+        serde_json::json!({"jsonrpc": "2.0", "method": "exit"}),
+    ]);
+    let frames: Vec<u8> = session.iter().flat_map(framed).collect();
+    let mut input: &[u8] = &frames;
+    let mut output = Vec::new();
+    let mut log = Vec::new();
+    let served = gandr_surface_lsp::serve(&mut input, &mut output, &mut log, Spelling::Unicode)
+        .expect("the session is served");
+    core::hint::black_box((served, output, log));
+}
+
 /// Open [`SOURCE`] in a language-server session, erase its middle line as one
 /// keystroke would leave it, then shut the session down.
 ///
@@ -131,8 +174,7 @@ fn framed(message: &serde_json::Value) -> Vec<u8>
 /// trivial.
 fn lsp_keystroke()
 {
-    let path = source();
-    let text = std::fs::read_to_string(&path).expect("the model source reads");
+    let text = std::fs::read_to_string(source()).expect("the model source reads");
     let lines: Vec<&str> = text.lines().collect();
     let erased_at = lines.len().checked_div(2).unwrap_or_default();
     let kept: Vec<&str> = lines
@@ -141,28 +183,39 @@ fn lsp_keystroke()
         .filter(|&(at, _)| at != erased_at)
         .map(|(_, line)| *line)
         .collect();
-    let erased = kept.join("\n");
-    let uri = format!("file://{}", path.display());
-    let session = [
-        serde_json::json!({"jsonrpc": "2.0", "id": 1_u8, "method": "initialize", "params": {}}),
-        serde_json::json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
-        serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
-            "textDocument": {"uri": uri, "languageId": "gandr", "version": 1_u8, "text": text},
-        }}),
-        serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
-            "textDocument": {"uri": uri, "version": 2_u8},
-            "contentChanges": [{"text": erased}],
-        }}),
-        serde_json::json!({"jsonrpc": "2.0", "id": 2_u8, "method": "shutdown"}),
-        serde_json::json!({"jsonrpc": "2.0", "method": "exit"}),
-    ];
-    let frames: Vec<u8> = session.iter().flat_map(framed).collect();
-    let mut input: &[u8] = &frames;
-    let mut output = Vec::new();
-    let mut log = Vec::new();
-    let served = gandr_surface_lsp::serve(&mut input, &mut output, &mut log, Spelling::Unicode)
-        .expect("the session is served");
-    core::hint::black_box((served, output, log));
+    lsp_session(&text, &[kept.join("\n")]);
+}
+
+/// Open [`SOURCE`] in a language-server session, erase the last [`BURST`]
+/// characters of its middle line one keystroke at a time, every change read in
+/// one frame, then shut the session down.
+///
+/// # Specification
+/// trivial.
+fn lsp_burst()
+{
+    let text = std::fs::read_to_string(source()).expect("the model source reads");
+    let lines: Vec<&str> = text.lines().collect();
+    let erased_at = lines.len().checked_div(2).unwrap_or_default();
+    let edits: Vec<String> = (1 ..= BURST)
+        .map(|erased| {
+            lines
+                .iter()
+                .enumerate()
+                .map(|(at, line)| {
+                    if at == erased_at {
+                        let kept = line.chars().count().saturating_sub(erased);
+                        line.chars().take(kept).collect()
+                    }
+                    else {
+                        String::from(*line)
+                    }
+                })
+                .collect::<Vec<String>>()
+                .join("\n")
+        })
+        .collect();
+    lsp_session(&text, &edits);
 }
 
 /// Run each workload once under its own measured block.
@@ -175,4 +228,5 @@ fn main()
     hotpath::measure_block!("closure check", closure_check());
     hotpath::measure_block!("stage readmission", stage_readmission());
     hotpath::measure_block!("lsp keystroke", lsp_keystroke());
+    hotpath::measure_block!("lsp burst", lsp_burst());
 }
