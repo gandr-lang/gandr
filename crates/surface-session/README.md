@@ -17,7 +17,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 
 **Why.** The REPL, the language server and a terminal interface all need what the batch pipeline does not keep: the latest resume to adopt from, a checkpoint store that outlives the process, and the import scope of the last revision that lowered. Holding that state once, below every face, means each face is a loop over `submit` and a renderer of steps, and every face's verdicts are the batch pipeline's.
 
-**How.** `judge` parses the revision through the session's form store, which molds only the top-level forms whose identity it does not hold, then calls the dispatcher's `lower_parsed`, then the dispatcher's `judge` for the report and `program` plus `IncrementalSession::submit` for the resume, over a copy of the lowered arena, and keeps the dispatcher's `Admission` for `admit`. A whole-revision refusal is `Composed::Refused`: it retains the accepted resume, imports, and snapshot but advances the lowering-attempt count. Checkpoints use `CheckpointStore`; a store failure becomes `Persistence::Failed` when a resume remains available, otherwise `SessionFault::Store`. A kernel block-store refusal is carried as `KernelCheckpoint::Failed` without discarding the accepted resume.
+**How.** `judge` parses the revision through the session's form store, which molds only the top-level forms whose identity it does not hold, then calls the dispatcher's `lower_parsed`, then the dispatcher's `judge` for the report and `program` plus `IncrementalSession::submit` for the resume, over a copy of the lowered arena, and keeps the dispatcher's `Admission` for `admit`. A whole-revision refusal is `Composed::Refused`: it retains the accepted resume, imports, and snapshot but advances the lowering-attempt count. Checkpoints use `CheckpointStore`; a store failure becomes `Persistence::Failed` when a resume remains available, otherwise `SessionFault::Store`. A kernel block-store refusal is carried as `KernelCheckpoint::Failed` without discarding the accepted resume. A store that keeps nothing (`DiscardingCheckpointStore`) is handed nothing: the submission's persistence is `Persistence::Discarded` and its kernel checkpoint `KernelCheckpoint::Discarded`.
 
 ## Provided features
 
@@ -38,7 +38,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 
 ## Expected features
 
-- **A checkpoint store.** Any `CheckpointStore`: `gandr-core-incremental`'s `MemoryCheckpointStore` for a session that dies with its process, its `FileCheckpointStore` for one that outlives it.
+- **A checkpoint store.** Any `CheckpointStore`: `gandr-core-incremental`'s `MemoryCheckpointStore` for a session that dies with its process, its `FileCheckpointStore` for one that outlives it, its `DiscardingCheckpointStore` for one whose checkpoints nothing restores, such as an editor's open document.
 - **A block store.** Any `BlockStore`: `gandr-storage-records`' `InMemoryBlockStore` for a session that dies with its process; a store that outlives it carries the kernel checkpoints to the next.
 - **A backend identity.** A `BackendArtifact` naming the checker build, so checkpoints a different checker judged are never restored.
 - **The text.** The caller owns the source's buffer and submits each revision whole; the submission borrows it.

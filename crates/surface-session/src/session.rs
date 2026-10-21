@@ -295,6 +295,7 @@ use gandr_core_incremental::CheckpointStoreError;
 use gandr_core_incremental::IncrementalSession;
 use gandr_core_incremental::ItemCount;
 use gandr_core_incremental::ItemOrdinal;
+use gandr_core_incremental::Keeping;
 use gandr_core_incremental::ProgramError;
 use gandr_core_incremental::Resume;
 use gandr_core_incremental::ResumeCensus;
@@ -670,9 +671,10 @@ impl Imports
 ///
 /// # Specification
 /// - requires: the producing operation’s documented context.
-/// - ensures: Stored reports successful checkpoint persistence; Failed carries
-///   the store refusal while the session keeps its resume. External partial
-///   writes follow the store’s contract.
+/// - ensures: Stored reports successful checkpoint persistence; Discarded a
+///   store that keeps nothing, which was handed nothing; Failed carries the
+///   store refusal while the session keeps its resume. External partial writes
+///   follow the store’s contract.
 /// - executable: none — The enum does not contain the store or the operation’s
 ///   earlier state; `Session::submit` and the persistence-failure witness
 ///   observe the transition.
@@ -688,6 +690,9 @@ pub enum Persistence
 {
     /// The store holds the submission's checkpoints at its program's address.
     Stored,
+    /// The store keeps no checkpoint sets ([`Keeping::Discarded`]): nothing
+    /// was addressed or written.
+    Discarded,
     /// The store refused them; its own contract governs any partial writes.
     /// The session still resumes from the submission.
     Failed(CheckpointStoreError),
@@ -749,8 +754,9 @@ impl Resumed
 /// # Specification
 /// - requires: the producing operation’s documented context.
 /// - ensures: Stored carries the manifest naming the committed kernel records;
-///   Failed preserves the first artifact or block-store refusal without
-///   discarding the accepted resume.
+///   Discarded a session whose checkpoint store keeps nothing, which commits
+///   nothing; Failed preserves the first artifact or block-store refusal
+///   without discarding the accepted resume.
 /// - executable: none — The enum has neither its originating artifact nor store
 ///   and no callable boundary; commit and readback operations check the
 ///   relation.
@@ -769,6 +775,10 @@ pub enum KernelCheckpoint
     /// The block store holds the revision's kernel artifact as records under
     /// this manifest, which [`Session::read_kernel`] reads back.
     Stored(ArtifactManifest),
+    /// The session's checkpoint store keeps nothing ([`Keeping::Discarded`]),
+    /// so no session restores the kernel artifact either: nothing was cut or
+    /// committed.
+    Discarded,
     /// The artifact was not committed: its records did not form or the block
     /// store refused a node. No manifest names what reached the store, and the
     /// session still resumes from the submission.
@@ -781,8 +791,9 @@ pub enum KernelCheckpoint
 ///
 /// # Specification
 /// - requires: constructed by [`Session::admit`].
-/// - ensures: the checkpoint is the one committed for the artifact; no more
-///   declarations crossed than were judged.
+/// - ensures: the checkpoint is the one committed for the artifact, or
+///   [`KernelCheckpoint::Discarded`] when the session's store keeps nothing; no
+///   more declarations crossed than were judged.
 /// - panics: none.
 /// - executable: none — this data type has no call boundary; [`Session::admit`]
 ///   carries the executable clauses.
@@ -1910,6 +1921,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         mut submission: Submission<'text>,
     ) -> Result<Submission<'text>, SessionFault<'text>>
     where
+        Store: CheckpointStore,
         Blocks: BlockStore,
     {
         if let Maybe::Present(admitted) = self
@@ -2349,7 +2361,10 @@ impl<Store, Blocks> Session<Store, Blocks>
             None => self.incremental.submit(&mut items, &mut Quiet),
         };
         let (census, persistence) = match submitted {
-            Ok(census) => (census, Persistence::Stored),
+            Ok(census) => (census, match Store::KEEPING {
+                Keeping::Kept => Persistence::Stored,
+                Keeping::Discarded => Persistence::Discarded,
+            }),
             Err(SessionError::Resume(error)) => return Err(SessionFault::Resume(error)),
             // The incremental session keeps the new resume when persisting
             // fails; were it to hold none, there is no census to report, so
@@ -2546,13 +2561,14 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   [`judge_module`](gandr_surface_dispatcher::judge_module) exports for
     ///   the same revision — beside the checkpoint [`build`] mints over the
     ///   records [`ArtifactRecordSet::from_artifact`] cuts from it, every node
-    ///   of their tree then in the block store, and how many declarations the
-    ///   kernel was offered of how many were judged; or the first refusal. The
-    ///   readmission of the import closure the revision was laid out after is
-    ///   resumed from the one the process holds for the closure's text whose
-    ///   declarations' checkpoints — content, consulted answers and typing —
-    ///   are pointwise those of the latest resume, and is held for the next
-    ///   admission otherwise
+    ///   of their tree then in the block store, or none when the checkpoint
+    ///   store keeps nothing ([`KernelCheckpoint::Discarded`]); and how many
+    ///   declarations the kernel was offered of how many were judged; or the
+    ///   first refusal. The readmission of the import closure the revision was
+    ///   laid out after is resumed from the one the process holds for the
+    ///   closure's text whose declarations' checkpoints — content, consulted
+    ///   answers and typing — are pointwise those of the latest resume, and is
+    ///   held for the next admission otherwise
     ///   ([`readmit_resuming`](gandr_core_checker::bridge::readmit_resuming));
     ///   the closure's declarations then cross only when no such readmission is
     ///   held. Either way the session holds no admission after.
@@ -2585,6 +2601,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     #[inline]
     pub fn admit(&mut self) -> Result<Maybe<Admitted, admission::Absent>, Readmitted>
     where
+        Store: CheckpointStore,
         Blocks: BlockStore,
     {
         let held = core::mem::replace(&mut self.admission, Maybe::Absent(admission::Absent::Idle));
@@ -2620,7 +2637,10 @@ impl<Store, Blocks> Session<Store, Blocks>
             }),
         };
         let kernel = resumption.artifact?;
-        let checkpoint = checkpoint_kernel(&kernel, &mut self.blocks, held.as_deref());
+        let checkpoint = match Store::KEEPING {
+            Keeping::Kept => checkpoint_kernel(&kernel, &mut self.blocks, held.as_deref()),
+            Keeping::Discarded => KernelCheckpoint::Discarded,
+        };
         Ok(Maybe::Present(Admitted {
             kernel,
             checkpoint,
@@ -3062,6 +3082,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             && u64::from(manifest.record_count()) >= 1_u64
     }
     KernelCheckpoint::Failed(_) => true,
+    KernelCheckpoint::Discarded => false,
 },
 )]
 fn checkpoint_kernel<Blocks>(

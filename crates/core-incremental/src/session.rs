@@ -18,6 +18,7 @@ use crate::persistence::BackendArtifact;
 use crate::persistence::CheckpointObserver;
 use crate::persistence::CheckpointStore;
 use crate::persistence::CheckpointStoreError;
+use crate::persistence::Keeping;
 use crate::persistence::persist;
 use crate::region::Program;
 use crate::stream::SynthesisStream;
@@ -176,13 +177,13 @@ impl<Store> IncrementalSession<Store>
     }
 
     /// Submit a revision: resume from the latest one, or judge it whole, then
-    /// persist its checkpoints.
+    /// persist its checkpoints to a store that keeps them.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: on success the session holds the revision's resume and the
-    ///   store its checkpoints at its address; the census of the pass is
-    ///   returned.
+    /// - ensures: on success the session holds the revision's resume and, when
+    ///   the store keeps sets ([`Keeping::Kept`]), the store its checkpoints at
+    ///   its address; the census of the pass is returned.
     /// - fails: [`SessionError::Resume`] when the resume fails;
     ///   [`SessionError::Store`] when persisting fails, with the store as it
     ///   was.
@@ -277,12 +278,14 @@ impl<Store> IncrementalSession<Store>
         self.persisted(program, next, observer)
     }
 
-    /// Persist `next`'s checkpoints of `program` and hold `next`, whether or
-    /// not persisting succeeds.
+    /// Persist `next`'s checkpoints of `program` to a store that keeps them
+    /// and hold `next`, whether or not persisting succeeds.
     ///
     /// # Specification
     /// - requires: `next` is the pass over `program`.
     /// - ensures: the session holds `next`; on success its census is returned.
+    ///   A store that keeps nothing ([`Keeping::Discarded`]) is neither
+    ///   addressed nor handed the set.
     /// - fails: [`SessionError::Store`] when persisting fails.
     /// - panics: none.
     ///
@@ -305,6 +308,10 @@ impl<Store> IncrementalSession<Store>
         Observer: CheckpointObserver,
     {
         let census = next.census();
+        if Store::KEEPING == Keeping::Discarded {
+            self.last = Maybe::Present(next);
+            return Ok(census);
+        }
         let persisted = persist(
             &mut self.store,
             program,
