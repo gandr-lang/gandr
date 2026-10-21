@@ -273,6 +273,79 @@ fn a_call_handing_the_scrutinee_is_refused()
     );
 }
 
+/// `sameAt @[i : Size] (f : U (Nat[i] → F Nat), x : Nat[i]) : F Nat = (force
+/// f) x` at position 1.
+///
+/// # Specification
+/// trivial.
+fn same_at(arena: &mut CoreArena) -> Declaration
+{
+    let nat = nat(arena);
+    let at_i = arena.value_type_staged(nat, Stage::At(StageId::from(0_usize)));
+    let function = function_of(arena, at_i);
+    let returner = arena.comp_type_returner(nat);
+    let inner = arena.comp_type_arrow(at_i, returner);
+    let outer = arena.comp_type_arrow(function, inner);
+    let declared = arena.value_type_thunk(outer);
+    let f = var(arena, DeBruijnIndex::from(1));
+    let x = var(arena, DeBruijnIndex::from(0));
+    let applied = call(arena, f, &[x]);
+    let second = arena.computation_lambda(applied);
+    let first = arena.computation_lambda(second);
+    let body = arena.value_thunk(first);
+    define(ConstantIndex::from(1), declared, body).staged(vec![StageBound::Unbounded])
+}
+
+#[test]
+fn arguments_at_apart_stages_disagree_by_name_1227()
+{
+    // #1227: `sameAt h p` reads `i` from above under `h`'s domain, one below
+    // `n`'s stage, and from below at `p`'s, which fits there: both checkers
+    // admit it at `p`'s stage. `sameAt h n` reads it from below at `n`'s own
+    // stage, where the solve stands it, and no stage there is under `h`'s
+    // domain: refused by name at `h`, the reading the solution leaves unmet.
+    let mut arena = CoreArena::new();
+    let declarations = vec![
+        declare_nat(&mut arena),
+        same_at(&mut arena),
+        helped(&mut arena, |arena| var(arena, DeBruijnIndex::from(0))),
+    ];
+    let (verdicts, outcomes) = judge(&mut arena, &declarations);
+    for position in [1, 2] {
+        assert!(
+            matches!(verdicts[position], Verdict::Checked { .. }),
+            "{position}: {:?}",
+            verdicts[position]
+        );
+        assert!(
+            matches!(outcomes[position], Outcome::Defined { .. }),
+            "{position}: {:?}",
+            outcomes[position]
+        );
+    }
+
+    let mut arena = CoreArena::new();
+    let declarations = vec![
+        declare_nat(&mut arena),
+        same_at(&mut arena),
+        helped(&mut arena, |arena| var(arena, DeBruijnIndex::from(1))),
+    ];
+    let (verdicts, _) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(
+            verdicts[2],
+            Verdict::Refused(CheckRefusal::StagesDisagree { at, binder, .. })
+                if binder == StageBinder::from(0_usize)
+                    && arena.value(at) == Some(&gandr_core_term::Value::Variable {
+                        zone: Zone::Intuitionistic,
+                        index: DeBruijnIndex::from(2),
+                    })
+        ),
+        "{:?}",
+        verdicts[2]
+    );
+}
+
 #[test]
 fn a_call_at_no_stage_reads_its_result_plain()
 {

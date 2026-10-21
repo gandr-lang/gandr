@@ -633,6 +633,17 @@ pub enum KernelError
         /// The stage it was wanted at or below.
         bound: gandr_kernel_term::Stage,
     },
+    /// Two arguments of a call show stages for one binder of a definition
+    /// quantified over stages that no stage satisfies together.
+    StagesDisagree
+    {
+        /// The binder, by its position in the signature.
+        binder: gandr_kernel_term::StageBinder,
+        /// The stage the other readings settle on.
+        first: gandr_kernel_term::Stage,
+        /// The stage of the reading it does not satisfy.
+        second: gandr_kernel_term::Stage,
+    },
     /// A presented type names a stage. Admission alone mints a stage, at a
     /// structural fixpoint and a case under it; a declaration never writes
     /// one.
@@ -956,6 +967,10 @@ impl core::fmt::Display for KernelError
             Self::StageNotBelow { .. } => {
                 f.write_str("a value did not stand below the stage its recursion wants")
             },
+            Self::StagesDisagree { .. } => f.write_str(
+                "two arguments showed stages for one stage binder that no stage satisfies \
+                 together",
+            ),
             Self::StagePresented => f.write_str("a presented type named a stage"),
             Self::StageUnplaced => {
                 f.write_str("a stage signature marked an occurrence that is no data type")

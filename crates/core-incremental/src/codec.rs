@@ -6377,6 +6377,11 @@ where
             write_standing(writer, found)?;
             write_stage(writer, bound)?;
         },
+        Refusal::StagesDisagree { at, binder } => {
+            writer.tag(Tag(83));
+            write_site(writer, at)?;
+            writer.count(Count(usize::from(binder)))?;
+        },
         Refusal::SessionMismatch {
             at,
             endpoint,
@@ -6633,6 +6638,7 @@ where
                     | Refusal::NonUniformOccurrence(_) => 31,
                     | Refusal::CrossBlockReference { .. } => 32,
                     | Refusal::StageNotBelow { .. } => 77,
+                    | Refusal::StagesDisagree { .. } => 83,
                     | Refusal::EffectSignatureConflict { .. } => 34,
                     | Refusal::UnknownOperation { .. } => 35,
                     | Refusal::HandlerCoverage { .. } => 36,
@@ -7065,6 +7071,10 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             let found = read_standing(reader)?;
             let bound = read_stage(reader)?;
             Refusal::StageNotBelow { at, found, bound }
+        },
+        83 => Refusal::StagesDisagree {
+            at: read_site(reader)?,
+            binder: gandr_kernel_term::StageBinder::from(reader.count()?.0),
         },
         34 => Refusal::EffectSignatureConflict {
             at: read_site(reader)?,
@@ -7686,6 +7696,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::NonUniformOccurrence(_)
             | Refusal::CrossBlockReference { .. }
             | Refusal::StageNotBelow { .. }
+            | Refusal::StagesDisagree { .. }
             | Refusal::EffectSignatureConflict { .. }
             | Refusal::AbstractKindNotUniverse(_)
             | Refusal::NotAnAbstractType(_)

@@ -314,6 +314,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::NonUniformOccurrence(_) => "the declared type at other arguments",
         CheckRefusal::CrossBlockReference { .. } => "names a later declaration",
         CheckRefusal::StageNotBelow { .. } => "not below the stage its recursion wants",
+        CheckRefusal::StagesDisagree { .. } => "a stage the call's earlier arguments exclude",
         CheckRefusal::SessionMismatch { defect, .. } => match defect {
             ProtocolDefect::Action { .. } => "an action the endpoint's state does not admit",
             ProtocolDefect::Label => "a label the endpoint's state does not offer",

@@ -8155,6 +8155,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CheckRefusal::NonUniformOccurrence(_)
                     | CheckRefusal::CrossBlockReference { .. }
                     | CheckRefusal::StageNotBelow { .. }
+                    | CheckRefusal::StagesDisagree { .. }
                     | CheckRefusal::SessionMismatch { .. }
                     | CheckRefusal::Linearity { .. }
                     | CheckRefusal::UnenclosedRun { .. }

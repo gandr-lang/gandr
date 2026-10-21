@@ -6,8 +6,9 @@
 //! stage's parent lies strictly above it, so a path up the forest is a chain
 //! of strict steps, and every comparison reads a path's length as a lower
 //! bound on how far apart two stages lie, never as an exact distance. There is
-//! no stage arithmetic, no `∞` stage and no constraint to solve: the order is
-//! decided by walking up one path.
+//! no stage arithmetic and no `∞` stage: the order is decided by walking up
+//! one path, and a binder a call reads off several arguments stands at the
+//! stage their bounds agree on ([`StageOrder::solve`]).
 //!
 //! The checker and the kernel each grow their own order and decide with this
 //! one type, so the two judgements share one notion of "below".
@@ -46,6 +47,74 @@ pub enum Unminted
 {
     /// The parent names no stage of this order.
     Parent(StageId),
+}
+
+/// Which way a reading bounds the binder it was read for.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Side
+{
+    /// The binder stands at or above it: read where an argument's own value
+    /// stands, which fits the binder's place by subsumption.
+    Lower,
+    /// The binder stands at or below it: read under a function argument's
+    /// domain, which takes the binder's place by subsumption.
+    Upper,
+    /// The binder stands at it: read inside a data type's argument, whose
+    /// variance the call does not read.
+    Exact,
+}
+
+impl Side
+{
+    /// The side a reading one domain deeper takes.
+    ///
+    /// # Specification
+    /// - ensures: lower and upper swap; exact stays.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`StageOrder::solve`].
+    /// - witness: `stage_order::tests::readings_solve_at_the_least_stage_they_allow`
+    #[spec(ensures: |ret| matches!((self, ret), (Self::Lower, Self::Upper) | (Self::Upper, Self::Lower) | (Self::Exact, Self::Exact)))]
+    #[inline]
+    #[must_use]
+    pub const fn flipped(self) -> Self
+    {
+        match self {
+            Self::Lower => Self::Upper,
+            Self::Upper => Self::Lower,
+            Self::Exact => Self::Exact,
+        }
+    }
+}
+
+/// One argument's reading of a binder: the stage it shows, and which way
+/// that stage bounds the binder.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Reading
+{
+    /// The stage the argument's type holds where the binder is marked.
+    pub stage: Stage,
+    /// Which way it bounds the binder.
+    pub side: Side,
+}
+
+/// Two readings of one binder no stage satisfies together.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Disagreement
+{
+    /// The stage the other readings settle on.
+    pub first: Stage,
+    /// The stage of the reading it does not satisfy.
+    pub second: Stage,
+}
+
+/// Why a side of a binder's readings holds no stage yet.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Unread
+{
+    /// No reading of that side has been read.
+    Unbounded,
 }
 
 /// How many strict steps up the forest one stage lies below another.
@@ -202,6 +271,155 @@ impl StageOrder
         if within { Fit::Within } else { Fit::NotBelow }
     }
 
+    /// The stage a binder stands at that every one of its readings bounds: the
+    /// least the lower readings allow, and the one the exact readings name.
+    ///
+    /// # Specification
+    /// - ensures: the exact readings' stage when there are any, else the
+    ///   greatest lower reading when there is one, else the least upper one;
+    ///   that stage satisfies every reading — a lower one fits within it, it
+    ///   fits within an upper one, and an exact one fits both ways.
+    /// - fails: [`Disagreement`] naming the first two readings no stage of the
+    ///   order satisfies together: two lower or two upper readings neither of
+    ///   which fits within the other, two exact readings that differ, or the
+    ///   chosen stage beside a reading it does not satisfy.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a chain of lower readings solves at its top, a lower
+    ///   reading above an upper one and two apart lower readings are refused,
+    ///   and an exact reading wins over a lower one it fits above.
+    /// - witness: `stage_order::tests::readings_solve_at_the_least_stage_they_allow`
+    /// - witness: `stage_order::tests::readings_no_stage_satisfies_disagree`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&solved| core::iter::once(&first)
+        .chain(rest)
+        .all(|&reading| self.bounded(solved, reading) == Fit::Within)))]
+    #[inline]
+    pub fn solve(
+        &self,
+        first: Reading,
+        rest: &[Reading],
+    ) -> Result<Stage, Disagreement>
+    {
+        let mut lower: Maybe<Stage, Unread> = Maybe::Absent(Unread::Unbounded);
+        let mut upper: Maybe<Stage, Unread> = Maybe::Absent(Unread::Unbounded);
+        let mut exact: Maybe<Stage, Unread> = Maybe::Absent(Unread::Unbounded);
+        for &reading in core::iter::once(&first).chain(rest) {
+            let held = match reading.side {
+                Side::Lower => &mut lower,
+                Side::Upper => &mut upper,
+                Side::Exact => &mut exact,
+            };
+            *held = Maybe::Present(match *held {
+                Maybe::Present(stage) => match reading.side {
+                    Side::Lower => self.greater(stage, reading.stage)?,
+                    Side::Upper => self.lesser(stage, reading.stage)?,
+                    Side::Exact => self.same(stage, reading.stage)?,
+                },
+                Maybe::Absent(_) => reading.stage,
+            });
+        }
+        let solved = match (exact, lower, upper) {
+            (Maybe::Present(stage), ..)
+            | (Maybe::Absent(_), Maybe::Present(stage), _)
+            | (Maybe::Absent(_), Maybe::Absent(_), Maybe::Present(stage)) => stage,
+            (Maybe::Absent(_), Maybe::Absent(_), Maybe::Absent(_)) => first.stage,
+        };
+        for (bound, side) in [(lower, Side::Lower), (upper, Side::Upper)] {
+            if let Maybe::Present(stage) = bound
+                && self.bounded(solved, Reading { stage, side }) == Fit::NotBelow
+            {
+                return Err(Disagreement {
+                    first: solved,
+                    second: stage,
+                });
+            }
+        }
+        Ok(solved)
+    }
+
+    /// Whether `solved` satisfies `reading`: [`Fit::Within`] when it lies
+    /// where the reading's side bounds it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn bounded(
+        &self,
+        solved: Stage,
+        reading: Reading,
+    ) -> Fit
+    {
+        let below = self.fit(reading.stage, solved);
+        let above = self.fit(solved, reading.stage);
+        match (reading.side, below, above) {
+            (Side::Lower, fit, _) | (Side::Upper, _, fit) => fit,
+            (Side::Exact, Fit::Within, Fit::Within) => Fit::Within,
+            (Side::Exact, Fit::NotBelow, _) | (Side::Exact, _, Fit::NotBelow) => Fit::NotBelow,
+        }
+    }
+
+    /// The greater of two lower readings.
+    ///
+    /// # Specification
+    /// trivial.
+    fn greater(
+        &self,
+        held: Stage,
+        read: Stage,
+    ) -> Result<Stage, Disagreement>
+    {
+        if self.fit(held, read) == Fit::Within {
+            Ok(read)
+        }
+        else if self.fit(read, held) == Fit::Within {
+            Ok(held)
+        }
+        else {
+            Err(Disagreement {
+                first: held,
+                second: read,
+            })
+        }
+    }
+
+    /// The lesser of two upper readings.
+    ///
+    /// # Specification
+    /// trivial.
+    fn lesser(
+        &self,
+        held: Stage,
+        read: Stage,
+    ) -> Result<Stage, Disagreement>
+    {
+        self.greater(held, read)
+            .map(|greater| if greater == read { held } else { read })
+    }
+
+    /// Two exact readings, which must name one stage.
+    ///
+    /// # Specification
+    /// trivial.
+    fn same(
+        &self,
+        held: Stage,
+        read: Stage,
+    ) -> Result<Stage, Disagreement>
+    {
+        if self.fit(held, read) == Fit::Within && self.fit(read, held) == Fit::Within {
+            Ok(held)
+        }
+        else {
+            Err(Disagreement {
+                first: held,
+                second: read,
+            })
+        }
+    }
+
     /// The steps from the exact stage `from` up to its ancestor `to`.
     ///
     /// # Specification
@@ -290,7 +508,10 @@ mod tests
     use gandr_kernel_term::StageDepth;
     use gandr_kernel_term::StageId;
 
+    use super::Disagreement;
     use super::Fit;
+    use super::Reading;
+    use super::Side;
     use super::StageOrder;
     use super::Unminted;
     use super::below;
@@ -436,5 +657,82 @@ mod tests
             anchor,
             depth: StageDepth::ONE.deeper()
         });
+    }
+
+    /// # Specification
+    /// trivial.
+    #[test]
+    fn readings_solve_at_the_least_stage_they_allow()
+    {
+        let mut order = StageOrder::default();
+        let root = Stage::At(order.mint_root());
+        let child = Stage::At(
+            order
+                .mint_below(StageId::from(0_usize))
+                .expect("the root is minted"),
+        );
+        let read = |stage, side| Reading { stage, side };
+        assert_eq!(
+            order.solve(read(child, Side::Lower), &[read(root, Side::Lower)]),
+            Ok(root),
+            "a chain of lower readings solves at its top"
+        );
+        assert_eq!(
+            order.solve(read(root, Side::Upper), &[read(child, Side::Lower)]),
+            Ok(child),
+            "the least stage the lower reading allows, under the upper one"
+        );
+        assert_eq!(
+            order.solve(read(child, Side::Upper), &[read(root, Side::Upper)]),
+            Ok(child),
+            "upper readings alone solve at their least"
+        );
+        assert_eq!(
+            order.solve(read(child, Side::Lower), &[read(root, Side::Exact)]),
+            Ok(root),
+            "an exact reading wins over a lower one it fits above"
+        );
+        assert_eq!(Side::Lower.flipped(), Side::Upper);
+        assert_eq!(Side::Exact.flipped(), Side::Exact);
+    }
+
+    /// # Specification
+    /// trivial.
+    #[test]
+    fn readings_no_stage_satisfies_disagree()
+    {
+        let mut order = StageOrder::default();
+        let root = Stage::At(order.mint_root());
+        let child = Stage::At(
+            order
+                .mint_below(StageId::from(0_usize))
+                .expect("the root is minted"),
+        );
+        let apart = Stage::At(order.mint_root());
+        let read = |stage, side| Reading { stage, side };
+        assert_eq!(
+            order.solve(read(root, Side::Lower), &[read(child, Side::Upper)]),
+            Err(Disagreement {
+                first: root,
+                second: child,
+            }),
+            "a lower reading above an upper one"
+        );
+        assert_eq!(
+            order.solve(read(root, Side::Lower), &[read(apart, Side::Lower)]),
+            Err(Disagreement {
+                first: root,
+                second: apart,
+            }),
+            "two lower readings on apart roots"
+        );
+        assert_eq!(
+            order.solve(read(root, Side::Exact), &[read(child, Side::Exact)]),
+            Err(Disagreement {
+                first: root,
+                second: child,
+            }),
+            "two exact readings that differ"
+        );
     }
 }
