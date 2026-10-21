@@ -60,11 +60,13 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SyntaxTree;
 use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
 
+use super::Collected;
 use super::Collector;
 use super::Component;
 use super::ComponentForm;
@@ -285,6 +287,93 @@ pub struct FamilyCheck
     pub stated: FamilyForm,
 }
 
+impl<'source> Collected<'source>
+{
+    /// The `theory` block `name` names where a form starting at `at` stands:
+    /// one its source defines wholly before `at`, or one a source it imports
+    /// unqualified declares.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the declaration's slot and the presentation its `theory`
+    ///   block defines.
+    /// - provides: the one lookup a module's ascription `Model(S)`, a nested
+    ///   model and the type `Model(S)` share.
+    /// - fails: a shadowed import for a name two imports bind, at `span`; an
+    ///   unresolved head, at `span`, for a name no such block defines.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::ImportShadows`] and
+    /// [`LoweringRefusal::UnresolvedTypeHead`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a local theory, an imported one, an undeclared one, a
+    ///   nested model's theory and a model type's.
+    /// - witness: `tests::modules::models::a_model_of_an_undeclared_theory_is_refused_by_name`
+    /// - witness: `tests::namespace::a_model_of_an_imported_theory_derives_its_signature_726`
+    /// - witness: `tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
+    /// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(position, _)| self.slots.get(position.0).is_some_and(|slot| slot.name == name)))]
+    pub(crate) fn presented_theory(
+        &self,
+        at: ByteOffset,
+        span: ByteSpan,
+        name: SurfaceName<'source>,
+    ) -> Result<(SlotIndex, &Presentation), LoweringRefusal<'source>>
+    {
+        let local = self
+            .by_name
+            .get(&(self.top(at), name))
+            .copied()
+            .filter(|position| {
+                self.slots
+                    .get(position.0)
+                    .is_some_and(|slot| slot.introduced_by.span.end() <= at)
+            });
+        let position = match local {
+            Some(position) => Some(position),
+            None => match self.imported_slot(self.unit.source_at(at), name) {
+                Ok(Maybe::Present((position, _import))) => Some(position),
+                Ok(Maybe::Absent(_)) => None,
+                Err(ambiguity) => {
+                    return Err(LoweringRefusal::ImportShadows {
+                        span,
+                        name,
+                        import: ambiguity.import,
+                        other: ambiguity.other,
+                    });
+                },
+            },
+        };
+        let presented = position.and_then(|position| {
+            let slot = self.slots.get(position.0)?;
+            if !matches!(
+                slot.definition,
+                Maybe::Present(Half {
+                    operand: Operand::Presented,
+                    ..
+                })
+            ) {
+                return None;
+            }
+            match self
+                .descriptions
+                .get(&slot.introduced_by.node)?
+                .presentation
+            {
+                Maybe::Present(ref presentation) => Some((position, presentation)),
+                Maybe::Absent(_) => None,
+            }
+        });
+        presented.ok_or(LoweringRefusal::UnresolvedTypeHead {
+            span,
+            name,
+            arity: HeadArity::Nullary,
+        })
+    }
+}
+
 impl<'source> Collector<'_, 'source>
 {
     /// File the manifest family component `component`, `type F(a : A, …) =
@@ -468,7 +557,9 @@ impl<'source> Collector<'_, 'source>
             });
         }
         let name = self.name_of(theory);
-        let (position, presentation) = self.presented_theory(form, theory.span, name)?;
+        let (position, presentation) =
+            self.collected
+                .presented_theory(form.span.start(), theory.span, name)?;
         let Ok(model) = crate::model::derive(presentation)
         else {
             return Err(LoweringRefusal::OutOfFragment {
@@ -546,95 +637,6 @@ impl<'source> Collector<'_, 'source>
         Ok((components, model, (theory.span, position)))
     }
 
-    /// The `theory` block `name` names where the module form `form` stands: one
-    /// its source defines wholly before `form`, or one a source it imports
-    /// unqualified declares.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the declaration's slot and the presentation its `theory`
-    ///   block defines.
-    /// - fails: a shadowed import for a name two imports bind, at `span`; an
-    ///   unresolved head, at `span`, for a name no such block defines.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// [`LoweringRefusal::ImportShadows`] and
-    /// [`LoweringRefusal::UnresolvedTypeHead`].
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a local theory, an imported one, an undeclared one
-    ///   and a nested model's theory.
-    /// - witness: `tests::modules::models::a_model_of_an_undeclared_theory_is_refused_by_name`
-    /// - witness: `tests::namespace::a_model_of_an_imported_theory_derives_its_signature_726`
-    /// - witness: `tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(position, _)| self.collected.slots.get(position.0).is_some_and(|slot| slot.name == name)))]
-    fn presented_theory(
-        &self,
-        form: Placed,
-        span: ByteSpan,
-        name: SurfaceName<'source>,
-    ) -> Result<(SlotIndex, &Presentation), LoweringRefusal<'source>>
-    {
-        let local = self
-            .collected
-            .by_name
-            .get(&(self.collected.top(form.span.start()), name))
-            .copied()
-            .filter(|position| {
-                self.collected
-                    .slots
-                    .get(position.0)
-                    .is_some_and(|slot| slot.introduced_by.span.end() <= form.span.start())
-            });
-        let position = match local {
-            Some(position) => Some(position),
-            None => {
-                match self
-                    .collected
-                    .imported_slot(self.collected.unit.source_at(form.span.start()), name)
-                {
-                    Ok(Maybe::Present((position, _import))) => Some(position),
-                    Ok(Maybe::Absent(_)) => None,
-                    Err(ambiguity) => {
-                        return Err(LoweringRefusal::ImportShadows {
-                            span,
-                            name,
-                            import: ambiguity.import,
-                            other: ambiguity.other,
-                        });
-                    },
-                }
-            },
-        };
-        let presented = position.and_then(|position| {
-            let slot = self.collected.slots.get(position.0)?;
-            if !matches!(
-                slot.definition,
-                Maybe::Present(Half {
-                    operand: Operand::Presented,
-                    ..
-                })
-            ) {
-                return None;
-            }
-            match self
-                .collected
-                .descriptions
-                .get(&slot.introduced_by.node)?
-                .presentation
-            {
-                Maybe::Present(ref presentation) => Some((position, presentation)),
-                Maybe::Absent(_) => None,
-            }
-        });
-        presented.ok_or(LoweringRefusal::UnresolvedTypeHead {
-            span,
-            name,
-            arity: HeadArity::Nullary,
-        })
-    }
-
     /// Whether the nested module at `nested` is ascribed the model signature
     /// of the theory `theory` names, read where the module form `form` stands.
     ///
@@ -667,7 +669,9 @@ impl<'source> Collector<'_, 'source>
         else {
             return ModelsTheory(false);
         };
-        let Ok((_, presentation)) = self.presented_theory(form, form.span, name)
+        let Ok((_, presentation)) =
+            self.collected
+                .presented_theory(form.span.start(), form.span, name)
         else {
             return ModelsTheory(false);
         };

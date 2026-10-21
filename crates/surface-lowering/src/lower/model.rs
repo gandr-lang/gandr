@@ -20,17 +20,26 @@
 //! difference between the two.
 
 use alloc::collections::BTreeMap;
+use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::Binders;
 use gandr_core_term::CertificateEquality;
+use gandr_core_term::Computation;
+use gandr_core_term::Sort;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::hole::TermId;
+use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldLabel;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::NodeIndex;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
@@ -46,6 +55,7 @@ use super::Reading;
 use super::Sink;
 use super::Site;
 use super::Stretch;
+use super::Universe;
 use super::exits;
 use super::lowered;
 use super::stretch;
@@ -57,10 +67,13 @@ use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
+use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::read_pieces;
+use crate::form::shape_of;
 use crate::model::Binder;
 use crate::model::Dependent;
+use crate::model::ModelComponent;
 use crate::model::ModelFault;
 use crate::model::ModelForm;
 use crate::model::ModelSignature;
@@ -140,21 +153,149 @@ enum MemberRead
     Held,
 }
 
-/// What a derived type is minted for: the module it is read in, its model's
-/// operations by name, and the origin every node it mints carries.
+/// Where a derived type reads the sorts and operations it names.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug)]
-struct Minting<'source>
+enum Members<'source, 'model>
 {
-    /// The module the type is read in.
-    structure: StructureIndex,
-    /// Each operation and constant of the model, by its name in the theory,
-    /// with the member name it reads in the module and how a term reads it.
-    operations: BTreeMap<Name, (SurfaceName<'source>, MemberRead)>,
+    /// The members of a module.
+    Module
+    {
+        /// The module the type is read in.
+        structure: StructureIndex,
+        /// Each operation and constant of the model, by its name in the
+        /// theory, with the member name it reads in the module and how a term
+        /// reads it.
+        operations: BTreeMap<Name, (SurfaceName<'source>, MemberRead)>,
+    },
+    /// The fields of a bundled model before the one being minted.
+    Fields(Fields<'model>),
+}
+
+/// The fields of a bundled model a later field reads: the components before
+/// it, each with whether its link binds.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct Fields<'model>
+{
+    /// The components, in signature order.
+    before: &'model [ModelComponent],
+    /// Whether each one's link binds, in the same order.
+    binds: &'model [Dependent],
+}
+
+impl Fields<'_>
+{
+    /// The index the field named `name` is read at under `context`.
+    ///
+    /// # Specification
+    /// - requires: `context` is the telescope prefix the reading stands under,
+    ///   inside the field after the last of `before`.
+    /// - ensures: for the last component of the name, when its link binds, the
+    ///   count of the binding links after it plus the binding binders of
+    ///   `context`; nothing for a name no binding link bears.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the carrier read by the start, the step and the
+    ///   reading, and an operation read by a law under its telescope.
+    /// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
+    /// - witness: `tests::modules::models::a_law_bearing_model_type_reads_its_operations`
+    #[spec(ensures: |ret| ret.is_none() || !self.before.is_empty())]
+    fn index(
+        self,
+        name: &Name,
+        context: Context<'_>,
+    ) -> Option<DeBruijnIndex>
+    {
+        let place = self
+            .before
+            .iter()
+            .rposition(|component| component.name == *name)?;
+        if !self.binds.get(place).is_some_and(|binds| binds.0) {
+            return None;
+        }
+        let links = self
+            .binds
+            .get(place.saturating_add(1) ..)
+            .unwrap_or_default()
+            .iter()
+            .filter(|binds| binds.0)
+            .count();
+        let telescope = context.dependent.iter().filter(|binds| binds.0).count();
+
+        u32::try_from(links.saturating_add(telescope))
+            .ok()
+            .map(DeBruijnIndex::from)
+    }
+}
+
+/// What a derived type is minted for: where it reads what it names, and the
+/// origin every node it mints carries.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+struct Minting<'source, 'model>
+{
+    /// Where the type reads the sorts and operations it names.
+    members: Members<'source, 'model>,
     /// The origin every minted node carries.
     origin: Origin,
+}
+
+/// A theory's models as a type: the signature of every theory its bundled
+/// record reads, the outermost first, each beside the places of the theories
+/// its nested components name, and the name the type is written over.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct Bundled
+{
+    /// The theories, the outermost first; a nested theory stands after the
+    /// one nesting it.
+    theories: Vec<BundledTheory>,
+    /// The theory's name, `T` in `Model(T)`, where every node below the type
+    /// is located.
+    named: NodeIndex,
+}
+
+/// One theory of a [`Bundled`] record.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct BundledTheory
+{
+    /// The signature the theory derives.
+    signature: ModelSignature,
+    /// The place of each nested component's theory, in the order the
+    /// components stand.
+    nested: Vec<usize>,
+}
+
+/// A theory whose components [`Lowerer::bundled`] is reading.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct BundleFrame
+{
+    /// The theory's place among the bundle's theories.
+    place: usize,
+    /// The theory's declaration.
+    slot: SlotIndex,
+    /// Where the theory's declaration starts, where its nested theories are
+    /// read.
+    start: ByteOffset,
+    /// The next component to read.
+    next: usize,
 }
 
 impl<'source> Lowerer<'_, 'source>
@@ -450,8 +591,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   carrying `origin`.
     /// - fails: a component the derivation cannot state, a sort or a nested
     ///   model, and one naming a component that did not lower, as unlowered;
-    ///   one naming a refused component, with its refusal. refused component,
-    ///   with its refusal.
+    ///   one naming a refused component, with its refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -482,10 +622,46 @@ impl<'source> Lowerer<'_, 'source>
             return Err(Missing::Unlowered);
         };
         let minting = Minting {
-            structure,
-            operations: self.operation_names(model),
+            members: Members::Module {
+                structure,
+                operations: self.operation_names(model),
+            },
             origin,
         };
+
+        self.mint_form(form, &minting, sink)
+    }
+
+    /// The type an operation, a constant or a law states, its sorts and
+    /// operations read where `minting` reads them.
+    ///
+    /// # Specification
+    /// - requires: the mint sweep has run.
+    /// - ensures: an operation's or a law's telescope Π, as the module's
+    ///   documentation states it, and a constant's type itself, every node
+    ///   carrying the minting's origin.
+    /// - fails: a sort or a nested model, and a form naming a component that
+    ///   did not lower, as unlowered; one naming a refused component, with its
+    ///   refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Missing`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::mint_component`] and
+    ///   [`Self::mint_bundle`].
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
+    fn mint_form(
+        &self,
+        form: &ModelForm,
+        minting: &Minting<'source, '_>,
+        sink: &mut Sink<'_>,
+    ) -> Result<ValueTypeId, Missing<'source>>
+    {
+        let origin = minting.origin;
         let (telescope, tail) = match *form {
             ModelForm::Operation {
                 ref telescope,
@@ -502,7 +678,7 @@ impl<'source> Lowerer<'_, 'source>
                     binders: &[],
                     dependent: &[],
                 };
-                return self.sort_type(sort, closed, &minting, sink);
+                return self.sort_type(sort, closed, minting, sink);
             },
             ModelForm::Sort { .. } | ModelForm::Nested(_) => return Err(Missing::Unlowered),
         };
@@ -513,7 +689,7 @@ impl<'source> Lowerer<'_, 'source>
                 binders: telescope.get(.. depth).unwrap_or_default(),
                 dependent: dependent.get(.. depth).unwrap_or_default(),
             };
-            domains.push(self.sort_type(&binder.sort, context, &minting, sink)?);
+            domains.push(self.sort_type(&binder.sort, context, minting, sink)?);
         }
         let context = Context {
             binders: telescope,
@@ -523,7 +699,7 @@ impl<'source> Lowerer<'_, 'source>
             Tail::Results(results) => {
                 let mut sorts = Vec::with_capacity(results.len());
                 for result in results {
-                    sorts.push(self.sort_type(result, context, &minting, sink)?);
+                    sorts.push(self.sort_type(result, context, minting, sink)?);
                 }
                 if let [one] = *sorts.as_slice() {
                     one
@@ -535,9 +711,9 @@ impl<'source> Lowerer<'_, 'source>
                 }
             },
             Tail::Path(carrier, left, right) => {
-                let over = self.sort_type(carrier, context, &minting, sink)?;
-                let from = self.term_value(left, context, &minting, sink)?;
-                let to = self.term_value(right, context, &minting, sink)?;
+                let over = self.sort_type(carrier, context, minting, sink)?;
+                let from = self.term_value(left, context, minting, sink)?;
+                let to = self.term_value(right, context, minting, sink)?;
                 let id = sink.arena.value_type_path(over, from, to);
                 sink.origins.record_value_type(id, origin);
                 id
@@ -602,13 +778,16 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: the mint sweep has run.
-    /// - ensures: for an unindexed sort, the type its component reads — the
-    ///   member's type, or the atom a sealed component declares — or, where no
-    ///   type component bears its name, the builtin type it names; for an
-    ///   indexed one, its family expanded over the index terms' values.
-    /// - fails: a sort no type component of the module answers and no builtin
-    ///   type names, of another index count, or whose type did not lower, as
-    ///   unlowered; one whose component is refused, with its refusal.
+    /// - ensures: for a sort a bundle field before the minted one states, the
+    ///   decode at the fuss-free level of that field's variable, or for an
+    ///   indexed sort of the call [`Self::family_call`] mints; for an unindexed
+    ///   sort, the type its component reads — the member's type, or the atom a
+    ///   sealed component declares — or, where no type component bears its
+    ///   name, the builtin type it names; for an indexed one, its family
+    ///   expanded over the index terms' values.
+    /// - fails: a sort no type component of the module or field answers and no
+    ///   builtin type names, of another index count, or whose type did not
+    ///   lower, as unlowered; one whose component is refused, with its refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -619,19 +798,40 @@ impl<'source> Lowerer<'_, 'source>
     ///   b)` the member's family over two variables.
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `tests::modules::models::an_operation_at_a_builtin_type_derives_it_1226`
+    /// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
+    /// - witness: `tests::modules::models::a_family_sort_is_a_function_into_the_universe`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
     fn sort_type(
         &self,
         sort: &SortTerm,
         context: Context<'_>,
-        minting: &Minting<'source>,
+        minting: &Minting<'source, '_>,
         sink: &mut Sink<'_>,
     ) -> Result<ValueTypeId, Missing<'source>>
     {
-        let Some(component) = self
-            .collected
-            .structures
-            .get(usize::from(minting.structure))
+        let structure = match minting.members {
+            Members::Module { structure, .. } => Some(structure),
+            Members::Fields(fields) => {
+                if let Some(at) = fields.index(&sort.sort, context) {
+                    let code = if sort.indices.is_empty() {
+                        let head = sink.arena.value_variable(Zone::Intuitionistic, at);
+                        sink.origins.record_value(head, minting.origin);
+                        head
+                    }
+                    else {
+                        self.family_call(at, &sort.indices, context, minting, sink)?
+                    };
+                    let id = sink
+                        .arena
+                        .value_type_element(code, Level::constant(Universe::FUSS_FREE.level));
+                    sink.origins.record_value_type(id, minting.origin);
+                    return Ok(id);
+                }
+                None
+            },
+        };
+        let Some(component) = structure
+            .and_then(|structure| self.collected.structures.get(usize::from(structure)))
             .and_then(|structure| {
                 structure
                     .types
@@ -697,6 +897,118 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
+    /// The returned call of the family field at `at` on the index terms
+    /// `indices`, read under `context`, as a written call of a family in a type
+    /// lowers.
+    ///
+    /// # Specification
+    /// - requires: `at` is the field's index under `context`.
+    /// - ensures: `↑((force x) t₁ … tₙ)` over the index terms' values; an index
+    ///   term that applies an operation runs first, `c ← t; …`, one bind per
+    ///   such term in written order, the first outermost, the term read as its
+    ///   bind's variable and every other value raised past the binds; every
+    ///   node carrying the minting's origin.
+    /// - fails: an index term that does not mint, as [`Self::term_value`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Missing`].
+    ///
+    /// # Termination
+    /// Every loop runs once per index term of the finite `indices`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a graph's edges over two variables, and the terms of
+    ///   a context extended by a call.
+    /// - witness: `tests::modules::models::a_family_sort_is_a_function_into_the_universe`
+    /// - witness: `tests::modules::models::a_family_over_an_applied_index_runs_the_call_first`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&code| matches!(sink.arena.value(code), Some(&Value::Returned(_)))))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `runs` holds the runs among one sort term's indices"
+        )
+    )]
+    fn family_call(
+        &self,
+        at: DeBruijnIndex,
+        indices: &[FreeTerm],
+        context: Context<'_>,
+        minting: &Minting<'source, '_>,
+        sink: &mut Sink<'_>,
+    ) -> Result<ValueId, Missing<'source>>
+    {
+        let origin = minting.origin;
+        let mut passed = Vec::with_capacity(indices.len());
+        let mut runs = Vec::new();
+        for index in indices {
+            let value = self.term_value(index, context, minting, sink)?;
+            if let Some(&Value::Returned(run)) = sink.arena.value(value) {
+                runs.push((passed.len(), run));
+            }
+            passed.push(value);
+        }
+        let past = Binders::from(u32::try_from(runs.len()).unwrap_or(u32::MAX));
+        let mark = sink.arena.watermark();
+        let mut carried = Vec::new();
+        let mut raised = Vec::with_capacity(passed.len());
+        for (position, &value) in passed.iter().enumerate() {
+            if runs.is_empty() || runs.iter().any(|&(run_at, _)| run_at == position) {
+                raised.push(value);
+                continue;
+            }
+            let wrapped = sink.arena.computation_return(value);
+            let shifted =
+                gandr_core_term::shift_computation_under(sink.arena, wrapped, Binders::NONE, past)
+                    .settle_traced(sink.arena, &mut carried);
+            raised.push(match sink.arena.computation(shifted) {
+                Some(&Computation::Return(inner)) => inner,
+                _ => value,
+            });
+        }
+        let mut firsts = Vec::with_capacity(runs.len());
+        for (order, &(_, run)) in runs.iter().enumerate() {
+            let before = Binders::from(u32::try_from(order).unwrap_or(u32::MAX));
+            firsts.push(
+                gandr_core_term::shift_computation_under(sink.arena, run, Binders::NONE, before)
+                    .settle_traced(sink.arena, &mut carried),
+            );
+        }
+        exits::record_copies(sink, mark, &carried, origin);
+        let head = sink.arena.value_variable(
+            Zone::Intuitionistic,
+            DeBruijnIndex::from(u32::from(at).saturating_add(u32::from(past))),
+        );
+        sink.origins.record_value(head, origin);
+        let mut called = sink.arena.computation_force(head);
+        sink.origins.record_computation(called, origin);
+        for (position, &value) in raised.iter().enumerate() {
+            let argument = match runs.iter().position(|&(run_at, _)| run_at == position) {
+                Some(order) => {
+                    let index = runs.len().saturating_sub(order).saturating_sub(1);
+                    let bound = sink.arena.value_variable(
+                        Zone::Intuitionistic,
+                        DeBruijnIndex::from(u32::try_from(index).unwrap_or(u32::MAX)),
+                    );
+                    sink.origins.record_value(bound, origin);
+                    bound
+                },
+                None => value,
+            };
+            called = sink.arena.computation_application(called, argument);
+            sink.origins.record_computation(called, origin);
+        }
+        for &first in firsts.iter().rev() {
+            called = sink.arena.computation_bind(first, called);
+            sink.origins.record_computation(called, origin);
+        }
+        let returned = sink.arena.value_returned(called);
+        sink.origins.record_value(returned, origin);
+
+        Ok(returned)
+    }
+
     /// The value the term `term` denotes, read under `context`.
     ///
     /// # Specification
@@ -725,7 +1037,7 @@ impl<'source> Lowerer<'_, 'source>
         &self,
         term: &FreeTerm,
         context: Context<'_>,
-        minting: &Minting<'source>,
+        minting: &Minting<'source, '_>,
         sink: &mut Sink<'_>,
     ) -> Result<ValueId, Missing<'source>>
     {
@@ -755,9 +1067,7 @@ impl<'source> Lowerer<'_, 'source>
                         .len()
                         .checked_sub(usize::from(count))
                         .ok_or(Missing::Unlowered)?;
-                    let (constant, read) = self.operation_constant(minting, name)?;
-                    let head = sink.arena.value_constant(constant);
-                    sink.origins.record_value(head, origin);
+                    let (head, read) = self.member_head(minting, name, context, sink)?;
                     match read {
                         MemberRead::Held if usize::from(count) == 0 => built.push(head),
                         MemberRead::Held => return Err(Missing::Unlowered),
@@ -782,8 +1092,72 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// The constant of the member the operation `name` reads in the
-    /// minting's module, and how a term reads it.
+    /// The value the operation or constant `name` is read as where `minting`
+    /// reads it, under `context`, and how a term reads it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: in a module, the constant of the member it names, as
+    ///   [`Self::operation_constant`] finds it; in a bundle, the variable of
+    ///   the field before the minted one that states it; the node carries the
+    ///   minting's origin.
+    /// - fails: a name neither answers, as unlowered; a refused member, with
+    ///   its refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Missing`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `comp` reads the member `comp`, and a law of a model
+    ///   type reads its operation's field.
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_law_bearing_model_type_reads_its_operations`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(head, _)| sink.arena.value(head).is_some()))]
+    fn member_head(
+        &self,
+        minting: &Minting<'source, '_>,
+        name: &Name,
+        context: Context<'_>,
+        sink: &mut Sink<'_>,
+    ) -> Result<(ValueId, MemberRead), Missing<'source>>
+    {
+        let (head, read) = match minting.members {
+            Members::Module {
+                structure,
+                ref operations,
+            } => {
+                let (constant, read) = self.operation_constant(structure, operations, name)?;
+                (sink.arena.value_constant(constant), read)
+            },
+            Members::Fields(fields) => {
+                let read = match fields
+                    .before
+                    .iter()
+                    .rfind(|component| component.name == *name)
+                    .map(|component| &component.form)
+                {
+                    Some(&Ok(ModelForm::Operation { .. })) => MemberRead::Applied,
+                    Some(&Ok(ModelForm::Constant(_))) => MemberRead::Held,
+                    Some(
+                        &(Ok(
+                            ModelForm::Sort { .. } | ModelForm::Law { .. } | ModelForm::Nested(_),
+                        )
+                        | Err(_)),
+                    )
+                    | None => return Err(Missing::Unlowered),
+                };
+                let index = fields.index(name, context).ok_or(Missing::Unlowered)?;
+                (sink.arena.value_variable(Zone::Intuitionistic, index), read)
+            },
+        };
+        sink.origins.record_value(head, minting.origin);
+
+        Ok((head, read))
+    }
+
+    /// The constant of the member the operation `name` reads in the module at
+    /// `structure`, and how a term reads it.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -799,21 +1173,22 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — `comp` reads the member `comp`.
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
-    #[spec(ensures: |ret| ret.is_err() || minting.operations.contains_key(name))]
+    #[spec(ensures: |ret| ret.is_err() || operations.contains_key(name))]
     fn operation_constant(
         &self,
-        minting: &Minting<'source>,
+        structure: StructureIndex,
+        operations: &BTreeMap<Name, (SurfaceName<'source>, MemberRead)>,
         name: &Name,
     ) -> Result<(ConstantIndex, MemberRead), Missing<'source>>
     {
-        let Some(&(member, read)) = minting.operations.get(name)
+        let Some(&(member, read)) = operations.get(name)
         else {
             return Err(Missing::Unlowered);
         };
         let Some(&slot) = self
             .collected
             .by_name
-            .get(&(Container::Module(minting.structure), member))
+            .get(&(Container::Module(structure), member))
         else {
             return Err(Missing::Unlowered);
         };
@@ -826,6 +1201,408 @@ impl<'source> Lowerer<'_, 'source>
         }
 
         Ok((declared.constant, read))
+    }
+
+    /// Classify a theory's models as a type, `Model(S)`, its operand read off
+    /// the application.
+    ///
+    /// # Specification
+    /// - requires: `site` is a type application headed `Model`, which nothing
+    ///   the scope binds answers, written over `theory`.
+    /// - ensures: the form stands as a value type and is planned over the
+    ///   bundle [`Self::bundled`] reads off the theory the operand names; the
+    ///   operand is read as that name alone.
+    /// - fails: yields the wrong-sort refusal where no value type is read; an
+    ///   operand that is no capitalised name is out of the fragment; the
+    ///   refusals [`Self::bundled`] yields.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Model(Toggle)` beside the record it abbreviates, a
+    ///   law-bearing theory's beside its own, and a name no theory answers.
+    /// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
+    /// - witness: `tests::modules::models::a_law_bearing_model_type_reads_its_operations`
+    /// - witness: `tests::modules::models::a_model_type_of_an_undeclared_theory_is_refused`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Bundle(_))))]
+    pub(super) fn model_type(
+        &mut self,
+        site: Site,
+        theory: NodeIndex,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let _frame = self.require(site, Produced::ValueType)?;
+        let Some(node) = self.tree.node(theory)
+        else {
+            return Err(site.out(FragmentBoundary::Unadmitted));
+        };
+        let named = Placed::of(theory, node);
+        let written = Site { at: named, ..site };
+        let Shape::Form {
+            former: Former::TypeHead | Former::Constructor,
+            ..
+        } = shape_of(self.pbg, node)?
+        else {
+            return Err(written.out(FragmentBoundary::Unadmitted));
+        };
+        let theories = self.bundled(written, (site.at.span.start(), self.name_at(named)))?;
+        let bundled = Bundled {
+            theories,
+            named: theory,
+        };
+        self.plan(site, Plan::Bundle(Arc::new(bundled)));
+
+        Ok(())
+    }
+
+    /// The theories of the bundle the theory `name` names where a form
+    /// starting at `at` stands, its refusals placed at `written`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the signature the theory derives first, then, depth first in
+    ///   the order the components stand, the signature of each theory a nested
+    ///   component names, read where the nesting theory's declaration starts,
+    ///   each theory beside the places of the theories it nests.
+    /// - fails: the refusals [`crate::module::Collected::presented_theory`]
+    ///   yields; an unadmitted form for a theory whose value codes no
+    ///   presentation or that nests itself; a component the signature cannot
+    ///   state, refused by name with its fault.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnstatedComponent`],
+    /// [`LoweringRefusal::OutOfFragment`] and the refusals of
+    /// [`crate::module::Collected::presented_theory`].
+    ///
+    /// # Termination
+    /// Every pass advances the top frame past one component or pops it. A
+    /// frame is pushed only for a theory no frame on the stack holds, so the
+    /// stack is no deeper than the unit's finite slots, and each frame reads
+    /// its signature's finite components once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a theory of sorts and operations, one with a law, one
+    ///   with a family sort, one nesting another, and a name no theory answers.
+    /// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
+    /// - witness: `tests::modules::models::a_law_bearing_model_type_reads_its_operations`
+    /// - witness: `tests::modules::models::a_family_sort_is_a_function_into_the_universe`
+    /// - witness: `tests::modules::models::a_nesting_model_type_bundles_the_inner_one`
+    /// - witness: `tests::modules::models::a_model_type_of_an_undeclared_theory_is_refused`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |theories| !theories.is_empty()))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: one search of the unit's slots and of the frame stack per nested component, and a bundle nests few"
+        )
+    )]
+    fn bundled(
+        &self,
+        written: Site,
+        (at, name): (ByteOffset, SurfaceName<'source>),
+    ) -> Result<Vec<BundledTheory>, LoweringRefusal<'source>>
+    {
+        let span = written.at.span;
+        let read = |at: ByteOffset, name: SurfaceName<'source>| {
+            let (position, presentation) = self.collected.presented_theory(at, span, name)?;
+            let Ok(signature) = crate::model::derive(presentation)
+            else {
+                return Err(written.out(FragmentBoundary::Unadmitted));
+            };
+            let start = self
+                .collected
+                .slots
+                .get(usize::from(position))
+                .map_or(at, |slot| slot.introduced_by.span.start());
+            Ok((position, start, signature))
+        };
+        let (slot, start, signature) = read(at, name)?;
+        let mut theories = vec![BundledTheory {
+            signature,
+            nested: Vec::new(),
+        }];
+        let mut frames = vec![BundleFrame {
+            place: 0,
+            slot,
+            start,
+            next: 0,
+        }];
+        while let Some(frame) = frames.last_mut() {
+            let Some(component) = theories
+                .get(frame.place)
+                .and_then(|theory| theory.signature.components.get(frame.next))
+            else {
+                let _done = frames.pop();
+                continue;
+            };
+            frame.next = frame.next.saturating_add(1);
+            let (parent, start) = (frame.place, frame.start);
+            let theory = match component.form {
+                Ok(ModelForm::Nested(ref theory)) => theory.clone(),
+                Ok(
+                    ModelForm::Sort { .. }
+                    | ModelForm::Operation { .. }
+                    | ModelForm::Constant(_)
+                    | ModelForm::Law { .. },
+                ) => continue,
+                Err(fault) => {
+                    return Err(LoweringRefusal::UnstatedComponent {
+                        span,
+                        name: self.name_at(component.named),
+                        fault,
+                    });
+                },
+            };
+            let Some(name) = self
+                .collected
+                .slots
+                .iter()
+                .find(|slot| slot.name.as_ref() == theory.as_ref())
+                .map(|slot| slot.name)
+            else {
+                return Err(written.out(FragmentBoundary::Unadmitted));
+            };
+            let (slot, start, signature) = read(start, name)?;
+            if frames.iter().any(|frame| frame.slot == slot) {
+                return Err(written.out(FragmentBoundary::Unadmitted));
+            }
+            let place = theories.len();
+            if let Some(parent) = theories.get_mut(parent) {
+                parent.nested.push(place);
+            }
+            theories.push(BundledTheory {
+                signature,
+                nested: Vec::new(),
+            });
+            frames.push(BundleFrame {
+                place,
+                slot,
+                start,
+                next: 0,
+            });
+        }
+
+        Ok(theories)
+    }
+
+    /// Mint a theory's models as a type: the bundled record `bundled` states.
+    ///
+    /// # Specification
+    /// - requires: every theory of `bundled` nests only theories after it, as
+    ///   [`Self::bundled`] reads them.
+    /// - ensures: the outermost theory's record as [`Self::bundle_type`] mints
+    ///   it, each nested component's field the record of its theory, minted
+    ///   before the theory nesting it; the record carrying `origin` and every
+    ///   node below it the theory's name marked [`Insertion::Model`], since the
+    ///   source writes the name and not the record; nothing when a field does
+    ///   not mint.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// The loop runs once per theory of the finite bundle.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::bundle_type`], and a theory nesting
+    ///   another bundles the inner record as a field.
+    /// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
+    /// - witness: `tests::modules::models::a_nesting_model_type_bundles_the_inner_one`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
+    pub(super) fn mint_bundle(
+        &self,
+        bundled: &Bundled,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let below = match self.origin_at(bundled.named) {
+            Maybe::Present(named) => named.inserted(Insertion::Model),
+            Maybe::Absent(_) => origin.inserted(Insertion::Model),
+        };
+        let mut minted: Vec<Option<ValueTypeId>> = vec![None; bundled.theories.len()];
+        for (place, theory) in bundled.theories.iter().enumerate().rev() {
+            let nested: Option<Vec<ValueTypeId>> = theory
+                .nested
+                .iter()
+                .map(|&inner| minted.get(inner).copied().flatten())
+                .collect();
+            let Some(nested) = nested
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            let top = if place == 0 { origin } else { below };
+            let Ok(id) = self.bundle_type(&theory.signature, &nested, sink, (top, below))
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            if let Some(at) = minted.get_mut(place) {
+                *at = Some(id);
+            }
+        }
+        minted
+            .first()
+            .copied()
+            .flatten()
+            .map_or(Maybe::Absent(lowered::Absent::Unminted), |id| {
+                Maybe::Present(Lowered::ValueType(id))
+            })
+    }
+
+    /// The bundled record `signature` states, each nested component's field
+    /// the matching type of `nested`.
+    ///
+    /// # Specification
+    /// - requires: every component of the signature states its form, and
+    ///   `nested` holds one type per nested component, in order.
+    /// - ensures: one field per component in signature order — a sort as
+    ///   [`Self::sort_field`] states it, a constant its sort, an operation or a
+    ///   law its telescope Π as [`Self::mint_form`] states it, a nested model
+    ///   its type of `nested` — each sort and operation a field names read as
+    ///   the variable of the field stating it; the fields nested to the right
+    ///   as a written dependent record lowers: `Σ` over a field a later one
+    ///   names, the eager product of two otherwise, and the record keyed by the
+    ///   components' names when no field names another; the record carrying
+    ///   `top` and every node below it `below`.
+    /// - fails: a field that does not mint, as unlowered.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Missing::Unlowered`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the toggle's bundle is its written dependent record
+    ///   node for node, a law-bearing theory's is its own written record with a
+    ///   `Path` field, a family sort is a function into the universe its later
+    ///   fields call, and a theory nesting another holds the inner record as a
+    ///   field.
+    /// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
+    /// - witness: `tests::modules::models::a_law_bearing_model_type_reads_its_operations`
+    /// - witness: `tests::modules::models::a_family_sort_is_a_function_into_the_universe`
+    /// - witness: `tests::modules::models::a_nesting_model_type_bundles_the_inner_one`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
+    fn bundle_type(
+        &self,
+        signature: &ModelSignature,
+        nested: &[ValueTypeId],
+        sink: &mut Sink<'_>,
+        (top, below): (Origin, Origin),
+    ) -> Result<ValueTypeId, Missing<'source>>
+    {
+        let components = &signature.components;
+        let binds = bundle_dependence(signature);
+        let mut nested = nested.iter();
+        let mut fields = Vec::with_capacity(components.len());
+        for (at, component) in components.iter().enumerate() {
+            let minting = Minting {
+                members: Members::Fields(Fields {
+                    before: components.get(.. at).unwrap_or_default(),
+                    binds: binds.get(.. at).unwrap_or_default(),
+                }),
+                origin: below,
+            };
+            let field = match component.form {
+                Ok(ModelForm::Sort { ref indices }) => self.sort_field(indices, &minting, sink)?,
+                Ok(ModelForm::Nested(_)) => *nested.next().ok_or(Missing::Unlowered)?,
+                Ok(ref form) => self.mint_form(form, &minting, sink)?,
+                Err(_) => return Err(Missing::Unlowered),
+            };
+            fields.push(field);
+        }
+        if !binds.iter().any(|binds| binds.0) {
+            let record = components
+                .iter()
+                .zip(fields)
+                .map(|(component, id)| {
+                    (FieldLabel::from(String::from(component.name.as_ref())), id)
+                })
+                .collect();
+            let id = sink.arena.value_type_record(record);
+            sink.origins.record_value_type(id, top);
+            return Ok(id);
+        }
+        let Some((&last, earlier)) = fields.split_last()
+        else {
+            return Err(Missing::Unlowered);
+        };
+        let mut chained = last;
+        for (link, (&first, &binds)) in earlier.iter().zip(&binds).enumerate().rev() {
+            chained = if binds.0 {
+                sink.arena.value_type_sigma(first, chained)
+            }
+            else {
+                sink.arena.value_type_product(&[first, chained])
+            };
+            sink.origins
+                .record_value_type(chained, if link == 0 { top } else { below });
+        }
+
+        Ok(chained)
+    }
+
+    /// The field a sort over the index telescope `indices` states.
+    ///
+    /// # Specification
+    /// - requires: `minting` reads the fields before the sort's.
+    /// - ensures: the fuss-free universe for an unindexed sort; for an indexed
+    ///   one, the function from its indices into that universe, `+U` over one
+    ///   binder per index, dependent exactly where a later index's sort names
+    ///   it, into the universe's returner — as the written `(a : A, …) => Type`
+    ///   lowers; every node carrying the minting's origin.
+    /// - fails: an index whose sort does not mint, as [`Self::sort_type`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Missing`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the toggle's carrier and a graph's edges over two
+    ///   vertices.
+    /// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
+    /// - witness: `tests::modules::models::a_family_sort_is_a_function_into_the_universe`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
+    fn sort_field(
+        &self,
+        indices: &[Binder],
+        minting: &Minting<'source, '_>,
+        sink: &mut Sink<'_>,
+    ) -> Result<ValueTypeId, Missing<'source>>
+    {
+        let origin = minting.origin;
+        let universe = sink.arena.value_type_universe(
+            Sort::Ground(Universe::FUSS_FREE.sort),
+            Level::constant(Universe::FUSS_FREE.level),
+        );
+        sink.origins.record_value_type(universe, origin);
+        if indices.is_empty() {
+            return Ok(universe);
+        }
+        let dependent = dependence(indices, Tail::Results(&[]));
+        let mut domains = Vec::with_capacity(indices.len());
+        for (depth, binder) in indices.iter().enumerate() {
+            let context = Context {
+                binders: indices.get(.. depth).unwrap_or_default(),
+                dependent: dependent.get(.. depth).unwrap_or_default(),
+            };
+            domains.push(self.sort_type(&binder.sort, context, minting, sink)?);
+        }
+        let mut chain = sink.arena.comp_type_returner(universe);
+        sink.origins.record_comp_type(chain, origin);
+        for (&domain, &binds) in domains.iter().zip(&dependent).rev() {
+            chain = if binds.0 {
+                sink.arena.comp_type_pi(domain, chain)
+            }
+            else {
+                sink.arena.comp_type_arrow(domain, chain)
+            };
+            sink.origins.record_comp_type(chain, origin);
+        }
+        let id = sink.arena.value_type_thunk(chain);
+        sink.origins.record_value_type(id, origin);
+
+        Ok(id)
     }
 
     /// Check every family component's indices against its member's
@@ -1106,8 +1883,10 @@ impl<'source> Lowerer<'_, 'source>
             return Err(Missing::Unlowered);
         };
         let minting = Minting {
-            structure,
-            operations: BTreeMap::new(),
+            members: Members::Module {
+                structure,
+                operations: BTreeMap::new(),
+            },
             origin,
         };
         let dependent: Vec<Dependent> = binders.iter().map(|_| Dependent(true)).collect();
@@ -1186,6 +1965,162 @@ impl<'source> Lowerer<'_, 'source>
         sink.origins.record_value(thunk, origin);
 
         Maybe::Present((stated, thunk))
+    }
+}
+
+/// Whether each component of `signature` is named by a later one, and so its
+/// link in the bundled record binds.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one flag per component, in order: affirmative exactly when a
+///   later component's sort terms name it or a later law's terms apply it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the toggle's carrier binds and its operations do not; a
+///   law-bearing theory's operations bind.
+/// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
+/// - witness: `tests::modules::models::a_law_bearing_model_type_reads_its_operations`
+#[spec(ensures: |ret| ret.len() == signature.components.len())]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        linear_search_in_loop,
+        reason = "bounded: `named` holds the names one signature's components read"
+    )
+)]
+fn bundle_dependence(signature: &ModelSignature) -> Vec<Dependent>
+{
+    let mut named: Vec<&Name> = Vec::new();
+    let mut flags = Vec::with_capacity(signature.components.len());
+    for component in signature.components.iter().rev() {
+        flags.push(Dependent(named.contains(&&component.name)));
+        component_reads(component, &mut named);
+    }
+    flags.reverse();
+
+    flags
+}
+
+/// Push every name `component` reads onto `into`: the sorts its sort terms
+/// name and the operations its terms apply.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one entry per sort term's sort and per application's head, in the
+///   order the component states them.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`bundle_dependence`].
+/// - witness: `tests::modules::models::a_law_bearing_model_type_reads_its_operations`
+#[spec(
+    captures: before = into.len(),
+    ensures: into.len() >= before,
+)]
+fn component_reads<'form>(
+    component: &'form ModelComponent,
+    into: &mut Vec<&'form Name>,
+)
+{
+    match component.form {
+        Ok(ModelForm::Sort { ref indices }) => {
+            for binder in indices {
+                sort_reads(&binder.sort, into);
+            }
+        },
+        Ok(ModelForm::Operation {
+            ref telescope,
+            ref results,
+        }) => {
+            for binder in telescope {
+                sort_reads(&binder.sort, into);
+            }
+            for result in results {
+                sort_reads(result, into);
+            }
+        },
+        Ok(ModelForm::Constant(ref sort)) => sort_reads(sort, into),
+        Ok(ModelForm::Law {
+            ref telescope,
+            ref carrier,
+            ref left,
+            ref right,
+        }) => {
+            for binder in telescope {
+                sort_reads(&binder.sort, into);
+            }
+            sort_reads(carrier, into);
+            term_heads(left, into);
+            term_heads(right, into);
+        },
+        Ok(ModelForm::Nested(_)) | Err(_) => {},
+    }
+}
+
+/// Push the sort `sort` names and the heads its index terms apply onto
+/// `into`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the sort's name, then each index term's heads in order.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`bundle_dependence`].
+/// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
+#[spec(
+    captures: before = into.len(),
+    ensures: into.len() > before,
+)]
+fn sort_reads<'form>(
+    sort: &'form SortTerm,
+    into: &mut Vec<&'form Name>,
+)
+{
+    into.push(&sort.sort);
+    for index in &sort.indices {
+        term_heads(index, into);
+    }
+}
+
+/// Push the head of every application in `term` onto `into`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one entry per operation application of the term.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Each node of the finite term is pushed once and popped once.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`bundle_dependence`].
+/// - witness: `tests::modules::models::a_law_bearing_model_type_reads_its_operations`
+#[spec(
+    captures: before = into.len(),
+    ensures: into.len() >= before,
+)]
+fn term_heads<'term>(
+    term: &'term FreeTerm,
+    into: &mut Vec<&'term Name>,
+)
+{
+    let mut pending = Vec::from([term.to_node()]);
+    while let Some(node) = pending.pop() {
+        match node.view() {
+            TermView::Var(_) => {},
+            TermView::Op { name, args } => {
+                into.push(name);
+                pending.extend(args);
+            },
+            TermView::Ctor { args, .. } | TermView::Results { args } => pending.extend(args),
+        }
     }
 }
 
