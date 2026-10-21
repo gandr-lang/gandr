@@ -186,6 +186,8 @@ use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
+use crate::origin::ClauseBinder;
+use crate::origin::ClausePlace;
 use crate::origin::Label;
 use crate::origin::Labelled;
 use crate::origin::Origin;
@@ -321,6 +323,8 @@ pub(super) struct Scoped
     subject: Block,
     /// The return clause's body, under its result's binder.
     on_return: NodeIndex,
+    /// The return clause's result binder, as written.
+    result: NodeIndex,
     /// Each operation clause, in written order.
     clauses: Vec<Clause>,
 }
@@ -335,6 +339,10 @@ struct Clause
 {
     /// The operation the clause handles.
     operation: OperationName,
+    /// The payload's binder, as written.
+    payload: NodeIndex,
+    /// The continuation's binder, as written.
+    continuation: NodeIndex,
     /// The body, under the clause's binders.
     body: NodeIndex,
     /// The buffer the scope mints for the clause, for an operation that
@@ -355,8 +363,6 @@ enum Mint
     /// into the payload's name and the mint's, the mint placed live.
     Minted
     {
-        /// The payload's name, as written.
-        payload: NodeIndex,
         /// The mint's name, as written.
         mint: NodeIndex,
     },
@@ -1217,14 +1223,14 @@ impl<'source> Lowerer<'_, 'source>
         let mut cursor = Cursor::new(handlers, site.at.span);
         closed(site, &mut cursor, TileName::WITH)?;
         closed(site, &mut cursor, TileName::BRACE_OPEN)?;
-        let mut on_return: Maybe<(NodeIndex, Placed), clause::Absent> =
+        let mut on_return: Maybe<(NodeIndex, Placed, NodeIndex), clause::Absent> =
             Maybe::Absent(clause::Absent::Unwritten);
         let mut clauses = Vec::new();
         loop {
             match cursor.read() {
                 Maybe::Present(Piece::Tile { label, at }) if label == TileName::PURE => {
                     let (result, body) = Self::clause_parameter(site, &mut cursor)?;
-                    if let Maybe::Present((_, first)) = on_return {
+                    if let Maybe::Present((_, first, _)) = on_return {
                         return Err(LoweringRefusal::DuplicateDefinition {
                             span: at.span,
                             name: SurfaceName::from("pure"),
@@ -1233,7 +1239,7 @@ impl<'source> Lowerer<'_, 'source>
                     }
                     let bound = self.bind(result, frame)?;
                     self.clause(site, body, Frame::Inner(bound))?;
-                    on_return = Maybe::Present((body, at));
+                    on_return = Maybe::Present((body, at, result.node));
                 },
                 Maybe::Present(Piece::Tile { label, .. }) if label == TileName::OPER => {
                     let Maybe::Present(at) = cursor.tile(TileName::IDENTIFIER)
@@ -1287,10 +1293,7 @@ impl<'source> Lowerer<'_, 'source>
                             name,
                             Maybe::Present(minted.span),
                         );
-                        (Frame::Inner(live), Mint::Minted {
-                            payload: payload.node,
-                            mint: minted.node,
-                        })
+                        (Frame::Inner(live), Mint::Minted { mint: minted.node })
                     }
                     else {
                         let bound = self.bind(payload, frame)?;
@@ -1301,6 +1304,8 @@ impl<'source> Lowerer<'_, 'source>
                     self.clause(site, body.node, under)?;
                     clauses.push(Clause {
                         operation,
+                        payload: payload.node,
+                        continuation: continuation.node,
                         body: body.node,
                         mint,
                     });
@@ -1321,7 +1326,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         closed(site, &mut cursor, TileName::BRACE_CLOSE)?;
         exhausted(site, &cursor)?;
-        let Maybe::Present((on_return, _)) = on_return
+        let Maybe::Present((on_return, _, result)) = on_return
         else {
             return Err(site.fault(site.at.span, FormFault::MissingOperand));
         };
@@ -1333,6 +1338,7 @@ impl<'source> Lowerer<'_, 'source>
                 subject,
                 binder: binder.node,
                 on_return,
+                result,
                 clauses,
             }),
         );
@@ -1697,7 +1703,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the scope over the interface's whole signature, its subject,
     ///   its return clause and its operation clauses in written order, each
     ///   body minted as a body a path runs through, at `origin`, with the
-    ///   capability's written name recorded as the scope's binder; the first
+    ///   capability's written name recorded as the scope's binder and each
+    ///   clause's binders — the result, and each operation clause's payload and
+    ///   continuation by its place — as the scope's clause binders; the first
     ///   absence among the bodies.
     /// - fails: never.
     /// - panics: none.
@@ -1705,6 +1713,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::capability_scope`].
     /// - witness: `lower::capability::tests::a_scope_handles_its_capability_and_resumes`
+    /// - witness: `lower::capability::tests::a_scope_records_where_its_clauses_bind_1439`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
         | Maybe::Present(_) => false,
@@ -1732,7 +1741,7 @@ impl<'source> Lowerer<'_, 'source>
                     Maybe::Present(body) => body,
                     Maybe::Absent(reason) => return Maybe::Absent(reason),
                 };
-            if let Mint::Minted { payload, mint } = clause.mint {
+            if let Mint::Minted { mint } = clause.mint {
                 // Under the pair and the continuation: split the pair, the
                 // payload then the mint, and place the mint live.
                 let minted = sink
@@ -1755,7 +1764,7 @@ impl<'source> Lowerer<'_, 'source>
                     .arena
                     .computation_split(pair, ComponentCount::from(2_usize), placed);
                 sink.origins.record_computation(body, origin);
-                if let Maybe::Present(name) = self.origin_at(payload) {
+                if let Maybe::Present(name) = self.origin_at(clause.payload) {
                     sink.origins.record_binder(body, name);
                 }
             }
@@ -1771,6 +1780,24 @@ impl<'source> Lowerer<'_, 'source>
             let scope = sink.computation(id, origin);
             if let Maybe::Present(name) = self.origin_at(scoped.binder) {
                 sink.origins.record_binder(id, name);
+            }
+            let written = core::iter::once((ClauseBinder::Result, scoped.result)).chain(
+                scoped
+                    .clauses
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(place, clause)| {
+                        let place = ClausePlace::from(place);
+                        [
+                            (ClauseBinder::Payload(place), clause.payload),
+                            (ClauseBinder::Continuation(place), clause.continuation),
+                        ]
+                    }),
+            );
+            for (binder, node) in written {
+                if let Maybe::Present(name) = self.origin_at(node) {
+                    sink.origins.place_clause_binder(id, binder, name);
+                }
             }
             scope
         })

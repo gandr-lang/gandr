@@ -464,6 +464,55 @@ impl From<SplitComponent> for usize
     }
 }
 
+/// An operation clause's place among its capability scope's operation
+/// clauses, counted from the first written.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ClausePlace(usize);
+
+impl From<usize> for ClausePlace
+{
+    /// The clause `place` places from the first written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(place: usize) -> Self
+    {
+        Self(place)
+    }
+}
+
+impl From<ClausePlace> for usize
+{
+    /// How many places from the first written `place` stands.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(place: ClausePlace) -> Self
+    {
+        place.0
+    }
+}
+
+/// A binder a capability scope's clause writes.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ClauseBinder
+{
+    /// The return clause's result, `x` of `pure(x) => …`.
+    Result,
+    /// The payload of the operation clause at the place, `p` of
+    /// `oper op(p, k) => …`.
+    Payload(ClausePlace),
+    /// The continuation of the operation clause at the place, `k` of
+    /// `oper op(p, k) => …`.
+    Continuation(ClausePlace),
+}
+
 /// The name a split component binds.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ComponentName
@@ -537,6 +586,11 @@ pub struct OriginTable
     /// label of the field a labelled pattern leaves unwritten. A split opens
     /// several binders, so the opener alone does not name one.
     components: Vec<((ComputationId, SplitComponent), ComponentName)>,
+    /// Where each binder a capability scope's clauses write is written, by
+    /// the scope and the binder, ascending. A scope opens its capability's
+    /// binder over its subject and its clauses' binders over their bodies, so
+    /// the scope alone does not name one.
+    clause_binders: Vec<((ComputationId, ClauseBinder), Origin)>,
     /// The name each dependent arrow binds, by the arrow, ascending by id:
     /// the syntax its binder's name was written at, a parameter's or a
     /// telescope entry's. The core carries no name; the printer reads it
@@ -1217,6 +1271,18 @@ impl OriginTable
         &self.components
     }
 
+    /// Every binder a capability scope's clauses write, with where its name is
+    /// written, ascending by scope and binder.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn clause_binders(&self) -> &[((ComputationId, ClauseBinder), Origin)]
+    {
+        &self.clause_binders
+    }
+
     /// Every value's origin, in mint order.
     ///
     /// # Specification
@@ -1569,6 +1635,54 @@ impl OriginTable
             .binary_search_by_key(&key, |&(held, _)| held)
         {
             self.components.insert(at, (key, name));
+        }
+    }
+
+    /// Record where the binder `binder` of the capability scope `scope`'s
+    /// clauses is written, where it falls among those already recorded.
+    ///
+    /// # Specification
+    /// - requires: nothing — a binder already recorded keeps its origin.
+    /// - ensures: the list holds the binder, at `name` unless it held it
+    ///   before.
+    /// - intension: the pair is inserted where the binary search over the
+    ///   ascending list places it, so the list stays strictly ascending.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope's return clause and each operation clause,
+    ///   minting or not, record their binders where they are written.
+    /// - witness: `lower::capability::tests::a_scope_records_where_its_clauses_bind_1439`
+    #[spec(
+        captures: before = self
+            .clause_binders
+            .binary_search_by_key(&(scope, binder), |&(held, _)| held)
+            .ok()
+            .and_then(|at| self.clause_binders.get(at))
+            .map(|&(_, held)| held),
+        ensures: self
+            .clause_binders
+            .binary_search_by_key(&(scope, binder), |&(held, _)| held)
+            .ok()
+            .and_then(|at| self.clause_binders.get(at))
+            .map(|&(_, held)| held)
+            == Some(before.unwrap_or(name)),
+    )]
+    #[inline]
+    pub fn place_clause_binder(
+        &mut self,
+        scope: ComputationId,
+        binder: ClauseBinder,
+        name: Origin,
+    )
+    {
+        let key = (scope, binder);
+        if let Err(at) = self
+            .clause_binders
+            .binary_search_by_key(&key, |&(held, _)| held)
+        {
+            self.clause_binders.insert(at, (key, name));
         }
     }
 

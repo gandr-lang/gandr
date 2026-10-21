@@ -456,6 +456,8 @@ pub use crate::module::unaliased;
 pub use crate::module::written_imports;
 pub use crate::origin::ArmOrigin;
 pub use crate::origin::CaseOrigin;
+pub use crate::origin::ClauseBinder;
+pub use crate::origin::ClausePlace;
 pub use crate::origin::ComponentName;
 pub use crate::origin::Insertion;
 pub use crate::origin::Label;

@@ -143,6 +143,8 @@ use gandr_surface_diagnostics::Subject as DiagnosedSubject;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_diagnostics::diagnose;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_lowering::ClauseBinder;
+use gandr_surface_lowering::ClausePlace;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::DocumentationText;
 use gandr_surface_lowering::InScope;
@@ -1542,6 +1544,76 @@ impl TypeTable
                 ty: TypeNode::Value(ty),
                 last: TypeNode::Value(ty),
                 standing,
+            });
+        }
+        // Each binder a capability scope's clauses write, at the type the
+        // scope's first judgement binds it at: the result at what the subject
+        // returns, a payload at its operation's payload, and a continuation at
+        // the stack from the operation's reply, under the answer's effects, to
+        // the answer. A binder some use already answers is not answered twice.
+        for &((scope, clause), origin) in origins.clause_binders() {
+            let span = origin.span();
+            if binders.contains(&span) {
+                continue;
+            }
+            let Some((TypeNode::Computation(answer), (constant, depth))) =
+                first_of(TermNode::Computation(scope))
+            else {
+                continue;
+            };
+            let Some(&Computation::Scope {
+                ref signature,
+                subject,
+                ref clauses,
+                ..
+            }) = arena.computation(scope)
+            else {
+                continue;
+            };
+            let operation = |place: ClausePlace| {
+                let written = clauses.get(usize::from(place))?;
+                match signature.operation(&written.operation) {
+                    Maybe::Present(operation) => Some((operation.payload, operation.reply)),
+                    Maybe::Absent(_) => None,
+                }
+            };
+            let ty = match clause {
+                ClauseBinder::Result => match first_type(TermNode::Computation(subject)) {
+                    Some(TypeNode::Computation(returned)) => match arena.comp_type(returned) {
+                        Some(&CompType::Returner { result, .. }) => Some(result),
+                        Some(_) | None => None,
+                    },
+                    Some(TypeNode::Value(_)) | None => None,
+                },
+                ClauseBinder::Payload(place) => operation(place).map(|(payload, _)| payload),
+                ClauseBinder::Continuation(place) => {
+                    let replied = operation(place).map(|(_, reply)| reply);
+                    let effects = match arena.comp_type(answer) {
+                        Some(&CompType::Returner { ref effects, .. }) => Some(effects.clone()),
+                        Some(_) | None => None,
+                    };
+                    replied.zip(effects).map(|(reply, effects)| {
+                        let input = arena.comp_type_returner_with_effects(reply, effects);
+                        arena.value_type_stack(input, answer)
+                    })
+                },
+            };
+            let Some(ty) = ty
+            else {
+                continue;
+            };
+            let _fresh = binders.insert(span);
+            entries.push(Entry {
+                span,
+                subject: Subject::Binder,
+                provenance: Provenance::Written,
+                ty: TypeNode::Value(ty),
+                last: TypeNode::Value(ty),
+                standing: Standing::Judged(Within {
+                    constant,
+                    node: CoreNode::Computation(scope),
+                    depth: Some(depth),
+                }),
             });
         }
         // What each written computation returns, read at the first judgement
@@ -5580,6 +5652,43 @@ mod tests
                 expected: Maybe::Absent(checked_against::Absent::Agreed),
             }),
             "the part names the pattern's own `a`, though the arm never uses it (#537)"
+        );
+    }
+
+    /// #1439: a capability scope's clause arguments that no body reads answer
+    /// at what the scope binds them at: the result at what the subject
+    /// returns, the payload at its operation's payload, and the continuation at
+    /// the stack from the operation's reply to the scope's answer.
+    #[test]
+    fn an_unread_clause_argument_answers_at_what_its_scope_binds_1439()
+    {
+        let source = SourceText::from(
+            "def handled() -> -F Unit {\n  handle c : Proc {\n    run code <- c.exit(1) ;\n    \
+             pure code\n  } with {\n    pure(x) => pure unit,\n    oper exit(status, k) => pure \
+             unit\n  }\n}\n",
+        );
+        let table = table(source);
+        let binder = |ty: &str| {
+            Maybe::Present(Answer {
+                subject: Subject::Binder,
+                ty: String::from(ty),
+                expected: Maybe::Absent(checked_against::Absent::Agreed),
+            })
+        };
+        assert_eq!(
+            answer(&table, source, SourceText::from("x) =>")),
+            binder("Unit"),
+            "the result at what the subject returns"
+        );
+        assert_eq!(
+            answer(&table, source, SourceText::from("status, k")),
+            binder("Integer"),
+            "the payload at `exit`'s"
+        );
+        assert_eq!(
+            answer(&table, source, SourceText::from("k) =>")),
+            binder("Stack(-F Unit, -F Unit)"),
+            "the continuation from `exit`'s reply to the scope's answer"
         );
     }
 
