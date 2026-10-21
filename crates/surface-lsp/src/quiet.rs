@@ -737,7 +737,7 @@ where
 }
 
 #[cfg(test)]
-mod tests
+pub mod tests
 {
     use std::io;
 
@@ -757,6 +757,27 @@ mod tests
     use crate::protocol::Diagnostic;
     use crate::protocol::Severity;
     use crate::recheck::grammar;
+
+    /// The files a watch handed `inbox`'s loop, one list per handing, in the
+    /// order they came.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn handed(inbox: &super::Inbox) -> Vec<Vec<std::path::PathBuf>>
+    {
+        inbox
+            .receiving
+            .try_iter()
+            .filter_map(|read| match read {
+                super::Read::Changed(paths) => Some(paths),
+                super::Read::Message(_)
+                | super::Read::Edited(_)
+                | super::Read::Proposed
+                | super::Read::Closed
+                | super::Read::Fault(_) => None,
+            })
+            .collect()
+    }
 
     /// The range from `start` to `end` on line zero.
     ///

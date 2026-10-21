@@ -136,8 +136,11 @@ impl Disk
     /// # Adequacy
     /// - hypothesis: L3 — a hub connection whose client watches nothing
     ///   republishes an open document when a file it imports is rewritten on
-    ///   disk, with no notification sent.
+    ///   disk, with no notification sent; the watch hands a followed file on
+    ///   when it is created, changed or removed, and not when it is only opened
+    ///   or closed.
     /// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
+    /// - witness: `disk::tests::only_a_write_to_a_followed_file_is_handed_on`
     #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|disk| disk.directories.is_empty()))]
     #[inline]
     pub fn new() -> notify::Result<Self>
@@ -172,8 +175,10 @@ impl Disk
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — through [`Self::new`]'s witness.
+    /// - hypothesis: L3 — through [`Self::new`]'s witness; a second set
+    ///   replaces the first and an empty one stops serving the connection.
     /// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
+    /// - witness: `disk::tests::a_connection_follows_exactly_what_it_named_last`
     #[spec(captures: following = !named.is_empty(),
         ensures: lock(&self.followed).followers.contains_key(&peer) == following)]
     #[inline]
@@ -222,5 +227,111 @@ impl Disk
             let _watched = self.watcher.watch(added, RecursiveMode::NonRecursive);
         }
         self.directories = directories;
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::collections::BTreeSet;
+    use alloc::vec::Vec;
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    use notify::Event;
+    use notify::EventKind;
+    use notify::event::AccessKind;
+    use notify::event::AccessMode;
+    use notify::event::CreateKind;
+    use notify::event::ModifyKind;
+    use notify::event::RemoveKind;
+
+    use super::Disk;
+    use super::Followed;
+    use super::Follower;
+    use super::handed;
+    use super::lock;
+    use crate::quiet::Inbox;
+    use crate::quiet::tests::handed as received;
+    use crate::server::Peer;
+
+    /// A file a connection follows is handed on when it is created, changed
+    /// or removed, and not when it is only opened or closed: a save closes
+    /// the file it wrote too, so the write's own event is the one to read.
+    #[test]
+    fn only_a_write_to_a_followed_file_is_handed_on()
+    {
+        let inbox = Inbox::default();
+        let path = PathBuf::from("/followed/base.gandr");
+        let followed = Mutex::new(Followed::default());
+        {
+            let mut held = lock(&followed);
+            let _served = held.followers.insert(Peer::from(1_u64), Follower {
+                changes: inbox.changes(),
+                named: BTreeSet::from([path.clone()]),
+            });
+            let _resolved = held.resolved.insert(path.clone(), path.clone());
+        }
+        let after = |kind: EventKind| {
+            handed(&followed, &Event::new(kind).add_path(path.clone()));
+            received(&inbox)
+        };
+
+        assert!(
+            after(EventKind::Access(AccessKind::Close(AccessMode::Write))).is_empty(),
+            "closing a written file hands nothing on"
+        );
+        assert!(
+            after(EventKind::Access(AccessKind::Open(AccessMode::Read))).is_empty(),
+            "opening a file to read it hands nothing on"
+        );
+        assert_eq!(
+            after(EventKind::Create(CreateKind::File)),
+            [Vec::from([path.clone()])],
+            "a created file is handed on"
+        );
+        assert_eq!(
+            after(EventKind::Modify(ModifyKind::Any)),
+            [Vec::from([path.clone()])],
+            "a changed file is handed on"
+        );
+        assert_eq!(
+            after(EventKind::Remove(RemoveKind::File)),
+            [Vec::from([path.clone()])],
+            "a removed file is handed on"
+        );
+    }
+
+    /// A connection follows exactly the paths it named last: a second set
+    /// replaces the first, and an empty one stops the watch serving it.
+    #[test]
+    fn a_connection_follows_exactly_what_it_named_last()
+    {
+        let inbox = Inbox::default();
+        let mut disk = Disk::new().expect("the watcher starts");
+        let peer = Peer::from(1_u64);
+        let first = BTreeSet::from([PathBuf::from("/followed/first.gandr")]);
+        let second = BTreeSet::from([PathBuf::from("/followed/second.gandr")]);
+        let following = |disk: &Disk| {
+            lock(&disk.followed)
+                .followers
+                .get(&peer)
+                .map(|follower| follower.named.clone())
+        };
+
+        disk.follow(peer, &inbox.changes(), first.clone());
+        assert_eq!(following(&disk), Some(first), "the first set is followed");
+        disk.follow(peer, &inbox.changes(), second.clone());
+        assert_eq!(
+            following(&disk),
+            Some(second),
+            "a second set replaces the first"
+        );
+        disk.follow(peer, &inbox.changes(), BTreeSet::new());
+        assert_eq!(
+            following(&disk),
+            None,
+            "an empty set stops serving the connection"
+        );
     }
 }

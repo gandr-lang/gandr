@@ -115,6 +115,7 @@ impl Names
     ///   prefix cuts exactly the names starting with it.
     /// - witness: `complete::tests::a_prefix_offers_only_what_starts_with_it`
     /// - witness: `tests::session::a_completion_offers_what_a_sibling_declares_806`
+    /// - witness: `complete::tests::a_name_is_offered_whole_and_once_per_kind`
     #[spec(ensures: |ret| ret.0.windows(2).all(|pair| matches!(pair, [first, second] if (&first.0, first.1) < (&second.0, second.1))))]
     #[must_use]
     pub fn of(table: &TypeTable) -> Self
@@ -185,6 +186,7 @@ impl Names
     /// - hypothesis: L3 — `de` offers the names starting with `de` and no
     ///   other; a cut by linear scan or by substring changes it.
     /// - witness: `complete::tests::a_prefix_offers_only_what_starts_with_it`
+    /// - witness: `complete::tests::a_name_is_offered_whole_and_once_per_kind`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -307,6 +309,7 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
 /// - witness: `complete::tests::a_prefix_offers_only_what_starts_with_it`
 /// - witness: `complete::tests::a_binder_offers_only_where_it_is_in_scope_806`
 /// - witness: `complete::tests::each_item_carries_its_type_in_the_list`
+/// - witness: `complete::tests::a_binder_never_takes_the_type_of_a_term_at_its_name`
 /// - witness: `complete::tests::a_keyword_inserts_its_form_as_a_snippet`
 /// - witness: `complete::tests::a_call_fills_its_parameters_as_tab_stops`
 /// - witness: `tests::session::a_completion_offers_what_a_sibling_declares_806`
@@ -776,6 +779,37 @@ mod tests
         );
     }
 
+    /// A name typed in full still offers itself, and a constructor named as
+    /// its family is a second name in the list a prefix cuts: one name of
+    /// two kinds is two entries.
+    #[test]
+    fn a_name_is_offered_whole_and_once_per_kind()
+    {
+        use CompletionItemKind as Kind;
+
+        let typed = format!("{BASE}def three = double");
+        let whole = offered(SourceText::from(typed.as_str()), SourceText::from(" ;\n"));
+        assert_eq!(
+            whole.names,
+            named!([("double", Kind::FUNCTION)]),
+            "a name typed in full still offers itself"
+        );
+
+        let boxed = format!("{BASE}data Box : Type {{\n  Box : (x : Integer) --> Box;\n}}\n");
+        let hovering = hovered(SourceText::from(boxed.as_str()));
+        let kinds: Vec<super::NameKind> = hovering
+            .names()
+            .starting(SourceText::from("Box"))
+            .iter()
+            .map(|&(_, kind, _)| kind)
+            .collect();
+        assert_eq!(
+            kinds,
+            [super::NameKind::Family, super::NameKind::Constructor],
+            "the family and its constructor of one name are each named"
+        );
+    }
+
     /// #806: a pattern's binder offers in its own arm and not in its sibling,
     /// though the lowering refuses the declaration being typed.
     #[test]
@@ -1191,6 +1225,34 @@ mod tests
             resolve("case", Kind::KEYWORD),
             read(None, None),
             "a keyword: unchanged"
+        );
+    }
+
+    /// A binder's detail is its own type, read off the entry the table keeps
+    /// for its written name: in a declaration the checker refused, where the
+    /// parameter keeps no entry, the function's own term spans the
+    /// parameter's name, and its type is not the parameter's.
+    #[test]
+    fn a_binder_never_takes_the_type_of_a_term_at_its_name()
+    {
+        let before = "@[ checks ]\ndef dbl(x: Integer) -> -F Integer {\n  become x + x\n}\n\n@[ \
+                      refuses(\"TypeMismatch\") ]\ndef refuted(x: Integer) -> -F Path(Integer, \
+                      dbl(x), x) {\n  ";
+        let items = listed(
+            SourceText::from(before),
+            SourceText::from("5\n}\n"),
+            (LabelsDetailed(false), TakesSnippets(false)),
+        );
+        let parameter = items
+            .iter()
+            .find(|item| item.label == "x")
+            .expect("the parameter is offered");
+        assert!(
+            parameter
+                .detail
+                .as_deref()
+                .is_none_or(|detail| !detail.contains("->")),
+            "the parameter is not labelled with the function's type: {parameter:?}"
         );
     }
 }
