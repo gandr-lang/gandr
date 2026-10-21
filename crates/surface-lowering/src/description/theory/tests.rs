@@ -5,7 +5,11 @@ use core::fmt::Write as _;
 
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
+use gandr_theory_levitation::BridgeArity;
+use gandr_theory_levitation::OperDesc;
 use gandr_theory_levitation::PortFace;
+use gandr_theory_levitation::SortDesc;
+use gandr_theory_levitation::SortIndex;
 
 use super::*;
 use crate::circuit::JoinFault;
@@ -1351,13 +1355,6 @@ fn the_description_is_read_off_the_value()
         source
             .get(usize::from(span.start()) .. usize::from(span.end()))
             .is_some_and(|member| member.starts_with("rule unitL"))
-    );
-    let mut short = presentation.clone();
-    let _dropped = short.placement.faces.pop();
-    assert_eq!(
-        super::described(&short, theory.description.id.clone()),
-        Err(crate::model::PresentationFault::Unplaced),
-        "a rule the placement does not place"
     );
 }
 

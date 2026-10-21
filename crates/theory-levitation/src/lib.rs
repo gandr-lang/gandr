@@ -388,6 +388,8 @@ pub use crate::theory::TheoryPort;
 pub use crate::theory::TheoryRule;
 pub use crate::theory::TheorySort;
 pub use crate::theory::TheoryValue;
+pub use crate::theory::UndescribedTheory;
+pub use crate::theory::presented_names;
 pub use crate::theory::theory_desc;
 pub use crate::typed_rule::PatternContext;
 pub use crate::typed_rule::TypedRuleFace;

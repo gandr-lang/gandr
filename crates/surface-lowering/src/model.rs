@@ -86,7 +86,6 @@
 //!   <https://doi.org/10.1145/321250.321253> — first-order unification.
 
 use alloc::collections::BTreeMap;
-use alloc::format;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -100,6 +99,7 @@ use gandr_theory_levitation::TheoryFault;
 use gandr_theory_levitation::TheoryInclusion;
 use gandr_theory_levitation::TheoryPort;
 use gandr_theory_levitation::TheoryValue;
+use gandr_theory_levitation::presented_names;
 use quenchant_shape::shape::Maybe;
 
 use crate::description::DescriptionGrade;
@@ -491,40 +491,6 @@ where
                     },
                 })
                 .collect(),
-        })
-        .collect()
-}
-
-/// The names a member's ports present under, `inputs` then `outputs`: each
-/// port's own, or for an unnamed one the placeholder `_position` of its
-/// position among all of them, which the named-port normal form reads as
-/// anonymous.
-///
-/// # Specification
-/// - ensures: one name per port, in order; a named port's own name.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — an unnamed output after one input presents as `_1`, after
-///   two as `_2`, and a named port as itself.
-/// - witness: `model::tests::a_presentation_reads_its_members_off_its_value`
-#[spec(ensures: |ref names| names.len() == inputs.len().saturating_add(outputs.len()))]
-pub(crate) fn presented_names(
-    inputs: &[TheoryPort],
-    outputs: &[TheoryPort],
-) -> Vec<Name>
-{
-    inputs
-        .iter()
-        .chain(outputs)
-        .enumerate()
-        .map(|(position, port)| {
-            if port.name.as_ref().is_empty() {
-                Name::from(format!("_{position}"))
-            }
-            else {
-                port.name.clone()
-            }
         })
         .collect()
 }
