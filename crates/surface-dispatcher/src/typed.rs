@@ -538,7 +538,8 @@ struct Context
 {
     /// The binders' names; none where the source writes none.
     binders: Vec<Option<String>>,
-    /// The capability scopes' names, the first the outermost scope's region.
+    /// The regions' names, a capability scope's or a hold's, the first the
+    /// outermost region.
     regions: Vec<Option<String>>,
     /// The type each binder binds, in the context of the binders before it;
     /// none where the table knows none.
@@ -2344,17 +2345,18 @@ impl TypeTable
     }
 
     /// The context an entry standing at `standing` is read under: the names
-    /// of its intuitionistic binders and of the capability scopes among them,
-    /// each outermost first — for a judged node, by walking the scopes of its
+    /// of its intuitionistic binders and of the regions around it, each
+    /// outermost first — for a judged node, by walking the scopes of its
     /// declaration alone; for a described member, its context's names and no
-    /// scope.
+    /// region.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: for a judged node, for each intuitionistic binder from the
     ///   outermost to the innermost around the node, the name
-    ///   [`Naming::scoped`] gives it, and the same name again among the regions
-    ///   for each binder a capability scope binds over its subject; for a part
+    ///   [`Naming::scoped`] gives it, and among the regions the name of each
+    ///   capability scope and each hold around it, as
+    ///   [`gandr_surface_diagnostics::Scoped::regions`] gives them; for a part
     ///   standing under the parts before it, those of its match's node, then
     ///   each earlier part's name, of no known type; for a described member,
     ///   each name its context binds; empty for a closed node or one its
@@ -2369,13 +2371,15 @@ impl TypeTable
     /// - hypothesis: L3 — as [`Naming::scoped`]: a body's terms answer under
     ///   their binders' names, and an endpoint under its signature's; a
     ///   theory's operation under the sorts before it; a capability inside a
-    ///   scope's subject names the scope.
+    ///   scope's subject names the scope, and a type kept at a hold names the
+    ///   hold, past the scopes and holds around it.
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
     /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
     /// - witness: `typed::tests::a_scoped_capability_answers_at_its_scope`
+    /// - witness: `typed::tests::a_kept_type_answers_at_the_hold_it_is_kept_in`
     /// - witness: `typed::tests::an_unused_dependent_part_answers_in_its_arms_context`
     fn standing(
         &self,
@@ -2405,13 +2409,15 @@ impl TypeTable
         let scoped = self.naming.scoped(&self.arena, &self.names, roots);
         let mut context = Context::default();
         for binder in scoped.around(node).unwrap_or_default() {
-            let name = binder.name.map(String::from);
-            if binder.scope {
-                context.regions.push(name.clone());
-            }
-            context.binders.push(name);
+            context.binders.push(binder.name.map(String::from));
             context.types.push(self.bound_type(binder.opener));
         }
+        context.regions = scoped
+            .regions(node)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|region| region.name.map(String::from))
+            .collect();
         for name in parted
             .and_then(|earlier| self.contexts.get(earlier.0))
             .into_iter()
@@ -4787,6 +4793,28 @@ mod tests
         assert!(
             !scoped.is_empty() && scoped.iter().all(|trip| **trip == RoundTrip::Open),
             "a type naming a scope reads under that scope, as open: {scoped:?}"
+        );
+    }
+
+    #[test]
+    fn a_kept_type_answers_at_the_hold_it_is_kept_in()
+    {
+        let source = SourceText::from(
+            "def f() -> -F Unit {\n  hold s = 3;\n  handle c : Proc {\n    run d : Cap {exit} at \
+             c <- pure c ;\n    run k : Integer at s <- pure 1 ;\n    run m <- pure k ;\n    \
+             c.exit(1)\n  } with {\n    pure(x) => return x,\n    oper exit(code, k) => return \
+             unit\n  }\n}\n",
+        );
+        let table = table(source);
+        let capability = answer(&table, source, SourceText::from("c ;"));
+        assert!(
+            matches!(capability, Maybe::Present(Answer { ref ty, .. }) if ty == "Cap {exit} at c"),
+            "a capability names its scope past the hold around it: {capability:?}"
+        );
+        let kept = answer(&table, source, SourceText::from("k ;"));
+        assert!(
+            matches!(kept, Maybe::Present(Answer { ref ty, .. }) if ty == "Integer at s"),
+            "a value kept at a hold names the hold: {kept:?}"
         );
     }
 

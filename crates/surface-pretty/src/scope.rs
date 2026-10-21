@@ -60,6 +60,8 @@ impl ChildSlot
 {
     /// The first child slot: a capability scope's subject.
     pub const FIRST: Self = Self(0);
+    /// The second child slot: a hold's scope, after the value it holds.
+    pub const SECOND: Self = Self(1);
 }
 
 impl From<usize> for ChildSlot
@@ -122,7 +124,7 @@ impl<Node: Copy> Binder<Node>
 
     /// The position of the child slot the binder opens over, among its
     /// opener's children in the printer's order: a capability scope's
-    /// subject is its first.
+    /// subject is its first, a hold's scope its second.
     ///
     /// # Specification
     /// trivial.

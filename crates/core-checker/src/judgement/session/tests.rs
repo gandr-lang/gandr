@@ -1163,3 +1163,51 @@ fn a_type_is_read_shifted_past_the_binders_opened_since_it_was_formed()
         "read one binder later, its variable names the same binder"
     );
 }
+
+#[test]
+fn a_fork_carries_nothing_kept_in_a_region()
+{
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let kept = arena.value_type_kept(
+        string,
+        gandr_core_term::effect::capability::RegionDepth::from(1_u32),
+    );
+    // `?A. end`: the child receives one payload, then closes.
+    let receiving = |arena: &mut CoreArena, payload| {
+        session(
+            arena,
+            alloc::vec![
+                ProtocolSyntax::Receive {
+                    payload: PayloadSlot::from(0_usize),
+                    next: ProtocolState::from(1_usize),
+                },
+                ProtocolSyntax::End,
+            ],
+            &[payload],
+        )
+    };
+    let plain = receiving(&mut arena, string);
+    let carrying = receiving(&mut arena, kept);
+    let mut program = Program::new(&mut arena);
+    let received = program.receive(Program::close);
+    let closed = program.close();
+    let sent = program.send(Spelled("buffer"), closed);
+    let plain_fork = fork(&mut arena, plain, received, sent);
+    assert_eq!(
+        check_unit(&mut arena, plain_fork),
+        Ok(()),
+        "a child receives a plain payload"
+    );
+    let carrying_fork = fork(&mut arena, carrying, received, sent);
+    assert_eq!(
+        check_unit(&mut arena, carrying_fork),
+        Err(CheckRefusal::Access {
+            at: crate::refusal::CoreNode::Term(crate::refusal::TermNode::Computation(
+                carrying_fork
+            )),
+            defect: crate::access::AccessDefect::KeptEscaped,
+        }),
+        "a child no region bounds receives nothing kept in one"
+    );
+}

@@ -8,9 +8,11 @@
 import "../../model/completion/ring-base.gandr" ;
 
 /// A pending completion handed to a reaping peer while its frame ends.
-/// Delegation admits the handover, and nothing yet ties the buffer to a
-/// region: this checks until the buffer can be kept in its frame's region, a
-/// hold's (#1220), when its expectation becomes that refusal.
+/// Delegation admits the handover, and nothing ties the buffer to a region. A
+/// kernel handed a buffer kept in a hold's region is refused where it is
+/// forked, since no region bounds a forked peer (`region-ended.gandr`), so
+/// this checks until a kernel can be bounded by the buffer's hold (#1183),
+/// when a reaper that outlives the hold becomes the refusal.
 @[ checks ]
 def bufferOrphaned() -> -F Unit {
   fork (reactor : Ring.Reaping) {

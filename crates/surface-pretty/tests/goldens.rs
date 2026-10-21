@@ -4132,3 +4132,35 @@ fn a_kept_value_names_the_scope_it_is_kept_in()
         ))
     );
 }
+
+/// A value kept in the region of a hold the term opens names the hold by the
+/// name its binder takes, `A at a`.
+#[test]
+fn a_kept_value_names_the_hold_it_is_kept_in()
+{
+    use gandr_core_term::effect::capability::RegionDepth;
+    use gandr_core_term::memory::HoldGrade;
+    use gandr_core_term::memory::MemoryForm;
+
+    let mut core = CoreArena::new();
+    let unit = core.value_type_product(&[]);
+    let kept = core.value_type_kept(unit, RegionDepth::from(1_u32));
+    let returns = core.comp_type_returner(kept);
+    let held = core.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+    let pure = core.computation_return(held);
+    let ascribed = core.computation_ascribe(pure, returns);
+    let read = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = core.computation_return(read);
+    let body = core.computation_bind(ascribed, returned);
+    let nothing = core.value_unit();
+    let holds = core.computation_memory(MemoryForm::Hold {
+        value: nothing,
+        body,
+        grade: HoldGrade::Many,
+    });
+    let source = CoreSource::new(&core, &[]);
+    assert_eq!(
+        spelled(&source, Root::Computation(CoreNode::Computation(holds))),
+        faithful(Written("hold a = unit ; run b : Unit at a <- pure a ; b"))
+    );
+}

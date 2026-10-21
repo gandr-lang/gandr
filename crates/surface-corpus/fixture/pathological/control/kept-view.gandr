@@ -1,6 +1,7 @@
 // What a kept view may not do: a view no region keeps escapes its access, an
 // exclusive view is kept nowhere, a held value a live region keeps a view of
-// is not written, and nothing kept in a region leaves it. A region is a static
+// is not written, and nothing kept in a region leaves it, whether a capability
+// scope or a hold opened the region. A region is a static
 // extent erased before anything runs (Koronkevich and Bowman, _Type Universes
 // as Kripke Worlds_, ICFP 2025, doi:10.1145/3747532).
 
@@ -77,4 +78,24 @@ def answered() -> -F (() => Integer) {
     pure(x) => pure x,
     oper exit(code, k) => pure thunk { pure 0 }
   }
+}
+
+/// An exclusive access while the hold's own region keeps a view of its value:
+/// the kept thunk would read the value while it is written.
+@[ refuses("HeldKept") ]
+def writtenInHold() -> -F Integer {
+  hold s = 3;
+  run k : (() => Integer) at s <- access shared s as w { pure thunk { pure w } } ;
+  access s as v { resume(v, v + 1) };
+  force k
+}
+
+/// A thunk kept in no region that forces the one kept in the hold's region:
+/// the kept thunk would leave the hold's region inside it.
+@[ refuses("KeptEscaped") ]
+def leftHold() -> -F Integer {
+  hold s = 3;
+  run k : (() => Integer) at s <- access shared s as w { pure thunk { pure w } } ;
+  run j : () => Integer <- pure thunk { force k } ;
+  force j
 }

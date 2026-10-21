@@ -1,6 +1,6 @@
-// A shared view kept in a capability scope's region: it lives as long as the
-// scope rather than the access that lent it, and the held value stays frozen
-// until the scope ends. A region is a static extent, ordered by outlives and
+// A shared view kept in a region: it lives as long as the capability scope or
+// the hold that opened the region rather than the access that lent it, and the
+// held value stays frozen until the region ends. A region is a static extent, ordered by outlives and
 // erased before anything runs: a value enters a region at any time and never
 // leaves it. Lifetimes stated by control rather than by a reference type
 // follow boats, "References are like jumps" (2024,
@@ -66,4 +66,27 @@ def keptRead() -> -F Integer {
     pure(x) => pure x,
     oper exit(code, k) => pure 0
   }
+}
+
+/// A hold opens a region too: a view of its own value kept there lives until
+/// the hold ends.
+@[ runs("3") ]
+def keptInHold() -> -F Integer {
+  hold s = 3;
+  run k : (() => Integer) at s <- access shared s as w { pure thunk { pure w } } ;
+  force k
+}
+
+/// A view of an outer hold kept in an inner hold's region frees the outer
+/// value when the inner hold ends, so an exclusive access writes it back.
+@[ runs("4") ]
+def keptInInner() -> -F Integer {
+  hold s = 3;
+  run n : Integer <- {
+    hold r = 0;
+    run k : (() => Integer) at r <- access shared s as w { pure thunk { pure w } } ;
+    force k
+  } ;
+  access s as v { resume(v, n + 1) };
+  pure s
 }

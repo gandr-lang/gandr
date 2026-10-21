@@ -3134,11 +3134,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
     }
 
     /// The region the next capability scope introduces: one deeper than every
-    /// scope enclosing it, each counted by the subject it is checking.
+    /// region enclosing it, each counted by the frame waiting on its body —
+    /// a scope's subject or a hold's scope.
     ///
     /// # Specification
     /// - ensures: [`Region::Scoped`] at one past the number of waiting
-    ///   [`Frame::ScopeSubject`] frames.
+    ///   [`Frame::ScopeSubject`] and [`Frame::HoldBody`] frames.
     /// - fails: [`CheckRefusal::MachineInvariant`] past the depth a region
     ///   counts.
     /// - panics: none.
@@ -3153,7 +3154,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
         let depth = self
             .frames
             .iter()
-            .filter(|waiting| matches!(waiting.frame, Frame::ScopeSubject { .. }))
+            .filter(|waiting| {
+                matches!(
+                    waiting.frame,
+                    Frame::ScopeSubject { .. } | Frame::HoldBody { .. }
+                )
+            })
             .count()
             .checked_add(1)
             .and_then(|depth| u32::try_from(depth).ok())

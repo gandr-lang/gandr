@@ -404,26 +404,26 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// Classify a type placed somewhere, `T at c`: a type kept in a scope's
-    /// region, or a handle to a value meaningful at a world.
+    /// Classify a type placed somewhere, `T at c`: a type kept in a region, or
+    /// a handle to a value meaningful at a world.
     ///
     /// # Specification
     /// - requires: `site` is an at type.
-    /// - ensures: where `c` names a capability scope around the type, the
-    ///   type's region is that scope's: [`Region::Scoped`] at the number of
-    ///   capability scopes from the outermost to the one binding `c`, counted
-    ///   from one, the depth the checker gives the capability that scope
-    ///   introduces. A capability type operand stands as the type, its region
-    ///   recorded; any other operand is kept in the region, the operand read as
-    ///   a value type where the at type stands. Where `c` names an earlier
-    ///   declaration, the type is the handle `T at c` to a value of the operand
-    ///   meaningful at the world that declaration declares, the operand read as
-    ///   a value type where the at type stands (a declaration that declares no
-    ///   world is the checker's to refuse).
+    /// - ensures: where `c` names a capability scope or a hold around the type,
+    ///   the type's region is the one that scope or hold opens:
+    ///   [`Region::Scoped`] at the number of capability scopes and holds from
+    ///   the outermost to the one binding `c`, counted from one, the depth the
+    ///   checker gives that region. A capability type operand stands as the
+    ///   type, its region recorded; any other operand is kept in the region,
+    ///   the operand read as a value type where the at type stands. Where `c`
+    ///   names an earlier declaration, the type is the handle `T at c` to a
+    ///   value of the operand meaningful at the world that declaration
+    ///   declares, the operand read as a value type where the at type stands (a
+    ///   declaration that declares no world is the checker's to refuse).
     /// - fails: the wrong-sort refusal where no value type is read;
     ///   [`LoweringRefusal::UnresolvedName`] at `c` when neither a capability
-    ///   scope nor an earlier declaration binds it; a misplaced tile or missing
-    ///   operand fault for a type out of shape.
+    ///   scope, a hold nor an earlier declaration binds it; a misplaced tile or
+    ///   missing operand fault for a type out of shape.
     /// - panics: none.
     ///
     /// # Errors
@@ -431,9 +431,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a capability at the inner of two nested scopes and at
-    ///   the outer one mint their depths, a name no scope binds is refused and
-    ///   an integer kept at a scope mints the kept type, each asserted exactly;
-    ///   a handle at a declared world mints the handle type.
+    ///   the outer one mint their depths, a name no scope binds is refused, an
+    ///   integer kept at a scope mints the kept type and one kept at a hold
+    ///   inside the scope counts both, each asserted exactly; a handle at a
+    ///   declared world mints the handle type.
     /// - witness: `lower::capability::tests::a_capability_at_a_scope_lives_in_its_region`
     /// - witness: `lower::world::tests::the_located_forms_lower_to_their_world_forms`
     #[spec(ensures: |ret| ret.is_err()
@@ -461,7 +462,8 @@ impl<'source> Lowerer<'_, 'source>
         };
         let bound = match self.resolve_name(site, frame, name) {
             Ok(Maybe::Present(Resolved::Binder(bound)))
-                if self.capabilities.contains(&bound.binder) =>
+                if self.capabilities.contains(&bound.binder)
+                    || self.held.contains(&bound.binder) =>
             {
                 bound
             },
@@ -475,7 +477,7 @@ impl<'source> Lowerer<'_, 'source>
         let depth = self
             .scope
             .chain(Frame::Inner(bound.binder))
-            .filter(|binder| self.capabilities.contains(binder))
+            .filter(|binder| self.capabilities.contains(binder) || self.held.contains(binder))
             .count();
         let depth = RegionDepth::from(u32::try_from(depth).map_err(|_overflow| unbound())?);
         self.read(operand.node, site.reading);

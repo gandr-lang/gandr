@@ -860,7 +860,9 @@ fn a_view_kept_in_a_region_lives_as_long_as_its_scope()
     let units = units(&mut arena);
     let integers = integers(&mut arena);
     let suspended = arena.value_type_thunk(integers);
-    let kept = arena.value_type_kept(suspended, RegionDepth::from(1_u32));
+    // The hold around the scope opens the first region and the scope the
+    // second: one sort of regions, counted outermost first.
+    let kept = arena.value_type_kept(suspended, RegionDepth::from(2_u32));
     let keeps = arena.comp_type_returner(kept);
     let suspends = arena.comp_type_returner(suspended);
     let zero = arena.value_literal(integer_literal());
@@ -876,7 +878,8 @@ fn a_view_kept_in_a_region_lives_as_long_as_its_scope()
         .into();
         arena.computation_scope(host.proc.clone(), subject, passes, clauses)
     };
-    // x <- (return thunk { (w,).0 } : F (U F Integer at ρ)), with `w` the view.
+    // x <- (return thunk { (w,).0 } : F (U F Integer at ρ)), with `w` the view
+    // and ρ the scope's region.
     let (_viewed, read) = copied(&mut arena, l0());
     let thunk = arena.value_thunk(read);
     let suspend = arena.computation_return(thunk);
@@ -923,9 +926,13 @@ fn a_view_kept_in_a_region_lives_as_long_as_its_scope()
         }),
         "a thunk kept in no region captures no view"
     );
-    let (answering_scope, answering) = in_region(&mut arena, kept_access, returned);
+    // scope Proc (c) { () } checked at F (U F Integer at ρ), ρ its own region,
+    // the first with no hold around it.
+    let answering_scope = scope(&mut arena, returned);
+    let own = arena.value_type_kept(suspended, RegionDepth::from(1_u32));
+    let own_keeps = arena.comp_type_returner(own);
     assert_eq!(
-        checked(&mut arena, answering, keeps),
+        checked(&mut arena, answering_scope, own_keeps),
         Err(at(answering_scope, AccessDefect::KeptEscaped)),
         "a scope answers nothing kept in its own region"
     );
@@ -968,9 +975,13 @@ fn a_view_kept_in_a_region_lives_as_long_as_its_scope()
         "a value kept in a region stays kept at the type that keeps it"
     );
     // scope Proc (c) { y <- (return thunk { hold s = 0; access shared s as w {
-    // x <- …; force x } } : F (U F Integer)); () }: a hold stands in a scope only
-    // where its type is pure, inside a thunk.
-    let inner_body = arena.computation_bind(kept_bind, forced);
+    // x <- …; force x } } : F (U F Integer)); () }, x kept in the scope's region,
+    // the first: a hold stands in a scope only where its type is pure, inside a
+    // thunk.
+    let scope_kept = arena.value_type_kept(suspended, RegionDepth::from(1_u32));
+    let scope_keeps = arena.comp_type_returner(scope_kept);
+    let scope_bind = arena.computation_ascribe(suspend, scope_keeps);
+    let inner_body = arena.computation_bind(scope_bind, forced);
     let inner_access = shared(&mut arena, l0(), inner_body);
     let inner_hold = hold(&mut arena, inner_access);
     let holding = arena.value_thunk(inner_hold);
@@ -986,5 +997,73 @@ fn a_view_kept_in_a_region_lives_as_long_as_its_scope()
         }),
         "a value held inside the scope does not outlive its region, so no view \
          of it is kept there"
+    );
+}
+
+#[test]
+fn a_view_kept_in_a_hold_lives_as_long_as_the_hold()
+{
+    let mut arena = CoreArena::new();
+    let units = units(&mut arena);
+    let integers = integers(&mut arena);
+    let suspended = arena.value_type_thunk(integers);
+    let zero = arena.value_literal(integer_literal());
+    let returned = done(&mut arena);
+    let unwind = done(&mut arena);
+    let answered = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = arena.computation_force(answered);
+    // x <- (return thunk { (w,).0 } : F (U F Integer at ρ)); force x, with `w`
+    // the view and ρ the region at `depth`.
+    let kept_force = |arena: &mut CoreArena, depth: u32| {
+        let kept = arena.value_type_kept(suspended, RegionDepth::from(depth));
+        let keeps = arena.comp_type_returner(kept);
+        let (_viewed, read) = copied(arena, l0());
+        let thunk = arena.value_thunk(read);
+        let suspend = arena.computation_return(thunk);
+        let bound = arena.computation_ascribe(suspend, keeps);
+        (arena.computation_bind(bound, forced), keeps)
+    };
+    // hold s = 0; access shared s as w { x : … at s <- …; force x }; ()
+    let (own, own_keeps) = kept_force(&mut arena, 1_u32);
+    let own_access = shared(&mut arena, l0(), own);
+    let own_then = arena.computation_bind(own_access, returned);
+    let own_hold = hold(&mut arena, own_then);
+    assert_eq!(
+        checked(&mut arena, own_hold, units),
+        Ok(()),
+        "a view of a held value is kept in its own hold's region"
+    );
+    // … ; access s as v { resume(v, 0) }: the hold's region keeps the view.
+    let resumed = resume(&mut arena, l0(), zero);
+    let exclusive = access(&mut arena, l0(), resumed, unwind);
+    let frozen_then = arena.computation_bind(own_access, exclusive);
+    let frozen = hold(&mut arena, frozen_then);
+    assert_eq!(
+        checked(&mut arena, frozen, units),
+        Err(at(exclusive, AccessDefect::Kept)),
+        "a held value is frozen while its own hold's region keeps a view"
+    );
+    // hold s = 0; access shared s as w { x : … at s <- …; force x }, answered.
+    let answering = hold(&mut arena, own_access);
+    assert_eq!(
+        checked(&mut arena, answering, own_keeps),
+        Err(at(answering, AccessDefect::KeptEscaped)),
+        "a hold answers nothing kept in its own region"
+    );
+    // hold s = 0; (hold r = 0; access shared s as w { x : … at r <- …; force
+    // x }; ()); access s as v { resume(v, 0) }: a view of the outer hold kept
+    // in the inner one's region, released when the inner hold ends.
+    let (inner, _inner_keeps) = kept_force(&mut arena, 2_u32);
+    let inner_access = shared(&mut arena, l1(), inner);
+    let inner_then = arena.computation_bind(inner_access, returned);
+    let inner_hold = hold(&mut arena, inner_then);
+    let inner_ascribed = arena.computation_ascribe(inner_hold, units);
+    let released_then = arena.computation_bind(inner_ascribed, exclusive);
+    let released = hold(&mut arena, released_then);
+    assert_eq!(
+        checked(&mut arena, released, units),
+        Ok(()),
+        "a view kept in an inner hold's region frees the outer held value when \
+         the inner hold ends"
     );
 }
