@@ -44,6 +44,7 @@ use super::rename_value_type_traced;
 use super::shift_comp_type;
 use super::shift_value_type;
 use super::strengthen_comp_type;
+use super::strengthen_value;
 use super::strengthen_value_type;
 use super::strengthening;
 use super::substitute_environment;
@@ -1417,6 +1418,42 @@ fn a_value_type_strengthens_unless_it_names_a_binder()
         Maybe::Present(Relocated::from(integer)),
         strengthen_value_type(&mut arena, integer, Binders::from(2_u32)),
         "a closed type strengthens to itself"
+    );
+}
+
+#[test]
+fn a_value_strengthens_unless_it_names_a_binder()
+{
+    let mut arena = CoreArena::new();
+    let inner = variable(&mut arena, DeBruijnIndex::from(0));
+    let pair = {
+        let outer = variable(&mut arena, DeBruijnIndex::from(3));
+        arena.value_tuple(&[inner, outer])
+    };
+    assert_eq!(
+        Maybe::Absent(strengthening::Absent::MentionsBinder),
+        strengthen_value(&mut arena, pair, Binders::from(2_u32)),
+        "a pair naming the innermost binder cannot leave it"
+    );
+    let outer = variable(&mut arena, DeBruijnIndex::from(3));
+    let Maybe::Present(lowered) = strengthen_value(&mut arena, outer, Binders::from(2_u32))
+    else {
+        panic!("a value naming only past both binders leaves them");
+    };
+    let lowered = lowered.settle(&mut arena);
+    assert_eq!(
+        Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(1_u32)
+        }),
+        arena.value(lowered),
+        "and its index lowers by two"
+    );
+    let unit = arena.value_unit();
+    assert_eq!(
+        Maybe::Present(Relocated::from(unit)),
+        strengthen_value(&mut arena, unit, Binders::from(2_u32)),
+        "a closed value strengthens to itself"
     );
 }
 

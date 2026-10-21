@@ -686,6 +686,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-core-unify"
+version = "0.0.0"
+dependencies = [
+ "gandr-core-term",
+ "gandr-kernel-strata",
+ "gandr-kernel-term",
+ "quenchant-anodized",
+ "quenchant-shape",
+]
+
+[[package]]
 name = "gandr-kernel-check-memo"
 version = "0.0.0"
 dependencies = [

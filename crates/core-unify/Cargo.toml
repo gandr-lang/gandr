@@ -1,0 +1,30 @@
+[package]
+name = "gandr-core-unify"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Contextual metavariables over the core and the unifier that solves them by forced solutions only"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "metavariables", "no-std", "unification"]
+categories = ["compilers", "no-std"]
+publish.workspace = true
+autotests = false
+
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The core syntax the equations are stated over, and its carried supports,
+# strengthening and shifting, which decide a solution's scope. The quenchant
+# shapes give the named absences.
+[dependencies]
+anodized.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+quenchant-shape.workspace = true
+
+[lints]
+workspace = true

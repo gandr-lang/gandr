@@ -31,6 +31,7 @@ crates/
 ├── core-sequent/                  the command IL a core program is focused into, the outcome a run answers in and the store its answer is read back from
 ├── core-session/                  contractive binary session types, coinductive relation search, endpoint replay, dialogue admission by logical time and certified recorded-run transport
 ├── core-term/                     core syntax with native universe paths, the one unified context and the co-de Bruijn carrier
+├── core-unify/                    contextual metavariables and their unifier: most general solutions only, one store of postponed equations woken by their blockers, refutation on stable evidence
 ├── kernel-check-memo/             the check-memo seam a checker consults
 ├── kernel-conversion-trace/       the conversion-decision vocabulary and its sink
 ├── kernel-core/                   checking, conversion, admission and memoization; Path_U, identity and bridge recursion, higher fields, funext, Flow_U, guarded List observations and session-certificate replay; stage formation and replay

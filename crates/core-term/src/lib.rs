@@ -273,6 +273,7 @@ pub use crate::rewrite::shift_value;
 pub use crate::rewrite::shift_value_type;
 pub use crate::rewrite::shift_value_type_under;
 pub use crate::rewrite::strengthen_comp_type;
+pub use crate::rewrite::strengthen_value;
 pub use crate::rewrite::strengthen_value_type;
 pub use crate::rewrite::strengthening;
 pub use crate::rewrite::substitute_environment;
