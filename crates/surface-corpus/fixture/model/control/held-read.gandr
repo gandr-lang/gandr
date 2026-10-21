@@ -1,0 +1,14 @@
+// A held value is read as any variable is: its type is the slot's, known
+// where the hold binds it. A return synthesises the pure returner of what its
+// value synthesises, the mode-correct reading of an introduction whose premise
+// synthesises (Dunfield and Krishnaswami, "Bidirectional Typing", ACM
+// Computing Surveys 54(5), 2021, doi:10.1145/3450952).
+
+/// A held value returned to a statement that binds it: the binder states no
+/// type, and the read synthesises the slot's (#1142).
+@[ runs("3") ]
+def bound() -> -F Integer {
+  hold i = 3;
+  run k <- pure i;
+  pure k
+}

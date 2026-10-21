@@ -2,6 +2,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::BinderDepth;
+use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
@@ -58,6 +59,7 @@ use crate::fixture::Mode;
 use crate::fixture::dangling_value;
 use crate::fixture::integer_literal;
 use crate::fixture::numeric_literal;
+use crate::fixture::same_refusal;
 use crate::fixture::seed;
 use crate::fixture::term_recipe;
 use crate::fixture::text_literal;
@@ -500,7 +502,7 @@ fn every_comp_former_is_answered_in_both_modes()
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     seed(&mut context, &[thunk_arrow]);
     let crossed = |crossings: usize| Ok(ConversionCount::from(crossings));
-    let rows: [Row<ComputationId, CompTypeId>; 5] = [
+    let rows: [Row<ComputationId, CompTypeId>; 4] = [
         (force, Ok(arrow), arrow, crossed(1)),
         (
             application,
@@ -514,14 +516,6 @@ fn every_comp_former_is_answered_in_both_modes()
                 form: CheckingForm::Lambda(lambda),
             }),
             arrow,
-            crossed(1),
-        ),
-        (
-            returned,
-            Err(CheckRefusal::NotSynthesisable {
-                form: CheckingForm::Return(returned),
-            }),
-            returns_integer,
             crossed(1),
         ),
         (bind, Ok(arrow), arrow, crossed(2)),
@@ -539,6 +533,25 @@ fn every_comp_former_is_answered_in_both_modes()
             "{term:?} checks by its former's rule"
         );
     }
+    let found = synthesise_comp(&mut context, returned).map(|found| found.produced().id());
+    let mut tally = ConversionCount::default();
+    assert_eq!(
+        found.and_then(|found| comp_bridge(
+            &mut context,
+            returned,
+            found,
+            returns_integer,
+            &mut tally
+        )),
+        Ok(()),
+        "a return synthesises the pure returner of what its value synthesises (#1142)"
+    );
+    let expected = form_comp_type(&mut context, returns_integer).unwrap();
+    assert_eq!(
+        check_comp(&mut context, returned, expected).map(|evidence| evidence.conversions()),
+        crossed(1),
+        "and checks against it by its value"
+    );
     assert_eq!(
         synthesise_comp(&mut context, case).map(|found| found.produced().id()),
         Err(CheckRefusal::NotSynthesisable {
@@ -1733,12 +1746,13 @@ fn a_bind_checks_against_the_expected_computation()
         "the bound name has the type its returner returns, whatever the bind is checked \
              against"
     );
+    let found = synthesise_comp(&mut context, bind).map(|found| found.produced().id());
+    let mut tally = ConversionCount::default();
     assert_eq!(
-        synthesise_comp(&mut context, bind).map(|found| found.produced().id()),
-        Err(CheckRefusal::NotSynthesisable {
-            form: CheckingForm::Return(body),
-        }),
-        "a body that only checks leaves the bind with nothing to synthesise"
+        found.and_then(|found| comp_bridge(&mut context, bind, found, returns_integer, &mut tally)),
+        Ok(()),
+        "a body returning the bound name synthesises the returner of its type, and so does the \
+             bind"
     );
 }
 
@@ -3740,11 +3754,14 @@ proptest! {
                     Err(CheckRefusal::NotSynthesisable { form: CheckingForm::Lambda(term) }),
                     "a lambda does not synthesise"
                 ),
-                | Computation::Return(_) => prop_assert_eq!(
-                    synthesised,
-                    Err(CheckRefusal::NotSynthesisable { form: CheckingForm::Return(term) }),
-                    "a return does not synthesise"
-                ),
+                | Computation::Return(value) => {
+                    let value_synthesised = synthesise_value(&mut context, value);
+                    prop_assert_eq!(
+                        synthesised.is_ok(),
+                        value_synthesised.is_ok(),
+                        "a return synthesises exactly when its value does"
+                    );
+                },
                 | Computation::Fixpoint { .. } => prop_assert!(false, "the free recipe mints no fixpoint"),
                 | Computation::Primitive { .. } | Computation::Force(_) | Computation::Application(..) => {
                     let bridged = synthesised.and_then(|found| {
@@ -3752,10 +3769,16 @@ proptest! {
                         comp_bridge(&mut context, term, found.produced().id(), expected_comp.id(), &mut tally)
                             .map(|()| tally)
                     });
-                    prop_assert_eq!(
-                        checked.map(|evidence| evidence.conversions()),
-                        bridged,
-                        "a synthesising computation checks exactly as it synthesises, then crosses the computation bridge"
+                    let checked = checked.map(|evidence| evidence.conversions());
+                    let agree = match (checked, bridged) {
+                        | (Err(left), Err(right)) => same_refusal(context.arena(), left, right) == CertificateEquality::Equal,
+                        | (left, right) => left == right,
+                    };
+                    prop_assert!(
+                        agree,
+                        "a synthesising computation checks exactly as it synthesises, then crosses the computation bridge: {:?} against {:?}",
+                        checked,
+                        bridged
                     );
                 },
                 | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) => {

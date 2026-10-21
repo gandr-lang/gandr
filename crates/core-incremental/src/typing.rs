@@ -116,8 +116,6 @@ pub enum Form
     Thunk(Site),
     /// A lambda.
     Lambda(Site),
-    /// A return.
-    Return(Site),
     /// A static lambda.
     StaticLambda(Site),
     /// The item's own hole.
@@ -1413,7 +1411,6 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             | (CheckingForm::Shift(id), Form::Shift(at))
             | (CheckingForm::With(id), Form::With(at))
             | (CheckingForm::Lambda(id), Form::Lambda(at))
-            | (CheckingForm::Return(id), Form::Return(at))
             | (CheckingForm::Fixpoint(id), Form::Fixpoint(at))
             | (CheckingForm::Offer(id), Form::Offer(at))
             | (CheckingForm::Scope(id), Form::Scope(at)) => {
@@ -1690,7 +1687,6 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                     CheckingForm::Split(id) => Form::Split(self.site(ArenaNode::Computation(id))),
                     CheckingForm::Thunk(id) => Form::Thunk(self.site(ArenaNode::Value(id))),
                     CheckingForm::Lambda(id) => Form::Lambda(self.site(ArenaNode::Computation(id))),
-                    CheckingForm::Return(id) => Form::Return(self.site(ArenaNode::Computation(id))),
                     CheckingForm::Hole(_) => Form::Hole,
                     CheckingForm::StaticLambda(id) => {
                         Form::StaticLambda(self.site(ArenaNode::Value(id)))

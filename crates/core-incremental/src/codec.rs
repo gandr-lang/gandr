@@ -6328,10 +6328,6 @@ where
                     writer.tag(Tag(1));
                     write_site(writer, site)?;
                 },
-                Form::Return(site) => {
-                    writer.tag(Tag(2));
-                    write_site(writer, site)?;
-                },
                 Form::Hole => writer.tag(Tag(3)),
                 Form::StaticLambda(site) => {
                     writer.tag(Tag(4));
@@ -6885,10 +6881,6 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 1 => {
                     let site = read_site(reader)?;
                     Form::Lambda(site)
-                },
-                2 => {
-                    let site = read_site(reader)?;
-                    Form::Return(site)
                 },
                 3 => Form::Hole,
                 4 => {

@@ -1434,7 +1434,7 @@ mod tests
                 ),
                 (
                     range(Span(0, 33, 0, 41)),
-                    "checked against `-F String`; while checking the value this returns"
+                    "checked against `-F String`; while judging the value this returns"
                 ),
             ],
             "the refusal's own annotations, then every rule it stood inside, outermost first"

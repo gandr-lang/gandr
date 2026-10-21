@@ -243,7 +243,7 @@ pub fn sentence(role: FrameRole) -> Sentence
         FrameRole::PairSecond => "checking the first part of this list cell or dependent record",
         FrameRole::Unknowing => "checking this against the unknown type",
         FrameRole::ThunkBody => "checking the body of this thunk",
-        FrameRole::ReturnValue => "checking the value this returns",
+        FrameRole::ReturnValue => "judging the value this returns",
         FrameRole::InjectionPayload => "checking the payload of this injection",
         FrameRole::Quote => "forming the type this quotes",
         FrameRole::FormNext => "forming the parts of this type",

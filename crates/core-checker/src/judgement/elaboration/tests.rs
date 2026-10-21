@@ -8,6 +8,7 @@ use gandr_core_nbe::LoweredChain;
 use gandr_core_nbe::NeutralHead;
 use gandr_core_nbe::eval_value;
 use gandr_core_term::BinderDepth;
+use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompType;
 use gandr_core_term::Computation;
 use gandr_core_term::CoreArena;
@@ -38,6 +39,7 @@ use crate::OriginToken;
 use crate::Verdict;
 use crate::check_module;
 use crate::fixture::integer_literal;
+use crate::fixture::same_refusal;
 use crate::fixture::seed;
 use crate::fixture::term_recipe;
 use crate::fixture::type_recipe;
@@ -413,10 +415,11 @@ proptest! {
                 let total = elaborate_value(&mut context, term, direction);
                 match (strict, &total) {
                     | (Ok(()), &Ok(ref elaboration)) => prop_assert!(elaboration.marks().is_empty(), "an accepted term is not marked"),
-                    | (Err(refusal), &Ok(ref elaboration)) => prop_assert_eq!(
-                        elaboration.marks().first().map(MarkEntry::refusal),
-                        Some(refusal),
-                        "the first mark is the strict refusal"
+                    | (Err(refusal), &Ok(ref elaboration)) => prop_assert!(
+                        elaboration.marks().first().map(MarkEntry::refusal).is_some_and(|marked| same_refusal(context.arena(), marked, refusal) == CertificateEquality::Equal),
+                        "the first mark is the strict refusal {:?}: {:?}",
+                        refusal,
+                        elaboration.marks().first().map(MarkEntry::refusal)
                     ),
                     | (Ok(()), &Err(ref fault)) => prop_assert!(false, "an accepted term faults in a total run: {:?}", fault),
                     | (Err(_), &Err(ref fault)) => prop_assert_eq!(fault.classify(), FailureClass::EngineFault, "only an engine fault ends a total run"),
@@ -436,10 +439,11 @@ proptest! {
                 let total = elaborate_comp(&mut context, term, direction);
                 match (strict, &total) {
                     | (Ok(()), &Ok(ref elaboration)) => prop_assert!(elaboration.marks().is_empty(), "an accepted term is not marked"),
-                    | (Err(refusal), &Ok(ref elaboration)) => prop_assert_eq!(
-                        elaboration.marks().first().map(MarkEntry::refusal),
-                        Some(refusal),
-                        "the first mark is the strict refusal"
+                    | (Err(refusal), &Ok(ref elaboration)) => prop_assert!(
+                        elaboration.marks().first().map(MarkEntry::refusal).is_some_and(|marked| same_refusal(context.arena(), marked, refusal) == CertificateEquality::Equal),
+                        "the first mark is the strict refusal {:?}: {:?}",
+                        refusal,
+                        elaboration.marks().first().map(MarkEntry::refusal)
                     ),
                     | (Ok(()), &Err(ref fault)) => prop_assert!(false, "an accepted term faults in a total run: {:?}", fault),
                     | (Err(_), &Err(ref fault)) => prop_assert_eq!(fault.classify(), FailureClass::EngineFault, "only an engine fault ends a total run"),

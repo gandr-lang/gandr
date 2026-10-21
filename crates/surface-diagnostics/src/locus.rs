@@ -898,7 +898,6 @@ fn checked(
                 | CheckingForm::Case(at)
                 | CheckingForm::Split(at)
                 | CheckingForm::Lambda(at)
-                | CheckingForm::Return(at)
                 | CheckingForm::Fixpoint(at)
                 | CheckingForm::Offer(at)
                 | CheckingForm::Scope(at),
@@ -1277,7 +1276,6 @@ impl fmt::Display for Checked
                     | CheckingForm::Split(_) => "a split",
                     | CheckingForm::Thunk(_) => "a thunk",
                     | CheckingForm::Lambda(_) => "a lambda",
-                    | CheckingForm::Return(_) => "a return",
                     | CheckingForm::Hole(_) => "a hole",
                     | CheckingForm::StaticLambda(_) => "a type operator",
                     | CheckingForm::Fixpoint(_) => "a fixpoint",
@@ -2874,9 +2872,6 @@ mod tests
                 form: CheckingForm::Lambda(computation),
             },
             CheckRefusal::NotSynthesisable {
-                form: CheckingForm::Return(computation),
-            },
-            CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Fixpoint(computation),
             },
             CheckRefusal::NotSynthesisable {
@@ -3310,7 +3305,6 @@ mod tests
                                 | CheckingForm::Case(_)
                                 | CheckingForm::Split(_)
                                 | CheckingForm::Lambda(_)
-                                | CheckingForm::Return(_)
                                 | CheckingForm::Fixpoint(_)
                                 | CheckingForm::Offer(_)
                                 | CheckingForm::Scope(_),
@@ -3837,7 +3831,6 @@ mod tests
             CheckingForm::Split(computation),
             CheckingForm::Thunk(value),
             CheckingForm::Lambda(computation),
-            CheckingForm::Return(computation),
             CheckingForm::Hole(1_usize.into()),
             CheckingForm::StaticLambda(value),
             CheckingForm::Fixpoint(computation),
