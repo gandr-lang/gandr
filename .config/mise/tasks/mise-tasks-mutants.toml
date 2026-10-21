@@ -133,6 +133,19 @@ MUTANTS_OUTPUT="mutants.out/$crate/named" exec mise run mutants -- -p "$crate" \
 # all. `--in-diff` keeps only the mutants a diff's added lines hold
 # (cargo-mutants' own `--in-diff`), as `mutants:changed` runs it over a
 # change. The whole-suite `mutants` stays the way to map a crate first.
+#
+# `--iterate` carries a crate's outcomes from one run to the next, across
+# trees, as cargo-mutants' own `--iterate` does, in `iterate/` beside the
+# outcomes. The mutants a run catches or finds unviable are settled
+# (`settled.txt`) and no later `--iterate` run lists them again. The ones it
+# misses or times out are tried (`tried.txt`) and wait out the pass: a run
+# that leaves no group pending ends it, writes `iterate/passed` and clears
+# the tried list, so the next pass retries every survivor. `--until` bounds a
+# run's wall time: no group starts once that many seconds have gone since the
+# run started, and the group running then is stopped at it. A stopped
+# group's outcomes so far count; its other mutants, like those of a group
+# that never started, wait for the next run. A run therefore takes what fits
+# and the rest follows it, which `mutants:nightly` relies on.
 ["mutants:witnessed"]
 description = "Mutation-test one crate, each mutant under the witnesses of its function"
 depends = ["evidence:rustdoc"]
@@ -145,6 +158,8 @@ flag "-p --package <crate>" required=#true help="the crate to mutate"
 flag "--lanes <count>" default="4" help="workspace copies whose groups build and test at once"
 flag "--timeout <seconds>" default="300" help="the longest a mutant's witnesses may run"
 flag "--in-diff <file>" help="mutate only the lines a unified diff adds"
+flag "--iterate" help="skip the mutants earlier --iterate runs settled, and those they tried in the current pass"
+flag "--until <seconds>" help="start no group after this many seconds and stop the one running then; the rest wait for the next run"
 '''
 run = '''
 {% raw %}#!/usr/bin/env bash
@@ -152,6 +167,8 @@ set -euo pipefail
 crate=${usage_package:?}
 lanes=${usage_lanes:-4}
 timeout=${usage_timeout:-300}
+iterate=${usage_iterate:-false}
+until=${usage_until:-}
 in_diff=()
 if [[ -n "${usage_in_diff:-}" ]]; then
   [[ -f "$usage_in_diff" ]] || { printf 'no diff at %s\n' "$usage_in_diff" >&2; exit 2; }
@@ -159,6 +176,10 @@ if [[ -n "${usage_in_diff:-}" ]]; then
 fi
 [[ "$lanes" =~ ^[1-9][0-9]*$ ]] || { echo '--lanes takes a positive count' >&2; exit 2; }
 [[ "$timeout" =~ ^[1-9][0-9]*$ ]] || { echo '--timeout takes a positive count of seconds' >&2; exit 2; }
+if [[ -n "$until" ]]; then
+  [[ "$until" =~ ^[1-9][0-9]*$ ]] || { echo '--until takes a positive count of seconds' >&2; exit 2; }
+  command -v timeout > /dev/null || { echo '--until stops a group with timeout(1), which is not on the path' >&2; exit 2; }
+fi
 package=$(cargo metadata --locked --no-deps --format-version 1 | jq -c --arg crate "$crate" '.packages[] | select(.name == $crate)')
 if [[ -z "$package" ]]; then
   printf 'no workspace crate named %s\n' "$crate" >&2
@@ -177,10 +198,20 @@ hold_mutants_lock "mise run mutants:witnessed -- -p $crate"
 scope=${mutants_scope[0]}
 mkdir -p "$output/groups"
 output=$(cd "$output" && pwd)
-find "$output" -mindepth 1 -maxdepth 1 ! -name groups -exec rm -rf {} +
+find "$output" -mindepth 1 -maxdepth 1 ! -name groups ! -name iterate -exec rm -rf {} +
+[[ "$iterate" == true ]] || rm -rf "$output/iterate"
 mkdir -p "$output/logs"
 started=$SECONDS
 "$scope" cargo mutants --list --json --package "$crate" "${in_diff[@]}" > "$output/list.json"
+listed=$(jq length "$output/list.json")
+if [[ "$iterate" == true ]]; then
+  mkdir -p "$output/iterate"
+  touch "$output/iterate/settled.txt" "$output/iterate/tried.txt"
+  jq --rawfile known <(cat "$output/iterate/settled.txt" "$output/iterate/tried.txt") \
+    '($known | split("\n") | map({key: ., value: true}) | from_entries) as $known | map(select($known[.name] | not))' \
+    "$output/list.json" > "$output/listed.json"
+  mv "$output/listed.json" "$output/list.json"
+fi
 jq -f .config/mutants/items.jq "$doc" > "$output/items.json"
 jq -n --slurpfile mutants "$output/list.json" --slurpfile items "$output/items.json" \
   --arg package "$crate" --argjson targets "$targets" \
@@ -196,11 +227,9 @@ witnessed=$(jq -c '.[] | select(.filter != null)' "$output/groups.json" | while 
   key=$({ printf '%s\n%s\n' "$revision" "$timeout"; jq -r '.names[]' <<< "$group"; } | git hash-object --stdin)
   jq -c --arg key "$key" '. + {key: $key}' <<< "$group"
 done | jq -sc .)
-pending=0
-while IFS= read -r key; do
-  [[ -f "$output/groups/$key/resolved" ]] || pending=$((pending + 1))
-done < <(jq -r '.[].key' <<< "$witnessed")
-if (( pending > 0 )); then
+pending=$(jq -c --rawfile resolved <(cd "$output/groups" && for key in *; do [[ ! -f "$key/resolved" ]] || printf '%s\n' "$key"; done) \
+  '($resolved | split("\n")) as $resolved | map(select(.key | IN($resolved[]) | not))' <<< "$witnessed")
+if [[ "$pending" != '[]' ]]; then
   # Each lane is a detached worktree of this repository at HEAD with the
   # working tree's files laid over it: some witnesses read the history
   # (`git merge-base origin/main HEAD`), which a bare copy has not got. A
@@ -214,18 +243,24 @@ if (( pending > 0 )); then
       | while IFS= read -r -d '' path; do [[ ! -e "$path" && ! -L "$path" ]] || printf '%s\0' "$path"; done \
       | tar --null -T - -cf - | tar -xf - -C "$scratch/$lane"
   done
-  # One unmutated run of every witness, in a lane as the mutants will run:
-  # a witness that fails there, or names no test, would read each of its
-  # function's mutants caught.
-  union=$(jq -r '[.[].filter | sub("^package\\(=[^)]*\\) & "; "")] | unique | join(" | ")' <<< "$witnessed")
+  # One unmutated run of every pending group's witnesses, in a lane as the
+  # mutants will run: a witness that fails there, or names no test, would
+  # read each of its function's mutants caught.
+  union=$(jq -r '[.[].filter | sub("^package\\(=[^)]*\\) & "; "")] | unique | join(" | ")' <<< "$pending")
   (cd "$scratch/0" && "$scope" cargo nextest run --locked --package "$crate" --no-tests=fail -E "package(=$crate) & ($union)") > "$output/logs/witnesses.log" 2>&1 \
     || { printf 'the witnesses fail unmutated; see %s\n' "$output/logs/witnesses.log" >&2; exit 1; }
   run_lane() {
-    local lane=$1 index=0 group file re filter key out status
+    local lane=$1 index=0 group file re filter key out status left limit
     while IFS= read -r group; do
-      key=$(jq -r .key <<< "$group")
-      out=$output/groups/$key
-      if (( index % lanes == lane )) && [[ ! -f "$out/resolved" ]]; then
+      if (( index % lanes == lane )); then
+        limit=()
+        if [[ -n "$until" ]]; then
+          left=$((until - (SECONDS - started)))
+          (( left > 0 )) || break
+          limit=(timeout --kill-after=30 "$left")
+        fi
+        key=$(jq -r .key <<< "$group")
+        out=$output/groups/$key
         file=$(jq -r .file <<< "$group")
         re=$(jq -r .re <<< "$group")
         filter=$(jq -r .filter <<< "$group")
@@ -233,24 +268,28 @@ if (( pending > 0 )); then
         jq -r '.names[]' <<< "$group" > "$out/names.txt"
         # cargo-mutants exits 0 with every mutant caught, 2 with one missed
         # and 3 with one timed out; any other exit leaves the group to rerun.
+        # `timeout` exits 124, or 137 once it kills, when `--until` stops it.
         status=0
-        (cd "$scratch/$lane" && "${mutants_scope[@]}" cargo mutants --in-place --baseline skip --timeout "$timeout" \
+        (cd "$scratch/$lane" && "${limit[@]}" "${mutants_scope[@]}" cargo mutants --in-place --baseline skip --timeout "$timeout" \
           --test-tool nextest --jobserver-tasks 2 --package "$crate" --file "$file" --re "$re" \
           --output "$out" -- -E "$filter") > "$output/logs/$index.log" 2>&1 || status=$?
         if [[ -f "$out/mutants.out/outcomes.json" ]] && (( status == 0 || status == 2 || status == 3 )); then
           touch "$out/resolved"
+        elif (( ${#limit[@]} > 0 && (status == 124 || status == 137) )); then
+          printf 'group %s (%s) stopped at --until; its other mutants wait for the next run\n' "$index" "$(jq -r .item <<< "$group")" >&2
         else
           printf 'group %s (%s) left no outcomes; see %s\n' "$index" "$(jq -r .item <<< "$group")" "$output/logs/$index.log" >&2
           touch "$scratch/failed"
         fi
       fi
       index=$((index + 1))
-    done < <(jq -c '.[]' <<< "$witnessed")
+    done < <(jq -c '.[]' <<< "$pending")
   }
   for (( lane = 0; lane < lanes; lane++ )); do run_lane "$lane" & done
   wait
   [[ ! -e "$scratch/failed" ]] || exit 1
 fi
+waiting=$(jq -r '.[].key' <<< "$witnessed" | while IFS= read -r key; do [[ -f "$output/groups/$key/resolved" ]] || printf '%s\n' "$key"; done | wc -l | tr -d ' ')
 # cargo-mutants 27.1.0 skips `--re` for a struct literal's field deletions, so
 # every group in their file runs them too: each group keeps only the outcomes
 # of its own mutants.
@@ -266,10 +305,23 @@ for out in "$output"/groups/*; do
   jq -e --arg key "${out##*/}" 'any(.[]; .key == $key)' <<< "$witnessed" > /dev/null || rm -rf "$out"
 done
 sort -o "$output/missed.txt" "$output/missed.txt" "$output/unwitnessed.txt"
+if [[ "$iterate" == true ]]; then
+  sort -u -o "$output/iterate/settled.txt" "$output/iterate/settled.txt" "$output/caught.txt" "$output/unviable.txt"
+  if (( waiting == 0 )); then
+    : > "$output/iterate/tried.txt"
+    touch "$output/iterate/passed"
+  else
+    sort -u -o "$output/iterate/tried.txt" "$output/iterate/tried.txt" "$output/missed.txt" "$output/timeout.txt"
+    rm -f "$output/iterate/passed"
+  fi
+fi
+carried=
+[[ "$iterate" != true ]] || carried="; $((listed - $(jq length "$output/list.json"))) settled or tried earlier"
+(( waiting == 0 )) || carried+="; $waiting group(s) wait for the next run"
 count() { wc -l < "$output/$1.txt" | tr -d ' '; }
-printf '%s witnessed: %s mutants in %s groups, %s with a witness; caught %s, missed %s (%s unwitnessed), timeout %s, unviable %s; %ss\n' \
+printf '%s witnessed: %s mutants in %s groups, %s with a witness; caught %s, missed %s (%s unwitnessed), timeout %s, unviable %s%s; %ss\n' \
   "$crate" "$(jq length "$output/list.json")" "$(jq length "$output/groups.json")" "$(jq length <<< "$witnessed")" \
-  "$(count caught)" "$(count missed)" "$(count unwitnessed)" "$(count timeout)" "$(count unviable)" "$((SECONDS - started))" \
+  "$(count caught)" "$(count missed)" "$(count unwitnessed)" "$(count timeout)" "$(count unviable)" "$carried" "$((SECONDS - started))" \
   | tee "$output/summary.txt"
 {% endraw %}
 '''
@@ -300,6 +352,7 @@ run = '''
 set -euo pipefail
 base=${usage_base:-origin/main}
 output=${MUTANTS_OUTPUT:-mutants.out/changed}
+source .config/mise/mutants.bash
 fork=$(git merge-base "$base" HEAD) || { printf 'HEAD shares no history with %s\n' "$base" >&2; exit 2; }
 mkdir -p "$output"
 find "$output" -mindepth 1 -maxdepth 1 -type f -delete
@@ -333,21 +386,85 @@ for crate in "${crates[@]}"; do
   out=$output/$crate
   {
     printf '\n### %s\n\n%s\n' "$crate" "$(< "$out/summary.txt")"
-    if [[ -s "$out/missed.txt" || -s "$out/timeout.txt" ]]; then
-      printf '\n| mutant | verdict |\n| --- | --- |\n'
-      while IFS= read -r name; do
-        verdict=missed
-        ! grep -Fxq -- "$name" "$out/unwitnessed.txt" || verdict=unwitnessed
-        printf '| `%s` | %s |\n' "$name" "$verdict"
-      done < "$out/missed.txt"
-      while IFS= read -r name; do printf '| `%s` | timeout |\n' "$name"; done < "$out/timeout.txt"
-    else
-      printf '\nEvery mutant on an added line is caught or unviable.\n'
-    fi
+    mutants_survivors "$out" || printf '\nEvery mutant on an added line is caught or unviable.\n'
   } >> "$output/report.md"
   cat "$out/missed.txt" "$out/timeout.txt" >> "$output/survivors.txt"
 done
 printf '\n%s survivor(s).\n' "$(wc -l < "$output/survivors.txt" | tr -d ' ')" >> "$output/report.md"
 cat "$output/report.md"
+{% endraw %}
+'''
+
+# The night's mutation run (#1456, lever 3): one crate a night, taken in a
+# fixed rotation over the workspace's crates by name, under
+# `mutants:witnessed --iterate --until`. A night tests what fits its budget
+# and stops. The crate stays the night's until a run ends its pass, and the
+# next night takes the next crate, wrapping at the last. A large crate is
+# therefore cut into as many nights as its cost needs, and no night runs
+# longer. Each crate's outcomes stay in `mutants.out/nightly/<crate>` (or
+# under `MUTANTS_OUTPUT`), the rotation's place in `cursor`. A crate's next
+# pass lists only what the earlier ones did not settle: its new mutants and
+# its survivors. `--until` counts from the task's own start, so the
+# rustdoc build the listing reads comes out of the night's budget.
+# `--package` runs one crate and leaves the rotation where it is. The night's
+# report, `report.md`, gives the crate's count line and every survivor of
+# the night with its verdict, as `mutants:changed` gives them. The task exits
+# 0 whatever survives.
+["mutants:nightly"]
+description = "Mutation-test the night's crate where the rotation and the last night left it"
+tools."cargo:cargo-mutants" = "27.1.0"
+tools.jq = "1.8.1"
+usage = '''
+flag "--until <seconds>" required=#true help="the night's wall-time budget, from the task's start"
+flag "--lanes <count>" default="1" help="workspace copies whose groups build and test at once"
+flag "--timeout <seconds>" default="300" help="the longest a mutant's witnesses may run"
+flag "--package <crate>" help="mutate this crate and leave the rotation where it is"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+export LC_ALL=C
+started=$SECONDS
+until=${usage_until:?}
+[[ "$until" =~ ^[1-9][0-9]*$ ]] || { echo '--until takes a positive count of seconds' >&2; exit 2; }
+state=${MUTANTS_OUTPUT:-mutants.out/nightly}
+source .config/mise/mutants.bash
+mkdir -p "$state"
+mapfile -t crates < <(cargo metadata --locked --no-deps --format-version 1 \
+  | jq -r '.packages[] | select(any(.targets[]; .kind | index("lib") or index("bin"))) | .name' | sort)
+if [[ -n "${usage_package:-}" ]]; then
+  crate=$usage_package
+else
+  cursor=$(cat "$state/cursor" 2> /dev/null || true)
+  crate=
+  for name in "${crates[@]}"; do [[ "$name" != "$cursor" ]] || crate=$name; done
+  if [[ -z "$crate" || -e "$state/$crate/iterate/passed" ]]; then
+    crate=${crates[0]}
+    for name in "${crates[@]}"; do
+      if [[ "$name" > "$cursor" ]]; then crate=$name; break; fi
+    done
+  fi
+  printf '%s\n' "$crate" > "$state/cursor"
+fi
+mise run evidence:rustdoc
+left=$((until - (SECONDS - started)))
+if (( left <= 0 )); then
+  printf 'the documentation build spent the night'"'"'s %ss before %s could start\n' "$until" "$crate" >&2
+  exit 1
+fi
+MUTANTS_OUTPUT="$state/$crate" mise run mutants:witnessed -- --package "$crate" \
+  --lanes "${usage_lanes:-1}" --timeout "${usage_timeout:-300}" --iterate --until "$left"
+out=$state/$crate
+{
+  printf '## Mutants of the night\n\n'
+  if [[ -e "$out/iterate/passed" ]]; then
+    printf '`%s` · this night ends its pass; the next night takes the next crate.\n\n' "$crate"
+  else
+    printf '`%s` · its pass goes on the next night.\n\n' "$crate"
+  fi
+  printf '%s\n' "$(< "$out/summary.txt")"
+  mutants_survivors "$out" || printf '\nNo mutant the night tested survives.\n'
+} > "$state/report.md"
+cat "$state/report.md"
 {% endraw %}
 '''
