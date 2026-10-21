@@ -2,16 +2,21 @@
 //! a dead one is refused by name, and so is every edit that would make one.
 
 use gandr_storage_schema::AttributeValue;
+use gandr_storage_schema::Indexing;
 use gandr_storage_schema::Liveness;
 use gandr_storage_schema::PartKey;
+use gandr_storage_schema::Presentation;
 use gandr_storage_schema::Refusal;
 use gandr_storage_schema::Row;
+use gandr_storage_schema::Schema;
+use gandr_storage_schema::Store;
 
 use crate::common::Name;
 use crate::common::ThreePath;
 use crate::common::arrow;
 use crate::common::attribute;
 use crate::common::object;
+use crate::common::params;
 
 #[test]
 fn deleting_the_middle_vertex_refuses_by_name()
@@ -227,4 +232,95 @@ fn a_reference_to_a_dead_part_is_refused_by_name()
         .expect("a live vertex is a target");
     assert_eq!(store.target(tgt, first), Ok(three));
     assert_eq!(store.liveness(vertex, one), Ok(Liveness::Live));
+}
+
+#[test]
+fn a_part_deleted_before_its_label_is_set_owes_none()
+{
+    let ThreePath { mut store, .. } = ThreePath::new();
+    let vertex = object(&store, &Name("V"));
+
+    let mut edit = store.edit();
+    let fresh = edit.add_part(vertex).expect("a vertex is minted");
+    edit.delete_part(vertex, fresh)
+        .expect("nothing refers to it yet");
+    assert_eq!(edit.finish(), Ok(()), "a dead part owes no label");
+    assert_eq!(store.liveness(vertex, fresh), Ok(Liveness::Dead));
+
+    let edge = object(&store, &Name("E"));
+    let mut edit = store.edit();
+    let unset_vertex = edit.add_part(vertex).expect("a vertex is minted");
+    let unset_edge = edit.add_part(edge).expect("an edge is minted");
+    edit.delete_part(edge, unset_edge)
+        .expect("nothing refers to the edge");
+    edit.delete_part(vertex, unset_vertex)
+        .expect("the deleted edge no longer refers to anything");
+    let dangling = edit.add_part(edge).expect("another edge is minted");
+    assert!(
+        matches!(edit.finish(), Err(Refusal::Unset { part, .. }) if part == dangling),
+        "the edge left live has no ends"
+    );
+    for (table, part) in [(vertex, unset_vertex), (edge, unset_edge), (edge, dangling)] {
+        assert_eq!(
+            store.liveness(table, part),
+            Ok(Liveness::Dead),
+            "the refused edit's parts are gone, deleted or not"
+        );
+    }
+}
+
+#[test]
+fn a_refused_edit_restores_a_deleted_part_with_its_values()
+{
+    let ThreePath { mut store, .. } = ThreePath::new();
+    let vertex = object(&store, &Name("V"));
+    let edge = object(&store, &Name("E"));
+    let label = attribute(&store, &Name("label"));
+    let four = AttributeValue::from(&b"four"[..]);
+    let lone = store
+        .add_part(vertex, &Row::new().value(label, four.clone()))
+        .expect("a labelled vertex is complete");
+
+    let mut edit = store.edit();
+    let dangling = edit.add_part(edge).expect("an edge is minted");
+    edit.delete_part(vertex, lone)
+        .expect("no edge refers to the lone vertex, the unset one included");
+    assert!(
+        matches!(edit.finish(), Err(Refusal::Unset { part, .. }) if part == dangling),
+        "an edge with no ends is refused"
+    );
+
+    assert_eq!(store.liveness(vertex, lone), Ok(Liveness::Live));
+    assert_eq!(store.value(label, lone), Ok(&four));
+}
+
+#[test]
+fn an_abandoned_delete_rejoins_the_inverse_it_shared()
+{
+    let presentation = Presentation::new()
+        .object("V")
+        .attribute_type("Text")
+        .attribute("tag", "V", "Text", Indexing::Indexed);
+    let schema = Schema::present(&presentation).expect("the tagged schema presents");
+    let mut store = Store::new(schema, params()).expect("the parameters are supported");
+    let vertex = object(&store, &Name("V"));
+    let tag = attribute(&store, &Name("tag"));
+    let shared = AttributeValue::from(&b"shared"[..]);
+    let [first, second] = [(); 2].map(|()| {
+        store
+            .add_part(vertex, &Row::new().value(tag, shared.clone()))
+            .expect("a tagged vertex is complete")
+    });
+
+    let mut edit = store.edit();
+    edit.delete_part(vertex, first)
+        .expect("nothing refers to a vertex");
+    edit.abandon();
+
+    assert_eq!(store.liveness(vertex, first), Ok(Liveness::Live));
+    assert_eq!(
+        store.value_preimage(tag, &shared),
+        Ok(&[first, second][..]),
+        "the restored vertex rejoins the list in key order"
+    );
 }

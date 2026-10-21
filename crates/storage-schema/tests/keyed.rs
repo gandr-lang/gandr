@@ -461,6 +461,46 @@ fn a_doctored_table_is_refused_on_reopening()
         "a naming without its role"
     );
 
+    let past_counter = [
+        (
+            Vec::new(),
+            Vec::new(),
+            LayoutFault::Family,
+            "a record with no key",
+        ),
+        (
+            [&[0x00_u8][..], &be8(ghost)].concat(),
+            Vec::new(),
+            LayoutFault::Counter,
+            "a part past the counter",
+        ),
+        (
+            [&[0x01_u8][..], &be4(naming_task), &be8(ghost)].concat(),
+            Vec::from(u64::from(beta).to_le_bytes()),
+            LayoutFault::Counter,
+            "an arrow cell past the counter",
+        ),
+        (
+            [&[0x02_u8][..], &be4(role), &be8(ghost)].concat(),
+            vec![0x01_u8],
+            LayoutFault::Counter,
+            "an attribute cell past the counter",
+        ),
+    ];
+    for (key, value, fault, why) in past_counter {
+        let mut records = original.clone();
+        records.push(Record::new(key, value));
+        let refused = doctored(&manifest, table, &mut records, &mut blocks);
+        assert_eq!(
+            reopen(&refused, &blocks),
+            Some(StoreError::Layout {
+                object: "Naming".into(),
+                fault,
+            }),
+            "{why}"
+        );
+    }
+
     let mut records = original;
     let recounted = doctored(&manifest, table, &mut records, &mut blocks);
     let mut image = recounted.encode().as_ref().to_vec();
@@ -527,4 +567,33 @@ fn a_standing_moves_between_inverses()
         }),
         "heads keep no inverse"
     );
+}
+
+#[test]
+fn a_refused_edit_restores_a_value_and_its_inverse()
+{
+    let Keyed {
+        mut store,
+        tasks: [alpha, beta],
+        namings: [first, ..],
+        ..
+    } = Keyed::new();
+    let task_name = attribute(&store, &Name("task_name"));
+    let naming_task = arrow(&store, &Name("naming_task"));
+    let original = AttributeValue::from(&b"alpha"[..]);
+    let renamed = AttributeValue::from(&b"gamma"[..]);
+
+    let mut edit = store.edit();
+    edit.set_value(task_name, alpha, &renamed)
+        .expect("alpha is renamed");
+    edit.set_arrow(naming_task, first, beta)
+        .expect("the naming points at beta");
+    assert!(
+        matches!(edit.finish(), Err(Refusal::EquationViolated { .. })),
+        "the naming's move is alpha's, so the edit is refused"
+    );
+
+    assert_eq!(store.value(task_name, alpha), Ok(&original));
+    assert_eq!(store.value_preimage(task_name, &original), Ok(&[alpha][..]));
+    assert_eq!(store.value_preimage(task_name, &renamed), Ok(&[][..]));
 }

@@ -1,9 +1,12 @@
 //! One root per store, and proofs of what it holds against that root.
 
+use gandr_storage_records::BoundaryParams;
+use gandr_storage_records::BoundaryRecordCap;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_storage_records::Record;
 use gandr_storage_records::RecordRef;
 use gandr_storage_records::RecordTree;
+use gandr_storage_records::TreeParams;
 use gandr_storage_schema::Answer;
 use gandr_storage_schema::AttributeValue;
 use gandr_storage_schema::Liveness;
@@ -228,6 +231,23 @@ fn a_proof_under_another_schema_is_refused()
         }),
         "a reader of another schema"
     );
+    let current = params();
+    let capped = TreeParams::new(
+        current.kind(),
+        current.encoding_version(),
+        current.hash_algorithm(),
+        current.separator_convention(),
+        BoundaryParams::new(
+            current.boundary().profile(),
+            current.boundary().mask_bits(),
+            BoundaryRecordCap::try_from(65_u32).expect("sixty-five records is an admissible cap"),
+        ),
+    );
+    assert_eq!(
+        proof.verify(store.root(), store.schema(), capped, &question),
+        Err(StoreError::ProfileMismatch),
+        "a reader of other boundary parameters"
+    );
     assert_eq!(
         proof.verify(store.root(), store.schema(), params(), &Question::Part {
             object: task,
@@ -257,6 +277,16 @@ fn an_unindexed_preimage_is_not_proved()
         }),
         Err(StoreError::Refused(Refusal::NotIndexed {
             field: "tgt".into()
+        }))
+    );
+    let label = attribute(&store, &Name("label"));
+    assert_eq!(
+        store.prove(&Question::ValuePreimage {
+            attribute: label,
+            value: AttributeValue::from(&b"two"[..]),
+        }),
+        Err(StoreError::Refused(Refusal::NotIndexed {
+            field: "label".into()
         }))
     );
 }
