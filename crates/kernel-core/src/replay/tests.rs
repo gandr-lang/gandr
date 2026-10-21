@@ -3241,3 +3241,51 @@ fn each_elimination_runs_the_returned_endpoint_it_meets()
         );
     }
 }
+
+/// An elimination meeting a returned endpoint reads the endpoint's
+/// computation as an endpoint: a bind over a call stuck at a variable reads
+/// through, so `π₀ ⟨h(x) to y. return ("a", y)⟩` is `"a"` and `π₁` of it is
+/// the call itself.
+#[test]
+fn an_eliminated_endpoint_reads_a_bind_through_its_stuck_call()
+{
+    use alloc::string::String;
+
+    use gandr_kernel_term::Component;
+    use gandr_kernel_term::Literal;
+    use gandr_kernel_term::StringLiteral;
+
+    let mut arena = TermArena::new();
+    let function = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let point = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let forced = arena.computation_force(function);
+    let call = arena.computation_application(forced, point);
+    let first = arena.value_literal(Literal::Text(StringLiteral::new(String::from("a"))));
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let pair = arena.value_tuple(&[first, bound]);
+    let returns_pair = arena.computation_return(pair);
+    let binds = arena.computation_bind(call, returns_pair);
+    let endpoint = arena.value_returned(binds);
+    let returns_first = arena.computation_return(first);
+    let projections = [
+        (
+            Component::from(0_usize),
+            returns_first,
+            "the first component",
+        ),
+        (Component::from(1_usize), call, "the call itself"),
+    ];
+    for (component, expected, what) in projections {
+        let projection = arena.computation_tuple_projection(endpoint, component);
+        assert_eq!(
+            convert(
+                &mut arena,
+                &Unfoldings::default(),
+                ReplaySides::Computations(projection, expected),
+                ReplayBudget::DEFAULT
+            ),
+            KernelVerdict::Convertible,
+            "{what}"
+        );
+    }
+}

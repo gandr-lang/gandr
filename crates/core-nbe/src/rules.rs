@@ -271,6 +271,11 @@ pub enum Step
     /// Run the continuation of the unread call on this side in its place: a
     /// call that returns and whose value nothing reads is dropped.
     Discard(ConversionSide),
+    /// Read `return` of the returned endpoint on this side as the call it
+    /// holds, the other side returning nothing yet: a call at the empty row
+    /// returns, so it is the return of its result. The kernel's replay reads
+    /// it so, recording nothing.
+    Unreturn(ConversionSide),
     /// Read two held endpoints as the computations they hold: the kernel's
     /// replay reads a returned endpoint so before any rule, recording
     /// nothing.
@@ -2060,6 +2065,47 @@ pub fn returned(
     })
 }
 
+/// The side of two computations that returns a returned endpoint while the
+/// other side is no `return`, with the call that endpoint holds.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some((side, call))` exactly when `side`'s computation is `return
+///   v` with [`returned`] reading `v` as `call`, and the other computation is
+///   no `return`, the left side first; `None` otherwise.
+/// - provides: the planning half of [`Step::Unreturn`], and the call the
+///   machine reads in that side's place.
+/// - fails: [`ConversionFault::Domain`] when a node does not resolve.
+/// - panics: none.
+/// - executable: none — the answer reads the domain's nodes, which a predicate
+///   could only read again; the witness holds it to stated terms.
+///
+/// # Errors
+/// - [`ConversionFault::Domain`] — a node does not resolve.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `return (returned (force f x))` against `force f x`, on
+///   either side, converts through this reading, and against `return y` it
+///   decomposes by the values instead.
+/// - witness: `machine::tests::a_returned_call_is_read_as_the_call_it_holds`
+pub fn returned_return(
+    domain: &DomainArena,
+    (one, other): (DomainComp, DomainComp),
+) -> Result<Option<(ConversionSide, DomainCompId)>, ConversionFault>
+{
+    let held = |comp: DomainComp| match comp {
+        DomainComp::Return { value, .. } => returned(domain, value).map(Some),
+        DomainComp::Lambda { .. } | DomainComp::Neutral { .. } | DomainComp::Fixpoint { .. } => {
+            Ok(None)
+        },
+    };
+    Ok(match (held(one)?, held(other)?) {
+        (Some(Some(call)), None) => Some((ConversionSide::Left, call)),
+        (None, Some(Some(call))) => Some((ConversionSide::Right, call)),
+        (Some(_) | None, Some(_) | None) => None,
+    })
+}
+
 /// The literal a domain literal's core id names.
 ///
 /// # Specification
@@ -2773,6 +2819,9 @@ fn plan_comps(
     }
     if unread_call(core, domain, definitions, other)?.is_some() {
         return Ok(Plan::Step(Step::Discard(ConversionSide::Right)));
+    }
+    if let Some((side, _call)) = returned_return(domain, (one, other))? {
+        return Ok(Plan::Step(Step::Unreturn(side)));
     }
     let left_head = comp_neutrality(domain, frozen, ConversionSide::Left, one)?;
     let right_head = comp_neutrality(domain, frozen, ConversionSide::Right, other)?;

@@ -3,11 +3,10 @@
 // path between types, and carrying a function out of the path space back
 // along that path is injective. The two ends of the path space read back
 // alike along it, both the identity, so they are one function, and any map
-// into the path space gives a path between its two ends. The HoTT book's
-// § 4.9 credits the argument to Voevodsky and reworks it through weak
-// function extensionality. Reading a homotopy as a map into the path space
-// and its ends back as the two functions is
-// `../../pathological/identity/funext-from-ua.gandr`.
+// into the path space gives a path between its two ends. A homotopy is such
+// a map, and its ends read back as the two functions. The HoTT book's § 4.9
+// credits the argument to Voevodsky and reworks it through weak function
+// extensionality.
 
 /// The diagonal of the path space: a point, to itself, along reflexivity.
 @[ checks ]
@@ -230,4 +229,20 @@ def funextOfSpace(a : Type, b : Type, k : a => #{ x : b, y : b, p : Path(b, x, y
     thunk { fn (w) { target(b, w) } },
     endsAgree(b)
   )
+}
+
+/// Function extensionality from a homotopy, through the path space: the map
+/// takes a point to both functions' results there and the homotopy's path
+/// between them. Its first end reads the first result, a returned call, and
+/// a returned call is the call it holds, so the end is `f`; the second is
+/// `g`.
+@[ checks ]
+def funextFromUa(
+  a : Type,
+  b : Type,
+  f : a => b,
+  g : a => b,
+  h : (x : a) => Path(b, f(x), g(x))
+) -> -F Path(a => b, f, g) {
+  become funextOfSpace(a, b, thunk { fn (x) { (f(x), (g(x), h(x))) } })
 }

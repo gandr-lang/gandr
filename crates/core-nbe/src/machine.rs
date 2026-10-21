@@ -2493,6 +2493,10 @@ where
                 self.discard(id, goal, pair, side)?;
                 Ok(Turn::Again)
             },
+            Plan::Step(Step::Unreturn(side)) => {
+                self.unreturn(goal, pair, side)?;
+                Ok(Turn::Again)
+            },
             Plan::Step(Step::Reassociate(side)) => {
                 self.reassociate(id, goal, pair, side)?;
                 Ok(Turn::Again)
@@ -2701,6 +2705,61 @@ where
                 Self::set_side(goal, side, Slot::Ready(Glued::Computation(computation)));
             }
         }
+        Ok(())
+    }
+
+    /// Read `return` of the returned endpoint on `side` as the call it holds,
+    /// recording nothing.
+    ///
+    /// # Specification
+    /// - requires: [`crate::rules::returned_return`] reads `side` of `pair`.
+    /// - ensures: that side is the call its returned endpoint holds; the other
+    ///   side and the depth unchanged.
+    /// - provides: [`Step::Unreturn`]: a call at the empty row is the return of
+    ///   its result, `c ≡ return (returned c)`. The kernel's replay reads the
+    ///   same pair so before any rule, so the trace needs no decision.
+    /// - fails: [`ConversionFault::Domain`] for a side that does not resolve,
+    ///   [`ConversionFault::MachineInvariant`] when `side` returns no returned
+    ///   endpoint.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::rules::returned_return`].
+    /// - witness: `machine::tests::a_returned_call_is_read_as_the_call_it_holds`
+    #[spec(
+        captures: [depth = goal.depth, left = goal.left, right = goal.right],
+        ensures: |ret| ret.is_err() || (goal.depth == depth && match side {
+            ConversionSide::Left => goal.right == right,
+            ConversionSide::Right => goal.left == left,
+        }),
+    )]
+    fn unreturn(
+        &self,
+        goal: &mut Goal,
+        (left, right): (Glued, Glued),
+        side: ConversionSide,
+    ) -> Result<(), ConversionFault>
+    {
+        let (Glued::Computation(one), Glued::Computation(other)) = (left, right)
+        else {
+            return Err(ConversionFault::MachineInvariant);
+        };
+        let (Some(&one), Some(&other)) =
+            (self.domain.computation(one), self.domain.computation(other))
+        else {
+            return Err(ConversionFault::Domain(DomainFault::Dangling));
+        };
+        let Some((read, call)) = crate::rules::returned_return(self.domain, (one, other))?
+        else {
+            return Err(ConversionFault::MachineInvariant);
+        };
+        if read != side {
+            return Err(ConversionFault::MachineInvariant);
+        }
+        Self::set_side(goal, side, Slot::Ready(Glued::Computation(call)));
         Ok(())
     }
 
