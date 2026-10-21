@@ -1450,10 +1450,10 @@ fn surface_below<Node>(
 /// A piece stands bare in a slot that admits its binding and is parenthesized
 /// in one that admits only tighter pieces. The order is the grammar's: an
 /// atom, then the bridges and the keyword-led computations, then a word's
-/// cons, then the infix `*`, `+` and `&` the sugared form writes, then the
-/// relations `≃`, `≅` and `⇝` between types, then `->` and `=>`, then a
-/// bind's statements. Every arity-shaped former is an atom, its entries
-/// between its own delimiters.
+/// cons, then a composite `then`, then the infix `*`, `+` and `&` the sugared
+/// form writes, then the relations `≃`, `≅` and `⇝` between types, then `->`
+/// and `=>`, then a bind's statements. Every arity-shaped former is an atom,
+/// its entries between its own delimiters.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Binding
 {
@@ -1468,6 +1468,9 @@ enum Binding
     Prefix,
     /// `g ∷ p`, a word's letter before the rest, nested to the right.
     Cons,
+    /// `p then q`, at the grammar's comparison precedence, looser than a
+    /// cons.
+    Composite,
     /// `A * B`.
     Product,
     /// `A + B`.
@@ -6530,12 +6533,14 @@ impl Walk<'_, '_>
             // the lowering reads it back where a flow is answered (#631); so
             // is a path composite the sugared form reads off its transport
             // (#754).
+            // A cons is tighter than `then`, so it stands bare on either side;
+            // a composite operand stands in parentheses (#1255).
             Former::Then(..) => {
                 let _ = parts
-                    .piece(Binding::Atom)
+                    .piece(Binding::Cons)
                     .text(" then ")
-                    .piece(Binding::Atom);
-                writes(Production("binary_expression.then"), Binding::Cons)
+                    .piece(Binding::Cons);
+                writes(Production("binary_expression.then"), Binding::Composite)
             },
             Former::Send { endpoint, .. } => {
                 let _ = parts

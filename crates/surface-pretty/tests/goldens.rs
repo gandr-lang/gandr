@@ -2867,7 +2867,8 @@ fn a_product_of_flows_spells_as_written()
 
 /// A flow composite spells infix, `f then g`, as the surface writes it and
 /// the lowering reads it back (#631); a composite operand stands in
-/// parentheses.
+/// parentheses, and a word's cons, which binds tighter than `then`, stands
+/// bare on either side, as the formatter writes it (#1255).
 #[test]
 fn a_composite_of_flows_spells_infix()
 {
@@ -2878,14 +2879,34 @@ fn a_composite_of_flows_spells_infix()
     let exchanged = core.value_forward(exchange);
     let composite = core.value_then(kept, exchanged);
     let nested = core.value_then(composite, kept);
-    let names = [Name::from("keep"), Name::from("exchange")];
-    let source = CoreSource::new(&core, &names);
+    let loops = core.value_type_data(ConstantIndex::from(2_usize), Vec::new());
+    let base = core.value_constructor(loops, ConstructorTag::from(0_usize), Vec::new());
+    let word = core.value_constructor(loops, ConstructorTag::from(1_usize), vec![base]);
+    let consed_first = core.value_then(word, kept);
+    let consed_second = core.value_then(kept, word);
+    let names = [
+        Name::from("keep"),
+        Name::from("exchange"),
+        Name::from("Loops"),
+    ];
+    let mut constructors = Constructors::default();
+    constructors.words(
+        Name::from("Loops"),
+        [
+            (Name::from("base"), Arity::from(0_usize)),
+            (Name::from("loop"), Arity::from(1_usize)),
+        ],
+        Name::from("base"),
+    );
+    let source = CoreSource::new(&core, &names).naming(&constructors);
     for (root, expected) in [
         (composite, "forward(keep) then forward(exchange)"),
         (
             nested,
             "(forward(keep) then forward(exchange)) then forward(keep)",
         ),
+        (consed_first, "loop ∷ base then forward(keep)"),
+        (consed_second, "forward(keep) then loop ∷ base"),
     ] {
         let rendered = presented(&source, Root::Value(CoreNode::Value(root)), wide());
         assert_eq!(
