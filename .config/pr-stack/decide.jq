@@ -1,45 +1,32 @@
-# How `pr:land` lands a pull request, decided from the stack on the server.
+# How `pr:land` lands a pull request, decided from its stack on the server,
+# the only record (#1264).
 #
 # Input: an object with
-#   stack      whether `--stack` was given;
-#   refreshed  whether the local gh-stack record was refreshed from the server
-#              already in this landing;
-#   server     the open pull requests of the pull request's stack, bottom to
-#              top, each `{number, head}`: its base chain down to the trunk and
-#              the pull requests based on it up to the top;
-#   local      `gh stack view --json` for the current branch, or null when
-#              the clone records no stack.
+#   server  the pull request's stack, bottom to top, each `{number, head}`
+#           (`chain.jq`);
+#   own     the checked-out branch;
+#   queued  the numbers of the stack's pull requests already in the merge
+#           queue.
 #
 # Output: one tab-separated line:
 #   single              land the one pull request;
+#   wait<TAB>N          #N below is queued on its own; land once it merges,
+#                       when the stack is read again;
 #   stack<TAB>N         restack and queue the stack whose top is #N;
-#   refresh             refresh the local record from the server, then decide
-#                       again with `refreshed` set;
 #   refuse<TAB>MESSAGE  stop, naming why.
 #
-# The server is the authority: a stack linked with `gh stack link` has no local
-# record, and a reused branch name can leave a record of an earlier landing.
-# The local record only drives the restack, so it must name the server's open
-# branches in the server's order.
+# A stack lands whole from its top: the obligations are measured on the
+# checked-out tree, which is the top's.
 
 def chain: [.server[] | "#\(.number)"] | join(" ← ");
-def open_local: [(.local.branches // [])[] | select(.isMerged | not) | .name];
-def stale_entries:
-  . as $in
-  | [(.local.branches // [])[]
-      | . as $branch
-      | ($in.server[] | select(.head == $branch.name)) as $open
-      | select($branch.isMerged or (($branch.pr.number // $open.number) != $open.number))
-      | "local gh-stack record maps \($branch.name) to \(if $branch.isMerged then "merged " else "" end)#\($branch.pr.number // "?"); the open PR is #\($open.number)"];
-
-if (.server | length) <= 1 then
-  "single"
-elif (.stack | not) then
-  "refuse\tPR #\(.server[0].number) is in a stack of \(.server | length) on the server (\(chain)); land it with `pr:land --stack` from #\(.server[-1].number)'s branch"
-elif open_local == [.server[] | .head] then
-  "stack\t\(.server[-1].number)"
-elif .refreshed then
-  "refuse\t\((stale_entries | first) // "the local gh-stack record names \(open_local | join(", ")), not the server stack's open branches") in the server stack \(chain); refresh it with `gh stack unstack --local` and `gh stack checkout \(.server[-1].number)`"
-else
-  "refresh"
-end
+. as $in
+| [$in.server[:-1][] | .number | select(. as $n | $in.queued | index($n))] as $waiting
+| if ($in.server | length) <= 1 then
+    "single"
+  elif ($waiting | length) > 0 then
+    "wait\t\($waiting | last)"
+  elif $in.own != $in.server[-1].head then
+    "refuse\tthe checked-out branch is not the top of the server stack \($in | chain); land it with `pr:land` from #\($in.server[-1].number)'s branch"
+  else
+    "stack\t\($in.server[-1].number)"
+  end
