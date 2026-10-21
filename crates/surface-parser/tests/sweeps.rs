@@ -57,13 +57,16 @@ const RECOVERY_STRIDE: usize = 16;
 const ROW_FIELDS: usize = 8;
 
 /// The table sweep's sample: twelve sources, the rows of every sixteenth
-/// significant token of each, every sixty-fourth under `anodized_panic`.
+/// significant token of each, every sixty-fourth under `anodized_panic`. A
+/// change that touches more sources widens the step in proportion, so the
+/// sample molds about as many rows however many sources it visits.
 const TABLES: Sample = Sample {
     name: SampleName("table_verdicts_equal_dry_run_verdicts"),
     size: SampleSize(12),
 };
 
-/// The step between the token rows the table sample molds.
+/// The step between the token rows the table sample molds over its stated
+/// size.
 const TABLES_STRIDE: usize = if cfg!(anodized_panic) { 64 } else { 16 };
 
 /// The step between the token rows the whole table sweep molds: every row
@@ -407,7 +410,10 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
 ///
 /// The sample, [`TABLES`], molds twelve sources and every source the change
 /// touches, each whole and at every sixteenth significant token's rows, every
-/// sixty-fourth under `anodized_panic`. The whole sweep molds every source at
+/// sixty-fourth under `anodized_panic`. When the change brings it past twelve
+/// sources, the step widens by the multiple of twelve it visits, so a change
+/// over a hundred fixtures molds each whole and the same budget of rows spread
+/// over them, inside the test limit. The whole sweep molds every source at
 /// every row, every sixteenth under `anodized_panic`.
 #[test]
 fn table_verdicts_equal_dry_run_verdicts() -> Result<(), Box<dyn Error>>
@@ -426,9 +432,12 @@ fn table_verdicts_equal_dry_run_verdicts() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let sweep = Sweep::asked()?;
     eprintln!("{}", sweep.rotation());
+    let visited = sweep.visit_rotating(TABLES, &corpus::sources()?);
     let stride = match sweep.coverage() {
         Coverage::Full => TABLES_WHOLE_STRIDE,
-        Coverage::Sampled => TABLES_STRIDE,
+        Coverage::Sampled => {
+            TABLES_STRIDE.saturating_mul(visited.len().div_ceil(TABLES.size.0).max(1))
+        },
     };
     let mut molder = Molder::with_verdicts(pbg, MoldVerdicts::Differential);
     let mut molded = 0_usize;
@@ -451,7 +460,7 @@ fn table_verdicts_equal_dry_run_verdicts() -> Result<(), Box<dyn Error>>
         differential(&|| format!("stray {stray:?}"), stray);
     }
     let mut dropped = String::new();
-    for source in sweep.visit_rotating(TABLES, &corpus::sources()?) {
+    for source in visited {
         let rel = source.name.as_ref();
         let src = std::fs::read_to_string(&source.path)
             .map_err(|error| format!("{}: {error}", source.path.display()))?;
