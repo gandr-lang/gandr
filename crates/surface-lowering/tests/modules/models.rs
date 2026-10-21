@@ -237,6 +237,40 @@ fn a_constant_is_a_value_of_its_type_1226()
     );
 }
 
+/// A port at a builtin type the theory does not declare reads that type: a
+/// model's `read` returning an integer checks, and one returning a string is
+/// mismatched at the operation's witness.
+#[test]
+fn an_operation_at_a_builtin_type_derives_it_1226()
+{
+    let counter = |member: &str| {
+        format!(
+            "theory Counter {{\n  sort T : Type;\n  oper read : (x : T) --> Integer;\n}}\nmodule \
+             Count : Model(Counter) {{\n  type T = Integer;\n  {member}\n}}\n"
+        )
+    };
+
+    let integer = counter("def read(n : Integer) -> -F Integer { return n }");
+    let mut lowered = lower(integer.as_str());
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        !judgements.is_empty()
+            && !judgements.iter().any(|&(_, judgement)| {
+                matches!(judgement, Judgement::Refused | Judgement::Mismatched)
+            }),
+        "an integer result gives the operation: {judgements:?}"
+    );
+
+    let string = counter("def read(n : Integer) -> -F String { return \"n\" }");
+    let mut lowered = lower(string.as_str());
+    let stated = super::declaration(&lowered, "Count.read", Role::Witness).constant();
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements.contains(&(stated, Judgement::Mismatched)),
+        "a string result does not: {judgements:?}"
+    );
+}
+
 #[test]
 fn a_family_of_the_wrong_telescope_is_refused()
 {

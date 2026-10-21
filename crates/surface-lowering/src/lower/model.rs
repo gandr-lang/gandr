@@ -60,7 +60,6 @@ use crate::form::Placed;
 use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::model::Binder;
-use crate::model::ConstantType;
 use crate::model::Dependent;
 use crate::model::ModelFault;
 use crate::model::ModelForm;
@@ -497,25 +496,12 @@ impl<'source> Lowerer<'_, 'source>
                 ref left,
                 ref right,
             } => (telescope, Tail::Path(carrier, left, right)),
-            ModelForm::Constant(ConstantType::Sort(ref sort)) => {
+            ModelForm::Constant(ref sort) => {
                 let closed = Context {
                     binders: &[],
                     dependent: &[],
                 };
                 return self.sort_type(sort, closed, &minting, sink);
-            },
-            ModelForm::Constant(ConstantType::Ambient(ref name)) => {
-                let Maybe::Present(atom) = type_atom(SurfaceName::from(name.as_ref()))
-                else {
-                    return Err(Missing::Unlowered);
-                };
-                return match sink.atom(atom, origin) {
-                    Lowered::ValueType(id) => Ok(id),
-                    Lowered::Value(_)
-                    | Lowered::Computation(_)
-                    | Lowered::CompType(_)
-                    | Lowered::Function { .. } => Err(Missing::Unlowered),
-                };
             },
             ModelForm::Sort { .. } => return Err(Missing::Unlowered),
         };
@@ -615,11 +601,12 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: the mint sweep has run.
     /// - ensures: for an unindexed sort, the type its component reads — the
-    ///   member's type, or the atom a sealed component declares; for an indexed
-    ///   one, its family expanded over the index terms' values.
-    /// - fails: a sort no type component of the module answers, of another
-    ///   index count, or whose type did not lower, as unlowered; one whose
-    ///   component is refused, with its refusal.
+    ///   member's type, or the atom a sealed component declares — or, where no
+    ///   type component bears its name, the builtin type it names; for an
+    ///   indexed one, its family expanded over the index terms' values.
+    /// - fails: a sort no type component of the module answers and no builtin
+    ///   type names, of another index count, or whose type did not lower, as
+    ///   unlowered; one whose component is refused, with its refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -629,6 +616,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — `Ob` reads the universe the member writes and `Hom(a,
     ///   b)` the member's family over two variables.
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::an_operation_at_a_builtin_type_derives_it_1226`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
     fn sort_type(
         &self,
@@ -650,7 +638,17 @@ impl<'source> Lowerer<'_, 'source>
             })
             .copied()
         else {
-            return Err(Missing::Unlowered);
+            let builtin = match type_atom(SurfaceName::from(sort.sort.as_ref())) {
+                Maybe::Present(atom) if sort.indices.is_empty() => sink.atom(atom, minting.origin),
+                Maybe::Present(_) | Maybe::Absent(_) => return Err(Missing::Unlowered),
+            };
+            return match builtin {
+                Lowered::ValueType(id) => Ok(id),
+                Lowered::Value(_)
+                | Lowered::Computation(_)
+                | Lowered::CompType(_)
+                | Lowered::Function { .. } => Err(Missing::Unlowered),
+            };
         };
         if let Some(Maybe::Present((_at, refusal))) = self
             .collected

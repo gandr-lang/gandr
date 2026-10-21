@@ -138,9 +138,11 @@ use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::format;
 use alloc::string::ToString as _;
+use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::Attrs;
 use gandr_theory_levitation::BridgeArity;
@@ -1014,15 +1016,26 @@ impl Reader<'_, '_>
         if !run.eat(Spelling(":")).0 {
             return Err(run.signature_fault(SignatureFault::MissingJudgment));
         }
-        // `oper zero : T`, a type alone with no arrow and no port group, is a
-        // constant of `T`; `oper zero : () --> T` an operation of no inputs.
+        // `oper next : +U[ω] (T -> -F T)`, a thunk of curried arrows, is the
+        // operation of those inputs and that output; `oper zero : T`, a type
+        // alone with no arrow and no port group, a constant of `T`; and
+        // `oper zero : () --> T` an operation of no inputs.
+        let thunked = self.thunked(run)?;
         let kind = match kind {
-            OperationKind::Operation if !run.at(Spelling("(")).0 && !run.has_arrow().0 => {
+            OperationKind::Operation
+                if thunked.is_none() && !run.at(Spelling("(")).0 && !run.has_arrow().0 =>
+            {
                 OperationKind::Constant
             },
             OperationKind::Operation | OperationKind::Observation | OperationKind::Constant => kind,
         };
-        let boundary = self.boundary(run, sorts, ArrowRow::Mapping)?;
+        let (boundary, formers) = match thunked {
+            Some(thunk) => {
+                let _thunk = run.take()?;
+                self.thunk_boundary(thunk)?
+            },
+            None => (self.boundary(run, sorts, ArrowRow::Mapping)?, Vec::new()),
+        };
         if run.at(Spelling("{")).0 {
             return Err(run.signature_fault(SignatureFault::OperationFiller));
         }
@@ -1065,7 +1078,123 @@ impl Reader<'_, '_>
                 named: Maybe::Present(name.span),
                 inputs: written_inputs,
                 outputs: written_outputs,
+                formers,
             },
+        ))
+    }
+
+    /// The thunk type an operation's judgment writes whole, when it writes one.
+    ///
+    /// # Specification
+    /// - ensures: the one piece left in `run` when it is a type whose first
+    ///   tile is `+U`, and nothing otherwise; `run` is not advanced.
+    /// - fails: the piece's reading refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The piece's reading refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a thunk, a sort alone and a port group separate the
+    ///   operation, the constant and the boundary readings.
+    /// - witness: `description::theory::tests::a_thunk_type_reads_as_the_operation_it_curries_1226`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|at| matches!(*run.remaining(), [Piece::Operand(only)] if only.span == at.span))))]
+    fn thunked(
+        &self,
+        run: &Run<'_>,
+    ) -> Result<Option<Placed>, DescriptionDiagnostic>
+    {
+        let [Piece::Operand(at)] = *run.remaining()
+        else {
+            return Ok(None);
+        };
+        let pieces = self.pieces(at)?;
+        let thunk = matches!(pieces.first(), Some(&Piece::Tile { ref label, .. }) if label.as_ref() == "+U");
+        Ok(thunk.then_some(at))
+    }
+
+    /// Read a thunk of curried arrows, `+U[ω] (A1 -> … -> An -> -F R)`, as the
+    /// boundary `(_ : A1, …, _ : An) --> R`, beside the type formers written:
+    /// the thunk, each arrow and the returner.
+    ///
+    /// # Specification
+    /// - requires: `thunk` is a type whose first tile is `+U`.
+    /// - ensures: one unnamed input per arrow's domain, in written order, and
+    ///   the one output the returner returns, each at its written sort;
+    ///   parentheses around the body or a codomain are read through; the grade
+    ///   is `ω` or unwritten; the formers are the thunk's node at the value
+    ///   sort, then each arrow's and the returner's at the computation sort.
+    /// - fails: any other grade, and a body that is not arrows ending in a
+    ///   returner, is malformed.
+    /// - panics: none.
+    /// - executable: none — the written type is source syntax the boundary does
+    ///   not retain.
+    ///
+    /// # Errors
+    /// Returns `Malformed` at the part out of shape.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one and two arrows, a builtin result and a grade
+    ///   other than `ω` separate the inputs read, the output read and the
+    ///   refusal.
+    /// - witness: `description::theory::tests::a_thunk_type_reads_as_the_operation_it_curries_1226`
+    fn thunk_boundary(
+        &self,
+        thunk: Placed,
+    ) -> Result<(Boundary, Vec<(ByteSpan, GroundSort)>), DescriptionDiagnostic>
+    {
+        let pieces = self.pieces(thunk)?;
+        let mut run = Run::new(&pieces, thunk.span);
+        let _former = run.eat(Spelling("+U"));
+        if run.eat(Spelling("[")).0 && !(run.eat(Spelling("ω")).0 && run.eat(Spelling("]")).0) {
+            return Err(run.fault(DescriptionFault::Malformed));
+        }
+        let mut body = run.take()?;
+        run.end()?;
+        let mut formers = Vec::from([(thunk.span, GroundSort::Value)]);
+        let mut inputs = Vec::new();
+        let result = loop {
+            let pieces = self.pieces(body)?;
+            let mut run = Run::new(&pieces, body.span);
+            if run.eat(Spelling("(")).0 {
+                body = run.take()?;
+                if !run.eat(Spelling(")")).0 {
+                    return Err(run.fault(DescriptionFault::Malformed));
+                }
+                run.end()?;
+                continue;
+            }
+            if run.eat(Spelling("-F")).0 {
+                let result = run.take()?;
+                run.end()?;
+                formers.push((body.span, GroundSort::Computation));
+                break result;
+            }
+            let domain = run.take()?;
+            if !run.eat(Spelling("->")).0 {
+                return Err(run.fault(DescriptionFault::Malformed));
+            }
+            formers.push((body.span, GroundSort::Computation));
+            body = run.take()?;
+            run.end()?;
+            inputs.push(domain);
+        };
+        let port = |sort: Placed| SortRef::new(fresh_port(sort), self.text(sort).0);
+        let unnamed = |_| Maybe::Absent(port_name::Absent::Unnamed);
+        Ok((
+            Boundary {
+                inputs: inputs.iter().copied().map(port).collect(),
+                outputs: vec![port(result)],
+                input_names: inputs.iter().map(unnamed).collect(),
+                output_names: vec![Maybe::Absent(port_name::Absent::Unnamed)],
+                input_binders: inputs.iter().map(|_| Vec::new()).collect(),
+                output_binders: vec![Vec::new()],
+                input_sorts: inputs,
+                output_sorts: vec![result],
+                rewrites: Vec::new(),
+                written_rewrites: Vec::new(),
+            },
+            formers,
         ))
     }
 
