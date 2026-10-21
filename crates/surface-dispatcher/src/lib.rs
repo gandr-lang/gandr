@@ -157,6 +157,7 @@ mod exercised;
 mod format;
 mod ledger;
 mod pool;
+mod reader;
 mod report;
 mod root;
 mod script;

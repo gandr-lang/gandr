@@ -34,8 +34,9 @@
 //! source the formatter refuses, or the parse cannot commit, is a `FormatFault`
 //! and stays as written; the formatting continues past it.
 //!
-//! `Formatting::visit` forks the way `Walk::visit` does: at a width above one
-//! it reaches every path first, then lays the sources out on scoped threads,
+//! `Formatting::visit` forks by source as `Walk::visit` does, on scoped
+//! threads of its own rather than the driver's pool: at a width above one it
+//! reaches every path first, then lays the sources out on those threads,
 //! largest first, and hands the steps over in walk order, so every byte the
 //! driver prints, every source rewritten and the exit are the serial
 //! formatting's. A source's text lives only on the thread laying it out; what

@@ -116,6 +116,7 @@ use crate::compose::judge_component;
 use crate::compose::lower_parsed_unit;
 use crate::compose::lower_unit_source;
 use crate::pool::Pool;
+use crate::reader::Reader;
 use crate::report::RunReport;
 use crate::root::SourceRoot;
 use crate::root::classify;
@@ -315,6 +316,8 @@ pub struct Walk
     report: RunReport,
     /// The host operations every source's held capabilities are bounded by.
     grant: HostGrant,
+    /// The reader every source of the walk is read through.
+    reader: Reader,
 }
 
 /// Where a walk is among the paths it was given.
@@ -451,6 +454,7 @@ impl Walk
             traversal: Traversal::new(paths),
             report: RunReport::default(),
             grant: HostGrant::UNBOUNDED,
+            reader: Reader::new(),
         }
     }
 
@@ -560,7 +564,7 @@ impl Walk
             slots.push(match reached {
                 Reached::NoSource => Slot::NoSource,
                 Reached::Unreadable(error) => Slot::Unreadable(error),
-                Reached::Source => match read_given(&path) {
+                Reached::Source => match read_given(&self.reader, &path) {
                     Ok(source) => {
                         let root = source.root;
                         given.push(source);
@@ -1383,8 +1387,8 @@ fn part(
     }
 }
 
-/// Classify the source at `path` by its canonical path and read it, as a
-/// source given to `component::group`.
+/// Classify the source at `path` by its canonical path and read it through
+/// `reader`, as a source given to `component::group`.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -1402,10 +1406,13 @@ fn part(
 /// - witness: `walk::tests::every_path_answers_in_order`
 /// - witness: `walk::tests::an_explicit_link_uses_its_target_root_and_keeps_its_path`
 #[spec(ensures: |ref ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|given| given.path.is_absolute()))]
-fn read_given(path: &Path) -> std::io::Result<Given>
+fn read_given(
+    reader: &Reader,
+    path: &Path,
+) -> std::io::Result<Given>
 {
     let mut text = String::new();
-    let root = read_source(path, &mut text)?;
+    let root = read_source(reader, path, &mut text)?;
     let canonical = std::fs::canonicalize(path)?;
     Ok(Given {
         path: canonical,
@@ -1415,13 +1422,13 @@ fn read_given(path: &Path) -> std::io::Result<Given>
 }
 
 /// Classify the source at `path` by its canonical path, and read its text
-/// into `text`.
+/// through `reader` into `text`.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: success replaces `text` with the complete UTF-8 file and returns
-///   the root of its canonical path. On any error, the previous text is
-///   unchanged.
+/// - ensures: success replaces `text` with the complete UTF-8 file, as
+///   [`Reader::read`] reads it under its canonical path, and returns that
+///   path's root. On any error, the previous text is unchanged.
 /// - fails: the I/O error from canonicalization or reading, including a
 ///   directory or invalid UTF-8.
 /// - panics: none.
@@ -1442,12 +1449,15 @@ fn read_given(path: &Path) -> std::io::Result<Given>
     ensures: |ref ret| ret.is_ok() || text.len() == before,
 )]
 pub fn read_source(
+    reader: &Reader,
     path: &Path,
     text: &mut String,
 ) -> std::io::Result<SourceRoot>
 {
     let canonical = std::fs::canonicalize(path)?;
-    *text = std::fs::read_to_string(path)?;
+    let read = reader.read(&canonical)?;
+    text.clear();
+    text.push_str(read.text().as_ref());
     Ok(classify(&canonical))
 }
 
@@ -1502,6 +1512,7 @@ pub mod tests
     use super::Step;
     use super::Walk;
     use crate::pool::Pool;
+    use crate::reader::Reader;
     use crate::report::RunReport;
     use crate::report::SourceCount;
     use crate::root::SourceRoot;
@@ -2102,13 +2113,14 @@ pub mod tests
         std::fs::write(&invalid, [0xff_u8]).expect("the invalid UTF-8 file is written");
         let previous = "previous λ\r\n";
         let mut text = previous.to_owned();
+        let reader = Reader::new();
         for (path, expected_kind) in [
             (absent.as_path(), Some(io::ErrorKind::NotFound)),
             (scratch.0.as_path(), None),
             (invalid.as_path(), Some(io::ErrorKind::InvalidData)),
         ] {
-            let error =
-                super::read_source(path, &mut text).expect_err("the path is not a readable source");
+            let error = super::read_source(&reader, path, &mut text)
+                .expect_err("the path is not a readable source");
             if let Some(kind) = expected_kind {
                 assert_eq!(error.kind(), kind);
             }
