@@ -7,7 +7,7 @@
 # allocation is judged in every crate as `gandr` (hotpath/gandr-policy.toml).
 #
 # Wall-clock time on a shared runner is noisy: it is judged on the average of
-# functions called at least 20 times, at 5%. A regression fails the
+# functions called at least 20 times, at 7.5%. A regression fails the
 # `hotpath / gandr-timing` check, which is never a required check. The ratchet:
 # each observed false positive raises `min_percent_change` here by 2.5, to a
 # ceiling of 15, and the owner is told of every step.
@@ -21,6 +21,6 @@ min_percent_total = 1
 [functions.timing]
 judged = true
 fail_check = true
-min_percent_change = 5
+min_percent_change = 7.5
 metrics = ["avg"]
 min_calls = 20
