@@ -997,11 +997,12 @@ jobs:
   # updates in place; the merge queue still runs every test. The prose
   # clauses to re-read are the pull request body's `## Re-verification`
   # section (`pr:open` and `pr:land` write it), and the lane fails while one
-  # of its boxes is unticked. Dispatches run the lane too, against the parent
-  # commit and without a body, so `ci:act` exercises it. A fork's read-only
-  # token cannot comment: its witnesses stay in the log. The comment is found
-  # before the lane and posted after it, from bare runners, so the job running
-  # the change's code holds no write token.
+  # of its boxes is unticked, the lint assessment a performance fix owes among
+  # them. Dispatches run the lane too, against the parent commit and without a
+  # body, so `ci:act` exercises it. A fork's read-only token cannot comment:
+  # its witnesses stay in the log. The comment is found before the lane and
+  # posted after it, from bare runners, so the job running the change's code
+  # holds no write token.
   obligations-comment-read:
     name: find the obligations comment
     if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && github.actor != 'dependabot[bot]' }}
@@ -1035,6 +1036,7 @@ jobs:
       packages: read
       actions: read
       pull-requests: read
+      issues: read
     container: *ci-image # zizmor: ignore[unpinned-images]
     timeout-minutes: 30
     outputs:
@@ -1073,16 +1075,20 @@ jobs:
           mkdir -p target/evidence
           gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.body // ""' > target/evidence/body.md
       # Exit 2 is an unticked box: the witnesses still rerun and the comment
-      # is still posted, and the last step fails the lane.
+      # is still posted, and the last step fails the lane. The read-only token
+      # reads the labels the lint assessment is owed under.
       - name: list the re-verification obligations
         id: obligations
         shell: bash
         env:
           OBLIGATIONS_BODY: ${{ github.event_name == 'pull_request' }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           extra=()
           if [[ $OBLIGATIONS_BODY == true ]]; then
-            extra=(--previous target/evidence/body.md --require-acknowledged)
+            extra=(--previous target/evidence/body.md --pr "$PR_NUMBER" --require-acknowledged)
           fi
           status=0
           mise run evidence:obligations "$(git rev-parse --short=12 HEAD^)" "${extra[@]}" || status=$?
