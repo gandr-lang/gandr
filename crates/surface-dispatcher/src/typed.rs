@@ -142,6 +142,7 @@ use gandr_surface_diagnostics::constant_names;
 use gandr_surface_diagnostics::diagnose;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::DocumentationText;
 use gandr_surface_lowering::InScope;
 use gandr_surface_lowering::Insertion;
 use gandr_surface_lowering::Labelled;
@@ -155,6 +156,7 @@ use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::coincide::CallText;
 use gandr_surface_lowering::described::DescribedRole;
+use gandr_surface_lowering::documentation;
 use gandr_surface_parser::ParseResult;
 use gandr_surface_parser::parse;
 use gandr_surface_pretty::CoreNode;
@@ -696,6 +698,9 @@ pub struct TypeTable
     /// The lowering's refusal of the source as a whole, as it reads, when the
     /// lowering refused it: the table then holds nothing else.
     refused: Option<String>,
+    /// The documentation each source of the unit writes of itself, its `//!`
+    /// runs, by the source.
+    documented: BTreeMap<SourceIndex, DocumentationText>,
 }
 
 /// The printer's root for `node`.
@@ -856,7 +861,8 @@ impl TypeTable
     ///   writing the same form byte for byte (#596) — are not kept. A
     ///   declaration refused for binding again a name an unqualified import
     ///   binds answers at none of its sites (#677). The table keeps the unit,
-    ///   which every reading back lowers in again. Unchanged at offset zero
+    ///   which every reading back lowers in again, and the documentation each
+    ///   source of it writes of itself, by the source. Unchanged at offset zero
     ///   over [`Unit::single`].
     /// - provides: what an editor answers inside a document that imports a
     ///   sibling: an imported name types as its declaration does.
@@ -872,6 +878,7 @@ impl TypeTable
     ///   shadows answers nowhere and the importer's others still read back.
     /// - witness: `typed::tests::an_imported_name_types_at_its_use`
     /// - witness: `typed::tests::a_declaration_refused_as_shadowing_answers_at_no_site_677`
+    /// - witness: `typed::tests::the_table_keeps_each_source_s_own_documentation_1365`
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|table| table.entries.iter().all(|entry|
         usize::from(entry.span.end())
             <= <&str>::from(source).len().saturating_sub(usize::from(base))))
@@ -1677,6 +1684,11 @@ impl TypeTable
             &hidden,
             &described.uses,
         );
+        let documented = module
+            .source_documentations()
+            .iter()
+            .map(|(&source, written)| (source, written.text().clone()))
+            .collect();
         Self {
             entries,
             declared,
@@ -1693,7 +1705,39 @@ impl TypeTable
             referents,
             in_scope: module.into_in_scope(),
             refused: None,
+            documented,
         }
+    }
+
+    /// The documentation the unit's source `source` writes of itself.
+    ///
+    /// # Specification
+    /// - requires: nothing — any source is admissible input.
+    /// - ensures: the text the lowering filed under `source`, or the
+    ///   undocumented absence when it filed none.
+    /// - provides: what a hover shows beside an import of the source, and at
+    ///   the document's own head.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an imported sibling and an importer each answer their
+    ///   own text, and a source writing none the absence.
+    /// - witness: `typed::tests::the_table_keeps_each_source_s_own_documentation_1365`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(found) => self.documented.get(&source) == Some(found),
+        | Maybe::Absent(_) => !self.documented.contains_key(&source),
+    })]
+    #[inline]
+    pub fn source_documentation(
+        &self,
+        source: SourceIndex,
+    ) -> Maybe<&DocumentationText, documentation::Absent>
+    {
+        self.documented.get(&source).map_or(
+            Maybe::Absent(documentation::Absent::Undocumented),
+            Maybe::Present,
+        )
     }
 
     /// Each oriented rule's span and the direction the order chose.
@@ -4646,6 +4690,58 @@ mod tests
                 .spans()
                 .all(|span| usize::from(span.end()) <= <&str>::from(importer).len()),
             "no entry of the sibling is kept"
+        );
+    }
+
+    /// #1365: a table over an importer's unit keeps the documentation each
+    /// source writes of itself under that source, the sibling's and the
+    /// importer's apart, and none for a source writing none.
+    #[test]
+    fn the_table_keeps_each_source_s_own_documentation_1365()
+    {
+        use gandr_surface_lowering::ImportTarget;
+        use gandr_surface_lowering::SourceIndex;
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_lowering::UnitSource;
+
+        let grammar = built_in().expect("the built-in grammar builds");
+        let kept = |sibling: &str, importer: &str| {
+            let laid = format!("{sibling}\n{importer}");
+            let base = ByteOffset::from(sibling.len().saturating_add(1_usize));
+            let unit = Unit::new(vec![
+                UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+                UnitSource::new(base, vec![ImportTarget::Source(SourceIndex::from(0_usize))]),
+            ])
+            .expect("the unit's sources start in order");
+            let table = TypeTable::of_unit(&grammar, SourceText::from(laid.as_str()), &unit, base)
+                .expect("the unit parses");
+            [0_usize, 1_usize].map(|source| {
+                match table.source_documentation(SourceIndex::from(source)) {
+                    Maybe::Present(text) => Some(String::from(text.as_ref())),
+                    Maybe::Absent(_) => None,
+                }
+            })
+        };
+        assert_eq!(
+            kept(
+                "//! Points.\ndata Point : Type {\n  Here : Point;\n}",
+                "//! Uses [Point].\nimport \"./point.gandr\" ;\ndef there : Point ;\ndef there \
+                 = Here ;"
+            ),
+            [
+                Some(String::from("Points.")),
+                Some(String::from("Uses [Point]."))
+            ],
+            "each source's own run is kept under it"
+        );
+        assert_eq!(
+            kept(
+                "data Point : Type {\n  Here : Point;\n}",
+                "//! Uses [Point].\nimport \"./point.gandr\" ;\ndef there : Point ;\ndef there \
+                 = Here ;"
+            ),
+            [None, Some(String::from("Uses [Point]."))],
+            "a sibling writing none keeps none, and the importer's stays its own"
         );
     }
 

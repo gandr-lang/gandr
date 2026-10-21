@@ -1,4 +1,4 @@
-10:1-10:29 import "./magma-base.gan… ⇒ import "./magma-base.gandr" ;⏎⏎Reads `<corpus>/fixture/model/higher-cells/magma-base.gandr`.⏎⏎Its file's own documentation is not read yet. The tracking issue for this is: [#1365]⏎⏎[#1365]: https://github.com/gandr-lang/gandr/issues/1365 @10:1-10:30
+10:1-10:29 import "./magma-base.gan… ⇒ import "./magma-base.gandr" ;⏎⏎Reads `<corpus>/fixture/model/higher-cells/magma-base.gandr`. @10:1-10:30
 13:1-13:11 @[ checks ] ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @13:1-14:1
 14:1-14:3 def ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-14:31
 14:5-14:9 flip( ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:5-14:9

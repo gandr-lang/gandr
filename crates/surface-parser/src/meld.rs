@@ -156,6 +156,10 @@
 //!   whitespace between them. A run documents the form below it, never the one
 //!   before it, even when it starts on that form's last line; a blank line
 //!   between a run and the form below leaves it at the root.
+//! - **An inner run.** `//!` lines group the same way, a line of the other kind
+//!   ending either run, and document what they stand in rather than what
+//!   follows: the form enclosing them, or the root, where they are the source's
+//!   own documentation.
 //!
 //! The alternative was reading `///` and `doc` as ordinary attribute material,
 //! which keys the declaration by its prose: every documentation edit would
@@ -1204,6 +1208,19 @@ enum Reach
     Either,
     /// Documentation: the form after it only, since it describes what follows.
     Leading,
+    /// Inner documentation: the node enclosing it, since it describes what it
+    /// stands in.
+    Inner,
+}
+
+/// Which documentation a line writes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DocLine
+{
+    /// `///`: the form after it.
+    Outer,
+    /// `//!`: the node it stands in, a source's root included.
+    Inner,
 }
 
 /// The attribute whose entries are documentation.
@@ -1229,6 +1246,9 @@ const STRING_FORM: &str = "string";
 
 /// The opening of a documentation line, `///`, not followed by a fourth `/`.
 const DOC_LINE: &str = "///";
+
+/// The opening of an inner documentation line, `//!`.
+const INNER_DOC_LINE: &str = "//!";
 
 /// The operator shape of a shifted tile, derived from its precedence bounds.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -5634,15 +5654,17 @@ impl<'pbg> MeldState<'pbg>
     /// - requires: `root` is the interior [`wrap_root`](Self::wrap_root) just
     ///   emitted, whose children are in source order.
     /// - ensures: every emission stays the child of exactly one interior. A run
-    ///   of `///` lines, each separated from the next by whitespace holding one
-    ///   line break, becomes one documentation interior over the lines and the
-    ///   whitespace between them; it, and every documentation interior standing
-    ///   at the root, belongs to the form after it, as a leading comment does.
-    ///   A comment owned by a node other than the root leaves the root's
-    ///   children and joins its owner's at its source position; whitespace,
-    ///   shebangs and the root's own comments and documentation stay at the
-    ///   root, in source order. No digest changes, since neither layout nor
-    ///   documentation reaches one.
+    ///   of `///` lines, or of `//!` lines, each separated from the next by
+    ///   whitespace holding one line break, becomes one documentation interior
+    ///   over the lines and the whitespace between them; a line of the other
+    ///   kind ends a run. A `///` run, and every documentation interior
+    ///   standing at the root, belongs to the form after it, as a leading
+    ///   comment does; a `//!` run belongs to the node enclosing it, the root
+    ///   when no form does. A comment owned by a node other than the root
+    ///   leaves the root's children and joins its owner's at its source
+    ///   position; whitespace, shebangs and the root's own comments and
+    ///   documentation stay at the root, in source order. No digest changes,
+    ///   since neither layout nor documentation reaches one.
     /// - provides: the comment and documentation placement every tree reader
     ///   inherits.
     /// - fails: never.
@@ -5654,12 +5676,14 @@ impl<'pbg> MeldState<'pbg>
     /// - hypothesis: L3 — a leading, a trailing, a dangling and a standalone
     ///   comment are asserted under their owners, with reconstruction and every
     ///   digest unchanged over the corpus; a run of documentation lines is one
-    ///   interior under the form after it, and a blank line ends a run. Leaving
-    ///   a comment at the root, inserting it out of order, joining lines across
-    ///   a blank line or losing one changes an owner or the reconstructed
+    ///   interior under the form after it, a blank line ends a run, and a `//!`
+    ///   run stays with the root or the form it stands in. Leaving a comment at
+    ///   the root, inserting it out of order, joining lines across a blank line
+    ///   or across kinds, or losing one changes an owner or the reconstructed
     ///   source.
     /// - witness: `meld::tests::each_comment_is_owned_by_the_node_it_describes`
     /// - witness: `meld::tests::documentation_reaches_no_digest`
+    /// - witness: `meld::tests::an_inner_run_documents_what_it_stands_in_1365`
     /// - witness: `tests::acceptance::comments_reach_no_digest_and_lose_no_byte`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -5695,21 +5719,32 @@ impl<'pbg> MeldState<'pbg>
             let text = written(id);
             text.starts_with("//") || text.starts_with("/*")
         };
-        let is_doc_line = |id: EmitId| {
-            written(id)
+        let doc_line = |id: EmitId| {
+            let text = written(id);
+            if text
                 .strip_prefix(DOC_LINE)
                 .is_some_and(|rest| !rest.starts_with('/'))
+            {
+                Some(DocLine::Outer)
+            }
+            else if text.starts_with(INNER_DOC_LINE) {
+                Some(DocLine::Inner)
+            }
+            else {
+                None
+            }
         };
         if standing.is_empty() && !layout.iter().any(|&space| is_comment(space)) {
             return;
         }
-        let mut runs: Vec<Vec<EmitId>> = Vec::new();
+        let mut runs: Vec<(DocLine, Vec<EmitId>)> = Vec::new();
         let mut index = 0_usize;
         while let Some(&space) = layout.get(index) {
             index = index.saturating_add(1);
-            if !is_doc_line(space) {
+            let Some(kind) = doc_line(space)
+            else {
                 continue;
-            }
+            };
             let mut run = alloc::vec![space];
             while let (Some(&between), Some(&line)) =
                 (layout.get(index), layout.get(index.saturating_add(1)))
@@ -5722,7 +5757,7 @@ impl<'pbg> MeldState<'pbg>
                     && written(between)
                         .split_once('\n')
                         .is_some_and(|(_, after)| !after.contains('\n'))
-                    && is_doc_line(line);
+                    && doc_line(line) == Some(kind);
                 if !joined {
                     break;
                 }
@@ -5730,16 +5765,16 @@ impl<'pbg> MeldState<'pbg>
                 run.push(line);
                 index = index.saturating_add(2);
             }
-            runs.push(run);
+            runs.push((kind, run));
         }
         let lone: Vec<EmitId> = layout
             .iter()
             .copied()
-            .filter(|&space| is_comment(space) && !is_doc_line(space))
+            .filter(|&space| is_comment(space) && doc_line(space).is_none())
             .collect();
         let mut units: Vec<(EmitId, Reach)> = Vec::new();
         let mut leaving: Vec<EmitId> = Vec::new();
-        for run in runs {
+        for (kind, run) in runs {
             let (Some(&first), Some(&last)) = (run.first(), run.last())
             else {
                 continue;
@@ -5747,7 +5782,10 @@ impl<'pbg> MeldState<'pbg>
             let span = SourceSpan::new(self.emit_span(first).start, self.emit_span(last).end);
             leaving.extend_from_slice(&run);
             let doc = self.emit_interior(NodeLabel::Doc, span, run);
-            units.push((doc, Reach::Leading));
+            units.push((doc, match kind {
+                DocLine::Outer => Reach::Leading,
+                DocLine::Inner => Reach::Inner,
+            }));
         }
         units.extend(standing.iter().map(|&doc| (doc, Reach::Leading)));
         units.extend(lone.iter().map(|&comment| (comment, Reach::Either)));
@@ -5799,9 +5837,10 @@ impl<'pbg> MeldState<'pbg>
     ///   (leading); otherwise the enclosing node, which also owns a comment in
     ///   an empty block or bracket (dangling) and one set apart by a blank line
     ///   (standalone). Under [`Reach::Leading`] the trailing case is never
-    ///   taken. A neighbour that is a leaf holds no children and documentation
-    ///   documents no comment, so the enclosing node owns a comment written
-    ///   against either.
+    ///   taken, and under [`Reach::Inner`] the enclosing node owns it whatever
+    ///   its neighbours. A neighbour that is a leaf holds no children and
+    ///   documentation documents no comment, so the enclosing node owns a
+    ///   comment written against either.
     /// - provides: the owner [`attach_comments`](Self::attach_comments) moves a
     ///   comment to.
     /// - fails: never.
@@ -5812,9 +5851,10 @@ impl<'pbg> MeldState<'pbg>
     ///   asserted at their owner, and documentation after a form on its line
     ///   goes to the form after it. Reading the neighbour on the wrong side,
     ///   treating a blank line as a line break or attaching to a leaf changes
-    ///   an owner.
+    ///   an owner; a `//!` run before a form stays with the root.
     /// - witness: `meld::tests::each_comment_is_owned_by_the_node_it_describes`
     /// - witness: `meld::tests::documentation_reaches_no_digest`
+    /// - witness: `meld::tests::an_inner_run_documents_what_it_stands_in_1365`
     #[spec(ensures: |ret| ret == root || matches!(usize::try_from(ret.0).ok().and_then(|index| self.emit.get(index)), Some(EmitOp::Interior { .. })))]
     fn comment_owner(
         &self,
@@ -5845,6 +5885,9 @@ impl<'pbg> MeldState<'pbg>
             enclosing = candidate;
             siblings = self.emit_children(candidate);
             next = siblings.partition_point(|&child| self.emit_span(child).end <= span.start);
+        }
+        if reach == Reach::Inner {
+            return enclosing;
         }
         let gap = |from: SourceOffset, to: SourceOffset| {
             let first = layout.partition_point(|&space| self.emit_start(space) < from);
@@ -11017,6 +11060,48 @@ mod tests
             ("/// a".to_owned(), "the root".to_owned()),
             ("/// b\n/// c".to_owned(), "def x = 1;".to_owned()),
             ("/// d".to_owned(), "def y = 2;".to_owned()),
+        ]);
+        Ok(())
+    }
+
+    /// A `//!` run is one `Doc` node owned by what it stands in: the root
+    /// before any form, whatever follows it, and the form enclosing it inside
+    /// one. A `///` line ends the run and starts its own, which documents the
+    /// form below as before.
+    #[test]
+    fn an_inner_run_documents_what_it_stands_in_1365() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built_in()?;
+        let source = "//! s\n//! t\n/// a\ndef x = 1;\n//! u\ndef f(x: Integer) -> -F Integer {\n  \
+                      //! inner\n  return x\n}\n";
+        let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();
+        assert_eq!(crate::testing::reconstruct(&tree), source);
+        let text = |position| -> String {
+            tree.fragment(position)
+                .map_or_else(String::new, |text| <&str>::from(text).to_owned())
+        };
+        let docs: Vec<(String, String)> = tree
+            .positions()
+            .filter(|&position| label(&tree, position) == Some(NodeLabel::Doc))
+            .map(|position| {
+                let owner = tree
+                    .positions()
+                    .find(|&parent| children(&tree, parent).contains(&position))
+                    .map_or_else(String::new, |parent| match label(&tree, parent) {
+                        Some(NodeLabel::Wald) => "the root".to_owned(),
+                        _ => text(parent),
+                    });
+                (text(position), owner)
+            })
+            .collect();
+        assert_eq!(docs, [
+            ("//! s\n//! t".to_owned(), "the root".to_owned()),
+            ("//! u".to_owned(), "the root".to_owned()),
+            ("/// a".to_owned(), "def x = 1;".to_owned()),
+            (
+                "//! inner".to_owned(),
+                "def f(x: Integer) -> -F Integer {\n  //! inner\n  return x\n}".to_owned()
+            ),
         ]);
         Ok(())
     }

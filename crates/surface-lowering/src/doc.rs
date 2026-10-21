@@ -1,5 +1,6 @@
-//! Documentation: what a declaration's `///` lines and `doc("…")` entries
-//! say, read into one text, and the names that text links to.
+//! Documentation: what a declaration's `///` lines and `doc("…")` entries,
+//! and a source's `//!` lines, say, read into one text, and the names that
+//! text links to.
 //!
 //! # Both spellings are one attribute
 //!
@@ -46,6 +47,22 @@
 //! broken link in its documentation refuses its first member, as a module's
 //! refused attribute does; a module with no member has none to refuse.
 //!
+//! A source documents itself with `//!` lines, which the parser groups as it
+//! groups `///` lines and leaves with the node they stand in. A run standing
+//! at a root is the source's own: it reads as a `///` run does and is filed
+//! under the source, every run of one source joined in source order, and
+//! `LoweredModule::source_documentation` answers it, as an import's hover
+//! does beside the file it reads. A broken link in it refuses the source's
+//! first declaration, as a module's does its first member. A `//!` run inside
+//! a form is not read.
+//!
+//! A source is keyed by its place in the unit because a file writes no form
+//! of its own to key by. The alternative was filing a source's documentation
+//! under its first declaration's key, which would merge it with that
+//! declaration's own and lose it from a source declaring nothing. Reversal:
+//! when a source gains a content identity, as a module form per file would
+//! give it, its documentation is filed under that key.
+//!
 //! The alternative was storing documentation as an attribute entry with a text
 //! payload. It was declined because an entry's payload is minted into the core
 //! arena and the attribute table carries no source borrow, while a link names
@@ -78,13 +95,16 @@ use crate::resolve::SurfaceName;
 /// The opening of a documentation line.
 const DOC_LINE: &str = "///";
 
+/// The opening of an inner documentation line, a source's own.
+pub const INNER_DOC_LINE: &str = "//!";
+
 quenchant_shape::reason_enum! {
     /// Why a documentation node carries no entry's string.
     pub mod entry {
         /// The node is not a `doc("…")` entry.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// The node is a run of `///` lines.
+            /// The node is a run of `///` or `//!` lines.
             Lines,
         }
     }
@@ -197,10 +217,10 @@ impl<'source> Documentation<'source>
 /// - requires: `at` is a [`NodeLabel::Doc`] node of `tree`, molded under `pbg`.
 /// - ensures: a node holding a string form is a `doc("…")` entry and
 ///   contributes the string's decoded content; any other contributes each of
-///   its `///` lines, the text after the slashes less one leading space, one
-///   line break between lines. The piece follows `into`'s text after one line
-///   break when that text is not empty, and every link the piece writes is
-///   appended to `into`'s links with its source span.
+///   its `///` or `//!` lines, the text after the opening less one leading
+///   space, one line break between lines. The piece follows `into`'s text after
+///   one line break when that text is not empty, and every link the piece
+///   writes is appended to `into`'s links with its source span.
 /// - provides: the one reading both documentation spellings share.
 /// - fails: [`LoweringRefusal::MalformedLiteral`] for an entry whose string
 ///   does not decode; [`LoweringRefusal::UnknownMold`] for a mold `pbg` does
@@ -211,12 +231,13 @@ impl<'source> Documentation<'source>
 /// As above.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `///` lines and the equivalent entry read to equal
-///   documentation, two pieces join with one line break, and a link in each
-///   spelling is found at its exact span. The body writes `into` only after its
-///   last refusal and only by appending, so the predicate checks the text and
-///   link counts against the ones captured on entry rather than copying the
-///   documentation read so far; the witnesses assert the joined text.
+/// - hypothesis: L3 — `///` lines, `//!` lines and the equivalent entry read to
+///   equal documentation, two pieces join with one line break, and a link in
+///   each spelling is found at its exact span. The body writes `into` only
+///   after its last refusal and only by appending, so the predicate checks the
+///   text and link counts against the ones captured on entry rather than
+///   copying the documentation read so far; the witnesses assert the joined
+///   text.
 /// - witness: `doc::tests::both_spellings_read_to_one_text`
 /// - witness: `doc::tests::links_are_found_where_they_are_written`
 #[spec(
@@ -262,15 +283,19 @@ pub fn read_doc<'source>(
             scan_links(SourceFragment::from(written), span.start(), &mut links);
             continue;
         }
-        let (NodeLabel::Space, Some(line)) = (node.label(), written.strip_prefix(DOC_LINE))
+        let Some(line) = written
+            .strip_prefix(DOC_LINE)
+            .or_else(|| written.strip_prefix(INNER_DOC_LINE))
         else {
             continue;
         };
+        if node.label() != NodeLabel::Space {
+            continue;
+        }
+        let opened = written.len().saturating_sub(line.len());
         let (line, skipped) = line
             .strip_prefix(' ')
-            .map_or((line, DOC_LINE.len()), |rest| {
-                (rest, DOC_LINE.len().saturating_add(1))
-            });
+            .map_or((line, opened), |rest| (rest, opened.saturating_add(1)));
         lines.push(line);
         let start = ByteOffset::from(usize::from(span.start()).saturating_add(skipped));
         scan_links(SourceFragment::from(line), start, &mut links);
@@ -452,6 +477,19 @@ mod tests
             lines.text(),
             entry.text(),
             "a `///` run and the equivalent entry read to one text"
+        );
+        let (inner, inner_links) = read(SourceText::from(
+            "//! Squares\n//!its [argument].\ndef square = 1 ;",
+        ));
+        assert_eq!(
+            inner.text().as_ref(),
+            "Squares\nits [argument].",
+            "a `//!` run reads as a `///` run does, a tight line kept whole"
+        );
+        assert_eq!(
+            inner_links,
+            ["argument=argument"],
+            "a link in a `//!` line spans its name"
         );
         let (joined, _) = read(SourceText::from(
             "/// First.\n@[ doc(\"Second.\") ] def x = 1 ;",

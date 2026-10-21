@@ -559,6 +559,7 @@ use crate::attribute::payload_verdict;
 use crate::classify::FailureClass;
 use crate::doc::DocLink;
 use crate::doc::Documentation;
+use crate::doc::INNER_DOC_LINE;
 use crate::doc::read_doc;
 use crate::error::CrossedExit;
 use crate::error::FormFault;
@@ -3644,6 +3645,20 @@ pub fn lower_unit<'source>(
     lowerer.finish(arena, origins, None)
 }
 
+/// The documentation a lowering files: each documented form's, and each
+/// source's own.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+struct Filed<'source>
+{
+    /// Each documented form's documentation, by its unit key.
+    forms: BTreeMap<UnitKey, Documentation<'source>>,
+    /// Each source's own documentation, its `//!` runs, by the source.
+    sources: BTreeMap<SourceIndex, Documentation<'source>>,
+}
+
 /// Whether some root reads as a module's root: a root that is layout lowers
 /// to nothing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4112,7 +4127,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             collected.cells,
         )
-        .with_documentation(documentation)
+        .with_documentation(documentation.forms, documentation.sources)
         .with_constructors(constructors)
         .with_codata(codata)
         .with_inferred_exits(inferred)
@@ -14407,8 +14422,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Read every declaration's and every module's documentation and check its
-    /// links.
+    /// Read every declaration's, every module's and every source's own
+    /// documentation and check its links.
     ///
     /// # Specification
     /// - requires: the mint sweep has run, so every declaration form's key is
@@ -14418,9 +14433,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   identity of the form it documents, pieces in source order; each link
     ///   to a name the module neither declares nor recognises refuses its
     ///   declaration at the link, as a misspelt attribute does, and a module's
-    ///   as [`Self::document_modules`] states. Every slot's documentation list
-    ///   and the module documentation are drained.
-    /// - provides: the documentation table of the lowered module.
+    ///   as [`Self::document_modules`] states. Each source's own documentation
+    ///   is filed under the source, as [`Self::document_files`] states. Every
+    ///   slot's documentation list and the module documentation are drained.
+    /// - provides: the documentation tables of the lowered module, by form and
+    ///   by source.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] and
     ///   [`LoweringRefusal::UnknownMold`] abort the pass; every other refusal
     ///   is offered to the declaration the documentation belongs to.
@@ -14433,11 +14450,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — both spellings file one text under one key, a link to
     ///   a later declaration resolves, a link to a missing name refuses its
-    ///   declaration at the link's span, and a module's documentation is filed
-    ///   under its own form.
+    ///   declaration at the link's span, a module's documentation is filed
+    ///   under its own form, and a source's under the source.
     /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_key`
     /// - witness: `lower::tests::a_link_to_a_missing_name_is_refused_at_the_link`
     /// - witness: `lower::tests::a_module_s_documentation_is_filed_under_its_key_1135`
+    /// - witness: `lower::tests::a_source_s_documentation_is_filed_under_the_source_1365`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -14456,19 +14474,103 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && (ret.is_err() || self.collected.slots.iter().all(|slot| slot.docs.is_empty()))
         },
     )]
-    fn document(
-        &mut self
-    ) -> Result<BTreeMap<UnitKey, Documentation<'source>>, LoweringRefusal<'source>>
+    fn document(&mut self) -> Result<Filed<'source>, LoweringRefusal<'source>>
     {
-        let mut filed: BTreeMap<UnitKey, Documentation<'source>> = BTreeMap::new();
+        let mut filed = Filed::default();
         let mut slots = core::mem::take(&mut self.collected.slots);
         let modules = core::mem::take(&mut self.collected.module_docs);
         let outcome = self
-            .document_slots(&mut slots, &mut filed)
-            .and_then(|()| self.document_modules(&modules, &mut slots, &mut filed));
+            .document_slots(&mut slots, &mut filed.forms)
+            .and_then(|()| self.document_modules(&modules, &mut slots, &mut filed.forms))
+            .and_then(|()| self.document_files(&mut slots, &mut filed.sources));
         self.collected.slots = slots;
 
         outcome.map(|()| filed)
+    }
+
+    /// Read and file each source's own documentation, every `//!` run standing
+    /// at a root, into `files`.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::document`], over the slots taken out of the
+    ///   collection.
+    /// - ensures: each run is filed under the source of the unit it stands in,
+    ///   runs in source order, and spends one step; a run that does not read,
+    ///   or a link to a name the module neither declares nor recognises,
+    ///   refuses the source's first slot, as a module's documentation refuses
+    ///   its first member. A source with no slot files its documentation and
+    ///   has none to refuse. A `//!` run inside a form documents that form's
+    ///   inside and is not read.
+    /// - provides: the source walk of [`Self::document`].
+    /// - fails: as [`Self::document`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::document`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two sources' runs each filed under their own source,
+    ///   two runs of one source joined, a `///` run at a root left alone, and a
+    ///   link to a missing name refusing the source's first declaration at the
+    ///   link.
+    /// - witness: `lower::tests::a_source_s_documentation_is_filed_under_the_source_1365`
+    #[spec(
+        captures: before = self.fuel.remaining,
+        ensures: self.fuel.remaining <= before,
+    )]
+    fn document_files(
+        &mut self,
+        slots: &mut [DeclarationSlot<'source>],
+        files: &mut BTreeMap<SourceIndex, Documentation<'source>>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let tree = self.tree;
+        for &root in tree.roots() {
+            for child in tree.children(root) {
+                let Some(node) = tree.node(child)
+                else {
+                    continue;
+                };
+                let inner = tree
+                    .fragment(child)
+                    .is_some_and(|written| <&str>::from(written).starts_with(INNER_DOC_LINE));
+                if node.label() != NodeLabel::Doc || !inner {
+                    continue;
+                }
+                self.fuel.spend()?;
+                let unit = &self.collected.unit;
+                let source = unit.source_at(node.span().start());
+                let first = slots.iter().position(|slot| {
+                    [&slot.signature, &slot.definition]
+                        .into_iter()
+                        .find_map(|half| match *half {
+                            Maybe::Present(half) => Some(half.declaration.span.start()),
+                            Maybe::Absent(_) => None,
+                        })
+                        .is_some_and(|start| unit.source_at(start) == source)
+                });
+                let documentation = files.entry(source).or_default();
+                let before = documentation.links().len();
+                if let Err(refusal) = read_doc(self.pbg, tree, child, documentation) {
+                    if refusal.classify() == FailureClass::EngineFault {
+                        return Err(refusal);
+                    }
+                    if let Some(slot) = first.and_then(|first| slots.get_mut(first)) {
+                        slot.refuse(child, refusal);
+                    }
+                    continue;
+                }
+                for &link in documentation.links().get(before ..).unwrap_or_default() {
+                    if let Some(refusal) = self.unresolved(link)
+                        && let Some(slot) = first.and_then(|first| slots.get_mut(first))
+                    {
+                        slot.refuse(child, refusal);
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Read and file the documentation of every module form, `docs`, into
@@ -21654,6 +21756,70 @@ mod tests
             "a module's link to a missing name refuses its first member at the link"
         );
         for name in ["x", "y"] {
+            assert!(
+                !matches!(outcome_named(&module, name), DeclarationOutcome::Refused(_)),
+                "`{name}` is refused by nothing: {:?}",
+                outcome_named(&module, name)
+            );
+        }
+    }
+
+    #[test]
+    fn a_source_s_documentation_is_filed_under_the_source_1365()
+    {
+        let pbg = grammar();
+        let base = "//! The base.\n//! See [b].\ndef a = 1 ;\n";
+        let text = format!(
+            "{base}/// Dangling.\n\ndef b = 2 ;\n//! The importer,\n\n//! twice; see \
+             [gone].\ndef c = 3 ;\n"
+        );
+        let unit = crate::unit::Unit::new(alloc::vec![
+            crate::unit::UnitSource::new(ByteOffset::from(0_usize), alloc::vec::Vec::new()),
+            crate::unit::UnitSource::new(ByteOffset::from(base.len()), alloc::vec::Vec::new()),
+        ])
+        .unwrap();
+        let tree = parsed(&pbg, SourceText::from(text.as_str()));
+        let mut arena = CoreArena::new();
+        let module = super::lower_unit(
+            &pbg,
+            &tree,
+            &unit,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+        .unwrap();
+        let own = |source: usize| match module
+            .source_documentation(crate::unit::SourceIndex::from(source))
+        {
+            Maybe::Present(found) => Some(String::from(found.text().as_ref())),
+            Maybe::Absent(_) => None,
+        };
+        assert_eq!(
+            own(0_usize).as_deref(),
+            Some("The base.\nSee [b]."),
+            "the base's run is the base's own"
+        );
+        assert_eq!(
+            own(1_usize).as_deref(),
+            Some("The importer,\ntwice; see [gone]."),
+            "a source's two runs join in source order, and a `///` run at the root is no source's"
+        );
+        assert_eq!(
+            own(2_usize),
+            None,
+            "a source the unit does not hold has none"
+        );
+        let gone = text.find("gone").expect("the link is written");
+        assert_eq!(
+            outcome_named(&module, "b"),
+            DeclarationOutcome::Refused(LoweringRefusal::UnresolvedDocLink {
+                span: span(ByteOffset::from(gone), ByteOffset::from(gone + 4)),
+                name: SurfaceName::from("gone"),
+            }),
+            "a source's link to a missing name refuses its first declaration at the link"
+        );
+        for name in ["a", "c"] {
             assert!(
                 !matches!(outcome_named(&module, name), DeclarationOutcome::Refused(_)),
                 "`{name}` is refused by nothing: {:?}",

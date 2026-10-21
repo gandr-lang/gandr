@@ -8370,6 +8370,9 @@ pub struct LoweredModule<'source>
     /// Each documented declaration form's documentation, keyed by its unit
     /// key.
     documentation: BTreeMap<UnitKey, Documentation<'source>>,
+    /// Each documented source's own documentation, its `//!` runs, keyed by
+    /// the source.
+    sources: BTreeMap<SourceIndex, Documentation<'source>>,
     /// Every exit the lowering inferred where a path through a body ends in a
     /// form that is no exit, in source order.
     inferred_exits: Vec<InferredExit>,
@@ -8433,6 +8436,7 @@ impl<'source> LoweredModule<'source>
             structures,
             attributes,
             documentation: BTreeMap::new(),
+            sources: BTreeMap::new(),
             inferred_exits: Vec::new(),
             elidable_exits: Vec::new(),
             linear_runs: Vec::new(),
@@ -8466,7 +8470,7 @@ impl<'source> LoweredModule<'source>
     }
 
     /// This module, carrying `documentation`, keyed by declaration content
-    /// identity.
+    /// identity, and `sources`, each source's own, keyed by the source.
     ///
     /// # Specification
     /// trivial.
@@ -8475,9 +8479,11 @@ impl<'source> LoweredModule<'source>
     pub fn with_documentation(
         mut self,
         documentation: BTreeMap<UnitKey, Documentation<'source>>,
+        sources: BTreeMap<SourceIndex, Documentation<'source>>,
     ) -> Self
     {
         self.documentation = documentation;
+        self.sources = sources;
         self
     }
 
@@ -9402,6 +9408,48 @@ impl<'source> LoweredModule<'source>
     pub const fn documentations(&self) -> &BTreeMap<UnitKey, Documentation<'source>>
     {
         &self.documentation
+    }
+
+    /// The documentation the source at `source` writes of itself: its `//!`
+    /// runs standing at its root.
+    ///
+    /// # Specification
+    /// - requires: nothing — any source is admissible input.
+    /// - ensures: the documentation filed under `source`, or the undocumented
+    ///   absence when nothing was.
+    /// - provides: the read face an import's hover reads its file through.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two sources' documentation and an undocumented source
+    ///   are separated by presence and the exact text.
+    /// - witness: `lower::tests::a_source_s_documentation_is_filed_under_the_source_1365`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(found) => self.sources.get(&source) == Some(found),
+        | Maybe::Absent(_) => !self.sources.contains_key(&source),
+    })]
+    #[inline]
+    pub fn source_documentation(
+        &self,
+        source: SourceIndex,
+    ) -> Maybe<&Documentation<'source>, crate::doc::documentation::Absent>
+    {
+        self.sources.get(&source).map_or(
+            Maybe::Absent(crate::doc::documentation::Absent::Undocumented),
+            Maybe::Present,
+        )
+    }
+
+    /// Every source's own documentation, by the source.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn source_documentations(&self) -> &BTreeMap<SourceIndex, Documentation<'source>>
+    {
+        &self.sources
     }
 
     /// Every minted core node's origin, and the declarations' own.
