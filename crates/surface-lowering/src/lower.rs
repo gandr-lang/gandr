@@ -3096,6 +3096,83 @@ struct Lowerer<'run, 'source>
     own: Vec<NodeIndex>,
 }
 
+/// The tables a closure's own module finishes with that a document's module
+/// resumed after the closure leads with: the binders in scope, the
+/// resolutions and the nested sites, built once when the closure's lowering
+/// is suspended.
+///
+/// # Specification
+/// - requires: built by [`Finished::of`] from the module the closure's
+///   suspended lowering finishes alone.
+/// - ensures: each table is that module's.
+/// - panics: none.
+/// - executable: none — a carrier; [`Lowerer::finish`] states what it builds
+///   from it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a document resumed after its closure lowers to the module
+///   the whole lowering does.
+/// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+#[derive(Clone, Debug)]
+struct Finished
+{
+    /// The binders in scope at each span the closure's lowering read under one.
+    in_scope: crate::InScope,
+    /// Each written name the closure's lowering resolved, ascending by span.
+    resolutions: Vec<(ByteSpan, crate::Resolution)>,
+    /// The site of each syntax node of the closure a computation was nested
+    /// at.
+    nested: BTreeMap<NodeIndex, NestedSite>,
+}
+
+impl Finished
+{
+    /// The tables `module`, a closure's own, finished with.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(module: LoweredModule<'_>) -> Self
+    {
+        let (in_scope, resolutions, nested) = module.into_scope_tables();
+        Self {
+            in_scope,
+            resolutions,
+            nested,
+        }
+    }
+}
+
+/// Where a lowering resumed after a closure's began: the closure's finished
+/// tables, and the length each list the finish reads had at the closure's
+/// end.
+///
+/// # Specification
+/// - requires: built by [`Lowerer::resumed`] from the closure's suspended
+///   lowering before any later source is read into it.
+/// - ensures: every entry a list holds past its mark was made by a source after
+///   the closure's.
+/// - panics: none.
+/// - executable: none — the marks are positions into lists this record does not
+///   hold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Finished`].
+/// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+#[derive(Clone, Copy, Debug)]
+struct Resumed<'finished>
+{
+    /// The closure's finished tables.
+    finished: &'finished Finished,
+    /// The closure's nodes: the readings before the document's.
+    nodes: usize,
+    /// The origin values recorded before the document's.
+    values: usize,
+    /// The resolutions recorded before the document's.
+    resolved: usize,
+    /// The declared uses collected before the document's.
+    declared: usize,
+}
+
 /// The source a lowering is at, and where its share of each list the passes
 /// read begins. A unit is lowered a source at a time, in its order, each
 /// source's collection and every pass over it before the
@@ -3513,7 +3590,7 @@ pub fn lower_unit<'source>(
         lowerer.lower_source(SourceIndex::from(source), own, &mut sink)?;
     }
 
-    lowerer.finish(arena, origins)
+    lowerer.finish(arena, origins, None)
 }
 
 /// Whether some root reads as a module's root: a root that is layout lowers
@@ -3869,13 +3946,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
 
     /// The module every source lowered amounts to: its attributes,
     /// documentation, exits and declarations, assembled over `arena` and
-    /// `origins`.
+    /// `origins`; after a closure's tables when `resumed` gives them.
     ///
     /// # Specification
     /// - requires: every source of the unit is lowered into `arena`, its
-    ///   origins recorded in `origins`.
-    /// - ensures: the module [`lower_unit`] answers.
-    /// - provides: the tail of [`lower_unit`] and of a resumed lowering.
+    ///   origins recorded in `origins`; `resumed`, when given, marks where the
+    ///   lowering resumed after a closure's ([`Lowerer::resumed`]).
+    /// - ensures: the module [`lower_unit`] answers. After a closure, its
+    ///   binders in scope, resolutions and nested sites are the closure's
+    ///   finished tables followed by those of the entries past the marks, which
+    ///   every entry of a later source follows.
+    /// - provides: the tail of [`lower_unit`] and of a resumed lowering, the
+    ///   latter's scope tables built in the size of its own sources.
     /// - fails: as the attribute and documentation readings.
     /// - panics: none.
     ///
@@ -3883,7 +3965,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// As the specification's fails clause.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`lower_unit`].
+    /// - hypothesis: L3 — as [`lower_unit`]; a document resumed after its
+    ///   closure finishes as the whole lowering does.
     /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
     /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |module| {
@@ -3893,16 +3976,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
         mut self,
         arena: &CoreArena,
         mut origins: OriginTable,
+        resumed: Option<Resumed<'_>>,
     ) -> Result<LoweredModule<'source>, LoweringRefusal<'source>>
     {
         let mut attributes = AttributeTable::new();
         self.attribute(&mut attributes, arena)?;
         let documentation = self.document()?;
         let inferred = self.inferred_exits();
-        let nested = self.nested_sites(&origins);
+        let nested = self.nested_sites(&origins, resumed);
         let declarations = self.assemble(&mut origins);
         let structures = self.structures();
-        let in_scope = self.in_scope();
+        let in_scope = self.in_scope(resumed);
         let Self {
             collected,
             recognition,
@@ -3914,14 +3998,42 @@ impl<'run, 'source> Lowerer<'run, 'source>
             supplies,
             ..
         } = self;
-        resolutions.extend(collected.declared_uses.iter().filter_map(|&(span, slot)| {
+        let declared_use = |&(span, slot): &(ByteSpan, SlotIndex)| {
             collected
                 .slots
                 .get(usize::from(slot))
                 .map(|named| (span, crate::Resolution::Declaration(named.constant)))
-        }));
+        };
+        let (resolved, declared) =
+            resumed.map_or((0, 0), |resumed| (resumed.resolved, resumed.declared));
+        resolutions.drain(.. resolved.min(resolutions.len()));
+        resolutions.extend(
+            collected
+                .declared_uses
+                .get(declared ..)
+                .unwrap_or_default()
+                .iter()
+                .filter_map(declared_use),
+        );
         resolutions.sort_unstable();
         resolutions.dedup();
+        let (nested, resolutions) = match resumed {
+            Some(resumed) => {
+                let mut sites = resumed.finished.nested.clone();
+                sites.extend(nested);
+                let mut all = Vec::with_capacity(
+                    resumed
+                        .finished
+                        .resolutions
+                        .len()
+                        .saturating_add(resolutions.len()),
+                );
+                all.extend_from_slice(&resumed.finished.resolutions);
+                all.append(&mut resolutions);
+                (sites, all)
+            },
+            None => (nested, resolutions),
+        };
         let operation_rules = collected
             .operations
             .iter()
@@ -15417,38 +15529,71 @@ impl<'run, 'source> Lowerer<'run, 'source>
 
     /// The binders in scope at each node the lowering read under a binder:
     /// the scope's frames, beside each such node's span and its reading's
-    /// frame.
+    /// frame; after the closure's table when `resumed` gives it, from the
+    /// node it marks on.
     ///
     /// # Specification
-    /// - requires: every source is lowered.
+    /// - requires: every source is lowered; `resumed`, when given, marks where
+    ///   the lowering resumed after a closure's.
     /// - ensures: [`Scope::in_scope`] over this lowering's scope and one span
     ///   per node whose reading names an inner frame, a node of a refused
-    ///   declaration included.
+    ///   declaration included; after a closure, [`Scope::in_scope_after`] over
+    ///   the closure's table and the nodes past its mark.
     /// - provides: the table [`LoweredModule::in_scope`] keeps.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the table's own builder and query carry the
     ///   predicates.
-    /// - intension: one pass over the node readings.
+    /// - intension: one pass over the node readings past the mark.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`crate::InScope::binders_at`].
     /// - witness: `tests::scopes::the_binders_in_scope_are_kept_for_a_refused_declaration_831`
-    fn in_scope(&self) -> crate::InScope
+    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    fn in_scope(
+        &self,
+        resumed: Option<Resumed<'_>>,
+    ) -> crate::InScope
     {
+        let from = resumed.map_or(0, |resumed| resumed.nodes);
         let read = self
             .readings
+            .get(from ..)
+            .unwrap_or_default()
             .iter()
             .enumerate()
-            .filter_map(|(position, reading)| match reading.frame() {
+            .filter_map(|(offset, reading)| match reading.frame() {
                 Frame::Inner(frame) => self
                     .tree
-                    .node(NodeIndex::from(position))
+                    .node(NodeIndex::from(from.saturating_add(offset)))
                     .map(|node| (node.span(), frame)),
                 Frame::Outermost => None,
             })
             .collect();
-        self.scope.in_scope(read)
+        match resumed {
+            Some(resumed) => self.scope.in_scope_after(&resumed.finished.in_scope, read),
+            None => self.scope.in_scope(read),
+        }
+    }
+
+    /// Where a lowering continued from this one, a closure's suspended
+    /// lowering that finished alone as `finished`, onto `origins` begins.
+    ///
+    /// # Specification
+    /// trivial.
+    fn resumed<'finished>(
+        &self,
+        finished: &'finished Finished,
+        origins: &OriginTable,
+    ) -> Resumed<'finished>
+    {
+        Resumed {
+            finished,
+            nodes: self.readings.len(),
+            values: origins.values().len(),
+            resolved: self.resolutions.len(),
+            declared: self.collected.declared_uses.len(),
+        }
     }
 }
 
