@@ -1,0 +1,52 @@
+// A functor over a theory's models (#1226): a parameter written `(S :
+// Model(T))` takes the signature the theory `T` derives, its sorts abstract
+// in the body and its operations values at the types the theory states, and
+// an application matches its argument against that signature by name, so a
+// module ascribed the record signature the theory presents is an argument
+// as a model is. After Kaposi and Xie (_Second-Order Generalised Algebraic
+// Theories: Signatures and First-Order Semantics_, FSCD 2024,
+// doi:10.4230/LIPIcs.FSCD.2024.10), under which a module signature is a
+// theory and a parameterised module the static half of a functor.
+
+/// A magma: a carrier and a binary operation on it.
+@[ checks ]
+theory Mag {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> M;
+}
+
+/// The integers under multiplication, a model of the magma.
+module Times : Model(Mag) {
+  type M = Integer;
+
+  def mul(a : Integer, b : Integer) -> -F Integer { become a * b }
+}
+
+/// Squaring in any magma: an element multiplied by itself.
+module Squaring(S : Model(Mag)) {
+  def square(x : S.M) -> -F S.M { become S.mul(x, x) }
+}
+
+/// Squaring the integers under multiplication.
+module TimesSquared = Squaring(Times) ;
+
+/// Three squared.
+@[ runs("9") ]
+def nine : () => Integer ;
+def nine = thunk { become TimesSquared.square(3) } ;
+
+/// The integers under addition, ascribed the record signature the magma
+/// presents rather than its model signature.
+module Plus : #{ type M, mul : (x : M, y : M) => M } {
+  type M = Integer;
+
+  def mul(a : Integer, b : Integer) -> -F Integer { become a + b }
+}
+
+/// Doubling, as squaring the integers under addition.
+module PlusSquared = Squaring(Plus) ;
+
+/// Three doubled.
+@[ runs("6") ]
+def six : () => Integer ;
+def six = thunk { become PlusSquared.square(3) } ;

@@ -342,6 +342,7 @@ pub use self::functor::FunctorIndex;
 pub use self::functor::Instance;
 pub use self::functor::InstanceIndex;
 pub use self::functor::Matched;
+pub use self::functor::ParameterComponent;
 pub use self::functor::ParameterForm;
 pub use self::functor::Stratum;
 use self::functor::WrittenParameter;
@@ -5371,10 +5372,22 @@ impl<'source> Collector<'_, 'source>
             if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
                 return refused(misplaced_in(FormName::MODULE, cursor.here()));
             }
-            let components = match self.signature(&mut cursor) {
-                Ok(components) => components,
-                Err(refusal) => return refused(refusal),
-            };
+            let (components, model) =
+                if let Maybe::Present(_) = cursor.at(TileName::TYPE_IDENTIFIER) {
+                    match self.model_signature(&mut cursor, form) {
+                        Ok((components, derived, used)) => {
+                            self.collected.declared_uses.push(used);
+                            (components, Maybe::Present(derived))
+                        },
+                        Err(refusal) => return refused(refusal),
+                    }
+                }
+                else {
+                    match self.signature(&mut cursor) {
+                        Ok(components) => (components, Maybe::Absent(derived::Absent::Written)),
+                        Err(refusal) => return refused(refusal),
+                    }
+                };
             if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
                 return refused(misplaced_in(FormName::MODULE, cursor.here()));
             }
@@ -5382,6 +5395,7 @@ impl<'source> Collector<'_, 'source>
                 name: self.name_of(parameter_named),
                 named: parameter_named,
                 components,
+                model,
             })
         }
         else {

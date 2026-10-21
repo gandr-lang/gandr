@@ -440,7 +440,8 @@ pub enum AscriptionForm
     /// A type component whose kind is a family's or an operator's, `type T :
     /// (a : A) => U` or `type T : A -> U`, where its meaning would be an
     /// abstract family: under an opaque ascription, or in a functor's
-    /// parameter.
+    /// parameter, whether written or derived from an indexed sort of a
+    /// `Model(S)` parameter's theory.
     Kinded,
     /// A type component binding parameters, `type T(a : A) …`, before a kind
     /// or in a functor's parameter.
