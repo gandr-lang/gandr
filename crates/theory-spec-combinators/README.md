@@ -19,7 +19,7 @@ The bounded checks a specification clause makes of state its function has accumu
 
 **Why.** An enforcing build evaluates every `#[spec]` clause on every call, so a clause that walks state accumulated across calls turns a linear run quadratic. The workspace requires a specification check to cost no more than the function it checks. The combinators let a clause speak about accumulated state while reading only what changed since a point it captured, and quenchant's `spec_clause_traversal` lint stops following a clause's calls at a function whose `# Clause cost` section states its bound.
 
-**How.** A clause captures a `Mark` before the function runs and hands it, with the state, to a combinator after. The combinators read lengths, a suffix, a last element or two neighbours, never the whole of what was accumulated. A claim about the whole state is checked once where the state is built; a claim linear in accumulated state is not a combinator and carries a reasoned `#[expect(spec_clause_traversal, ...)]` at its own site. The decisions and their reversal are in [`src/lib.rs`](src/lib.rs).
+**How.** A clause captures a `Mark` before the function runs and hands it, with the state, to a combinator after. The combinators read lengths, a suffix, a last element or two neighbours, never the whole of what was accumulated. A claim about the whole state is checked once where the state is built; a claim linear in accumulated state is not a combinator and carries a reasoned `#[expect(spec_clause_traversal, ...)]` at its own site. The bound and the mark are stated in [`src/lib.rs`](src/lib.rs).
 
 ## Provided features
 
