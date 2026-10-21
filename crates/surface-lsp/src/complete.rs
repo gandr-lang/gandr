@@ -292,7 +292,8 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
 /// - panics: none.
 /// - intension: one relabeling and one molding of the form the word's start
 ///   ends, a walk of the binders in scope with one table lookup each, two
-///   binary searches of the names and one of the heads per declared name.
+///   binary searches of the names and at most two of the heads per declared
+///   name: the closure's part, then the document's own.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a value, a computation, a type, a pattern, an item and a

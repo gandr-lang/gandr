@@ -273,6 +273,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
+use alloc::sync::Weak;
 use core::fmt;
 use core::num::NonZeroUsize;
 use core::sync::atomic::AtomicUsize;
@@ -2738,9 +2739,10 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// The type table of `revision`, the text `unit` lays out with the
     /// document's own text from `base` on, parsed as
     /// [`parse_held_unit`](Self::parse_held_unit) parses it, `read` handed its
-    /// tree first: typed after the closure's judgement under the session's
-    /// root when the process holds the closure's lowering and the closure
-    /// lowers to its end, else typed whole.
+    /// tree first, beside the key of the closure's lowering when the tree is
+    /// laid after the lowering the process holds: typed after the closure's
+    /// judgement under the session's root when the process holds the closure's
+    /// lowering and the closure lowers to its end, else typed whole.
     ///
     /// # Specification
     /// - requires: as [`judge_unit_reading`](Self::judge_unit_reading).
@@ -2768,7 +2770,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         read: Read,
     ) -> Option<TypeTable>
     where
-        Read: FnOnce(&SyntaxTree<'text>),
+        Read: FnOnce(&SyntaxTree<'text>, Option<ClosureKey>),
     {
         let (parsed, _census, closure) = parse_held_laid(
             &self.grammar,
@@ -2778,7 +2780,12 @@ impl<Store, Blocks> Session<Store, Blocks>
             self.threads,
         )
         .ok()?;
-        read(parsed.tree());
+        read(
+            parsed.tree(),
+            closure
+                .as_ref()
+                .map(|closure| ClosureKey(Arc::downgrade(closure))),
+        );
         match closure
             .as_deref()
             .and_then(|closure| closure.judged(self.root.corpus_root()))
@@ -3188,6 +3195,75 @@ impl ClosureSlot
     {
         Self(OnceLock::new())
     }
+}
+
+/// The name of a closure lowering the process holds.
+///
+/// A reader keeps what it makes of the closure's part of a tree under it, once
+/// for every revision laid after the same lowering.
+///
+/// Two keys are equal exactly when they name the one lowering: the process
+/// holds one lowering for each closure text, sources and grammar, so a key
+/// stands for that content while the lowering is held. A key does not keep the
+/// lowering alive, and no lowering made later is equal to it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+#[repr(transparent)]
+pub struct ClosureKey(Weak<Closure>);
+
+/// Whether anything still holds the lowering a [`ClosureKey`] names.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Holding
+{
+    /// The lowering is held, so a revision may yet be laid after it.
+    Held,
+    /// Nothing holds the lowering: no revision is laid after it again.
+    Dropped,
+}
+
+impl ClosureKey
+{
+    /// Whether anything still holds the lowering the key names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn holding(&self) -> Holding
+    {
+        if self.0.strong_count() > 0 {
+            Holding::Held
+        }
+        else {
+            Holding::Dropped
+        }
+    }
+}
+
+impl PartialEq for ClosureKey
+{
+    /// Whether both keys name the one lowering. A key keeps its lowering's
+    /// allocation, so no other lowering is made where it was.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        Weak::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for ClosureKey
+{
 }
 
 /// The closure `revision` is laid out after: its text before `base`, and

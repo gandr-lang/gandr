@@ -66,9 +66,11 @@ use std::time::Instant;
 use anodized::spec;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::Freshness;
+use gandr_surface_dispatcher::Laid;
 use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::forget;
 use gandr_surface_dispatcher::imports_named;
+use gandr_surface_dispatcher::laid;
 use gandr_surface_dispatcher::named_path;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Spelling;
@@ -98,6 +100,7 @@ use crate::hover::Hovering;
 use crate::hover::Style;
 use crate::hover::hover;
 use crate::hover::hovering;
+use crate::hover::hovering_laid;
 use crate::inline::ghost;
 use crate::markup::Markup;
 use crate::position::Position;
@@ -393,8 +396,8 @@ impl Document
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a reading, a printed tree or a hover table, once made, is of the
-///   text as it stands: every change to the text drops all three.
+/// - ensures: a reading, a printed tree, a lay-out or a hover table, once made,
+///   is of the text as it stands: every change to the text drops all four.
 /// - panics: none.
 /// - executable: none — the text and what is read off it are private and change
 ///   only together, so the structure states the invariant and no call boundary
@@ -418,6 +421,10 @@ struct HeldText
     /// The type table of `text`, made by the first request that reads it after
     /// the text changed.
     hovering: OnceCell<Hovering>,
+    /// The import closure the latest recheck of `text` laid it out in, or why
+    /// it was judged alone; none until a recheck since the text or its
+    /// closure last changed.
+    laid: Option<Maybe<Laid, laid::Absent>>,
 }
 
 impl HeldText
@@ -433,6 +440,7 @@ impl HeldText
             reading: OnceCell::new(),
             tree: OnceCell::new(),
             hovering: OnceCell::new(),
+            laid: None,
         }
     }
 
@@ -458,6 +466,7 @@ impl HeldText
         self.reading = OnceCell::new();
         self.tree = OnceCell::new();
         self.hovering = OnceCell::new();
+        self.laid = None;
     }
 
     /// Apply `change` to the text held, as [`apply`] does, drop what was read
@@ -474,6 +483,7 @@ impl HeldText
         self.reading = OnceCell::new();
         self.tree = OnceCell::new();
         self.hovering = OnceCell::new();
+        self.laid = None;
         caret
     }
 
@@ -500,8 +510,9 @@ impl HeldText
     }
 
     /// What the hovers of the text held, the document at `path` that `session`
-    /// judges, read, each import of its closure read as `shadows` holds it,
-    /// made now when no hover has asked since it or its closure last changed.
+    /// judges, read, made now when no hover has asked since it or its closure
+    /// last changed: over the lay-out the text's latest recheck made, else laid
+    /// out now, each import of its closure read as `shadows` holds it.
     ///
     /// # Specification
     /// trivial.
@@ -512,8 +523,25 @@ impl HeldText
         shadows: &dyn Shadows,
     ) -> &Hovering
     {
-        self.hovering
-            .get_or_init(|| hovering(self.source(), path, session, shadows))
+        self.hovering.get_or_init(|| {
+            self.laid.as_ref().map_or_else(
+                || hovering(self.source(), path, session, shadows),
+                |laid| hovering_laid(self.source(), path, session, laid),
+            )
+        })
+    }
+
+    /// Hold `laid`, the lay-out a recheck of the text held judged, for the
+    /// hovers to read.
+    ///
+    /// # Specification
+    /// trivial.
+    fn judged_over(
+        &mut self,
+        laid: Maybe<Laid, laid::Absent>,
+    )
+    {
+        self.laid = Some(laid);
     }
 
     /// Drop what the hovers read off the text's closure, whose imports
@@ -524,6 +552,7 @@ impl HeldText
     fn reclose(&mut self)
     {
         self.hovering = OnceCell::new();
+        self.laid = None;
     }
 }
 
@@ -6248,6 +6277,7 @@ fn synchronised(
     let (published, holding) = publishable(&rechecked.diagnostics, &form);
     document.checked = rechecked.diagnostics;
     document.named = rechecked.named;
+    document.text.judged_over(rechecked.laid);
     Outcome {
         messages: vec![publish(PublishParams {
             uri: uri.clone(),
@@ -8585,6 +8615,67 @@ mod tests
             changed(&mut server, "elsewhere.gandr", 1),
             [],
             "a file no closure names rechecks nothing"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    /// #1403: a hover reads the lay-out its document's latest recheck judged,
+    /// so it answers over the closure the published diagnostics were judged
+    /// over: a sibling rewritten on disk since, unreported, is read by the
+    /// next recheck, not by the hover.
+    #[test]
+    fn a_hover_reads_the_lay_out_its_recheck_made_1403()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-hover-laid-1403-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        let sibling = directory.join("base.gandr");
+        std::fs::write(&sibling, "def one : Integer ;\ndef one = 1 ;\n")
+            .expect("the sibling is written");
+        let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
+        let uri = format!("file://{}", directory.join("importer.gandr").display());
+        let mut server = initialized();
+        let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen",
+            "params": {"textDocument": {"uri": uri, "languageId": "gandr", "version": 1_i32,
+                "text": importer}}});
+        let _published = send(&mut server, Json(&open.to_string()));
+        // The type a hover over `one`, in `two`'s definition, answers.
+        let hovered = |server: &mut Connected, id: i32| {
+            let hover = serde_json::json!({"jsonrpc": "2.0", "id": id, "method": "textDocument/hover",
+                "params": {"textDocument": {"uri": uri}, "position": {"line": 2_i32, "character": 11_i32}}});
+            send(server, Json(&hover.to_string()))
+                .as_array()
+                .and_then(|messages| messages.iter().find(|message| message["id"] == id))
+                .and_then(|message| message.pointer("/result/contents/value"))
+                .and_then(Value::as_str)
+                .map(String::from)
+        };
+        std::fs::write(&sibling, "def uno : Integer ;\ndef uno = 1 ;\n")
+            .expect("the sibling is rewritten without `one`");
+        assert!(
+            hovered(&mut server, 2_i32).is_some_and(|shown| shown.contains("Integer")),
+            "the hover answers over the closure the recheck judged, which declares `one`"
+        );
+        let change = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange",
+            "params": {"textDocument": {"uri": uri, "version": 2_i32},
+                "contentChanges": [{"text": importer}]}});
+        let published = send(&mut server, Json(&change.to_string()));
+        assert!(
+            published
+                .as_array()
+                .is_some_and(|messages| messages.iter().any(|message| {
+                    message["params"]["diagnostics"]
+                        .as_array()
+                        .is_some_and(|diagnostics| !diagnostics.is_empty())
+                })),
+            "the next keystroke's recheck reads the rewrite: `one` is gone"
+        );
+        assert!(
+            !hovered(&mut server, 3_i32).is_some_and(|shown| shown.contains("Integer")),
+            "and the hover then answers over that recheck's closure"
         );
         let _removed = std::fs::remove_dir_all(&directory);
     }
