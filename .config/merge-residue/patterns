@@ -1,0 +1,4 @@
+^(<<<<<<<|=======|>>>>>>>|\|\|\|\|\|\|\|)([[:space:]]|$)
+weave[:] run
+weave[ ]check
+^[[:space:]]*// refused_by:

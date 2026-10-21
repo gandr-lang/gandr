@@ -516,24 +516,48 @@ run = [
   ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check --form=sugared crates/surface-corpus",
 ]
 
-# Merge residue never lands: a conflict marker, or the resolution trailer a
-# merge driver appends as a comment. Git writes conflict markers as EXACTLY
-# seven marker characters followed by end-of-line or whitespace plus a label
+# Merge residue never lands: a conflict marker, or what a merge driver writes
+# as a comment, its resolution trailer or the `// refused_by:` line it puts
+# atop each side of a block it could not resolve (#1560). The patterns live in
+# `.config/merge-residue/patterns`, one extended regular expression per line,
+# and each case in `cases.json` beside it holds a line and whether the
+# patterns read it as residue; the scan skips that file, whose cases are
+# residue by design. Git writes conflict markers as EXACTLY seven marker
+# characters followed by end-of-line or whitespace plus a label
 # (`<<<<<<< HEAD`, bare `=======`). Anchoring on `([[:space:]]|$)` keeps real
 # markers matched while rejecting longer decorative runs -- setext underlines
 # and `====` delimiter rules are not conflicts. The trailer patterns bracket a
-# character so this file does not match itself. The `:/` pathspec scopes the
-# scan to tracked files under the repository root whatever directory the hook
-# runs from.
+# character so the patterns file does not match itself. The `:/` pathspec
+# scopes the scan to tracked files under the repository root whatever
+# directory the hook runs from.
 ["check:merge-residue"]
-description = "Detect conflict markers and merge-driver trailers in tracked files"
-run = """
-if git grep -nIE -e '^(<<<<<<<|=======|>>>>>>>|\\|\\|\\|\\|\\|\\|\\|)([[:space:]]|$)' -e 'weave[:] run' -e 'weave[ ]check' -- ':/'; then
-  echo 'merge residue check FAILED: conflict markers or merge-driver trailers found' >&2
+description = "Detect conflict markers and merge-driver residue in tracked files"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+patterns="$root/.config/merge-residue/patterns"
+cases="$root/.config/merge-residue/cases.json"
+failed=0
+while IFS= read -r case; do
+  name=$(jq -r .name <<< "$case")
+  line=$(jq -r .line <<< "$case")
+  want=$(jq -r .residue <<< "$case")
+  got=false
+  if grep -qE -f "$patterns" <<< "$line"; then got=true; fi
+  if [[ "$got" != "$want" ]]; then
+    printf 'merge residue case FAILED: %s\n  line: %s\n  read as residue: %s, recorded: %s\n' "$name" "$line" "$got" "$want" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' "$cases")
+(( failed == 0 )) || exit 1
+if git grep -nIE -f "$patterns" -- ':/' ':(top,exclude).config/merge-residue/cases.json'; then
+  echo 'merge residue check FAILED: conflict markers or merge-driver residue found' >&2
   exit 1
 fi
-echo 'merge residue check OK: no conflict markers or merge-driver trailers in tracked files'
-"""
+echo "merge residue check OK: $(jq length "$cases") cases read as recorded; no conflict markers or merge-driver residue in tracked files"
+'''
 
 # A workflow never hashes a tarball through `hashFiles`: the expression
 # engine reads the whole archive within a 120 s budget, and a build state

@@ -96,7 +96,6 @@ use crate::description::written::WrittenOperation;
 use crate::description::written::WrittenPort;
 use crate::description::written::WrittenSort;
 use crate::description::written::WrittenTerm;
-// refused_by: fail_closed · collision: none (both sides edited, nowhere the same lines)
 use crate::lower::atom_type;
 use crate::model::Binder;
 use crate::model::Dependent;
