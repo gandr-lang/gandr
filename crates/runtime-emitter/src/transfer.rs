@@ -142,12 +142,33 @@ pub struct Sites<'lowered>
     by_code: BTreeMap<Word, &'lowered Site>,
     /// What each literal frame resumes as, by its code word.
     frames: BTreeMap<Word, Resumed<'lowered>>,
+    /// What each frame of a counted function owns, by its code word.
+    owners: BTreeMap<Word, Owners<'lowered>>,
+}
+
+/// What a frame of a counted run's stack owns, by its code word: what a
+/// replay copies out with an owner of its own and the stack's release drops.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+pub enum Owners<'lowered>
+{
+    /// A window frame: the values in these slots of its window, one owner
+    /// per entry.
+    Window(&'lowered [Slot]),
+    /// A stub frame whose word is a value it owns: an application's
+    /// argument, a fold cell's closure.
+    Word,
+    /// A frame that resumes a block midway, whose owners no node names.
+    Unplaced,
 }
 
 impl<'lowered> Sites<'lowered>
 {
     /// Index `lowered`'s closure sites and reified bind frames, and the
-    /// application and projection stubs, by their code words in `codes`.
+    /// application and projection stubs, by their code words in `codes`;
+    /// for a counted function, what each of its frames owns too.
     ///
     /// # Specification
     /// trivial.
@@ -164,6 +185,19 @@ impl<'lowered> Sites<'lowered>
             .collect();
         frames.insert(codes.stub(Stub::Apply), Resumed::Apply);
         frames.insert(codes.stub(Stub::Project), Resumed::Project);
+        let mut owners = BTreeMap::new();
+        if lowered.uncounted.is_none() {
+            for window in &lowered.windows {
+                let owned = window
+                    .owners
+                    .as_ref()
+                    .and_then(|run| lowered.owners.get(run.0.clone()))
+                    .map_or(Owners::Unplaced, Owners::Window);
+                owners.insert(codes.label(window.label), owned);
+            }
+            owners.insert(codes.stub(Stub::Apply), Owners::Word);
+            owners.insert(codes.stub(Stub::Argument), Owners::Word);
+        }
         Self {
             by_code: lowered
                 .sites
@@ -171,7 +205,24 @@ impl<'lowered> Sites<'lowered>
                 .map(|site| (codes.label(site.label), site))
                 .collect(),
             frames,
+            owners,
         }
+    }
+
+    /// What the frame resuming at `code` owns, for a counted function's
+    /// frame; none for a frame that owns nothing or a function that counts
+    /// nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn owners(
+        &self,
+        code: Word,
+    ) -> Option<Owners<'lowered>>
+    {
+        self.owners.get(&code).copied()
     }
 }
 
@@ -348,9 +399,12 @@ fn children(
 /// The values `object` owns, which its release drops.
 ///
 /// A constructor owns its fields and a closure its producer captures, as
-/// [`children`] reads them. A cell, a stack and a closure no site records
-/// own none here: what their words own is the insertion's to state, and
-/// until it does their release frees the block alone.
+/// [`children`] reads them. A stack owns what each of its frames owns, as its
+/// sites' owner table reads them: the values in a window frame's owned slots
+/// of its window copy, one per entry, and the word of an application's or a
+/// fold cell's frame. A cell and a closure no site records own none here:
+/// what their words own is the insertion's to state, and until it does their
+/// release frees the block alone.
 ///
 /// # Specification
 /// trivial.
@@ -359,8 +413,24 @@ pub fn owned(
     sites: &Sites<'_>,
 ) -> Vec<Word>
 {
-    match Header::from_word(field(object, Field(0))).kind() {
-        Ok(Kind::Cell | Kind::Stack) | Err(_) => Vec::new(),
+    let header = Header::from_word(field(object, Field(0)));
+    match header.kind() {
+        Ok(Kind::Cell) | Err(_) => Vec::new(),
+        Ok(Kind::Stack) => {
+            let mut held = Vec::new();
+            for (code, word) in stack_frames(object, Field(usize::from(header.arity()))) {
+                match sites.owners(code) {
+                    Some(Owners::Window(slots)) => held.extend(
+                        slots
+                            .iter()
+                            .map(|&slot| field(word, slot_field(slot, Field(0)))),
+                    ),
+                    Some(Owners::Word) => held.push(word),
+                    Some(Owners::Unplaced) | None => {},
+                }
+            }
+            held
+        },
         Ok(
             Kind::Integer
             | Kind::Tuple

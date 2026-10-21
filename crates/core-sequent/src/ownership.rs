@@ -27,8 +27,11 @@
 //!   object cut straight against a frame run once and hand their captures to
 //!   their bodies; any other may run its body more than once, so the suspension
 //!   keeps one reference to each capture and the body duplicates each capture
-//!   it names on entry. A fold's cell branch, a handler's clauses and a stack's
-//!   bind frames are kept the same way by the node that holds them.
+//!   it names on entry. A fold's cell branch and a handler's clauses are kept
+//!   the same way by the node that holds them. A stack's bind frame owns its
+//!   captures as any child does, one reference each: the stack that holds the
+//!   frame is the keeper, and every resumption copies the frame's window out of
+//!   it with a reference of its own.
 //! - [`Reuse`] pairs a match whose scrutinee dies in a branch with a
 //!   constructor of the scrutinee's size that the branch builds, reached
 //!   without crossing a body that may run more than once or a choice between
@@ -286,7 +289,7 @@ impl Ownership
     /// - witness: `ownership::tests::an_ignored_binder_is_dropped_on_entry`
     /// - witness: `ownership::tests::an_arm_drops_what_its_sibling_uses`
     /// - witness: `ownership::tests::a_kept_body_duplicates_its_captures_on_entry`
-    /// - witness: `ownership::tests::a_reified_bind_body_is_kept`
+    /// - witness: `ownership::tests::a_reified_bind_body_owns_its_captures`
     /// - witness: `ownership::tests::a_linear_name_is_never_counted`
     /// - witness: `ownership::tests::a_nullary_match_reuses_nothing`
     /// - witness: `ownership::tests::a_branch_rebuilding_its_scrutinee_reuses_the_cell`
@@ -444,27 +447,13 @@ impl Ownership
                     mark(0, usize::MAX, share);
                 },
                 ProducerNode::Fixpoint { .. } => mark(0, usize::MAX, Share::Kept),
-                ProducerNode::Reify(ref frames) => {
-                    let mut at = 0_usize;
-                    for frame in frames.iter() {
-                        match *frame {
-                            gandr_core_term::control::StackFrame::Apply(_) => {
-                                at = at.saturating_add(1);
-                            },
-                            gandr_core_term::control::StackFrame::Bind(_) => {
-                                mark(at, at.saturating_add(1), Share::Kept);
-                                at = at.saturating_add(1);
-                            },
-                            gandr_core_term::control::StackFrame::Project(_) => {},
-                        }
-                    }
-                },
                 ProducerNode::Primitive { .. }
                 | ProducerNode::Variable { .. }
                 | ProducerNode::Constant(_)
                 | ProducerNode::Literal(_)
                 | ProducerNode::Code(_)
                 | ProducerNode::Constructor { .. }
+                | ProducerNode::Reify(_)
                 | ProducerNode::Mu { .. } => {},
             },
             NodeAddress::Consumer(id) => match *arena.consumer(id).ok_or(dangling)? {

@@ -261,11 +261,12 @@ fn a_kept_body_duplicates_its_captures_on_entry()
     }
 }
 
-/// A reified stack's bind frame is resumed once per resumption of the stack:
-/// its body is kept, and duplicates on entry the capture it names, while an
-/// applied argument and a projection mark nothing.
+/// A reified stack's bind frame owns its capture as any child does: the stack
+/// is the keeper, and each resumption copies the frame's window out of it
+/// with a reference of its own, so the body duplicates nothing on entry. An
+/// applied argument and a projection mark nothing either.
 #[test]
-fn a_reified_bind_body_is_kept()
+fn a_reified_bind_body_owns_its_captures()
 {
     let mut arena = CommandArena::new();
     let argument = tuple(&mut arena, &[]);
@@ -286,7 +287,8 @@ fn a_reified_bind_body_is_kept()
 
     assert_eq!(
         entry(&ownership, NodeAddress::Command(body)).entered,
-        [x1()].as_slice()
+        [].as_slice(),
+        "the resumption's copy holds the reference the body consumes"
     );
 }
 

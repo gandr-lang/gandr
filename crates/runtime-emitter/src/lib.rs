@@ -166,7 +166,9 @@ pub use crate::fuse::replay;
 pub use crate::host::release;
 pub use crate::lower::Form;
 pub use crate::lower::Lowered;
+pub use crate::lower::OwnerRun;
 pub use crate::lower::Uncounted;
+pub use crate::lower::Window;
 pub use crate::lower::lower;
 pub use crate::lower::lower_unfused;
 #[cfg(gandr_patcher)]
