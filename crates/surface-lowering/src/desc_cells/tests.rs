@@ -17,6 +17,7 @@ use crate::description::elaborate_descriptions;
 use crate::fixture::grammar;
 use crate::lower_module;
 use crate::namespace::Recognition;
+use crate::unit::Unit;
 
 /// Two frame-defining constructors and two operation laws.
 const NAT_ADD: &str = r#"data NatAdd : Type {
@@ -35,7 +36,7 @@ fn descriptions<'source>(source: impl Into<SourceText<'source>>) -> DescriptionR
 {
     let grammar = grammar();
     let tree = parse(&grammar, source.into()).unwrap().into_tree();
-    elaborate_descriptions(&grammar, &tree).unwrap()
+    elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap()
 }
 
 /// Read a fixture cell by its insertion identity.

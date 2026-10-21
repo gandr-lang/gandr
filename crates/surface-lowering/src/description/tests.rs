@@ -17,7 +17,7 @@ fn data_lowering_preserves_constructor_fields()
         Cons : (head : a, tail : List(a)) --> List(a);
     }"#;
     let tree = parsed(&grammar, source.into());
-    let report = elaborate_descriptions(&grammar, &tree).unwrap();
+    let report = elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap();
     assert_eq!(report.diagnostics, Vec::new());
     let [ref entry] = *report.declarations.as_slice()
     else {
@@ -54,7 +54,7 @@ fn codata_observations_preserve_their_codes()
     }"#
         .into(),
     );
-    let report = elaborate_descriptions(&grammar, &tree).unwrap();
+    let report = elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap();
     assert_eq!(report.diagnostics, Vec::new());
     let [ref entry] = *report.declarations.as_slice()
     else {
@@ -89,7 +89,7 @@ fn operations_and_rules_preserve_their_boundaries()
     }"#
         .into(),
     );
-    let report = elaborate_descriptions(&grammar, &tree).unwrap();
+    let report = elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap();
     assert_eq!(report.diagnostics, Vec::new());
     let [ref entry] = *report.declarations.as_slice()
     else {
@@ -267,7 +267,7 @@ fn elaborated(source: SourceText<'_>) -> DescriptionReport
     let tree = gandr_surface_parser::parse(&grammar, source)
         .unwrap()
         .into_tree();
-    elaborate_descriptions(&grammar, &tree).unwrap()
+    elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap()
 }
 
 #[test]

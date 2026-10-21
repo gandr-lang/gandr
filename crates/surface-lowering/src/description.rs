@@ -84,6 +84,8 @@
 //! route describe the family and lifts the rule-carrying case with it
 //! (`description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`).
 
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -114,6 +116,8 @@ use crate::form::Placed;
 use crate::form::Shape;
 use crate::form::read_pieces;
 use crate::form::shape_of;
+use crate::unit::SourceIndex;
+use crate::unit::Unit;
 
 /// A finite multiplicity decorating a field.
 #[repr(transparent)]
@@ -525,16 +529,18 @@ impl<'pieces> Run<'pieces>
     }
 }
 
-/// Read data and codata declarations, retaining every readable sibling.
+/// Read data and codata declarations, retaining every readable sibling, over
+/// `tree` laid out as `unit`.
 ///
 /// # Specification
-/// - requires: `grammar` interprets `tree`.
+/// - requires: `grammar` interprets `tree`, and `unit` lays out its text.
 /// - ensures: declarations and diagnostics follow source order; unreadable
 ///   members never disappear without a located refusal; descriptions run
 ///   through `check_desc`. A declaration whose own form the parser repaired
 ///   carries exactly one diagnostic, [`DescriptionFault::Repaired`] at the
 ///   repair: a parse error is reported alone, never beside the refusals its
-///   repaired reading would raise.
+///   repaired reading would raise. An `include` reads the blocks its source
+///   sees ([`Sight`]).
 /// - fails: grammar lookup failures return the existing lowering refusal.
 /// - panics: none.
 ///
@@ -553,6 +559,7 @@ impl<'pieces> Run<'pieces>
 pub fn elaborate_descriptions<'source>(
     grammar: &Pbg,
     tree: &SyntaxTree<'source>,
+    unit: &Unit,
 ) -> Result<DescriptionReport, LoweringRefusal<'source>>
 {
     if tree.grammar() != grammar.fingerprint() {
@@ -568,19 +575,95 @@ pub fn elaborate_descriptions<'source>(
         tree.roots(),
         NominalSerial::from(0_u64),
         &mut report,
+        Sight {
+            unit,
+            prior: &BTreeMap::new(),
+        },
     )?;
 
     Ok(report)
+}
+
+/// What a reading's `include`s may name besides its own declarations: the
+/// unit its sources stand in, and the declarations read before it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Sight<'held>
+{
+    /// The unit the sources stand in.
+    pub unit: &'held Unit,
+    /// The declarations read before the roots this reading reads, by their
+    /// nodes: a resumed document's closure's.
+    pub prior: &'held BTreeMap<NodeIndex, DescribedDeclaration>,
+}
+
+/// The declarations an `include` written in one source may name.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+pub(crate) struct Visible<'held>
+{
+    /// Those of the including source read before it, in reading order.
+    own: Vec<&'held DescribedDeclaration>,
+    /// Those of the sources it imports unqualified, in reading order, each
+    /// with its source.
+    imported: Vec<(SourceIndex, &'held DescribedDeclaration)>,
+}
+
+impl<'held> Visible<'held>
+{
+    /// The declarations of `read` a declaration of `source` sees, `source`
+    /// importing `imports` unqualified.
+    ///
+    /// # Specification
+    /// - requires: `read` is in reading order.
+    /// - ensures: `own` holds the declarations of `read` in `source`, and
+    ///   `imported` those in a source of `imports`, both in the order of
+    ///   `read`; every other declaration is passed over.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration of a source not imported is not seen.
+    /// - witness: `tests::namespace::an_include_reads_the_theories_its_source_imports_1224`
+    #[spec(ensures: |ret| ret.own.iter().all(|declaration| unit.source_at(declaration.at.span.start()) == source)
+        && ret.imported.iter().all(|&(from, declaration)| from != source && imports.contains(&from)
+            && unit.source_at(declaration.at.span.start()) == from))]
+    fn of(
+        unit: &Unit,
+        source: SourceIndex,
+        imports: &BTreeSet<SourceIndex>,
+        read: impl Iterator<Item = &'held DescribedDeclaration>,
+    ) -> Self
+    {
+        let mut visible = Self::default();
+        for declaration in read {
+            let from = unit.source_at(declaration.at.span.start());
+            if from == source {
+                visible.own.push(declaration);
+            }
+            else if imports.contains(&from) {
+                visible.imported.push((from, declaration));
+            }
+        }
+        visible
+    }
 }
 
 /// Read the data and codata declarations under `roots` into `report`, the
 /// first of them numbered `first`, retaining every readable sibling.
 ///
 /// # Specification
-/// - requires: `grammar` interprets `tree`, and `roots` are roots of `tree`.
+/// - requires: `grammar` interprets `tree`, `roots` are roots of `tree`, and
+///   `sight` lays them out after its prior declarations.
 /// - ensures: as [`elaborate_descriptions`], over the declarations under
 ///   `roots` in their order, each appended to `report` after what it holds and
-///   numbered `first` and on in that order.
+///   numbered `first` and on in that order. An `include` names a `theory` block
+///   of its own source read before it, or else of one source it imports
+///   unqualified, among `sight`'s prior declarations and those read here.
 /// - provides: the description reading of a document laid after a closure whose
 ///   declarations were read before.
 /// - fails: as [`elaborate_descriptions`].
@@ -604,12 +687,12 @@ pub(crate) fn elaborate_roots<'source>(
     roots: &[NodeIndex],
     first: NominalSerial,
     report: &mut DescriptionReport,
+    sight: Sight<'_>,
 ) -> Result<(), LoweringRefusal<'source>>
 {
     let reader = Reader { grammar, tree };
-    // The declarations this document reads start here: an `include` names a
-    // block of the same document.
-    let read_before = report.declarations.len();
+    let imports = crate::module::unqualified_imports(grammar, tree, roots, sight.unit);
+    let none = BTreeSet::new();
     // The declarations in source order: a mutual block's members are read in
     // its place, as declarations of their own.
     let mut pending: Vec<_> = roots.iter().flat_map(|&root| tree.children(root)).collect();
@@ -655,14 +738,15 @@ pub(crate) fn elaborate_roots<'source>(
             )
         }
         else if run.eat(Spelling("theory")).0 {
+            let source = sight.unit.source_at(at.span.start());
+            let visible = Visible::of(
+                sight.unit,
+                source,
+                imports.get(&source).unwrap_or(&none),
+                sight.prior.values().chain(&report.declarations),
+            );
             reader
-                .signature(
-                    at,
-                    &mut run,
-                    serial,
-                    report.declarations.get(read_before ..).unwrap_or_default(),
-                    &mut report.diagnostics,
-                )
+                .signature(at, &mut run, serial, &visible, &mut report.diagnostics)
                 .map(|declaration| Read::Described(alloc::boxed::Box::new(declaration)))
         }
         else if run.eat(Spelling("oper")).0 {

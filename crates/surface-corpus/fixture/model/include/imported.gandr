@@ -1,0 +1,87 @@
+// Including an imported theory (#1224): a theory is a named presentation a
+// client imports, so `include` names a block of a source its source imports
+// unqualified as it names one of its own. The imported monoid is extended by
+// a chosen element; a model of the extension gives the monoid's members and
+// the element, and runs.
+
+// The semigroup and the monoid.
+import "./monoid.gandr" ;
+
+/// A monoid with a chosen element.
+@[ checks ]
+theory PointedMonoid {
+  include Monoid;
+  oper point : () --> M;
+}
+
+/// The functions on the integers under composition, pointed at the
+/// successor.
+module Successor : Model(PointedMonoid) {
+  type M = +U[ω] (Integer -> -F Integer);
+
+  /// `f` then `g`, applied.
+  def andThen(
+    f : +U[ω] (Integer -> -F Integer),
+    g : +U[ω] (Integer -> -F Integer),
+    x : Integer
+  ) -> -F Integer {
+    run y <- f(x);
+    become g(y)
+  }
+
+  /// The identity function.
+  def ident(x : Integer) -> -F Integer { return x }
+
+  /// The successor.
+  def succ(x : Integer) -> -F Integer { return x + 1 }
+
+  def mul(
+    f : +U[ω] (Integer -> -F Integer),
+    g : +U[ω] (Integer -> -F Integer)
+  ) -> -F (+U[ω] (Integer -> -F Integer)) {
+    return thunk { become andThen(f, g) }
+  }
+
+  def one() -> -F (+U[ω] (Integer -> -F Integer)) { return ident }
+
+  def point() -> -F (+U[ω] (Integer -> -F Integer)) { return succ }
+
+  /// Associativity, included through the monoid.
+  @[ checks ]
+  def assoc(
+    f : +U[ω] (Integer -> -F Integer),
+    g : +U[ω] (Integer -> -F Integer),
+    h : +U[ω] (Integer -> -F Integer)
+  ) -> -F Path(+U[ω] (Integer -> -F Integer), mul(mul(f, g), h), mul(f, mul(g, h))) {
+    return here(thunk { become andThen(f, thunk { become andThen(g, h) }) })
+  }
+
+  /// The left unit law, included.
+  @[ checks ]
+  def unitL(f : +U[ω] (Integer -> -F Integer)) -> -F Path(
+    +U[ω] (Integer -> -F Integer),
+    mul(one(), f),
+    f
+  ) {
+    return here(f)
+  }
+
+  /// The right unit law, included.
+  @[ checks ]
+  def unitR(f : +U[ω] (Integer -> -F Integer)) -> -F Path(
+    +U[ω] (Integer -> -F Integer),
+    mul(f, one()),
+    f
+  ) {
+    return here(f)
+  }
+}
+
+/// The chosen element, then doubling, at three.
+@[ runs("8") ]
+def pointed : () => Integer ;
+def pointed = thunk {
+  run p <- Successor.point() ;
+  run h <- Successor.mul(p, thunk { fn (n) { become n * 2 } }) ;
+  become h(3)
+} ;

@@ -2252,7 +2252,7 @@ pub fn begin_collection<'source>(
     unit: &Unit,
 ) -> Result<Collected<'source>, LoweringRefusal<'source>>
 {
-    let described = crate::description::elaborate_descriptions(pbg, tree)?;
+    let described = crate::description::elaborate_descriptions(pbg, tree, unit)?;
     let cells = crate::desc_cells::elaborate_desc_cells(&described.declarations);
     let mut owner = Vec::new();
     owner.resize(
@@ -2979,6 +2979,76 @@ pub fn written_imports<'source>(
     }
 
     Ok(found)
+}
+
+/// The sources each source under `roots` imports unqualified, as `unit` lays
+/// its path imports out.
+///
+/// # Specification
+/// - requires: `tree` was molded under `pbg`, and `unit` lays out its text.
+/// - ensures: for each source written under `roots`, the targets of its
+///   unaliased path imports that `unit` resolves to a source; an import that
+///   does not read, a scheme address and an unresolved path add nothing, the
+///   collection refusing or binding them as it does.
+/// - provides: the sources whose `theory` blocks an `include` may name.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source importing one sibling unqualified and another
+///   under an alias sees the first alone.
+/// - witness: `tests::namespace::an_include_reads_the_theories_its_source_imports_1224`
+#[spec(ensures: |ret| ret.values().all(|targets| !targets.is_empty()))]
+pub fn unqualified_imports(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    roots: &[NodeIndex],
+    unit: &Unit,
+) -> BTreeMap<SourceIndex, BTreeSet<SourceIndex>>
+{
+    let mut seen: BTreeMap<SourceIndex, BTreeSet<SourceIndex>> = BTreeMap::new();
+    let mut ordinals: BTreeMap<SourceIndex, PathImportOrdinal> = BTreeMap::new();
+    let mut root = Pieces::new();
+    let mut pieces = Pieces::new();
+    for &position in roots {
+        if read_pieces(pbg, tree, position, &mut root).is_err() {
+            continue;
+        }
+        for piece in &root.pieces {
+            let child = piece.placed();
+            let Some(node) = tree.node(child.node)
+            else {
+                continue;
+            };
+            let Ok(Shape::Form {
+                former: Former::Import,
+                name,
+                ..
+            }) = shape_of(pbg, node)
+            else {
+                continue;
+            };
+            if read_pieces(pbg, tree, child.node, &mut pieces).is_err() {
+                continue;
+            }
+            let Ok(written) = read_import(tree, child, name, &pieces)
+            else {
+                continue;
+            };
+            if written.address != Address::Path {
+                continue;
+            }
+            let source = unit.source_at(child.span.start());
+            let ordinal = ordinals.entry(source).or_default();
+            let target = unit.target(source, *ordinal);
+            *ordinal = ordinal.next();
+            if let (Maybe::Absent(_), ImportTarget::Source(target)) = (written.alias, target) {
+                let _fresh = seen.entry(source).or_default().insert(target);
+            }
+        }
+    }
+
+    seen
 }
 
 impl<'source> Collector<'_, 'source>

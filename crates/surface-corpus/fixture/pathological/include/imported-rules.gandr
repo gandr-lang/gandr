@@ -1,0 +1,23 @@
+// The obligation an imported `include` creates (#1224): the imported
+// monoid's rules join the including block's, and the union is completed as
+// one block, exactly as for a block of the same source.
+
+// The semigroup and the monoid.
+import "../../model/include/monoid.gandr" ;
+
+/// The unit against a pair, read as the pair swapped: with the imported
+/// left unit law, `mul(one(), pair(x, y))` reads `pair(x, y)` and
+/// `pair(y, x)`, which the path order orients neither way.
+@[ refuses("RulesUncompleted") ]
+theory Swapping {
+  include Monoid;
+  oper pair : (x : M, y : M) --> M;
+  rule swap : mul(one(), pair(x, y)) ==> pair(y, x);
+}
+
+/// An include of a theory neither this source nor its import presents.
+@[ refuses("MalformedForm") ]
+theory Orphan {
+  include Unwritten;
+  oper one : () --> M;
+}

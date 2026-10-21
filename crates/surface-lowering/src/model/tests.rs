@@ -25,6 +25,7 @@ use super::SortTerm;
 use super::derive;
 use crate::description::elaborate_descriptions;
 use crate::fixture::grammar;
+use crate::unit::Unit;
 
 /// The theory the flagship model signature is derived from.
 const CAT_SHAPE: &str = r"theory CatShape {
@@ -49,7 +50,7 @@ where
 {
     let grammar = grammar();
     let tree = parse(&grammar, source.into()).unwrap().into_tree();
-    let report = elaborate_descriptions(&grammar, &tree).unwrap();
+    let report = elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap();
     let [ref theory] = *report.declarations.as_slice()
     else {
         panic!("one theory declared");

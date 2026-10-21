@@ -11,6 +11,7 @@ use super::*;
 use crate::description::DescriptionReport;
 use crate::description::elaborate_descriptions;
 use crate::fixture::grammar;
+use crate::unit::Unit;
 
 /// Read repaired and complete trees through the same declaration route.
 ///
@@ -20,7 +21,7 @@ fn described<'source>(source: impl Into<SourceText<'source>>) -> DescriptionRepo
 {
     let grammar = grammar();
     let tree = parse(&grammar, source.into()).unwrap().into_tree();
-    elaborate_descriptions(&grammar, &tree).unwrap()
+    elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap()
 }
 
 #[test]

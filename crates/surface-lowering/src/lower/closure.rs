@@ -13,6 +13,7 @@
 //! judgement minted into, so the document's nodes follow the checker's.
 
 use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -39,6 +40,7 @@ use super::empty_module;
 use super::lower_unit;
 use super::rooted;
 use crate::description::DescriptionReport;
+use crate::description::Sight;
 use crate::description::elaborate_roots;
 use crate::error::LoweringRefusal;
 use crate::form::Piece;
@@ -604,16 +606,23 @@ impl ClosureLowering
             Prefix::Misshapen(_) | Prefix::Halted { .. } | Prefix::Suspended { .. } => Ok(()),
         };
         halted(Stage::Collection)?;
-        let first = match *prefix {
-            Prefix::Suspended { ref state, .. } => NominalSerial::from(
-                u64::try_from(state.lowerer.collected.descriptions.len()).unwrap_or(u64::MAX),
+        let (first, prior) = match *prefix {
+            Prefix::Suspended { ref state, .. } => (
+                NominalSerial::from(
+                    u64::try_from(state.lowerer.collected.descriptions.len()).unwrap_or(u64::MAX),
+                ),
+                Some(&state.lowerer.collected.descriptions),
             ),
             // A refused closure answers its refusal below, however the
-            // document's descriptions are numbered.
-            Prefix::Misshapen(_) | Prefix::Halted { .. } => NominalSerial::from(0_u64),
+            // document's descriptions are numbered and whatever it includes.
+            Prefix::Misshapen(_) | Prefix::Halted { .. } => (NominalSerial::from(0_u64), None),
         };
+        let none = BTreeMap::new();
         let mut described = DescriptionReport::default();
-        elaborate_roots(pbg, tree, added, first, &mut described)?;
+        elaborate_roots(pbg, tree, added, first, &mut described, Sight {
+            unit,
+            prior: prior.unwrap_or(&none),
+        })?;
         halted(Stage::Pieces)?;
         let pieces = pieces_under(pbg, tree, added)?;
         halted(Stage::Lowering)?;
