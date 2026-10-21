@@ -204,3 +204,42 @@ fn an_imported_endpoint_maps_every_stack_frame_move_and_clause()
         "the image reads as the same spelling written in the target"
     );
 }
+
+/// Every former the rewrite witnesses, read through a decode, imports into
+/// an arena whose families are all occupied as the same spelling written
+/// there: each child edge of every family is relocated to its image.
+#[test]
+fn every_former_imports_as_its_own_spelling()
+{
+    use gandr_kernel_term::ConstantIndex;
+
+    use crate::rewrite::tests::Witnessed;
+    use crate::rewrite::tests::formers;
+
+    for Witnessed { what, former } in formers() {
+        let mut source = CoreArena::new();
+        let child = source.value_constant(ConstantIndex::from(7_usize));
+        let code = former(&mut source, child);
+        let root = source.value_type_element(code, Level::zero());
+        let mut target = CoreArena::new();
+        let unit = target.value_type_unit();
+        // Every family is occupied, so no image shares its source's id.
+        for _ in 0_u8 .. 4 {
+            let quoted = target.value_quote(unit);
+            let returned = target.computation_return(quoted);
+            let _occupied = target.comp_type_returner(unit);
+            let _thunk = target.value_thunk(returned);
+        }
+        let copied = TypeImporter::new(&source, &mut target)
+            .value_type(root)
+            .unwrap_or_else(|ImportFault| panic!("{what}: the source graph resolves"));
+        let child = target.value_constant(ConstantIndex::from(7_usize));
+        let code = former(&mut target, child);
+        let twin = target.value_type_element(code, Level::zero());
+        assert_eq!(
+            crate::CertificateEquality::Equal,
+            crate::equal_type_syntax(&target, copied, twin),
+            "{what}: the image reads as the same spelling written in the target"
+        );
+    }
+}
