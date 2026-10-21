@@ -1,0 +1,21 @@
+// The moved-from handle closed: C++ runs a destructor on the object a move
+// leaves "in a valid but unspecified state" ([lib.types.movedfrom], ISO/IEC
+// 14882:2020); here the move left nothing behind to close.
+
+// The file's protocols.
+import "../../model/moves/file-base.gandr" ;
+
+/// The handle closed by its mover after it was moved into a closer: the send
+/// spent the mover's end, so the close acts on a spent slot.
+@[ refuses("UsedAfterClose") ]
+def closedAfterMove() -> -F Unit {
+  fork (owner : File.Handle) { close(owner) } as file;
+  fork (closer : File.Closer) {
+    recv(closer) as held;
+    close(held);
+    close(closer)
+  } as task;
+  send(task, file);
+  close(file);
+  close(task)
+}

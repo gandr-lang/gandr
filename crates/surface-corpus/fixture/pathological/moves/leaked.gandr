@@ -1,0 +1,14 @@
+// A handle leaked: Rust's `mem::forget` is safe and never runs the value's
+// destructor (_The Rust Standard Library_, `std::mem::forget`), so a
+// descriptor can outlive every holder; here the holder must close it.
+
+// The file's protocols.
+import "../../model/moves/file-base.gandr" ;
+
+/// A handle opened and neither closed nor moved: the program ends with its end
+/// still open.
+@[ refuses("LinearResidue") ]
+def leaked() -> -F Unit {
+  fork (owner : File.Handle) { close(owner) } as file;
+  pure unit
+}

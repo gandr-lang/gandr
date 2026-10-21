@@ -1,0 +1,24 @@
+// A move hands a handle on whole and keeps its name: the one descriptor
+// leaves the mover's linear slot and enters the receiver's. No moved-from
+// object stays behind, as C++ leaves one "in a valid but unspecified state"
+// for its destructor ([lib.types.movedfrom], ISO/IEC 14882:2020), and no
+// move constructor runs. Rust moves the same way, but a type's `Copy` impl
+// decides whether `let b = a;` moves or copies; here the handle is linear
+// wherever it is bound.
+
+// The file's protocols.
+import "./file-base.gandr" ;
+
+/// A handle moved into a closer, which closes it: the send spends the mover's
+/// end, so the mover has nothing left to close.
+@[ checks ]
+def movedToCloser() -> -F Unit {
+  fork (owner : File.Handle) { close(owner) } as file;
+  fork (closer : File.Closer) {
+    recv(closer) as held;
+    close(held);
+    close(closer)
+  } as task;
+  send(task, file);
+  close(task)
+}
