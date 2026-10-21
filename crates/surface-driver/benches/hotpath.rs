@@ -107,7 +107,8 @@ fn stage_readmission()
     else {
         panic!("stage dispatches a staging");
     };
-    let run = staging.run().expect("the staging runs");
+    let pool = Pool::new(staging.width());
+    let run = staging.run(&pool).expect("the staging runs");
     core::hint::black_box(run.digest());
 }
 
