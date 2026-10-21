@@ -19,6 +19,7 @@ use gandr_surface_corpus::Stated;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Declared;
 use gandr_surface_dispatcher::Evaluation;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::RoundTrip;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Step;
@@ -286,8 +287,9 @@ fn spell(shard: Shard)
     let mut values = 0_usize;
     let mut walked = 0_usize;
     let walk = Walk::new(vec![root(Path::new("strict")), root(Path::new("fixture"))]);
-    let ControlFlow::Continue(_report) =
-        walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+    let ControlFlow::Continue(_report) = walk.visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
             let Step::Source {
                 path,
                 root,
@@ -387,7 +389,8 @@ fn spell(shard: Shard)
                 }
             }
             ControlFlow::Continue(())
-        });
+        },
+    );
     eprintln!("presentations read: {}", census.read);
     eprintln!("run values read: {values}");
     eprintln!("values read back and printed again: {}", fixed.read);
@@ -520,8 +523,9 @@ mod sweeps
         let mut moved: Vec<String> = Vec::new();
         let mut over = 0_usize;
         let walk = Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]);
-        let ControlFlow::Continue(_report) =
-            walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+        let ControlFlow::Continue(_report) = walk.visit(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
                 let Step::Source {
                     path,
                     root,
@@ -611,7 +615,8 @@ mod sweeps
                     }
                 }
                 ControlFlow::Continue(())
-            });
+            },
+        );
         for (class, count) in &trips {
             eprintln!("| {class} | {count} |");
         }

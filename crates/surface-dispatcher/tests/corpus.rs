@@ -27,6 +27,7 @@ use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Row;
 use gandr_surface_dispatcher::RunReport;
 use gandr_surface_dispatcher::RunVerdict;
@@ -90,13 +91,15 @@ fn root(name: &Path) -> PathBuf
         && usize::from(ret.lowerings()) == usize::from(ret.sources().read()))]
 fn run(path: PathBuf) -> RunReport
 {
-    let ControlFlow::Continue(report) =
-        Walk::new(vec![path]).visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+    let ControlFlow::Continue(report) = Walk::new(vec![path]).visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
             if let Step::Fault { path, fault } = step {
                 panic!("{}: {fault}", path.display());
             }
             ControlFlow::Continue(())
-        });
+        },
+    );
     report
 }
 
@@ -204,8 +207,9 @@ fn the_identity_base_is_lowered_once_for_its_importers()
     let subject = root(Path::new("fixture/model/identity"));
     let base = subject.join("circle-base.gandr");
     let mut certificates = Vec::new();
-    let ControlFlow::Continue(report) =
-        Walk::new(vec![subject]).visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+    let ControlFlow::Continue(report) = Walk::new(vec![subject]).visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
             let Step::Source {
                 path,
                 text,
@@ -227,7 +231,8 @@ fn the_identity_base_is_lowered_once_for_its_importers()
                 certificates.push((path.to_path_buf(), kernel.as_ref().to_vec()));
             }
             ControlFlow::Continue(())
-        });
+        },
+    );
     assert_eq!(
         usize::from(report.lowerings()),
         usize::from(report.sources().read()),
@@ -258,8 +263,9 @@ fn the_identity_base_is_spelled_once_for_its_importers_595()
 {
     let subject = root(Path::new("fixture/model/identity"));
     let mut components = BTreeSet::new();
-    let ControlFlow::Continue(report) =
-        Walk::new(vec![subject]).visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+    let ControlFlow::Continue(report) = Walk::new(vec![subject]).visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
             let Step::Source {
                 composed:
                     Composed::Settled {
@@ -274,7 +280,8 @@ fn the_identity_base_is_spelled_once_for_its_importers_595()
             // A component's sources share its one certificate.
             let _new = components.insert(kernel.as_ref().to_vec());
             ControlFlow::Continue(())
-        });
+        },
+    );
     assert!(
         components.len() < usize::from(report.sources().read()),
         "the subject holds a component of more than one source"
@@ -362,7 +369,7 @@ fn orphans(corpus: &Path) -> Vec<PathBuf>
     let mut reached = BTreeSet::new();
     let ControlFlow::Continue(_report) =
         Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]).visit(
-            Width::SERIAL,
+            &Pool::new(Width::SERIAL),
             |step| -> ControlFlow<Infallible> {
                 match step {
                     Step::Source { path, .. } | Step::Fault { path, .. } => {
@@ -479,7 +486,7 @@ fn each_settled(
 {
     let ControlFlow::Continue(_report) =
         Walk::new(vec![root(Path::new("strict")), root(Path::new("fixture"))]).visit(
-            Width::SERIAL,
+            &Pool::new(Width::SERIAL),
             |step| -> ControlFlow<Infallible> {
                 let Step::Source {
                     path,
@@ -714,8 +721,9 @@ fn no_subject_declares_a_name_twice()
     let mut lowerings = LoweringCount::default();
     let model = root(Path::new("fixture/model"));
     let mut declared: BTreeMap<(PathBuf, String), BTreeSet<PathBuf>> = BTreeMap::new();
-    let ControlFlow::Continue(_report) =
-        Walk::new(vec![model.clone()]).visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+    let ControlFlow::Continue(_report) = Walk::new(vec![model.clone()]).visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
             let Step::Source {
                 path, text, base, ..
             } = step
@@ -738,7 +746,8 @@ fn no_subject_declares_a_name_twice()
                     .insert(relative.to_path_buf());
             }
             ControlFlow::Continue(())
-        });
+        },
+    );
     assert!(!declared.is_empty(), "the model corpus declares names");
     let twice: Vec<String> = declared
         .iter()
@@ -859,19 +868,20 @@ mod sweeps
     ) -> (Vec<(PathBuf, Hashed)>, ControlFlow<Infallible, RunReport>)
     {
         let mut rows = Vec::new();
-        let visited = Walk::new(paths.to_vec()).visit(width, |step| -> ControlFlow<Infallible> {
-            if let Step::Fault { path, ref fault } = step {
-                panic!("{}: {fault}", path.display());
-            }
-            let mut digest = Digest::default();
-            core::fmt::Write::write_fmt(&mut digest, format_args!("{step:?}"))
-                .expect("a hash takes every byte");
-            let path = match step {
-                Step::Source { path, .. } | Step::Fault { path, .. } => path.to_path_buf(),
-            };
-            rows.push((path, Hashed(core::hash::Hasher::finish(&digest.0))));
-            ControlFlow::Continue(())
-        });
+        let visited =
+            Walk::new(paths.to_vec()).visit(&Pool::new(width), |step| -> ControlFlow<Infallible> {
+                if let Step::Fault { path, ref fault } = step {
+                    panic!("{}: {fault}", path.display());
+                }
+                let mut digest = Digest::default();
+                core::fmt::Write::write_fmt(&mut digest, format_args!("{step:?}"))
+                    .expect("a hash takes every byte");
+                let path = match step {
+                    Step::Source { path, .. } | Step::Fault { path, .. } => path.to_path_buf(),
+                };
+                rows.push((path, Hashed(core::hash::Hasher::finish(&digest.0))));
+                ControlFlow::Continue(())
+            });
         (rows, visited)
     }
 }

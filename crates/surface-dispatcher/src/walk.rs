@@ -64,22 +64,24 @@
 //! judgement grows into the tail of a wide visit, when the components whose
 //! judgement depends on no other move onto the pool.
 //!
-//! **Scoped threads, not `rayon`.** The pool is `std::thread::scope` and the
-//! cursor. The alternative was `rayon`; on the corpus, with the same cursor and
-//! the same in-order consumer, it measures the same as scoped threads, since
-//! there is nothing for work stealing to steal from one shared cursor. The
-//! choice reverses when the dispatcher forks below the component, by source,
-//! form or declaration, where nested work wants a stealing pool, or when a
-//! long-lived process — the session, the language server — keeps a pool warm
-//! across runs. The stage verb (the `stage` module) meets the first condition
-//! and runs on `rayon`; the walk forks by component alone, so it keeps scoped
-//! threads.
+//! **On the driver's pool.** The walk spawns its lowering jobs on the driver's
+//! [`Pool`], `rayon` threads started once per process, and keeps the cursor
+//! and the in-order consumer on the calling thread. Before, the pool was
+//! `std::thread::scope` threads started for each visit. On the corpus, with
+//! the same cursor and the same consumer, `rayon` measured the same as scoped
+//! threads, since one shared cursor leaves nothing for work stealing to
+//! steal. The reversal the walk recorded came true: the stage verb forks
+//! below the source and needs a stealing pool, and one pool held by the
+//! driver serves both verbs, so a process starts its threads once. The choice
+//! reverses if the walk measures slower on the shared pool than on threads of
+//! its own.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::collections::btree_map;
 use core::cell::OnceCell;
 use core::cmp::Reverse;
+use core::num::NonZeroUsize;
 use core::ops::ControlFlow;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
@@ -113,10 +115,10 @@ use crate::compose::LoweringCount;
 use crate::compose::judge_component;
 use crate::compose::lower_parsed_unit;
 use crate::compose::lower_unit_source;
+use crate::pool::Pool;
 use crate::report::RunReport;
 use crate::root::SourceRoot;
 use crate::root::classify;
-use crate::width::Width;
 
 quenchant_shape::reason_enum! {
     /// Why a traversal reaches nothing further.
@@ -479,7 +481,7 @@ impl Walk
     }
 
     /// Hand every step of the walk to `visitor`, in walk order, lowering the
-    /// components on `width` threads, and answer the walk's report.
+    /// components on `pool`, and answer the walk's report.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -504,18 +506,18 @@ impl Walk
     ///   grammar that did not build faults every source read. The answer is
     ///   `Continue` with the run's report, or the first `Break` `visitor`
     ///   returns, after which no step is handed over or counted and no thread
-    ///   starts another component. As many threads as the width answers, never
-    ///   more than the components, the calling thread among them, lower the
-    ///   components, each taking the largest component by bytes that no thread
-    ///   has taken; the calling thread meanwhile judges and hands over the
-    ///   sources in walk order, and lowers a component itself whenever the next
-    ///   one in walk order has not arrived. One component is lowered on the
-    ///   calling thread alone, and the host is asked its width only when there
-    ///   are two or more; at [`Width::SERIAL`] the calling thread lowers each
-    ///   component when its first source comes up. A thread the host refuses to
-    ///   start leaves its components to the others.
-    /// - provides: the pass `check` and `test` run, at the width the driver
-    ///   chose.
+    ///   starts another component. As many threads as the pool's width answers,
+    ///   never more than the components, the calling thread among them, lower
+    ///   the components, each taking the largest component by bytes that no
+    ///   thread has taken; the calling thread meanwhile judges and hands over
+    ///   the sources in walk order, and lowers a component itself whenever the
+    ///   next one in walk order has not arrived. One component is lowered on
+    ///   the calling thread alone, and the pool starts its threads only when
+    ///   there are two or more; at [`Width::SERIAL`](crate::Width::SERIAL) the
+    ///   calling thread lowers each component when its first source comes up. A
+    ///   pool the host refuses to start leaves every component to the calling
+    ///   thread.
+    /// - provides: the pass `check` and `test` run, on the driver's pool.
     /// - fails: never; every fault is a step, and the walk continues past it.
     /// - panics: only by propagating a panic of `visitor` or of a pool thread,
     ///   once every thread has stopped.
@@ -544,7 +546,7 @@ impl Walk
     #[inline]
     pub fn visit<Stop, Visitor>(
         mut self,
-        width: Width,
+        pool: &Pool,
         mut visitor: Visitor,
     ) -> ControlFlow<Stop, RunReport>
     where
@@ -620,12 +622,6 @@ impl Walk
             .map(|(position, component)| (Reverse(component.text.len()), position))
             .collect();
         order.sort_unstable();
-        let threads = match order.len() {
-            0 | 1 => 1,
-            components => {
-                usize::from(core::num::NonZeroUsize::from(width.threads())).min(components)
-            },
-        };
         let cursor = AtomicUsize::new(0);
         // The largest component no thread has taken, lowered.
         let take = || {
@@ -633,22 +629,10 @@ impl Walk
             Some((position, lower(grammar, grouped.components.get(position)?)))
         };
         let (sender, receiver) = std::sync::mpsc::channel();
-        std::thread::scope(|scope| {
-            let mut pool = 0_usize;
-            for _ in 1 .. threads {
-                let sender = sender.clone();
-                let started = std::thread::Builder::new().spawn_scoped(scope, move || {
-                    while let Some(lowered) = take() {
-                        if sender.send(lowered).is_err() {
-                            break;
-                        }
-                    }
-                });
-                if started.is_ok() {
-                    pool = pool.saturating_add(1);
-                }
-            }
-            drop(sender);
+        // The calling thread's share: judge each component in walk order as
+        // its lowering arrives from `helpers` pool threads, lowering one itself
+        // whenever the next in walk order has not arrived.
+        let consume = |helpers: usize| -> ControlFlow<Stop> {
             // Lowerings that arrived ahead of their turn in walk order.
             let mut early = BTreeMap::new();
             // Each judged component's compositions, by source, taken as the
@@ -681,7 +665,7 @@ impl Walk
                         };
                         if let btree_map::Entry::Vacant(unjudged) = judged.entry(placed.component) {
                             let job = loop {
-                                if pool == 0 {
+                                if helpers == 0 {
                                     break lower(grammar, component);
                                 }
                                 if let Some(job) = early.remove(&placed.component) {
@@ -796,7 +780,29 @@ impl Walk
                 }
             }
             ControlFlow::Continue(())
-        })?;
+        };
+        match pool.helpers(&order) {
+            Maybe::Present((threads, helpers)) => threads.in_place_scope(|scope| {
+                let helpers = NonZeroUsize::from(helpers).get();
+                for _ in 0 .. helpers {
+                    let sender = sender.clone();
+                    let take = &take;
+                    scope.spawn(move |_| {
+                        while let Some(lowered) = take() {
+                            if sender.send(lowered).is_err() {
+                                break;
+                            }
+                        }
+                    });
+                }
+                drop(sender);
+                consume(helpers)
+            })?,
+            Maybe::Absent(_) => {
+                drop(sender);
+                consume(0)?;
+            },
+        }
         ControlFlow::Continue(self.report)
     }
 }
@@ -1495,6 +1501,7 @@ pub mod tests
     use super::Standing;
     use super::Step;
     use super::Walk;
+    use crate::pool::Pool;
     use crate::report::RunReport;
     use crate::report::SourceCount;
     use crate::root::SourceRoot;
@@ -1708,7 +1715,7 @@ pub mod tests
     {
         let mut seen = Vec::new();
         let ControlFlow::Continue(report) =
-            Walk::new(paths).visit(width, |step| -> ControlFlow<Infallible> {
+            Walk::new(paths).visit(&Pool::new(width), |step| -> ControlFlow<Infallible> {
                 let kind = Seen::from(&step);
                 let path = match step {
                     Step::Source { path, .. } | Step::Fault { path, .. } => path,
@@ -1976,7 +1983,7 @@ pub mod tests
                 let mut seen = Vec::new();
                 let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.join("corpus")])
                     .granting(grant.clone())
-                    .visit(width, |step| -> ControlFlow<Infallible> {
+                    .visit(&Pool::new(width), |step| -> ControlFlow<Infallible> {
                         let kind = Seen::from(&step);
                         let path = match step {
                             Step::Source { path, .. } | Step::Fault { path, .. } => path,
@@ -2012,7 +2019,7 @@ pub mod tests
         scratch.file(Path::new("c.gandr"), SourceText::from("def c = 3 ;"));
         for width in widths() {
             let mut handed = Vec::new();
-            let stopped = Walk::new(vec![scratch.0.clone()]).visit(width, |step| {
+            let stopped = Walk::new(vec![scratch.0.clone()]).visit(&Pool::new(width), |step| {
                 let path = match step {
                     Step::Source { path, .. } | Step::Fault { path, .. } => path,
                 };
@@ -2050,8 +2057,9 @@ pub mod tests
         scratch.file(Path::new("strict/tree/b.gandr"), SourceText::from(last));
 
         let mut read = Vec::new();
-        let ControlFlow::Continue(report) =
-            walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+        let ControlFlow::Continue(report) = walk.visit(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
                 if let Step::Source { path, text, .. } = step {
                     read.push((
                         path.strip_prefix(&root)
@@ -2061,7 +2069,8 @@ pub mod tests
                     ));
                 }
                 ControlFlow::Continue(())
-            });
+            },
+        );
         assert_eq!(
             read,
             [
@@ -2124,7 +2133,7 @@ pub mod tests
         assert_eq!(classify(&alias), SourceRoot::Strict);
         let mut read = Vec::new();
         let ControlFlow::Continue(_report) = Walk::new(vec![alias.clone()]).visit(
-            Width::SERIAL,
+            &Pool::new(Width::SERIAL),
             |step| -> ControlFlow<Infallible> {
                 if let Step::Source {
                     path,
@@ -2207,7 +2216,7 @@ pub mod tests
         for width in widths() {
             let mut judged = Vec::new();
             let ControlFlow::Continue(report) = Walk::new(vec![scratch.0.join("fixture")]).visit(
-                width,
+                &Pool::new(width),
                 |step| -> ControlFlow<Infallible> {
                     let Step::Source {
                         path,
@@ -2328,7 +2337,7 @@ pub mod tests
         let parsed = |directory: &str| {
             let ControlFlow::Continue(report) =
                 Walk::new(vec![scratch.0.join("fixture").join(directory)])
-                    .visit(Width::SERIAL, |_| -> ControlFlow<Infallible> {
+                    .visit(&Pool::new(Width::SERIAL), |_| -> ControlFlow<Infallible> {
                         ControlFlow::Continue(())
                     });
             usize::from(report.parsed())
@@ -2377,7 +2386,7 @@ pub mod tests
         for width in widths() {
             let mut standings = Vec::new();
             let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.join("fixture")]).visit(
-                width,
+                &Pool::new(width),
                 |step| -> ControlFlow<Infallible> {
                     if let Step::Source { path, standing, .. } = step {
                         standings.push((
@@ -2422,7 +2431,7 @@ pub mod tests
         for width in widths() {
             let mut walked = Vec::new();
             let ControlFlow::Continue(report) = Walk::new(vec![scratch.0.join("fixture")]).visit(
-                width,
+                &Pool::new(width),
                 |step| -> ControlFlow<Infallible> {
                     let Step::Source {
                         path, text, base, ..
@@ -2485,7 +2494,7 @@ pub mod tests
         for width in widths() {
             let mut judged = Vec::new();
             let ControlFlow::Continue(report) = Walk::new(vec![scratch.0.join("fixture")]).visit(
-                width,
+                &Pool::new(width),
                 |step| -> ControlFlow<Infallible> {
                     let Step::Source {
                         path,

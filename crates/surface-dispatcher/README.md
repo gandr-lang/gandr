@@ -58,7 +58,7 @@ Each nontrivial operation states an executable contract or a local exemption, pl
 
 - **A renderer.** The caller renders each `Outcome`, and each diagnostic `entries` yields from a `Step`: `gandr-surface-render-terminal` lays one out for a terminal, `gandr-surface-lsp` publishes it to an editor. A diagnostic carries the lines of source it covers, its loci and the types its refusal names, so a face renders it without composing the source again. `StatusReport`'s `Display` writes one sentence and no line terminator; `RunReport`'s writes its counts one per line, without a trailing terminator.
 - **A file system.** `Walk::visit` lists directories and reads sources, and `Formatting::step` reads them and writes a changed layout back; every failure to do so is a fault step, never a panic.
-- **Threads.** `Walk::visit` starts scoped threads from `std`; a thread the host refuses to start leaves its components to the others. `Staging::run` builds a `rayon` pool of its width once per run, and reports a pool the host refuses as `PoolFault`. The default width reads the host's physical performance cores: `hw.perflevel0.physicalcpu` on macOS, the `cpu_core` CPU list and each CPU's core siblings under `/sys/devices` on Linux; a host that reports neither runs on the parallelism `std` reports.
+- **Threads.** `Walk::visit` and `Staging::run` fork on the driver's [`Pool`](src/pool.rs), whose `rayon` threads start once per process; its default width is the host's physical performance cores ([width](src/width.rs)).
 
 ## Examples
 
@@ -68,6 +68,7 @@ use core::ops::ControlFlow;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Outcome;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::dispatch;
@@ -78,7 +79,7 @@ fn run(paths: Vec<std::path::PathBuf>) {
     else {
         return;
     };
-    let ControlFlow::Continue(report) = walk.visit(width, |step| -> ControlFlow<core::convert::Infallible> {
+    let ControlFlow::Continue(report) = walk.visit(&Pool::new(width), |step| -> ControlFlow<core::convert::Infallible> {
         if let Step::Fault { path, fault } = step {
             eprintln!("{}: {fault}", path.display());
         }

@@ -11,7 +11,8 @@
 //! [`dispatch`] reads no file and writes nothing. The `check` and `test` verbs
 //! route to a [`Walk`] over the paths they were given and the [`Width`] to
 //! visit it at, and the walk's I/O — listing a directory, reading a source —
-//! happens as the driver hands it a visitor with [`Walk::visit`]. The `run`
+//! happens as the driver hands it its [`Pool`] and a visitor with
+//! [`Walk::visit`]. The `run`
 //! verb routes to a [`Script`], which reads its one source when the driver
 //! runs it. The `stage` verb routes to a [`Staging`], which reads nothing: it
 //! builds its programs when the driver runs it. The `fmt` verb routes to a
@@ -44,11 +45,13 @@
 //!
 //! # Components fork; judgement keeps walk order
 //!
-//! [`Walk::visit`] parses and lowers the components on a pool of scoped
-//! threads, largest first, and judges, settles and reports their sources in
+//! [`Walk::visit`] parses and lowers the components on the driver's
+//! [`Pool`], largest first, and judges, settles and reports their sources in
 //! walk order on the calling thread, so every count, verdict and diagnostic
-//! is the serial visit's at every width. [`Width::SERIAL`] is that serial
-//! visit, and the reference every wider one is tested against.
+//! is the serial visit's at every width. A pool at [`Width::SERIAL`] is that
+//! serial visit, and the reference every wider one is tested against. The
+//! `stage` verb forks each program's stages on the same pool, so a process
+//! starts its threads once (the `pool` module).
 //!
 //! # One composition serves both verbs
 //!
@@ -153,6 +156,7 @@ mod evaluate;
 mod exercised;
 mod format;
 mod ledger;
+mod pool;
 mod report;
 mod root;
 mod script;
@@ -230,6 +234,8 @@ pub use crate::ledger::LedgerFault;
 pub use crate::ledger::LedgerRun;
 pub use crate::ledger::LedgerTask;
 pub use crate::ledger::SyntaxLedger;
+pub use crate::pool::Pool;
+pub use crate::pool::PoolFault;
 pub use crate::report::Goals;
 pub use crate::report::Lints;
 pub use crate::report::Reach;
@@ -247,7 +253,6 @@ pub use crate::script::Script;
 pub use crate::script::ScriptRun;
 pub use crate::script::execute;
 pub use crate::script::run_source;
-pub use crate::stage::PoolFault;
 pub use crate::stage::ProgramSpec;
 pub use crate::stage::RunDigest;
 pub use crate::stage::SpecError;
@@ -539,6 +544,7 @@ mod tests
     use super::Invocation;
     use super::Lints;
     use super::Outcome;
+    use super::Pool;
     use super::ScriptRun;
     use super::StatusReport;
     use super::Step;
@@ -570,7 +576,7 @@ mod tests
         else {
             panic!("a verb routes to a walk");
         };
-        let ControlFlow::Break(path) = walk.visit(Width::SERIAL, |step| match step {
+        let ControlFlow::Break(path) = walk.visit(&Pool::new(Width::SERIAL), |step| match step {
             Step::Fault { path, .. } => ControlFlow::Break(path.to_path_buf()),
             Step::Source { .. } => panic!("an absent path faults"),
         })

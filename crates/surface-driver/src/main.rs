@@ -281,6 +281,7 @@ use gandr_surface_dispatcher::LedgerTask;
 use gandr_surface_dispatcher::Lints;
 use gandr_surface_dispatcher::OperationName;
 use gandr_surface_dispatcher::Outcome;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::ProgramSpec;
 use gandr_surface_dispatcher::Ran;
 use gandr_surface_dispatcher::Rewrite;
@@ -1660,14 +1661,27 @@ fn render(
             writeln!(stdout, "gandr {} — {report}", env!("CARGO_PKG_VERSION"))?;
             Ok(ExitCode::SUCCESS)
         },
+        // The driver's pool: one per process, at the verb's width, its threads
+        // started on the first fork of two items or more.
         Outcome::Run {
             verb,
             lints,
             walk,
             width,
-        } => run(verb, lints, walk, width, printing, stdout, stderr),
+        } => run(
+            verb,
+            lints,
+            walk,
+            &Pool::new(width),
+            printing,
+            stdout,
+            stderr,
+        ),
         Outcome::Script(mut runnable) => script(&mut runnable, printing.spelling, stdout, stderr),
-        Outcome::Stage(staging) => stage(staging, stdout, stderr),
+        Outcome::Stage(staging) => {
+            let pool = Pool::new(staging.width());
+            stage(staging, &pool, stdout, stderr)
+        },
         Outcome::Format(formatting) => fmt(formatting, stdout, stderr),
         Outcome::Ledger(task) => ledger(&task, stdout, stderr),
     }
@@ -1859,11 +1873,12 @@ fn kept(
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(REFUSED) || *exit == ExitCode::from(FAULTED)))]
 fn stage(
     staging: Staging,
+    pool: &Pool,
     stdout: &mut dyn std::io::Write,
     stderr: &mut dyn std::io::Write,
 ) -> std::io::Result<ExitCode>
 {
-    let run = match staging.run() {
+    let run = match staging.run(pool) {
         Ok(run) => run,
         Err(fault) => {
             writeln!(stderr, "gandr: {fault}")?;
@@ -1883,7 +1898,7 @@ fn stage(
     })
 }
 
-/// Visit `walk` at `width` under `verb`, printing each step at the verbosity
+/// Visit `walk` on `pool` under `verb`, printing each step at the verbosity
 /// and in the spelling `printing` names, then the report and the verdict.
 ///
 /// # Specification
@@ -1927,7 +1942,7 @@ fn run(
     verb: Verb,
     lints: Lints,
     walk: Walk,
-    width: Width,
+    pool: &Pool,
     printing: Printing,
     stdout: &mut dyn std::io::Write,
     stderr: &mut dyn std::io::Write,
@@ -1937,7 +1952,7 @@ fn run(
         verbosity,
         spelling,
     } = printing;
-    let visited = walk.visit(width, |step| {
+    let visited = walk.visit(pool, |step| {
         match step {
             Step::Source { .. } => {
                 for diagnostic in entries(&step, verb).linting(lints).spelling(spelling) {

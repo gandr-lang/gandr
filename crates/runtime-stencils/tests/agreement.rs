@@ -47,6 +47,7 @@ use gandr_runtime_emitter::replay;
 use gandr_surface_corpus::Stated;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Engine;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
@@ -248,8 +249,9 @@ fn the_corpus_runs_items_agree_on_both_executors()
     let mut declined: BTreeMap<String, usize> = BTreeMap::new();
     let mut item = String::new();
     let mut rendered = String::new();
-    let ControlFlow::Continue(_report) =
-        walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+    let ControlFlow::Continue(_report) = walk.visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
             let Step::Source {
                 path,
                 composed:
@@ -302,7 +304,8 @@ fn the_corpus_runs_items_agree_on_both_executors()
                 }
             }
             ControlFlow::Continue(())
-        });
+        },
+    );
     println!("runs items {stated}, answered {answered}, declined {declined:?}");
     assert!(answered > 0, "the corpus states runs the tiers answer");
 }

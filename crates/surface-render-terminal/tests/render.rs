@@ -24,6 +24,7 @@ use gandr_surface_diagnostics::diagnose;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::LoweringCount;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Step;
@@ -650,13 +651,15 @@ def wrong = "text" ;
         Verb::Test,
     ] {
         let mut rendered = Vec::new();
-        let ControlFlow::Continue(_report) =
-            Walk::new(vec![path.clone()]).visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+        let ControlFlow::Continue(_report) = Walk::new(vec![path.clone()]).visit(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
                 rendered.extend(
                     entries(&step, verb).map(|diagnostic| plain(&diagnostic, Verbosity::User)),
                 );
                 ControlFlow::Continue(())
-            });
+            },
+        );
         assert_eq!(rendered.len(), 3_usize, "three refusals: {rendered:?}");
         for ((line, column), rendered) in [(2_usize, 14_usize), (4, 13), (5, 4)]
             .into_iter()
@@ -680,7 +683,7 @@ fn a_ledger_line_prints_as_itself()
     );
     let mut lines = Vec::new();
     let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()]).visit(
-        Width::SERIAL,
+        &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
             lines.extend(entries(&step, Verb::Test));
             ControlFlow::Continue(())
@@ -724,13 +727,15 @@ fn scratch_scope_removal_is_visible_to_a_new_walk()
     let text = SourceText::from("def answer = 17 ;\n");
     let path = scratch.file(Path::new("strict/nested/source.gandr"), text);
     let mut observed = Vec::new();
-    let ControlFlow::Continue(_report) =
-        Walk::new(vec![path.clone()]).visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+    let ControlFlow::Continue(_report) = Walk::new(vec![path.clone()]).visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
             if let Step::Source { text, .. } = step {
                 observed.push(<&str>::from(text).to_owned());
             }
             ControlFlow::Continue(())
-        });
+        },
+    );
     assert_eq!(
         observed,
         [<&str>::from(text).to_owned()],
@@ -739,7 +744,7 @@ fn scratch_scope_removal_is_visible_to_a_new_walk()
     let root = scratch.0.clone();
     drop(scratch);
     assert!(matches!(root.try_exists(), Ok(false)));
-    let missing = Walk::new(vec![path]).visit(Width::SERIAL, |step| {
+    let missing = Walk::new(vec![path]).visit(&Pool::new(Width::SERIAL), |step| {
         ControlFlow::Break(matches!(step, Step::Fault { .. }))
     });
     assert_eq!(

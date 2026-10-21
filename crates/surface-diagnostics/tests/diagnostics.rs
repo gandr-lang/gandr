@@ -46,6 +46,7 @@ use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Lints;
 use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Step;
@@ -1932,7 +1933,7 @@ fn an_importer_s_refusal_is_located_in_its_own_text()
     scratch.file(Path::new("strict/user.gandr"), SourceText::from(user));
     let mut found = Vec::new();
     let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()]).visit(
-        Width::SERIAL,
+        &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
             found.extend(
                 entries(&step, Verb::Check(Goals::Reported))
@@ -1983,7 +1984,7 @@ fn an_importer_keeps_the_marks_its_import_holds_1199()
     scratch.file(Path::new("strict/user.gandr"), SourceText::from(user));
     let mut found = Vec::new();
     let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()]).visit(
-        Width::SERIAL,
+        &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
             found.extend(
                 entries(&step, Verb::Check(Goals::Reported))
@@ -2090,7 +2091,7 @@ fn each_verb_prints_its_entries()
         let mut printed = Vec::new();
         let mut line = String::new();
         let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()]).visit(
-            Width::SERIAL,
+            &Pool::new(Width::SERIAL),
             |step| -> ControlFlow<Infallible> {
                 for diagnostic in entries(&step, verb) {
                     if diagnostic.severity == Severity::Ledger {
@@ -2306,8 +2307,9 @@ mod sweeps
             .join("fixture/pathological");
         let mut repaired = 0_usize;
         let mut severities = Vec::new();
-        let ControlFlow::Continue(_report) =
-            Walk::new(vec![root]).visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+        let ControlFlow::Continue(_report) = Walk::new(vec![root]).visit(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
                 let Step::Source {
                     path, text, base, ..
                 } = step
@@ -2413,7 +2415,8 @@ mod sweeps
                     }
                 }
                 ControlFlow::Continue(())
-            });
+            },
+        );
         assert!(
             repaired > 0_usize,
             "typing the corpus meets malformed forms"

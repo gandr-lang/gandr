@@ -1096,13 +1096,15 @@ version = "0.30.2"
 default-features = false
 features = ["crossterm"]
 
-# The work-stealing pool a staged program's checks fork onto: the dispatcher
-# builds one per `gandr stage` invocation at the driver's width, and the
-# checker's forked stages nest a join of two forked halves inside it. The
-# choice, its alternatives and its reversal are in the consumer's README.
+# The work-stealing pool the driver holds: one per process at the driver's
+# width, which a walk forks its components on and a staged program's checks
+# fork onto, nesting a join of two forked halves inside it. The admission
+# observer measures families through the same schedule. The choice, its
+# alternatives and its reversal are in the dispatcher's `pool` module.
 # features:
 # - none: the pool, `scope` and `join` need no optional feature.
 # consumers:
+# - core-checker (dev)
 # - surface-dispatcher
 [workspace.dependencies.rayon]
 version = "1.12.0"

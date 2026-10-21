@@ -26,8 +26,11 @@
 //! latency. Every timed stream is checked against serial verdicts and counters,
 //! and every transport exercises the changed-rule refusal at all worker counts.
 //! `COMPRESSED` retains the scoped-thread baseline, with one worker executing
-//! directly. Schema validation and fixed-content binding are timed separately;
-//! cloning and pool creation are outside batch timing.
+//! directly. `POOLED` admits the same members through a standing `rayon` pool
+//! at 2, 4 and 8 threads on the dispatcher's schedule: one task per worker,
+//! each taking members from a shared cursor. Schema validation and
+//! fixed-content binding are timed separately; cloning and pool creation are
+//! outside batch timing.
 //!
 //! These are observer-only dev-dependencies: channel/deque enable `std`,
 //! ringbuf enables `alloc`, and rtrb uses no default features. The established
@@ -297,6 +300,93 @@ fn admission_measure(
     Ok(result)
 }
 
+/// Measure independent compressed members through a standing `rayon` pool on
+/// the driver's schedule: one task per worker, at most one per member, each
+/// taking members from one shared cursor and making its row buffer on its
+/// first member.
+///
+/// # Specification
+/// - requires: one row per member.
+/// - ensures: every member is admitted once; verdict and work must equal the
+///   serial observer in the calling differential.
+/// - fails: the first named admission refusal.
+/// - panics: a worker's panic, at the end of the scope.
+///
+/// # Errors
+/// Returns `Refusal`.
+///
+/// # Adequacy
+/// - hypothesis: L2 — independent rows cannot change verdict with scheduling;
+///   the calling differential compares every counter with the serial one.
+/// - witness: `admission::handoff::tests::scoped_rows_and_replay_keep_their_serial_counters`
+#[spec(requires: members.len() == rows.len())]
+fn pooled_measure(
+    schema: &Schema,
+    consumer: &Consumer<'_>,
+    members: &[Step],
+    rows: &[Vec<Choice>],
+    pool: &rayon::ThreadPool,
+) -> Result<Measurement, Refusal>
+{
+    let workers = pool.current_num_threads().min(members.len());
+    let mut result = Measurement::default();
+    for _ in 0_usize .. 25 {
+        let start = Instant::now();
+        let cursor = std::sync::Mutex::new(members.iter().zip(rows));
+        let observed = std::sync::Mutex::new(Vec::with_capacity(members.len()));
+        pool.install(|| {
+            rayon::scope(|scope| {
+                for _ in 0 .. workers {
+                    scope.spawn(|_| {
+                        let mut row = None;
+                        let mut local = Vec::new();
+                        loop {
+                            let next = match cursor.lock() {
+                                Ok(mut items) => items.next(),
+                                Err(poisoned) => poisoned.into_inner().next(),
+                            };
+                            let Some((step, choices)) = next
+                            else {
+                                break;
+                            };
+                            local.push(lookup(
+                                schema,
+                                consumer,
+                                choices,
+                                *step,
+                                row.get_or_insert_with(Row::default),
+                            ));
+                        }
+                        match observed.lock() {
+                            Ok(mut all) => all.extend(local),
+                            Err(poisoned) => poisoned.into_inner().extend(local),
+                        }
+                    });
+                }
+            });
+        });
+        let observations = observed
+            .into_inner()
+            .map_err(|_poisoned| Refusal::Malformed)?
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?;
+        result.elapsed = result.elapsed.saturating_add(start.elapsed());
+        for observation in observations {
+            result.work.0 = result.work.0.saturating_add(observation.comparisons.0);
+            result.choices.0 = result.choices.0.saturating_add(observation.choices.0);
+            result.instantiations.0 = result
+                .instantiations
+                .0
+                .saturating_add(observation.instantiations.0);
+            result.classifiers.0 = result
+                .classifiers
+                .0
+                .saturating_add(observation.classifiers.0);
+        }
+    }
+    Ok(result)
+}
+
 /// Execute the parent workload set, preserving its exact memo-aware price gate.
 ///
 /// # Specification
@@ -330,6 +420,18 @@ pub fn run(output: &mut io::BufWriter<io::StdoutLock<'_>>) -> Result<(), super::
                 arms: Natural(arms),
             })
         }));
+    // Standing pools, each built once outside every timed batch, as the
+    // driver holds one pool for its process.
+    let pools = [2_usize, 4, 8]
+        .into_iter()
+        .map(|threads| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .map(|pool| (threads, pool))
+                .map_err(io::Error::other)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     for case in cases {
         let input = fixture(case)?;
         let families = harvest(&input.arena, ProgramId(0), &input.certificates)?;
@@ -420,6 +522,26 @@ pub fn run(output: &mut io::BufWriter<io::StdoutLock<'_>>) -> Result<(), super::
                     admitted.elapsed.as_nanos(),
                     largest.as_nanos(),
                     binding_time.as_nanos()
+                )?;
+            }
+            // The same members through a standing pool at each width, on the
+            // driver's schedule.
+            for &(threads, ref pool) in &pools {
+                let pooled = pooled_measure(&schema, &consumer, &members, &admission.rows, pool)?;
+                if pooled.work != serial.work
+                    || pooled.choices != serial.choices
+                    || pooled.instantiations != serial.instantiations
+                    || pooled.classifiers != serial.classifiers
+                {
+                    return Err(StageError::InvalidCertificate.into());
+                }
+                writeln!(
+                    output,
+                    "POOLED,{case},family={index},rule={rule},k={},threads={threads},schema_ns={},admit_ns={},largest_ns={}",
+                    members.len(),
+                    schema_time.as_nanos(),
+                    pooled.elapsed.as_nanos(),
+                    largest.as_nanos()
                 )?;
             }
             workload.push(handoff::Workload {
