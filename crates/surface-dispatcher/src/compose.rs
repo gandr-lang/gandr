@@ -158,6 +158,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
 use core::fmt;
+use std::sync::OnceLock;
 
 use anodized::spec;
 use gandr_core_checker::AbstractType;
@@ -201,6 +202,7 @@ use gandr_surface_corpus::settle_after;
 use gandr_surface_diagnostics::Failures;
 use gandr_surface_diagnostics::TypeSpellings;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_lowering::CarriedOrigins;
 use gandr_surface_lowering::ClosureLowering;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::InferredExit;
@@ -822,11 +824,9 @@ mod lowering
     use alloc::sync::Arc;
 
     use anodized::spec;
-    use gandr_core_term::Carried;
-    use gandr_core_term::ComputationId;
     use gandr_core_term::CoreArena;
-    use gandr_core_term::ValueId;
     use gandr_surface_grammar::Pbg;
+    use gandr_surface_lowering::CarriedOrigins;
     use gandr_surface_lowering::ClosureLowering;
     use gandr_surface_lowering::LoweredModule;
     use gandr_surface_lowering::LoweringBudget;
@@ -979,9 +979,9 @@ mod lowering
     }
 
     /// Lower `tree`, a document laid after `closure`'s tree, as `unit` lays
-    /// it out, after the nodes of `arena`, resuming `closure`'s lowering;
-    /// each source after the closure's counted in `lowerings` unless the tree
-    /// is left to the whole lowering.
+    /// it out, after the nodes of `arena`, resuming `closure`'s lowering on a
+    /// copy of `origins`; each source after the closure's counted in
+    /// `lowerings` unless the tree is left to the whole lowering.
     ///
     /// # Specification
     /// - requires: as [`ClosureLowering::resume_onto`].
@@ -1009,11 +1009,11 @@ mod lowering
         tree: &SyntaxTree<'held>,
         unit: &Unit,
         arena: &mut CoreArena,
-        (carried, binds): (&[Carried], &[(ValueId, ComputationId)]),
+        origins: &CarriedOrigins,
         lowerings: &mut LoweringCount,
     ) -> Result<Onto<'held>, LoweringRefusal<'held>>
     {
-        let answer = closure.resume_onto(tree, unit, arena, carried, binds);
+        let answer = closure.resume_onto(tree, unit, arena, origins);
         if !matches!(answer, Ok(Onto::Whole)) {
             let after = unit
                 .sources()
@@ -1441,10 +1441,12 @@ struct ClosureJudgement<'held>
     /// The admission position after the last of them.
     boundary: ConstantIndex,
     /// The nodes their elaborations minted, each beside the node it stands
-    /// for, and the binds minted for runs beside their runs: located in a
-    /// document's table before its own nodes
-    /// ([`ClosureLowering::resume_onto`]).
+    /// for, and the binds minted for runs beside their runs.
     elaborated: (Vec<Carried>, Vec<(ValueId, ComputationId)>),
+    /// The closure lowering's origin table locating `elaborated`, built the
+    /// first time a document is lowered onto `arena`: the table every such
+    /// document starts from ([`ClosureLowering::resume_onto`]).
+    origins: OnceLock<CarriedOrigins>,
     /// Their share of the program: each focused, before any ran.
     program: Focused<'held>,
     /// Their settle reports, or the settle fault.
@@ -1683,6 +1685,7 @@ fn judge_closure<'held>(
         root,
         boundary,
         elaborated: minted,
+        origins: OnceLock::new(),
         program: focused,
         settled: settled.map(|report| report.declarations().to_vec()),
         spellings,
@@ -1748,37 +1751,36 @@ pub fn lower_onto_closure<'held>(
     let tree = parsed.into_tree();
     let judgement = judged.judgement();
     let mut arena = onto.clone();
-    let (ref carried, ref binds) = judgement.elaborated;
-    let (lowered, checking) = match lowering::resume_onto(
-        closure,
-        &tree,
-        unit,
-        &mut arena,
-        (carried, binds),
-        lowerings,
-    ) {
-        Ok(Onto::Resumed(module)) => (Lowered::Module { module, arena }, Checking::After(judged)),
-        Ok(Onto::Whole) => {
-            let mut whole = CoreArena::new();
-            match lowering::resume(closure, &tree, unit, &mut whole, lowerings) {
-                Ok(module) => (
-                    Lowered::Module {
-                        module,
-                        arena: whole,
+    let origins = judgement.origins.get_or_init(|| {
+        let (ref carried, ref binds) = judgement.elaborated;
+        closure.carrying(carried, binds)
+    });
+    let (lowered, checking) =
+        match lowering::resume_onto(closure, &tree, unit, &mut arena, origins, lowerings) {
+            Ok(Onto::Resumed(module)) => {
+                (Lowered::Module { module, arena }, Checking::After(judged))
+            },
+            Ok(Onto::Whole) => {
+                let mut whole = CoreArena::new();
+                match lowering::resume(closure, &tree, unit, &mut whole, lowerings) {
+                    Ok(module) => (
+                        Lowered::Module {
+                            module,
+                            arena: whole,
+                        },
+                        Checking::Whole,
+                    ),
+                    Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
+                        return Err(ComposeFault::Lowering(refusal));
                     },
-                    Checking::Whole,
-                ),
-                Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
-                    return Err(ComposeFault::Lowering(refusal));
-                },
-                Err(refusal) => (Lowered::Refused(refusal), Checking::Whole),
-            }
-        },
-        Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
-            return Err(ComposeFault::Lowering(refusal));
-        },
-        Err(refusal) => (Lowered::Refused(refusal), Checking::Whole),
-    };
+                    Err(refusal) => (Lowered::Refused(refusal), Checking::Whole),
+                }
+            },
+            Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
+                return Err(ComposeFault::Lowering(refusal));
+            },
+            Err(refusal) => (Lowered::Refused(refusal), Checking::Whole),
+        };
     Ok((
         Lowering {
             obligations,
