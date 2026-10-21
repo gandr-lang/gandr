@@ -57,6 +57,7 @@ use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::remote::line_repair_cards;
 use crate::remote::repair_cards;
 use crate::render::TRANSCRIPT_WIDTH;
 
@@ -520,13 +521,14 @@ fn re_range(
 ///   of what its run came to: a value line spelling the value in `spelling`, a
 ///   blame line naming the goal reached, or a note line for a run that stopped
 ///   short or never reached the machine; then a warning line per parse repair
-///   inside the chunk. A probe answers instead with the one type line `: T`. A
-///   prompt probe answers with the declaration's type line and, where the
-///   session evaluates it, its value line, and its refusal is re-ranged to the
-///   line; a type at the prompt answers its sort alone — the session does not
-///   evaluate a universe, so no stuck note follows. The disposition keeps the
-///   chunk, with the standings of the whole revision, exactly when the subject
-///   is declarations or a prompt probe and nothing was refused.
+///   inside the chunk, a prompt line's measured on the line as its refusal is.
+///   A probe answers instead with the one type line `: T`. A prompt probe
+///   answers with the declaration's type line and, where the session evaluates
+///   it, its value line, and its refusal is re-ranged to the line; a type at
+///   the prompt answers its sort alone — the session does not evaluate a
+///   universe, so no stuck note follows. The disposition keeps the chunk, with
+///   the standings of the whole revision, exactly when the subject is
+///   declarations or a prompt probe and nothing was refused.
 /// - provides: the one encoding every face draws, so the batch transcript, the
 ///   terminal and a later interface show the same lines.
 /// - fails: never.
@@ -586,7 +588,16 @@ pub fn encode_submission(
         chunk,
         subject,
     } = offer;
-    let cards = repair_cards(submission.obligations(), chunk);
+    let cards = match subject {
+        Subject::Prompt { line_start, .. } => line_repair_cards(
+            submission.obligations(),
+            ByteOffset::from(usize::from(chunk).saturating_add(usize::from(line_start))),
+            SourceText::from(echo.source.as_str()),
+        ),
+        Subject::Declarations | Subject::Probe { .. } => {
+            repair_cards(submission.obligations(), chunk)
+        },
+    };
     let mut step = submission.into_step(Path::new(""));
     let mut lines: Vec<(OutKind, String)> = Vec::new();
     let mut refused = false;

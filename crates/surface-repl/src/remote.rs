@@ -11,9 +11,11 @@
 //! obligations starting at or after the chunk boundary and projects each onto a
 //! `DiagCard` under `W0012`, with its span shifted to chunk-relative bytes. An
 //! obligation starting earlier, even one crossing the boundary, is omitted; a
-//! zero-width obligation at the boundary is retained. Distinct obligation
-//! classes have distinguishable messages. A richer recovery vocabulary is the
-//! alternative when the renderer seam supports structured recovery actions.
+//! zero-width obligation at the boundary is retained. A line read at the prompt
+//! is submitted wrapped in a probe, so its cards are measured from the line's
+//! start in the probe and clamped to the line. Distinct obligation classes have
+//! distinguishable messages. A richer recovery vocabulary is the alternative
+//! when the renderer seam supports structured recovery actions.
 
 use alloc::string::String;
 use alloc::string::ToString as _;
@@ -28,6 +30,7 @@ use gandr_surface_render_remote::DiagCard;
 use gandr_surface_render_remote::DiagnosticCode;
 use gandr_surface_render_remote::DiagnosticMessage;
 use gandr_surface_syntax::ByteOffset as SourceOffset;
+use gandr_surface_syntax::SourceText;
 
 /// How a repair of `class` reads in a card's message.
 ///
@@ -123,6 +126,48 @@ pub fn repair_cards(
             }
         })
         .collect()
+}
+
+/// The renderer seam's cards for the repairs `obligations` records in a prompt
+/// line standing at `line_start` in the probe it is wrapped in.
+///
+/// # Specification
+/// - requires: `obligations` and `line_start` are measured against the probe's
+///   revision, and `line` is the text standing at `line_start` in it.
+/// - ensures: the cards [`repair_cards`] makes from `line_start`, each span
+///   clamped to `line`'s bytes: a repair inside the line addresses the line's
+///   own bytes, as the refusal beside it does, and a repair in the probe's text
+///   after the line is marked at the line's end.
+/// - provides: the repair rows of a prompt line's block.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a repair inside a prompt line is reported at the line's
+///   bytes, not the probe's.
+/// - witness: `tests::repl_loop::a_repair_at_the_prompt_names_the_line_s_bytes_1467`
+#[spec(ensures: |ret| ret.iter().all(|card| card.span.is_none_or(|span|
+    usize::from(span.end()) <= <&str>::from(line).len())))]
+#[inline]
+#[must_use]
+pub fn line_repair_cards(
+    obligations: &[ObligationInstance],
+    line_start: SourceOffset,
+    line: SourceText<'_>,
+) -> Vec<DiagCard>
+{
+    let line_end = <&str>::from(line).len();
+    let mut cards = repair_cards(obligations, line_start);
+    for card in &mut cards {
+        card.span = card.span.and_then(|span| {
+            ByteRange::new(
+                ByteOffset::from(usize::from(span.start()).min(line_end)),
+                ByteOffset::from(usize::from(span.end()).min(line_end)),
+            )
+            .ok()
+        });
+    }
+    cards
 }
 
 #[cfg(test)]

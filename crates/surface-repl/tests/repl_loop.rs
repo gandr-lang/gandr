@@ -449,6 +449,28 @@ fn a_malformed_expression_carries_the_line_s_range()
     ]);
 }
 
+/// #1467: a repair at the prompt names the bytes of the line the block echoes,
+/// as the refusal beside it does, not the bytes of the probe the line is
+/// wrapped in.
+#[test]
+fn a_repair_at_the_prompt_names_the_line_s_bytes_1467()
+{
+    let mut repl = repl();
+    let block = block(&mut repl, "1 )");
+    let repairs: Vec<&str> = block
+        .lines
+        .iter()
+        .filter(|row| row.0 == OutKind::Diag && row.1.starts_with("warning[W0012]"))
+        .map(|row| row.1.as_str())
+        .collect();
+    assert_eq!(
+        repairs,
+        ["warning[W0012]: parse repaired: a missing delimiter at 2..3"],
+        "{:?}",
+        block.lines
+    );
+}
+
 /// A definition kept on one line is in scope on the next.
 #[test]
 fn a_definition_is_visible_on_the_next_line()
