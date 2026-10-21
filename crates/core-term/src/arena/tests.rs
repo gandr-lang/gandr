@@ -8,10 +8,13 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 
 use super::ArenaWatermark;
+use super::BinderPrecedence;
 use super::CoreArena;
 use super::ValueId;
 use crate::classifier::Sort;
 use crate::control::StackFrame;
+use crate::effect::capability::Region;
+use crate::effect::capability::RegionBinder;
 use crate::memory::AccessMode;
 use crate::memory::MemoryForm;
 use crate::session::SessionAction;
@@ -172,6 +175,61 @@ fn truncating_to_a_watermark_drops_later_nodes()
     assert!(
         arena.value(kept).is_some(),
         "truncating twice to the same mark is a no-op"
+    );
+}
+
+/// A type minted before the arena's first kept type at a region binder names
+/// none without a walk; that kept type and every type minted after it are read,
+/// until a truncation drops it.
+#[test]
+fn a_type_minted_before_the_first_region_binder_names_none()
+{
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let returner = arena.comp_type_returner(unit);
+    let held = arena.value_type_kept(unit, Region::Held);
+    assert_eq!(
+        arena.value_type_binder_precedence(held),
+        BinderPrecedence::Before,
+        "a type kept in the held region names no binder"
+    );
+    let mark = arena.watermark();
+    let bound = arena.value_type_kept(unit, Region::Bound(RegionBinder::from(0_u32)));
+    let later = arena.value_type_thunk(returner);
+    let later_returner = arena.comp_type_returner(unit);
+    assert_eq!(
+        (
+            arena.value_type_binder_precedence(unit),
+            arena.comp_type_binder_precedence(returner)
+        ),
+        (BinderPrecedence::Before, BinderPrecedence::Before),
+        "a type minted before the first binder names none"
+    );
+    assert_eq!(
+        arena.value_type_binder_precedence(bound),
+        BinderPrecedence::Unread,
+        "the type naming the binder is read"
+    );
+    assert_eq!(
+        (
+            arena.value_type_binder_precedence(later),
+            arena.comp_type_binder_precedence(later_returner)
+        ),
+        (BinderPrecedence::Unread, BinderPrecedence::Unread),
+        "a type minted after it is read, whatever it reaches"
+    );
+    arena.truncate_to(mark);
+    assert_eq!(
+        arena.value_type_binder_precedence(bound),
+        BinderPrecedence::Unread,
+        "a dangling id says nothing"
+    );
+    let reused = arena.value_type_thunk(returner);
+    assert_eq!(reused, bound, "the truncated index is minted again");
+    assert_eq!(
+        arena.value_type_binder_precedence(reused),
+        BinderPrecedence::Before,
+        "a truncation below the binder's type forgets it"
     );
 }
 

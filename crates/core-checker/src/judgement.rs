@@ -7132,6 +7132,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
         read: ValueTypeId,
     ) -> Result<Maybe<ValueTypeId, crate::regioned::Unread>, CheckRefusal>
     {
+        if crate::capability::binder_precedence(self.context.arena(), TypeNode::Value(read))
+            == gandr_core_term::BinderPrecedence::Before
+        {
+            return Ok(Maybe::Absent(crate::regioned::Unread::Unabstracted));
+        }
         let Some((_head, spine)) = self.forced_call()
         else {
             return Ok(Maybe::Absent(crate::regioned::Unread::Unabstracted));

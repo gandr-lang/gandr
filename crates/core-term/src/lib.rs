@@ -226,6 +226,7 @@ pub use gandr_kernel_term::RuleVariable;
 pub use gandr_kernel_term::Summand;
 
 pub use crate::arena::ArenaWatermark;
+pub use crate::arena::BinderPrecedence;
 pub use crate::arena::CompTypeId;
 pub use crate::arena::ComputationId;
 pub use crate::arena::CoreArena;

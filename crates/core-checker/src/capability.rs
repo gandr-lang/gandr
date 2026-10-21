@@ -91,6 +91,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::BinderPrecedence;
 use gandr_core_term::CompType;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
@@ -467,7 +468,8 @@ pub fn reaches(
 ///
 /// # Specification
 /// - ensures: what [`first_region`] answers choosing every [`Region::Bound`]:
-///   [`Reach::Clear`] exactly when the type names no region binder.
+///   [`Reach::Clear`] exactly when the type names no region binder, without a
+///   walk for a type minted before its arena's first binder.
 /// - fails: [`CheckRefusal::DanglingNode`] for a reachable type that does not
 ///   resolve.
 /// - panics: none.
@@ -486,7 +488,27 @@ pub fn abstracts(
     root: TypeNode,
 ) -> Result<Reach, CheckRefusal>
 {
+    if binder_precedence(arena, root) == BinderPrecedence::Before {
+        return Ok(Reach::Clear);
+    }
     first_region(arena, root, |region| matches!(region, Region::Bound(_)))
+}
+
+/// Where the type `root` stands against its arena's first type naming a region
+/// binder.
+///
+/// # Specification
+/// trivial.
+#[inline]
+pub fn binder_precedence(
+    arena: &CoreArena,
+    root: TypeNode,
+) -> BinderPrecedence
+{
+    match root {
+        TypeNode::Value(at) => arena.value_type_binder_precedence(at),
+        TypeNode::Computation(at) => arena.comp_type_binder_precedence(at),
+    }
 }
 
 /// The region binders the type `root` names, `A at r` under `@[r : Region]`,
@@ -494,7 +516,8 @@ pub fn abstracts(
 ///
 /// # Specification
 /// - ensures: exactly the binders of the [`Region::Bound`] regions
-///   [`first_region`] meets, read through every capability and kept type.
+///   [`first_region`] meets, read through every capability and kept type; none,
+///   without a walk, for a type minted before its arena's first binder.
 /// - fails: [`CheckRefusal::DanglingNode`] for a reachable type that does not
 ///   resolve.
 /// - panics: none.
@@ -514,6 +537,9 @@ pub fn binders(
 ) -> Result<alloc::collections::BTreeSet<RegionBinder>, CheckRefusal>
 {
     let mut named = alloc::collections::BTreeSet::new();
+    if binder_precedence(arena, root) == BinderPrecedence::Before {
+        return Ok(named);
+    }
     let _clear = first_region(arena, root, |region| {
         if let Region::Bound(binder) = region {
             let _first = named.insert(binder);
