@@ -602,6 +602,11 @@ pub enum Tail
     /// The body goes on: the computation a bind runs, the function a call
     /// applies.
     Continues,
+    /// A loop's pass ends here, where the lowering runs the loop again after
+    /// a computation left bare: a returner is written `break(v)` where the
+    /// loop ends the body and `return v` where a rest follows it, a call
+    /// `become f(a)`, and the loop's own binder forced `continue`.
+    Passes,
 }
 
 /// Whether a thunk's body is spelled or the thunk written opaque, and whether
@@ -953,8 +958,9 @@ where
             && ret.iter().take(usize::from(arity)).all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE)
             && (!annotated || ret.last().is_some_and(|slot| slot.admits == Admits::ValueType))
     },
-    | Former::Pi { .. } | Former::Sigma { .. } | Former::StaticLambda(_) | Former::Lambda(_) | Former::Bind(..) | Former::Fixpoint(_)
+    | Former::Pi { .. } | Former::Sigma { .. } | Former::StaticLambda(_) | Former::Lambda(_) | Former::Bind(..)
         | Former::Shift(_) | Former::Leta { .. } => ret.last().is_some_and(|slot| slot.binds == Binds::ONE),
+    | Former::Fixpoint(_) => ret.last().is_some_and(|slot| slot.binds.count > 0_usize),
     | Former::Case { arity, .. } => ret.len() == usize::from(arity).saturating_add(1_usize)
         && ret.first().is_some_and(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
     | Former::DataCase { arity, .. } => ret.len() == usize::from(arity).saturating_add(1_usize).saturating_add(usize::from(written == Motive::Written))
@@ -1152,19 +1158,51 @@ where
         Former::Application(function, argument) => {
             Vec::from([continues(function), value(argument)])
         },
-        // A lambda's body below a value states no more than the lambda.
-        Former::Lambda(body) | Former::Fixpoint(body) | Former::Shift(body) => {
-            Vec::from([match admits {
+        // A loop's passes run its body, which the loop's binder and, in a
+        // `while`, the test's binders stand over unwritten.
+        Former::Fixpoint(body) => match looped(source, node, admits) {
+            Some(Looped::Loop(passes)) => Vec::from([Slot::of(
+                passes,
+                Admits::Computation(Tail::Passes),
+                Binds::ONE,
+            )]),
+            Some(Looped::While {
+                condition,
+                then,
+                rest,
+            }) => {
+                let tested = Binds::intuitionistic(OpenBinders(3_usize));
+                let mut slots = Vec::from([
+                    Slot::of(condition, Admits::Computation(Tail::Continues), Binds::ONE),
+                    Slot::of(then, Admits::Computation(Tail::Passes), tested),
+                ]);
+                if let Some(rest) = rest {
+                    slots.push(Slot::of(rest, admits, tested));
+                }
+                slots
+            },
+            None => Vec::from([match admits {
                 Admits::Computation(Tail::Unstated) => Slot::of(body, admits, Binds::ONE),
-                Admits::Computation(Tail::Ends | Tail::Continues)
+                Admits::Computation(Tail::Ends | Tail::Continues | Tail::Passes)
                 | Admits::Type
                 | Admits::ValueType
                 | Admits::CompType
                 | Admits::Value
                 | Admits::Operand
                 | Admits::Stated => ends(body, Binds::ONE),
-            }])
+            }]),
         },
+        // A lambda's body below a value states no more than the lambda.
+        Former::Lambda(body) | Former::Shift(body) => Vec::from([match admits {
+            Admits::Computation(Tail::Unstated) => Slot::of(body, admits, Binds::ONE),
+            Admits::Computation(Tail::Ends | Tail::Continues | Tail::Passes)
+            | Admits::Type
+            | Admits::ValueType
+            | Admits::CompType
+            | Admits::Value
+            | Admits::Operand
+            | Admits::Stated => ends(body, Binds::ONE),
+        }]),
         // A thunk's body states its type only where the thunk's position
         // does: a definition's value, a family's argument; below any other
         // value, as a constructor's field, nothing states it.
@@ -1773,6 +1811,10 @@ enum Prefix
     Returner,
     /// A returner where the body goes on, `pure v`.
     Pure,
+    /// An exit with a value, where a bare returner would run on, `return v`.
+    Return,
+    /// An exit through a call, where a bare call would run on, `become c`.
+    Become,
     /// A force, `force v`.
     Force,
     /// A run where a value is read, `run c`.
@@ -1886,6 +1928,8 @@ enum Bracket
     Run,
     /// A type quoted where an expression stands, `type(T)`.
     TypeQuote,
+    /// A loop's end with a value, `break(v)`.
+    Break,
 }
 
 impl Bracket
@@ -1917,6 +1961,7 @@ impl Bracket
             Self::Arrow => "arrow(",
             Self::Run => "Run(",
             Self::TypeQuote => "type(",
+            Self::Break => "break(",
         })
     }
 }
@@ -2164,6 +2209,114 @@ where
     else {
         None
     }
+}
+
+/// How a fixpoint the walk reaches is written: as the loop it lowered from,
+/// or, where it is no loop's, in the printer's notation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Looped<Node>
+{
+    /// `loop { b }`, its body run on each pass.
+    Loop(Node),
+    /// `while c { t }`, then the rest the loop's break goes on with, if any:
+    /// `fix k. x ← c; case x { inl _ => t, inr _ => split () (); r }`, the
+    /// false branch `return ()` where nothing follows the loop.
+    While
+    {
+        /// The condition, under the loop's binder.
+        condition: Node,
+        /// The true branch, under the loop's binder, the condition's and the
+        /// branch's.
+        then: Node,
+        /// What follows the loop, under the same three binders.
+        rest: Option<Node>,
+    },
+}
+
+/// The loop the fixpoint `node` lowered from, in a position admitting
+/// `admits`.
+///
+/// The lowering reads a loop into the fixpoint, `loop { b }` as `fix k. b'`
+/// and `while c { b }` as `fix k. x ← c; case x { inl _ => b', inr _ =>
+/// return () }`, and puts what follows the loop at its breaks. A loop stands
+/// only where a path through a body ends, so a fixpoint anywhere else, and
+/// one whose body abstracts, a `for` or a loop threading held slots, keeps
+/// the printer's notation.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: none unless `node` reads as a fixpoint in a position where a body
+///   ends whose body is no lambda; a `while` when the body binds a computation
+///   and cases on the bound value in two branches the second of which is a
+///   break, `return ()` or `split () (); r`; a `loop` otherwise.
+/// - provides: the reading [`children`] and [`Walk::form`] share.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `loop`, a `while` the body ends with and one a rest
+///   follows, and a fixpoint whose body abstracts.
+/// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Fixpoint(_)))]
+fn looped<S>(
+    source: &S,
+    node: S::Node,
+    admits: Admits,
+) -> Option<Looped<S::Node>>
+where
+    S: Source + ?Sized,
+{
+    if !matches!(admits, Admits::Computation(Tail::Ends | Tail::Unstated)) {
+        return None;
+    }
+    let Former::Fixpoint(body) = source.read(node)
+    else {
+        return None;
+    };
+    if let Former::Lambda(_) = source.read(body) {
+        return None;
+    }
+    // A `while`: the body binds the test and cases on it, the false branch
+    // the loop's break, `return ()` where the loop ends the body and
+    // `split () (); r` where the rest `r` follows it.
+    if let Former::Bind(condition, tested) = source.read(body)
+        && let Former::Case { scrutinee, arity } = source.read(tested)
+        && usize::from(arity) == 2_usize
+        && let Former::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        } = source.read(scrutinee)
+        && u32::from(index) == 0_u32
+        && let (Some(then), Some(otherwise)) = (
+            source.component(tested, Component::from(0_usize)),
+            source.component(tested, Component::from(1_usize)),
+        )
+    {
+        if let Former::Return(value) = source.read(otherwise)
+            && matches!(source.read(value), Former::Unit)
+        {
+            return Some(Looped::While {
+                condition,
+                then,
+                rest: None,
+            });
+        }
+        if let Former::Split {
+            scrutinee: broken,
+            arity: binders,
+            body: rest,
+        } = source.read(otherwise)
+            && usize::from(binders) == 0_usize
+            && matches!(source.read(broken), Former::Unit)
+        {
+            return Some(Looped::While {
+                condition,
+                then,
+                rest: Some(rest),
+            });
+        }
+    }
+    Some(Looped::Loop(body))
 }
 
 /// A derived path operation a transport is the derivation of
@@ -2619,6 +2772,35 @@ enum ReductAs
     Result,
 }
 
+/// A binder a loop's spelling leaves unwritten.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LoopBinder
+{
+    /// The loop's own, the thunk a pass forces to run the next: forced at the
+    /// end of a pass it is written `continue`. A rest follows the loop when
+    /// `rest` holds, so a returner ending a pass is an exit, `return v`, and
+    /// otherwise the loop's end, `break(v)`.
+    Own
+    {
+        /// Whether a rest follows the loop.
+        rest: bool,
+    },
+    /// One a `while` loop's test binds.
+    Hidden,
+}
+
+/// How a computation ending a loop's pass is written.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PassEnd
+{
+    /// The loop's own binder forced, `continue`.
+    Continue,
+    /// As an exit, or as a former the path runs on through.
+    Written,
+    /// Not at all: a computation left bare there runs the loop again.
+    Unwritten,
+}
+
 /// One unit of the walk's pending work.
 #[derive(Clone, Copy, Debug)]
 enum Task<Node>
@@ -2650,6 +2832,13 @@ enum Task<Node>
     /// or a hold's held name — as [`Task::Bind`] does, its region the
     /// innermost the walk is inside.
     BindScope(Zone, Option<Node>),
+    /// Open a binder a loop's spelling does not write, as [`Task::Bind`]
+    /// does: the loop's own, which a `continue` forces, or one its test
+    /// binds.
+    BindLoop(Zone, LoopBinder),
+    /// Enter (`true`) or leave (`false`) a handler's subject, where an exit
+    /// leaves the handler.
+    Handled(bool),
     /// Close the innermost binder.
     Unbind,
     /// Set the occurrences named so far aside, so the argument visited next
@@ -3234,6 +3423,14 @@ struct Walk<'walk, 'names>
     /// a dependent arrow whose binder no occurrence names is spelled as the
     /// plain arrow.
     occurring: BTreeSet<OpenBinders>,
+    /// The positions of the binders a loop's spelling leaves unwritten: an
+    /// occurrence of one names nothing the text binds.
+    hidden: BTreeSet<OpenBinders>,
+    /// The loops the walk is inside, the innermost last: each one's own
+    /// binder's position, and whether a rest follows it.
+    loops: Vec<(OpenBinders, bool)>,
+    /// How many handler subjects the walk is inside.
+    subjects: usize,
     /// The occurrences set aside by each [`Task::Hold`] whose argument has not
     /// yet been bound, the outermost first.
     held: Vec<BTreeSet<OpenBinders>>,
@@ -3635,6 +3832,9 @@ impl Walk<'_, '_>
     {
         let spelled = if let Some(position) = self.opened_at(zone, index) {
             let _fresh = self.occurring.insert(position);
+            if self.hidden.contains(&position) {
+                self.note(Unspelled::Notation(Notation::Fixpoint));
+            }
             match self.names.get(position.0) {
                 Some(&Some(ref name)) => Ok(name.0.clone()),
                 Some(&None) | None => Err(Unspelled::Exhausted),
@@ -3740,6 +3940,81 @@ impl Walk<'_, '_>
             remaining = remaining.saturating_sub(1_usize);
         }
         None
+    }
+
+    /// How `former`, ending a loop's pass, is written.
+    ///
+    /// The loop's own binder forced is `continue`. A returner is written
+    /// `break(v)` where the loop ends the body and `return v` where a rest
+    /// follows it, a call `become c`, and a bind or a case runs the path on
+    /// into its rest or its branches. An exit written in a handler's subject
+    /// leaves the handler, not the body the loop stands in, so there only
+    /// `break(v)` and `continue` are written.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`PassEnd::Continue`] exactly for a force of an
+    ///   intuitionistic variable whose open binder is the innermost loop's own;
+    ///   [`PassEnd::Written`] for a bind, a case of any kind, a returner ending
+    ///   a loop no rest follows, and outside every handler subject a returner
+    ///   and a call; [`PassEnd::Unwritten`] otherwise.
+    /// - provides: the formers a pass's end writes, the rest noted as the
+    ///   fixpoint's notation.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pass ending in `continue`, `break(v)`, `return v`
+    ///   and `become c`, and one naming the loop's binder.
+    /// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
+    #[spec(ensures: |ret| ret != PassEnd::Continue || !self.loops.is_empty())]
+    fn pass_end<S>(
+        &self,
+        source: &S,
+        former: &Former<'_, S::Node>,
+    ) -> PassEnd
+    where
+        S: Source + ?Sized,
+    {
+        let outside = self.subjects == 0_usize;
+        let rest = self.loops.last().is_some_and(|&(_, rest)| rest);
+        let written = if let Former::Force(forced) = *former {
+            if let Former::Variable {
+                zone: Zone::Intuitionistic,
+                index,
+            } = source.read(forced)
+                && self
+                    .opened_at(Zone::Intuitionistic, index)
+                    .is_some_and(|position| {
+                        self.loops.last().is_some_and(|&(own, _)| own == position)
+                    })
+            {
+                return PassEnd::Continue;
+            }
+            false
+        }
+        else if let Former::Return(_) = *former {
+            outside || !rest
+        }
+        else if let Former::Application(..) = *former {
+            outside
+        }
+        else {
+            matches!(
+                *former,
+                Former::Bind(..)
+                    | Former::Case { .. }
+                    | Former::DataCase { .. }
+                    | Former::Split { .. }
+                    | Former::ListCase { .. }
+            )
+        };
+        if written {
+            PassEnd::Written
+        }
+        else {
+            PassEnd::Unwritten
+        }
     }
 
     /// The position in the context, outermost first, of the binder an
@@ -4774,10 +5049,14 @@ impl Walk<'_, '_>
     ///   the closing of the binders it stands under; a former spelled by parts
     ///   pushes its parts as [`Self::form`] builds them; a static application
     ///   schedules its spine as [`Self::spine`] does and an application its
-    ///   call as [`Self::call`] does; a decode, a quote, a returner where the
-    ///   body ends, a nested computation and a returned value push their
-    ///   child's visit alone, so the child's piece is theirs; a returner
-    ///   anywhere else is `pure v` and a run `run c`.
+    ///   call as [`Self::call`] does, under `become` where it ends a loop's
+    ///   pass; a decode, a quote, a returner where the body ends, a nested
+    ///   computation and a returned value push their child's visit alone, so
+    ///   the child's piece is theirs; the loop's own binder forced at the end
+    ///   of a pass finishes as `continue`, a returner ending a pass is
+    ///   `break(v)` or `return v` as [`Self::pass_end`] reads it, and a
+    ///   computation the end of a pass cannot write is noted as the fixpoint's
+    ///   notation; a returner anywhere else is `pure v` and a run `run c`.
     /// - provides: one step of the walk.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -4798,6 +5077,7 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `tests::goldens::a_scoped_capability_names_its_scope_400`
     /// - witness: `tests::goldens::a_returner_lists_each_interface_of_its_row_between_commas`
+    /// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
     #[spec(
         captures: [entry = self.pieces.len(), pending = tasks.len(), opened = self.opened.len(), fidelity = self.fidelity],
         ensures: |ref ret| self.opened.len() == opened
@@ -4844,6 +5124,32 @@ impl Walk<'_, '_>
             )]
             Reach::Misplaced => return self.unspell(Unspelled::Misplaced),
         }
+        // The end of a loop's pass is written as an exit, a `continue`, or a
+        // former the path runs on through; anything else there the surface
+        // cannot write, since a computation left bare runs the loop again.
+        let pass =
+            (admits == Admits::Computation(Tail::Passes)).then(|| self.pass_end(source, &former));
+        if pass == Some(PassEnd::Continue) {
+            return writes(
+                Production("continue_expression"),
+                self.atom(Glyphs("continue")),
+            );
+        }
+        #[cfg_attr(
+            dylint_lib = "quenchant_dylints",
+            expect(
+                answer_totality,
+                reason = "a pass ending in a computation the surface cannot write there keeps \
+                          the fixpoint's notation"
+            )
+        )]
+        let admits = if pass == Some(PassEnd::Unwritten) {
+            self.note(Unspelled::Notation(Notation::Fixpoint));
+            Admits::Computation(Tail::Ends)
+        }
+        else {
+            admits
+        };
         // The slots a former read whole in a shape of its own stands over, in
         // place of its child table's.
         let mut shaped = None;
@@ -5411,6 +5717,12 @@ impl Walk<'_, '_>
                 return writes(Production("type_application"), Ok(()));
             },
             Former::Application(function, argument) => {
+                if admits == Admits::Computation(Tail::Passes) {
+                    tasks.push(Task::Join(writes(
+                        Production("become_expression"),
+                        Join::Prefix(Prefix::Become),
+                    )));
+                }
                 self.call(source, function, argument, depth, tasks);
                 return writes(Production("call_expression"), Ok(()));
             },
@@ -5419,6 +5731,20 @@ impl Walk<'_, '_>
             // So does one that ends answering a `run`: bare at a statement's
             // head, `run` opens a bind, `run x <- c ; …`.
             Former::Return(returned) => match admits {
+                Admits::Computation(Tail::Passes) => {
+                    Some(if self.loops.last().is_some_and(|&(_, rest)| rest) {
+                        writes(
+                            Production("return_expression"),
+                            Join::Prefix(Prefix::Return),
+                        )
+                    }
+                    else {
+                        writes(
+                            Production("break_value_expression"),
+                            Join::Bracket(Bracket::Break),
+                        )
+                    })
+                },
                 Admits::Computation(Tail::Ends | Tail::Unstated)
                     if !matches!(
                         source.read(returned),
@@ -5526,7 +5852,21 @@ impl Walk<'_, '_>
             Some(slots) => slots,
             None => children(source, node, &former, admits, self.bodies),
         };
+        let looping = if matches!(former, Former::Fixpoint(_)) {
+            looped(source, node, admits)
+        }
+        else {
+            None
+        };
+        let rest = matches!(looping, Some(Looped::While { rest: Some(_), .. }));
         for (index, slot) in slots.into_iter().enumerate().rev() {
+            // A handler's subject, its first slot, is where an exit leaves
+            // the handler.
+            let subject =
+                index == 0_usize && matches!(former, Former::Handle { .. } | Former::Scope { .. });
+            if subject {
+                tasks.push(Task::Handled(false));
+            }
             for _ in 0_usize .. slot.binds.count {
                 tasks.push(Task::Unbind);
             }
@@ -5547,13 +5887,30 @@ impl Walk<'_, '_>
             // its second, stand in the region the scope or the hold opens.
             let scoped = (index == 0_usize && matches!(former, Former::Scope { .. }))
                 || (index == 1_usize && matches!(former, Former::Hold { .. }));
-            for _ in 0_usize .. slot.binds.count {
+            for binder in 0_usize .. slot.binds.count {
+                // The outermost binder of a loop's slot, opened first and so
+                // pushed last, is the loop's own.
+                let own = binder.saturating_add(1_usize) == slot.binds.count;
                 tasks.push(if scoped {
                     Task::BindScope(slot.binds.zone, opener)
+                }
+                else if looping.is_some() {
+                    Task::BindLoop(
+                        slot.binds.zone,
+                        if own && slot.admits == Admits::Computation(Tail::Passes) {
+                            LoopBinder::Own { rest }
+                        }
+                        else {
+                            LoopBinder::Hidden
+                        },
+                    )
                 }
                 else {
                     Task::Bind(slot.binds.zone, opener)
                 });
+            }
+            if subject {
+                tasks.push(Task::Handled(true));
             }
             if let Some(label) = slot.label {
                 tasks.push(Task::Label(label));
@@ -6516,14 +6873,30 @@ impl Walk<'_, '_>
                     .rest(Arity(4_usize));
                 writes(Production("call_expression"), Binding::Atom)
             },
-            Former::Fixpoint(_) => {
-                self.note(Unspelled::Notation(Notation::Fixpoint));
-                let _ = parts
-                    .text("rec ")
-                    .part(Part::Binder(0_usize))
-                    .text(" {")
-                    .body();
-                Binding::Prefix
+            Former::Fixpoint(_) => match looped(source, node, admits) {
+                Some(Looped::Loop(_)) => {
+                    let _ = parts.text("loop {").body();
+                    writes(Production("loop_expression"), Binding::Prefix)
+                },
+                Some(Looped::While { rest, .. }) => {
+                    let _ = parts.text("while ").piece(Binding::Arrow).text(" {").body();
+                    if rest.is_some() {
+                        let _ = parts.text(" ;").part(Part::Line).piece(Binding::Sequence);
+                        writes(Production("block"), Binding::Sequence)
+                    }
+                    else {
+                        writes(Production("while_expression"), Binding::Prefix)
+                    }
+                },
+                None => {
+                    self.note(Unspelled::Notation(Notation::Fixpoint));
+                    let _ = parts
+                        .text("rec ")
+                        .part(Part::Binder(0_usize))
+                        .text(" {")
+                        .body();
+                    Binding::Prefix
+                },
             },
             Former::Reset(_) => {
                 self.note(Unspelled::Notation(Notation::Reset));
@@ -7028,7 +7401,7 @@ impl Walk<'_, '_>
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
             Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Lambda | Join::Thunk
-                | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Back | Bracket::Forward | Bracket::Run | Bracket::TypeQuote) => Some(1_usize),
+                | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Back | Bracket::Forward | Bracket::Run | Bracket::TypeQuote | Bracket::Break) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
                 | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) => Some(count),
             Join::ValueFunction(Arity(domains), _) => domains.checked_add(1_usize),
@@ -7102,6 +7475,8 @@ impl Walk<'_, '_>
                     Prefix::Thunk => Glyphs("+U "),
                     Prefix::Returner => Glyphs("-F "),
                     Prefix::Pure => Glyphs("pure "),
+                    Prefix::Return => Glyphs("return "),
+                    Prefix::Become => Glyphs("become "),
                     Prefix::Force => Glyphs("force "),
                     Prefix::Run => Glyphs("run "),
                 })?;
@@ -7379,7 +7754,8 @@ impl Walk<'_, '_>
                     | Bracket::Back
                     | Bracket::Forward
                     | Bracket::Run
-                    | Bracket::TypeQuote => {
+                    | Bracket::TypeQuote
+                    | Bracket::Break => {
                         let body = self.pop()?;
                         let opener = self.leaf(bracket.opener())?;
                         items.extend([opener, body.doc]);
@@ -7516,6 +7892,9 @@ where
         opened: Vec::new(),
         scopes: Vec::new(),
         occurring: BTreeSet::new(),
+        hidden: BTreeSet::new(),
+        loops: Vec::new(),
+        subjects: 0_usize,
         held: Vec::new(),
         substituted: BTreeMap::new(),
         context,
@@ -7570,6 +7949,22 @@ where
                 Walk::returned(source, node, depth, &mut tasks);
             },
             Task::Bind(zone, opener) => walk.bind(source, zone, opener),
+            Task::BindLoop(zone, binder) => {
+                walk.bind(source, zone, None);
+                let position = OpenBinders(walk.opened.len().saturating_sub(1_usize));
+                let _fresh = walk.hidden.insert(position);
+                if let LoopBinder::Own { rest } = binder {
+                    walk.loops.push((position, rest));
+                }
+            },
+            Task::Handled(entered) => {
+                walk.subjects = if entered {
+                    walk.subjects.saturating_add(1_usize)
+                }
+                else {
+                    walk.subjects.saturating_sub(1_usize)
+                };
+            },
             Task::BindScope(zone, opener) => {
                 walk.bind(source, zone, opener);
                 walk.scopes.push(walk.opened.len().saturating_sub(1_usize));
@@ -7584,6 +7979,14 @@ where
                     let _left = walk.scopes.pop();
                 }
                 let _argument = walk.substituted.remove(&OpenBinders(walk.opened.len()));
+                let _shown = walk.hidden.remove(&OpenBinders(walk.opened.len()));
+                if walk
+                    .loops
+                    .last()
+                    .is_some_and(|&(own, _)| own.0 >= walk.opened.len())
+                {
+                    let _left = walk.loops.pop();
+                }
             },
             Task::Hold => walk.held.push(core::mem::take(&mut walk.occurring)),
             Task::Substitute(arity) => walk.substitute(arity)?,
@@ -7844,6 +8247,9 @@ mod tests
             opened: super::Vec::new(),
             scopes: super::Vec::new(),
             occurring: super::BTreeSet::new(),
+            hidden: super::BTreeSet::new(),
+            loops: super::Vec::new(),
+            subjects: 0_usize,
             held: super::Vec::new(),
             substituted: super::BTreeMap::new(),
             context: &[],
@@ -7931,6 +8337,9 @@ mod tests
             opened: super::Vec::new(),
             scopes: super::Vec::new(),
             occurring: super::BTreeSet::new(),
+            hidden: super::BTreeSet::new(),
+            loops: super::Vec::new(),
+            subjects: 0_usize,
             held: super::Vec::new(),
             substituted: super::BTreeMap::new(),
             context: &[],

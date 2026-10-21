@@ -1004,7 +1004,10 @@ pub enum Unreadable
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Notation
 {
-    /// A fixpoint, written `rec x { … }`.
+    /// A fixpoint no `loop` or `while` reads as, written `rec x { … }`: one
+    /// over an abstraction, one where no body ends, or a loop one of whose
+    /// passes ends in a computation the surface cannot write there or names
+    /// a binder the loop leaves unwritten.
     Fixpoint,
     /// A delimited-control reset, written `reset { … }`.
     Reset,

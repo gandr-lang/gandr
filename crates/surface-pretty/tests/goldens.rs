@@ -2040,7 +2040,7 @@ fn a_block_body_holds_its_sequence_bare()
     let source = CoreSource::new(&core, &[]);
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(recursive))),
-        approximate(Written("rec a { run b <- pure 1 ; b }"))
+        faithful(Written("loop { run b <- pure 1 ; break(b) }"))
     );
 }
 
@@ -4128,8 +4128,9 @@ fn an_approximate_printing_names_its_reason_820()
     let mut core = CoreArena::new();
     let one = integer(&mut core, Sign::NonNegative, Written("1"));
     let pure_one = core.computation_return(one);
+    let abstraction = core.computation_lambda(pure_one);
     let recursive =
-        core.computation_fixpoint(pure_one, gandr_kernel_term::FixpointEvidence::Partial);
+        core.computation_fixpoint(abstraction, gandr_kernel_term::FixpointEvidence::Partial);
     let integer_type = core.value_type_base(BaseType::Integer);
     let returns_integer = core.comp_type_returner(integer_type);
     let ascribed = core.computation_ascribe(pure_one, returns_integer);
@@ -4139,7 +4140,7 @@ fn an_approximate_printing_names_its_reason_820()
     for (root, expected, reason) in [
         (
             body(recursive),
-            "rec a { 1 }",
+            "rec a { fn (b) { 1 } }",
             Unspelled::Notation(Notation::Fixpoint),
         ),
         (body(ascribed), "1", Unspelled::Elided(Elided::Ascription)),
@@ -4352,5 +4353,85 @@ fn a_continuation_is_resumed_by_its_call_941()
             "handle a : Proc { unit } with { pure(a) => a, oper exit(a, b) => resume(b, force a) }"
         )),
         "a resumption with any other computation keeps the notation"
+    );
+}
+
+/// A fixpoint where a body ends prints as the loop it lowered from: its
+/// own binder forced at the end of a pass is `continue`, a returner there
+/// `break(v)` where the loop ends the body and `return v` where a rest
+/// follows it, a call `become c`, and a body casing on a bound test whose
+/// second branch is a break a `while`. A fixpoint over an abstraction, and
+/// one whose unwritten binder a pass names, keep the printer's notation
+/// and make the presentation approximate (#941).
+#[test]
+fn a_loop_prints_as_the_loop_it_lowered_from_941()
+{
+    let mut core = CoreArena::new();
+    let partial = gandr_kernel_term::FixpointEvidence::Partial;
+    let variable = |core: &mut CoreArena, index: u32| {
+        core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let own = variable(&mut core, 0_u32);
+    let again = core.computation_force(own);
+    let spinning = core.computation_fixpoint(again, partial);
+    let nothing = core.value_unit();
+    let ends = core.computation_return(nothing);
+    let ending = core.computation_fixpoint(ends, partial);
+    // `fn (a) { while force a { … } ; unit }`: the condition under the
+    // loop's binder, each branch under the loop's, the test's and its own;
+    // the true branch tests again, its branches under two more.
+    let tested = variable(&mut core, 1_u32);
+    let condition = core.computation_force(tested);
+    let looped = variable(&mut core, 4_u32);
+    let continued = core.computation_force(looped);
+    let exits = core.computation_return(nothing);
+    let test = variable(&mut core, 0_u32);
+    let retest = core.computation_case(test, &[continued, exits]);
+    let tested = variable(&mut core, 3_u32);
+    let again = core.computation_force(tested);
+    let then = core.computation_bind(again, retest);
+    let rest = core.computation_return(nothing);
+    let broken = core.computation_split(nothing, ComponentCount::from(0_usize), rest);
+    let test = variable(&mut core, 0_u32);
+    let branches = core.computation_case(test, &[then, broken]);
+    let body = core.computation_bind(condition, branches);
+    let fixpoint = core.computation_fixpoint(body, partial);
+    let whiled = core.computation_lambda(fixpoint);
+    let function = variable(&mut core, 1_u32);
+    let head = core.computation_force(function);
+    let call = core.computation_application(head, nothing);
+    let fixpoint = core.computation_fixpoint(call, partial);
+    let becoming = core.computation_lambda(fixpoint);
+    let named = variable(&mut core, 0_u32);
+    let leaked = core.computation_return(named);
+    let leaking = core.computation_fixpoint(leaked, partial);
+    let source = CoreSource::new(&core, &[]);
+    let body = |id| Root::Computation(CoreNode::Computation(id));
+    assert_eq!(
+        spelled(&source, body(spinning)),
+        faithful(Written("loop { continue }")),
+        "the loop's own binder forced ends a pass as `continue`"
+    );
+    assert_eq!(
+        spelled(&source, body(ending)),
+        faithful(Written("loop { break(unit) }")),
+        "a returner where the loop ends the body is its break"
+    );
+    assert_eq!(
+        spelled(&source, body(whiled)),
+        faithful(Written(
+            "fn (a) {\n  while force a { run e <- force a ; case e { +{.0 = f} => continue, +{.1 = f} => return unit } } ;\n  unit\n}"
+        )),
+        "a while a rest follows writes its exits"
+    );
+    assert_eq!(
+        spelled(&source, body(becoming)),
+        faithful(Written("fn (a) { loop { become a(unit) } }")),
+        "a call ending a pass is written `become`"
+    );
+    assert_eq!(
+        spelled(&source, body(leaking)),
+        approximate(Written("loop { break(a) }")),
+        "a pass naming the loop's unwritten binder keeps the notation"
     );
 }
