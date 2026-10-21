@@ -41,13 +41,20 @@
 //! The choice of `memmap2` reverses on an advisory against a call the reader
 //! makes that no release fixes, or an unmaintained mark.
 //!
-//! **A mapped file is one no gandr verb writes.** A mapping's bytes change if
+//! **A verb writes a source through its reader.** A mapping's bytes change if
 //! the file under it is rewritten in place, and a truncated file faults the
-//! reader that touches the lost pages. No verb that writes a source reads it
-//! through a reader: the formatter, which rewrites a source in place, reads its
-//! own, and the rung that brings it onto the reader settles how a mapped
-//! source is rewritten. Another process rewriting a mapped file in place is the
-//! hazard every mapped reader accepts.
+//! reader that touches the lost pages. [`Reader::write`] therefore writes a
+//! file the reader holds mapped, or one at or above the crossover, to a
+//! sibling temporary file carrying the file's permissions and renamed over it,
+//! so every mapping keeps the old inode's pages; a hard link to such a file is
+//! lost. A file below the crossover is no mapping's, and is rewritten in place
+//! as `std::fs::write` does, keeping its inode and its hard links. The
+//! alternatives were renaming every write, which loses hard links to every
+//! source for a hazard only mapped files carry, and dropping the reader's
+//! entry before an in-place write, which leaves every other holder of the
+//! mapping to fault. The choice reverses if a hard link to a source of a
+//! mebibyte or more is reported lost. Another process rewriting a mapped file
+//! in place is the hazard every mapped reader accepts.
 
 use alloc::sync::Arc;
 use std::collections::HashMap;
@@ -204,6 +211,16 @@ impl Reader
         }
     }
 
+    /// A reader that has read nothing and maps every file that is not empty.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(test)]
+    pub(crate) fn mapping_every_file() -> Self
+    {
+        Self::mapping_from(Crossover(1))
+    }
+
     /// The text of the file at `path`, read now unless the reader holds it at
     /// the file's present identity.
     ///
@@ -246,9 +263,10 @@ impl Reader
             return Ok(read.clone());
         }
         let held = if metadata.is_file() && Crossover(metadata.len()) >= self.crossover {
-            // SAFETY: the mapping is read-only, and no gandr verb writes a file
-            // a reader holds; the module docs state the hazard a rewrite in
-            // place by another process leaves.
+            // SAFETY: the mapping is read-only, and a gandr verb writes a
+            // source only through `Reader::write`, which never rewrites a file
+            // at or above the crossover in place; the module docs state the
+            // hazard a rewrite in place by another process leaves.
             let map = unsafe { memmap2::Mmap::map(&file) }?;
             core::str::from_utf8(&map)
                 .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
@@ -264,6 +282,91 @@ impl Reader
             .insert(path.to_path_buf(), (identity, read.clone()));
         Ok(read)
     }
+
+    /// Write `text` over the file at `path`, safe against every mapping this
+    /// reader holds or may hold of it, and forget what it held there.
+    ///
+    /// # Specification
+    /// - requires: no other process writes the file meanwhile.
+    /// - ensures: on success the file at `path` holds exactly `text`, with the
+    ///   permissions it had, and the reader holds nothing under `path`. A file
+    ///   the reader holds mapped, or one at or above the crossover, is written
+    ///   to a sibling temporary file renamed over it, so every mapping of the
+    ///   old file keeps its pages; a file below the crossover held buffered or
+    ///   not at all is rewritten in place, keeping its inode and every hard
+    ///   link to it.
+    /// - fails: the I/O error writing, or inspecting or renaming, met; the
+    ///   reader then holds nothing under `path`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The I/O error met.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a mapped source rewritten shorter leaves the text
+    ///   mapped before it whole and keeps its permissions, the reader reads the
+    ///   new text, and a buffered one keeps its inode.
+    /// - witness: `reader::tests::a_mapped_source_is_rewritten_beside_its_mapping`
+    #[spec(ensures: !self.held.lock().unwrap_or_else(PoisonError::into_inner).contains_key(path))]
+    pub fn write(
+        &self,
+        path: &Path,
+        text: SourceText<'_>,
+    ) -> io::Result<()>
+    {
+        let mapped = self
+            .held
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(path)
+            .is_some_and(|(_, read)| matches!(*read.0, Held::Mapped(_)));
+        let large = std::fs::metadata(path)
+            .is_ok_and(|metadata| Crossover(metadata.len()) >= self.crossover);
+        if mapped || large {
+            replace(path, text)
+        }
+        else {
+            std::fs::write(path, text.as_ref())
+        }
+    }
+}
+
+/// Write `text` over the file at `path` through a sibling temporary file
+/// renamed over it, carrying the file's permissions, so a mapping of the
+/// file's present inode keeps every page.
+///
+/// # Specification
+/// - ensures: on success the file at `path` holds exactly `text`, with the
+///   permissions it had, and `path` names a new inode; on failure the file is
+///   as it was and no temporary file is left.
+/// - fails: the I/O error inspecting the file, or creating, writing or renaming
+///   the temporary file, met.
+/// - panics: none.
+///
+/// # Errors
+/// The I/O error met.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Reader::write`].
+/// - witness: `reader::tests::a_mapped_source_is_rewritten_beside_its_mapping`
+#[spec(ensures: |ret| ret.is_err() || std::fs::read_to_string(path).is_ok_and(|written| written == text.as_ref()))]
+fn replace(
+    path: &Path,
+    text: SourceText<'_>,
+) -> io::Result<()>
+{
+    let permissions = std::fs::metadata(path)?.permissions();
+    let mut name = std::ffi::OsString::from(".");
+    name.push(path.file_name().unwrap_or_default());
+    name.push(format!(".{}.tmp", std::process::id()));
+    let temporary = path.with_file_name(name);
+    let written = std::fs::write(&temporary, text.as_ref())
+        .and_then(|()| std::fs::set_permissions(&temporary, permissions))
+        .and_then(|()| std::fs::rename(&temporary, path));
+    if written.is_err() {
+        let _gone = std::fs::remove_file(&temporary);
+    }
+    written
 }
 
 #[cfg(test)]
@@ -370,5 +473,81 @@ mod tests
                 .kind(),
             io::ErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn a_mapped_source_is_rewritten_beside_its_mapping()
+    {
+        let scratch = Scratch::new(Path::new("reader-write"));
+        let long = "def one = 1 ;\n".repeat(4096);
+        scratch.file(Path::new("a.gandr"), SourceText::from(long.as_str()));
+        scratch.file(Path::new("b.gandr"), SourceText::from("def two  = 2 ;\n"));
+        let (mapped_path, buffered_path) = (
+            scratch.root().join("a.gandr"),
+            scratch.root().join("b.gandr"),
+        );
+        #[cfg(unix)]
+        std::fs::set_permissions(
+            &mapped_path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o640),
+        )
+        .expect("the permissions are set");
+        let reader = Reader::mapping_from(Crossover(1 << 12));
+        let before = reader.read(&mapped_path).expect("the file maps");
+        assert!(matches!(*before.0, Held::Mapped(_)));
+        reader
+            .write(&mapped_path, SourceText::from("def one = 1 ;\n"))
+            .expect("the mapped source is rewritten");
+        assert_eq!(
+            before.text().as_ref(),
+            long,
+            "a mapping read before the write keeps every page of the text it mapped"
+        );
+        assert_eq!(
+            reader
+                .read(&mapped_path)
+                .expect("the file reads")
+                .text()
+                .as_ref(),
+            "def one = 1 ;\n",
+            "the reader reads the rewritten text"
+        );
+        #[cfg(unix)]
+        assert_eq!(
+            std::os::unix::fs::PermissionsExt::mode(
+                &std::fs::metadata(&mapped_path)
+                    .expect("the file is there")
+                    .permissions()
+            ) & 0o777,
+            0o640,
+            "the rewritten source keeps its permissions"
+        );
+        let buffered = reader.read(&buffered_path).expect("the file reads");
+        let node = std::fs::metadata(&buffered_path).expect("the file is there");
+        reader
+            .write(&buffered_path, SourceText::from("def two = 2 ;\n"))
+            .expect("the buffered source is rewritten");
+        assert_eq!(buffered.text().as_ref(), "def two  = 2 ;\n");
+        assert_eq!(
+            reader
+                .read(&buffered_path)
+                .expect("the file reads")
+                .text()
+                .as_ref(),
+            "def two = 2 ;\n"
+        );
+        #[cfg(unix)]
+        assert_eq!(
+            std::os::unix::fs::MetadataExt::ino(
+                &std::fs::metadata(&buffered_path).expect("the file is there")
+            ),
+            std::os::unix::fs::MetadataExt::ino(&node),
+            "a source below the crossover is rewritten in place"
+        );
+        let names: Vec<_> = std::fs::read_dir(scratch.root())
+            .expect("the directory lists")
+            .map(|entry| entry.expect("an entry").file_name())
+            .collect();
+        assert_eq!(names.len(), 2, "no temporary file is left: {names:?}");
     }
 }
