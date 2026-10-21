@@ -65,7 +65,9 @@ use std::time::Instant;
 
 use anodized::spec;
 use gandr_surface_diagnostics::Verbosity;
+use gandr_surface_dispatcher::Freshness;
 use gandr_surface_dispatcher::Shadows;
+use gandr_surface_dispatcher::forget;
 use gandr_surface_dispatcher::imports_named;
 use gandr_surface_dispatcher::named_path;
 use gandr_surface_pretty::Form;
@@ -952,11 +954,17 @@ pub struct Workspace
     /// no editor holds. A cache the answers refresh, so it changes under a
     /// shared borrow.
     files: RefCell<Files>,
+    /// Each connection whose client watches the gandr sources under the
+    /// folders it opened, and reports their changes.
+    reporting: BTreeSet<Peer>,
+    /// Every path the hub's watch over the disk reports a change of, as the
+    /// closures named it.
+    watched: BTreeSet<PathBuf>,
 }
 
 /// The copies the editors hold, read by an import in place of the file at
 /// its path: `peer`'s own copy of each document, or the latest when it holds
-/// none.
+/// none; and whether a change to a file on disk is reported.
 struct Shadowing<'held>
 {
     /// The documents held, those out of the map being judged aside.
@@ -968,6 +976,12 @@ struct Shadowing<'held>
     paths: &'held BTreeMap<PathBuf, DocumentUri>,
     /// The connection whose imports read.
     peer: Peer,
+    /// The folders the connections opened.
+    files: &'held RefCell<Files>,
+    /// Each connection whose client reports changes under its folders.
+    reporting: &'held BTreeSet<Peer>,
+    /// Every path the hub's watch over the disk reports.
+    watched: &'held BTreeSet<PathBuf>,
 }
 
 impl Shadows for Shadowing<'_>
@@ -984,6 +998,30 @@ impl Shadows for Shadowing<'_>
         let uri = self.paths.get(named)?;
         let held = self.held.get(uri).or_else(|| self.pending?.get(uri))?;
         Some(held.view(self.peer).text.source())
+    }
+
+    /// Reported when the hub's watch over the disk follows `named`, or when
+    /// `peer`'s client watches a folder it opened holding `named`; confirmed
+    /// otherwise, and while the folders are being changed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn freshness(
+        &self,
+        named: &Path,
+    ) -> Freshness
+    {
+        let opened = || {
+            self.files
+                .try_borrow()
+                .is_ok_and(|files| files.opened_by(self.peer, named).is_some())
+        };
+        if self.watched.contains(named) || (self.reporting.contains(&self.peer) && opened()) {
+            Freshness::Reported
+        }
+        else {
+            Freshness::Confirmed
+        }
     }
 }
 
@@ -1053,6 +1091,63 @@ impl Workspace
         let _prior = self.editors.insert(peer, changes);
     }
 
+    /// Admit `peer` as a connection whose client watches the gandr sources
+    /// under the folders it opened: a read held of one of them stands
+    /// without a `stat` until the client reports it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reported_by(
+        &mut self,
+        peer: Peer,
+    )
+    {
+        let _new = self.reporting.insert(peer);
+    }
+
+    /// `peer`'s client stops watching: each read it covered is confirmed on
+    /// disk at its next lay-out.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unreported_by(
+        &mut self,
+        peer: Peer,
+    )
+    {
+        let _gone = self.reporting.remove(&peer);
+    }
+
+    /// Take `watched` as every path the hub's watch over the disk reports. A
+    /// path it did not report before is read from disk once more, so its held
+    /// read is no older than the watch.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the reported paths are `watched`; every read the process
+    ///   holds of a path `watched` adds is let go.
+    /// - provides: the hub's arming of its watch after each message.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the set taken is the argument moved into place, and
+    ///   comparing it again would walk both sets on every message the hub
+    ///   serves.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an importer whose sibling the hub's watch follows
+    ///   sees the sibling's rewrite once the watch reports it.
+    /// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
+    #[inline]
+    pub fn watched_on_disk(
+        &mut self,
+        watched: BTreeSet<PathBuf>,
+    )
+    {
+        let added: Vec<PathBuf> = watched.difference(&self.watched).cloned().collect();
+        forget(&added);
+        self.watched = watched;
+    }
+
     /// The copies the editors hold, as `peer`'s imports read them.
     ///
     /// # Specification
@@ -1067,6 +1162,9 @@ impl Workspace
             pending: None,
             paths: &self.paths,
             peer,
+            files: &self.files,
+            reporting: &self.reporting,
+            watched: &self.watched,
         }
     }
 
@@ -1421,6 +1519,7 @@ impl Workspace
     {
         let _watcher = self.watchers.remove(&peer);
         let _editor = self.editors.remove(&peer);
+        let _reporting = self.reporting.remove(&peer);
         self.files.get_mut().depart(peer);
         for (uri, held) in core::mem::take(&mut self.documents) {
             if let Some(forgotten) = self.let_go(uri, held, peer) {
@@ -2249,6 +2348,7 @@ impl Server
                     None => self.request(workspace, id, &method, params),
                 };
                 if unwatching {
+                    workspace.unreported_by(self.peer);
                     Outcome {
                         messages: Vec::from([
                             unregister(UnregistrationParams::watched_files()),
@@ -2854,6 +2954,9 @@ impl Server
     ) -> Outcome
     {
         let peer = self.peer;
+        if let Picks::Naming(changed, Origin::Disk) | Picks::Under(changed) = picks {
+            forget(changed);
+        }
         let paths = &workspace.paths;
         let chosen = |document: &Document| picked(picks, paths, &document.named).0;
         let mut outcome = Outcome::quiet();
@@ -2877,6 +2980,9 @@ impl Server
                     pending: Some(&pending),
                     paths,
                     peer,
+                    files: &workspace.files,
+                    reporting: &workspace.reporting,
+                    watched: &workspace.watched,
                 };
                 let rechecked = synchronised(
                     &uri,
@@ -3923,6 +4029,7 @@ impl Server
                     outcome
                         .messages
                         .push(register(RegistrationParams::watched_files()));
+                    workspace.reported_by(self.peer);
                 }
                 if self.pulling.0 {
                     let sent = self.next_request();
@@ -8478,6 +8585,120 @@ mod tests
             changed(&mut server, "elsewhere.gandr", 1),
             [],
             "a file no closure names rechecks nothing"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    /// #1404: a client that watches its folders reports a sibling's rewrite,
+    /// so the closure's read of it stands at each keystroke until reported;
+    /// a client that watches nothing has each keystroke confirm it on disk.
+    #[cfg(unix)]
+    #[test]
+    fn a_watched_sibling_is_read_again_once_reported_1404()
+    {
+        use core::time::Duration;
+        use std::time::SystemTime;
+
+        let directory =
+            std::env::temp_dir().join(format!("gandr-reported-1404-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        let sibling = directory.join("base.gandr");
+        let declared = "def one : Integer ;\ndef one = 1 ;\n";
+        let renamed = "def uno : Integer ;\ndef uno = 1 ;\n";
+        let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        // The sibling written as `text`, its modification time set back so the
+        // read of it is held.
+        let written = |text: &str| {
+            std::fs::write(&sibling, text).expect("the sibling is written");
+            let settled = SystemTime::now()
+                .checked_sub(Duration::from_secs(60))
+                .expect("a minute ago is a time");
+            std::fs::File::options()
+                .write(true)
+                .open(&sibling)
+                .and_then(|file| file.set_modified(settled))
+                .expect("the sibling's modification time is set back");
+        };
+        // How many diagnostics the importer's publication carries.
+        let errors = |published: &Value| {
+            published
+                .as_array()
+                .and_then(|messages| {
+                    messages
+                        .iter()
+                        .find(|message| message["params"]["uri"] == uri("importer.gandr"))
+                })
+                .and_then(|message| message["params"]["diagnostics"].as_array())
+                .map(Vec::len)
+        };
+        // The importer, at `version`, its text a comment longer each time.
+        let typed = |server: &mut Connected, version: i32| {
+            let text = format!(
+                "{importer}{}\n",
+                "//".repeat(usize::try_from(version).unwrap_or(0))
+            );
+            let change = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange",
+                "params": {"textDocument": {"uri": uri("importer.gandr"), "version": version},
+                    "contentChanges": [{"text": text}]}});
+            send(server, Json(&change.to_string()))
+        };
+        let opened = |watching: bool| {
+            let mut server = Connected::default();
+            let initialize = serde_json::json!({"jsonrpc": "2.0", "id": 1_i32, "method": "initialize",
+                "params": {"capabilities": {"workspace": {"didChangeWatchedFiles":
+                    {"dynamicRegistration": watching}}},
+                    "workspaceFolders": [{"uri": format!("file://{}", directory.display()), "name": "scratch"}]}});
+            let _initialized = send(&mut server, Json(&initialize.to_string()));
+            let _registered = send(
+                &mut server,
+                Json(r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#),
+            );
+            let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen",
+                "params": {"textDocument": {"uri": uri("importer.gandr"), "languageId": "gandr",
+                    "version": 1_i32, "text": importer}}});
+            let published = send(&mut server, Json(&open.to_string()));
+            (server, published)
+        };
+
+        written(declared);
+        let (mut watched, published) = opened(true);
+        assert_eq!(
+            errors(&published),
+            Some(0_usize),
+            "the importer reads `one`"
+        );
+        written(renamed);
+        assert_eq!(
+            errors(&typed(&mut watched, 2_i32)),
+            Some(0_usize),
+            "a watching client has not reported the rewrite, so the held read stands"
+        );
+        let reported = serde_json::json!({"jsonrpc": "2.0", "method": "workspace/didChangeWatchedFiles",
+            "params": {"changes": [{"uri": uri("base.gandr"), "type": 2_u8}]}});
+        assert!(
+            errors(&send(&mut watched, Json(&reported.to_string()))).is_some_and(|count| count > 0),
+            "once reported, the rewrite is read: `one` is gone"
+        );
+        assert!(
+            errors(&typed(&mut watched, 3_i32)).is_some_and(|count| count > 0),
+            "and the next keystroke reads it so"
+        );
+
+        written(declared);
+        let (mut unwatched, published) = opened(false);
+        assert_eq!(
+            errors(&published),
+            Some(0_usize),
+            "the importer reads `one`"
+        );
+        written(renamed);
+        assert!(
+            errors(&typed(&mut unwatched, 2_i32)).is_some_and(|count| count > 0),
+            "a client watching nothing has the next keystroke read the rewrite"
         );
         let _removed = std::fs::remove_dir_all(&directory);
     }

@@ -189,6 +189,22 @@ impl Files
             .map(PathBuf::as_path)
     }
 
+    /// The folder `peer` opened that holds `path`, if one does.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn opened_by(
+        &self,
+        peer: Peer,
+        path: &Path,
+    ) -> Option<&Path>
+    {
+        self.roots
+            .iter()
+            .find(|&(root, openers)| openers.contains(&peer) && path.starts_with(root))
+            .map(|(root, _)| root.as_path())
+    }
+
     /// The id of `path`, named now when the table names it not yet.
     ///
     /// # Specification

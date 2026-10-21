@@ -160,7 +160,8 @@ impl Disk
     }
 
     /// Follow `named` for `peer`, handing a change of any of them to
-    /// `changes`; with `named` empty, stop serving `peer`.
+    /// `changes`; with `named` empty, stop serving `peer`. The paths the
+    /// watch now reports, when they changed.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -168,9 +169,12 @@ impl Disk
     ///   and not served otherwise; the directories holding a path any served
     ///   connection follows, as each resolves, are watched and no others; a
     ///   path that does not resolve, or a directory the system refuses to
-    ///   watch, goes unnoticed.
+    ///   watch, goes unnoticed. When what `peer` is served with changed, every
+    ///   path a served connection follows whose directory is watched, as named;
+    ///   `None` otherwise.
     /// - provides: a connection's resynchronisation after each message it
-    ///   handled, and its leaving.
+    ///   handled, and its leaving; the paths whose reads stand without a
+    ///   `stat`.
     /// - fails: never; an unwatchable path goes unnoticed.
     /// - panics: none.
     ///
@@ -187,7 +191,7 @@ impl Disk
         peer: Peer,
         changes: &Changes,
         named: BTreeSet<PathBuf>,
-    )
+    ) -> Option<BTreeSet<PathBuf>>
     {
         let mut held = lock(&self.followed);
         let unchanged = held
@@ -195,7 +199,7 @@ impl Disk
             .get(&peer)
             .is_some_and(|follower| follower.named == named);
         if unchanged {
-            return;
+            return None;
         }
         if named.is_empty() {
             let _left = held.followers.remove(&peer);
@@ -218,15 +222,32 @@ impl Disk
             }
             let _named = resolved.insert(real, path.clone());
         }
-        held.resolved = resolved;
-        drop(held);
         for gone in self.directories.difference(&directories) {
             let _unwatched = self.watcher.unwatch(gone);
         }
+        let mut refused: BTreeSet<PathBuf> = BTreeSet::new();
         for added in directories.difference(&self.directories) {
-            let _watched = self.watcher.watch(added, RecursiveMode::NonRecursive);
+            if self
+                .watcher
+                .watch(added, RecursiveMode::NonRecursive)
+                .is_err()
+            {
+                let _refused = refused.insert(added.clone());
+            }
         }
+        directories.retain(|directory| !refused.contains(directory));
+        let watched = resolved
+            .iter()
+            .filter(|&(real, _)| {
+                real.parent()
+                    .is_some_and(|directory| directories.contains(directory))
+            })
+            .map(|(_, named)| named.clone())
+            .collect();
+        held.resolved = resolved;
+        drop(held);
         self.directories = directories;
+        Some(watched)
     }
 }
 
