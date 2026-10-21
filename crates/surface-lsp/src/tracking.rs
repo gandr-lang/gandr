@@ -23,9 +23,6 @@ impl TrackingIssue
 {
     /// A module's documentation, which no face shows.
     pub const DOCUMENTATION: Self = Self(1135);
-    /// A tile inside a form the engine types nothing in: a nested module's
-    /// member, a descent claim, a member's signature.
-    pub const INNER: Self = Self(1204);
     /// An import whose address has a scheme, which nothing resolves.
     pub const SCHEME: Self = Self(1233);
     /// A tile of a root form that declares nothing, which the lowering reads
@@ -69,8 +66,6 @@ pub enum Gap
     Undocumented,
     /// In a root form that declares nothing: a run target or a stray.
     Undeclared,
-    /// Inside a declaration, where the engine typed nothing.
-    Untyped,
 }
 
 impl Gap
@@ -86,7 +81,6 @@ impl Gap
             Self::Foreign => TrackingIssue::SCHEME,
             Self::Undocumented => TrackingIssue::DOCUMENTATION,
             Self::Undeclared => TrackingIssue::RUN_TARGET,
-            Self::Untyped => TrackingIssue::INNER,
         }
     }
 
@@ -102,7 +96,6 @@ impl Gap
             Self::Foreign => String::from("An address with a scheme resolves to nothing yet."),
             Self::Undocumented => String::from("Its module documentation is not shown yet."),
             Self::Undeclared => String::from("A form that declares nothing has no hover yet."),
-            Self::Untyped => String::from("A form the engine typed nothing at has no hover yet."),
         };
         let issue = self.issue();
         format!(

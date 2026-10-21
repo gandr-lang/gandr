@@ -623,6 +623,7 @@ pub use crate::ledger::ObligationLedger;
 pub use crate::module::Judged;
 pub use crate::module::ModuleReport;
 pub use crate::module::ModuleRun;
+pub use crate::module::TypedModule;
 pub use crate::module::Verdict;
 pub use crate::module::check_declaration;
 pub use crate::module::check_declaration_supported;

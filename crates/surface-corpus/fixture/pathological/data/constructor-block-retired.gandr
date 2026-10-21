@@ -1,0 +1,5 @@
+/// The retired constructor-block spelling: a parameter without its type and
+/// constructors listed by comma. A data declaration reads neither, and is
+/// refused at its first parameter.
+@[ refuses("MalformedForm") ]
+data Maybe(a) { None, Some(x: a) }
