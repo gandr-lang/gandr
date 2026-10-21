@@ -698,10 +698,11 @@ impl Refusal
     ///
     /// # Specification
     /// - requires: nothing; the function is total over the vocabulary.
-    /// - ensures: the class is a function of the variant alone. A withheld
-    ///   constant is malformed source, since the declaration it names was
-    ///   turned away for a reason its own entry reports; a former outside the
-    ///   fragment, a session and a world are unimplemented, each naming the
+    /// - ensures: the class is a function of the variant alone, but for a
+    ///   former outside the fragment, whose class is its former's at the kernel
+    ///   ([`readmitted`]). A withheld constant is malformed source, since the
+    ///   declaration it names was turned away for a reason its own entry
+    ///   reports; a session and a world are unimplemented, each naming the
     ///   issue tracking it; a dangling id, a cyclic node, a declined
     ///   certificate and a machine invariant are engine faults, because a
     ///   judged term from the judged arena holds none of them and an unfolding
@@ -721,18 +722,19 @@ impl Refusal
     /// - witness: `bridge::tests::a_hole_is_refused_where_it_stands_and_its_filling_is_admitted`
     #[spec(ensures: |ret| match *self {
         | Self::Withheld { .. } | Self::WithheldData { .. } => matches!(ret, FailureClass::MalformedSource),
-        | Self::OutOfFragment { .. } | Self::Session { .. } | Self::Located { .. } => matches!(ret, FailureClass::Unimplemented(_)),
+        | Self::OutOfFragment { former, .. } => ret == readmitted(former),
+        | Self::Session { .. } | Self::Located { .. } => matches!(ret, FailureClass::Unimplemented(_)),
         | Self::DanglingNode { .. } | Self::Cyclic { .. }
             | Self::CertificateDeclined { .. } | Self::MachineInvariant => matches!(ret, FailureClass::EngineFault),
         | Self::Hole { .. } | Self::Unknown { .. } => matches!(ret, FailureClass::UserAbsence),
     })]
     #[inline]
     #[must_use]
-    pub const fn classify(&self) -> FailureClass
+    pub fn classify(&self) -> FailureClass
     {
         match *self {
             Self::Withheld { .. } | Self::WithheldData { .. } => FailureClass::MalformedSource,
-            Self::OutOfFragment { .. } => FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
+            Self::OutOfFragment { former, .. } => readmitted(former),
             Self::Session { .. } => FailureClass::Unimplemented(TrackingIssue::KERNEL_SESSION),
             Self::Located { .. } => FailureClass::Unimplemented(TrackingIssue::KERNEL_WORLD),
             Self::DanglingNode { .. }
@@ -741,6 +743,73 @@ impl Refusal
             | Self::MachineInvariant => FailureClass::EngineFault,
             Self::Hole { .. } | Self::Unknown { .. } => FailureClass::UserAbsence,
         }
+    }
+}
+
+/// Whose fact the bridge's refusal of `former` records.
+///
+/// # Specification
+/// - requires: nothing; the function is total over the formers.
+/// - ensures: a former the pure kernel has no reading for is unimplemented,
+///   naming the kernel's issue for its feature: effects and control,
+///   capabilities, memory and buffers, runs, flows above level zero, sealed
+///   abstract types, static lambdas left unnormalised and staged types in a
+///   term; a numeric literal, the numeric atom, a value lift and a universe
+///   over a sort parameter are unimplemented as the judgement's refusal of them
+///   is; a universe at the greatest level and a lift that does not raise, which
+///   the bridge never meets in an accepted declaration, are engine faults.
+/// - provides: the class of [`Refusal::OutOfFragment`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every former is pinned to its class by a census row.
+/// - witness: `bridge::tests::each_former_the_kernel_refuses_names_its_issue`
+#[spec(ensures: |ret| match former {
+    | UnadmittedFormer::EffectRow | UnadmittedFormer::Reify | UnadmittedFormer::Stack | UnadmittedFormer::Perform | UnadmittedFormer::Handle | UnadmittedFormer::Resume | UnadmittedFormer::Reset | UnadmittedFormer::Shift | UnadmittedFormer::Abandon => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_EFFECTS)),
+    | UnadmittedFormer::Capability | UnadmittedFormer::Exercise | UnadmittedFormer::Scope => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_CAPABILITY)),
+    | UnadmittedFormer::Memory | UnadmittedFormer::Buffer => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_MEMORY)),
+    | UnadmittedFormer::Run => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_RUN)),
+    | UnadmittedFormer::HigherFlow => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_HIGHER_FLOW)),
+    | UnadmittedFormer::Abstract => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_ABSTRACT)),
+    | UnadmittedFormer::StaticLambda => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_STATIC_LAMBDA)),
+    | UnadmittedFormer::Stage => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_STAGE)),
+    | UnadmittedFormer::NumericLiteral | UnadmittedFormer::NumericAtom | UnadmittedFormer::ValueLift | UnadmittedFormer::SortParameter => matches!(ret, FailureClass::Unimplemented(TrackingIssue::UNFILED)),
+    | UnadmittedFormer::TopUniverse | UnadmittedFormer::TypeLift => matches!(ret, FailureClass::EngineFault),
+})]
+#[must_use]
+const fn readmitted(former: UnadmittedFormer) -> FailureClass
+{
+    match former {
+        UnadmittedFormer::EffectRow
+        | UnadmittedFormer::Reify
+        | UnadmittedFormer::Stack
+        | UnadmittedFormer::Perform
+        | UnadmittedFormer::Handle
+        | UnadmittedFormer::Resume
+        | UnadmittedFormer::Reset
+        | UnadmittedFormer::Shift
+        | UnadmittedFormer::Abandon => FailureClass::Unimplemented(TrackingIssue::KERNEL_EFFECTS),
+        UnadmittedFormer::Capability | UnadmittedFormer::Exercise | UnadmittedFormer::Scope => {
+            FailureClass::Unimplemented(TrackingIssue::KERNEL_CAPABILITY)
+        },
+        UnadmittedFormer::Memory | UnadmittedFormer::Buffer => {
+            FailureClass::Unimplemented(TrackingIssue::KERNEL_MEMORY)
+        },
+        UnadmittedFormer::Run => FailureClass::Unimplemented(TrackingIssue::KERNEL_RUN),
+        UnadmittedFormer::HigherFlow => {
+            FailureClass::Unimplemented(TrackingIssue::KERNEL_HIGHER_FLOW)
+        },
+        UnadmittedFormer::Abstract => FailureClass::Unimplemented(TrackingIssue::KERNEL_ABSTRACT),
+        UnadmittedFormer::StaticLambda => {
+            FailureClass::Unimplemented(TrackingIssue::KERNEL_STATIC_LAMBDA)
+        },
+        UnadmittedFormer::Stage => FailureClass::Unimplemented(TrackingIssue::KERNEL_STAGE),
+        UnadmittedFormer::NumericLiteral
+        | UnadmittedFormer::NumericAtom
+        | UnadmittedFormer::ValueLift
+        | UnadmittedFormer::SortParameter => former.judged(),
+        UnadmittedFormer::TopUniverse | UnadmittedFormer::TypeLift => FailureClass::EngineFault,
     }
 }
 

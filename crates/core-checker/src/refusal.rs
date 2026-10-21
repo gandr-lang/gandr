@@ -268,6 +268,63 @@ pub enum UnadmittedFormer
     Abandon,
 }
 
+impl UnadmittedFormer
+{
+    /// Whose fact the judgement's refusal of this former records.
+    ///
+    /// # Specification
+    /// - requires: nothing; the function is total over the formers.
+    /// - ensures: a stage the source places where none stands and a lift that
+    ///   does not raise are malformed source; a universe at the greatest
+    ///   representable level is an engine fault, the bound being the
+    ///   representation's; a numeric literal, the numeric atom, a value lift
+    ///   and a universe over a sort parameter are unimplemented, naming the
+    ///   holding issue no source reaches past the lowering; every other former
+    ///   has a rule in the judgement, so its refusal there is an engine fault.
+    /// - provides: the class of [`CheckRefusal::OutOfFragment`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every former is pinned to its class by a census row.
+    /// - witness: `refusal::tests::each_unadmitted_former_carries_its_pinned_class`
+    #[spec(ensures: |ret| match self {
+        | Self::Stage | Self::TypeLift => matches!(ret, FailureClass::MalformedSource),
+        | Self::NumericLiteral | Self::NumericAtom | Self::ValueLift | Self::SortParameter => matches!(ret, FailureClass::Unimplemented(TrackingIssue::UNFILED)),
+        | Self::TopUniverse | Self::Abstract | Self::StaticLambda | Self::EffectRow | Self::Reify | Self::Stack | Self::Perform | Self::Handle | Self::Resume | Self::Reset | Self::Shift | Self::Capability | Self::Exercise | Self::Scope | Self::Run | Self::HigherFlow | Self::Memory | Self::Buffer | Self::Abandon => matches!(ret, FailureClass::EngineFault),
+    })]
+    #[inline]
+    #[must_use]
+    pub const fn judged(self) -> FailureClass
+    {
+        match self {
+            Self::Stage | Self::TypeLift => FailureClass::MalformedSource,
+            Self::NumericLiteral | Self::NumericAtom | Self::ValueLift | Self::SortParameter => {
+                FailureClass::Unimplemented(TrackingIssue::UNFILED)
+            },
+            Self::TopUniverse
+            | Self::Abstract
+            | Self::StaticLambda
+            | Self::EffectRow
+            | Self::Reify
+            | Self::Stack
+            | Self::Perform
+            | Self::Handle
+            | Self::Resume
+            | Self::Reset
+            | Self::Shift
+            | Self::Capability
+            | Self::Exercise
+            | Self::Scope
+            | Self::Run
+            | Self::HigherFlow
+            | Self::Memory
+            | Self::Buffer
+            | Self::Abandon => FailureClass::EngineFault,
+        }
+    }
+}
+
 /// A count of static arguments: how many a static application passes, or how
 /// many static Pis a head's type opens.
 #[repr(transparent)]
@@ -1105,35 +1162,35 @@ impl CheckRefusal
     ///
     /// # Specification
     /// - requires: nothing; the function is total over the vocabulary.
-    /// - ensures: the class is a function of the variant alone — two refusals
-    ///   of one variant classify alike whatever their payloads hold. A type
-    ///   mismatch, a shape mismatch, a checking-only form in synthesis
-    ///   position, an unknown constant, a sort mismatch, a level mismatch, a
-    ///   dependent bind, a family at the wrong arity or with an argument at the
-    ///   wrong classifier, a static lambda at a dynamic parameter, a static Pi
-    ///   over a type that classifies no codes, an occurrence of a data
-    ///   declaration's own family outside a strictly positive, uniform field,
-    ///   rules that do not present their type, a reference past its block, a
-    ///   recursive call whose argument stands below no stage its recursion
-    ///   wants, reflexivity at endpoints its point does not reach, a compound
-    ///   endpoint that returns no pure value, an abstract type's kind that is
-    ///   no universe, a representation above it, an atom naming no abstract
-    ///   type, translators that are no equivalence of species, a run with no
-    ///   computation enclosing it, a session action its endpoint's state
-    ///   refuses, a break of an endpoint's linear use, a forged, amplified,
-    ///   escaping, consumable or ungranted capability or one exercised outside
-    ///   its authority, sessions that are not bisimilar or not related by
-    ///   subtyping, an operand that is no session code, a ride whose motive is
-    ///   not covariant, a run its session does not admit and a function flow's
-    ///   boundary against its variance are malformed source; a former outside
-    ///   the fragment, a case on an indexed family, a function extensionality
-    ///   or a universe equivalence or a `forward` the rule does not decide, a
-    ///   list round trip reading its tail, univalence at a stratum the checker
-    ///   does not certify and a ride the checker does not move are
-    ///   unimplemented, each naming the issue tracking it; an unbound index, an
-    ///   exhausted allowance, a dangling id, an admission out of order, a
-    ///   repeated sealing site, a machine invariant and an undecided unfolding
-    ///   are engine faults; nothing is a user absence.
+    /// - ensures: the class is a function of the variant alone, but for a
+    ///   former outside the fragment, whose class is its former's
+    ///   ([`UnadmittedFormer::judged`]). A type mismatch, a shape mismatch, a
+    ///   checking-only form in synthesis position, an unknown constant, a sort
+    ///   mismatch, a level mismatch, a dependent bind, a family at the wrong
+    ///   arity or with an argument at the wrong classifier, a static lambda at
+    ///   a dynamic parameter, a static Pi over a type that classifies no codes,
+    ///   an occurrence of a data declaration's own family outside a strictly
+    ///   positive, uniform field, rules that do not present their type, a
+    ///   reference past its block, a recursive call whose argument stands below
+    ///   no stage its recursion wants, reflexivity at endpoints its point does
+    ///   not reach, a compound endpoint that returns no pure value, an abstract
+    ///   type's kind that is no universe, a representation above it, an atom
+    ///   naming no abstract type, translators that are no equivalence of
+    ///   species, a run with no computation enclosing it, a session action its
+    ///   endpoint's state refuses, a break of an endpoint's linear use, a
+    ///   forged, amplified, escaping, consumable or ungranted capability or one
+    ///   exercised outside its authority, sessions that are not bisimilar or
+    ///   not related by subtyping, an operand that is no session code, a ride
+    ///   whose motive is not covariant, a run its session does not admit and a
+    ///   function flow's boundary against its variance are malformed source; a
+    ///   case on an indexed family, a function extensionality or a universe
+    ///   equivalence or a `forward` the rule does not decide, a list round trip
+    ///   reading its tail, univalence at a stratum the checker does not certify
+    ///   and a ride the checker does not move are unimplemented, each naming
+    ///   the issue tracking it; an unbound index, an exhausted allowance, a
+    ///   dangling id, an admission out of order, a repeated sealing site, a
+    ///   machine invariant and an undecided unfolding are engine faults;
+    ///   nothing is a user absence.
     /// - provides: the fact a report groups by and an exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -1144,8 +1201,9 @@ impl CheckRefusal
     ///   than turning the rejection into an obligation.
     /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
     #[spec(ensures: |ret| match *self {
+        | Self::OutOfFragment { former, .. } => ret == former.judged(),
         | Self::IndexedCase(_)
-        | Self::OutOfFragment { .. } | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } | Self::UaUncertified { .. } | Self::RideUnsupported { .. } | Self::ForwardUnsupported { .. } => matches!(ret, FailureClass::Unimplemented(_)),
+        | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } | Self::UaUncertified { .. } | Self::RideUnsupported { .. } | Self::ForwardUnsupported { .. } => matches!(ret, FailureClass::Unimplemented(_)),
         | Self::UnboundIndex { .. }
         | Self::BudgetExceeded { .. }
         | Self::DanglingNode { .. }
@@ -1177,7 +1235,7 @@ impl CheckRefusal
     })]
     #[inline]
     #[must_use]
-    pub const fn classify(&self) -> FailureClass
+    pub fn classify(&self) -> FailureClass
     {
         match *self {
             Self::PathCode(_)
@@ -1247,7 +1305,7 @@ impl CheckRefusal
             | Self::RunNotAdmitted { .. }
             | Self::Boundary { .. } => FailureClass::MalformedSource,
             Self::IndexedCase(_) => FailureClass::Unimplemented(TrackingIssue::INDEXED),
-            Self::OutOfFragment { .. } => FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
+            Self::OutOfFragment { former, .. } => former.judged(),
             Self::FunextUnsupported { .. } => FailureClass::Unimplemented(TrackingIssue::FUNEXT),
             Self::EquivUnsupported { .. } => FailureClass::Unimplemented(TrackingIssue::EQUIV),
             Self::UncertifiedStratum { .. } => {
