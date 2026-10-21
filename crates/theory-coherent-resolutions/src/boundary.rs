@@ -89,6 +89,13 @@ wrapper! {
 }
 
 wrapper! {
+    /// How many critical pairs a joining has decided, a pair decided again
+    /// after its store grew counted again.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct PairDecisions(usize);
+}
+
+wrapper! {
     /// Whether a normalization stopped at its budget with a redex still
     /// pending, rather than at a normal form.
     #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]

@@ -905,27 +905,8 @@ where
 {
     let (left_id, left_cell) = left;
     let (right_id, right_cell) = right;
-    let mut out = Vec::new();
     let renamed = renamed_apart(left_cell, right_cell);
-    // The guard is on the identifiers, not on whether the legs coincide: a
-    // ground rule and a schematic rule over one operation are distinct cells
-    // whose legs coincide once unified, and that joinable pair is real work
-    // completion certifies. See `peak_legs`.
-    if left_id != right_id {
-        let mut unifier = A::Subst::default();
-        if bool::from(A::unify_cmd(left_cell.lhs(), renamed.lhs(), &mut unifier)) {
-            let peak = A::apply_subst(&unifier, left_cell.lhs());
-            out.push(Overlap {
-                left: left_id,
-                right: right_id,
-                kind: OverlapKind::Confluence,
-                unifier,
-                seam: A::root_position(),
-                peak,
-                right_renamed: renamed.clone(),
-            });
-        }
-    }
+    let mut out = root_overlap(left, right, &renamed);
     for seam in A::command_positions(left_cell.rhs()) {
         let Maybe::Present(sub) = A::subterm_cmd_at(left_cell.rhs(), &seam)
         else {
@@ -946,6 +927,81 @@ where
         }
     }
     out
+}
+
+/// The root confluence entries of one ordered cell pair: [`overlaps_between`]
+/// without its composition entries, which a critical-pair sweep never reads.
+///
+/// # Specification
+/// - requires: as [`overlaps_between`].
+/// - ensures: the confluence entries of `overlaps_between(left, right)`, at
+///   most one, in its order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the joinability sweep reads the root pairs through this
+///   query and its verdicts and certificates are unchanged; a missing or extra
+///   entry changes them.
+/// - witness: `completion::tests::joinability_separates_joined_divergent_and_undecided_pairs`
+/// - witness: `tests::second_inhabitant::interior_overlaps_reach_below_the_root_and_join_or_diverge`
+#[inline]
+#[must_use]
+#[spec(ensures: |output| *output == overlaps_between(left, right).into_iter().filter(|overlap| overlap.kind == OverlapKind::Confluence).collect::<Vec<_>>())]
+pub fn root_overlaps_between<A>(
+    left: (CellId, &Cell<A>),
+    right: (CellId, &Cell<A>),
+) -> Vec<Overlap<A>>
+where
+    A: CellAlphabet,
+{
+    root_overlap(left, right, &renamed_apart(left.1, right.1))
+}
+
+/// The root confluence entry of two cells, the right one already renamed
+/// apart from the left.
+///
+/// # Specification
+/// - requires: `renamed` is `right`'s cell renamed apart from `left`'s.
+/// - ensures: one entry when the identifiers differ and the two left-hand sides
+///   unify, none otherwise. The guard is on the identifiers, not on whether the
+///   legs coincide: a ground rule and a schematic rule over one operation are
+///   distinct cells whose legs coincide once unified, and that joinable pair is
+///   real work completion certifies (see `peak_legs`).
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`overlaps_between`]'s confluence entry.
+/// - witness: `tests::overlap::the_pair_query_agrees_with_the_store_wide_family`
+#[spec(ensures: |output| output.len() <= usize::from(left.0 != right.0)
+    && output.iter().all(|overlap| overlap.left == left.0 && overlap.right == right.0
+        && overlap.kind == OverlapKind::Confluence && overlap.seam == A::root_position()
+        && overlap.peak == A::apply_subst(&overlap.unifier, left.1.lhs())))]
+fn root_overlap<A>(
+    left: (CellId, &Cell<A>),
+    right: (CellId, &Cell<A>),
+    renamed: &Cell<A>,
+) -> Vec<Overlap<A>>
+where
+    A: CellAlphabet,
+{
+    let ((left_id, left_cell), (right_id, _)) = (left, right);
+    if left_id == right_id {
+        return Vec::new();
+    }
+    let mut unifier = A::Subst::default();
+    if !bool::from(A::unify_cmd(left_cell.lhs(), renamed.lhs(), &mut unifier)) {
+        return Vec::new();
+    }
+    let peak = A::apply_subst(&unifier, left_cell.lhs());
+    alloc::vec![Overlap {
+        left: left_id,
+        right: right_id,
+        kind: OverlapKind::Confluence,
+        unifier,
+        seam: A::root_position(),
+        peak,
+        right_renamed: renamed.clone(),
+    }]
 }
 
 /// The interior confluence family of one ordered cell pair: the right cell's
