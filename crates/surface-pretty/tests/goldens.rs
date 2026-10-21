@@ -2312,6 +2312,66 @@ fn a_type_no_expression_reads_is_quoted_839()
     }
 }
 
+/// #1127: an expression reads a sugared chain's `*`, `+` and `&` as
+/// operators over the components, so a quoted product, sum or lazy product
+/// of two or more components is written `type(T)` where an expression
+/// stands in the sugared form, alone, as an argument and under a type
+/// former; the explicit form's `#{A, B}` reads as the product's code and
+/// stays bare. A static abstraction's body is read as a type, where the chain
+/// stands bare: `\a. type(a * a)` does not parse.
+#[test]
+fn a_quoted_chain_is_quoted_1127()
+{
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    let unit = core.value_type_product(&[]);
+    let pair = core.value_type_product(&[unit, integer]);
+    let either = core.value_type_sum(&[integer, unit]);
+    let pairs = core.value_type_list(pair);
+    let returns = core.comp_type_returner(integer);
+    let returns_unit = core.comp_type_returner(unit);
+    let lazy = core.comp_type_with(&[returns, returns_unit]);
+    let pair = core.value_quote(pair);
+    let either = core.value_quote(either);
+    let pairs = core.value_quote(pairs);
+    let lazy = core.value_quote_computation(lazy);
+    let argument = core.value_stay(pair);
+    let variable = bound(&mut core, DeBruijnIndex::from(0_u32));
+    let squared = core.value_type_product(&[variable, variable]);
+    let squared = core.value_quote(squared);
+    let operator = core.value_static_lambda(squared);
+    let source = CoreSource::new(&core, &[]);
+    for (root, sugared, explicit) in [
+        (pair, "type(Unit * Integer)", "#{Unit, Integer}"),
+        (either, "type(Integer + Unit)", "type(+{Integer, Unit})"),
+        (
+            pairs,
+            "type(List(Unit * Integer))",
+            "List(#{Unit, Integer})",
+        ),
+        (
+            lazy,
+            "type(-F Integer & -F Unit)",
+            "type(&{-F Integer, -F Unit})",
+        ),
+        (
+            argument,
+            "stay(type(Unit * Integer))",
+            "stay(#{Unit, Integer})",
+        ),
+        (operator, "\\a. a * a", "\\a. #{a, a}"),
+    ] {
+        for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
+            let presented = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
+            assert_eq!(
+                (presented.as_ref(), presented.fidelity()),
+                (expected, Fidelity::Faithful),
+                "{root:?} in the {form:?} form"
+            );
+        }
+    }
+}
+
 /// #800: the sugared form writes a thunk over a dependent arrow chain as the
 /// dependent alias, naming each binder its codomain reads and writing every
 /// other domain bare, where it wrote the explicit thunk before; the explicit
