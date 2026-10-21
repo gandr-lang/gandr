@@ -5,10 +5,10 @@
 //! evaluation and related application.
 //!
 //! Every judgement here reads the one identity fold in
-//! [`crate::identity_recursion`], beside one rule of its own, the identity at
-//! a dependent pair. It computes the fibre a persisted identity denotes,
-//! turns the evidence a persisted node carries into goals for the checking
-//! machine, and supplies the replay's reductions.
+//! [`crate::identity_recursion`], beside two rules of its own, the identity at
+//! a dependent pair and at a tuple of a product. It computes the fibre a
+//! persisted identity denotes, turns the evidence a persisted node carries into
+//! goals for the checking machine, and supplies the replay's reductions.
 //!
 //! # Decisions
 //!
@@ -61,6 +61,14 @@
 //! - reversal: a fold clause that types a coordinate by a transport moves this
 //!   rule into the fold and lets transport along a non-reflexive path at a Σ
 //!   compute componentwise.
+//!
+//! **A path between tuples is a tuple of paths.** A tuple checked at the
+//! identity between `l` and `r` at `A₀ × … × Aₙ` checks at [`product_fibre`]'s
+//! `Path(A₀, l₀, r₀) × … × Path(Aₙ, lₙ, rₙ)`, the components read as the Σ
+//! rule reads them; a tuple transported at a product motive is read as its
+//! components' transports `⟨tr(x. Aᵢ, p, vᵢ)⟩`, the table's product row. The
+//! fold's evidence at a product still checks, each component at its factor's
+//! identity.
 //!
 //! **Identity at an open type is a neutral fibre.** A domain that mentions a
 //! bound variable or reaches a sealed atom has no fold clause: its fibre would
@@ -1195,25 +1203,56 @@ where
     arena.value_type_sigma(paths, over)
 }
 
+/// The fibre of the identity at the product of `parts` between `left` and
+/// `right`, when a tuple is checked there.
+///
+/// # Specification
+/// - requires: both endpoints inhabit the product of `parts`; `entries` is the
+///   admission log the endpoints were checked under.
+/// - ensures: `Path(A₀, l₀, r₀) × … × Path(Aₙ, lₙ, rₙ)`, each endpoint's
+///   components read by [`tuple_components`]. Each factor's identity reads its
+///   own fibre when a component is checked there, so a tuple of fold evidence
+///   inhabits it as it inhabits the fold's product, and a tuple of `here`s or
+///   of paths at the factors' own identities does too.
+/// - provides: the type the checking machine redirects a tuple checked at an
+///   identity of a product to.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a tuple of reflexivities inhabits the identity of a tuple
+///   with itself, one whose path ends elsewhere is refused, and a tuple of fold
+///   evidence still inhabits it.
+/// - witness: `element_identity::tests::a_tuple_of_paths_inhabits_the_identity_of_a_product`
+#[spec(ensures: |ret| arena.value_type(ret).is_some())]
+pub(crate) fn product_fibre(
+    arena: &mut TermArena,
+    entries: &[AdmittedDeclaration],
+    parts: &[ValueTypeId],
+    (left, right): (ValueId, ValueId),
+) -> ValueTypeId
+{
+    let lefts = tuple_components(arena, entries, left, parts);
+    let rights = tuple_components(arena, entries, right, parts);
+    let paths: Vec<ValueTypeId> = parts
+        .iter()
+        .zip(lefts.into_iter().zip(rights))
+        .map(|(&part, (from, to))| arena.value_type_path(part, from, to))
+        .collect();
+    arena.value_type_product(&paths)
+}
+
 /// The two components of a dependent pair's inhabitant.
 ///
 /// # Specification
 /// - requires: `pair` inhabits a dependent pair; `entries` is the admission log
 ///   it was checked under.
-/// - ensures: the components of the written pair of two that `pair` is, or that
-///   a declared constant's admitted body is, through a chain of definitions
-///   whose bodies name a constant; the projections `⟨pair.0⟩` and `⟨pair.1⟩`,
-///   each the value it returns, otherwise.
+/// - ensures: [`tuple_components`] of `pair` at two components.
 /// - provides: the kernel's own δ-step at an endpoint, the one the checker's
 ///   reading of a declared pair takes: a body is admitted, so it is read, never
 ///   searched for.
 /// - fails: never.
 /// - panics: none.
-///
-/// # Termination
-/// - reason: the `while let` loop takes one δ-step per turn, not recursion.
-/// - measure: the admission position of the constant unfolded, which each step
-///   must lower: a body names only declarations admitted before its own.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`sigma_fibre`]; a declared pair relates by its body's
@@ -1227,7 +1266,108 @@ fn pair_components(
     pair: ValueId,
 ) -> [ValueId; 2]
 {
-    let mut head = pair;
+    let head = admitted_head(arena, entries, pair);
+    if let Some(&[first, second]) = arena.value(head).and_then(Value::components) {
+        return [first, second];
+    }
+    [0_usize, 1_usize].map(|index| {
+        let projected =
+            arena.computation_tuple_projection(pair, gandr_kernel_term::Component::from(index));
+        arena.value_returned(projected)
+    })
+}
+
+/// The components of a tuple's inhabitant at the product of `parts`.
+///
+/// # Specification
+/// - requires: `tuple` inhabits the product of `parts`; `entries` is the
+///   admission log it was checked under.
+/// - ensures: one component per factor: those of the written tuple that `tuple`
+///   is, or that a declared constant's admitted body is, through a chain of
+///   definitions whose bodies name a constant; when `tuple` is `⟨tr(x. A₀ × … ×
+///   Aₙ, p, v)⟩` and `v` is such a tuple, its components each transported along
+///   `p` in their own factor, `⟨tr(x. Aᵢ, p, vᵢ)⟩` — the product row of the
+///   transport table, read at an endpoint; the projections `⟨tuple.0⟩` …
+///   `⟨tuple.n⟩`, each the value it returns, otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`product_fibre`], and a tuple transported along a
+///   univalence path at a product motive relates by its components' transports.
+/// - witness: `element_identity::tests::a_tuple_of_paths_inhabits_the_identity_of_a_product`
+#[spec(ensures: |ret| ret.len() == parts.len() && ret.iter().all(|&component| arena.value(component).is_some()))]
+fn tuple_components(
+    arena: &mut TermArena,
+    entries: &[AdmittedDeclaration],
+    tuple: ValueId,
+    parts: &[ValueTypeId],
+) -> Vec<ValueId>
+{
+    let head = admitted_head(arena, entries, tuple);
+    if let Some(components) = arena.value(head).and_then(Value::components)
+        && components.len() == parts.len()
+    {
+        return components.to_vec();
+    }
+    if let Some(&Value::Returned(formed)) = arena.value(head)
+        && let Some(&gandr_kernel_term::Computation::PathTransport {
+            motive,
+            path,
+            value,
+        }) = arena.computation(formed)
+        && let Some(&ValueType::Product(ref factors)) = arena.value_type(motive)
+        && factors.len() == parts.len()
+        && let moved = admitted_head(arena, entries, value)
+        && let Some(components) = arena.value(moved).and_then(Value::components)
+        && components.len() == factors.len()
+    {
+        let (factors, components) = (factors.to_vec(), components.to_vec());
+        return factors
+            .into_iter()
+            .zip(components)
+            .map(|(factor, component)| {
+                let transported = arena.computation_path_transport(factor, path, component);
+                arena.value_returned(transported)
+            })
+            .collect();
+    }
+    (0_usize .. parts.len())
+        .map(|index| {
+            let projected = arena
+                .computation_tuple_projection(tuple, gandr_kernel_term::Component::from(index));
+            arena.value_returned(projected)
+        })
+        .collect()
+}
+
+/// The value `value` is read as at an identity's endpoint: the admitted body
+/// of the declared constant it names, through a chain of definitions whose
+/// bodies name a constant, or itself.
+///
+/// # Specification
+/// - requires: `entries` is the admission log `value` was checked under.
+/// - ensures: `value` when it names no admitted definition; the first body
+///   along the chain that is no constant otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `while let` loop takes one δ-step per turn, not recursion.
+/// - measure: the admission position of the constant unfolded, which each step
+///   must lower: a body names only declarations admitted before its own.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`pair_components`].
+/// - witness: `element_identity::tests::a_declared_pair_relates_by_its_body_s_components_337`
+#[spec(ensures: |ret| arena.value(ret).is_some() || ret == value)]
+fn admitted_head(
+    arena: &TermArena,
+    entries: &[AdmittedDeclaration],
+    value: ValueId,
+) -> ValueId
+{
+    let mut head = value;
     let mut below = entries.len();
     while let Some(&Value::Constant(constant)) = arena.value(head)
         && usize::from(constant) < below
@@ -1238,14 +1378,7 @@ fn pair_components(
         head = body;
         below = usize::from(constant);
     }
-    if let Some(&[first, second]) = arena.value(head).and_then(Value::components) {
-        return [first, second];
-    }
-    [0_usize, 1_usize].map(|index| {
-        let projected =
-            arena.computation_tuple_projection(pair, gandr_kernel_term::Component::from(index));
-        arena.value_returned(projected)
-    })
+    head
 }
 
 /// The native fibre and the fibre graph it was read from.

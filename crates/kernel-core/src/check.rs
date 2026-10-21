@@ -3176,10 +3176,12 @@ where
                 },
                 // An introduction form checked at an identity checks at the
                 // fibre the identity fold computes for its domain and
-                // endpoints, or at a dependent pair's at a Σ domain, or at the
-                // words a looped point's free cells mint; one checked at a
-                // bridge checks at the bridge fold's fibre. `here`, the higher
-                // forms and the neutrals take their own arms.
+                // endpoints, or at a dependent pair's at a Σ domain, or at
+                // the product of the factors' identities when a tuple meets a
+                // product, or at the words a looped point's free cells mint;
+                // one checked at a bridge checks at the bridge fold's fibre.
+                // `here`, the higher forms and the neutrals take their own
+                // arms.
                 Goal::CheckValue(id, expected)
                     if crate::element_identity::goal_reading(arena, id, expected)
                         == crate::element_identity::GoalReading::Fibre =>
@@ -3264,6 +3266,18 @@ where
                             session.rewrite_parts(),
                             judgement.entries,
                             (first, second),
+                            (left, right),
+                        )
+                    }
+                    else if let Some(&ValueType::Product(ref parts)) = arena.value_type(domain)
+                        && let Some(&Value::Tuple(ref components)) = arena.value(id)
+                        && components.len() == parts.len()
+                    {
+                        let parts = parts.to_vec();
+                        crate::element_identity::product_fibre(
+                            arena,
+                            judgement.entries,
+                            &parts,
                             (left, right),
                         )
                     }

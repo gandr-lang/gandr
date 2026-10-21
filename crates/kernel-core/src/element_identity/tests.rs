@@ -49,6 +49,7 @@ use super::higher_codata;
 use super::related_beta;
 use super::telescope_beta;
 use super::transport_beta;
+use super::tuple_components;
 use crate::check::check_closed_value;
 use crate::check::synth_closed_value;
 use crate::conv::Convertibility;
@@ -643,6 +644,81 @@ fn a_pair_of_paths_inhabits_the_identity_of_a_dependent_pair()
             Err(KernelError::Identity(IdentityError::EndpointsDiffer { .. }))
         ),
         "the first path must join the first components"
+    );
+}
+
+#[test]
+fn a_tuple_of_paths_inhabits_the_identity_of_a_product()
+{
+    // Path(Bool × Bool, (true, false), (true, false)) reads the product of
+    // the coordinates' identities: a tuple of reflexivities relates the pair,
+    // the fold's evidence still checks, and a component path between other
+    // points is refused at its endpoint.
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let (truth, falsity) = (boolean.truth, boolean.falsity);
+    let pairs = arena.value_type_product(&[boolean.ty, boolean.ty]);
+    let pair = arena.value_tuple(&[truth, falsity]);
+    let identity = arena.value_type_path(pairs, pair, pair);
+    let [here_truth, here_falsity] = [truth, falsity].map(|value| arena.value_here(value));
+    let paths = arena.value_tuple(&[here_truth, here_falsity]);
+    check_closed_value(&mut arena, paths, identity).expect("two reflexivities relate a pair");
+    let unit = arena.value_unit();
+    let evidence = arena.value_tuple(&[unit, unit]);
+    check_closed_value(&mut arena, evidence, identity).expect("the fold's evidence");
+    let strayed = arena.value_tuple(&[here_falsity, here_falsity]);
+    assert!(
+        matches!(
+            check_closed_value(&mut arena, strayed, identity),
+            Err(KernelError::Identity(IdentityError::EndpointsDiffer { .. }))
+        ),
+        "the first path must join the first components"
+    );
+
+    // A pair carried along `ua(not)` in `y. El(y) × El(y)` is read at an
+    // endpoint as its components' transports, each of which negates.
+    let path = boolean_univalence(&mut arena, [[falsity, truth], [falsity, truth], [
+        falsity, truth,
+    ]]);
+    let binder = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let decode = arena.value_type_element(binder, Level::zero());
+    let motive = arena.value_type_product(&[decode, decode]);
+    let moved = arena.computation_path_transport(motive, path, pair);
+    let moved = arena.value_returned(moved);
+    let components = tuple_components(&mut arena, &[], moved, &[boolean.ty, boolean.ty]);
+    let transports: Vec<ComputationId> = components
+        .iter()
+        .map(|&component| match arena.value(component) {
+            Some(&Value::Returned(transport)) => transport,
+            other => panic!("a component transport, not {other:?}"),
+        })
+        .collect();
+    let [to_falsity, to_truth] = [falsity, truth].map(|value| arena.computation_return(value));
+    assert_eq!(
+        transports
+            .iter()
+            .map(|&transport| arena.computation(transport).cloned())
+            .collect::<Vec<_>>(),
+        [truth, falsity]
+            .map(|component| Some(Computation::PathTransport {
+                motive: decode,
+                path,
+                value: component,
+            }))
+            .to_vec(),
+        "each component is transported in its own factor"
+    );
+    for (&transport, expected) in transports.iter().zip([to_falsity, to_truth]) {
+        assert_eq!(
+            computes(&mut arena, transport, expected),
+            KernelVerdict::Convertible
+        );
+    }
+    let unmoved = tuple_components(&mut arena, &[], pair, &[boolean.ty, boolean.ty]);
+    assert_eq!(
+        unmoved,
+        [truth, falsity],
+        "a written pair reads its own components"
     );
 }
 

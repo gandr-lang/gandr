@@ -1,0 +1,49 @@
+// Representation independence of two structures, after Sterling, Gratzer and
+// Birkedal (_Towards univalent reference types_, § 5, the counters
+// `posCounter ≡ negCounter`) and the structure identity principle in
+// Sterling's _Reflexive graph lenses in univalent foundations_ (§ 4,
+// arXiv:2404.07854): a structure is a record over a carrier, its identity is
+// read field by field, and two structures whose carriers are equivalent, the
+// fields carried along, are one. The identity of a product is the product of
+// its factors' identities, and the identity of a dependent pair is a path
+// between the first components and, over it, one between the second.
+
+// The booleans' path to themselves by negation, `negation`.
+import "./transport-list.gandr" ;
+
+/// A pair relates to a pair by a path in each place.
+@[ checks ]
+def corners : Path(Integer * Integer, (2, 3), (2, 3)) ;
+def corners = (here(2), here(3)) ;
+
+/// A pair carried along negation is each component carried, so it relates to
+/// the swapped pair by a reflexivity in each place.
+@[ checks ]
+def swappedPair : Path(
+  Bool * Bool,
+  transport(\t. t * t, negation, (+{.0 = unit}, +{.1 = unit})),
+  (+{.1 = unit}, +{.0 = unit})
+) ;
+def swappedPair = (here(+{.1 = unit}), here(+{.0 = unit})) ;
+
+/// A carrier with a start and a stop, starting false.
+@[ checks ]
+def rising : #{t : Type, start : t, stop : t} ;
+def rising = (Bool, (+{.0 = unit}, +{.1 = unit})) ;
+
+/// The same structure written the other way round, starting true.
+@[ checks ]
+def falling : #{t : Type, start : t, stop : t} ;
+def falling = (Bool, (+{.1 = unit}, +{.0 = unit})) ;
+
+/// The two structures are one: the carriers by negation, and each point
+/// carried along it to the other's.
+@[ checks ]
+def oneStructure : Path(#{t : Type, start : t, stop : t}, rising, falling) ;
+def oneStructure = (negation, (here(+{.1 = unit}), here(+{.0 = unit}))) ;
+
+/// Carried along reflexivity instead, the points stay where they are, and the
+/// path between the structures is refused at the first point.
+@[ refuses("EndpointMismatch") ]
+def stayed : Path(#{t : Type, start : t, stop : t}, rising, falling) ;
+def stayed = (here(Bool), (here(+{.1 = unit}), here(+{.0 = unit}))) ;

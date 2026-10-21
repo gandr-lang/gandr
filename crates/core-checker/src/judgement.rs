@@ -19,7 +19,7 @@
 //! |force|synthesise|the forced value synthesises `U C`; the force has `C`|
 //! |application|synthesise|the head synthesises `A → C` or `(x : A) → C`, the argument checks against `A`; the application has `C`, instantiated at the argument for the dependent arrow; an argument at a static Pi must not normalize away|
 //! |bind|either|the bound computation synthesises `F A`; opens a binder of `A`; the body is judged in the bind's own mode, and the bind has what the body has, lowered out of the binder|
-//! |pair|either|synthesising, each component synthesises and the pair has their eager product; checking against `A × B`, each component checks against its factor; checking against `Σ (x : A). B`, the first checks against `A` and the second against `B` at the first; checking against a path between dependent pairs, it checks against that path's fibre (§ Element identity)|
+//! |pair|either|synthesising, each component synthesises and the pair has their eager product; checking against `A × B`, each component checks against its factor; checking against `Σ (x : A). B`, the first checks against `A` and the second against `B` at the first; checking against a path between dependent pairs or between tuples, it checks against that path's fibre (§ Element identity)|
 //! |lambda|check against `A → C` or `(x : A) → C`|opens a binder of `A`; the body checks against `C`|
 //! |static lambda|check against a static Pi `K ⇒ J`|opens a binder of `K`; the body checks against `J`|
 //! |static application|synthesise|the head synthesises one static Pi per argument; each argument checks against its Pi's domain; the application has the last codomain|
@@ -384,6 +384,16 @@
 //!   this fibre where the rule states it, and reduce transport along a path
 //!   that is not reflexivity componentwise.
 //!
+//! **A path between tuples is a tuple of paths.** A tuple checked at
+//! `Path(A₀ × … × Aₙ, l, r)` checks at `Path(A₀, l₀, r₀) × … × Path(Aₙ, lₙ,
+//! rₙ)`, its components read as the Σ rule reads them; a tuple transported at
+//! a product motive, `⟨tr(x. A₀ × … × Aₙ, p, v)⟩`, is read as its components'
+//! transports `⟨tr(x. Aᵢ, p, vᵢ)⟩`. An endpoint unfolds only through declared
+//! constants, as the kernel reads it, so the fibre is the kernel's and the
+//! dialogues recorded at its endpoints replay there.
+//! `judgement::tests::a_tuple_of_paths_checks_at_the_identity_of_a_product`
+//! witnesses it.
+//!
 //! **Identity at an open type is a neutral fibre.** A carrier that mentions a
 //! variable bound outside it — the decode of a type variable, a data type at a
 //! variable index — or exposes no structure — the decode of a code no quote
@@ -428,6 +438,7 @@ use gandr_core_term::BinderDepth;
 use gandr_core_term::Binders;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
+use gandr_core_term::ComponentCount;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ContextError;
@@ -1126,15 +1137,12 @@ fn telescope_instance(
 }
 
 /// The two components of a dependent pair's inhabitant: those of the written
-/// pair it reduces to at its head, and otherwise its two projections, each
-/// read as the value it returns.
+/// pair it is or a declared constant's body is, and otherwise its two
+/// projections, each read as the value it returns.
 ///
 /// # Specification
 /// - requires: `pair` inhabits a dependent pair.
-/// - ensures: the components of the written pair of two that `pair` reaches by
-///   [`CheckingContext::whnf_code`] — `pair` itself when written, the body a
-///   declared constant unfolds to, as an endpoint at every other former
-///   unfolds; `⟨pair.0⟩` and `⟨pair.1⟩` when its head is no written pair.
+/// - ensures: [`tuple_components`] of `pair` at two components.
 /// - fails: the unfolding's refusal.
 /// - panics: none.
 ///
@@ -1152,16 +1160,127 @@ fn pair_components(
     pair: ValueId,
 ) -> Result<[ValueId; 2], CheckRefusal>
 {
-    let head = context.whnf_code(pair)?;
-    let arena = context.arena_mut();
-    if let Some(&[first, second]) = arena.value(head).and_then(Value::components) {
-        return Ok([first, second]);
+    match *tuple_components(context, pair, ComponentCount::from(2_usize))?.as_slice() {
+        [first, second] => Ok([first, second]),
+        _ => Err(CheckRefusal::MachineInvariant),
     }
-    Ok([0_usize, 1_usize].map(|index| {
-        let projected =
-            arena.computation_tuple_projection(pair, gandr_kernel_term::Component::from(index));
-        arena.value_returned(projected)
-    }))
+}
+
+/// The `width` components of a tuple's inhabitant, read as the kernel reads
+/// an identity's endpoint: those of the written tuple it is or a declared
+/// constant's body is, its components' transports when that is a written
+/// tuple transported at a product, and otherwise its projections, each read
+/// as the value it returns.
+///
+/// # Specification
+/// - requires: `tuple` inhabits a product or a dependent pair of `width`
+///   factors.
+/// - ensures: the components of the written tuple of `width` that `tuple` is,
+///   or that the chain of declared constants it names unfolds to; when that
+///   head is `⟨tr(x. A₀ × … × Aₙ, p, v)⟩` and `v` is or names such a tuple, its
+///   components each transported along `p` in their own factor, `⟨tr(x. Aᵢ, p,
+///   vᵢ)⟩`; `⟨tuple.0⟩` … `⟨tuple.n⟩` otherwise. No other reduction runs, so
+///   the endpoints are the ones the kernel computes and the dialogues recorded
+///   at them replay there.
+/// - fails: the unfolding's refusal.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`pair_components`], the identity of a written tuple
+///   of three reads its three components, and a tuple transported along a
+///   univalence path at a product reads its components' transports.
+/// - witness: `judgement::tests::a_tuple_of_paths_checks_at_the_identity_of_a_product`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |components| components.len() == usize::from(width) && components.iter().all(|&component| context.arena().value(component).is_some())))]
+fn tuple_components(
+    context: &mut CheckingContext<'_>,
+    tuple: ValueId,
+    width: ComponentCount,
+) -> Result<Vec<ValueId>, CheckRefusal>
+{
+    let count = usize::from(width);
+    let head = declared_head(context, tuple)?;
+    if let Some(components) = context.arena().value(head).and_then(Value::components)
+        && components.len() == count
+    {
+        return Ok(components.to_vec());
+    }
+    if let Some(&Value::Returned(formed)) = context.arena().value(head)
+        && let Some(&Computation::PathTransport {
+            motive,
+            path,
+            value,
+        }) = context.arena().computation(formed)
+        && let Some(&gandr_core_term::ValueType::Product(ref factors)) =
+            context.arena().value_type(motive)
+        && factors.len() == count
+    {
+        let factors = factors.to_vec();
+        let moved = declared_head(context, value)?;
+        let arena = context.arena_mut();
+        if let Some(components) = arena.value(moved).and_then(Value::components)
+            && components.len() == count
+        {
+            let components = components.to_vec();
+            return Ok(factors
+                .into_iter()
+                .zip(components)
+                .map(|(factor, component)| {
+                    let transported = arena.computation_path_transport(factor, path, component);
+                    arena.value_returned(transported)
+                })
+                .collect());
+        }
+    }
+    let arena = context.arena_mut();
+    Ok((0_usize .. count)
+        .map(|index| {
+            let projected = arena
+                .computation_tuple_projection(tuple, gandr_kernel_term::Component::from(index));
+            arena.value_returned(projected)
+        })
+        .collect())
+}
+
+/// The value `value` is read as at an identity's endpoint: the body of the
+/// declared constant it names, through a chain of definitions whose bodies
+/// name a constant, or itself.
+///
+/// # Specification
+/// - requires: as [`CheckingContext::unfold`].
+/// - ensures: `value` when it names no constant or its constant has no body the
+///   checker unfolds; otherwise the first value of the chain of unfoldings that
+///   names no constant, or the last one that unfolds no further.
+/// - fails: as [`CheckingContext::unfold`].
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Termination
+/// - reason: the `loop` takes one certified unfolding per turn.
+/// - measure: the chain of definitions: each step unfolds one constant to its
+///   accepted body, and the judgement's step allowance bounds the chain.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`tuple_components`].
+/// - witness: `judgement::tests::a_pair_of_paths_checks_at_the_identity_of_a_dependent_pair`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&head| context.arena().value(head).is_some()))]
+fn declared_head(
+    context: &mut CheckingContext<'_>,
+    value: ValueId,
+) -> Result<ValueId, CheckRefusal>
+{
+    let mut head = value;
+    while matches!(context.arena().value(head), Some(&Value::Constant(..))) {
+        match context.unfold(head)? {
+            Maybe::Present(reduct) => head = reduct,
+            Maybe::Absent(_) => break,
+        }
+    }
+    Ok(head)
 }
 
 /// The completed premise of a native List fold rule.
@@ -4532,19 +4651,31 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 if let ValueTypeView::Sigma { first, second } = view {
                     return self.dependent_pair(term, expected, first, second);
                 }
+                let mut expected = expected;
                 if let ValueTypeView::Path {
                     carrier,
                     left,
                     right,
                 } = view
-                    && count == 2
                 {
                     let base = self.context.whnf_value_type(carrier)?;
-                    if let ValueTypeView::Sigma { first, second } =
-                        value_type_view(self.context.arena(), base)?
+                    let fibre = value_type_view(self.context.arena(), base)?;
+                    let factors = if let ValueTypeView::Product(parts) = fibre
+                        && parts.len() == count
+                    {
+                        Some(parts.to_vec())
+                    }
+                    else {
+                        None
+                    };
+                    if let ValueTypeView::Sigma { first, second } = fibre
+                        && count == 2
                     {
                         let (paths, over) = self.sigma_identity(first, second, left, right)?;
                         return self.dependent_pair(term, expected, paths, over);
+                    }
+                    if let Some(parts) = factors {
+                        expected = self.product_identity(&parts, left, right)?;
                     }
                 }
                 let factors = self.product_expected(term, expected)?;
@@ -5759,6 +5890,46 @@ impl<'context, 'arena> Machine<'context, 'arena>
         let over = arena.value_type_path(at_right, transported, target);
 
         Ok((paths, over))
+    }
+
+    /// The fibre of the identity at the product of `parts` between `left`
+    /// and `right`: the product of the identities at each factor, between the
+    /// two endpoints' components there.
+    ///
+    /// # Specification
+    /// - requires: `parts` are a product's factors; `left` and `right` inhabit
+    ///   it.
+    /// - ensures: `Path(A₀, l₀, r₀) × … × Path(Aₙ, lₙ, rₙ)`, each endpoint's
+    ///   components read by [`tuple_components`].
+    /// - fails: as [`tuple_components`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tuple of reflexivities at the identity of a written
+    ///   tuple with itself checks, and one whose path ends elsewhere is refused
+    ///   at that component.
+    /// - witness: `judgement::tests::a_tuple_of_paths_checks_at_the_identity_of_a_product`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&fibre| self.context.arena().value_type(fibre).is_some()))]
+    fn product_identity(
+        &mut self,
+        parts: &[ValueTypeId],
+        left: ValueId,
+        right: ValueId,
+    ) -> Result<ValueTypeId, CheckRefusal>
+    {
+        let width = ComponentCount::from(parts.len());
+        let lefts = tuple_components(self.context, left, width)?;
+        let rights = tuple_components(self.context, right, width)?;
+        let arena = self.context.arena_mut();
+        let paths: Vec<ValueTypeId> = parts
+            .iter()
+            .zip(lefts.into_iter().zip(rights))
+            .map(|(&part, (from, to))| arena.value_type_path(part, from, to))
+            .collect();
+        Ok(arena.value_type_product(&paths))
     }
 
     /// The domain and codomain a static lambda's body checks against: the
