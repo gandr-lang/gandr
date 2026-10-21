@@ -133,6 +133,58 @@ fn a_model_of_an_undeclared_theory_is_refused_by_name()
     );
 }
 
+/// `Model(S) with sort x = A` fixes the sort `x` to `A`: a model need not
+/// define it and a model sealed at the signature reads its constant at `A`,
+/// where a model sealed at `Model(S)` alone keeps the sort abstract; a sort `S`
+/// does not present is refused by name.
+#[test]
+fn a_manifest_sort_is_the_type_the_model_type_names_1226()
+{
+    let sealed = |manifest: &str, ratio: &str| {
+        format!(
+            "theory Metering {{\n  sort Ratio : Type;\n  oper scale : Ratio;\n}}\nmodule Sealed :> \
+             Model(Metering){manifest} {{\n  {ratio}\n  def scale = 2;\n}}\ndef read : () => \
+             Integer ;\ndef read = thunk {{ return Sealed.scale }} ;\n"
+        )
+    };
+
+    let manifest = sealed(" with sort Ratio = Integer", "");
+    let mut lowered = lower(manifest.as_str());
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        !judgements.is_empty()
+            && !judgements.iter().any(|&(_, judgement)| {
+                matches!(judgement, Judgement::Refused | Judgement::Mismatched)
+            }),
+        "the manifest sort is the integers through the seal: {judgements:?}"
+    );
+
+    let abstracted = sealed("", "type Ratio = Integer;");
+    let mut lowered = lower(abstracted.as_str());
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements
+            .iter()
+            .any(|&(_, judgement)| judgement == Judgement::Mismatched),
+        "without the manifest the seal keeps the sort abstract: {judgements:?}"
+    );
+
+    let unknown = "theory Metering {\n  sort Ratio : Type;\n  oper scale : Ratio;\n}\nmodule M : \
+                   Model(Metering) with sort Rate = Integer {\n  def scale = 2;\n}\n";
+    assert!(
+        rows(&lower(unknown)).contains(&row(
+            "M",
+            Role::Held,
+            Amounts::Refused(LoweringRefusal::UnknownMember {
+                span: span_of(unknown, "Rate", 0_usize),
+                module: name("Metering"),
+                member: name("Rate"),
+            })
+        )),
+        "a manifest sort the theory does not present is refused by name"
+    );
+}
+
 #[test]
 fn a_model_missing_an_operation_is_refused_naming_it()
 {

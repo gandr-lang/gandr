@@ -1,0 +1,46 @@
+// A manifest sort: `Model(T) with sort x = A` is the type of the models of
+// `T` whose sort `x` is `A`, as `module-signature-matching.gandr`'s record
+// signature states `type Ratio = Integer`. The model type gives the sort, so
+// a model need not, and a sealed model keeps it: what reads the sealed
+// model's constant at `Ratio` reads it at `Integer`.
+
+/// Metrics, the theory of `module-signature-matching.gandr`'s
+/// `#{ type Ratio = Integer, base: Integer, double: Integer, scale: Ratio }`.
+theory Metering {
+  sort Ratio : Type;
+  oper base : Integer;
+  oper double : Integer;
+  oper scale : Ratio;
+}
+
+/// The metrics at integer ratios. The module writes no `Ratio`: the model
+/// type states it.
+module Metrics : Model(Metering) with sort Ratio = Integer {
+  /// The base.
+  @[ checks ]
+  def base = 7;
+  /// Its double.
+  @[ checks ]
+  def double = 14;
+  /// The scale, at the manifest sort.
+  @[ checks ]
+  def scale = 1;
+}
+
+/// The metrics sealed at the manifest model type: the sort stays `Integer`.
+module Sealed :> Model(Metering) with sort Ratio = Integer {
+  /// The base.
+  @[ checks ]
+  def base = 7;
+  /// Its double.
+  @[ checks ]
+  def double = 14;
+  /// The scale.
+  @[ checks ]
+  def scale = 2;
+}
+
+/// The sealed model's scale, read as the integer the model type says it is.
+@[ runs("2") ]
+def sealed_scale : () => Integer ;
+def sealed_scale = thunk { return Sealed.scale } ;
