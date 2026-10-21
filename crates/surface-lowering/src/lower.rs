@@ -1810,7 +1810,8 @@ struct Block
 ///   run.
 /// - ensures: The binder’s origin, introduced frame and optional written type
 ///   remain separate coordinates.
-/// - provides: The data used to build a function’s lambda and signature spines.
+/// - provides: The data a function’s lambda and signature spines are built
+///   from.
 /// - fails: none as a data value; interpretation belongs to its consumers.
 /// - panics: none as a data value.
 /// - executable: none — The source, scope and lowered types are not retained;
@@ -5567,12 +5568,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   standing where a type is read, which is read as the type head of that
     ///   spelling; a block's last computation written as a statement that is
     ///   not an exit and does not leave on every path is recorded as trailing,
-    ///   no longer where a path ends; a form where a body ends that is neither
-    ///   an exit nor a form that passes the end on — a block, a match, a
-    ///   grouping — nor a hole takes the exit its polarity names, recorded as
-    ///   inferred and leaving, and is handed to its reader; every other former
-    ///   is handed to its own reader, a declaration form to the function
-    ///   reader, the one reading of the family that seeds one.
+    ///   not where a path ends; a form where a body ends that is neither an
+    ///   exit nor a form that passes the end on — a block, a match, a grouping
+    ///   — nor a hole takes the exit its polarity names, recorded as inferred
+    ///   and leaving, and is handed to its reader; every other former is handed
+    ///   to its own reader, a declaration form to the function reader, the one
+    ///   reading of the family that seeds one.
     /// - provides: the dispatch on the grammar's named kind.
     /// - fails: yields the form's first refusal.
     /// - panics: none.
@@ -12950,7 +12951,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: child positions are interpreted in this lowering run.
     /// - ensures: each supported plan yields its own term or type family, with
     ///   the supplied origin on the new outer node.
-    /// - provides: core constructors over previously lowered children.
+    /// - provides: core constructors over children already lowered.
     /// - fails: unsupported plans are Unminted; missing or wrong-sort children
     ///   preserve the first required absence.
     /// - panics: none under the origin table’s ordered-identifier invariant.
@@ -14958,8 +14959,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a functor's body yields no declaration and each of
     ///   two applications yields its own; a function whose two halves the mint
-    ///   left unminted, with no refusal filed, is refused by name where it used
-    ///   to vanish.
+    ///   left unminted, with no refusal filed, is refused by name rather than
+    ///   dropped silently.
     /// - witness: `tests::modules::functors::a_functor_body_never_reaches_the_kernel`
     /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
     /// - witness: `lower::tests::a_declaration_minting_neither_half_is_refused_by_name_455`

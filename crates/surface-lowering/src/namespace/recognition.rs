@@ -489,7 +489,7 @@ impl NamespaceEventHandler<Recognized, RecognitionSite> for RecognitionHandler
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a formerly builtin-tagged binding is refused under
+    /// - ensures: displacing a builtin-tagged binding is refused under
     ///   [`ShadowPolicy::Reject`]; under warn-and-allow the later binding
     ///   survives, and a source-tagged arrival is recorded at its span. A
     ///   builtin-tagged arrival supplies no source span and is not recorded.

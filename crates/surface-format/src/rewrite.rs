@@ -714,9 +714,9 @@ pub struct Rewrites<'run, 'source>
 ///   applies to respelled bottom-up — its operands' leaves kept, its own tiles
 ///   the other spelling's, its comments after the operand they followed, an
 ///   operand parenthesised where its band is looser than its position admits
-///   and unwrapped where a parenthesis it was written in is no longer needed.
-///   Beside it, the span of each path composite the explicit form would enter
-///   but that keeps its spelling, no motive derived for it.
+///   and unwrapped where a parenthesis it was written in is not needed. Beside
+///   it, the span of each path composite the explicit form would enter but that
+///   keeps its spelling, no motive derived for it.
 /// - provides: the leaves [`crate::format`] lays out in place of a form's.
 /// - fails: never.
 /// - panics: none.
@@ -1542,7 +1542,7 @@ impl<'source> Respelling<'_, 'source>
     }
 
     /// Write `operands` between `open` and `close`, separated by commas, each
-    /// unwrapped from a parenthesis it no longer needs, each comment of
+    /// unwrapped from a parenthesis it does not need, each comment of
     /// `parts` before the operand it preceded.
     ///
     /// # Specification

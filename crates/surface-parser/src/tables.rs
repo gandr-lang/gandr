@@ -376,8 +376,8 @@ impl SettleChain
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`SettleChain`]; a stale chain left keyed would
-    ///   key a later decision's candidates against frontiers the state no
-    ///   longer holds.
+    ///   key a later decision's candidates against frontiers the state does not
+    ///   hold.
     /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     #[spec(ensures: |()| self.molds.is_empty() && !self.keyed)]
     pub(crate) fn unkey(&mut self)

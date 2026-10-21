@@ -83,7 +83,7 @@
 //!   condition alone. The alternative, a table at every shape with naturality
 //!   checked everywhere, is what [`restrict`] accepts as input and reduces to
 //!   the generated form. Reversal: a stratum whose shapes are not the products
-//!   of their corollas, where the corolla values no longer determine a family.
+//!   of their corollas, where the corolla values do not determine a family.
 //! - **The corollas generate every certified stratum.** At a certified stratum
 //!   each shape of degree two to `n` is the colimit of its corollas, so its
 //!   probes add no condition the corollas' probes do not: [`restrict`] checks

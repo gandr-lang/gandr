@@ -1494,7 +1494,7 @@ enum TypeFrame
 {
     /// Read one nested type node.
     Read(Placed),
-    /// Assemble the previously read argument suffix.
+    /// Assemble the argument suffix read before it.
     Apply(Name, ArgumentCount),
 }
 

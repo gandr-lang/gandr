@@ -4345,9 +4345,9 @@ impl<'pbg> MeldState<'pbg>
     /// # Specification
     /// - requires: every cell above `frontier` is an operand, which
     ///   [`collapse`](Self::collapse)'s highest-first order guarantees.
-    /// - ensures: the form at `frontier` is no longer open; a form that never
-    ///   reached a last tile gains a ghost end and one [`Oblig::MissingTile`]
-    ///   over the frontier tile's span.
+    /// - ensures: the form at `frontier` is closed; a form that never reached a
+    ///   last tile gains a ghost end and one [`Oblig::MissingTile`] over the
+    ///   frontier tile's span.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -7725,7 +7725,7 @@ impl Reader<'_>
         Ok(WireU64::from(u64::from_le_bytes(array)))
     }
 
-    /// Read a length previously written as a `u64`.
+    /// Read a length written as a `u64`.
     ///
     /// # Specification
     /// - requires: nothing.

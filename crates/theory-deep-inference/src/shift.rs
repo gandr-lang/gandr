@@ -153,7 +153,7 @@ impl<A: CellAlphabet> ShiftEquivalence<A>
     /// # Specification
     /// - ensures: positive exactly when, with the peak and the composite
     ///   skolemized to constants, both orders fire step by step and land on the
-    ///   skolemized composite; a step that no longer fires, a stale cell
+    ///   skolemized composite; a step that does not fire, a stale cell
     ///   identifier, or either order landing elsewhere is a negative.
     /// - provides: the confirmation half of the identification, separate from
     ///   the guard that licensed it.

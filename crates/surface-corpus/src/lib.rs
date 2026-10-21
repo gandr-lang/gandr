@@ -244,7 +244,7 @@
 //! later uncommented item would land with nothing to refuse it. The test's
 //! `CORPUS_COMMENTS_WRITE_LEDGER=1` records the debt once, untriaged. The
 //! gate then refuses a finding the ledger does not hold, and refuses a
-//! ledger line that no longer names an uncommented item, so debt is paid
+//! ledger line naming no uncommented item, so debt is paid
 //! down and never added. The alternative was that one-shot pass with no
 //! ledger: every source green on the day, and no gate afterwards.
 //!

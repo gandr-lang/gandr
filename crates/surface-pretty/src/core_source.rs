@@ -725,7 +725,7 @@ impl<'arena> CoreSource<'arena>
     ///   over the forward map's domain and result, read off the record's first
     ///   component `+U (A -> -F B)`; for a recorded flow, the relation over the
     ///   flow's two codes; nothing for an unrecorded type, or a recorded one
-    ///   whose node is no longer that shape.
+    ///   whose node is not that shape.
     /// - fails: never.
     /// - panics: none.
     ///

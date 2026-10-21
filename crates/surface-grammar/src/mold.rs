@@ -1231,7 +1231,7 @@ impl MoldTable
     /// [`PbgError::UnknownMold`] for an id past the table.
     ///
     /// # Adequacy
-    /// - hypothesis: For the rules used to build the table, L2 built-in owner
+    /// - hypothesis: For the rules the table is built from, L2 built-in owner
     ///   census and L3 invalid-id observations catch shifted owners, cross-rule
     ///   aliases and lost refusal identity; the original-rule provenance
     ///   requirement is not reconstructed from unrelated rule lists.

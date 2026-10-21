@@ -976,8 +976,8 @@ impl<'source> Collector<'_, 'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the member's form as a [`Operand::Signature`] half and the
-    ///   member's attributes, which the member no longer holds, when `held`
-    ///   names a slot; nothing otherwise.
+    ///   member's attributes, taken out of the member, when `held` names a
+    ///   slot; nothing otherwise.
     /// - provides: the expectation of the witness [`Self::abstract_component`]
     ///   and [`Self::family_component`] file.
     /// - fails: never.

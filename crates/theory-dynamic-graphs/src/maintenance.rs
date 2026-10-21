@@ -298,7 +298,7 @@ pub enum MaintenanceError
     Order(OrderError),
     /// A node identifier does not address a slot of this structure.
     NodeCapacity,
-    /// A handle the structure still tracks no longer resolves in the
+    /// A handle the structure still tracks does not resolve in the
     /// maintained order.
     OrderDesynchronized,
     /// An internal checked arithmetic operation overflowed.
@@ -689,7 +689,7 @@ impl AcyclicityMaintenance
     ///   edges are the offered edge together with admitted edges.
     /// - fails: [`MaintenanceError::Order`] when the order cannot admit or
     ///   relocate an element, [`MaintenanceError::OrderDesynchronized`] when a
-    ///   tracked handle no longer resolves, and
+    ///   tracked handle does not resolve, and
     ///   [`MaintenanceError::ArithmeticOverflow`] on an internal conversion the
     ///   node capacity precludes.
     /// - panics: none.
@@ -1222,7 +1222,7 @@ impl AcyclicityMaintenance
     /// # Errors
     /// Returns [`MaintenanceError::NodeCapacity`] when a node addresses no
     /// maintained slot, or [`MaintenanceError::OrderDesynchronized`] when a
-    /// tracked handle no longer resolves — checked up front so the sort's
+    /// tracked handle does not resolve — checked up front so the sort's
     /// comparator is a total order.
     ///
     /// # Specification

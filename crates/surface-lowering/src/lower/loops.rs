@@ -982,11 +982,11 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `site` is a form where a path through a loop's body ends,
     ///   written as a statement or taking the inferred re-entry.
-    /// - ensures: `site` no longer ends a path; a form whose every path leaves
-    ///   is left as it is; any other records the index its loop's binder has
-    ///   under the binder of the result it discards, and either joins the body,
-    ///   when a path through it leaves, so its local ends run the loop again,
-    ///   or answers nothing, since its result is discarded.
+    /// - ensures: `site` ends no path; a form whose every path leaves is left
+    ///   as it is; any other records the index its loop's binder has under the
+    ///   binder of the result it discards, and either joins the body, when a
+    ///   path through it leaves, so its local ends run the loop again, or
+    ///   answers nothing, since its result is discarded.
     /// - provides: the inferred `continue` at a loop's end.
     /// - fails: [`LoweringRefusal::OutsideLoop`] for a form on no loop's path,
     ///   which a loop's reader never marks; [`LoweringRefusal::BudgetExceeded`]

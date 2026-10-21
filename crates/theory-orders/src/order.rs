@@ -251,7 +251,7 @@ impl TryFrom<SlotIndex> for usize
 }
 
 /// A slot's reuse counter, bumped each time the slot is freed so a handle
-/// minted before the reuse no longer resolves.
+/// minted before the reuse does not resolve.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct SlotGeneration(u32);
@@ -1113,9 +1113,9 @@ impl<T> OrderMaintenance<T>
     ///
     /// # Specification
     /// - requires: nothing; a stale or foreign handle is refused.
-    /// - ensures: on `Ok`, `value` sits immediately after `pos` and before
-    ///   whatever previously followed `pos`; the returned handle refers to it
-    ///   and every pre-existing handle keeps resolving.
+    /// - ensures: on `Ok`, `value` sits immediately after `pos` and before what
+    ///   followed `pos` before; the returned handle refers to it and every
+    ///   pre-existing handle keeps resolving.
     /// - provides: the handle for the inserted element. The clause checks the
     ///   new adjacency and liveness. Stale or foreign handles return the typed
     ///   refusal; survival of every older handle is witnessed by the model.
@@ -1162,9 +1162,9 @@ impl<T> OrderMaintenance<T>
     ///
     /// # Specification
     /// - requires: nothing; a stale or foreign handle is refused.
-    /// - ensures: on `Ok`, `value` sits immediately before `pos` and after
-    ///   whatever previously preceded `pos`; the returned handle refers to it
-    ///   and every pre-existing handle keeps resolving.
+    /// - ensures: on `Ok`, `value` sits immediately before `pos` and after what
+    ///   preceded `pos` before; the returned handle refers to it and every
+    ///   pre-existing handle keeps resolving.
     /// - provides: the handle for the inserted element. The clause checks the
     ///   new adjacency and liveness; the model witnesses surviving handles.
     /// - fails: [`OrderError::UnknownPosition`] if `pos` is stale or foreign;

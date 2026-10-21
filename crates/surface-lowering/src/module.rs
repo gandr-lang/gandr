@@ -1775,7 +1775,7 @@ impl<'source> Collected<'source>
     /// - requires: slot names a live declaration slot.
     /// - ensures: an in-range owner entry becomes slot; an out-of-range node
     ///   position changes nothing.
-    /// - provides: the ownership relation used to route descendant refusals.
+    /// - provides: the ownership relation that routes descendant refusals.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — ownership assignment redirects one node while leaving
