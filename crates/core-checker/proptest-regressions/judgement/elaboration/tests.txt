@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 7be228d88cbb80c29942d2b48d43f3155bcf9468f2727759a52b26edbc898652 # shrinks to recipe = TermRecipe { steps: [Apply(Position(0), Position(0))] }, constants = [TypeRecipe { steps: [] }, TypeRecipe { steps: [] }, TypeRecipe { steps: [] }, TypeRecipe { steps: [] }], expected = TypeRecipe { steps: [] }

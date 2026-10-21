@@ -11,6 +11,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
@@ -19,6 +20,8 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::equal_comp_type_syntax;
+use gandr_core_term::equal_type_syntax;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -35,6 +38,60 @@ use proptest::prop_oneof;
 
 use crate::context::CheckingContext;
 use crate::formation::form_value_type;
+use crate::refusal::CheckRefusal;
+use crate::refusal::TypeNode;
+
+/// Whether two runs of the judgement over one term refused it alike. A rule
+/// that mints a type as it judges mints it again in the second run, so a
+/// shape mismatch's found type is compared by its syntax, and every other
+/// refusal exactly.
+///
+/// # Specification
+/// - ensures: equal refusals answer `Equal`; shape mismatches at one term
+///   wanting one shape answer `Equal` exactly when their found types are
+///   syntactically equal; anything else answers `Different`.
+/// - executable: none — a test oracle's comparison.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the oracles compare the refusals of generated terms whose
+///   rules mint types, so a comparison by id fails them and one that ignores
+///   the site or the wanted shape passes a wrong refusal.
+/// - witness: `judgement::elaboration::tests::the_strict_judgement_is_the_total_runs_oracle`
+/// - witness: `judgement::tests::the_faces_agree_on_free_terms`
+pub fn same_refusal(
+    arena: &CoreArena,
+    left: CheckRefusal,
+    right: CheckRefusal,
+) -> CertificateEquality
+{
+    let (
+        CheckRefusal::ShapeMismatch { at, wanted, found },
+        CheckRefusal::ShapeMismatch {
+            at: right_at,
+            wanted: right_wanted,
+            found: right_found,
+        },
+    ) = (left, right)
+    else {
+        return if left == right {
+            CertificateEquality::Equal
+        }
+        else {
+            CertificateEquality::Different
+        };
+    };
+    if at != right_at || wanted != right_wanted {
+        return CertificateEquality::Different;
+    }
+    match (found, right_found) {
+        (TypeNode::Computation(left), TypeNode::Computation(right)) => {
+            equal_comp_type_syntax(arena, left, right)
+        },
+        (TypeNode::Value(left), TypeNode::Value(right)) => equal_type_syntax(arena, left, right),
+        (TypeNode::Computation(_), TypeNode::Value(_))
+        | (TypeNode::Value(_), TypeNode::Computation(_)) => CertificateEquality::Different,
+    }
+}
 
 /// The integer literal `0`.
 ///
@@ -844,7 +901,9 @@ impl TypedRecipe
     /// # Specification
     /// - requires: nothing; every selection wraps into a seeded pool.
     /// - ensures: output nodes and their types resolve, modes distinguish
-    ///   introduction from synthesis, and every recorded constant has a type.
+    ///   introduction from synthesis — a return takes its value's mode, so it
+    ///   checks only when it returns a thunk — and every recorded constant has
+    ///   a type.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -857,7 +916,9 @@ impl TypedRecipe
             && matches!(arena.value(value), Some(gandr_core_term::Value::Thunk(_))) == (mode == Mode::Checking))
         && ret.comps.iter().all(|&(comp, declared, mode)|
             arena.computation(comp).is_some() && arena.comp_type(declared).is_some()
-                && matches!(arena.computation(comp), Some(gandr_core_term::Computation::Return(_) | gandr_core_term::Computation::Lambda(_))) == (mode == Mode::Checking))
+                && (matches!(arena.computation(comp), Some(gandr_core_term::Computation::Lambda(_)))
+                    || matches!(arena.computation(comp), Some(&gandr_core_term::Computation::Return(returned))
+                        if matches!(arena.value(returned), Some(gandr_core_term::Value::Thunk(_))))) == (mode == Mode::Checking))
         && ret.constants.iter().all(|&declared| arena.value_type(declared).is_some()))]
     pub fn build(
         &self,
@@ -870,7 +931,7 @@ impl TypedRecipe
         let returns_unit = arena.comp_type_returner(unit_type);
         let mut terms = TypedTerms {
             values: Vec::from([(unit, unit_type, Mode::Synthesising)]),
-            comps: Vec::from([(returned, returns_unit, Mode::Checking)]),
+            comps: Vec::from([(returned, returns_unit, Mode::Synthesising)]),
             constants: Vec::new(),
         };
         for &step in &self.steps {
@@ -905,10 +966,10 @@ impl TypedRecipe
                     terms.values.push((thunk, thunk_type, Mode::Checking));
                 },
                 TypedStep::Return(returned) => {
-                    let (returned, result, _) = value(returned);
+                    let (returned, result, mode) = value(returned);
                     let term = arena.computation_return(returned);
                     let returner = arena.comp_type_returner(result);
-                    terms.comps.push((term, returner, Mode::Checking));
+                    terms.comps.push((term, returner, mode));
                 },
                 TypedStep::Force(start) => {
                     let found =

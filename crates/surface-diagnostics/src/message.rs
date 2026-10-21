@@ -743,7 +743,6 @@ fn checked(
                 CheckingForm::Split(_) => "a split",
                 CheckingForm::Thunk(_) => "a thunk",
                 CheckingForm::Lambda(_) => "a function",
-                CheckingForm::Return(_) => "a return",
                 CheckingForm::Hole(_) => "a hole",
                 CheckingForm::StaticLambda(_) => "a type operator",
                 CheckingForm::Fixpoint(_) => "a recursive definition",

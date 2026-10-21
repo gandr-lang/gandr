@@ -2620,7 +2620,6 @@ fn every_refusal() -> Vec<Refusal>
         [
             Form::Thunk(at),
             Form::Lambda(at),
-            Form::Return(at),
             Form::Hole,
             Form::StaticLambda(at),
             Form::Injection(at),

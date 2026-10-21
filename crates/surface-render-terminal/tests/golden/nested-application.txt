@@ -1,10 +1,10 @@
-error[NotSynthesisable]: the type of a return cannot be inferred where it stands
+error[ShapeMismatch]: expected an arrow `A → C`
   ╭▸ application.gandr:2:25
   │
 2 │ def b = thunk { become (pure 1)(2) } ;
   │         ┬──────────────┬┯━━━━━──────
   │         │              ││
-  │         │              │needs a type to be checked against
+  │         │              │its type is not of the required shape: found `-F Integer`
   │         │              checked against `-F Integer`; while synthesising the function this applies
   │         checked against `() => Integer`; while checking the body of this thunk
   │

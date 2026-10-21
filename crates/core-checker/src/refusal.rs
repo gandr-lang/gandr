@@ -180,8 +180,6 @@ pub enum CheckingForm
     Thunk(ValueId),
     /// A lambda.
     Lambda(ComputationId),
-    /// A return.
-    Return(ComputationId),
     /// A fixpoint: its type is the type it is checked at.
     Fixpoint(ComputationId),
     /// A hole: the body of the declaration at this admission position, which

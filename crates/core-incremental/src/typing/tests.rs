@@ -417,14 +417,6 @@ fn refusal_payloads_use_item_coordinates_and_type_content()
         ),
         (
             super::CheckRefusal::NotSynthesisable {
-                form: super::CheckingForm::Return(returned),
-            },
-            Refusal::NotSynthesisable {
-                form: Form::Return(computation_site),
-            },
-        ),
-        (
-            super::CheckRefusal::NotSynthesisable {
                 form: super::CheckingForm::StaticLambda(unit),
             },
             Refusal::NotSynthesisable {

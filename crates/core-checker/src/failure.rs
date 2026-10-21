@@ -269,7 +269,7 @@ pub enum FrameRole
     Unknowing,
     /// A thunk's body is being checked.
     ThunkBody,
-    /// A return's value is being checked.
+    /// A return's value is being judged.
     ReturnValue,
     /// An injection's payload is being checked.
     InjectionPayload,

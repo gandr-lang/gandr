@@ -25,18 +25,20 @@
 //! |static application|synthesise|the head synthesises one static Pi per argument; each argument checks against its Pi's domain; the application has the last codomain|
 //! |dependent split|synthesise|the scrutinee synthesises `Σ (x : A). B`; the motive `C` forms under a binder of the Σ; the body checks against `C` at the pair of its two binders, `x : A` outermost; the split has `C` at the scrutinee|
 //! |tuple projection|synthesise|the tuple synthesises a product or a Σ; at a Σ the first projection has `A` and the second `B` at the first projection|
-//! |return|check against `F A`|the value checks against `A`|
+//! |return|check against `F A`, or synthesise|checked, the value checks against `A`; synthesised, the value synthesises `A` and the return the pure returner of `A`|
 //!
-//! A bind and a pair are the formers of either mode. A bind eliminates the
-//! returner its bound computation synthesises, so that half synthesises, and
-//! it hands its type through from its body, so the body is judged in
-//! whichever mode the bind was asked for. A bound computation that only
-//! checks — a bare `return` — is refused as not synthesisable rather than
-//! given a guessed type, and a body type that mentions the bound name is
-//! refused as a dependent bind: the binder is opaque to types, so that type
-//! has no reading outside it. A pair synthesises when every component does
-//! and checks component-wise otherwise, so a thunk stands in a pair checked
-//! against a product.
+//! A bind and a pair are the formers of either mode, and so is a return. A
+//! bind eliminates the returner its bound computation synthesises, so that half
+//! synthesises, and it hands its type through from its body, so the body is
+//! judged in whichever mode the bind was asked for. A return synthesises when
+//! its value does: the value's type is the one it synthesised, and a return
+//! performs nothing, so its row is the empty one, which every row it meets
+//! subsumes. A return whose value only checks, a thunk or a lambda, is refused
+//! at that value rather than given a guessed type. A body type that mentions
+//! the bound name is refused as a dependent bind: the binder is opaque to
+//! types, so that type has no reading outside it. A pair synthesises when every
+//! component does and checks component-wise otherwise, so a thunk stands in a
+//! pair checked against a product.
 //!
 //! A synthesising term in checking position synthesises, then its type crosses
 //! the conversion boundary to the expected type; that is the only place a
@@ -58,12 +60,9 @@
 //! at which point the arm the lint looks for cannot be written.
 //!
 //! The bind is answered in both directions because its type is its body's: a
-//! bind fixed to synthesis would refuse every block that ends in a return,
-//! which only checks, and a bind fixed to checking would refuse a block
-//! standing where a type is wanted from it, as the head of an application. The
-//! refusal of a bare return as a statement reverses when a statement can state
-//! its returner, by an annotation or a metavariable, and the bound computation
-//! then checks against it.
+//! bind fixed to synthesis would refuse every block that ends in a return of a
+//! value that only checks, and a bind fixed to checking would refuse a block
+//! standing where a type is wanted from it, as the head of an application.
 //!
 //! The pair is answered in both directions for the same reason at its
 //! components: a pair fixed to checking would refuse every unsigned definition
@@ -251,8 +250,8 @@
 //! Project selects a lazy-product component. Reset supplies Shift's answer,
 //! weakened through intervening binders. Stack literals, handlers, resets,
 //! shifts and lazy products check rather than synthesise. A handler's subject
-//! and a Bind frame's body synthesise, so a bare `return` there is refused as a
-//! checking form. Returner rows and stacks subsume by the variance `conversion`
+//! and a Bind frame's body synthesise, so a `return` there synthesises its
+//! value. Returner rows and stacks subsume by the variance `conversion`
 //! states.
 //!
 //! Against the unknown type, a stack literal runs its frames over unknown
@@ -2124,8 +2123,9 @@ enum Frame
     /// A thunk waits on its body's check against the computation type it
     /// suspends.
     ThunkBody,
-    /// A return waits on its value's check against the result of its
-    /// returner.
+    /// A return waits on its value: checked against the result of the returner
+    /// it is checked against, or synthesised for the pure returner the return
+    /// then synthesises.
     ReturnValue,
     /// An injection waits on its payload's check against its summand.
     InjectionPayload,
@@ -5115,14 +5115,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a force awaits its value's synthesised type; an application
-    ///   awaits its head's; a bind awaits its bound computation's; a transport
-    ///   awaits its path's, running a computation nested at the path first, so
-    ///   it alone waits a second frame, the run's; an ascription forms its
-    ///   stated type, checks its body against it and synthesises it; a hole and
-    ///   a mark have the unknown computation type, minted, and ascend.
-    /// - fails: [`CheckRefusal::NotSynthesisable`] for a lambda, a return or a
-    ///   fixpoint; [`CheckRefusal::OutOfFragment`] for a case.
+    /// - ensures: a force awaits its value's synthesised type; a return awaits
+    ///   its value's; an application awaits its head's; a bind awaits its bound
+    ///   computation's; a transport awaits its path's, running a computation
+    ///   nested at the path first, so it alone waits a second frame, the run's;
+    ///   an ascription forms its stated type, checks its body against it and
+    ///   synthesises it; a hole and a mark have the unknown computation type,
+    ///   minted, and ascend.
+    /// - fails: [`CheckRefusal::NotSynthesisable`] for a lambda or a fixpoint;
+    ///   [`CheckRefusal::OutOfFragment`] for a case.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — force, application and bind expose their synthesised
@@ -5372,9 +5373,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Computation::Lambda(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Lambda(term),
             }),
-            Computation::Return(_) => Err(CheckRefusal::NotSynthesisable {
-                form: CheckingForm::Return(term),
-            }),
+            Computation::Return(value) => {
+                self.wait(Frame::ReturnValue);
+                Ok(Step::Descend(Goal::Value {
+                    term: value,
+                    direction: Direction::Synthesise,
+                }))
+            },
             Computation::Fixpoint { .. } => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Fixpoint(term),
             }),
@@ -7127,6 +7132,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::InjectionPayload,
                 Produced::Checked,
             ) => Ok(Step::Ascend(Produced::Checked)),
+            (Frame::ReturnValue, Produced::ValueType(result)) => {
+                let arena = self.context.arena_mut();
+                let result = result.settle(arena);
+                Ok(Step::Ascend(Produced::CompType(
+                    arena.comp_type_returner(result),
+                )))
+            },
             (Frame::NativeRecord { term, base }, Produced::Checked) => {
                 let Some(matched_native_node) = self.context.arena().value(term)
                 else {
@@ -7216,24 +7228,6 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let record = record.settle(self.context.arena_mut());
                 self.native_projection(term, record)
             },
-            (
-                Frame::NativeNext(_)
-                | Frame::NativeYield(_)
-                | Frame::NativeCollect
-                | Frame::NativeDiscard
-                | Frame::NativeTuple { .. }
-                | Frame::NativeRecord { .. }
-                | Frame::NativeCase(_)
-                | Frame::NativeMotive { .. }
-                | Frame::NativeRespect { .. }
-                | Frame::NativeLoops { .. }
-                | Frame::NativeForesee(_)
-                | Frame::NativeForget(_)
-                | Frame::SigmaSplitScrutinee(_)
-                | Frame::SigmaSplitMotive { .. }
-                | Frame::NativeProjection(_),
-                _,
-            ) => Err(CheckRefusal::MachineInvariant),
             (Frame::Resume { stack, body }, Produced::ValueType(classifier)) => {
                 let classifier = classifier.settle(self.context.arena_mut());
                 let (input, output) = self.stack_expected(stack, classifier)?;
@@ -8645,7 +8639,6 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::StaticOperand { .. }
                 | Frame::Unknowing(_)
                 | Frame::ThunkBody
-                | Frame::ReturnValue
                 | Frame::InjectionPayload
                 | Frame::SessionSend { .. }
                 | Frame::OfferArm { .. }
@@ -8660,9 +8653,26 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::ResumeValue { .. },
                 Produced::ValueType(_) | Produced::CompType(_),
             )
-            | (Frame::BindBody { .. }, Produced::ValueType(_)) => {
-                Err(CheckRefusal::MachineInvariant)
-            },
+            | (
+                Frame::NativeNext(_)
+                | Frame::NativeYield(_)
+                | Frame::NativeCollect
+                | Frame::NativeDiscard
+                | Frame::NativeTuple { .. }
+                | Frame::NativeRecord { .. }
+                | Frame::NativeCase(_)
+                | Frame::NativeMotive { .. }
+                | Frame::NativeRespect { .. }
+                | Frame::NativeLoops { .. }
+                | Frame::NativeForesee(_)
+                | Frame::NativeForget(_)
+                | Frame::SigmaSplitScrutinee(_)
+                | Frame::SigmaSplitMotive { .. }
+                | Frame::NativeProjection(_),
+                _,
+            )
+            | (Frame::BindBody { .. }, Produced::ValueType(_))
+            | (Frame::ReturnValue, Produced::CompType(_)) => Err(CheckRefusal::MachineInvariant),
         }
     }
     /// Open one binder per component of the split `at`'s scrutinee, whose

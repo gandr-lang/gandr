@@ -589,7 +589,6 @@ fn checking_row(
                 | CheckingForm::Case(_)
                 | CheckingForm::Split(_)
                 | CheckingForm::List(_)
-                | CheckingForm::Return(_)
                 | CheckingForm::Hole(_)
                 | CheckingForm::StaticLambda(_)
                 | CheckingForm::Fixpoint(_)
