@@ -29,6 +29,7 @@ use crate::compose::compose;
 use crate::evaluate::Evaluation;
 use crate::evaluate::RunStatus;
 use crate::evaluate::declaration_name;
+use crate::reader::Reader;
 use crate::walk::SourceFault;
 use crate::walk::Standing;
 use crate::walk::Step;
@@ -276,6 +277,8 @@ pub struct Script
     grammar: Result<Pbg, PbgError>,
     /// The source's path.
     path: PathBuf,
+    /// The reader the source is read through.
+    reader: Reader,
     /// The source's text, once read.
     text: String,
     /// The lowerings the script has run.
@@ -298,6 +301,7 @@ impl Script
         Self {
             grammar: built_in(),
             path,
+            reader: Reader::new(),
             text: String::new(),
             lowerings: LoweringCount::default(),
             spelling: Spelling::Unicode,
@@ -363,7 +367,7 @@ impl Script
     )]
     pub fn run(&mut self) -> ScriptRun<'_>
     {
-        let root = match read_source(&self.path, &mut self.text) {
+        let root = match read_source(&self.reader, &self.path, &mut self.text) {
             Ok(root) => root,
             Err(error) => {
                 return ScriptRun::Fault {

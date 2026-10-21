@@ -893,6 +893,18 @@ default-features = false
 version = "0.2.189"
 default-features = false
 
+# Read-only file mappings: the dispatcher's reader maps a source at or above
+# its measured crossover. The choice, its alternatives and its reversal are in
+# the reader module's docs.
+# features:
+# - none: `Mmap::map` needs no optional feature; `stable_deref_trait` is for
+#   owning references the reader does not make
+# consumers:
+# - surface-dispatcher
+[workspace.dependencies.memmap2]
+version = "0.9.11"
+default-features = false
+
 # The operating system's file events: the hub's watch over the files open
 # documents import, for connections whose client watches none, and the
 # terminal REPL's watch over the files it loaded.

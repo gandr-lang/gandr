@@ -25,8 +25,9 @@ path = "tests/lib.rs"
 # hand, and builds what each step prints; the type table spells the type a
 # face asks for through the presentation printer. The `stage` verb builds the
 # normaliser's staging observer programs and checks them through the
-# checker's program entry on a `rayon` pool of the driver's width. The
-# `ledger` verb writes the syntax ledger's machine form through serde_json.
+# checker's program entry, on the driver's `rayon` pool. The reader maps a
+# source above its crossover through memmap2. The `ledger` verb writes the
+# syntax ledger's machine form through serde_json.
 # A closure's judgement is held in a self_cell with the closure's lowering,
 # whose names it borrows.
 # The pinned anodized facade supplies core-only specification helpers;
@@ -47,6 +48,7 @@ gandr-surface-lowering.workspace = true
 gandr-surface-parser.workspace = true
 gandr-surface-pretty.workspace = true
 gandr-surface-syntax.workspace = true
+memmap2.workspace = true
 quenchant-shape.workspace = true
 rayon.workspace = true
 self_cell.workspace = true
