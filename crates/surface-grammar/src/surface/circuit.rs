@@ -799,10 +799,12 @@ fn parameter() -> Regex
 }
 
 /// Build one input port: a plain [`port`] whose named form may write its type
-/// under restricted binders, `t : pi+ (x : S) . T` — `T` under one variable of
-/// the representable sort `S`, the binding a second-order signature's
-/// operation writes (Kaposi and Xie's `S ⇒⁺ T`). A telescope nests outermost
-/// first, `pi+ (x : S) . pi+ (y : S) . T`.
+/// under binders, outermost first. A restricted binder, `t : pi+ (x : S) .
+/// T`, puts `T` under one variable of the representable sort `S`, the binding
+/// a second-order signature's operation writes (Kaposi and Xie's `S ⇒⁺ T`). A
+/// nominal binder, `p : bind (a : N) . T`, abstracts one atom of the atom sort
+/// `N` over `T`, the code universe's `⟨a⟩T` (Pitts, _Nominal Sets_, CUP 2013).
+/// A telescope nests outermost first, `pi+ (x : S) . pi+ (y : S) . T`.
 ///
 /// The binder belongs to the port, not to the type language: a rule in every
 /// type slot would put its parenthesis, name, colon and dot molds before
@@ -810,8 +812,8 @@ fn parameter() -> Regex
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a named port over zero or more binders, or a bare type, keeping
-///   the unnamed-port sugar separate.
+/// - ensures: a named port over zero or more binders, each `pi+` or `bind`, or
+///   a bare type, keeping the unnamed-port sugar separate.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -825,19 +827,22 @@ fn parameter() -> Regex
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.get(2).is_some_and(|binders| matches!(binders.shape(), RegexShape::Repeat(_))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type))))]
 fn input_port() -> Regex
 {
+    let binder = |keyword: &'static str| {
+        seq([
+            t(TileLabel(keyword)),
+            t(TileLabel("(")),
+            t(TileLabel("identifier")),
+            t(TileLabel(":")),
+            h(Sort::Type),
+            t(TileLabel(")")),
+            t(TileLabel(".")),
+        ])
+    };
     alt([
         seq([
             port_name(),
             t(TileLabel(":")),
-            repeat(seq([
-                t(TileLabel("pi+")),
-                t(TileLabel("(")),
-                t(TileLabel("identifier")),
-                t(TileLabel(":")),
-                h(Sort::Type),
-                t(TileLabel(")")),
-                t(TileLabel(".")),
-            ])),
+            repeat(alt([binder("pi+"), binder("bind")])),
             h(Sort::Type),
         ]),
         h(Sort::Type),

@@ -64,7 +64,7 @@
 //!
 //! # One sort, chained
 //!
-//! `Theory` is one self-recursive sort of twenty-three constructors, in tag
+//! `Theory` is one self-recursive sort of twenty-four constructors, in tag
 //! order:
 //!
 //! | tag | constructor | fields |
@@ -92,6 +92,7 @@
 //! | 20 | `Nested` | as `Oper`, for a model of another theory |
 //! | 21 | `Inst` | a metavariable's name, its arguments |
 //! | 22 | `Atom` | as `Sort`, for an atom sort |
+//! | 23 | `Abstracted` | as `Bound`, its atom binders before its binders |
 //!
 //! Every list a presentation holds is a chain of its member constructor ended
 //! by `End`, and every name is a `String` field; an unnamed port carries the
@@ -144,6 +145,16 @@
 //! presentation that declares none keeps the bytes it had. A port may sit at
 //! an atom sort; no operation's output does, which [`crate::check_desc`]
 //! refuses.
+//!
+//! A port written `p : bind (a : Name) . T` abstracts an atom of an atom sort
+//! over its sort: swapping renames the atom, and it may escape, where a `pi+`
+//! binder's variable is instantiated by substitution. Such a port is an
+//! `Abstracted` member of its operation's port chain: its atoms a chain of
+//! plain `Port`s, outermost first and outside its binders, then its binder
+//! chain, which may be empty. An `Abstracted` port abstracts at least one atom
+//! and a sort's index port abstracts nothing, so the value of a port has one
+//! spelling; [`crate::check_desc`] refuses an abstraction over a sort that is
+//! not an atom sort.
 //!
 //! # The shape parameter
 //!
@@ -290,7 +301,7 @@ use crate::wellformed::derive_cell_var_meta;
 
 /// The names of `Theory`'s constructors, in tag order: the names a program that
 /// matches on a presentation writes.
-pub const THEORY_CONSTRUCTORS: [&str; 23] = [
+pub const THEORY_CONSTRUCTORS: [&str; 24] = [
     "Presents",
     "End",
     "Sort",
@@ -314,11 +325,12 @@ pub const THEORY_CONSTRUCTORS: [&str; 23] = [
     "Nested",
     "Inst",
     "Atom",
+    "Abstracted",
 ];
 
 /// Each constructor of `Theory`, in tag order, with its count of `String`
 /// fields, which come first, and its count of recursive fields after them.
-const CONSTRUCTORS: [(&str, usize, usize); 23] = [
+const CONSTRUCTORS: [(&str, usize, usize); 24] = [
     (THEORY_CONSTRUCTORS[0], 0, 3),
     (THEORY_CONSTRUCTORS[1], 0, 0),
     (THEORY_CONSTRUCTORS[2], 1, 2),
@@ -342,6 +354,7 @@ const CONSTRUCTORS: [(&str, usize, usize); 23] = [
     (THEORY_CONSTRUCTORS[20], 1, 3),
     (THEORY_CONSTRUCTORS[21], 1, 1),
     (THEORY_CONSTRUCTORS[22], 1, 2),
+    (THEORY_CONSTRUCTORS[23], 2, 4),
 ];
 
 /// One constructor of `Theory`, by its tag.
@@ -394,6 +407,9 @@ enum Tag
     Inst,
     /// An atom sort and the rest of the sorts.
     Atom,
+    /// A port under its atom abstractions and its binders, and the rest of
+    /// the ports.
+    Abstracted,
 }
 
 impl Tag
@@ -429,11 +445,12 @@ impl Tag
             Self::Nested => 20,
             Self::Inst => 21,
             Self::Atom => 22,
+            Self::Abstracted => 23,
         })
     }
 }
 
-/// The description of `Theory`, one data sort of twenty-three constructors.
+/// The description of `Theory`, one data sort of twenty-four constructors.
 ///
 /// The constructors stand in the order the module documentation tables; every
 /// name is a `String` field and every other field a recursive occurrence.
@@ -442,11 +459,12 @@ impl Tag
 /// - ensures: no parameters, one data sort `Theory`, and the constructors
 ///   `Presents`, `End`, `Sort`, `Oper`, `Port`, `Rule`, `Var`, `App`, `Con`,
 ///   `Tuple`, `Arg`, `Representable`, `Bound`, `Shape`, `Face`, `Obs`,
-///   `Turned`, `Derived`, `Rank`, `Const`, `Nested`, `Inst` and `Atom` in that
-///   order, each at the result sort `Theory`; a constructor's `String` fields
-///   carry `grade` and come first, three for `Derived`, two for `Port`,
-///   `Bound`, `Shape`, `Face` and `Rank` and one for every other constructor
-///   that names something, and its remaining fields are `Theory`.
+///   `Turned`, `Derived`, `Rank`, `Const`, `Nested`, `Inst`, `Atom` and
+///   `Abstracted` in that order, each at the result sort `Theory`; a
+///   constructor's `String` fields carry `grade` and come first, three for
+///   `Derived`, two for `Port`, `Bound`, `Shape`, `Face`, `Rank` and
+///   `Abstracted` and one for every other constructor that names something, and
+///   its remaining fields are `Theory`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -526,6 +544,10 @@ pub struct TheoryPort
     /// representable sort; empty for a first-order port. Only an operation's
     /// port binds.
     pub bindings: Vec<TheoryBinder>,
+    /// The atoms `bind` abstracts over the port, outermost first and outside
+    /// its binders, each of an atom sort; empty for a port that abstracts
+    /// none. Only an operation's port abstracts.
+    pub abstractions: Vec<TheoryBinder>,
 }
 
 /// One `pi+` binder of a port: the bound variable's name and its sort, a
@@ -1453,30 +1475,46 @@ where
     Payload::leaf(format!("{number}").as_bytes())
 }
 
-/// The chain coding `list`, in order: a port with binders as `Bound` over the
-/// chain of its binders, every other port as `Port`.
+/// The chain coding `list`, in order: a port abstracting atoms as
+/// `Abstracted` over the chains of its atoms and its binders, a port with
+/// binders as `Bound` over the chain of its binders, every other port as
+/// `Port`.
 ///
 /// # Specification
 /// trivial.
 fn ports(list: &[TheoryPort]) -> DescValue
 {
+    let chained = |binders: &[TheoryBinder]| {
+        let mut chain = value(Tag::End, Vec::new());
+        for binder in binders.iter().rev() {
+            chain = plain_port(&binder.name, &binder.sort, &binder.indices, chain);
+        }
+        chain
+    };
     let mut chain = value(Tag::End, Vec::new());
     for port in list.iter().rev() {
-        if port.bindings.is_empty() {
-            chain = plain_port(&port.name, &port.sort, &port.indices, chain);
-            continue;
+        chain = if !port.abstractions.is_empty() {
+            value(Tag::Abstracted, vec![
+                leaf(&port.name),
+                leaf(&port.sort),
+                rec(index_arguments(&port.indices)),
+                rec(chained(&port.abstractions)),
+                rec(chained(&port.bindings)),
+                rec(chain),
+            ])
         }
-        let mut binders = value(Tag::End, Vec::new());
-        for binder in port.bindings.iter().rev() {
-            binders = plain_port(&binder.name, &binder.sort, &binder.indices, binders);
+        else if !port.bindings.is_empty() {
+            value(Tag::Bound, vec![
+                leaf(&port.name),
+                leaf(&port.sort),
+                rec(index_arguments(&port.indices)),
+                rec(chained(&port.bindings)),
+                rec(chain),
+            ])
         }
-        chain = value(Tag::Bound, vec![
-            leaf(&port.name),
-            leaf(&port.sort),
-            rec(index_arguments(&port.indices)),
-            rec(binders),
-            rec(chain),
-        ]);
+        else {
+            plain_port(&port.name, &port.sort, &port.indices, chain)
+        };
     }
     chain
 }
@@ -1934,13 +1972,15 @@ fn read_rules(mut at: Node<'_>) -> Result<(Vec<TheoryRule>, RuleCertificate), Th
 }
 
 /// The ports of an operation's chain at `node`, in order, each with the
-/// binders it carries.
+/// binders and the atom abstractions it carries.
 ///
 /// # Specification
-/// - ensures: one port per `Port` or `Bound` member, each with its index terms;
-///   a `Bound` member's binders in order, a `Port` member's none.
+/// - ensures: one port per `Port`, `Bound` or `Abstracted` member, each with
+///   its index terms; a `Bound` member's binders in order, an `Abstracted`
+///   member's atoms and binders in order, a `Port` member's none.
 /// - fails: as [`member`], [`text`], [`read_term`] and [`read_plain`]; a
-///   `Bound` member whose binder chain is empty is misplaced at its `End`.
+///   `Bound` member whose binder chain is empty, and an `Abstracted` member
+///   whose atom chain is empty, is misplaced at its `End`.
 /// - panics: none.
 /// - executable: none — a predicate would read the chain a second time.
 ///
@@ -1951,10 +1991,30 @@ fn read_rules(mut at: Node<'_>) -> Result<(Vec<TheoryRule>, RuleCertificate), Th
 /// - hypothesis: L3 — as [`TheoryValue::decode`].
 /// - witness: `theory::tests::a_second_order_presentation_encodes_its_binders`
 /// - witness: `theory::tests::a_binder_outside_an_operation_port_is_misplaced`
+/// - witness: `theory::tests::an_abstracting_port_takes_its_own_tag`
 fn read_ports(mut node: Node<'_>) -> Result<Vec<TheoryPort>, TheoryFault>
 {
     let mut ports = Vec::new();
     loop {
+        if node.ctor == Tag::Abstracted.constructor() {
+            let [name, sort, indices, atoms, binders, rest] = expect::<6>(node, Tag::Abstracted)?;
+            let port = plain_at(name, sort, indices)?;
+            let atoms = nested(atoms)?;
+            if atoms.ctor == Tag::End.constructor() {
+                return Err(TheoryFault::Misplaced(atoms.ctor));
+            }
+            let abstractions = read_plain(atoms, core::convert::identity)?;
+            let bindings = read_plain(nested(binders)?, core::convert::identity)?;
+            ports.push(TheoryPort {
+                name: port.name,
+                sort: port.sort,
+                indices: port.indices,
+                bindings,
+                abstractions,
+            });
+            node = nested(rest)?;
+            continue;
+        }
         if node.ctor != Tag::Bound.constructor() {
             let next = member::<4>(node, Tag::Port)?;
             let Maybe::Present([name, sort, indices, rest]) = next
@@ -1978,6 +2038,7 @@ fn read_ports(mut node: Node<'_>) -> Result<Vec<TheoryPort>, TheoryFault>
             sort: port.sort,
             indices: port.indices,
             bindings,
+            abstractions: Vec::new(),
         });
         node = nested(rest)?;
     }
@@ -2031,6 +2092,7 @@ fn unbound(plain: TheoryBinder) -> TheoryPort
         sort: plain.sort,
         indices: plain.indices,
         bindings: Vec::new(),
+        abstractions: Vec::new(),
     }
 }
 
@@ -2424,19 +2486,17 @@ fn port_ref(
     name: Name,
 ) -> SortRef
 {
-    let reference = SortRef::new(name, spelled(port));
-    if port.bindings.is_empty() {
-        return reference;
-    }
-    reference.pi_plus(
-        port.bindings
-            .iter()
+    let binders = |list: &[TheoryBinder]| {
+        list.iter()
             .map(|binder| {
                 SortIndex::new(binder.name.clone(), binder.sort.clone())
                     .applied(binder.indices.clone())
             })
-            .collect::<Vec<_>>(),
-    )
+            .collect::<Vec<_>>()
+    };
+    SortRef::new(name, spelled(port))
+        .pi_plus(binders(&port.bindings))
+        .abstracting(binders(&port.abstractions))
 }
 
 /// A port's sort as the description spells it: its name, applied to its

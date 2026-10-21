@@ -64,6 +64,7 @@ where
         sort: sort.into(),
         indices: indices.into_iter().collect(),
         bindings: Vec::new(),
+        abstractions: Vec::new(),
     }
 }
 
@@ -258,6 +259,9 @@ fn the_code_is_one_data_sort_of_the_tabled_constructors()
         ("Nested", vec!["String", "Theory", "Theory", "Theory"]),
         ("Inst", vec!["String", "Theory"]),
         ("Atom", vec!["String", "Theory", "Theory"]),
+        ("Abstracted", vec![
+            "String", "String", "Theory", "Theory", "Theory", "Theory",
+        ]),
     ]);
     let counted: Vec<(usize, usize)> = fields
         .iter()
@@ -1161,5 +1165,117 @@ fn an_atom_sort_takes_its_own_tag()
     assert!(
         check_desc(&description).is_empty(),
         "an operation taking an atom is well formed"
+    );
+}
+
+/// An `Abstracted` port named `t` at `Tm`, under the atom chain `atoms` and the
+/// binder chain `binders`, before `rest`.
+///
+/// # Specification
+/// trivial.
+fn abstracted(
+    atoms: Payload,
+    binders: Payload,
+    rest: Payload,
+) -> DescValue
+{
+    node(
+        Tag::Abstracted,
+        Payload::pair(
+            Payload::leaf(&b"t"[..]),
+            Payload::pair(
+                Payload::leaf(&b"Tm"[..]),
+                Payload::pair(end(), Payload::pair(atoms, Payload::pair(binders, rest))),
+            ),
+        ),
+    )
+}
+
+#[test]
+fn an_abstracting_port_takes_its_own_tag()
+{
+    let restriction = |abstracts: bool| {
+        let channel = TheoryBinder {
+            name: Name::from("a"),
+            sort: Name::from("Name"),
+            indices: Vec::new(),
+        };
+        let mut body = port("p", "Proc", []);
+        if abstracts {
+            body.abstractions.push(channel);
+        }
+        else {
+            body.bindings.push(channel);
+        }
+        TheoryParts {
+            sorts: vec![
+                sort("Name", Representability::Atom),
+                sort("Proc", Representability::Ordinary),
+            ],
+            operations: vec![TheoryOperation {
+                name: Name::from("nu"),
+                kind: OperationKind::Operation,
+                inputs: vec![body],
+                outputs: vec![port("", "Proc", [])],
+            }],
+            ..TheoryParts::default()
+        }
+    };
+    let parts = restriction(true);
+    let value = TheoryValue::encode(&parts);
+    assert_eq!(value.decode(), Ok(parts), "an abstraction reads back");
+    assert_eq!(
+        Tag::Abstracted.constructor(),
+        ConstructorTag::from(23_usize),
+        "appended, so a presentation abstracting nothing keeps its bytes"
+    );
+    assert_ne!(
+        TheoryValue::encode(&restriction(false)),
+        value,
+        "an abstracted atom is not a bound variable"
+    );
+    let description = value
+        .description::<Grade>(named("Restriction"), &[])
+        .expect("a presentation abstracting an atom reads as its table");
+    let [ref nu] = *description.opers
+    else {
+        panic!("one operation: {:?}", description.opers)
+    };
+    let [ref body] = *nu.arity.inputs
+    else {
+        panic!("one input: {:?}", nu.arity.inputs)
+    };
+    assert_eq!(
+        (body.abstractions.len(), body.bindings.len()),
+        (1, 0),
+        "the table keeps the abstraction apart from the binders"
+    );
+    assert!(
+        check_desc(&description).is_empty(),
+        "an abstraction over an atom sort is well formed"
+    );
+    assert_eq!(
+        operating(abstracted(end(), plain(end()), end())).decode(),
+        Err(TheoryFault::Misplaced(ConstructorTag::from(1_usize))),
+        "an abstracting port abstracts at least one atom"
+    );
+    assert_eq!(
+        operating(abstracted(plain(end()), end(), end()))
+            .decode()
+            .map(|parts| parts.operations[0].inputs[0].abstractions.len()),
+        Ok(1),
+        "an abstracting port's binder chain may be empty"
+    );
+    assert_eq!(
+        presenting(node(
+            Tag::Sort,
+            Payload::pair(
+                Payload::leaf(&b"S"[..]),
+                Payload::pair(Payload::rec(abstracted(plain(end()), end(), end())), end()),
+            ),
+        ))
+        .decode(),
+        Err(TheoryFault::Misplaced(Tag::Abstracted.constructor())),
+        "a sort's index port abstracts nothing"
     );
 }

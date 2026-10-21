@@ -363,4 +363,17 @@ fn translation_refuses_non_signatures()
         first_order(&parameterised),
         Err(TranslationError::NonSignatureMembers)
     );
+    // A port abstracting an atom has no context extension in the model.
+    let mut abstracting = lc();
+    abstracting.sorts = Box::from([abstracting.sorts[0].clone(), SortDesc {
+        representability: Representability::Atom,
+        ..SortDesc::new("Name", DeclPolarity::Data)
+    }]);
+    abstracting.opers[1].arity.inputs[0] =
+        SortRef::new("t", "Tm").abstracting([SortIndex::new("a", "Name")]);
+    assert_eq!(check_desc(&abstracting), []);
+    assert_eq!(
+        first_order(&abstracting),
+        Err(TranslationError::AtomAbstraction(Name::from("app")))
+    );
 }

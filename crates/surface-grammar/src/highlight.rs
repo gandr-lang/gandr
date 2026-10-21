@@ -153,16 +153,16 @@ const OPENERS: &[&str] = &[
 const CLOSERS: &[&str] = &[")", "]", "subshell_close", "}"];
 
 /// The words the surface reads as keywords where a form molds them, the
-/// compound bridge tiles and the restricted binder's marked tile included.
+/// compound bridge tiles and the binders' tiles included.
 const KEYWORDS: &[&str] = &[
-    "+U", "-F", "abort", "access", "acquire", "as", "at", "become", "break", "case", "close", "co",
-    "codata", "continue", "data", "def", "drop", "dup", "else", "end", "ext", "extern", "feed",
-    "fn", "for", "forall", "force", "fork", "from", "glob", "handle", "hold", "if", "import", "in",
-    "include", "infix", "infixl", "infixr", "is", "leta", "loop", "migrate", "mobile", "module",
-    "mu", "node", "obs", "offer", "on", "op", "oper", "pack", "package", "pi+", "postfix",
-    "prefix", "pure", "rec", "recv", "release", "resume", "return", "rule", "run", "select",
-    "send", "shape", "sort", "tail", "then", "theory", "thunk", "type", "type(", "unit", "unpack",
-    "unwind", "val", "while", "with", "world",
+    "+U", "-F", "abort", "access", "acquire", "as", "at", "become", "bind", "break", "case",
+    "close", "co", "codata", "continue", "data", "def", "drop", "dup", "else", "end", "ext",
+    "extern", "feed", "fn", "for", "forall", "force", "fork", "from", "glob", "handle", "hold",
+    "if", "import", "in", "include", "infix", "infixl", "infixr", "is", "leta", "loop", "migrate",
+    "mobile", "module", "mu", "node", "obs", "offer", "on", "op", "oper", "pack", "package", "pi+",
+    "postfix", "prefix", "pure", "rec", "recv", "release", "resume", "return", "rule", "run",
+    "select", "send", "shape", "sort", "tail", "then", "theory", "thunk", "type", "type(", "unit",
+    "unpack", "unwind", "val", "while", "with", "world",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the

@@ -976,11 +976,11 @@ impl Typer<'_>
     }
 
     /// Record one port `port` of a binding operation, written as `written`,
-    /// under `scope`: a first-order port as [`Self::port`] does; a bound
-    /// port's binders each at its sort, the binders' sorts and its own at
-    /// their universe, and their index terms. A bound port's name answers
-    /// nowhere: no core type states a `pi+` port. No derivation elaborates
-    /// these sorts, so each is read as written.
+    /// under `scope`: a first-order port as [`Self::port`] does; a bound or
+    /// abstracting port's atoms and binders each at its sort, their sorts and
+    /// its own at their universe, and their index terms. Such a port's name
+    /// answers nowhere: no core type states a `pi+` or a `bind` port. No
+    /// derivation elaborates these sorts, so each is read as written.
     ///
     /// # Specification
     /// trivial.
@@ -993,11 +993,12 @@ impl Typer<'_>
         declared: &Declared<'_>,
     )
     {
-        if port.binders.is_empty() {
+        if port.binders.is_empty() && port.abstractions.is_empty() {
             self.port(scope, telescope, declared, &port.sort, &port.sort, written);
             return;
         }
-        for (binder, at) in port.binders.iter().zip(&written.binders) {
+        let binders = port.abstractions.iter().chain(&port.binders);
+        for (binder, at) in binders.zip(&written.binders) {
             if let Some(ty) = self.sort(scope, &binder.sort) {
                 let context = self.context(scope);
                 self.emit(at.named, DescribedRole::Name, ty, context);
@@ -1185,7 +1186,10 @@ impl Typer<'_>
                     self.port(&scope, &[], &declared, &raw.sort, sort, port);
                 }
             }
-            else if form == Some(&Err(ModelFault::Binding)) {
+            else if matches!(
+                form,
+                Some(&Err(ModelFault::Binding | ModelFault::Abstraction))
+            ) {
                 self.binding(&mut scope, operation, member, &declared);
             }
             else if let Some(&Ok(ModelForm::Nested(_))) = form {

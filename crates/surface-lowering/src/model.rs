@@ -94,6 +94,7 @@ use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::NominalId;
 use gandr_theory_levitation::OperationKind;
+use gandr_theory_levitation::TheoryBinder;
 use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::TheoryFault;
 use gandr_theory_levitation::TheoryInclusion;
@@ -175,6 +176,9 @@ pub struct Port
     /// The `pi+` binders over it, each a named variable of a representable
     /// sort; empty for a first-order port.
     pub binders: Vec<Binder>,
+    /// The atoms `bind` abstracts over it, outside its binders, each of an
+    /// atom sort; empty for a port that abstracts none.
+    pub abstractions: Vec<Binder>,
 }
 
 /// A sort a theory declares, with its index telescope.
@@ -471,6 +475,17 @@ fn ports<Names>(
 where
     Names: IntoIterator<Item = Name>,
 {
+    let binders = |list: Vec<TheoryBinder>| {
+        list.into_iter()
+            .map(|binder| Binder {
+                name: binder.name,
+                sort: SortTerm {
+                    sort: binder.sort,
+                    indices: binder.indices,
+                },
+            })
+            .collect()
+    };
     coded
         .into_iter()
         .zip(names)
@@ -480,17 +495,8 @@ where
                 sort: port.sort,
                 indices: port.indices,
             },
-            binders: port
-                .bindings
-                .into_iter()
-                .map(|binder| Binder {
-                    name: binder.name,
-                    sort: SortTerm {
-                        sort: binder.sort,
-                        indices: binder.indices,
-                    },
-                })
-                .collect(),
+            binders: binders(port.bindings),
+            abstractions: binders(port.abstractions),
         })
         .collect()
 }
@@ -605,6 +611,10 @@ pub enum ModelFault
     /// operation, whose models are the first-order translation's, not a
     /// structure on the value universe.
     Binding,
+    /// An operation one of whose ports abstracts an atom: a nominal
+    /// operation, whose models are nominal sets', not a structure on the
+    /// value universe.
+    Abstraction,
 }
 
 impl core::fmt::Display for ModelFault
@@ -631,6 +641,7 @@ impl core::fmt::Display for ModelFault
             Self::Binding => {
                 "binds a variable over a port, whose models are its first-order translation's"
             },
+            Self::Abstraction => "abstracts an atom over a port, whose models are nominal sets'",
         })
     }
 }
@@ -772,13 +783,12 @@ pub(crate) fn derive_members(
         }
     }
     for operation in &members.operations {
-        let binds = operation
-            .inputs
-            .iter()
-            .chain(&operation.outputs)
-            .any(|port| !port.binders.is_empty());
-        let head = if binds {
+        let mut sides = operation.inputs.iter().chain(&operation.outputs);
+        let head = if sides.clone().any(|port| !port.binders.is_empty()) {
             Err(ModelFault::Binding)
+        }
+        else if sides.any(|port| !port.abstractions.is_empty()) {
+            Err(ModelFault::Abstraction)
         }
         else {
             infer::derive_head(

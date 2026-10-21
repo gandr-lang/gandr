@@ -1,0 +1,30 @@
+// The twin of `model/desc/bind-port.gandr`: an abstraction over a sort that is
+// not an atom sort, an abstraction written inside a `pi+` binder, and the
+// models of an abstracting operation.
+
+// The restriction signature.
+import "../../model/desc/bind-port.gandr" ;
+
+/// `bind` abstracts an atom, and `Tm` is an ordinary sort: the description
+/// check refuses the abstraction by name (`NonAtomAbstraction`).
+@[ refuses("IllFormedDescription") ]
+theory OrdinaryAbstraction {
+  sort Tm : Type;
+  oper nu : (t : bind (a : Tm) . Tm) --> Tm;
+}
+
+/// A port's abstractions stand outside its `pi+` binders, so a `bind` written
+/// inside one is malformed.
+@[ refuses("MalformedForm") ]
+theory InnerAbstraction {
+  sort Name : Atom;
+  sort Val : Type+;
+  sort Proc : Type;
+  oper new : (body : pi+ (x : Val) . bind (c : Name) . Proc) --> Proc;
+}
+
+/// The restriction signature's models: `nu` abstracts an atom over its port,
+/// whose model is a nominal set's abstraction `⟨a⟩Proc`, a type the value
+/// universe does not state (#1561).
+@[ refuses("UnstatedComponent") ]
+def restrictionModel : Model(Restriction) ;

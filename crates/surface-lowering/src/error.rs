@@ -1444,6 +1444,10 @@ fn ill_formed(
             f,
             "the port {other} binds a variable of the sort {one}, which is not representable"
         ),
+        WfKind::NonAtomAbstraction => write!(
+            f,
+            "the port {other} abstracts an atom of the sort {one}, which is not an atom sort"
+        ),
         WfKind::SplitCircuitOutputs => write!(
             f,
             "the wiring of the rule {one} reads the port {other}, one output of a many-out \
