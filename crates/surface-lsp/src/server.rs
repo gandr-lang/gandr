@@ -9385,6 +9385,53 @@ mod tests
     }
 
     #[test]
+    fn the_client_s_formatting_options_are_not_read()
+    {
+        let mut server = initialized();
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/untidy.gandr","languageId":"gandr","version":1,
+                     "text":"def plus(n : Nat) -> -F Nat {   \ncase n {\nZero => n\n}\n}\n\n\n"}}}"#,
+            ),
+        );
+        let format = |server: &mut Connected, options: &str| {
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":7,"method":"textDocument/formatting","params":{{
+                    "textDocument":{{"uri":"file:///tmp/untidy.gandr"}},"options":{options}}}}}"#
+            );
+            send(server, Json(&request))
+        };
+        // The edit keeps the text's last newline, after `}`, and drops the two
+        // blank lines before it.
+        let canonical = wire(Json(
+            r#"[{"jsonrpc":"2.0","id":7,"result":[{
+                "range":{"start":{"line":0,"character":29},"end":{"line":6,"character":0}},
+                "newText":"\n  case n {\n    Zero => n\n  }\n}"}]}]"#,
+        ));
+        assert_eq!(
+            format(
+                &mut server,
+                r#"{"tabSize":8,"insertSpaces":false,"trimTrailingWhitespace":false,
+                    "insertFinalNewline":false,"trimFinalNewlines":false}"#
+            ),
+            canonical,
+            "options asking for tabs and for the whitespace kept: the canonical layout, two \
+             spaces a level, no trailing whitespace, one final newline"
+        );
+        assert_eq!(
+            format(
+                &mut server,
+                r#"{"tabSize":2,"insertSpaces":true,"trimTrailingWhitespace":true,
+                    "insertFinalNewline":true,"trimFinalNewlines":true}"#
+            ),
+            canonical,
+            "options asking for what the layout writes: the same edit"
+        );
+    }
+
+    #[test]
     fn no_position_names_a_type_hierarchy()
     {
         let mut server = server_over_the_known_document();
