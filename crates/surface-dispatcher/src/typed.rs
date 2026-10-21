@@ -475,8 +475,8 @@ struct Entry
     standing: Standing,
 }
 
-/// Where a typed node stands: the declaration whose run first typed it, and
-/// the node itself.
+/// Where a typed node stands: the declaration whose run first typed it, the
+/// node itself, and the binders that typing was read under.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Within
 {
@@ -484,7 +484,23 @@ struct Within
     constant: ConstantIndex,
     /// The node.
     node: CoreNode,
+    /// How many intuitionistic binders the run judged the node's type under:
+    /// a node the term shares between places of other depths answers at its
+    /// place under this many. None where the table keeps no typing of the
+    /// node, a session endpoint's, which answers at its first place.
+    depth: Option<BinderDepth>,
 }
+
+/// One judged term with the type its first and its last typing at the first
+/// typing's depth gave it, the run position it was first judged at, and the
+/// declaration and binder depth that first typing was read under.
+type Kept = (
+    TermNode,
+    TypeNode,
+    TypeNode,
+    usize,
+    (ConstantIndex, BinderDepth),
+);
 
 /// The binders an entry's type is read under.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1132,7 +1148,8 @@ impl TypeTable
             })
             .collect();
         judged.sort_unstable_by_key(|&(term, finished, ..)| (term, finished));
-        let mut kept: Vec<(TermNode, TypeNode, TypeNode, usize, ConstantIndex)> = Vec::new();
+        // The declaration beside the binders its first typing was read under.
+        let mut kept: Vec<Kept> = Vec::new();
         let mut first_depth = BinderDepth::default();
         for (term, finished, ty, depth, constant) in judged {
             match kept.last_mut() {
@@ -1144,7 +1161,7 @@ impl TypeTable
                 },
                 Some(_) | None => {
                     first_depth = depth;
-                    kept.push((term, ty, ty, finished, constant));
+                    kept.push((term, ty, ty, finished, (constant, depth)));
                 },
             }
         }
@@ -1152,7 +1169,7 @@ impl TypeTable
             kept.binary_search_by_key(&term, |&(held, ..)| held)
                 .ok()
                 .and_then(|at| kept.get(at))
-                .map(|&(_, first, _, _, constant)| (first, constant))
+                .map(|&(_, first, _, _, judged)| (first, judged))
         };
         let first_type = |term: TermNode| first_of(term).map(|(first, _)| first);
         // Each binder a term former opens, at the type the first judgement of
@@ -1219,11 +1236,10 @@ impl TypeTable
         endpoints.sort_by_key(|&(term, ..)| term);
         endpoints.dedup_by_key(|&mut (term, ..)| term);
         let names = constant_names(&module);
-        let mut order: Vec<&(TermNode, TypeNode, TypeNode, usize, ConstantIndex)> =
-            kept.iter().collect();
+        let mut order: Vec<&Kept> = kept.iter().collect();
         order.sort_unstable_by_key(|&&(_, _, _, at, _)| at);
         let mut entries = Vec::with_capacity(order.len());
-        for &(term, first, last, _, constant) in order {
+        for &(term, first, last, _, (constant, depth)) in order {
             let (origin, node) = match term {
                 TermNode::Value(id) => (origins.value(id), CoreNode::Value(id)),
                 TermNode::Computation(id) => (origins.computation(id), CoreNode::Computation(id)),
@@ -1254,13 +1270,17 @@ impl TypeTable
                     provenance: origin.provenance(),
                     ty: first,
                     last,
-                    standing: Standing::Judged(Within { constant, node }),
+                    standing: Standing::Judged(Within {
+                        constant,
+                        node,
+                        depth: Some(depth),
+                    }),
                 });
             }
         }
         let mut binders = BTreeSet::new();
         for &(variable, binder) in origins.bindings() {
-            if let Some((first, constant)) = first_of(TermNode::Value(variable))
+            if let Some((first, (constant, depth))) = first_of(TermNode::Value(variable))
                 && binders.insert(binder)
             {
                 entries.push(Entry {
@@ -1272,6 +1292,7 @@ impl TypeTable
                     standing: Standing::Judged(Within {
                         constant,
                         node: CoreNode::Value(variable),
+                        depth: Some(depth),
                     }),
                 });
             }
@@ -1284,11 +1305,12 @@ impl TypeTable
         // scrutinee's node. A binder some use already answers is not answered
         // twice.
         let typed_at = |value: ValueId| match first_of(TermNode::Value(value)) {
-            Some((TypeNode::Value(ty), constant)) => Some(Scrutinised {
+            Some((TypeNode::Value(ty), (constant, depth))) => Some(Scrutinised {
                 ty,
                 within: Within {
                     constant,
                     node: CoreNode::Value(value),
+                    depth: Some(depth),
                 },
             }),
             Some((TypeNode::Computation(_), _)) | None => None,
@@ -1392,7 +1414,7 @@ impl TypeTable
         // at a decode — `force m` with `m` at `+U (T(A))` — returns what the
         // decode reads as.
         let mut returned: BTreeMap<NodeIndex, (usize, ValueTypeId, Within)> = BTreeMap::new();
-        for &(term, first, _, at, constant) in &kept {
+        for &(term, first, _, at, (constant, depth)) in &kept {
             let (TermNode::Computation(id), TypeNode::Computation(ty)) = (term, first)
             else {
                 continue;
@@ -1415,6 +1437,7 @@ impl TypeTable
             let judged = (at, result, Within {
                 constant,
                 node: CoreNode::Computation(id),
+                depth: Some(depth),
             });
             let _held = returned
                 .entry(origin.node())
@@ -1444,7 +1467,7 @@ impl TypeTable
                     (TypeNode::Computation(ty), Standing::Named(named))
                 },
                 Labelled::Value(value) => {
-                    let Some((first, constant)) = first_of(TermNode::Value(value))
+                    let Some((first, (constant, depth))) = first_of(TermNode::Value(value))
                     else {
                         continue;
                     };
@@ -1453,6 +1476,7 @@ impl TypeTable
                         Standing::Judged(Within {
                             constant,
                             node: CoreNode::Value(value),
+                            depth: Some(depth),
                         }),
                     )
                 },
@@ -1469,6 +1493,7 @@ impl TypeTable
                         Standing::Judged(Within {
                             constant,
                             node: CoreNode::Computation(action),
+                            depth: None,
                         }),
                     )
                 },
@@ -1500,6 +1525,7 @@ impl TypeTable
                         Standing::Judged(Within {
                             constant,
                             node: CoreNode::Computation(action),
+                            depth: None,
                         }),
                     )
                 },
@@ -2538,14 +2564,16 @@ impl TypeTable
     /// # Specification
     /// - requires: nothing.
     /// - ensures: for a judged node, for each intuitionistic binder from the
-    ///   outermost to the innermost around the node, the name
+    ///   outermost to the innermost around the node's place under as many of
+    ///   them as its type was judged under — its first place where the table
+    ///   keeps no such depth or no place is under it — the name
     ///   [`Naming::scoped`] gives it, and among the regions the name of each
-    ///   capability scope and each hold around it, as
-    ///   [`gandr_surface_diagnostics::Scoped::regions`] gives them; for a part
-    ///   standing under the parts before it, those of its match's node, then
-    ///   each earlier part's name, of no known type; for a described member,
-    ///   each name its context binds; empty for a closed node or one its
-    ///   declaration does not reach.
+    ///   capability scope and each hold around that place, as
+    ///   [`gandr_surface_diagnostics::Scoped::regions_at`] gives them; for a
+    ///   part standing under the parts before it, those of its match's node,
+    ///   then each earlier part's name, of no known type; for a described
+    ///   member, each name its context binds; empty for a closed node or one
+    ///   its declaration does not reach.
     /// - provides: the context an entry's type is spelled in.
     /// - fails: never.
     /// - panics: none.
@@ -2557,7 +2585,8 @@ impl TypeTable
     ///   their binders' names, and an endpoint under its signature's; a
     ///   theory's operation under the sorts before it; a capability inside a
     ///   scope's subject names the scope, and a type kept at a hold names the
-    ///   hold, past the scopes and holds around it.
+    ///   hold, past the scopes and holds around it; a node the term shares
+    ///   between places of other depths answers at the place it was judged.
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
@@ -2566,12 +2595,20 @@ impl TypeTable
     /// - witness: `typed::tests::a_scoped_capability_answers_at_its_scope`
     /// - witness: `typed::tests::a_kept_type_answers_at_the_hold_it_is_kept_in`
     /// - witness: `typed::tests::an_unused_dependent_part_answers_in_its_arms_context`
+    /// - witness: `typed::tests::a_dependent_record_spells_its_variables_where_it_stands_1515`
     fn standing(
         &self,
         standing: Standing,
     ) -> Context
     {
-        let (Within { constant, node }, parted) = match standing {
+        let (
+            Within {
+                constant,
+                node,
+                depth,
+            },
+            parted,
+        ) = match standing {
             Standing::Closed => return Context::default(),
             Standing::Named(context) => {
                 return Context {
@@ -2592,13 +2629,23 @@ impl TypeTable
             return Context::default();
         };
         let scoped = self.naming.scoped(&self.arena, &self.names, roots);
+        // A node the term shares between places of other depths is read at
+        // the place its type was judged at.
+        let (around, regions) = depth.map_or_else(
+            || (scoped.around(node), scoped.regions(node)),
+            |depth| {
+                (
+                    scoped.around_at(node, depth),
+                    scoped.regions_at(node, depth),
+                )
+            },
+        );
         let mut context = Context::default();
-        for binder in scoped.around(node).unwrap_or_default() {
+        for binder in around.unwrap_or_default() {
             context.binders.push(binder.name.map(String::from));
             context.types.push(self.bound_type(binder.opener));
         }
-        context.regions = scoped
-            .regions(node)
+        context.regions = regions
             .unwrap_or_default()
             .into_iter()
             .map(|region| region.name.map(String::from))
@@ -5970,6 +6017,52 @@ mod tests
             assert!(
                 spelled.iter().any(|entry| entry.ty().as_ref() == remainder),
                 "{reason}: {spelled:#?}"
+            );
+        }
+    }
+
+    /// A dependent record's variables spell under the binders in scope where
+    /// each entry stands: at a case under a motive that reads the scrutinee,
+    /// where the rest after the first entry answers by the label it starts at,
+    /// primed apart from the record's own `y`, and on both sides of an
+    /// equivalence as under a function type (#1515).
+    #[test]
+    fn a_dependent_record_spells_its_variables_where_it_stands_1515()
+    {
+        let record = "#{ x : b, y : b, p : Path(b, x, y) }";
+        let source = format!(
+            "def againAt(b : Type, w : {record}) -> -F Path({record}, w, w) {{\n  case w {{\n    \
+             #{{.x = u, .y = v, .p = q}} => here((u, (v, q)))\n  }}\n}}\n\ndef selfEquiv(b : \
+             Type) -> -F ({record} ≃ {record}) {{\n  (\n    thunk {{ fn (w) {{ w }} }},\n    \
+             ((thunk {{ fn (w) {{ w }} }}, thunk {{ fn (w) {{ here(w) }} }}), (thunk {{ fn (w) \
+             {{ w }} }}, thunk {{ fn (w) {{ here(w) }} }}))\n  )\n}}\n\ndef selfMap(b : Type) -> \
+             -F ({record} => {record}) {{\n  thunk {{ fn (w) {{ w }} }}\n}}\n"
+        );
+        let source = SourceText::from(source.as_str());
+        let spelled = spelled(source);
+        assert!(
+            spelled
+                .iter()
+                .all(|entry| entry.ty().unspelled().is_empty()),
+            "no entry spells a `?`: {spelled:#?}"
+        );
+        assert!(
+            spelled
+                .iter()
+                .any(|entry| entry.ty().as_ref().contains("(u, y′)")),
+            "the rest of the record answers by its label: {spelled:#?}"
+        );
+        for (name, declared) in
+            table(source).declarations(PageWidth::from(200_u32), Form::Sugared.into())
+        {
+            let Maybe::Present(super::Declared::Typed(ty)) = declared
+            else {
+                panic!("`{name:?}` is typed");
+            };
+            assert!(
+                ty.unspelled().is_empty(),
+                "`{name:?}`'s declared type spells no `?`: `{ty}` {:?}",
+                ty.unspelled()
             );
         }
     }

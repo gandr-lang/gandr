@@ -12,6 +12,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::BinderDepth;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
@@ -292,11 +293,14 @@ impl Naming
     /// - ensures: the scopes of every node reachable from `roots`, and for each
     ///   binder, at its position, the intuitionistic binder around it and its
     ///   name: the one written for the lambda or bind that opens it, or for the
-    ///   split component it is, counted from the split's outermost binder, or
-    ///   the label of the dependent record field whose pair opens it, else the
-    ///   one written at a use's binder; a split component a label pattern
-    ///   leaves unwritten is named by its field's label, primed (`′`) until no
-    ///   other binder of the declaration holds the name.
+    ///   split component it is, counted from the split's outermost binder along
+    ///   the chain each component stands under the one before in, or the label
+    ///   of the dependent record field whose pair opens it, else the one
+    ///   written at a use's binder; a split component a label pattern leaves
+    ///   unwritten, or that holds a dependent record's rest, is named by its
+    ///   field's label, primed (`′`) until no other binder of the declaration
+    ///   holds the name; a dependent split's motive binder, the scrutinee's
+    ///   again, keeps none.
     /// - provides: the context a node inside the declaration is spelled in.
     /// - fails: never.
     /// - panics: none.
@@ -318,21 +322,32 @@ impl Naming
         let names: Vec<Name<'_>> = names.iter().map(|name| Name::from(name.as_str())).collect();
         let printer = CoreSource::new(arena, &names);
         let scopes = Scopes::of(&printer, roots.into_iter().flatten());
-        // A split's binders are consecutive, its outermost component first.
-        let mut split: Option<(ComputationId, usize)> = None;
+        // A split's binders chain, its outermost component first: a binder
+        // continues the split whose last component it stands under.
+        let mut split: Option<(ComputationId, BinderIndex, usize)> = None;
         // The binders a label names, primed apart once every binder is named.
         let mut labelled: Vec<usize> = Vec::new();
         let mut bound: Vec<Bound> = scopes
             .binders()
             .enumerate()
-            .map(|(at, (_, binder))| {
+            .map(|(at, (index, binder))| {
                 let (name, scope) = match binder.opener() {
+                    // The motive's binder is the scrutinee's again, which the
+                    // source writes no name for.
+                    CoreNode::Computation(_) if binder.slot() == ChildSlot::MOTIVE => {
+                        split = None;
+                        (None, false)
+                    },
                     CoreNode::Computation(opener) => {
                         let component = match split {
-                            Some((held, count)) if held == opener => count.saturating_add(1),
+                            Some((held, previous, count))
+                                if held == opener && binder.parent() == Some(previous) =>
+                            {
+                                count.saturating_add(1)
+                            },
                             Some(_) | None => 0,
                         };
-                        split = Some((opener, component));
+                        split = Some((opener, index, component));
                         let key = (opener, SplitComponent::from(component));
                         let opened = self
                             .openers
@@ -516,7 +531,91 @@ impl Scoped
         node: CoreNode,
     ) -> Option<Vec<Around<'_>>>
     {
-        let innermost = self.scopes.innermost(node)?;
+        Some(self.around_from(self.scopes.innermost(node)?))
+    }
+
+    /// The intuitionistic binders `node` stands under at its place under
+    /// `depth` of them, outermost first, or at its first place where none is
+    /// under `depth`; none when the declaration's roots do not reach `node`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `None` exactly when the scopes hold no position for `node`;
+    ///   otherwise as [`Self::around`] answers at the place
+    ///   [`Scopes::innermost_at`] answers for `depth`, or at the first place
+    ///   where it answers none.
+    /// - provides: the context a type judged under `depth` binders at `node` is
+    ///   spelled in, where the term shares `node` between places of other
+    ///   depths.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a dependent record's field variable, shared by the
+    ///   copies of the record a relation abbreviates, answers under the
+    ///   record's own fields at the depth it was judged.
+    /// - witness: `tests::diagnostics::a_shared_field_variable_answers_at_the_depth_it_was_judged_1515`
+    #[spec(ensures: |ret| ret.is_none() == self.scopes.innermost(node).is_none())]
+    #[inline]
+    #[must_use]
+    pub fn around_at(
+        &self,
+        node: CoreNode,
+        depth: BinderDepth,
+    ) -> Option<Vec<Around<'_>>>
+    {
+        let innermost = self
+            .scopes
+            .innermost_at(node, depth)
+            .or_else(|| self.scopes.innermost(node))?;
+        Some(self.around_from(innermost))
+    }
+
+    /// The regions `node` stands in at its place under `depth` intuitionistic
+    /// binders, or at its first place where none is under `depth`; none when
+    /// the declaration's roots do not reach `node`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `None` exactly when the scopes hold no position for `node`;
+    ///   otherwise as [`Self::regions`] answers at the place
+    ///   [`Self::around_at`] reads.
+    /// - provides: the regions beside [`Self::around_at`]'s binders.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::regions`].
+    /// - witness: `tests::diagnostics::a_node_stands_in_the_regions_of_each_scope_and_hold_around_it`
+    #[spec(ensures: |ret| ret.is_none() == self.scopes.innermost(node).is_none())]
+    #[inline]
+    #[must_use]
+    pub fn regions_at(
+        &self,
+        node: CoreNode,
+        depth: BinderDepth,
+    ) -> Option<Vec<Around<'_>>>
+    {
+        let innermost = self
+            .scopes
+            .innermost_at(node, depth)
+            .or_else(|| self.scopes.innermost(node))?;
+        Some(self.regions_from(innermost))
+    }
+
+    /// The intuitionistic binders of the scope whose innermost binder is
+    /// `innermost`, outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Termination
+    /// A binder's parent precedes it, so the chain strictly descends.
+    fn around_from(
+        &self,
+        innermost: Option<BinderIndex>,
+    ) -> Vec<Around<'_>>
+    {
         let mut around = Vec::new();
         let mut at = intuitionistic(&self.scopes, innermost);
         while let Some(index) = at {
@@ -531,8 +630,9 @@ impl Scoped
             at = binder.around.filter(|&around| around < index);
         }
         around.reverse();
-        Some(around)
+        around
     }
+
     /// The names of the regions `node` stands in, outermost first: one per
     /// capability scope and per hold around it, in the order they nest, the
     /// order a region's depth counts; none when the declaration's roots do
@@ -562,7 +662,22 @@ impl Scoped
         node: CoreNode,
     ) -> Option<Vec<Around<'_>>>
     {
-        let innermost = self.scopes.innermost(node)?;
+        Some(self.regions_from(self.scopes.innermost(node)?))
+    }
+
+    /// The regions of the scope whose innermost binder is `innermost`,
+    /// outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Termination
+    /// A binder's parent precedes it, so the chain strictly descends.
+    fn regions_from(
+        &self,
+        innermost: Option<BinderIndex>,
+    ) -> Vec<Around<'_>>
+    {
         let mut regions = Vec::new();
         let mut at = innermost;
         while let Some(index) = at {
@@ -581,7 +696,7 @@ impl Scoped
             at = binder.parent().filter(|&parent| parent < index);
         }
         regions.reverse();
-        Some(regions)
+        regions
     }
 }
 

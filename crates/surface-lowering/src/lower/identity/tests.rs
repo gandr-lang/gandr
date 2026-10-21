@@ -1781,7 +1781,8 @@ fn a_pattern_at_a_relation_splits_its_record()
 
 /// Each component a pattern at a relation writes a variable for is named by
 /// it, though the arm uses only one: the record's later fields mention the
-/// earlier ones, so a type read inside the arm names them (#665).
+/// earlier ones, so a type read inside the arm names them (#665). The rest of
+/// the record each link holds is named by the label it starts at (#1515).
 #[test]
 fn a_relation_split_names_each_written_component_665()
 {
@@ -1790,8 +1791,9 @@ fn a_relation_split_names_each_written_component_665()
     );
     assert_eq!(
         component_names(source),
-        ["k", "r", "s", "t"],
-        "every written component is named, the unused `t`, `s` and `r` with `k`"
+        ["back", "k", "r", "s", "sect", "t"],
+        "every written component is named, the unused `t`, `s` and `r` with `k`, and each rest by \
+         its first label"
     );
 }
 
@@ -1818,7 +1820,8 @@ fn a_run_binder_splits_the_relation_its_call_returns_656()
 }
 
 /// A label pattern writes no variable for the fields it omits; each is named
-/// by its label, the one name the record declares for it (#670).
+/// by its label, the one name the record declares for it (#670), as is the
+/// rest of the record each link holds, by the label it starts at (#1515).
 #[test]
 fn an_unwritten_field_is_named_by_its_label_670()
 {
@@ -1827,8 +1830,8 @@ fn an_unwritten_field_is_named_by_its_label_670()
     );
     assert_eq!(
         component_names(source),
-        ["k", "retr", "sect", "to"],
-        "the written `k` by its variable, the omitted fields by their labels"
+        ["back", "k", "retr", "sect", "sect", "to"],
+        "the written `k` by its variable, the omitted fields and the rests by their labels"
     );
 }
 

@@ -19,6 +19,7 @@ use gandr_core_checker::FrameRole;
 use gandr_core_checker::Mismatch;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
+use gandr_core_term::BinderDepth;
 use gandr_core_term::FailureClass;
 use gandr_core_term::TrackingIssue;
 use gandr_core_term::Value;
@@ -656,6 +657,71 @@ fn a_declaration_s_binders_are_named_as_written_803()
         Some(String::from("n")),
         Some(String::from("m"))
     ]]);
+}
+
+/// A dependent record's field variable under `≃` is one node in each copy of
+/// the record the relation abbreviates; at the depth its type was judged, the
+/// written side's `Path(b, x, y)`, it stands under the parameter and the
+/// fields before it, not under the first copy the walk reached (#1515).
+#[test]
+fn a_shared_field_variable_answers_at_the_depth_it_was_judged_1515()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let text = SourceText::from(
+        "def selfEquiv(b : Type) -> -F (#{ x : b, y : b, p : Path(b, x, y) } ≃ #{ x : b, y : b, \
+         p : Path(b, x, y) }) {\n  (\n    thunk { fn (w) { w } },\n    ((thunk { fn (w) { w } }, \
+         thunk { fn (w) { here(w) } }), (thunk { fn (w) { w } }, thunk { fn (w) { here(w) } }))\n  \
+         )\n}\n",
+    );
+    let Lowered::Module { module, arena } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is one module");
+    };
+    let used = <&str>::from(text)
+        .find("Path(b, x, y)")
+        .expect("the record's last field reads the earlier ones")
+        .saturating_add(8);
+    let variables: Vec<_> = module
+        .origins()
+        .values()
+        .iter()
+        .filter(|&&(_, origin)| usize::from(origin.span().start()) == used)
+        .map(|&(variable, _)| variable)
+        .collect();
+    assert!(!variables.is_empty(), "the written `x` has an origin");
+    let naming = Naming::of(&module, text);
+    let names = constant_names(&module);
+    let spelled = |around: Option<Vec<gandr_surface_diagnostics::Around<'_>>>| {
+        around.map(|around| {
+            around
+                .into_iter()
+                .map(|binder| binder.name.map(String::from))
+                .collect::<Vec<_>>()
+        })
+    };
+    for (_, roots) in naming.declarations() {
+        let scoped = naming.scoped(&arena, &names, roots);
+        for &variable in &variables {
+            let node = CoreNode::Value(variable);
+            assert_eq!(
+                spelled(scoped.around_at(node, BinderDepth::from(3_usize))),
+                Some(vec![
+                    Some(String::from("b")),
+                    Some(String::from("x")),
+                    Some(String::from("y"))
+                ]),
+                "the parameter, then the fields before `p`"
+            );
+            assert_ne!(
+                spelled(scoped.around(node)),
+                spelled(scoped.around_at(node, BinderDepth::from(3_usize))),
+                "the first place the walk reached is a copy the relation abbreviates"
+            );
+        }
+    }
 }
 
 /// A node stands in the region of each capability scope and each hold around

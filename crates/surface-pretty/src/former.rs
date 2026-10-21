@@ -1268,6 +1268,40 @@ pub trait Source
         None
     }
 
+    /// The motive the split `node` checks its body against, where it carries
+    /// one: a computation type under one binder of the scrutinee, beside the
+    /// split's children rather than among them, since the surface writes a
+    /// split's motive nowhere.
+    ///
+    /// # Specification
+    /// - requires: nothing; any handle is admissible.
+    /// - ensures: the motive of a split that reads its scrutinee, when [`read`]
+    ///   answers a [`Former::Split`]; none for a split that only checks and for
+    ///   every other former. The default knows no motive.
+    /// - provides: the nodes a typed run judges inside a dependent split's
+    ///   motive, which [`crate::Scopes`] places under the binder the motive
+    ///   opens, though the printer writes none of them.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a node inside a dependent split's motive stands under
+    ///   the split's binders and the motive's, so a variable in it counts out
+    ///   to the binder it names.
+    /// - witness: `scope::tests::a_dependent_split_s_motive_stands_under_its_binder`
+    #[inline]
+    fn split_motive(
+        &self,
+        node: Self::Node,
+    ) -> Option<Self::Node>
+    {
+        let _ = node;
+        None
+    }
+
     /// The names of the intuitionistic binders the presented root stands
     /// under, outermost first; an entry the source cannot name is none.
     ///

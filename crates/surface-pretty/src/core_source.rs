@@ -12,6 +12,7 @@ use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::SplitMotive;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
@@ -2194,6 +2195,40 @@ impl Source for CoreSource<'_>
         let family = *self.constructors.cases.get(&id)?;
         let (name, arity) = self.constructors.arm(family, index)?;
         Some((name, arity, self.constructors.placement(family, arity)))
+    }
+
+    /// The motive of a split that reads its scrutinee.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the computation type a held split that reads its scrutinee
+    ///   checks its body against; none for any other node.
+    /// - provides: as [`Source::split_motive`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Source::split_motive`].
+    /// - witness: `scope::tests::a_dependent_split_s_motive_stands_under_its_binder`
+    #[spec(ensures: |ret| ret.is_none_or(|motive| matches!(motive, CoreNode::CompType(_))))]
+    #[inline]
+    fn split_motive(
+        &self,
+        node: CoreNode,
+    ) -> Option<CoreNode>
+    {
+        let CoreNode::Computation(id) = self.restoration.restored(node)
+        else {
+            return None;
+        };
+        let Computation::Split {
+            motive: SplitMotive::Scrutinee(motive),
+            ..
+        } = *self.arena.computation(id)?
+        else {
+            return None;
+        };
+        Some(CoreNode::CompType(motive))
     }
 
     /// The names of the binders the root stands under.
