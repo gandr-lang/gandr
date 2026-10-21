@@ -41,6 +41,7 @@ use gandr_surface_diagnostics::constant_names;
 use gandr_surface_diagnostics::diagnose;
 use gandr_surface_diagnostics::report_identifier;
 use gandr_surface_diagnostics::report_span;
+use gandr_surface_diagnostics::tracking;
 use gandr_surface_diagnostics::upstream;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Goals;
@@ -2258,6 +2259,40 @@ fn a_declaration_naming_a_refused_one_is_a_note()
         ))],
         "a declaration expected to owe is told its own expectation, then what it rests on"
     );
+}
+
+#[test]
+fn an_unimplemented_refusal_names_its_tracking_issue_in_every_face()
+{
+    let url = "https://github.com/gandr-lang/gandr/issues/1107";
+    let annotated = only(
+        Path::new("annotated.gandr"),
+        SourceText::from("def annotated = (3 : Integer) ;\n"),
+    );
+    assert_eq!(
+        annotated.detail.class,
+        Class::Refusal(FailureClass::Unimplemented(TrackingIssue::ANNOTATION_VALUE))
+    );
+    assert_eq!(
+        annotated.tracked(),
+        Maybe::Present(format!("tracked by #1107 <{url}>")),
+        "the terminal and the editor close with the issue and its address"
+    );
+    let image: serde_json::Value =
+        serde_json::from_str(&annotated.json()).expect("the JSON image parses");
+    assert_eq!(
+        image["tracking"],
+        serde_json::json!({"issue": "#1107", "url": url})
+    );
+    let malformed = only(Path::new("force.gandr"), SourceText::from(FORCE));
+    assert_eq!(
+        malformed.tracked(),
+        Maybe::Absent(tracking::Absent::Untracked),
+        "a refusal of what the author wrote names no issue"
+    );
+    let image: serde_json::Value =
+        serde_json::from_str(&malformed.json()).expect("the JSON image parses");
+    assert_eq!(image["tracking"], serde_json::Value::Null);
 }
 
 /// The malformed-form sweep: each pathological fixture cut short at every

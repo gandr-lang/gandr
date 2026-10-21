@@ -194,6 +194,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::inline::Forms;
 use crate::position::Range;
+use crate::protocol::CodeDescription;
 use crate::protocol::Diagnostic;
 use crate::protocol::DocumentUri;
 use crate::protocol::Location;
@@ -537,22 +538,24 @@ pub struct Rechecked
 ///   one LSP diagnostic, in that order, as [`diagnostic`] writes it at
 ///   `verbosity`, every type it names in `spelling`: the range of its primary
 ///   annotation, else of its innermost located context, the refusal's
-///   vocabulary name as its code, its message, primary label, unlocated
-///   contexts and note as its message, each context annotation and then each
-///   located context, outermost first, as a related location carrying its
-///   label, then each mark it makes in an import at that import's file, and the
-///   severity of a goal as information, of a warning as a warning, of a note as
-///   a hint and of every other diagnostic as an error; a diagnostic locating
-///   nothing in the document, and a ledger line, at the document's origin. A
-///   fault that keeps the document from composing, and a grammar that did not
-///   build, is one error at the origin naming it. The timing carries the
-///   judgement's form census, the incremental checker's census, and the wall of
-///   the whole recheck; its admission is pending when the judgement left one.
-///   The form is [`caret_form`] of the judged tree at `caret`, `caret`'s own
-///   reason when it is absent, and [`formless::Absent::Unparsed`] when the
-///   judgement faulted or the grammar did not build. A text the session last
-///   judged, submitted again, molds no form and judges no item, and its
-///   diagnostics are the ones its previous recheck produced.
+///   vocabulary name as its code, described at its tracking issue's address
+///   when the refusal is unimplemented, its message, primary label, unlocated
+///   contexts, note and tracking issue as its message, each context annotation
+///   and then each located context, outermost first, as a related location
+///   carrying its label, then each mark it makes in an import at that import's
+///   file, and the severity of a goal as information, of a warning as a
+///   warning, of a note as a hint and of every other diagnostic as an error; a
+///   diagnostic locating nothing in the document, and a ledger line, at the
+///   document's origin. A fault that keeps the document from composing, and a
+///   grammar that did not build, is one error at the origin naming it. The
+///   timing carries the judgement's form census, the incremental checker's
+///   census, and the wall of the whole recheck; its admission is pending when
+///   the judgement left one. The form is [`caret_form`] of the judged tree at
+///   `caret`, `caret`'s own reason when it is absent, and
+///   [`formless::Absent::Unparsed`] when the judgement faulted or the grammar
+///   did not build. A text the session last judged, submitted again, molds no
+///   form and judges no item, and its diagnostics are the ones its previous
+///   recheck produced.
 /// - provides: the one recheck every synchronisation publishes.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
@@ -1063,11 +1066,13 @@ fn reported(step: Step<'_>) -> Step<'_>
 ///   plain message, then the primary annotation's label on its own line when it
 ///   is located, then each unlocated context as `while …` on a line of its own,
 ///   then its note on a line of its own after `note: ` when it closes with one,
-///   then each detail line the level adds: what the terminal prints, in the one
-///   text field the protocol gives a diagnostic. The related information is
-///   every annotation but the primary one, in order, then every located
-///   context, outermost first, then each mark the diagnostic makes in an
-///   import, at that import's file, in order.
+///   then `note: tracked by #N <url>` when its refusal is unimplemented, then
+///   each detail line the level adds: what the terminal prints, in the one text
+///   field the protocol gives a diagnostic. A diagnostic with a code whose
+///   refusal is unimplemented describes the code at its tracking issue's
+///   address. The related information is every annotation but the primary one,
+///   in order, then every located context, outermost first, then each mark the
+///   diagnostic makes in an import, at that import's file, in order.
 /// - provides: the one map from a model diagnostic to an editor diagnostic.
 /// - fails: never.
 /// - panics: none.
@@ -1087,10 +1092,12 @@ fn reported(step: Step<'_>) -> Step<'_>
 /// - witness: `recheck::tests::one_refusal_is_published_at_every_verbosity`
 /// - witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`
 /// - witness: `recheck::tests::a_refusal_in_an_import_is_published_where_the_document_reaches_it_1199`
+/// - witness: `recheck::tests::an_unimplemented_refusal_links_its_tracking_issue`
 /// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[spec(ensures: |ret| ret.source == "gandr"
     && ret.severity == match found.severity { Seriousness::Goal => Severity::INFORMATION, Seriousness::Warning => Severity::WARNING, Seriousness::Note => Severity::HINT, Seriousness::Error | Seriousness::Ledger => Severity::ERROR }
     && ret.code.is_some() == matches!(found.identifier, Maybe::Present(_))
+    && ret.code_description.is_some() == (ret.code.is_some() && matches!(found.detail.class.tracking(), Maybe::Present(_)))
     && (verbosity == Verbosity::Json || ret.message.starts_with(found.message.text.as_str()))
     && ret.related_information.len() >= found.annotations.iter()
         .filter(|annotation| annotation.kind == AnnotationKind::Context).count()
@@ -1151,6 +1158,10 @@ fn diagnostic(
             message.push_str("\nnote: ");
             message.push_str(note);
         }
+        if let Maybe::Present(ref sentence) = found.tracked() {
+            message.push_str("\nnote: ");
+            message.push_str(sentence);
+        }
         for detail in found.details(verbosity) {
             let _written = write!(message, "\n{detail}");
         }
@@ -1159,6 +1170,9 @@ fn diagnostic(
     let mut diagnostic = Diagnostic::new(range, severity, message);
     if let Maybe::Present(ref spelling) = found.identifier {
         diagnostic.code = Some(spelling.to_string());
+        if let Maybe::Present(issue) = found.detail.class.tracking() {
+            diagnostic.code_description = Some(CodeDescription { href: issue.url() });
+        }
     }
     let contexts = found
         .contexts
@@ -1257,6 +1271,7 @@ mod tests
     use crate::position::Line;
     use crate::position::Position;
     use crate::position::Range;
+    use crate::protocol::CodeDescription;
     use crate::protocol::Diagnostic;
     use crate::protocol::DocumentUri;
     use crate::protocol::Location;
@@ -1568,6 +1583,44 @@ mod tests
         assert!(
             note.starts_with("note: ") && note.contains("`f`"),
             "the note names the declaration the terminal names"
+        );
+    }
+
+    #[test]
+    fn an_unimplemented_refusal_links_its_tracking_issue()
+    {
+        let url = "https://github.com/gandr-lang/gandr/issues/1107";
+        let uri = DocumentUri::from("file:///strict/annotated.gandr");
+        let diagnostics = checked(&uri, SourceText::from("def annotated = (3 : Integer) ;\n"));
+        let [ref diagnostic] = *diagnostics.as_slice()
+        else {
+            panic!("one unsupported annotation");
+        };
+        assert_eq!(diagnostic.code.as_deref(), Some("OutOfFragment"));
+        assert_eq!(
+            diagnostic.code_description,
+            Some(CodeDescription {
+                href: String::from(url),
+            }),
+            "the code opens the issue tracking what the refusal is missing"
+        );
+        assert!(
+            diagnostic
+                .message
+                .ends_with(format!("\nnote: tracked by #1107 <{url}>").as_str()),
+            "the message closes with the line the terminal closes with: {:?}",
+            diagnostic.message
+        );
+        let malformed = checked(
+            &DocumentUri::from("file:///strict/head.gandr"),
+            SourceText::from("def f(xs: Vec(Integer)) -> -F Integer {\n  pure 1\n}\n"),
+        );
+        assert!(
+            malformed
+                .iter()
+                .all(|diagnostic| diagnostic.code_description.is_none()
+                    && !diagnostic.message.contains("tracked by")),
+            "a refusal of what the author wrote links no issue"
         );
     }
 

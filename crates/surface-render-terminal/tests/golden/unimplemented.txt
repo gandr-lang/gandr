@@ -1,0 +1,8 @@
+error[OutOfFragment]: the annotation expression is not supported yet
+  ╭▸ annotated.gandr:1:17
+  │
+1 │ def annotated = (3 : Integer) ;
+  │                 ━━━━━━━━━━━━━ a form the fragment does not admit
+  │
+  ├ note: `annotated` is expected to check, and this refusal leaves it unsettled
+  ╰ note: tracked by #1107 <https://github.com/gandr-lang/gandr/issues/1107>

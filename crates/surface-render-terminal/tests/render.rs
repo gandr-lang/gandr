@@ -364,6 +364,22 @@ fn a_type_mismatch_renders_as_a_located_report()
 }
 
 #[test]
+fn an_unimplemented_refusal_closes_with_its_tracking_issue()
+{
+    let diagnostic = only(
+        Path::new("annotated.gandr"),
+        SourceRoot::Strict,
+        SourceText::from("def annotated = (3 : Integer) ;\n"),
+        Verb::Check(Goals::Gated),
+    );
+    assert_eq!(
+        plain(&diagnostic, Verbosity::User),
+        include_str!("golden/unimplemented.txt"),
+        "the issue tracking what the refusal is missing closes it at the user level"
+    );
+}
+
+#[test]
 fn each_causal_shape_renders_as_its_golden()
 {
     let check = Verb::Check(Goals::Gated);
