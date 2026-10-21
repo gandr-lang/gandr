@@ -176,7 +176,7 @@ usage = '''
 flag "--runs <runs>" help="how many of the latest successful queue runs to read" default="5"
 flag "--offline" help="report on the stored runs without invoking gh"
 '''
-run = "cargo run --locked --quiet --package gandr-workflow-test-timing -- --runs {{usage.runs}}{% if usage.offline %} --offline{% endif %}"
+run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-test-timing -- --runs {{usage.runs}}{% if usage.offline %} --offline{% endif %}"
 
 # Specification cost is profiled, never guessed from clause shapes: the tool
 # samples the slowest enforcing tests the timing store names under perf and
@@ -190,7 +190,7 @@ flag "--runs <runs>" help="how many of the newest stored queue runs name them" d
 flag "--frequency <hz>" help="samples per second" default="499"
 flag "--top <top>" help="how many checks to list" default="30"
 '''
-run = "cargo run --locked --quiet --package gandr-workflow-spec-cost -- --tests {{usage.tests}} --runs {{usage.runs}} --frequency {{usage.frequency}} --top {{usage.top}}"
+run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-spec-cost -- --tests {{usage.tests}} --runs {{usage.runs}} --frequency {{usage.frequency}} --top {{usage.top}}"
 
 # The one-token-drop recovery matrix in full: some forty thousand parses
 # against the per-source records under crates/surface-parser/tests/recovery,
@@ -199,7 +199,7 @@ run = "cargo run --locked --quiet --package gandr-workflow-spec-cost -- --tests 
 # narrows either run to one source.
 ["ci:recovery"]
 description = "Every corpus source cut short and with each token dropped, against its recovery record"
-run = "cargo nextest run --locked --package gandr-surface-parser --test tests --profile sweeps -E 'test(=sweeps::dropped_tokens_recover_no_worse_than_the_record)'"
+run = ".config/mise/scope cargo nextest run --locked --package gandr-surface-parser --test tests --profile sweeps -E 'test(=sweeps::dropped_tokens_recover_no_worse_than_the_record)'"
 
 # The goldens a corpus source carries beside it — its recovery record and its
 # role golden — rewritten for every source. The records are a sweep and run
@@ -211,8 +211,8 @@ run = "cargo nextest run --locked --package gandr-surface-parser --test tests --
 description = "Rewrite every corpus source's recovery record and role golden"
 env.UPDATE_EXPECT = "1"
 run = [
-  "cargo nextest run --locked --package gandr-surface-parser --test tests --profile sweeps -E 'test(=sweeps::dropped_tokens_recover_no_worse_than_the_record)'",
-  "cargo nextest run --locked --package gandr-surface-grammar --test tests -E 'test(=highlight::corpus_roles_match_the_golden)'",
+  ".config/mise/scope cargo nextest run --locked --package gandr-surface-parser --test tests --profile sweeps -E 'test(=sweeps::dropped_tokens_recover_no_worse_than_the_record)'",
+  ".config/mise/scope cargo nextest run --locked --package gandr-surface-grammar --test tests -E 'test(=highlight::corpus_roles_match_the_golden)'",
 ]
 
 # The nightly sweeps with specifications enforced, under the `nightly`
@@ -227,7 +227,7 @@ run = [
 description = "Every sweep with specifications enforced, the costliest over the night's slice"
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
-run = "cargo nextest run --workspace --locked --profile nightly"
+run = ".config/mise/scope cargo nextest run --workspace --locked --profile nightly"
 
 # The enforcing suite, instrumented into target/coverage so it never shares
 # the cached enforcing state, under the `coverage` nextest profile (its own
@@ -260,7 +260,7 @@ trap 'rm -rf "$scratch"' EXIT
 exports() {
   local target=$1 prefix=$2 line llvm_cov object index=0 count=0
   local -a options=() objects=()
-  line=$(CARGO_TARGET_DIR="$target" cargo llvm-cov report -v --lcov --output-path "$scratch/$prefix.discarded" 2>&1 > /dev/null \
+  line=$(CARGO_TARGET_DIR="$target" "$root/.config/mise/scope" cargo llvm-cov report -v --lcov --output-path "$scratch/$prefix.discarded" 2>&1 > /dev/null \
     | grep -F ' export -format=lcov ')
   line=${line#*\`}
   line=${line%\`*}
@@ -285,12 +285,12 @@ exports() {
   echo "$prefix: $count objects exported"
 }
 RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR="$root/target/coverage" \
-  cargo llvm-cov nextest --workspace --locked --no-report
+  "$root/.config/mise/scope" cargo llvm-cov nextest --workspace --locked --no-report
 exports "$root/target/coverage" enforcing
 CARGO_TARGET_DIR="$root/target/coverage-plain" \
   cargo llvm-cov clean --workspace
 CARGO_TARGET_DIR="$root/target/coverage-plain" \
-  cargo llvm-cov nextest --locked --no-report \
+  "$root/.config/mise/scope" cargo llvm-cov nextest --locked --no-report \
   -p gandr-surface-parser --test tests \
   -E 'test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget)'
 exports "$root/target/coverage-plain" plain
@@ -340,7 +340,7 @@ awk '
 # `--file-issue`.
 ["ci:coverage-guard"]
 description = "Main's coverage upload against the one before it, filed when it drops"
-run = "cargo run --locked --quiet --package gandr-workflow-coverage-guard --"
+run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-coverage-guard --"
 
 # Each test's enforcing time over its plain time, from a run's enforcing JUnit
 # report and a plain baseline's; the enforcing lane reports it on every run
@@ -352,7 +352,7 @@ run = "cargo run --locked --quiet --package gandr-workflow-coverage-guard --"
 description = "Compare each test's enforcing time with a plain baseline's"
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
-run = "cargo run --locked --quiet --profile test --package gandr-workflow-spec-cost --bin spec-cost-ratio --"
+run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-workflow-spec-cost --bin spec-cost-ratio --"
 
 # Each CI lane's median job time over the newest merge-queue and
 # pull-request runs against its budget, as Markdown; `--issue TITLE` keeps
@@ -361,7 +361,7 @@ run = "cargo run --locked --quiet --profile test --package gandr-workflow-spec-c
 # NAME=SECONDS` per lane, optionally `--runs` and `--issue`.
 ["ci:lane-budget"]
 description = "Each CI lane's median job time over recent runs against its budget"
-run = "cargo run --locked --quiet --package gandr-workflow-lane-budget --"
+run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-lane-budget --"
 
 # The build state a test lane hands to the next landing holds what this run's
 # builds used: Cargo never deletes a unit a dependency, feature or lockfile
@@ -374,7 +374,7 @@ description = "Prune the enforcing test state to the units this run's builds use
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 run = [
-  "cargo nextest run --workspace --locked --no-run --cargo-message-format json > target/enforcing/units.jsonl",
+  ".config/mise/scope cargo nextest run --workspace --locked --no-run --cargo-message-format json > target/enforcing/units.jsonl",
   "target/enforcing/debug/build-state prune --profile-dir target/enforcing/debug target/enforcing/units.jsonl",
 ]
 
@@ -384,10 +384,10 @@ run = [
 ["ci:prune-plain"]
 description = "Prune the plain test state to the units this run's builds used"
 run = [
-  "cargo nextest run --locked --package gandr-surface-parser --test tests --no-run --cargo-message-format json > target/debug/units-tests.jsonl",
-  "cargo build --locked --profile test --package gandr-lang --message-format json > target/debug/units-corpus.jsonl",
-  "cargo test --locked --package gandr-surface-corpus --test tests --no-run --message-format json > target/debug/units-comments.jsonl",
-  "cargo build --locked --profile test --package gandr-workflow-build-state --message-format json > target/debug/units-tool.jsonl",
+  ".config/mise/scope cargo nextest run --locked --package gandr-surface-parser --test tests --no-run --cargo-message-format json > target/debug/units-tests.jsonl",
+  ".config/mise/scope cargo build --locked --profile test --package gandr-lang --message-format json > target/debug/units-corpus.jsonl",
+  ".config/mise/scope cargo test --locked --package gandr-surface-corpus --test tests --no-run --message-format json > target/debug/units-comments.jsonl",
+  ".config/mise/scope cargo build --locked --profile test --package gandr-workflow-build-state --message-format json > target/debug/units-tool.jsonl",
   "target/debug/build-state prune --profile-dir target/debug target/debug/units-tests.jsonl target/debug/units-corpus.jsonl target/debug/units-comments.jsonl target/debug/units-tool.jsonl",
 ]
 
@@ -400,9 +400,9 @@ run = [
 description = "Prune the documentation state to the units this run's builds used"
 env.RUSTDOCFLAGS = "-D warnings"
 run = [
-  "cargo doc --workspace --all-features --locked --no-deps --document-private-items --message-format json > target/debug/units-doc.jsonl",
-  "RUSTDOC=true cargo test --doc --workspace --locked --message-format json > target/debug/units-doctests.jsonl",
-  "cargo build --locked --profile test --package gandr-workflow-build-state --message-format json > target/debug/units-tool.jsonl",
+  ".config/mise/scope cargo doc --workspace --all-features --locked --no-deps --document-private-items --message-format json > target/debug/units-doc.jsonl",
+  "RUSTDOC=true .config/mise/scope cargo test --doc --workspace --locked --message-format json > target/debug/units-doctests.jsonl",
+  ".config/mise/scope cargo build --locked --profile test --package gandr-workflow-build-state --message-format json > target/debug/units-tool.jsonl",
   "target/debug/build-state prune --profile-dir target/debug target/debug/units-doc.jsonl target/debug/units-doctests.jsonl target/debug/units-tool.jsonl",
 ]
 
@@ -411,9 +411,9 @@ run = [
 ["ci:prune-clippy"]
 description = "Prune the Clippy state to the units this run's passes used"
 run = [
-  "cargo clippy --workspace --all-targets --locked --message-format json -- --deny warnings > target/debug/units-clippy.jsonl",
-  "RUSTFLAGS='--cfg anodized_panic' CARGO_TARGET_DIR=target/enforcing cargo clippy --workspace --all-targets --locked --profile test --message-format json -- --deny warnings > target/enforcing/debug/units-clippy.jsonl",
-  "cargo build --locked --profile test --package gandr-workflow-build-state --message-format json > target/debug/units-tool.jsonl",
+  ".config/mise/scope cargo clippy --workspace --all-targets --locked --message-format json -- --deny warnings > target/debug/units-clippy.jsonl",
+  "RUSTFLAGS='--cfg anodized_panic' CARGO_TARGET_DIR=target/enforcing .config/mise/scope cargo clippy --workspace --all-targets --locked --profile test --message-format json -- --deny warnings > target/enforcing/debug/units-clippy.jsonl",
+  ".config/mise/scope cargo build --locked --profile test --package gandr-workflow-build-state --message-format json > target/debug/units-tool.jsonl",
   "target/debug/build-state prune --profile-dir target/debug target/debug/units-clippy.jsonl target/debug/units-tool.jsonl",
   "target/debug/build-state prune --profile-dir target/enforcing/debug target/enforcing/debug/units-clippy.jsonl",
 ]
@@ -479,7 +479,7 @@ mkdir -p "$scratch"
 upload() {
   rm -f "$scratch/$1.json"
   HOTPATH_BENCHMARK=$1 HOTPATH_POLICY_PATH=$2 HOTPATH_UPLOAD_RESPONSE_PATH="$scratch/$1.json" \
-    cargo test --locked --profile test --package "$package" --bench "$bench" --features hotpath
+    "$root/.config/mise/scope" cargo test --locked --profile test --package "$package" --bench "$bench" --features hotpath
   if [[ ${ACT:-} != true ]]; then test -s "$scratch/$1.json"; fi
 }
 upload "$series" "$root/hotpath/$series-policy.toml"
@@ -549,7 +549,7 @@ upload "$series-timing" "$scratch/$series-timing-policy.toml"
 # `--sha`, optionally `--repository` and `--file-issue`.
 ["ci:hotpath-guard"]
 description = "A commit's failed hotpath checks, filed on its pull request's one issue"
-run = "cargo run --locked --quiet --package gandr-workflow-hotpath-guard --"
+run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-hotpath-guard --"
 
 # A landing's hotpath verdicts, read on main's push from each merged pull
 # request's `hotpath / <benchmark>` checks (the number from each landed
