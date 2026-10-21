@@ -38,6 +38,8 @@ use crate::lower::lower_module;
 use crate::module::DeclarationOutcome;
 use crate::module::LoweredModule;
 use crate::namespace::Recognition;
+use crate::origin::ClauseBinder;
+use crate::origin::ClausePlace;
 use crate::origin::Labelled;
 use crate::resolve::HeadArity;
 use crate::resolve::SurfaceName;
@@ -1133,4 +1135,41 @@ fn an_allocated_buffer_is_placed_live_and_freed()
             verdict_of(&module, &report, name.into())
         );
     }
+}
+
+/// #1439: a scope records where each binder its clauses write is written: the
+/// return clause's result, and each operation clause's payload and
+/// continuation by the clause's place, a minting clause's among them.
+#[test]
+fn a_scope_records_where_its_clauses_bind_1439()
+{
+    let written = "def ring() -> -F Unit { handle r : Ring { run b <- r.alloc(4096) ; r.free(b) } \
+                   with { pure(x) => pure x, oper alloc(n, b, k) => k(b), oper free(m, j) => \
+                   j(unit) } }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(written), &mut arena);
+    let ring = tail_of(&module, &arena, "ring".into());
+    let spelled: Vec<(ClauseBinder, &str)> = module
+        .origins()
+        .clause_binders()
+        .iter()
+        .filter(|entry| entry.0.0 == ring)
+        .map(|entry| {
+            let span = entry.1.span();
+            (
+                entry.0.1,
+                written
+                    .get(usize::from(span.start()) .. usize::from(span.end()))
+                    .unwrap_or_default(),
+            )
+        })
+        .collect();
+    let place = ClausePlace::from;
+    assert_eq!(spelled, [
+        (ClauseBinder::Result, "x"),
+        (ClauseBinder::Payload(place(0_usize)), "n"),
+        (ClauseBinder::Payload(place(1_usize)), "m"),
+        (ClauseBinder::Continuation(place(0_usize)), "k"),
+        (ClauseBinder::Continuation(place(1_usize)), "j"),
+    ]);
 }
