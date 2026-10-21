@@ -54,13 +54,20 @@
 //! - **Code order is evaluation order.** A `μ`'s body is laid out before the
 //!   continuation it loaded, a match's tests before its arms; every block ends
 //!   in a delivery, so nothing falls through a label.
-//! - **A closure copies its creator's window.** A thunk, a fixpoint and a
-//!   one-arm copattern object (`apply` or `force`) evaluate to a closure over
-//!   the first `d` slots, `d` the depth they are created at; the body's entry,
-//!   laid out after the creator's code, allocates a fresh window on the heap,
-//!   copies the captures into its first `d` slots and binds its own binders
-//!   above them. A window is never shared, so a frame resumed in it finds its
-//!   slots as it left them.
+//! - **A closure captures what it names.** A thunk, a fixpoint, a copattern
+//!   object and a fold's cell closure evaluate to a closure over the slots
+//!   their support selects past their own binders — producer variables, linear
+//!   cells and covariable marks alike, a falling-through covariable needing
+//!   none — each pushed in the creator's binding order and popped into the
+//!   closure. The body's entry, laid out after the creator's code, allocates a
+//!   fresh window on the heap, copies the captures into its first slots and
+//!   binds its own binders above them; in the body's scope every binder the
+//!   creator had still counts, so the body's indices resolve unchanged, and one
+//!   it does not capture holds no slot. A window is never shared, so a frame
+//!   resumed in it finds its slots as it left them. The alternative, copying
+//!   the creator's whole window prefix, kept every binding in reach alive in
+//!   every closure, which a counted runtime cannot afford: a closure owns
+//!   exactly what it names.
 //! - **An observation enters code.** Delivering to `apply(p; c)` or `force(c)`
 //!   saves the observed value and the argument in slots, loads `c`, and jumps
 //!   to the closure's entry; loading `c` pushes, for each destructor on it, a
@@ -76,15 +83,18 @@
 //!   the definitions do not hold sticks where it is read.
 //!
 //! A closure site is recorded for every closure the function creates: the
-//! producer it suspends and the slots of the producer bindings its support
-//! selects (`CommandArena::captures`), innermost first; a reified stack's
-//! bind frame is recorded the same way, from its body's support past the
-//! frame's value. A run's outcome is moved into the caller's store through
-//! these records, so a closure moves exactly the values it names, and a
-//! closure or a literal stack in an answer reads back as the IL it suspends.
+//! producer it suspends and its capture positions of the producer bindings
+//! its support selects (`CommandArena::captures`), innermost first; a reified
+//! stack's bind frame is recorded by the slots of its window, from its body's
+//! support past the frame's value. A run's outcome is moved into the caller's
+//! store through these records, so a closure moves exactly the values it
+//! names, and a closure or a literal stack in an answer reads back as the IL
+//! it suspends.
 //!
 //! What the lowering refuses is named by [`Form`], and the run declines with
 //! it.
+
+use alloc::collections::BTreeSet;
 
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
@@ -96,11 +106,13 @@ use gandr_core_sequent::Definition;
 use gandr_core_sequent::Definitions;
 use gandr_core_sequent::DestructorTag;
 use gandr_core_sequent::Introduces;
+use gandr_core_sequent::NodeAddress;
 use gandr_core_sequent::ProducerId;
 use gandr_core_sequent::ProducerNode;
 use gandr_core_sequent::Route;
 use gandr_core_sequent::Selector;
 use gandr_core_sequent::Suspension;
+use gandr_core_term::BinderDepth;
 use gandr_core_term::FieldLabel;
 use gandr_core_term::Zone;
 use gandr_core_term::control::StackFrame;
@@ -110,6 +122,7 @@ use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place;
 use gandr_core_term::primitive::Primitive;
+use gandr_core_term::support::Indices;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::IntegerLiteral;
@@ -250,8 +263,10 @@ struct Binder
     parent: Scope,
     /// What it binds.
     binding: Binding,
-    /// Its slot, which is its depth.
-    slot: Slot,
+    /// Its slot, or none in a closure body that does not capture it.
+    slot: Option<Slot>,
+    /// The slot the next binder inside it takes.
+    depth: Slot,
 }
 
 /// A scope: the innermost binder, if any.
@@ -286,10 +301,7 @@ impl Scopes
     {
         match scope {
             Scope::Empty => Slot(0),
-            Scope::At(at) => self
-                .binders
-                .get(at)
-                .map_or(Slot(0), |binder| Slot(binder.slot.0.saturating_add(1))),
+            Scope::At(at) => self.binders.get(at).map_or(Slot(0), |binder| binder.depth),
         }
     }
 
@@ -307,7 +319,8 @@ impl Scopes
         self.binders.push(Binder {
             parent: scope,
             binding,
-            slot,
+            slot: Some(slot),
+            depth: Slot(slot.0.saturating_add(1)),
         });
         (Scope::At(self.binders.len().saturating_sub(1)), slot)
     }
@@ -357,7 +370,7 @@ impl Scopes
         index: Index,
     ) -> Result<Slot, Form>
     {
-        self.find(scope, binding, index).map(|binder| binder.slot)
+        self.find(scope, binding, index)?.slot.ok_or(Form::Unbound)
     }
 
     /// The slot of the covariable `index` covariables out from `scope`, or
@@ -375,17 +388,23 @@ impl Scopes
     ) -> Result<Option<Slot>, Form>
     {
         let binder = self.find(scope, Binding::Covariable, index)?;
-        Ok((binder.binding == Binding::Covariable).then_some(binder.slot))
+        match binder.binding {
+            Binding::Covariable => binder.slot.map(Some).ok_or(Form::Unbound),
+            Binding::Producer | Binding::FallThrough | Binding::Linear | Binding::Temporary => {
+                Ok(None)
+            },
+        }
     }
 
-    /// The slots of `scope`'s visible producer binders, innermost first.
+    /// The slots of `scope`'s visible producer binders, innermost first; a
+    /// binder a closure body does not capture holds none.
     ///
     /// # Specification
     /// trivial.
     fn producers(
         &self,
         scope: Scope,
-    ) -> Vec<Slot>
+    ) -> Vec<Option<Slot>>
     {
         let mut slots = Vec::new();
         let mut cursor = scope;
@@ -401,6 +420,110 @@ impl Scopes
         }
         slots
     }
+
+    /// The base of a closure body's scope over the creator's `scope`: every
+    /// binder that counts in an index space, outermost first, those `captured`
+    /// selects in a fresh slot each, in order, and the rest holding none.
+    /// Answers the base and the creator's slot each capture copies, in slot
+    /// order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn enclose(
+        &mut self,
+        scope: Scope,
+        captured: &Captured,
+    ) -> (Scope, Vec<Slot>)
+    {
+        let mut chain = Vec::new();
+        let mut cursor = scope;
+        let (mut producers, mut linears, mut covariables) = (Index(0), Index(0), Index(0));
+        while let Scope::At(at) = cursor {
+            let Some(&binder) = self.binders.get(at)
+            else {
+                break;
+            };
+            let kept = match binder.binding {
+                Binding::Producer => Some(captured.producers.contains(&next(&mut producers).0)),
+                Binding::Linear => Some(captured.linears.contains(&next(&mut linears).0)),
+                Binding::Covariable => {
+                    Some(captured.covariables.contains(&next(&mut covariables).0))
+                },
+                Binding::FallThrough => {
+                    let _index = next(&mut covariables);
+                    Some(false)
+                },
+                Binding::Temporary => None,
+            };
+            if let Some(kept) = kept {
+                chain.push((binder, kept));
+            }
+            cursor = binder.parent;
+        }
+        let mut base = Scope::Empty;
+        let mut sources = Vec::new();
+        for (binder, kept) in chain.into_iter().rev() {
+            let depth = self.depth(base);
+            let slot = match (kept, binder.slot) {
+                (true, Some(source)) => {
+                    sources.push(source);
+                    Some(depth)
+                },
+                (..) => None,
+            };
+            self.binders.push(Binder {
+                parent: base,
+                binding: binder.binding,
+                slot,
+                depth: slot.map_or(depth, |taken| Slot(taken.0.saturating_add(1))),
+            });
+            base = Scope::At(self.binders.len().saturating_sub(1));
+        }
+        (base, sources)
+    }
+}
+
+/// The index `counter` stands at, advancing it past.
+///
+/// # Specification
+/// trivial.
+fn next(counter: &mut Index) -> Index
+{
+    let index = *counter;
+    *counter = Index(counter.0.saturating_add(1));
+    index
+}
+
+/// What a closure body names outside its own binders, as indices counted where
+/// the closure is created, per index space.
+#[derive(Debug, Default)]
+struct Captured
+{
+    /// The intuitionistic producer variables.
+    producers: BTreeSet<u32>,
+    /// The linear variables.
+    linears: BTreeSet<u32>,
+    /// The covariables.
+    covariables: BTreeSet<u32>,
+}
+
+/// The binders a closure body's own entry opens, which its captures lie past.
+#[derive(Clone, Copy, Debug)]
+struct Crossed
+{
+    /// The producer binders.
+    producers: u32,
+    /// The covariables.
+    covariables: u32,
+}
+
+impl Crossed
+{
+    /// None: a producer's support already lies past its own binders.
+    const NONE: Self = Self {
+        producers: 0,
+        covariables: 0,
+    };
 }
 
 /// A de Bruijn index, as the lowering counts it.
@@ -905,8 +1028,8 @@ impl Lowering<'_>
         (inner, slot)
     }
 
-    /// Allocate a closure over `scope`'s slots entered by `entry`, recording
-    /// its site and the bindings `producer` captures.
+    /// Allocate a closure over what `producer` names in `scope`, entered by
+    /// `entry`, recording its site and the bindings it captures.
     ///
     /// # Specification
     /// trivial.
@@ -922,8 +1045,14 @@ impl Lowering<'_>
         flavour: Flavour,
     ) -> Result<(), Form>
     {
-        let captures = self.captured(Suspension::Producer(producer), scope)?;
-        let label = self.suspend(scope, entry, flavour)?;
+        let (base, label) = self.suspend(
+            scope,
+            NodeAddress::Producer(producer),
+            Crossed::NONE,
+            entry,
+            flavour,
+        )?;
+        let captures = self.captured(Suspension::Producer(producer), base)?;
         self.sites.push(Site {
             label,
             producer,
@@ -933,7 +1062,9 @@ impl Lowering<'_>
     }
 
     /// The slots of the producer binders `suspension` captures where it is
-    /// created in `scope`: the bindings its support selects, innermost first.
+    /// created, read in `scope`: the bindings its support selects, innermost
+    /// first. In a closure body's base scope these are the closure's own
+    /// capture positions.
     ///
     /// # Specification
     /// trivial.
@@ -941,7 +1072,7 @@ impl Lowering<'_>
     /// # Errors
     /// [`Form::Dangling`] for a suspension the arena does not hold;
     /// [`Form::Unbound`] for a captured index no producer binder of `scope`
-    /// binds.
+    /// binds to a slot.
     fn captured(
         &self,
         suspension: Suspension,
@@ -956,38 +1087,86 @@ impl Lowering<'_>
                     .ok()
                     .and_then(|at| visible.get(at))
                     .copied()
+                    .flatten()
                     .ok_or(Form::Unbound)
             })
             .collect()
     }
 
-    /// Allocate a closure over `scope`'s slots entered by `entry`, and queue
-    /// its body; answers the body's label. A closure no site records never
-    /// reaches an answer: a fold's cell closure lives only in a frame.
+    /// The base of a closure body's scope over what `node` names in `scope`
+    /// past the binders `crossed` counts, and the slots its captures copy.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Errors
-    /// [`Form::HeaderWidth`] for a capture count past the arity field.
+    /// [`Form::Dangling`] for a node the arena does not hold.
+    fn enclosed(
+        &mut self,
+        scope: Scope,
+        node: NodeAddress,
+        crossed: Crossed,
+    ) -> Result<(Scope, Vec<Slot>), Form>
+    {
+        let support = self.arena.node_scope(node).ok_or(Form::Dangling)?;
+        let past = |indices: Indices<'_>, crossed: u32| -> BTreeSet<u32> {
+            indices
+                .map(|index| u32::from(index).saturating_sub(crossed))
+                .collect()
+        };
+        let depth = |count: u32| BinderDepth::from(usize::try_from(count).unwrap_or(usize::MAX));
+        let captured = Captured {
+            producers: past(
+                support
+                    .producers()
+                    .outside(Zone::Intuitionistic, depth(crossed.producers)),
+                crossed.producers,
+            ),
+            linears: past(support.producers().outside(Zone::Linear, depth(0)), 0),
+            covariables: past(
+                support
+                    .covariables()
+                    .outside(Zone::Intuitionistic, depth(crossed.covariables)),
+                crossed.covariables,
+            ),
+        };
+        Ok(self.scopes.enclose(scope, &captured))
+    }
+
+    /// Allocate a closure over what `node` names in `scope` past the binders
+    /// `crossed` counts, entered by `entry`, and queue its body over the
+    /// captures; answers the body's base scope and label. A closure no site
+    /// records never reaches an answer: a fold's cell closure lives only in a
+    /// frame.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::HeaderWidth`] for a capture count past the arity field;
+    /// [`Form::Dangling`] for a node the arena does not hold.
     fn suspend(
         &mut self,
         scope: Scope,
+        node: NodeAddress,
+        crossed: Crossed,
         entry: Entry,
         flavour: Flavour,
-    ) -> Result<Label, Form>
+    ) -> Result<(Scope, Label), Form>
     {
-        let label = self.allocate(scope, flavour)?;
+        let (base, sources) = self.enclosed(scope, node, crossed)?;
+        let label = self.allocate(&sources, flavour)?;
         self.bodies.push(Body {
             label,
             entry,
-            scope,
+            scope: base,
         });
-        Ok(label)
+        Ok((base, label))
     }
 
-    /// Allocate a closure of `flavour` over `scope`'s slots whose code is a
-    /// fresh label, and answer the label.
+    /// Allocate a closure of `flavour` over the words in `sources`, in order,
+    /// whose code is a fresh label, and answer the label: each source is pushed
+    /// and the closure pops them.
     ///
     /// # Specification
     /// trivial.
@@ -996,27 +1175,30 @@ impl Lowering<'_>
     /// [`Form::HeaderWidth`] for a capture count past the arity field.
     fn allocate(
         &mut self,
-        scope: Scope,
+        sources: &[Slot],
         flavour: Flavour,
     ) -> Result<Label, Form>
     {
         let label = self.function.label();
-        let depth = self.scopes.depth(scope);
-        let count = usize::try_from(depth.0).map_err(|_overflow| Form::HeaderWidth)?;
         let header = Header::new(
             Kind::Closure,
             Tag::from(flavour),
-            Arity::try_from(count).map_err(|_overflow| Form::HeaderWidth)?,
+            Arity::try_from(sources.len()).map_err(|_overflow| Form::HeaderWidth)?,
             Family::UNNAMED,
         );
+        for &source in sources {
+            self.emit(StencilId::Var, source.operand(), Operand::Unused);
+            self.emit(StencilId::Push, Operand::Unused, Operand::Unused);
+        }
         let (low, _) = header_operands(header);
         self.emit(StencilId::Closure, Operand::Code(label), low);
         Ok(label)
     }
 
-    /// Allocate the copattern object `id` over `scope`'s slots, recording its
-    /// site and the bindings it captures; its code is a dispatch laid out
-    /// among the current window's blocks, since it reads no slot.
+    /// Allocate the copattern object `id` over what it names in `scope`,
+    /// recording its site and the bindings it captures; its code is a dispatch
+    /// laid out among the current window's blocks, since it reads no slot, and
+    /// every arm's body opens over the object's captures.
     ///
     /// # Specification
     /// trivial.
@@ -1030,9 +1212,10 @@ impl Lowering<'_>
         scope: Scope,
     ) -> Result<(), Form>
     {
-        let captures = self.captured(Suspension::Producer(id), scope)?;
-        let label = self.allocate(scope, Flavour::Object)?;
-        self.blocks.push((label, Task::Dispatch(id, scope)));
+        let (base, sources) = self.enclosed(scope, NodeAddress::Producer(id), Crossed::NONE)?;
+        let label = self.allocate(&sources, Flavour::Object)?;
+        self.blocks.push((label, Task::Dispatch(id, base)));
+        let captures = self.captured(Suspension::Producer(id), base)?;
         self.sites.push(Site {
             label,
             producer: id,
@@ -1274,7 +1457,18 @@ impl Lowering<'_>
         self.emit(StencilId::Field, head.operand(), Slot(0).operand());
         let (with_tail, tail) = self.bind(with_head, Binding::Temporary);
         self.emit(StencilId::Field, tail.operand(), Slot(1).operand());
-        self.suspend(with_head, Entry::Apply(on_cons), Flavour::Apply)?;
+        // The cell branch binds the head, the tail's result and a covariable;
+        // the head is bound here, the other two by the closure's entry.
+        let _closed = self.suspend(
+            with_head,
+            NodeAddress::Command(on_cons),
+            Crossed {
+                producers: 1,
+                covariables: 1,
+            },
+            Entry::Apply(on_cons),
+            Flavour::Apply,
+        )?;
         let (_, closure) = self.bind(with_tail, Binding::Temporary);
         self.emit(StencilId::Bind, closure.operand(), Operand::Unused);
         self.emit(
@@ -2587,4 +2781,63 @@ fn lower_pass(
         Pass::First
     };
     Ok((lowered, needed))
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_core_sequent::Provenance;
+    use gandr_core_sequent::focus_computation;
+    use gandr_core_term::CoreArena;
+
+    use super::*;
+
+    /// A thunk created under two bindings that names only the outer one
+    /// holds that one capture, not the creator's two slots, and its site reads
+    /// the capture at the closure's first position.
+    #[test]
+    fn a_closure_holds_exactly_what_it_names()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let outer = core.computation_return(unit);
+        let inner = core.computation_return(unit);
+        let named = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+        let suspended = core.computation_return(named);
+        let thunk = core.value_thunk(suspended);
+        let body = core.computation_return(thunk);
+        let within = core.computation_bind(inner, body);
+        let root = core.computation_bind(outer, within);
+        let mut commands = CommandArena::new();
+        let root = focus_computation(&core, root, &mut commands, &mut Provenance::new())
+            .expect("the program focuses");
+        let lowered = lower(&commands, &Definitions::new(), root).expect("the program lowers");
+        let arities: Vec<usize> = lowered
+            .function
+            .instructions()
+            .iter()
+            .filter(|instruction| instruction.stencil == StencilId::Closure)
+            .map(|instruction| match instruction.b {
+                // The header's arity field: bits 16 to 31.
+                Operand::Immediate(low) => (usize::from(low) >> 16_u32) & 0xFFFF,
+                other @ (Operand::Unused
+                | Operand::Code(_)
+                | Operand::Data(_)
+                | Operand::Stub(_)) => {
+                    panic!("a closure's header is an immediate, not {other:?}")
+                },
+            })
+            .collect();
+        assert_eq!(vec![1], arities, "the thunk captures one binding");
+        let captures: Vec<&[Slot]> = lowered
+            .sites
+            .iter()
+            .map(|site| site.captures.as_slice())
+            .collect();
+        assert_eq!(
+            vec![&[Slot(0)][..]],
+            captures,
+            "its site reads the one capture"
+        );
+    }
 }
