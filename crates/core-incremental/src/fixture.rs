@@ -9,7 +9,9 @@ use std::path::PathBuf;
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::Declaration;
+use gandr_core_checker::Demand;
 use gandr_core_checker::OriginToken;
+use gandr_core_checker::Retirement;
 use gandr_core_checker::body;
 use gandr_core_checker::signature;
 use gandr_core_term::CoreArena;
@@ -66,6 +68,49 @@ pub struct Noise(pub usize);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
 pub struct Position(pub usize);
+
+/// A poll that retires the work at its `at`th reading, counting every reading.
+#[derive(Debug)]
+pub struct RetireAt
+{
+    /// The reading that retires the work, counted from one.
+    pub at: usize,
+    /// How many times the work has been polled.
+    pub readings: core::cell::Cell<usize>,
+}
+
+impl Retirement for RetireAt
+{
+    type Retired = ();
+
+    /// Wanted until the `at`th reading, retired from it on.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one more reading counted; retired once the count reaches
+    ///   `at`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the witness counts the readings a submission made.
+    /// - witness: `session::tests::a_retired_submission_keeps_the_resume_it_held_1547`
+    #[spec(
+        captures: before = self.readings.get(),
+        ensures: |ret| self.readings.get() == before.saturating_add(1)
+            && matches!(ret, Demand::Retired(())) == (self.readings.get() >= self.at),
+    )]
+    fn demand(&self) -> Demand<()>
+    {
+        let reading = self.readings.get().saturating_add(1);
+        self.readings.set(reading);
+        if reading >= self.at {
+            Demand::Retired(())
+        }
+        else {
+            Demand::Wanted
+        }
+    }
+}
 
 /// A scratch path selected using the system temporary directory and a test
 /// label. Construction and drop request removal on a best-effort basis;

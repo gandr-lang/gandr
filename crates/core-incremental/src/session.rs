@@ -5,15 +5,18 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::Polled;
+use gandr_core_checker::Retirement;
+use gandr_core_checker::Unretired;
 use quenchant_shape::shape::Maybe;
 
 use crate::checkpoint::Leading;
 use crate::checkpoint::Resume;
 use crate::checkpoint::ResumeCensus;
 use crate::checkpoint::ResumeError;
-use crate::checkpoint::check_program;
-use crate::checkpoint::resume;
-use crate::checkpoint::resume_after;
+use crate::checkpoint::Resuming;
+use crate::checkpoint::resume_after_retiring;
+use crate::checkpoint::resume_or_check;
 use crate::persistence::BackendArtifact;
 use crate::persistence::CheckpointObserver;
 use crate::persistence::CheckpointStore;
@@ -91,7 +94,8 @@ impl core::error::Error for SessionError
 ///   satisfy their respective trait obligations when a submission uses them.
 /// - ensures: a fresh session holds no resume; a reopened session holds its
 ///   supplied resume. A completed checking pass replaces the retained state
-///   even when persistence fails; a resume failure leaves no retained base.
+///   even when persistence fails; a retired pass leaves it as it was; a resume
+///   failure leaves no retained base.
 /// - executable: none — this declaration has no call boundary; submit's
 ///   predicate checks the local transition, while persistence and observer
 ///   behavior belong to the supplied implementations.
@@ -224,13 +228,63 @@ impl<Store> IncrementalSession<Store>
         Store: CheckpointStore,
         Observer: CheckpointObserver,
     {
+        self.submit_retiring(program, observer, &Unretired)
+            .map(Polled::whole)
+    }
+
+    /// [`submit`](Self::submit), polling `retirement` before each item the
+    /// pass adopts or judges: retired, the pass stops before the item it
+    /// polled at, nothing is persisted, and the session keeps the resume it
+    /// held for the next submission to resume from.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: while every poll answers wanted, [`submit`](Self::submit)'s
+    ///   census as [`Polled::Whole`]. Retired, [`Polled::Retired`] with the
+    ///   retirement; the session holds the resume it held before, and the store
+    ///   is not addressed.
+    /// - fails: as [`submit`](Self::submit).
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`submit`](Self::submit).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a submission retired part way leaves the session the
+    ///   resume it held, and the next submission resumes from it, judging and
+    ///   recording what it would have with no retired one before it.
+    /// - witness: `session::tests::a_retired_submission_keeps_the_resume_it_held_1547`
+    #[spec(
+        captures: held = self.last().map(Resume::census),
+        ensures: |ret| match ret {
+            | Ok(Polled::Whole(census)) => {
+                matches!(self.last, Maybe::Present(ref latest) if latest.census() == census && latest.checkpoints().items().len() == program.items().len())
+            },
+            | Ok(Polled::Retired(..)) => self.last().map(Resume::census) == held,
+            | Err(SessionError::Resume(_)) => {
+                matches!(self.last, Maybe::Absent(submitted::Absent::Fresh))
+            },
+            | Err(SessionError::Store(_)) => {
+                matches!(self.last, Maybe::Present(ref latest) if latest.checkpoints().items().len() == program.items().len())
+            },
+        },
+    )]
+    #[inline]
+    pub fn submit_retiring<Observer, Poll>(
+        &mut self,
+        program: &mut Program,
+        observer: &mut Observer,
+        retirement: &Poll,
+    ) -> Result<Polled<ResumeCensus, Poll::Retired, ()>, SessionError>
+    where
+        Store: CheckpointStore,
+        Observer: CheckpointObserver,
+        Poll: Retirement,
+    {
         let previous = core::mem::replace(&mut self.last, Maybe::Absent(submitted::Absent::Fresh));
-        let next = match previous {
-            Maybe::Present(base) => resume(base, program),
-            Maybe::Absent(_) => check_program(program, self.budget),
-        }
-        .map_err(SessionError::Resume)?;
-        self.persisted(program, next, observer)
+        let polled = resume_or_check(previous, program, self.budget, retirement)
+            .map_err(SessionError::Resume)?;
+        self.settled(program, polled, observer)
     }
 
     /// [`submit`](Self::submit) of a revision laid after `leading`, the state
@@ -238,9 +292,10 @@ impl<Store> IncrementalSession<Store>
     /// the items after that program's are judged or adopted.
     ///
     /// # Specification
-    /// - requires: as [`resume_after`].
-    /// - ensures: as [`submit`](Self::submit), the pass being [`resume_after`]
-    ///   from the resume the session holds, if any, after `leading`.
+    /// - requires: as [`resume_after`](crate::resume_after).
+    /// - ensures: as [`submit`](Self::submit), the pass being
+    ///   [`resume_after`](crate::resume_after) from the resume the session
+    ///   holds, if any, after `leading`.
     /// - fails: as [`submit`](Self::submit).
     /// - panics: none.
     ///
@@ -273,9 +328,101 @@ impl<Store> IncrementalSession<Store>
         Store: CheckpointStore,
         Observer: CheckpointObserver,
     {
+        self.submit_after_retiring(program, leading, observer, &Unretired)
+            .map(Polled::whole)
+    }
+
+    /// [`submit_after`](Self::submit_after), polling `retirement` before each
+    /// item the pass adopts or judges, as
+    /// [`submit_retiring`](Self::submit_retiring) does.
+    ///
+    /// # Specification
+    /// - requires: as [`resume_after`](crate::resume_after).
+    /// - ensures: as [`submit_retiring`](Self::submit_retiring), the pass being
+    ///   [`resume_after`](crate::resume_after)'s.
+    /// - fails: as [`submit`](Self::submit).
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`submit`](Self::submit).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`submit_retiring`](Self::submit_retiring).
+    /// - witness: `session::tests::a_retired_submission_keeps_the_resume_it_held_1547`
+    #[spec(
+        captures: held = self.last().map(Resume::census),
+        ensures: |ret| match ret {
+            | Ok(Polled::Whole(census)) => {
+                matches!(self.last, Maybe::Present(ref latest) if latest.census() == census && latest.checkpoints().items().len() == program.items().len())
+            },
+            | Ok(Polled::Retired(..)) => self.last().map(Resume::census) == held,
+            | Err(SessionError::Resume(_)) => {
+                matches!(self.last, Maybe::Absent(submitted::Absent::Fresh))
+            },
+            | Err(SessionError::Store(_)) => {
+                matches!(self.last, Maybe::Present(ref latest) if latest.checkpoints().items().len() == program.items().len())
+            },
+        },
+    )]
+    #[inline]
+    pub fn submit_after_retiring<Observer, Poll>(
+        &mut self,
+        program: &mut Program,
+        leading: &Arc<Leading>,
+        observer: &mut Observer,
+        retirement: &Poll,
+    ) -> Result<Polled<ResumeCensus, Poll::Retired, ()>, SessionError>
+    where
+        Store: CheckpointStore,
+        Observer: CheckpointObserver,
+        Poll: Retirement,
+    {
         let previous = core::mem::replace(&mut self.last, Maybe::Absent(submitted::Absent::Fresh));
-        let next = resume_after(previous, leading, program).map_err(SessionError::Resume)?;
-        self.persisted(program, next, observer)
+        let polled = resume_after_retiring(previous, leading, program, retirement)
+            .map_err(SessionError::Resume)?;
+        self.settled(program, polled, observer)
+    }
+
+    /// Persist and hold a whole pass's resume, or hold again the resume a
+    /// retired pass handed back.
+    ///
+    /// # Specification
+    /// - requires: `polled` is the pass over `program`.
+    /// - ensures: whole, as [`persisted`](Self::persisted); retired, the
+    ///   session holds what the pass handed back and the store is not
+    ///   addressed.
+    /// - fails: [`SessionError::Store`] when persisting a whole pass fails.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`submit_retiring`](Self::submit_retiring).
+    /// - witness: `session::tests::a_retired_submission_keeps_the_resume_it_held_1547`
+    #[spec(
+        captures: retired = matches!(polled, Polled::Retired(..)),
+        ensures: |ret| match ret {
+            Ok(Polled::Retired(..)) => retired,
+            Ok(Polled::Whole(ref census)) => !retired
+                && matches!(self.last, Maybe::Present(ref latest) if latest.census() == *census),
+            Err(_) => !retired,
+        },
+    )]
+    fn settled<Observer, Retired>(
+        &mut self,
+        program: &Program,
+        polled: Resuming<Retired>,
+        observer: &mut Observer,
+    ) -> Result<Polled<ResumeCensus, Retired, ()>, SessionError>
+    where
+        Store: CheckpointStore,
+        Observer: CheckpointObserver,
+    {
+        match polled {
+            Polled::Whole(next) => self.persisted(program, next, observer).map(Polled::Whole),
+            Polled::Retired(retired, held) => {
+                self.last = held;
+                Ok(Polled::Retired(retired, ()))
+            },
+        }
     }
 
     /// Persist `next`'s checkpoints of `program` to a store that keeps them

@@ -17,6 +17,7 @@ use super::Candidate;
 use super::ItemCheckpoint;
 use super::Standing;
 use super::Supplied;
+use super::content_keys;
 use super::touches;
 use crate::boundary::ItemOrdinal;
 use crate::boundary::NodeIndex;
@@ -24,6 +25,11 @@ use crate::boundary::Occurrence;
 use crate::content::ContentNode;
 use crate::content::encode_item;
 use crate::content::seating;
+use crate::fixture::Digits;
+use crate::fixture::Key;
+use crate::fixture::Noise;
+use crate::fixture::integers;
+use crate::fixture::noisy;
 use crate::footprint::footprint_of;
 use crate::region::Item;
 use crate::region::ItemKey;
@@ -369,4 +375,32 @@ fn value_change_closure_handles_cycles_and_opaque_readers()
     assert_eq!(usize::from(census.seeds), 1_usize);
     assert_eq!(usize::from(census.value_changed), 4_usize);
     assert_eq!(usize::from(census.closure_edges), 3_usize);
+}
+
+/// #1547: an item's content key moves with its content and nothing else: two
+/// revisions over arenas numbered apart agree on the key of the item they both
+/// hold alike and differ on the one edited between them.
+#[test]
+fn an_item_s_content_key_moves_only_with_its_content_1547()
+{
+    let first = content_keys(&integers(CoreArena::new(), &[
+        (Key("one"), Digits("1")),
+        (Key("two"), Digits("2")),
+    ]));
+    let edited = content_keys(&integers(noisy(Noise(3)), &[
+        (Key("one"), Digits("1")),
+        (Key("two"), Digits("20")),
+    ]));
+    let (
+        &[Maybe::Present(first_one), Maybe::Present(first_two)],
+        &[Maybe::Present(edited_one), Maybe::Present(edited_two)],
+    ) = (first.as_slice(), edited.as_slice())
+    else {
+        panic!("each integer item has a key: {first:?} {edited:?}");
+    };
+    assert_eq!(
+        first_one, edited_one,
+        "the item both revisions hold alike keeps its key over an arena numbered apart"
+    );
+    assert_ne!(first_two, edited_two, "the edited item's key moves");
 }
