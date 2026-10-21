@@ -60,13 +60,11 @@
 //! (the decisions are in `model` and `module::model`). For a member written as
 //! a `def` to meet its component, a telescope entry and a dependent arrow
 //! `(x : A) -> C` bind exactly where a later type names their binder, as a
-//! function's parameters do. This reverses the recorded choice of #266, which
-//! read every named binder of `(x : A) -> C` as dependent, the spelling taken
-//! as written; that made `(n : Integer) => Integer` and `def g(n : Integer) ->
-//! -F Integer` two types while the kernel kept a Π that ignores its binder
-//! apart from the plain arrow, which it no longer does (#577). Transport
-//! motives still read, the motive reader taking either arrow (the decision is
-//! in `lower::arity`).
+//! function's parameters do. The alternative, #266's choice, reads every named
+//! binder of `(x : A) -> C` as dependent, the spelling taken as written; it
+//! makes `(n : Integer) => Integer` and `def g(n : Integer) -> -F Integer` two
+//! types (#577). Transport motives still read, the motive reader taking either
+//! arrow (the decision is in `lower::arity`).
 //!
 //! **A signature no definition completes is what an artifact owes.** That case
 //! is its own outcome, because it is the producer an obligation ledger reads —
@@ -165,7 +163,7 @@
 //! declined because every consumer of the core and the bridge to the kernel
 //! would learn a new former, and the kernel would still need the commuted
 //! form. Reversal: when the core and the kernel gain join points, an exit
-//! lowers to a jump and the rest is no longer copied.
+//! lowers to a jump and the rest is not copied.
 //!
 //! # A handler's frame is crossed by `return` alone
 //!
@@ -187,7 +185,7 @@
 //! reset. The machine's shift captures through handler frames to the nearest
 //! reset, as the checker types it, so no core or kernel former is new and no
 //! clause runs while unwinding. The price is that body's reset frame, under
-//! which its own tail calls no longer run in constant continuation; the
+//! which its own tail calls do not run in constant continuation; the
 //! `lower::capability` module docs state the alternatives and the reversal.
 //!
 //! # Loops are partial fixpoints

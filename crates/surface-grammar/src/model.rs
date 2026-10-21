@@ -1571,7 +1571,7 @@ impl Pbg
     }
 
     /// Builds the grammar of `rules` over a table's DAG from a table frozen
-    /// ahead of time, or through every gate when `rules` no longer digest to
+    /// ahead of time, or through every gate when `rules` do not digest to
     /// the frozen table's rules.
     ///
     /// # Specification

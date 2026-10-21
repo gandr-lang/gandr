@@ -757,8 +757,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `site` is a block's last computation written as a statement
     ///   and no exit, outside a loop's end.
     /// - ensures: a form whose every path leaves is left as it is, the end of
-    ///   its block; any other is recorded as trailing, is no longer where a
-    ///   path ends, so nothing in its tail position takes an inferred exit, and
+    ///   its block; any other is recorded as trailing, is not where a path
+    ///   ends, so nothing in its tail position takes an inferred exit, and
     ///   either joins what follows it, when a path through it leaves, or
     ///   answers nothing, since its result is discarded.
     /// - provides: the reading of `{ s… c ; }` as Rust reads it: `c` runs and

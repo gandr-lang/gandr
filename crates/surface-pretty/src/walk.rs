@@ -178,8 +178,8 @@
 //! named `t`, `t1`, … by nesting, apart from the binders of terms.
 //!
 //! - **Alternatives.** Spelling the whole protocol and marking the state would
-//!   print what the endpoint no longer follows; `?`, the spelling of a node the
-//!   surface does not write, would hide a type the grammar parses.
+//!   print what the endpoint has already passed; `?`, the spelling of a node
+//!   the surface does not write, would hide a type the grammar parses.
 //! - **Reversal.** A ruled spelling for a state, or binder names avoiding the
 //!   names a term mentions as term binders do.
 

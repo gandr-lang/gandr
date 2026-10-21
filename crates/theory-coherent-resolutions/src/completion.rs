@@ -286,7 +286,7 @@ pub enum CompletionOutcome<A: CellAlphabet = SequentAlphabet>
     /// Completion declined at a ceiling or on invalid supplied input.
     Declined
     {
-        /// The store as of the decline.
+        /// The store at the decline.
         store: CellStore<A>,
         /// The cells derived before the decline.
         derived: Vec<CellId>,
@@ -301,7 +301,7 @@ pub enum CompletionOutcome<A: CellAlphabet = SequentAlphabet>
 
 impl<A: CellAlphabet> CompletionOutcome<A>
 {
-    /// The store, completed or as of the decline.
+    /// The store, completed or at the decline.
     ///
     /// # Specification
     /// trivial.

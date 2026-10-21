@@ -281,7 +281,7 @@ impl MatchCheckpoint
     /// - requires: `core` and `definitions` are this checkpoint's; `filling`
     ///   resolves in `core` at the context of the named hole.
     /// - ensures: success replaces the retained scrutinee with its resumed
-    ///   value; failure leaves the previously observable scrutinee in place.
+    ///   value; failure leaves the observable scrutinee as it was.
     /// - provides: other holes remain; no original expression is re-evaluated.
     /// - fails: [`LiveFault`] preserves readback and evaluation refusals.
     /// - panics: none.

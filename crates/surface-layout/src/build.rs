@@ -1360,7 +1360,7 @@ impl<'meter> DocBuilder<'meter>
     /// # Specification
     /// - requires: `doc` is an earlier original node already visited by finish.
     /// - ensures: one edge charge precedes its flattened-image lookup.
-    /// - provides: the child image used to build a parent image.
+    /// - provides: the child image a parent image is built from.
     /// - fails: reports edge-limit or identity errors.
     /// - panics: none.
     ///
@@ -1519,7 +1519,7 @@ impl<'meter> DocBuilder<'meter>
         Ok(node)
     }
 
-    /// Returns or creates the text identity used to flatten a soft line.
+    /// Returns or creates the text identity that flattens a soft line.
     ///
     /// # Specification
     /// - requires: finalization needs a flattened soft-line image.
@@ -1633,7 +1633,7 @@ impl KeyCounter
 /// # Specification
 /// - requires: nothing.
 /// - ensures: every successful call returns a distinct non-zero token.
-/// - provides: the arena identity used to reject foreign handles.
+/// - provides: the arena identity that rejects foreign handles.
 /// - fails: returns `ArenaKeyExhausted` once the counter is exhausted.
 /// - panics: none.
 ///

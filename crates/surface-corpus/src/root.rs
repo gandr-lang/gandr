@@ -258,8 +258,8 @@ impl fmt::Display for CorpusRoot
     /// - ensures: writes a label distinguishing the selected corpus root.
     /// - fails: returns the formatter sink refusal without swallowing it.
     /// - panics: none.
-    /// - executable: none — the formatter exposes neither previously emitted
-    ///   text nor the sink state; these effects are observed by the caller.
+    /// - executable: none — the formatter exposes neither the emitted text nor
+    ///   the sink state; these effects are observed by the caller.
     ///
     /// # Errors
     /// Returns `fmt::Error` when the sink refuses the label.

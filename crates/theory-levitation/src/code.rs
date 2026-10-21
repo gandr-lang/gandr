@@ -797,7 +797,7 @@ impl<G> Code<G>
     /// The inline sum code `left + right`.
     ///
     /// A declared datatype's primary tag is its constructor table; this
-    /// former is an inline sum, used to retrofit builtin sums.
+    /// former is an inline sum, which retrofits builtin sums.
     ///
     /// # Specification
     /// trivial.

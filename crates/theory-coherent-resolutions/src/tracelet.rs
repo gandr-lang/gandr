@@ -62,7 +62,7 @@
 //! mint a record whose kind, seam and unifier claim a critical pair no
 //! enumeration produced; a replay written by the crate that checks those
 //! boundaries would be a second replay beside this one, and a certificate check
-//! that two implementations answer is no longer one check. The function becomes
+//! that two implementations answer is not one check. The function becomes
 //! a constructor if the engine grows a peak-rooted replay type that `Tracelet`
 //! wraps.
 //!

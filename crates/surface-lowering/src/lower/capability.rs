@@ -122,7 +122,7 @@
 //!   live; a sum the subject returns and the scope's continuation inspects,
 //!   which needs the types the lowering does not read.
 //! - cost: a body holding such a `return` keeps its reset frame while it runs,
-//!   so its own tail calls no longer run in constant continuation.
+//!   so its own tail calls do not run in constant continuation.
 //! - reversal: relocatable continuation marks, with which the `return` becomes
 //!   a jump to the body's own continuation and no reset is minted.
 

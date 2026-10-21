@@ -952,8 +952,8 @@ impl PotentialMaintenance
     /// Restores every journalled value, most recent first.
     ///
     /// # Errors
-    /// Returns [`PotentialError::NodeCapacity`] when a journalled node no
-    /// longer addresses a slot, which the journal's construction precludes.
+    /// Returns [`PotentialError::NodeCapacity`] when a journalled node
+    /// addresses no slot, which the journal's construction precludes.
     ///
     /// # Specification
     /// - ensures: Restores each journalled node to its earliest saved value.
