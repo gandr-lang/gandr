@@ -563,6 +563,26 @@ impl InitializeParams
         )
     }
 
+    /// Whether completions are answered to this client with snippets: when
+    /// it declares `textDocument.completion.completionItem.snippetSupport`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn snippets(&self) -> TakesSnippets
+    {
+        TakesSnippets(
+            self.capabilities
+                .as_ref()
+                .and_then(|capabilities| capabilities.text_document.as_ref())
+                .and_then(|text_document| text_document.completion.as_ref())
+                .and_then(|completion| completion.completion_item.as_ref())
+                .and_then(|item| item.snippet_support)
+                .unwrap_or(false),
+        )
+    }
+
     /// Whether folds are answered to this client with the text a folded range
     /// shows: when it declares `textDocument.foldingRange.foldingRange.
     /// collapsedText`.
@@ -932,6 +952,11 @@ pub struct LabelOffsets(pub bool);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct LabelsDetailed(pub bool);
+
+/// Whether a client takes a completion's text as a snippet.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TakesSnippets(pub bool);
 
 /// Whether a client shows the text a fold names in place of the folded lines.
 #[repr(transparent)]
@@ -1431,13 +1456,16 @@ pub struct CompletionCapabilities
 /// What the client takes of one completion item.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
-#[repr(transparent)]
 pub struct CompletionItemCapabilities
 {
     /// `…completionItem.labelDetailsSupport`: whether it shows an item's
     /// label details.
     #[serde(default)]
     pub label_details_support: Option<bool>,
+    /// `…completionItem.snippetSupport`: whether it takes an item's text as
+    /// a snippet.
+    #[serde(default)]
+    pub snippet_support: Option<bool>,
 }
 
 /// What the client takes in answer to a signature-help request.
@@ -2672,6 +2700,14 @@ pub struct CompletionItem
     pub sort_text: String,
     /// The edit writing it over the word at the cursor.
     pub text_edit: TextEdit,
+    /// How the edit's text reads: a snippet for a keyword written as its
+    /// form; none when it is the plain text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub insert_text_format: Option<InsertTextFormat>,
+    /// The text the client filters the item by when its edit writes more
+    /// than the label: the keyword of a form written as a snippet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter_text: Option<String>,
     /// What a declared name's head writes, or a binder's name and type.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
@@ -2729,6 +2765,19 @@ impl CompletionItemKind
     pub const KEYWORD: Self = Self(14);
     /// A binder in scope.
     pub const VARIABLE: Self = Self(6);
+}
+
+/// How a completion's text reads, as the protocol numbers it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct InsertTextFormat(u8);
+
+impl InsertTextFormat
+{
+    /// A snippet: `$1` and `${1:name}` are tab stops, `$`, `}` and `\`
+    /// escaped.
+    pub const SNIPPET: Self = Self(2);
 }
 
 /// The character whose typing closes a top-level form: what on-type
