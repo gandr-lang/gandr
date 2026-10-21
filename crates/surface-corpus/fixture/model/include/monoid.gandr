@@ -44,12 +44,12 @@ theory UnitAndZero {
 /// conversion, and the members it gives for the included semigroup are its
 /// multiplication and associativity.
 module Endo : Model(Monoid) {
-  type M = +U[ω] (Integer -> -F Integer);
+  type M = Integer => Integer;
 
   /// `f` then `g`, applied.
   def andThen(
-    f : +U[ω] (Integer -> -F Integer),
-    g : +U[ω] (Integer -> -F Integer),
+    f : Integer => Integer,
+    g : Integer => Integer,
     x : Integer
   ) -> -F Integer {
     run y <- f(x);
@@ -60,28 +60,28 @@ module Endo : Model(Monoid) {
   def ident(x : Integer) -> -F Integer { return x }
 
   def mul(
-    f : +U[ω] (Integer -> -F Integer),
-    g : +U[ω] (Integer -> -F Integer)
-  ) -> -F (+U[ω] (Integer -> -F Integer)) {
+    f : Integer => Integer,
+    g : Integer => Integer
+  ) -> -F (Integer => Integer) {
     return thunk { become andThen(f, g) }
   }
 
-  def one() -> -F (+U[ω] (Integer -> -F Integer)) { return ident }
+  def one() -> -F (Integer => Integer) { return ident }
 
   /// Associativity, the included law.
   @[ checks ]
   def assoc(
-    f : +U[ω] (Integer -> -F Integer),
-    g : +U[ω] (Integer -> -F Integer),
-    h : +U[ω] (Integer -> -F Integer)
-  ) -> -F Path(+U[ω] (Integer -> -F Integer), mul(mul(f, g), h), mul(f, mul(g, h))) {
+    f : Integer => Integer,
+    g : Integer => Integer,
+    h : Integer => Integer
+  ) -> -F Path(Integer => Integer, mul(mul(f, g), h), mul(f, mul(g, h))) {
     return here(thunk { become andThen(f, thunk { become andThen(g, h) }) })
   }
 
   /// The left unit law.
   @[ checks ]
-  def unitL(f : +U[ω] (Integer -> -F Integer)) -> -F Path(
-    +U[ω] (Integer -> -F Integer),
+  def unitL(f : Integer => Integer) -> -F Path(
+    Integer => Integer,
     mul(one(), f),
     f
   ) {
@@ -90,8 +90,8 @@ module Endo : Model(Monoid) {
 
   /// The right unit law.
   @[ checks ]
-  def unitR(f : +U[ω] (Integer -> -F Integer)) -> -F Path(
-    +U[ω] (Integer -> -F Integer),
+  def unitR(f : Integer => Integer) -> -F Path(
+    Integer => Integer,
     mul(f, one()),
     f
   ) {

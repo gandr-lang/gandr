@@ -63,7 +63,10 @@
 //! presentation printer (`gandr-surface-pretty`) tells apart — the eager
 //! product, the sum, the lazy product, the tuple, the value function, the
 //! path composite, the path inverse and a map's action on a path — each
-//! moving one form between its two spellings on the
+//! moving one form between its two spellings, and the default grade `ω` of a
+//! thunk type, which the printer writes in neither form and both leave
+//! unwritten, so a value function written with it is sugared as one written
+//! without. Each moves its form on the
 //! concrete syntax
 //! tree: its operands and their comments are kept, its own tiles are the
 //! other spelling's, each comment it owns goes before the operand it
@@ -78,6 +81,7 @@
 //! | `lazy-product`   | `&{C, D}`               | `C & D`         |
 //! | `tuple`          | `#{a, b, …}`            | `(a, b, …)`     |
 //! | `value-function` | `+U ((x : A) -> B -> -F C)` | `(x : A, B) => C` |
+//! | `default-grade`  | `+U B`, from `+U[ω] B`  | `+U B`, from `+U[ω] B` |
 //! | `path-composite` | `transport(\y. Path(A, a, y), q, p)` | `p then q` |
 //! | `path-inverse`   | `transport(\y. Path(A, y, a), p, here(a))` | `back(p)` |
 //! | `path-action`    | `transport(\y. Path(B, f(a), f(y)), p, here(f(a)))` | `cong(f, p)` |

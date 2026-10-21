@@ -6,7 +6,7 @@
 
 /// A counter sealed by its signature: an abstract type, its zero, a step and
 /// a reader.
-module Seed :> #{ type T, zero : T, next : +U[ω] (T -> -F T), read : +U[ω] (T -> -F Integer) } {
+module Seed :> #{ type T, zero : T, next : T => T, read : T => Integer } {
   type T = Integer;
   /// The counter's zero.
   @[ runs("0") ]
@@ -24,9 +24,9 @@ module Seed :> #{ type T, zero : T, next : +U[ω] (T -> -F T), read : +U[ω] (T 
 module MkCounter(S : #{
   type T,
   zero : T,
-  next : +U[ω] (T -> -F T),
-  read : +U[ω] (T -> -F Integer)
-}) :> #{ type T, seed : T, step : +U[ω] (T -> -F T), read : +U[ω] (T -> -F Integer) } {
+  next : T => T,
+  read : T => Integer
+}) :> #{ type T, seed : T, step : T => T, read : T => Integer } {
   type T = S.T;
   def seed = S.zero;
   def step = S.next;

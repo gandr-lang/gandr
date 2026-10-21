@@ -14,7 +14,7 @@ import "./circle-rotation.gandr" ;
 /// A map's image of the loop, at the map's image of the point: `cong` of the
 /// parameter `f` along the loop.
 @[ checks ]
-def loopImage(f : +U[ω] (Circle -> -F Int)) -> -F Path(Int, f(Base), f(Base)) {
+def loopImage(f : Circle => Int) -> -F Path(Int, f(Base), f(Base)) {
   cong(f, loop)
 }
 
@@ -23,7 +23,7 @@ def loopImage(f : +U[ω] (Circle -> -F Int)) -> -F Path(Int, f(Base), f(Base)) {
 /// `f(Base)` (#426). `circle-rotation.gandr`'s `toLoop` writes the loop as
 /// `cong(f, loop)` itself.
 @[ checks ]
-def toLoopThroughImage(f : +U[ω] (Circle -> -F Int)) -> -F (#{
+def toLoopThroughImage(f : Circle => Int) -> -F (#{
   point : Int,
   around : Path(Int, point, point)
 }) {
@@ -32,7 +32,7 @@ def toLoopThroughImage(f : +U[ω] (Circle -> -F Int)) -> -F (#{
 
 /// Another map's loop is not one at this map's point.
 @[ refuses("TypeMismatch") ]
-def toOtherLoop(f : +U[ω] (Circle -> -F Int), g : +U[ω] (Circle -> -F Int)) -> -F (#{
+def toOtherLoop(f : Circle => Int, g : Circle => Int) -> -F (#{
   point : Int,
   around : Path(Int, point, point)
 }) {
