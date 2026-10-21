@@ -78,7 +78,7 @@ def substRenameSquareLift(
       RShift(S(Z)),
       RShift(S(Z)),
       RLift(q),
-      thunk { fn (i) { shiftPastLift(q, i) } }
+      fn (i) { shiftPastLift(q, i) }
     ) then renameLookWeakens(u, q, m)))
   }
 }
@@ -104,7 +104,7 @@ def rec substRenameSquare(
         Lift(s),
         Lift(u),
         RLift(q),
-        thunk { fn (n) { substRenameSquareLift(r, s, u, q, h, n) } }
+        fn (n) { substRenameSquareLift(r, s, u, q, h, n) }
       )
     ),
     Ap(f, x) => transport(
@@ -150,6 +150,6 @@ def substWeaken(x : Term, s : Env) -> -F Path(Term, subst(wk(x), Lift(s)), wk(su
     Lift(s),
     s,
     RShift(S(Z)),
-    thunk { fn (n) { weakenLiftLooks(s, n) } }
+    fn (n) { weakenLiftLooks(s, n) }
   )
 }

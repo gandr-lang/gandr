@@ -102,6 +102,6 @@ module Endo : Model(Monoid) {
 @[ runs("8") ]
 def composed : () => Integer ;
 def composed = thunk {
-  run h <- Endo.mul(thunk { fn (n) { become n + 1 } }, thunk { fn (n) { become n * 2 } }) ;
+  run h <- Endo.mul(fn (n) { become n + 1 }, fn (n) { become n * 2 }) ;
   become h(3)
 } ;

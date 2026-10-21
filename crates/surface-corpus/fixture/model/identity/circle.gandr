@@ -70,7 +70,7 @@ def twice = here(loop ∷ loop ∷ here(Base)) ;
 /// Spinning two successors and winding the word counts two.
 @[ runs("S(S(Z))") ]
 def counted : () => Int ;
-def counted = thunk { wind(spin(S(S(Z)))) } ;
+def counted = wind(spin(S(S(Z)))) ;
 
 /// The loops at the point and the presented integers are a quasi-inverse, by
 /// `wind` and `spin` with the two round trips at a variable, nothing owed.

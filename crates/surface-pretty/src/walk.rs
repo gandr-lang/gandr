@@ -1276,6 +1276,16 @@ where
             Bodies::Spelled => Vec::from([ends(body, Binds::NONE)]),
             Bodies::Opaque => Vec::new(),
         },
+        // A lambda nested where a value is read stands below a value: the
+        // lowering checks it against no type, so its body states no more than
+        // the lambda, as a thunk's body below a value does.
+        Former::Nested(body) if matches!(source.read(body), Former::Lambda(_)) => {
+            Vec::from([Slot::of(
+                body,
+                Admits::Computation(Tail::Unstated),
+                Binds::NONE,
+            )])
+        },
         Former::Nested(body)
         | Former::Run(body)
         | Former::Returned(body)
@@ -6476,7 +6486,10 @@ impl Walk<'_, '_>
             // A body that ends answering a type's code keeps its `pure`: the
             // lowering reads a type at a body's end only as a returned value.
             // So does one that ends answering a `run`: bare at a statement's
-            // head, `run` opens a bind, `run x <- c ; …`.
+            // head, `run` opens a bind, `run x <- c ; …`. And so does one that
+            // ends answering a nested computation, `pure pure v`: the lowering
+            // keeps the `return` of a computation written, and the nested one
+            // bare would be the body's own end.
             Former::Return(returned) => match admits {
                 Admits::Computation(Tail::Passes) => {
                     Some(if self.loops.last().is_some_and(|looping| looping.rest) {
@@ -6495,7 +6508,10 @@ impl Walk<'_, '_>
                 Admits::Computation(Tail::Ends | Tail::Unstated)
                     if !matches!(
                         source.read(returned),
-                        Former::Quote(_) | Former::QuoteComputation(_) | Former::Run(_)
+                        Former::Quote(_)
+                            | Former::QuoteComputation(_)
+                            | Former::Run(_)
+                            | Former::Nested(_)
                     ) =>
                 {
                     None

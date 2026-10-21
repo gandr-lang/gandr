@@ -14,7 +14,7 @@
 def keptView() -> -F Integer {
   hold s = 3;
   handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } } ;
+    run k : (() => Integer) at c <- access shared s as w { pure pure w } ;
     force k
   } with {
     pure(x) => pure x,
@@ -28,7 +28,7 @@ def keptView() -> -F Integer {
 def keptAgain() -> -F Integer {
   hold s = 3;
   handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } } ;
+    run k : (() => Integer) at c <- access shared s as w { pure pure w } ;
     run j : (() => Integer) at c <- pure k ;
     force j
   } with {
@@ -43,7 +43,7 @@ def keptAgain() -> -F Integer {
 def released() -> -F Integer {
   hold s = 3;
   run n : Integer <- handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } } ;
+    run k : (() => Integer) at c <- access shared s as w { pure pure w } ;
     force k
   } with {
     pure(x) => pure x,
@@ -73,7 +73,7 @@ def keptRead() -> -F Integer {
 @[ runs("3") ]
 def keptInHold() -> -F Integer {
   hold s = 3;
-  run k : (() => Integer) at s <- access shared s as w { pure thunk { pure w } } ;
+  run k : (() => Integer) at s <- access shared s as w { pure pure w } ;
   force k
 }
 
@@ -84,7 +84,7 @@ def keptInInner() -> -F Integer {
   hold s = 3;
   run n : Integer <- {
     hold r = 0;
-    run k : (() => Integer) at r <- access shared s as w { pure thunk { pure w } } ;
+    run k : (() => Integer) at r <- access shared s as w { pure pure w } ;
     force k
   } ;
   access s as v { resume(v, n + 1) };

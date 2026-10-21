@@ -81,6 +81,6 @@ module Successor : Model(PointedMonoid) {
 def pointed : () => Integer ;
 def pointed = thunk {
   run p <- Successor.point() ;
-  run h <- Successor.mul(p, thunk { fn (n) { become n * 2 } }) ;
+  run h <- Successor.mul(p, fn (n) { become n * 2 }) ;
   become h(3)
 } ;

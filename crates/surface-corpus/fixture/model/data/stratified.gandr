@@ -21,7 +21,7 @@ data Chain : Type {
 /// A test answering `R` of a link and `L` of the start.
 @[ checks ]
 def linked : Chain => Two ;
-def linked = thunk { fn (c) { case c -> -F Two { Start => L, Link(p, t) => R } } } ;
+def linked = fn (c) { case c -> -F Two { Start => L, Link(p, t) => R } } ;
 
 /// Two links over the start, each holding `linked`.
 @[ checks ]
@@ -50,9 +50,9 @@ def rec chainLength(c : Chain) -> -F Nat {
 /// The outer link's test of the inner link.
 @[ runs("R") ]
 def judged : () => Two ;
-def judged = thunk { judge(twice) } ;
+def judged = judge(twice) ;
 
 /// The chain's two links.
 @[ runs("Succ(Succ(Zero))") ]
 def measured : () => Nat ;
-def measured = thunk { chainLength(twice) } ;
+def measured = chainLength(twice) ;

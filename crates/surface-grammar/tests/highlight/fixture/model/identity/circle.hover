@@ -250,23 +250,21 @@
 72:15-72:19 () => ⇒ () => Int : Type[-] @72:15-72:24
 72:21-72:23 Int ⇒ Int : Type @72:21-72:24
 72:25-72:25 ; ⇒ counted : () => Int⏎⏎Spinning two successors and winding the word counts two. @72:1-72:26
-73:1-73:3 def ⇒ counted : () => Int @73:1-73:46
+73:1-73:3 def ⇒ counted : () => Int @73:1-73:36
 73:5-73:11 counted ⇒ counted : () => Int @73:5-73:12
-73:13-73:13 = ⇒ counted : () => Int @73:1-73:46
-73:15-73:21 thunk { ⇒ () => Int @73:15-73:44
-73:23-73:26 wind ⇒ wind : Path(Circle, Base, Base) => Int @73:23-73:27
-73:27-73:27 ( ⇒ -F Int @73:23-73:42
-73:28-73:31 spin ⇒ spin : Int => Path(Circle, Base, Base) @73:28-73:32
-73:32-73:32 ( ⇒ -F Path(Circle, Base, Base) @73:28-73:41
-73:33-73:34 S( ⇒ S(S(Z)) : Int @73:33-73:40
-73:35-73:36 S( ⇒ S(Z) : Int @73:35-73:39
-73:37-73:37 Z ⇒ Z : Int @73:37-73:38
-73:38-73:38 ) ⇒ S(Z) : Int @73:35-73:39
-73:39-73:39 ) ⇒ S(S(Z)) : Int @73:33-73:40
-73:40-73:40 ) ⇒ -F Path(Circle, Base, Base) @73:28-73:41
-73:41-73:41 ) ⇒ -F Int @73:23-73:42
-73:43-73:43 } ⇒ () => Int @73:15-73:44
-73:45-73:45 ; ⇒ counted : () => Int @73:1-73:46
+73:13-73:13 = ⇒ counted : () => Int @73:1-73:36
+73:15-73:18 wind ⇒ wind : Path(Circle, Base, Base) => Int @73:15-73:19
+73:19-73:19 ( ⇒ -F Int @73:15-73:34
+73:20-73:23 spin ⇒ spin : Int => Path(Circle, Base, Base) @73:20-73:24
+73:24-73:24 ( ⇒ -F Path(Circle, Base, Base) @73:20-73:33
+73:25-73:26 S( ⇒ S(S(Z)) : Int @73:25-73:32
+73:27-73:28 S( ⇒ S(Z) : Int @73:27-73:31
+73:29-73:29 Z ⇒ Z : Int @73:29-73:30
+73:30-73:30 ) ⇒ S(Z) : Int @73:27-73:31
+73:31-73:31 ) ⇒ S(S(Z)) : Int @73:25-73:32
+73:32-73:32 ) ⇒ -F Path(Circle, Base, Base) @73:20-73:33
+73:33-73:33 ) ⇒ -F Int @73:15-73:34
+73:35-73:35 ; ⇒ counted : () => Int @73:1-73:36
 77:1-77:11 @[ checks ] ⇒ windingIso : Path(Circle, Base, Base) ≅ Int⏎⏎The loops at the point and the presented integers are a quasi-inverse, by⏎`wind` and `spin` with the two round trips at a variable, nothing owed. @77:1-78:1
 78:1-78:3 def ⇒ windingIso : Path(Circle, Base, Base) ≅ Int⏎⏎The loops at the point and the presented integers are a quasi-inverse, by⏎`wind` and `spin` with the two round trips at a variable, nothing owed. @78:1-78:50
 78:5-78:14 windingIso ⇒ windingIso : Path(Circle, Base, Base) ≅ Int⏎⏎The loops at the point and the presented integers are a quasi-inverse, by⏎`wind` and `spin` with the two round trips at a variable, nothing owed. @78:5-78:15

@@ -2785,9 +2785,12 @@ fn pattern_holes(module: &LoweredModule<'_>) -> Vec<HoleId>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a `run` statement read once first and the call written at
-///   its read elaborate to one body, so the sugared form writes it away; a
-///   source formatted without the checker keeps it.
+///   its read elaborate to one body, so the sugared form writes it away, and so
+///   do a `thunk { e }` and the `e` the checker wraps in one where it checks
+///   `e` against a thunk type; a source formatted without the checker keeps
+///   both.
 /// - witness: `format::tests::a_linear_run_is_written_away_beside_a_checker`
+/// - witness: `format::tests::a_thunk_the_checker_inserts_is_left_to_it_1327`
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Elaborating;
 

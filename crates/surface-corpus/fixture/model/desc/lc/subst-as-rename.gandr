@@ -51,7 +51,7 @@ def rec substRenames(
     Ix(n) => h(n),
     Lam(b) => cong(
       lamOf,
-      substRenames[<](b, Lift(s), RLift(r), thunk { fn (n) { substRenamesLift(s, r, h, n) } })
+      substRenames[<](b, Lift(s), RLift(r), fn (n) { substRenamesLift(s, r, h, n) })
     ),
     Ap(f, x) => transport(
       \z. Path(Term, Ap(subst(f, s), subst(x, s)), Ap(z, rename(x, r))),

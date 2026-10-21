@@ -38,4 +38,4 @@ def loopsRound(
 /// A loop carried to the integers and back again is the loop, by a run.
 @[ runs("loop ∷ here(Base)") ]
 def roundRun : () => Path(Circle, Base, Base) ;
-def roundRun = thunk { loopsRound(loopsAreIntegers, loop) } ;
+def roundRun = loopsRound(loopsAreIntegers, loop) ;

@@ -29,7 +29,7 @@ def rec walk(t : Nat, c : Nat) -> -F Nat {
 /// raised once per step.
 @[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
 def walkedTwo : () => Nat ;
-def walkedTwo = thunk { walk(two, Zero) } ;
+def walkedTwo = walk(two, Zero) ;
 
 /// One step at a variable.
 @[ checks ]

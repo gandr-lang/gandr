@@ -5,7 +5,7 @@ def lazy() -> &{get : -F Integer, put : -F String} {
 
 @[ checks ]
 def binary : +U (-F Integer & -F String) ;
-def binary = thunk { &{.0 => 1, .1 => "s"} } ;
+def binary = &{.0 => 1, .1 => "s"} ;
 
 @[ checks ]
 def observe(m : +U &{get : -F Integer, put : -F String}) -> -F Integer {
@@ -21,7 +21,7 @@ def offered(n : Integer) -> &{get : -F Integer, put : -F String} {
 /// block.
 @[ checks ]
 def terminal : +U &{} ;
-def terminal = thunk { &{} } ;
+def terminal = &{} ;
 
 /// A lazy record of one entry is the lazy product of one, not its entry: its
 /// block answers the one entry.

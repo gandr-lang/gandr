@@ -45,17 +45,17 @@ def five = thunk { become plus_returned(two, three) } ;
 /// Two and three, added with the `return`s elided.
 @[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
 def five_elided : () => Nat ;
-def five_elided = thunk { plus_elided(two, three) } ;
+def five_elided = plus_elided(two, three) ;
 
 /// Two and three, added with the call nested.
 @[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
 def five_nested : () => Nat ;
-def five_nested = thunk { plus(two, three) } ;
+def five_nested = plus(two, three) ;
 
 /// Two and three, added with the call run in the field.
 @[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
 def five_run : () => Nat ;
-def five_run = thunk { plus_run(two, three) } ;
+def five_run = plus_run(two, three) ;
 
 /// One more than two and three, the nested addition inside a successor.
 @[ runs("Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))") ]

@@ -4,15 +4,15 @@ def none = thunk { 1 } ;
 
 @[ runs("fn (a) { a }") ]
 def one : Integer => Integer ;
-def one = thunk { fn (x) { x } } ;
+def one = fn (x) { x } ;
 
 @[ runs("fn (a) { fn (b) { a } }") ]
 def two : (Integer, String) => Integer ;
-def two = thunk { fn (x) { fn (y) { x } } } ;
+def two = fn (x) { fn (y) { x } } ;
 
 @[ runs("fn (a) { fn (b) { b } }") ]
 def dependent : (a : Type, a) => a ;
-def dependent = thunk { fn (a) { fn (x) { x } } } ;
+def dependent = fn (a) { fn (x) { x } } ;
 
 @[ refuses("DuplicateDefinition") ]
 def twice : (x : Integer, x : String) => Integer ;
