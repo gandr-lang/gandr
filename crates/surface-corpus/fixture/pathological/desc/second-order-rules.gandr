@@ -17,7 +17,7 @@ theory Beta {
 /// β's first-order shadow passes `lam`'s body to `app`, whose port binds
 /// nothing: the binding is lost, and the description check refuses the rule
 /// by the variable's name (#1324).
-@[ refuses("MalformedForm") ]
+@[ refuses("IllFormedDescription") ]
 theory BetaShadow {
   sort Tm : Type+;
   oper lam : (t : pi+ (x : Tm) . Tm) --> Tm;
@@ -27,7 +27,7 @@ theory BetaShadow {
 
 /// An instantiation takes one argument per variable its port binds, and `t`
 /// binds one (#1324).
-@[ refuses("MalformedForm") ]
+@[ refuses("IllFormedDescription") ]
 theory LetTwice {
   sort Tm : Type+;
   oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm;

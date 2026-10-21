@@ -3,7 +3,7 @@
 
 /// `fresh` returns a `Name`: an atom is compared and swapped, never produced,
 /// so the description check refuses the output by name (`AtomResult`).
-@[ refuses("MalformedForm") ]
+@[ refuses("IllFormedDescription") ]
 theory Minting {
   sort Name : Atom;
   sort Tm : Type;
@@ -13,7 +13,7 @@ theory Minting {
 /// A port binds a variable of the atom sort `Name`: `pi+` binds a variable of
 /// a representable sort (`NonRepresentableBinder`); an atom is abstracted by
 /// the nominal binding port instead (#1426).
-@[ refuses("MalformedForm") ]
+@[ refuses("IllFormedDescription") ]
 theory AtomBinder {
   sort Name : Atom;
   sort Tm : Type;

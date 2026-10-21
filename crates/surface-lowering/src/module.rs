@@ -3648,6 +3648,10 @@ impl<'source> Collector<'_, 'source>
     {
         let inside =
             |span: ByteSpan| span.start() >= child.span.start() && span.end() <= child.span.end();
+        let written = self
+            .tree
+            .fragment(child.node)
+            .unwrap_or_else(|| SourceFragment::from(""));
         let described = self
             .collected
             .description_diagnostics
@@ -3657,10 +3661,10 @@ impl<'source> Collector<'_, 'source>
             .clone()
             .find(|diagnostic| matches!(diagnostic.fault, DescriptionFault::Repaired { .. }))
         {
-            return Vec::from([(repaired.span, repaired.lowering_refusal())]);
+            return Vec::from([(repaired.span, repaired.lowering_refusal(written))]);
         }
         described
-            .map(|diagnostic| (diagnostic.span, diagnostic.lowering_refusal()))
+            .map(|diagnostic| (diagnostic.span, diagnostic.lowering_refusal(written)))
             .chain(
                 self.collected
                     .cells

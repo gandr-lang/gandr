@@ -7,7 +7,7 @@
 // `map` presented as an operation, in `../../model/data/map-laws.gandr`.
 
 /// Mapping twice fused into mapping once, over the `def`.
-@[ refuses("MalformedForm") ]
+@[ refuses("IllFormedDescription") ]
 theory MapLaws {
   sort L : Type;
 

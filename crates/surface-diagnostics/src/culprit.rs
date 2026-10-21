@@ -165,6 +165,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             FragmentBoundary::View => "not a view an access binds",
         },
         LoweringRefusal::BareFeedback { .. } => "fed back, and read under no observation",
+        LoweringRefusal::IllFormedDescription { .. } => "what the description check refuses",
         LoweringRefusal::GradedBridge { .. } => "a grade other than `ω`",
         LoweringRefusal::MalformedLiteral { .. } => "not this literal's lexeme",
         LoweringRefusal::MalformedForm { fault, .. } => match fault {
@@ -527,6 +528,7 @@ mod tests
                 FragmentBoundary::View => "not a view an access binds",
             },
             LoweringRefusal::BareFeedback { .. } => "fed back, and read under no observation",
+            LoweringRefusal::IllFormedDescription { .. } => "what the description check refuses",
             LoweringRefusal::GradedBridge { .. } => "a grade other than `ω`",
             LoweringRefusal::MalformedLiteral { .. } => "not this literal's lexeme",
             LoweringRefusal::MalformedForm { fault, .. } => match fault {
@@ -740,6 +742,16 @@ mod tests
                 boundary: FragmentBoundary::View,
             },
             LoweringRefusal::BareFeedback { span: at, rule: at },
+            LoweringRefusal::IllFormedDescription {
+                span: at,
+                kind: gandr_surface_lowering::WfKind::DuplicateSortName,
+                subjects: [
+                    quenchant_shape::shape::Maybe::Present(name),
+                    quenchant_shape::shape::Maybe::Absent(
+                        gandr_surface_lowering::description_subject::Absent::Unnamed,
+                    ),
+                ],
+            },
             LoweringRefusal::GradedBridge {
                 span: at,
                 grade: name,

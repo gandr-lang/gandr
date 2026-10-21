@@ -174,6 +174,7 @@ impl LoweringRefusal<'_>
             | Self::DescentOnSeveralParameters { .. }
             | Self::UnguardedCorecursion { .. }
             | Self::BareFeedback { .. }
+            | Self::IllFormedDescription { .. }
             | Self::UnresolvedName { .. }
             | Self::UnresolvedDocLink { .. }
             | Self::UnresolvedTypeHead { .. }
@@ -274,7 +275,8 @@ impl LoweringRefusal<'_>
             | Self::CellNotALoop { .. }
             | Self::DescentOnSeveralParameters { .. }
             | Self::UnguardedCorecursion { .. }
-            | Self::BareFeedback { .. } => FailureClass::MalformedSource,
+            | Self::BareFeedback { .. }
+            | Self::IllFormedDescription { .. } => FailureClass::MalformedSource,
             Self::OutOfFragment {
                 form,
                 sort,
@@ -585,7 +587,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 57_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 58_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -823,6 +825,14 @@ mod tests
             },
             LoweringRefusal::ViewNotPlace { span: empty },
             LoweringRefusal::ViewOfNoPlace { span: empty },
+            LoweringRefusal::IllFormedDescription {
+                span: empty,
+                kind: crate::WfKind::DuplicateSortName,
+                subjects: [
+                    Maybe::Present(SurfaceName::from("Tm")),
+                    Maybe::Absent(crate::description_subject::Absent::Unnamed),
+                ],
+            },
         ]
     }
 
@@ -885,6 +895,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::HIGHER_CELL),
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
         ];

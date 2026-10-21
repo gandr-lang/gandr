@@ -353,25 +353,33 @@ pub struct DescriptionDiagnostic
 impl DescriptionDiagnostic
 {
     /// Keep the source location when presenting a description refusal to the
-    /// ordinary module consumer. The description report retains the full cause.
+    /// ordinary module consumer, `written` the text of the declaration it
+    /// stands in. The description report retains the full cause.
     ///
     /// # Specification
     /// - ensures: the module refusal covers exactly the diagnostic's source
     ///   site; a field past the first-order code, an undecodable description,
     ///   an operation filler, a fillerless higher cell and the reserved glyph
     ///   are an undescribed member carrying their own fault, a feed no
-    ///   observation guards its own refusal, and every other fault a malformed
-    ///   form.
+    ///   observation guards its own refusal, a description the description
+    ///   check refuses an ill-formed description carrying the check's kind and
+    ///   its first two subjects as `written` spells them, and every other fault
+    ///   a malformed form.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a refused middle member cannot erase either
     ///   neighboring member, and an unguarded feed, a reversible glyph and a
-    ///   cycle keep three classes apart.
+    ///   cycle keep three classes apart; a binder over an unrepresentable sort
+    ///   is refused naming the sort and the port as written.
     /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
     /// - witness: `description::theory::tests::theory_declines_and_malformed_wiring_are_refused_apart`
+    /// - witness: `description::theory::tests::an_ill_formed_theory_is_refused_with_the_checks_reason_1553`
     #[spec(ensures: |result| result.span() == Maybe::Present(self.span))]
-    pub(crate) fn lowering_refusal(&self) -> LoweringRefusal<'static>
+    pub(crate) fn lowering_refusal<'source>(
+        &self,
+        written: gandr_surface_syntax::SourceFragment<'source>,
+    ) -> LoweringRefusal<'source>
     {
         let undescribed = |fault| LoweringRefusal::UndescribedMember {
             span: self.span,
@@ -398,6 +406,14 @@ impl DescriptionDiagnostic
             DescriptionFault::Signature(crate::circuit::SignatureFault::Reversible) => {
                 undescribed(MemberFault::Reversible)
             },
+            DescriptionFault::IllFormed(ref reason) => LoweringRefusal::IllFormedDescription {
+                span: self.span,
+                kind: reason.kind,
+                subjects: [
+                    spelled(reason.subjects.first(), written),
+                    spelled(reason.subjects.get(1_usize), written),
+                ],
+            },
             DescriptionFault::Malformed
             | DescriptionFault::FamilyHead
             | DescriptionFault::NonUniformResult
@@ -405,7 +421,6 @@ impl DescriptionDiagnostic
             | DescriptionFault::MemberPolarity
             | DescriptionFault::RetiredRuleArrow
             | DescriptionFault::RetiredOperation
-            | DescriptionFault::IllFormed(_)
             | DescriptionFault::Signature(_) => LoweringRefusal::MalformedForm {
                 span: self.span,
                 form: crate::FormName::DECLARATION,
@@ -413,6 +428,45 @@ impl DescriptionDiagnostic
             },
         }
     }
+}
+
+/// The name `subject` as `written` spells it: the declaration's own bytes for
+/// a name the description read from it.
+///
+/// # Specification
+/// - ensures: the unnamed absence when there is no `subject`; otherwise the
+///   first span of `written` whose text is `subject`'s, or the unwritten
+///   absence when `written` holds none.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`DescriptionDiagnostic::lowering_refusal`].
+/// - witness: `description::theory::tests::an_ill_formed_theory_is_refused_with_the_checks_reason_1553`
+#[spec(ensures: |ret| match (subject, ret) {
+    (None, Maybe::Absent(crate::description_subject::Absent::Unnamed)) => true,
+    (Some(name), Maybe::Present(spelled)) => spelled.as_ref() == name.as_ref(),
+    (Some(name), Maybe::Absent(crate::description_subject::Absent::Unwritten)) => !<&str>::from(written).contains(name.as_ref()),
+    (None, Maybe::Present(_) | Maybe::Absent(crate::description_subject::Absent::Unwritten))
+        | (Some(_), Maybe::Absent(crate::description_subject::Absent::Unnamed)) => false,
+})]
+fn spelled<'source>(
+    subject: Option<&gandr_theory_levitation::Name>,
+    written: gandr_surface_syntax::SourceFragment<'source>,
+) -> Maybe<crate::SurfaceName<'source>, crate::description_subject::Absent>
+{
+    let Some(subject) = subject
+    else {
+        return Maybe::Absent(crate::description_subject::Absent::Unnamed);
+    };
+    let name: &str = subject.as_ref();
+    let written: &'source str = written.into();
+    written
+        .find(name)
+        .and_then(|at| written.get(at .. at.saturating_add(name.len())))
+        .map_or(
+            Maybe::Absent(crate::description_subject::Absent::Unwritten),
+            |text| Maybe::Present(crate::SurfaceName::from(text)),
+        )
 }
 
 /// A named family binder with its written classifier.

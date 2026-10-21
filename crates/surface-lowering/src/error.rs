@@ -108,6 +108,7 @@ use anodized::spec;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::GrammarFingerprint;
 use gandr_surface_syntax::MoldId;
+use gandr_theory_levitation::WfKind;
 use quenchant_shape::shape::Maybe;
 
 use crate::attribute::AttributeSchema;
@@ -131,6 +132,22 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The refusal concerns the lowering run as a whole.
             Run,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an ill-formed description's refusal holds no name in a subject's
+    /// place.
+    pub mod description_subject {
+        /// The reason the name is absent.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The description check's reason names fewer names.
+            Unnamed,
+            /// The declaration spells no name the check gives: a name the
+            /// description derived rather than read.
+            Unwritten,
         }
     }
 }
@@ -795,6 +812,22 @@ pub enum LoweringRefusal<'source>
         rule: ByteSpan,
     },
 
+    /// A description the description check refuses: a `data`, `codata` or
+    /// `theory` declaration whose sorts, ports, shape or rules are not well
+    /// formed, though its syntax is complete.
+    IllFormedDescription
+    {
+        /// The bytes the check located the failure at: the rule or face at
+        /// fault, or the whole declaration where the check records none.
+        span: ByteSpan,
+        /// Why the check refuses it.
+        kind: WfKind,
+        /// The names the check's reason names, in its order, as the
+        /// declaration spells them: the sort, port, rule, face, symbol or
+        /// variable at fault.
+        subjects: [Maybe<SurfaceName<'source>, description_subject::Absent>; 2],
+    },
+
     /// A thunk type written with a grade other than the default `ω`, which
     /// the core has no bridge for.
     GradedBridge
@@ -1311,6 +1344,127 @@ pub enum LoweringRefusal<'source>
     },
 }
 
+/// A subject of an ill-formed description's refusal: the name as the
+/// declaration spells it.
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+struct Subject<'source>(Maybe<SurfaceName<'source>, description_subject::Absent>);
+
+impl fmt::Display for Subject<'_>
+{
+    /// Writes the name between backticks, or says the declaration does not
+    /// spell it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match self.0 {
+            Maybe::Present(name) => write!(f, "`{name}`"),
+            Maybe::Absent(_) => f.write_str("a name it does not spell"),
+        }
+    }
+}
+
+/// Writes why the description check refuses a description, naming the
+/// `subjects` its reason names, in their order.
+///
+/// # Specification
+/// trivial.
+fn ill_formed(
+    kind: WfKind,
+    subjects: [Maybe<SurfaceName<'_>, description_subject::Absent>; 2],
+    f: &mut fmt::Formatter<'_>,
+) -> fmt::Result
+{
+    let [first, second] = subjects;
+    let (one, other) = (Subject(first), Subject(second));
+    match kind {
+        WfKind::OutOfSignatureRule => match second {
+            Maybe::Present(_) => write!(
+                f,
+                "the rule {one} applies {other}, which the signature does not declare"
+            ),
+            Maybe::Absent(_) => write!(
+                f,
+                "a rule applies {one}, which the signature does not declare"
+            ),
+        },
+        WfKind::UnboundRhsVariable => write!(
+            f,
+            "a rule's right-hand side introduces {one}, which its left-hand side does not bind"
+        ),
+        WfKind::ArityDoesNotCompose => {
+            write!(
+                f,
+                "the bridge arity of the operation {one} does not compose"
+            )
+        },
+        WfKind::DeclaresDerivedMetadata => write!(
+            f,
+            "{one} declares {other}, which is derived from the rules, never declared"
+        ),
+        WfKind::DerivedBoundaryMismatch => write!(
+            f,
+            "the wiring of the rule {one} derives a boundary its declared sphere does not fix"
+        ),
+        WfKind::CyclicCircuitWiring => write!(
+            f,
+            "the wiring of the rule {one} reaches the port {other} from itself"
+        ),
+        WfKind::UnknownRewritePort => write!(
+            f,
+            "the rule {one} applies the rewrite {other}, which its telescope does not declare"
+        ),
+        WfKind::CircuitDerivationBudget => write!(
+            f,
+            "the wiring of the rule {one} unfolds past the derivation's node budget"
+        ),
+        WfKind::DuplicateSortName => write!(f, "the sort {one} is declared more than once"),
+        WfKind::UnknownResultSort => write!(
+            f,
+            "the constructor {one} targets {other}, which is not a declared sort"
+        ),
+        WfKind::UnknownVarSort => write!(
+            f,
+            "the constructor {one} recurses at {other}, which is not a declared sort"
+        ),
+        WfKind::SortPolarityDisagreement => write!(
+            f,
+            "the sort {one} declares a polarity its declaration does not"
+        ),
+        WfKind::MisplacedResults => f.write_str(
+            "a rule writes a results tuple away from its right-hand root, the one place it \
+             stands",
+        ),
+        WfKind::NonRepresentableBinder => write!(
+            f,
+            "the port {other} binds a variable of the sort {one}, which is not representable"
+        ),
+        WfKind::SplitCircuitOutputs => write!(
+            f,
+            "the wiring of the rule {one} reads the port {other}, one output of a many-out \
+             node, on its own"
+        ),
+        WfKind::DuplicateFaceName => write!(f, "the shape {one} names the face {other} twice"),
+        WfKind::FaceOutsideShape => {
+            write!(f, "the face {one} holds a point outside the shape {other}")
+        },
+        WfKind::UnsortedBinding => write!(
+            f,
+            "a rule uses {one} where no port binds it over the same sorts"
+        ),
+        WfKind::AtomResult => write!(
+            f,
+            "the operation {one} returns {other}, an atom sort, which is compared and swapped, \
+             never produced"
+        ),
+    }
+}
+
 impl fmt::Display for LoweringRefusal<'_>
 {
     /// Writes the refusal without the positions it names: a diagnostic
@@ -1376,6 +1530,7 @@ impl fmt::Display for LoweringRefusal<'_>
                 "a fed-back port is read bare: the rule's body reads it under no observation of \
                  its sort",
             ),
+            Self::IllFormedDescription { kind, subjects, .. } => ill_formed(kind, subjects, f),
             Self::GradedBridge { grade, .. } => write!(
                 f,
                 "the bridge's grade `{grade}` is not the default `ω`, the only grade the \
@@ -1663,6 +1818,7 @@ impl LoweringRefusal<'_>
             | Self::ShadowedBuiltin { span, .. }
             | Self::OutOfFragment { span, .. }
             | Self::BareFeedback { span, .. }
+            | Self::IllFormedDescription { span, .. }
             | Self::GradedBridge { span, .. }
             | Self::MalformedLiteral { span, .. }
             | Self::MalformedForm { span, .. }
@@ -1770,7 +1926,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 53_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 54_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -2013,6 +2169,14 @@ mod tests
             LoweringRefusal::ViewOfNoPlace {
                 span: s(97_usize, 98_usize),
             },
+            LoweringRefusal::IllFormedDescription {
+                span: s(99_usize, 100_usize),
+                kind: crate::WfKind::NonRepresentableBinder,
+                subjects: [
+                    Maybe::Present(SurfaceName::from("Tm")),
+                    Maybe::Absent(crate::description_subject::Absent::Unwritten),
+                ],
+            },
         ]
     }
 
@@ -2077,6 +2241,7 @@ mod tests
             s(93_usize, 94_usize),
             s(95_usize, 96_usize),
             s(97_usize, 98_usize),
+            s(99_usize, 100_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

@@ -3,8 +3,9 @@
 // representable sorts outside the `theory` block that reads it.
 
 /// A port binds a variable of `Tm`, which is not representable: the
-/// description check refuses the binder by name (`NonRepresentableBinder`).
-@[ refuses("MalformedForm") ]
+/// description check refuses the binder, and its refusal names the sort `Tm`
+/// and the port `t` (#1553).
+@[ refuses("IllFormedDescription") ]
 theory Unbindable {
   sort Tm : Type;
   oper lam : (t : pi+ (x : Tm) . Tm) --> Tm;
