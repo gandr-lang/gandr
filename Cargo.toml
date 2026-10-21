@@ -55,6 +55,7 @@ members = [
   "crates/theory-spec-combinators",
   "crates/theory-virtual-doctrines",
   "crates/workflow-build-state",
+  "crates/workflow-coverage-guard",
   "crates/workflow-hotpath-guard",
   "crates/workflow-lane-budget",
   "crates/workflow-spec-cost",
@@ -164,6 +165,7 @@ default-features = false
 # - theory-spec-combinators
 # - theory-virtual-doctrines
 # - workflow-build-state
+# - workflow-coverage-guard
 # - workflow-hotpath-guard
 # - workflow-lane-budget
 # - workflow-spec-cost
@@ -206,6 +208,7 @@ default-features = false
 # consumers:
 # - surface-driver
 # - workflow-build-state
+# - workflow-coverage-guard
 # - workflow-hotpath-guard
 # - workflow-lane-budget
 # - workflow-spec-cost
@@ -1087,6 +1090,7 @@ default-features = false
 # - theory-nominal-automata
 # - theory-sites
 # - theory-virtual-doctrines
+# - workflow-coverage-guard
 # - workflow-hotpath-guard
 # - workflow-lane-budget
 # - workflow-spec-cost
@@ -1198,8 +1202,9 @@ default-features = false
 # The serialization framework the render-bus wire image, the language
 # server's protocol messages, the diagnostics' JSON image, the
 # specification-cost ranking's reading of nextest's test list, the build
-# state's reading of Cargo's messages and the lane budget's reading of `gh`'s
-# issue listing derive through.
+# state's reading of Cargo's messages, the lane budget's reading of `gh`'s
+# issue listing and the coverage guard's reading of Codecov's answers derive
+# through.
 # features:
 # - alloc: the owned strings and vectors, and the tagged enums' buffered content
 # - derive: the `Serialize` and `Deserialize` derives
@@ -1209,6 +1214,7 @@ default-features = false
 # - surface-lsp
 # - surface-render-remote
 # - workflow-build-state
+# - workflow-coverage-guard
 # - workflow-hotpath-guard
 # - workflow-lane-budget
 # - workflow-spec-cost
@@ -1220,8 +1226,8 @@ features = ["alloc", "derive"]
 # JSON: the language server's and the Model Context Protocol server's wire
 # format, the diagnostics' JSON verbosity level, the render bus's line format
 # and the format its codec witnesses round-trip through, the syntax ledger's
-# machine form, nextest's machine-readable test list, Cargo's build messages
-# and `gh`'s issue listing.
+# machine form, nextest's machine-readable test list, Cargo's build messages,
+# `gh`'s issue listing and Codecov's answers.
 # features:
 # - alloc: the owned value tree and the string encoder without std
 # consumers:
@@ -1235,6 +1241,7 @@ features = ["alloc", "derive"]
 # - surface-render-terminal (dev)
 # - surface-tui
 # - workflow-build-state
+# - workflow-coverage-guard
 # - workflow-hotpath-guard
 # - workflow-lane-budget
 # - workflow-spec-cost

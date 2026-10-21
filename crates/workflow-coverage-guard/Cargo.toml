@@ -1,0 +1,36 @@
+[package]
+name = "gandr-workflow-coverage-guard"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Main's coverage upload against the one before it, filed on one issue when it drops"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["ci", "codecov", "coverage", "gandr"]
+categories = ["development-tools"]
+publish.workspace = true
+autotests = false
+
+[[bin]]
+name = "coverage-guard"
+path = "src/main.rs"
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies the specification attribute; the shape
+# crate the `Maybe` a crate absent from one upload has for its lines. serde
+# reads Codecov's answers and `gh`'s issue listing.
+[dependencies]
+anodized.workspace = true
+clap.workspace = true
+quenchant-shape.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

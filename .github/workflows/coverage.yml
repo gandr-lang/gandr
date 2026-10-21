@@ -10,7 +10,8 @@ name: Coverage
 # instrumented run pays a cold instrumented build and two to three times the
 # test time, and a run per push was cancelled by the next push before it
 # uploaded. A pull request that wants numbers dispatches this workflow, which
-# always measures, or runs `mise run ci:coverage`.
+# always measures, or runs `mise run ci:coverage`. After an upload of main,
+# the guard compares it with the upload before it and files a drop.
 on:
   schedule:
     - cron: "0 3 * * *"
@@ -200,7 +201,7 @@ jobs:
     if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') }}
     runs-on: *linux
     permissions: *image-read-permissions
-    container: ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
+    container: &ci-image ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
     timeout-minutes: 45
     steps:
       - *git-checkout
@@ -212,3 +213,31 @@ jobs:
       - *measure-coverage
       - *save-coverage-state
       - *upload-coverage
+
+  # Main's upload against the upload before it (`mise run
+  # ci:coverage-guard`): a fall of more than codecov.yml's project threshold
+  # or an upload covering fewer files opens or updates the one issue
+  # `coverage: main dropped from X to Y (<sha>)` with each crate's delta,
+  # for triage. Alerting, never a gate. Its own job, so `issues: write`
+  # never reaches the job that runs the test suite.
+  guard:
+    name: file a coverage drop
+    needs: [ci-image-ref, coverage]
+    if: ${{ !cancelled() && needs.coverage.result == 'success' && github.ref == 'refs/heads/main' }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: read
+      issues: write
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 25
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - *setup-rust
+      - name: compare main's upload with the one before
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: mise run ci:coverage-guard --threshold 0.5 --file-issue >> "$GITHUB_STEP_SUMMARY"

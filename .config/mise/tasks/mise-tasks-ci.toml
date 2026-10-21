@@ -234,6 +234,11 @@ run = "cargo nextest run --workspace --locked --profile nightly"
 # limit, each sweep over its sample — .config/nextest.toml says why). The
 # plain-only parser test is cfg(not(anodized_panic)), so it is a second
 # instrumented run; a line is covered when either run executed it.
+# `--no-report` implies `--no-clean`, and `report` reads every workspace
+# object in the target directory, so the plain directory is cleaned of the
+# workspace's objects first: a restored state otherwise keeps the previous
+# revision's test binary beside this one's, and its coverage map, at the old
+# line numbers with no hits, merges in as missed lines.
 # llvm-tools already supplies llvm-cov.
 ["ci:coverage"]
 description = "Enforcing line coverage, with the plain-only parser witness merged in, as coverage.lcov"
@@ -244,6 +249,8 @@ root="{{ config_root }}"
 export NEXTEST_PROFILE=coverage
 RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR="$root/target/coverage" \
   cargo llvm-cov nextest --workspace --locked --lcov --output-path "$root/coverage.lcov"
+CARGO_TARGET_DIR="$root/target/coverage-plain" \
+  cargo llvm-cov clean --workspace
 CARGO_TARGET_DIR="$root/target/coverage-plain" \
   cargo llvm-cov nextest --locked --no-report \
   -p gandr-surface-parser --test tests \
@@ -289,6 +296,16 @@ awk '
 mv "$root/coverage.merged.lcov" "$root/coverage.lcov"
 rm -f "$root/coverage-plain.lcov"
 '''
+
+# Main's coverage upload against the one before it, as Markdown; with
+# `--file-issue`, a drop over the threshold or fewer files opens or updates
+# one issue (crates/workflow-coverage-guard/README.md). The coverage
+# workflow passes codecov.yml's project threshold. Arguments pass through:
+# `--repository`, `--sha`, `--threshold`, optionally `--wait` and
+# `--file-issue`.
+["ci:coverage-guard"]
+description = "Main's coverage upload against the one before it, filed when it drops"
+run = "cargo run --locked --quiet --package gandr-workflow-coverage-guard --"
 
 # Each test's enforcing time over its plain time, from a run's enforcing JUnit
 # report and a plain baseline's; the enforcing lane reports it on every run
