@@ -1159,7 +1159,9 @@ where
         // the remaining list's, and the cell's element and tail, of which only
         // the element is written. What follows the loop is visited before the
         // body, so the element's name is the one the body's visit leaves open
-        // where the join writes it.
+        // where the join writes it. A threading loop's passes run as an
+        // unthreaded loop's, under the binders its threading opens; the slots
+        // the first pass takes go unwritten.
         Former::Application(function, argument) => match looped(source, node, admits) {
             Some(Looped::For { list, each, rest }) => {
                 let mut slots = Vec::from([value(list)]);
@@ -1177,32 +1179,16 @@ where
                 ));
                 slots
             },
-            Some(Looped::Loop(_) | Looped::While { .. }) | None => {
-                Vec::from([continues(function), value(argument)])
+            Some(reading @ (Looped::Loop { .. } | Looped::While { .. })) => {
+                passing(reading, admits)
             },
+            None => Vec::from([continues(function), value(argument)]),
         },
         // A loop's passes run its body, which the loop's binder and, in a
         // `while`, the test's binders stand over unwritten.
         Former::Fixpoint(body) => match looped(source, node, admits) {
-            Some(Looped::Loop(passes)) => Vec::from([Slot::of(
-                passes,
-                Admits::Computation(Tail::Passes),
-                Binds::ONE,
-            )]),
-            Some(Looped::While {
-                condition,
-                then,
-                rest,
-            }) => {
-                let tested = Binds::intuitionistic(OpenBinders(3_usize));
-                let mut slots = Vec::from([
-                    Slot::of(condition, Admits::Computation(Tail::Continues), Binds::ONE),
-                    Slot::of(then, Admits::Computation(Tail::Passes), tested),
-                ]);
-                if let Some(rest) = rest {
-                    slots.push(Slot::of(rest, admits, tested));
-                }
-                slots
+            Some(reading @ (Looped::Loop { .. } | Looped::While { .. })) => {
+                passing(reading, admits)
             },
             Some(Looped::For { .. }) | None => Vec::from([match admits {
                 Admits::Computation(Tail::Unstated) => Slot::of(body, admits, Binds::ONE),
@@ -2240,19 +2226,27 @@ where
 enum Looped<Node>
 {
     /// `loop { b }`, its body run on each pass.
-    Loop(Node),
+    Loop
+    {
+        /// The body, under the loop's binder and those `threads` opens.
+        body: Node,
+        /// The held slots the loop threads through its passes.
+        threads: Threads<Node>,
+    },
     /// `while c { t }`, then the rest the loop's break goes on with, if any:
     /// `fix k. x ← c; case x { inl _ => t, inr _ => split () (); r }`, the
     /// false branch `return ()` where nothing follows the loop.
     While
     {
-        /// The condition, under the loop's binder.
+        /// The condition, under the loop's binder and those `threads` opens.
         condition: Node,
-        /// The true branch, under the loop's binder, the condition's and the
+        /// The true branch, under the condition's binders, the test's and the
         /// branch's.
         then: Node,
-        /// What follows the loop, under the same three binders.
+        /// What follows the loop, under the same binders as `then`.
         rest: Option<Node>,
+        /// The held slots the loop threads through its passes.
+        threads: Threads<Node>,
     },
     /// `for x in l { b }`, then the rest the loop's break goes on with, if
     /// any: `(fix k. λ r. case r { nil => split () (); rest, cons(x, t) => b
@@ -2269,6 +2263,57 @@ enum Looped<Node>
         /// list's.
         rest: Option<Node>,
     },
+}
+
+/// The held slots a `loop` or a `while` threads through its passes
+/// (`gandr_surface_lowering`'s `lower::loops`, loop-carried state).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Threads<Node>
+{
+    /// None: the loop is its fixpoint alone.
+    Unthreaded,
+    /// `count` slots: `(fix k. λ s. hold c = s; b) c` for one, and `(fix k. λ
+    /// p. split p (s₁, …, sₙ); hold c₁ = s₁; …; hold cₙ = sₙ; b) (c₁, …, cₙ)`
+    /// for several, each pass holding the slots again under their own names.
+    Slots
+    {
+        /// How many slots the loop threads.
+        count: usize,
+        /// The slots the first pass takes: the one slot read, or the tuple of
+        /// the slots read, outermost first.
+        first: Node,
+    },
+}
+
+impl<Node> Threads<Node>
+{
+    /// How many binders the threading opens between the loop's own and its
+    /// passes: none unthreaded; the content and its hold for one slot; the
+    /// tuple, its components and their holds for several. The holds open
+    /// last.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn opened(&self) -> OpenBinders
+    {
+        OpenBinders(match *self {
+            Self::Unthreaded => 0_usize,
+            Self::Slots { count: 1_usize, .. } => 2_usize,
+            Self::Slots { count, .. } => count.saturating_mul(2_usize).saturating_add(1_usize),
+        })
+    }
+
+    /// How many of the binders [`Self::opened`] counts hold a slot again.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn held(&self) -> Arity
+    {
+        Arity(match *self {
+            Self::Unthreaded => 0_usize,
+            Self::Slots { count, .. } => count,
+        })
+    }
 }
 
 /// What a loop's break goes on with.
@@ -2345,27 +2390,34 @@ where
 /// `while c { b }` as `fix k. x ← c; case x { inl _ => b', inr _ => return
 /// () }` and `for x in l { b }` as `(fix k. λ r. case r { nil => return (),
 /// cons(x, t) => b' }) l`, and puts what follows the loop at its breaks. A
-/// loop stands only where a path through a body ends, so a fixpoint anywhere
-/// else, and one whose body abstracts but is no `for`, a loop threading held
-/// slots, keeps the printer's notation.
+/// `loop` or a `while` threading held slots applies its fixpoint to them
+/// ([`Threads::Slots`]). A loop stands only where a path through a body
+/// ends, so a fixpoint anywhere else, and one whose body abstracts but is no
+/// `for` and threads no slot, a local recursive definition's, keeps the
+/// printer's notation.
 ///
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
-/// - ensures: none unless `node` is in a position where a body ends; a `for`
-///   when it reads as the application of a fixpoint over a lambda casing on its
-///   bound list whose empty branch is a break; a `while` when it reads as a
-///   fixpoint whose body binds a computation and cases on the bound value in
-///   two branches the second of which is a break; a `loop` when it reads as any
-///   other fixpoint whose body is no lambda; none otherwise.
-/// - provides: the reading [`slots`], [`Walk::visit`] and [`Walk::form`] share.
+/// - ensures: none unless `node` is in a position where a body or a pass ends;
+///   for the application of a fixpoint over a lambda, a `for` when the lambda
+///   cases on its bound list and the empty branch is a break, and otherwise a
+///   threading loop when the lambda holds its argument again as [`held_again`]
+///   reads it and the fixpoint is applied to as many slots; for a fixpoint
+///   whose body is no lambda, the loop [`passes`] reads; where a pass ends,
+///   only a `while` or a `for` a rest follows; none otherwise.
+/// - provides: the reading [`slots`], [`Walk::visit`], [`Walk::pass_end`] and
+///   [`Walk::form`] share.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a `loop`, a `while` and a `for` the body ends with and
-///   each with a rest following it, and a fixpoint whose body abstracts.
+///   each with a rest following it, a `while` threading one slot and one
+///   threading two, a `while` ending another's pass with a rest following it,
+///   and a fixpoint whose body abstracts.
 /// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
 /// - witness: `tests::goldens::a_for_loop_prints_as_the_loop_it_lowered_from_941`
+/// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
 #[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Fixpoint(_) | Former::Application(..)))]
 fn looped<S>(
     source: &S,
@@ -2375,33 +2427,75 @@ fn looped<S>(
 where
     S: Source + ?Sized,
 {
-    if !matches!(admits, Admits::Computation(Tail::Ends | Tail::Unstated)) {
+    if !matches!(
+        admits,
+        Admits::Computation(Tail::Ends | Tail::Unstated | Tail::Passes)
+    ) {
         return None;
     }
-    // A `for`: the applied fixpoint abstracts the remaining list and cases on
-    // it, the empty list the loop's break.
-    if let Former::Application(function, list) = source.read(node) {
-        if let Former::Fixpoint(abstraction) = source.read(function)
-            && let Former::Lambda(walked) = source.read(abstraction)
-            && let Former::ListCase {
-                list: remaining,
-                nil,
-                cons,
-            } = source.read(walked)
-            && let Former::Variable {
-                zone: Zone::Intuitionistic,
-                index,
-            } = source.read(remaining)
-            && u32::from(index) == 0_u32
+    // Where a pass ends, the loop's rest goes on with the pass, so a loop
+    // stands there only with a rest to write.
+    let kept = |reading: Looped<S::Node>| match reading {
+        Looped::While { rest: Some(_), .. } | Looped::For { rest: Some(_), .. } => Some(reading),
+        Looped::Loop { .. } | Looped::While { rest: None, .. } | Looped::For { rest: None, .. } => {
+            (admits != Admits::Computation(Tail::Passes)).then_some(reading)
+        },
+    };
+    if let Former::Application(function, argument) = source.read(node) {
+        let Former::Fixpoint(abstraction) = source.read(function)
+        else {
+            return None;
+        };
+        let Former::Lambda(each) = source.read(abstraction)
+        else {
+            return None;
+        };
+        // A `for`: the lambda cases on the remaining list, the empty list the
+        // loop's break.
+        if let Former::ListCase {
+            list: remaining,
+            nil,
+            cons,
+        } = source.read(each)
+            && matches!(
+                source.read(remaining),
+                Former::Variable { zone: Zone::Intuitionistic, index } if u32::from(index) == 0_u32
+            )
             && let Some(end) = broken(source, nil)
         {
-            return Some(Looped::For {
-                list,
+            return kept(Looped::For {
+                list: argument,
                 each: cons,
                 rest: end.rest(),
             });
         }
-        return None;
+        // A threading loop: the lambda holds the slots again, and the first
+        // pass takes them, each read as a linear variable.
+        let (Arity(count), under) = held_again(source, each)?;
+        let slot = |node| {
+            matches!(source.read(node), Former::Variable {
+                zone: Zone::Linear,
+                ..
+            })
+        };
+        let first = if count == 1_usize {
+            slot(argument)
+        }
+        else {
+            matches!(source.read(argument), Former::Tuple(arity) if usize::from(arity) == count)
+                && (0_usize .. count).all(|component| {
+                    source
+                        .component(argument, Component::from(component))
+                        .is_some_and(slot)
+                })
+        };
+        if !first {
+            return None;
+        }
+        return kept(passes(source, under, Threads::Slots {
+            count,
+            first: argument,
+        }));
     }
     let Former::Fixpoint(body) = source.read(node)
     else {
@@ -2410,6 +2504,34 @@ where
     if let Former::Lambda(_) = source.read(body) {
         return None;
     }
+    kept(passes(source, body, Threads::Unthreaded))
+}
+
+/// The `loop` or the `while` whose passes run `body`, threading `threads`.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: a `while` when `body` binds a computation and cases on the bound
+///   value in two branches the second of which is a break; a `loop` over `body`
+///   otherwise; either carrying `threads`.
+/// - provides: the passes [`looped`] reads under a fixpoint, alone or applied
+///   to the slots it threads.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `loop` and a `while`, each alone and threading a slot.
+/// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
+/// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
+#[spec(ensures: |ret| matches!(ret, Looped::Loop { threads: kept, .. } | Looped::While { threads: kept, .. } if kept.held() == threads.held()))]
+fn passes<S>(
+    source: &S,
+    body: S::Node,
+    threads: Threads<S::Node>,
+) -> Looped<S::Node>
+where
+    S: Source + ?Sized,
+{
     // A `while`: the body binds the test and cases on it, the false branch
     // the loop's break.
     if let Former::Bind(condition, tested) = source.read(body)
@@ -2426,13 +2548,141 @@ where
         )
         && let Some(end) = broken(source, otherwise)
     {
-        return Some(Looped::While {
+        return Looped::While {
             condition,
             then,
             rest: end.rest(),
-        });
+            threads,
+        };
     }
-    Some(Looped::Loop(body))
+    Looped::Loop { body, threads }
+}
+
+/// How many slots a threading loop's lambda body `each` holds again, and the
+/// passes it runs under them: `hold c = s; b` holding its one argument, or
+/// `split p (s₁, …, sₙ); hold c₁ = s₁; …; hold cₙ = sₙ; b` holding each
+/// component of its argument in order.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: `(1, b)` for a hold at many of the innermost intuitionistic
+///   variable whose body is `b`; `(n, b)` for a split of the innermost
+///   intuitionistic variable into `n ≥ 2` components whose body holds at many
+///   each component, outermost first, the innermost hold's body `b`; none
+///   otherwise.
+/// - provides: the threading [`looped`] reads.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `while` threading one slot and one threading two.
+/// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
+#[spec(ensures: |ret| ret.is_none_or(|(count, _)| count.0 >= 1_usize))]
+fn held_again<S>(
+    source: &S,
+    each: S::Node,
+) -> Option<(Arity, S::Node)>
+where
+    S: Source + ?Sized,
+{
+    // The body of `node` when it holds at many the intuitionistic variable
+    // `content` binders out.
+    let held = |node, content: usize| {
+        if let Former::Hold {
+            value,
+            body,
+            grade: gandr_core_term::memory::HoldGrade::Many,
+        } = source.read(node)
+            && let Former::Variable {
+                zone: Zone::Intuitionistic,
+                index,
+            } = source.read(value)
+            && usize::try_from(u32::from(index)).ok() == Some(content)
+        {
+            Some(body)
+        }
+        else {
+            None
+        }
+    };
+    if let Former::Split {
+        scrutinee,
+        arity,
+        body,
+    } = source.read(each)
+        && usize::from(arity) >= 2_usize
+        && matches!(
+            source.read(scrutinee),
+            Former::Variable { zone: Zone::Intuitionistic, index } if u32::from(index) == 0_u32
+        )
+    {
+        let count = usize::from(arity);
+        let mut under = body;
+        for component in 0_usize .. count {
+            under = held(
+                under,
+                count.saturating_sub(component).saturating_sub(1_usize),
+            )?;
+        }
+        return Some((Arity(count), under));
+    }
+    held(each, 0_usize).map(|under| (Arity(1_usize), under))
+}
+
+/// The slots the `loop` or the `while` `reading` visits in a position
+/// admitting `admits`: the body, or the condition, the true branch and the
+/// rest, each under the loop's binder and those its threading opens
+/// ([`Threads::opened`]), and a `while`'s branch and rest under the test's
+/// two more.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one pass slot for a `loop`; for a `while`, the condition
+///   continuing, the true branch a pass and the rest, where one follows,
+///   admitting `admits`; none for a `for`.
+/// - provides: the slots [`children`] gives a loop, alone or threading.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `loop` and a `while`, each alone and threading a slot.
+/// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
+/// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
+#[spec(ensures: |ret| ret.len() <= 3_usize)]
+fn passing<Node>(
+    reading: Looped<Node>,
+    admits: Admits,
+) -> Vec<Slot<Node>>
+{
+    match reading {
+        Looped::Loop { body, threads } => Vec::from([Slot::of(
+            body,
+            Admits::Computation(Tail::Passes),
+            Binds::intuitionistic(OpenBinders(threads.opened().0.saturating_add(1_usize))),
+        )]),
+        Looped::While {
+            condition,
+            then,
+            rest,
+            threads,
+        } => {
+            let looping = threads.opened().0.saturating_add(1_usize);
+            let tested = Binds::intuitionistic(OpenBinders(looping.saturating_add(2_usize)));
+            let mut slots = Vec::from([
+                Slot::of(
+                    condition,
+                    Admits::Computation(Tail::Continues),
+                    Binds::intuitionistic(OpenBinders(looping)),
+                ),
+                Slot::of(then, Admits::Computation(Tail::Passes), tested),
+            ]);
+            if let Some(rest) = rest {
+                slots.push(Slot::of(rest, admits, tested));
+            }
+            slots
+        },
+        Looped::For { .. } => Vec::new(),
+    }
 }
 
 /// A derived path operation a transport is the derivation of
@@ -2908,8 +3158,41 @@ enum LoopBinder
     /// A `for` loop's remaining tail, which a pass hands the loop's own
     /// binder to run the next: `(force k) t` is `continue`.
     Tail,
-    /// One a `while` loop's test binds, or a `for` loop's remaining list.
+    /// One a `while` loop's test binds, a `for` loop's remaining list, or the
+    /// content a threading loop's pass takes.
     Hidden,
+}
+
+/// A slot a threading loop holds again in each pass, written under the name
+/// of the slot held around the loop it carries.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Carried
+{
+    /// The position of the slot held around the loop, whose name the hold
+    /// takes; none where the slot the first pass takes is no open binder.
+    of: Option<OpenBinders>,
+    /// How many slots a pass hands on, on the first slot's hold in a pass;
+    /// none on every other.
+    passing: Option<usize>,
+}
+
+/// What a pass hands the loop's own binder to run the next.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Pass
+{
+    /// Nothing: the pass forces it, `(force k)`.
+    Nothing,
+    /// A `for` loop's remaining tail, at this position: `(force k) t`.
+    Tail(OpenBinders),
+    /// The slots a threading loop's pass holds again, `count` of them from
+    /// the position of the first: `(force k) c`, `(force k) (c₁, …, cₙ)`.
+    Slots
+    {
+        /// The position of the first slot's hold.
+        first: OpenBinders,
+        /// How many slots.
+        count: usize,
+    },
 }
 
 /// A loop the walk is inside.
@@ -2920,8 +3203,8 @@ struct Looping
     own: OpenBinders,
     /// Whether a rest follows the loop.
     rest: bool,
-    /// The position of the tail a `for` loop's pass runs the next on.
-    tail: Option<OpenBinders>,
+    /// What a pass hands the loop's own binder.
+    pass: Pass,
 }
 
 /// How a computation ending a loop's pass is written.
@@ -2971,6 +3254,9 @@ enum Task<Node>
     /// does: the loop's own, which a `continue` forces, or one its test
     /// binds.
     BindLoop(Zone, LoopBinder),
+    /// Open the linear binder a threading loop's pass holds a slot again
+    /// under, as [`Task::BindScope`] does, named as the slot it carries.
+    BindCarried(Carried),
     /// Enter (`true`) or leave (`false`) a handler's subject, where an exit
     /// leaves the handler.
     Handled(bool),
@@ -4078,64 +4364,73 @@ impl Walk<'_, '_>
 
     /// How `former`, ending a loop's pass, is written.
     ///
-    /// The loop's own binder forced is `continue`, and in a `for` loop the
-    /// loop's own binder applied to the remaining tail. A returner is written
-    /// `break(v)` where the loop ends the body and `return v` where a rest
-    /// follows it, a call `become c`, and a bind or a case runs the path on
-    /// into its rest or its branches. An exit written in a handler's subject
-    /// leaves the handler, not the body the loop stands in, so there only
-    /// `break(v)` and `continue` are written.
+    /// The loop's own binder forced is `continue`, and so is the loop's own
+    /// binder applied to what a pass hands on: in a `for` loop the remaining
+    /// tail, and in a threading loop the slots it holds again. A returner is
+    /// written `break(v)` where the loop ends the body and `return v` where a
+    /// rest follows it, a call `become c`, and a bind or a case runs the path
+    /// on into its rest or its branches. An exit written in a handler's
+    /// subject leaves the handler, not the body the loop stands in, so there
+    /// only `break(v)` and `continue` are written.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`PassEnd::Continue`] exactly for a force of an
     ///   intuitionistic variable whose open binder is the innermost loop's own
-    ///   where that loop is no `for`, and for the application of such a force
-    ///   to the variable whose open binder is the innermost `for` loop's tail;
-    ///   [`PassEnd::Written`] for a bind, a case of any kind, a returner ending
-    ///   a loop no rest follows, and outside every handler subject a returner
-    ///   and any other call; [`PassEnd::Unwritten`] otherwise.
+    ///   where its pass hands on nothing ([`Pass::Nothing`]), and for the
+    ///   application of such a force to what the innermost loop's pass hands
+    ///   on: the variable whose open binder is a `for` loop's tail, the linear
+    ///   variable whose open binder holds a threading loop's one slot, or the
+    ///   tuple of the linear variables whose open binders hold its slots, in
+    ///   order; [`PassEnd::Written`] for a loop [`looped`] reads there, a bind,
+    ///   a case of any kind, a returner ending a loop no rest follows, and
+    ///   outside every handler subject a returner and any other call;
+    ///   [`PassEnd::Unwritten`] otherwise.
     /// - provides: the formers a pass's end writes, the rest noted as the
     ///   fixpoint's notation.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a pass ending in `continue` in a `loop` and a `for`,
-    ///   `break(v)`, `return v` and `become c`, and one naming the loop's
-    ///   binder.
+    /// - hypothesis: L3 — a pass ending in `continue` in a `loop`, a `for` and
+    ///   a `while` threading one slot and two, `break(v)`, `return v` and
+    ///   `become c`, one naming the loop's binder, and one ending in another
+    ///   loop whose rest continues the first.
     /// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
     /// - witness: `tests::goldens::a_for_loop_prints_as_the_loop_it_lowered_from_941`
+    /// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
     #[spec(ensures: |ret| ret != PassEnd::Continue || !self.loops.is_empty())]
     fn pass_end<S>(
         &self,
         source: &S,
+        node: S::Node,
         former: &Former<'_, S::Node>,
     ) -> PassEnd
     where
         S: Source + ?Sized,
     {
+        // A loop ending a pass is written, its rest ending the pass in turn.
+        if looped(source, node, Admits::Computation(Tail::Passes)).is_some() {
+            return PassEnd::Written;
+        }
         let outside = self.subjects == 0_usize;
         let innermost = self.loops.last().copied();
         let rest = innermost.is_some_and(|looping| looping.rest);
-        // Whether `node` reads as the variable whose open binder is at
-        // `position`.
-        let names = |node, position: Option<OpenBinders>| {
-            if let Former::Variable {
-                zone: Zone::Intuitionistic,
-                index,
-            } = source.read(node)
-            {
-                position.is_some() && self.opened_at(Zone::Intuitionistic, index) == position
+        // Whether `node` reads as the variable in `zone` whose open binder is
+        // at `position`.
+        let names = |node, zone: Zone, position: OpenBinders| {
+            if let Former::Variable { zone: read, index } = source.read(node) {
+                read == zone && self.opened_at(zone, index) == Some(position)
             }
             else {
                 false
             }
         };
         let own = innermost.map(|looping| looping.own);
-        let tail = innermost.and_then(|looping| looping.tail);
+        let pass = innermost.map_or(Pass::Nothing, |looping| looping.pass);
+        let forces_own = |forced| own.is_some_and(|own| names(forced, Zone::Intuitionistic, own));
         let written = if let Former::Force(forced) = *former {
-            if tail.is_none() && names(forced, own) {
+            if pass == Pass::Nothing && forces_own(forced) {
                 return PassEnd::Continue;
             }
             false
@@ -4144,10 +4439,31 @@ impl Walk<'_, '_>
             outside || !rest
         }
         else if let Former::Application(function, argument) = *former {
-            if let Former::Force(forced) = source.read(function)
-                && tail.is_some()
-                && names(forced, own)
-                && names(argument, tail)
+            let handed = match pass {
+                Pass::Nothing => false,
+                Pass::Tail(tail) => names(argument, Zone::Intuitionistic, tail),
+                Pass::Slots {
+                    first,
+                    count: 1_usize,
+                } => names(argument, Zone::Linear, first),
+                Pass::Slots { first, count } => {
+                    matches!(source.read(argument), Former::Tuple(arity) if usize::from(arity) == count)
+                        && (0_usize .. count).all(|component| {
+                            source
+                                .component(argument, Component::from(component))
+                                .is_some_and(|slot| {
+                                    names(
+                                        slot,
+                                        Zone::Linear,
+                                        OpenBinders(first.0.saturating_add(component)),
+                                    )
+                                })
+                        })
+                },
+            };
+            if handed
+                && let Former::Force(forced) = source.read(function)
+                && forces_own(forced)
             {
                 return PassEnd::Continue;
             }
@@ -5202,17 +5518,18 @@ impl Walk<'_, '_>
     ///   scheduled just before its entry and each child between the opening and
     ///   the closing of the binders it stands under; a former spelled by parts
     ///   pushes its parts as [`Self::form`] builds them, a `for` loop's
-    ///   application among them; a static application schedules its spine as
-    ///   [`Self::spine`] does and any other application its call as
-    ///   [`Self::call`] does, under `become` where it ends a loop's pass; a
-    ///   decode, a quote, a returner where the body ends, a nested computation
-    ///   and a returned value push their child's visit alone, so the child's
-    ///   piece is theirs; the loop's own binder forced at the end of a pass, or
-    ///   in a `for` loop applied to the remaining tail, finishes as `continue`,
-    ///   a returner ending a pass is `break(v)` or `return v` as
-    ///   [`Self::pass_end`] reads it, and a computation the end of a pass
-    ///   cannot write is noted as the fixpoint's notation; a returner anywhere
-    ///   else is `pure v` and a run `run c`.
+    ///   application and a threading loop's among them; a static application
+    ///   schedules its spine as [`Self::spine`] does and any other application
+    ///   its call as [`Self::call`] does, under `become` where it ends a loop's
+    ///   pass; a decode, a quote, a returner where the body ends, a nested
+    ///   computation and a returned value push their child's visit alone, so
+    ///   the child's piece is theirs; the loop's own binder forced at the end
+    ///   of a pass, or applied to what the pass hands on, finishes as
+    ///   `continue`, a returner ending a pass is `break(v)` or `return v` and a
+    ///   loop ending a pass is written with its rest, as [`Self::pass_end`]
+    ///   reads them, and a computation the end of a pass cannot write is noted
+    ///   as the fixpoint's notation; a returner anywhere else is `pure v` and a
+    ///   run `run c`.
     /// - provides: one step of the walk.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -5235,6 +5552,7 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_returner_lists_each_interface_of_its_row_between_commas`
     /// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
     /// - witness: `tests::goldens::a_for_loop_prints_as_the_loop_it_lowered_from_941`
+    /// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
     #[spec(
         captures: [entry = self.pieces.len(), pending = tasks.len(), opened = self.opened.len(), fidelity = self.fidelity],
         ensures: |ref ret| self.opened.len() == opened
@@ -5284,8 +5602,8 @@ impl Walk<'_, '_>
         // The end of a loop's pass is written as an exit, a `continue`, or a
         // former the path runs on through; anything else there the surface
         // cannot write, since a computation left bare runs the loop again.
-        let pass =
-            (admits == Admits::Computation(Tail::Passes)).then(|| self.pass_end(source, &former));
+        let pass = (admits == Admits::Computation(Tail::Passes))
+            .then(|| self.pass_end(source, node, &former));
         if pass == Some(PassEnd::Continue) {
             return writes(
                 Production("continue_expression"),
@@ -5873,10 +6191,9 @@ impl Walk<'_, '_>
                 Self::spine(source, operator, argument, depth, ReductAs::Term, tasks);
                 return writes(Production("type_application"), Ok(()));
             },
-            // A `for` loop's application is the loop, spelled by parts.
-            Former::Application(..)
-                if matches!(looped(source, node, admits), Some(Looped::For { .. })) =>
-            {
+            // A `for` loop's application, and a threading loop's, is the
+            // loop, spelled by parts.
+            Former::Application(..) if looped(source, node, admits).is_some() => {
                 Some(self.form(source, node, &former, admits))
             },
             Former::Application(function, argument) => {
@@ -6025,6 +6342,46 @@ impl Walk<'_, '_>
             looping,
             Some(Looped::While { rest: Some(_), .. } | Looped::For { rest: Some(_), .. })
         );
+        let threads = match looping {
+            Some(Looped::Loop { threads, .. } | Looped::While { threads, .. }) => threads,
+            Some(Looped::For { .. }) | None => Threads::Unthreaded,
+        };
+        // The slots held around a threading loop, by the positions of their
+        // open binders, outermost first: each pass holds them again under
+        // their names.
+        let carried: Vec<Option<OpenBinders>> = match threads {
+            Threads::Slots { count, first } => (0_usize .. count)
+                .map(|component| {
+                    let slot = if count == 1_usize {
+                        Some(first)
+                    }
+                    else {
+                        source.component(first, Component::from(component))
+                    };
+                    match slot.map(|slot| source.read(slot)) {
+                        Some(Former::Variable {
+                            zone: Zone::Linear,
+                            index,
+                        }) => self.opened_at(Zone::Linear, index),
+                        Some(_) | None => None,
+                    }
+                })
+                .collect(),
+            Threads::Unthreaded => Vec::new(),
+        };
+        // A pass's binders open the loop's own, the content the threading
+        // takes, and then the holds.
+        let content = threads.opened().0.saturating_sub(threads.held().0);
+        // The slot a loop's pass runs in: a `loop`'s body, a `while`'s true
+        // branch, a `for` loop's body after its list and rest. A rest that
+        // ends another loop's pass admits a pass's end too, but runs none of
+        // this loop's.
+        let pass_slot = match looping {
+            Some(Looped::Loop { .. }) => Some(0_usize),
+            Some(Looped::While { .. } | Looped::For { rest: None, .. }) => Some(1_usize),
+            Some(Looped::For { rest: Some(_), .. }) => Some(2_usize),
+            None => None,
+        };
         for (index, slot) in slots.into_iter().enumerate().rev() {
             // A handler's subject, its first slot, is where an exit leaves
             // the handler.
@@ -6061,7 +6418,7 @@ impl Walk<'_, '_>
                     .count
                     .saturating_sub(binder)
                     .saturating_sub(1_usize);
-                let passes = slot.admits == Admits::Computation(Tail::Passes);
+                let passes = pass_slot == Some(index);
                 let unwritten = if !passes {
                     looping.map(|_| LoopBinder::Hidden)
                 }
@@ -6080,8 +6437,19 @@ impl Walk<'_, '_>
                 else {
                     looping.map(|_| LoopBinder::Hidden)
                 };
+                // The slot a threading loop's binder at this depth holds
+                // again, counted from the outermost.
+                let holding = depth
+                    .checked_sub(content.saturating_add(1_usize))
+                    .filter(|&held| held < threads.held().0);
                 tasks.push(if scoped {
                     Task::BindScope(slot.binds.zone, opener)
+                }
+                else if let Some(held) = holding {
+                    Task::BindCarried(Carried {
+                        of: carried.get(held).copied().flatten(),
+                        passing: (passes && held == 0_usize).then_some(threads.held().0),
+                    })
                 }
                 else if let Some(unwritten) = unwritten {
                     Task::BindLoop(slot.binds.zone, unwritten)
@@ -6655,6 +7023,77 @@ impl Walk<'_, '_>
         self.opened.push(zone);
     }
 
+    /// Open the linear binder a threading loop's pass holds a slot again
+    /// under, named as the slot held around the loop it carries, so the
+    /// passes read and write the slot by its own name; its region the
+    /// innermost the walk is inside, as a hold's. On the first slot's hold in
+    /// a pass, the innermost loop's pass hands on the slots held from here.
+    ///
+    /// # Specification
+    /// - requires: the binders opened since the slot `carried.of` names are the
+    ///   loop's own, the content the threading takes and the holds before this
+    ///   one, none of which takes that slot's name.
+    /// - ensures: one linear binder more is open, named as the open binder at
+    ///   `carried.of`; where that position names nothing, named as
+    ///   [`Self::bind`] names a binder of no opener, and the printing noted as
+    ///   the fixpoint's notation. A region opens at it; with `carried.passing`,
+    ///   the innermost loop's pass hands on that many slots from it
+    ///   ([`Pass::Slots`]).
+    /// - provides: the name each occurrence of the slot inside the loop reads.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `while` threading one slot and one threading two
+    ///   read each slot by its name.
+    /// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
+    #[spec(
+        captures: [opened = self.opened.len()],
+        ensures: self.opened.len() == opened.saturating_add(1_usize)
+            && self.names.len() > opened,
+    )]
+    fn bind_carried<S>(
+        &mut self,
+        source: &S,
+        carried: Carried,
+    ) where
+        S: Source + ?Sized,
+    {
+        let position = self.opened.len();
+        if let Some(name) = carried
+            .of
+            .and_then(|of| self.names.get(of.0).cloned().flatten())
+        {
+            self.names.truncate(position);
+            self.names.resize(position, None);
+            self.names.push(Some(name));
+            let _named = self.occurring.remove(&OpenBinders(position));
+            self.opened.push(Zone::Linear);
+        }
+        else {
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a slot held around a threading loop that no open binder names \
+                              leaves its hold no name to take, so the loop keeps the \
+                              fixpoint's notation"
+                )
+            )]
+            self.note(Unspelled::Notation(Notation::Fixpoint));
+            self.bind(source, Zone::Linear, None);
+        }
+        self.scopes.push(position);
+        if let Some(count) = carried.passing
+            && let Some(looping) = self.loops.last_mut()
+        {
+            looping.pass = Pass::Slots {
+                first: OpenBinders(position),
+                count,
+            };
+        }
+    }
+
     /// The name of the capability scope or hold whose region is `depth`,
     /// counted from the outermost: the regions the source's roots stand in
     /// first, then the ones the walk is inside.
@@ -7054,53 +7493,57 @@ impl Walk<'_, '_>
                     .rest(Arity(4_usize));
                 writes(Production("call_expression"), Binding::Atom)
             },
-            Former::Fixpoint(_) => match looped(source, node, admits) {
-                Some(Looped::Loop(_)) => {
-                    let _ = parts.text("loop {").body();
-                    writes(Production("loop_expression"), Binding::Prefix)
-                },
-                Some(Looped::While { rest, .. }) => {
-                    let _ = parts.text("while ").piece(Binding::Arrow).text(" {").body();
-                    if rest.is_some() {
-                        let _ = parts.text(" ;").part(Part::Line).piece(Binding::Sequence);
-                        writes(Production("block"), Binding::Sequence)
-                    }
-                    else {
-                        writes(Production("while_expression"), Binding::Prefix)
-                    }
-                },
-                Some(Looped::For { .. }) | None => {
-                    self.note(Unspelled::Notation(Notation::Fixpoint));
-                    let _ = parts
-                        .text("rec ")
-                        .part(Part::Binder(0_usize))
-                        .text(" {")
-                        .body();
-                    Binding::Prefix
-                },
-            },
-            // `for x in l { b }`: the element the body's binders name third,
-            // after the loop's own and the remaining list's; the body is
-            // visited last, so it is the last piece.
-            Former::Application(..)
-                if let Some(Looped::For { rest, .. }) = looped(source, node, admits) =>
+            // A loop, from its fixpoint or, threading slots or walking a
+            // list, from the fixpoint's application.
+            Former::Fixpoint(_) | Former::Application(..)
+                if let Some(reading) = looped(source, node, admits) =>
             {
+                match reading {
+                    Looped::Loop { .. } => {
+                        let _ = parts.text("loop {").body();
+                        writes(Production("loop_expression"), Binding::Prefix)
+                    },
+                    Looped::While { rest, .. } => {
+                        let _ = parts.text("while ").piece(Binding::Arrow).text(" {").body();
+                        if rest.is_some() {
+                            let _ = parts.text(" ;").part(Part::Line).piece(Binding::Sequence);
+                            writes(Production("block"), Binding::Sequence)
+                        }
+                        else {
+                            writes(Production("while_expression"), Binding::Prefix)
+                        }
+                    },
+                    // `for x in l { b }`: the element the body's binders name
+                    // third, after the loop's own and the remaining list's;
+                    // the body is visited last, so it is the last piece.
+                    Looped::For { rest, .. } => {
+                        let _ = parts
+                            .text("for ")
+                            .part(Part::Binder(2_usize))
+                            .text(" in ")
+                            .piece(Binding::Arrow)
+                            .text(" {")
+                            .part(Part::Open)
+                            .part(Part::Last(Binding::Sequence))
+                            .part(Part::Close);
+                        if rest.is_some() {
+                            let _ = parts.text(" ;").part(Part::Line).piece(Binding::Sequence);
+                            writes(Production("block"), Binding::Sequence)
+                        }
+                        else {
+                            writes(Production("for_expression"), Binding::Prefix)
+                        }
+                    },
+                }
+            },
+            Former::Fixpoint(_) => {
+                self.note(Unspelled::Notation(Notation::Fixpoint));
                 let _ = parts
-                    .text("for ")
-                    .part(Part::Binder(2_usize))
-                    .text(" in ")
-                    .piece(Binding::Arrow)
+                    .text("rec ")
+                    .part(Part::Binder(0_usize))
                     .text(" {")
-                    .part(Part::Open)
-                    .part(Part::Last(Binding::Sequence))
-                    .part(Part::Close);
-                if rest.is_some() {
-                    let _ = parts.text(" ;").part(Part::Line).piece(Binding::Sequence);
-                    writes(Production("block"), Binding::Sequence)
-                }
-                else {
-                    writes(Production("for_expression"), Binding::Prefix)
-                }
+                    .body();
+                Binding::Prefix
             },
             Former::Reset(_) => {
                 self.note(Unspelled::Notation(Notation::Reset));
@@ -8175,16 +8618,17 @@ where
                     LoopBinder::Own { rest } => walk.loops.push(Looping {
                         own: position,
                         rest,
-                        tail: None,
+                        pass: Pass::Nothing,
                     }),
                     LoopBinder::Tail => {
                         if let Some(looping) = walk.loops.last_mut() {
-                            looping.tail = Some(position);
+                            looping.pass = Pass::Tail(position);
                         }
                     },
                     LoopBinder::Hidden => {},
                 }
             },
+            Task::BindCarried(carried) => walk.bind_carried(source, carried),
             Task::Handled(entered) => {
                 walk.subjects = if entered {
                     walk.subjects.saturating_add(1_usize)
