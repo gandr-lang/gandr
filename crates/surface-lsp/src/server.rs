@@ -73,6 +73,7 @@ use gandr_surface_pretty::Spelling;
 use gandr_surface_render_remote::DocId;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_render_remote::RenderFrame;
+use gandr_surface_session::CandidateIndex;
 use gandr_surface_session::Session;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
@@ -84,6 +85,8 @@ use serde_json::Value;
 use crate::complete::completions;
 use crate::complete::resolved;
 use crate::files::Files;
+use crate::fix::fills;
+use crate::fix::holes;
 use crate::fix::repairs;
 use crate::format::Scope;
 use crate::format::edits;
@@ -3534,6 +3537,12 @@ impl Server
                                         self.editing,
                                     ));
                                 }
+                                offered.extend(workspace.hole_fills(
+                                    &params.text_document.uri,
+                                    self.peer,
+                                    (params.range, &params.context.diagnostics),
+                                    self.style.printed(),
+                                ));
                                 self.edited(workspace, Answer::Actions(offered))
                             },
                             Maybe::Absent(_) => Answer::Nothing,
@@ -4578,6 +4587,90 @@ impl Workspace
             (uri, position),
             presented,
         ))
+    }
+
+    /// The quick fixes that fill each written hole `asked` meets in the copy of
+    /// the document at `uri` that `peer` is answered from, its candidates'
+    /// types spelled in `printer`'s style.
+    ///
+    /// # Specification
+    /// - requires: `diagnostics` are the request's, each as the client sent it.
+    /// - ensures: nothing for an unknown document, one whose session or grammar
+    ///   did not build, or a copy that is not the latest the trial judges;
+    ///   otherwise, for each of the copy's [`holes`] in text order, the
+    ///   [`fills`] its names answer in one trial of every hole's names, made as
+    ///   [`Self::trial`] makes it, against the latest copy's published
+    ///   diagnostics. Every copy, its session and its published diagnostics are
+    ///   unchanged.
+    /// - provides: the hole fills of `textDocument/codeAction`.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one trial of the names of every hole the range meets.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`fills`], through the request.
+    /// - witness: `server::tests::a_hole_is_offered_the_names_that_settle_it`
+    #[spec(ensures: |ret| self.documents.contains_key(uri) || ret.is_empty())]
+    fn hole_fills(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        (asked, diagnostics): (Range, &[Value]),
+        printer: gandr_surface_pretty::Style,
+    ) -> Vec<CodeAction>
+    {
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Vec::new();
+        };
+        let (Ok(session), Ok(grammar), Ok(forms), Some((version, published))) = (
+            document.session.as_ref(),
+            grammar(),
+            forms(),
+            self.published(uri),
+        )
+        else {
+            return Vec::new();
+        };
+        if version != document.version {
+            return Vec::new();
+        }
+        let found = holes(
+            (grammar, forms),
+            (document.text.source(), document.text.reading().spans()),
+            (
+                document
+                    .text
+                    .hovering(&uri.path(), session, &self.shadowing(peer)),
+                printer,
+            ),
+            (uri, asked),
+        );
+        let changes: Vec<ContentChange> = found
+            .iter()
+            .flat_map(|hole| {
+                hole.names.iter().map(|name| ContentChange {
+                    range: Some(hole.range),
+                    text: name.clone(),
+                })
+            })
+            .collect();
+        let Some((judged, tried)) = self.trial(uri, &changes)
+        else {
+            return Vec::new();
+        };
+        if judged != version {
+            return Vec::new();
+        }
+        found
+            .iter()
+            .scan(0_usize, |next, hole| {
+                let first = CandidateIndex::from(*next);
+                *next = next.saturating_add(hole.names.len());
+                Some((hole, first))
+            })
+            .flat_map(|placed| fills(uri, placed, &tried, (published, diagnostics)))
+            .collect()
     }
 
     /// `item`, offered by a completion request, resolved off the copy of the
@@ -11207,6 +11300,68 @@ mod tests
                 ]}},
             }]),
             "the brace the parser expects, inserted where the refusal stands"
+        );
+    }
+
+    /// The identity subject's base source, its `loopOn` body's path left a
+    /// hole, open in the editor: a code action request at the hole is offered
+    /// the two names in scope the trial judges without a refusal at the hole,
+    /// `p`, which also settles `sect` downstream, before `loop`, which does
+    /// not; neither is preferred. A request where no hole stands is offered
+    /// no fill.
+    #[test]
+    fn a_hole_is_offered_the_names_that_settle_it()
+    {
+        let (mut workspace, [mut first, _second]) = two_connections();
+        let uri = crate::protocol::DocumentUri::from("file:///tmp/shared.gandr");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../surface-corpus/fixture/model/identity/circle-base.gandr");
+        let written = std::fs::read_to_string(&path)
+            .expect("the fixture is read")
+            .replacen("  loop ∷ p\n", "  loop ∷ ?\n", 1);
+        let opened = format!(
+            r#","version":1,"text":{}}}"#,
+            serde_json::to_string(&written).expect("the text serialises")
+        );
+        drop(first.handle(
+            &mut workspace,
+            &shared(Json("textDocument/didOpen"), Json(&opened)),
+        ));
+        let judged = workspace
+            .documents
+            .get(&uri)
+            .map(|held| serde_json::to_value(&held.document.checked))
+            .expect("the document is held")
+            .expect("the diagnostics serialise");
+        let ask = |line: u32, character: u32| {
+            asked(
+                &workspace,
+                Json("textDocument/codeAction"),
+                Json(&format!(
+                    r#","range":{{"start":{{"line":{line},"character":{character}}},"end":{{"line":{line},"character":{character}}}}},"context":{{"diagnostics":{judged}}}"#
+                )),
+            )
+        };
+        let hole = serde_json::json!({"start": {"line": 78_u32, "character": 9_u32},
+            "end": {"line": 78_u32, "character": 10_u32}});
+        let fill = |name: &str| {
+            serde_json::json!({
+                "title": format!("Fill the hole with `{name}`"),
+                "kind": "quickfix",
+                "edit": {"changes": {"file:///tmp/shared.gandr": [
+                    {"range": hole, "newText": name}
+                ]}},
+            })
+        };
+        assert_eq!(
+            ask(78, 9),
+            serde_json::json!([fill("p"), fill("loop")]),
+            "the parameter, which settles the source, before the loop, which checks here"
+        );
+        assert_eq!(
+            ask(78, 2),
+            serde_json::json!([]),
+            "where no hole stands, no fill"
         );
     }
 

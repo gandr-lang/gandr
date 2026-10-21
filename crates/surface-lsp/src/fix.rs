@@ -11,33 +11,53 @@
 //! versioned edits) is sent the closing as a snippet. Any other client is sent
 //! a closing with no hole as its text, and no fix for a closing with one,
 //! whose hole it could not fill.
+//!
+//! A written hole, `?` or `?name`, is a term the source left unfinished. Each
+//! name in scope where it stands, as completion offers it, is tried in its
+//! place in one trial of the document, the one a model's candidate fills
+//! pass. A name the trial judges, leaving no more errors than the document
+//! publishes, is offered as a fix, best first.
 
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::iter;
 
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_pretty::Style;
+use gandr_surface_render_remote::HlRole;
+use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::LineIndex;
+use gandr_surface_session::CandidateIndex;
 use gandr_surface_syntax::SourceText;
 use serde::Deserialize as _;
 use serde_json::Value;
 
+use crate::complete::completions;
+use crate::hover::Hovering;
 use crate::inline::Forms;
 use crate::inline::Labeled;
 use crate::position::Range;
 use crate::protocol::CodeAction;
+use crate::protocol::CompletionItemKind;
+use crate::protocol::Diagnostic;
 use crate::protocol::DocumentEdit;
 use crate::protocol::DocumentUri;
 use crate::protocol::DocumentVersion;
 use crate::protocol::EditedDocument;
 use crate::protocol::EditsShaped;
+use crate::protocol::LabelsDetailed;
+use crate::protocol::Severity;
 use crate::protocol::SnippetEdit;
 use crate::protocol::StringValue;
+use crate::protocol::TakesSnippets;
 use crate::protocol::TextDocumentEdit;
 use crate::protocol::TextEdit;
 use crate::protocol::WorkspaceEdit;
+use crate::recheck::Reached;
+use crate::recheck::Tried;
 
 /// The code of the refusal a repaired form is reported under.
 const MALFORMED: &str = "MalformedForm";
@@ -150,6 +170,191 @@ pub fn repairs(
         });
     }
     found
+}
+
+/// The most names one hole is tried with: as many as one trial a model's
+/// candidate fills pass through judges.
+const MOST_FILLS: usize = 32;
+
+/// A written hole the asked range meets, and the names it is tried with.
+///
+/// # Specification
+/// - requires: built by [`holes`].
+/// - ensures: `names` holds between one and [`MOST_FILLS`] names.
+/// - panics: none.
+/// - executable: none — a carrier; [`holes`] states what it holds.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`holes`].
+/// - witness: `server::tests::a_hole_is_offered_the_names_that_settle_it`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Hole
+{
+    /// The hole's range: its `?` and a name written right after it.
+    pub range: Range,
+    /// The names in scope where it stands, as completion offers them.
+    pub names: Vec<String>,
+}
+
+/// The written holes of `text` that meet `asked`, each with the names it is
+/// tried with.
+///
+/// # Specification
+/// - requires: `spans` are the highlighter's spans of `text`, in text order;
+///   `hovering` was read off `text`, the document at `uri`; `forms` is
+///   [`Forms::new`] of `grammar`.
+/// - ensures: in text order, one hole per `Hole` span whose range, extended
+///   over a `Label` span starting where it ends, reads and meets `asked`
+///   (neither ends before the other starts): the first [`MOST_FILLS`] names
+///   [`completions`] offers at the hole's start, keywords left out, binders
+///   innermost first, then declared names by name. A hole offered no name is
+///   left out.
+/// - provides: the candidates of the hole fills `textDocument/codeAction`
+///   offers.
+/// - fails: never.
+/// - panics: none.
+/// - intension: one line index, then one completion per hole the range meets.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a hole in a declaration with a parameter is tried with
+///   the parameter and the declared names, and a range meeting no hole is
+///   offered no fill.
+/// - witness: `server::tests::a_hole_is_offered_the_names_that_settle_it`
+#[spec(ensures: |ret| ret.iter().all(|hole| (1 ..= MOST_FILLS).contains(&hole.names.len())))]
+#[must_use]
+pub fn holes(
+    (grammar, forms): (&Pbg, &Forms),
+    (text, spans): (SourceText<'_>, &[HlSpan]),
+    (hovering, printer): (&Hovering, Style),
+    (uri, asked): (&DocumentUri, Range),
+) -> Vec<Hole>
+{
+    let index = LineIndex::new(<&str>::from(text).into());
+    let following = spans.iter().skip(1).map(Some).chain(iter::once(None));
+    let mut found = Vec::new();
+    for (span, next) in spans.iter().zip(following) {
+        if span.role != HlRole::Hole {
+            continue;
+        }
+        let end = next
+            .filter(|next| next.role == HlRole::Label && next.range.start() == span.range.end())
+            .map_or_else(|| span.range.end(), |next| next.range.end());
+        let Some(range) = Range::of_bytes(&index, span.range.start(), end)
+            .ok()
+            .filter(|range| range.start <= asked.end && asked.start <= range.end)
+        else {
+            continue;
+        };
+        let names: Vec<String> = completions(
+            grammar,
+            forms,
+            text,
+            hovering,
+            (uri, range.start),
+            (printer, LabelsDetailed(false), TakesSnippets(false)),
+        )
+        .items
+        .into_iter()
+        .filter(|item| item.kind != CompletionItemKind::KEYWORD)
+        .take(MOST_FILLS)
+        .map(|item| item.label)
+        .collect();
+        if !names.is_empty() {
+            found.push(Hole { range, names });
+        }
+    }
+    found
+}
+
+/// The quick fixes that fill `hole` of the document at `uri` with each of its
+/// names `tried` judged, best first.
+///
+/// # Specification
+/// - requires: `tried` is a trial of candidates among which `hole`'s names,
+///   each alone written over its range, stand in order from `first`, ranked as
+///   the trial ranks them; `published` is the document's published diagnostics,
+///   and `diagnostics` the request's, each as the client sent it.
+/// - ensures: fewest errors left first, then in the trial's order, one
+///   `quickfix` per name the trial judged whose diagnostics hold no error whose
+///   range holds the hole's start (the name, or a form or declaration around
+///   it, refused) and no more errors than `published`, replacing the hole's
+///   range with the name and naming each diagnostic of `diagnostics` whose
+///   range reads and meets the hole's; preferred when it is the only such fix
+///   and leaves no error.
+/// - provides: the hole fills' share of `textDocument/codeAction`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a hole of a path type is offered the parameter that
+///   settles its declaration and a downstream one, and none of the names the
+///   trial refuses at the hole, in the trial's order.
+/// - witness: `server::tests::a_hole_is_offered_the_names_that_settle_it`
+#[spec(ensures: |ret| ret.len() <= tried.len()
+    && ret.iter().all(|action| action.kind == "quickfix")
+    && ret.iter().filter(|action| action.is_preferred).count() <= 1)]
+#[must_use]
+pub fn fills(
+    uri: &DocumentUri,
+    (hole, first): (&Hole, CandidateIndex),
+    tried: &[Tried],
+    (published, diagnostics): (&[Diagnostic], &[Value]),
+) -> Vec<CodeAction>
+{
+    let errors = |judged: &[Diagnostic]| {
+        judged
+            .iter()
+            .filter(|diagnostic| diagnostic.severity == Severity::ERROR)
+            .count()
+    };
+    let at = hole.range.start;
+    let refused = |judged: &[Diagnostic]| {
+        judged.iter().any(|diagnostic| {
+            diagnostic.severity == Severity::ERROR
+                && diagnostic.range.start <= at
+                && at <= diagnostic.range.end
+        })
+    };
+    let before = errors(published);
+    let mut kept: Vec<(&String, usize)> = tried
+        .iter()
+        .filter(|tried| tried.reached == Reached::Judged && !refused(&tried.diagnostics))
+        .filter_map(|tried| {
+            let after = errors(&tried.diagnostics);
+            usize::from(tried.candidate)
+                .checked_sub(usize::from(first))
+                .and_then(|at| hole.names.get(at))
+                .filter(|_| after <= before)
+                .map(|name| (name, after))
+        })
+        .collect();
+    kept.sort_by_key(|&(_, after)| after);
+    let named: Vec<Value> = diagnostics
+        .iter()
+        .filter(|diagnostic| {
+            diagnostic
+                .get("range")
+                .and_then(|range| Range::deserialize(range).ok())
+                .is_some_and(|range| range.start <= hole.range.end && hole.range.start <= range.end)
+        })
+        .cloned()
+        .collect();
+    let alone = kept.len() == 1;
+    kept.into_iter()
+        .map(|(name, after)| CodeAction {
+            title: format!("Fill the hole with `{name}`"),
+            kind: "quickfix",
+            diagnostics: named.clone(),
+            is_preferred: alone && after == 0,
+            edit: WorkspaceEdit::of(BTreeMap::from([(
+                uri.clone(),
+                Vec::from([TextEdit {
+                    range: hole.range,
+                    new_text: name.clone(),
+                }]),
+            )])),
+        })
+        .collect()
 }
 
 #[cfg(test)]
