@@ -211,6 +211,7 @@ pub use crate::live_match::MatchAnalysis;
 pub use crate::live_match::MatchCheckpoint;
 pub use crate::live_match::MatchRun;
 pub use crate::live_match::MatchRunFault;
+pub use crate::lowerings::Led;
 pub use crate::session::Admitted;
 pub use crate::session::CandidateIndex;
 pub use crate::session::ClosureSlot;

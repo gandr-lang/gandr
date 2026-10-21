@@ -16,6 +16,7 @@ use super::Answered;
 use super::Candidate;
 use super::ItemCheckpoint;
 use super::Standing;
+use super::Supplied;
 use super::touches;
 use crate::boundary::ItemOrdinal;
 use crate::boundary::NodeIndex;
@@ -83,14 +84,14 @@ fn recorded_answer_references_participate_in_value_invalidation()
         occurrence: Occurrence::from(0_usize),
     };
     let untyped = [Answered::new(Reference::Unoccupied, Answer::Untyped)];
+    let none = Supplied {
+        leading: &[],
+        own: Vec::new(),
+    };
     for (name, support, expected) in [
-        (&unrelated, checkpoint.support.as_slice(), Standing::Stands),
-        (
-            &abstract_name,
-            checkpoint.support.as_slice(),
-            Standing::Falls,
-        ),
-        (&code_name, checkpoint.support.as_slice(), Standing::Falls),
+        (&unrelated, checkpoint.support(), Standing::Stands),
+        (&abstract_name, checkpoint.support(), Standing::Falls),
+        (&code_name, checkpoint.support(), Standing::Falls),
         (&abstract_name, untyped.as_slice(), Standing::Stands),
     ] {
         let value_changed = BTreeSet::from([name.clone()]);
@@ -100,7 +101,7 @@ fn recorded_answer_references_participate_in_value_invalidation()
             footprint: &footprint,
             declaration: program.items()[0].declaration(),
             layout: program.layout(),
-            supplied: &[],
+            supplied: &none,
             ordinal: ItemOrdinal::from(0_usize),
             value_changed: &value_changed,
         };
@@ -115,7 +116,7 @@ fn recorded_answer_references_participate_in_value_invalidation()
         footprint: &footprint,
         declaration: program.items()[0].declaration(),
         layout: program.layout(),
-        supplied: &[],
+        supplied: &none,
         ordinal: ItemOrdinal::from(0_usize),
         value_changed: &no_change,
     };
@@ -344,7 +345,7 @@ fn value_change_closure_handles_cycles_and_opaque_readers()
     );
     let mut census = super::ResumeCensus::default();
     assert_eq!(
-        super::close_value_changes(&base, &before, &footprints, &mut census),
+        super::close_value_changes(&base.items, &before, &footprints, &mut census),
         BTreeSet::new()
     );
     assert_eq!(census, super::ResumeCensus::default());
@@ -356,7 +357,7 @@ fn value_change_closure_handles_cycles_and_opaque_readers()
         .iter()
         .map(|item| footprint_of(&item.content))
         .collect();
-    let changed = super::close_value_changes(&base, &after, &footprints, &mut census);
+    let changed = super::close_value_changes(&base.items, &after, &footprints, &mut census);
     let expected = ["a", "b", "opaque", "reader"]
         .into_iter()
         .map(|key| Reference::Item {

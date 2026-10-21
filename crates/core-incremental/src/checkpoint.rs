@@ -114,6 +114,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 use core::fmt;
@@ -350,7 +351,7 @@ impl Answered
     }
 }
 
-/// One item's checkpoint.
+/// One item's checkpoint, its parts shared by every copy of it.
 ///
 /// # Specification
 /// - executable: none — raw checkpoint parts are admitted; construction does
@@ -363,7 +364,19 @@ impl Answered
 /// - witness: `tests::incremental::a_suppressed_invalidation_signal_is_caught`
 /// - witness: `tests::incremental::a_stored_footprint_is_not_an_adoption_input`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[repr(transparent)]
 pub struct ItemCheckpoint
+{
+    /// The checkpoint's parts.
+    parts: Arc<CheckpointParts>,
+}
+
+/// What one item's checkpoint records.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct CheckpointParts
 {
     /// The item's content.
     content: ItemContent,
@@ -395,8 +408,8 @@ impl ItemCheckpoint
     #[spec(
         captures: [count = support.len()],
         ensures: |ret| {
-            ret.support.len() <= count
-                && ret.support.windows(2).all(|pair| {
+            ret.support().len() <= count
+                && ret.support().windows(2).all(|pair| {
                     pair.first()
                         .zip(pair.last())
                         .is_none_or(|(left,right)| (&left.reference,left.answer.consultation()) < (&right.reference,right.answer.consultation()))
@@ -413,10 +426,12 @@ impl ItemCheckpoint
     ) -> Self
     {
         Self {
-            content,
-            footprint,
-            support: canonical_support(support),
-            typing,
+            parts: Arc::new(CheckpointParts {
+                content,
+                footprint,
+                support: canonical_support(support),
+                typing,
+            }),
         }
     }
 
@@ -426,9 +441,9 @@ impl ItemCheckpoint
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn content(&self) -> &ItemContent
+    pub fn content(&self) -> &ItemContent
     {
-        &self.content
+        &self.parts.content
     }
 
     /// The item's footprint.
@@ -437,9 +452,9 @@ impl ItemCheckpoint
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn footprint(&self) -> &Footprint
+    pub fn footprint(&self) -> &Footprint
     {
-        &self.footprint
+        &self.parts.footprint
     }
 
     /// The consulted answers, ascending by reference and signature table.
@@ -450,7 +465,7 @@ impl ItemCheckpoint
     #[must_use]
     pub fn support(&self) -> &[Answered]
     {
-        &self.support
+        &self.parts.support
     }
 
     /// The item's typing.
@@ -459,9 +474,9 @@ impl ItemCheckpoint
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn typing(&self) -> &Typing
+    pub fn typing(&self) -> &Typing
     {
-        &self.typing
+        &self.parts.typing
     }
 
     /// The checkpoint with its footprint replaced, for a test that shows the
@@ -476,7 +491,11 @@ impl ItemCheckpoint
         footprint: Footprint,
     ) -> Self
     {
-        Self { footprint, ..self }
+        let mut parts = Arc::unwrap_or_clone(self.parts);
+        parts.footprint = footprint;
+        Self {
+            parts: Arc::new(parts),
+        }
     }
 
     /// The checkpoint with its typing replaced, for a test that shows a stale
@@ -491,7 +510,11 @@ impl ItemCheckpoint
         typing: Typing,
     ) -> Self
     {
-        Self { typing, ..self }
+        let mut parts = Arc::unwrap_or_clone(self.parts);
+        parts.typing = typing;
+        Self {
+            parts: Arc::new(parts),
+        }
     }
 
     /// The checkpoint with its support replaced, for a test that shows a
@@ -513,8 +536,8 @@ impl ItemCheckpoint
     #[spec(
         captures: [count = support.len()],
         ensures: |ret| {
-            ret.support.len() <= count
-                && ret.support.windows(2).all(|pair| {
+            ret.support().len() <= count
+                && ret.support().windows(2).all(|pair| {
                     pair.first()
                         .zip(pair.last())
                         .is_none_or(|(left,right)| (&left.reference,left.answer.consultation()) < (&right.reference,right.answer.consultation()))
@@ -528,9 +551,10 @@ impl ItemCheckpoint
         support: Vec<Answered>,
     ) -> Self
     {
+        let mut parts = Arc::unwrap_or_clone(self.parts);
+        parts.support = canonical_support(support);
         Self {
-            support: canonical_support(support),
-            ..self
+            parts: Arc::new(parts),
         }
     }
 }
@@ -711,6 +735,109 @@ impl core::error::Error for ResumeError
 {
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a resume started after no leading state.
+    pub mod leading {
+        /// The reason the pass started at the program's first item.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The pass ran over the whole program.
+            Whole,
+        }
+    }
+}
+
+/// What a pass over a program's leading items leaves, for a later revision
+/// that lays more items after them to start from.
+///
+/// The state holds the items' references, checkpoints and answers, the locus
+/// they were encoded at, and the checking context they leave, its arena
+/// released.
+///
+/// # Specification
+/// - executable: none — the state holds no program to certify it against;
+///   [`lead`] builds it, and [`resume_after`] reads a revision's leading items
+///   against it before starting from it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a revision resumed after a leading state answers what a
+///   whole pass over it answers, judging only its own items.
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+#[derive(Debug)]
+pub struct Leading
+{
+    /// The allowance the leading items were judged under.
+    budget: CheckBudget,
+    /// Whether the leading program is located: every item's content holds it.
+    locus: crate::content::Locus,
+    /// The leading items, in order.
+    items: Vec<crate::region::Item>,
+    /// Their references, in order.
+    references: Vec<Reference>,
+    /// Their checkpoints, in order.
+    checkpoints: Vec<ItemCheckpoint>,
+    /// Their answers, in order.
+    answers: Vec<Answer>,
+    /// The checking context after the last of them.
+    context: gandr_core_checker::Checkpoint,
+}
+
+impl Leading
+{
+    /// How many leading items the state holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn count(&self) -> ItemCount
+    {
+        ItemCount::from(self.checkpoints.len())
+    }
+
+    /// Whether `program` lays the leading items first: it is located alike
+    /// and its first items are theirs, keys and declarations.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Leads`] exactly when the locus matches and `program`'s
+    ///   items begin with the leading items.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Leading`].
+    /// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+    #[spec(ensures: |ret| (ret == Leads::Leads) == (program.layout().locus() == self.locus
+        && program.items().get(.. self.items.len()) == Some(self.items.as_slice())))]
+    fn leads(
+        &self,
+        program: &Program,
+    ) -> Leads
+    {
+        if program.layout().locus() == self.locus
+            && program.items().get(.. self.items.len()) == Some(self.items.as_slice())
+        {
+            Leads::Leads
+        }
+        else {
+            Leads::Departs
+        }
+    }
+}
+
+/// Whether a program lays a leading state's items first.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Leads
+{
+    /// It does: a pass may start after them.
+    Leads,
+    /// It does not: the pass runs over the whole program.
+    Departs,
+}
+
 /// One revision's checkpoints, how each was reached, and the item order that
 /// carries identity to the next revision.
 ///
@@ -737,6 +864,9 @@ pub struct Resume
     order: ItemOrder,
     /// The work the pass did.
     census: ResumeCensus,
+    /// The leading state the pass started after, when it judged only the
+    /// items after its own.
+    after: Maybe<Arc<Leading>, leading::Absent>,
 }
 
 impl fmt::Debug for Resume
@@ -799,7 +929,7 @@ impl Resume
                         .zip(&restored.checkpoints.items)
                         .all(|(&handle, item)| {
                             restored.order.reference(handle)
-                                == Maybe::Present(item.content.reference())
+                                == Maybe::Present(item.content().reference())
                         })
             }) || ret.is_err()
         },
@@ -810,7 +940,7 @@ impl Resume
         let references: Vec<Reference> = checkpoints
             .items
             .iter()
-            .map(|checkpoint| checkpoint.content.reference().clone())
+            .map(|checkpoint| checkpoint.content().reference().clone())
             .collect();
         let (order, handles) = ItemOrder::seeded(&references).map_err(ResumeError::Order)?;
         Ok(Self {
@@ -819,6 +949,7 @@ impl Resume
             handles,
             order,
             census: ResumeCensus::default(),
+            after: Maybe::Absent(leading::Absent::Whole),
         })
     }
 
@@ -840,10 +971,7 @@ impl Resume
     #[inline]
     pub fn typings(&self) -> impl Iterator<Item = &Typing>
     {
-        self.checkpoints
-            .items
-            .iter()
-            .map(|checkpoint| &checkpoint.typing)
+        self.checkpoints.items.iter().map(ItemCheckpoint::typing)
     }
 
     /// Whether each item was adopted or judged, in source order.
@@ -947,7 +1075,7 @@ impl Resume
                 .and_then(|index| self.checkpoints.items.get(index))
                 .map_or_else(
                     || ret == Maybe::Absent(handle::Absent::Stale),
-                    |item| ret == Maybe::Present(item.content.reference()),
+                    |item| ret == Maybe::Present(item.content().reference()),
                 )
         },
     )]
@@ -1012,7 +1140,7 @@ impl Resume
                     .checkpoints
                     .items
                     .iter()
-                    .map(|item| item.content.reference())
+                    .map(|item| item.content().reference())
                     .eq(program.references().iter())
                 && checked
                     .adoptions
@@ -1028,9 +1156,9 @@ pub fn check_program(
     budget: CheckBudget,
 ) -> Result<Resume, ResumeError>
 {
-    let empty = Checkpoints::new(budget, Vec::new());
-    let (order, base_handles) = ItemOrder::seeded(&[]).map_err(ResumeError::Order)?;
-    advance::<NullMemoChoice>(&empty, order, &base_handles, program)
+    let (order, _) = ItemOrder::seeded(&[]).map_err(ResumeError::Order)?;
+    advance::<NullMemoChoice, KeepNothing>((&[], &[]), (order, &[]), program, Start::Fresh(budget))
+        .map(|advanced| advanced.resume)
 }
 
 /// Resume from `base` onto the edited program, carrying item identity.
@@ -1083,7 +1211,7 @@ pub fn check_program(
                     .checkpoints
                     .items
                     .iter()
-                    .map(|item| item.content.reference())
+                    .map(|item| item.content().reference())
                     .eq(edited.references().iter())
         }) || ret.is_err()
     },
@@ -1100,7 +1228,13 @@ pub fn resume(
         order,
         ..
     } = base;
-    advance::<OrderedMemoChoice>(&checkpoints, order, &handles, edited)
+    advance::<OrderedMemoChoice, KeepNothing>(
+        (&checkpoints.items, &handles),
+        (order, &[]),
+        edited,
+        Start::Fresh(checkpoints.budget),
+    )
+    .map(|advanced| advanced.resume)
 }
 
 /// Resume from restored checkpoints onto the edited program, every item under
@@ -1146,7 +1280,7 @@ pub fn resume(
                     .checkpoints
                     .items
                     .iter()
-                    .map(|item| item.content.reference())
+                    .map(|item| item.content().reference())
                     .eq(edited.references().iter())
         }) || ret.is_err()
     },
@@ -1160,10 +1294,179 @@ pub fn resume_from(
     let references: Vec<Reference> = base
         .items
         .iter()
-        .map(|checkpoint| checkpoint.content.reference().clone())
+        .map(|checkpoint| checkpoint.content().reference().clone())
         .collect();
     let (order, handles) = ItemOrder::seeded(&references).map_err(ResumeError::Order)?;
-    advance::<OrderedMemoChoice>(base, order, &handles, edited)
+    advance::<OrderedMemoChoice, KeepNothing>(
+        (&base.items, &handles),
+        (order, &[]),
+        edited,
+        Start::Fresh(base.budget),
+    )
+    .map(|advanced| advanced.resume)
+}
+
+/// [`check_program`], keeping the state the pass leaves after its last item.
+///
+/// A later revision laying more items after them starts from that state with
+/// [`resume_after`].
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on success [`check_program`]'s resume, and the leading state of
+///   every item of `program`: their references, checkpoints and answers,
+///   `program`'s locus, and the checking context after the last of them.
+/// - fails: as [`check_program`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`check_program`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Leading`].
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|&(ref checked, ref leading)|
+    usize::from(leading.count()) == program.items().len()
+        && checked.checkpoints.items == leading.checkpoints
+        && leading.answers.len() == program.items().len()) || ret.is_err())]
+#[inline]
+pub fn lead(
+    program: &mut Program,
+    budget: CheckBudget,
+) -> Result<(Resume, Leading), ResumeError>
+{
+    let (order, _) = ItemOrder::seeded(&[]).map_err(ResumeError::Order)?;
+    let advanced = advance::<NullMemoChoice, KeepContext>(
+        (&[], &[]),
+        (order, &[]),
+        program,
+        Start::Fresh(budget),
+    )?;
+    let leading = Leading {
+        budget,
+        locus: program.layout().locus(),
+        items: program.items().to_vec(),
+        references: program.references().to_vec(),
+        checkpoints: advanced.resume.checkpoints.items.clone(),
+        answers: advanced.answers,
+        context: advanced.kept,
+    };
+    Ok((advanced.resume, leading))
+}
+
+/// Resume onto `edited` after `leading`, the state [`lead`] left over a
+/// program `edited` lays first.
+///
+/// Only the items after the leading ones are encoded, recalled from `base`
+/// and adopted or judged, in the context the leading items left; theirs are
+/// the state's.
+///
+/// # Specification
+/// - requires: `leading` was left by [`lead`] over a program whose arena
+///   `edited`'s extends, every node of it where it was.
+/// - ensures: when `edited` does not lay the leading items first, [`resume`]
+///   from `base`, or [`check_program`] under the state's allowance when no
+///   `base` is given. Otherwise one checkpoint per item: the leading items' the
+///   state's, each marked adopted, and every other as the pass gives it after
+///   them, recalled from `base`'s items after the leading ones when `base`
+///   started after the same state. The leading items keep `base`'s handles
+///   then, and take fresh ones otherwise.
+/// - fails: [`ResumeError::Order`] when the order cannot be built or spliced.
+/// - panics: none.
+///
+/// # Errors
+/// [`ResumeError::Order`] — the order-maintenance structure refused.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a revision after its leading items, resumed from their
+///   state, answers what a whole pass over it answers, judging only its own
+///   items; a revision that departs from them is resumed whole.
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body encodes and adopts or judges every item after the leading ones; the check compares those items' references once"
+    )
+)]
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|resumed|
+    resumed.checkpoints.items.len() == edited.items().len()
+        && resumed.adoptions.len() == edited.items().len()
+        && resumed.handles.len() == edited.items().len()
+        && resumed.checkpoints.items.get(leading.checkpoints.len() ..).unwrap_or_default().iter()
+            .map(|item| item.content().reference())
+            .eq(edited.references().get(leading.checkpoints.len() ..).unwrap_or_default().iter())) || ret.is_err())]
+#[inline]
+pub fn resume_after(
+    base: Maybe<Resume, crate::session::submitted::Absent>,
+    leading: &Arc<Leading>,
+    edited: &mut Program,
+) -> Result<Resume, ResumeError>
+{
+    if leading.leads(edited) == Leads::Departs {
+        return match base {
+            Maybe::Present(base) => resume(base, edited),
+            Maybe::Absent(_) => check_program(edited, leading.budget),
+        };
+    }
+    let count = leading.checkpoints.len();
+    let advanced = match base {
+        Maybe::Present(Resume {
+            checkpoints,
+            handles,
+            order,
+            after: Maybe::Present(after),
+            ..
+        }) if Arc::ptr_eq(&after, leading) => {
+            match (
+                handles.split_at_checked(count),
+                checkpoints.items.get(count ..),
+            ) {
+                (Some((before, after)), Some(items)) => advance::<OrderedMemoChoice, KeepNothing>(
+                    (items, after),
+                    (order, before),
+                    edited,
+                    Start::After(leading),
+                ),
+                _ => fresh_after(leading, edited),
+            }
+        },
+        Maybe::Present(_) | Maybe::Absent(_) => fresh_after(leading, edited),
+    }?;
+    Ok(Resume {
+        after: Maybe::Present(Arc::clone(leading)),
+        ..advanced.resume
+    })
+}
+
+/// [`resume_after`] with no base after the same state: the leading items
+/// under fresh handles, and every item after them judged.
+///
+/// # Specification
+/// - requires: as [`resume_after`], `edited` laying the leading items first.
+/// - ensures: the pass after `leading` from no base.
+/// - fails: [`ResumeError::Order`] when the order cannot be built or spliced.
+/// - panics: none.
+/// - executable: none — as [`resume_after`], whose witness runs it.
+///
+/// # Errors
+/// [`ResumeError::Order`] — the order-maintenance structure refused.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`resume_after`].
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+fn fresh_after(
+    leading: &Leading,
+    edited: &mut Program,
+) -> Result<Advanced<()>, ResumeError>
+{
+    let (order, handles) = ItemOrder::seeded(&leading.references).map_err(ResumeError::Order)?;
+    advance::<OrderedMemoChoice, KeepNothing>(
+        (&[], &[]),
+        (order, &handles),
+        edited,
+        Start::After(leading),
+    )
 }
 
 /// The memo identity of an item: its content, and the content's digest.
@@ -1348,7 +1651,7 @@ trait MemoChoice
     ///   choices, not an arbitrary implementation of this private strategy
     ///   trait.
     /// - witness: `tests::incremental::incremental_equals_from_scratch`
-    fn build(base: &Checkpoints) -> Self::Memo<'_>;
+    fn build(base: &[ItemCheckpoint]) -> Self::Memo<'_>;
 }
 
 /// The batch choice: a memo that recalls nothing.
@@ -1365,7 +1668,7 @@ impl MemoChoice for NullMemoChoice
     ///
     /// # Specification
     /// trivial.
-    fn build(_base: &Checkpoints) -> NullMemo
+    fn build(_base: &[ItemCheckpoint]) -> NullMemo
     {
         NullMemo
     }
@@ -1398,15 +1701,15 @@ impl MemoChoice for OrderedMemoChoice
     /// - witness: `tests::incremental::body_edit_adopts_the_type_stable_dependent`
     #[spec(
         ensures: |ret| {
-            usize::from(ret.entry_count()) <= base.items.len()
+            usize::from(ret.entry_count()) <= base.len()
                 && ret.plane_entry_count(ItemPlane::Items) == ret.entry_count()
         },
     )]
-    fn build(base: &Checkpoints) -> OrderedMemo<ItemIdentity<'_>, ItemOrdinal>
+    fn build(base: &[ItemCheckpoint]) -> OrderedMemo<ItemIdentity<'_>, ItemOrdinal>
     {
         let mut memo = OrderedMemo::new();
-        for (index, checkpoint) in base.items.iter().enumerate() {
-            if let Maybe::Present(identity) = identity_of(&checkpoint.content)
+        for (index, checkpoint) in base.iter().enumerate() {
+            if let Maybe::Present(identity) = identity_of(checkpoint.content())
                 && memo.remember(identity, ItemOrdinal::from(index)).is_err()
             {
                 // economy: a memo whose accounting is at its ceiling records
@@ -1500,18 +1803,211 @@ enum Standing
     Falls,
 }
 
-/// Run the pass from `base` over `edited`, splice the order, and assemble the
-/// resume.
+/// Where a pass starts: at a program's first item in a fresh context, or after
+/// the leading items a [`Leading`] state holds, in the context they left.
 ///
 /// # Specification
-/// - requires: `base_handles` are `order`'s handles, one per item of `base`, in
-///   order.
-/// - ensures: as [`resume`] at the memo `Choice` builds.
+/// trivial.
+#[derive(Clone, Copy)]
+enum Start<'leading>
+{
+    /// At the first item, in a fresh context under the allowance.
+    Fresh(CheckBudget),
+    /// After the leading items.
+    After(&'leading Leading),
+}
+
+impl<'leading> Start<'leading>
+{
+    /// How many items precede the pass's first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn leading(self) -> ItemCount
+    {
+        match self {
+            Self::Fresh(_) => ItemCount::default(),
+            Self::After(leading) => leading.count(),
+        }
+    }
+
+    /// The allowance the pass judges under.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn budget(self) -> CheckBudget
+    {
+        match self {
+            Self::Fresh(budget) => budget,
+            Self::After(leading) => leading.budget,
+        }
+    }
+
+    /// The answers of the items before the pass's first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn answers(self) -> &'leading [Answer]
+    {
+        match self {
+            Self::Fresh(_) => &[],
+            Self::After(leading) => &leading.answers,
+        }
+    }
+}
+
+/// The answers of the items a pass has passed, by ordinal: those of the
+/// leading items it started after, then its own.
+///
+/// # Specification
+/// - executable: none — borrowed answers cannot attest the judgements that
+///   produced them.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a revision resumed after its leading items adopts a
+///   dependent of one of them only against that item's answer.
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+struct Supplied<'leading>
+{
+    /// The leading items' answers.
+    leading: &'leading [Answer],
+    /// The answers of the items the pass has passed itself.
+    own: Vec<Answer>,
+}
+
+impl Supplied<'_>
+{
+    /// The answer of the item at `ordinal`, when it has been passed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn get(
+        &self,
+        ordinal: ItemOrdinal,
+    ) -> Option<&Answer>
+    {
+        let at = usize::from(ordinal);
+        at.checked_sub(self.leading.len())
+            .map_or_else(|| self.leading.get(at), |own| self.own.get(own))
+    }
+
+    /// The ordinal of the next item to pass.
+    ///
+    /// # Specification
+    /// trivial.
+    fn next(&self) -> ItemOrdinal
+    {
+        ItemOrdinal::from(self.leading.len().saturating_add(self.own.len()))
+    }
+
+    /// Every answer passed, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn iter(&self) -> impl Iterator<Item = &Answer>
+    {
+        self.leading.iter().chain(&self.own)
+    }
+}
+
+/// What a pass keeps of the checking context it leaves after its last item.
+///
+/// # Specification
+/// - executable: none — a choice of what to keep; each implementation's
+///   [`Keep::keep`] states its own.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Leading`].
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+trait Keep
+{
+    /// What is kept.
+    type Kept;
+
+    /// What to keep of `context`, the pass's after its last item.
+    ///
+    /// # Specification
+    /// - executable: none — this required trait declaration has no body; each
+    ///   implementation states what it keeps.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Leading`].
+    /// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+    fn keep(context: &CheckingContext<'_>) -> Self::Kept;
+}
+
+/// Keep nothing: a revision's own pass.
+///
+/// # Specification
+/// trivial.
+enum KeepNothing {}
+
+impl Keep for KeepNothing
+{
+    type Kept = ();
+
+    /// Nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keep(_context: &CheckingContext<'_>)
+    {
+    }
+}
+
+/// Keep the context: a leading program's pass, for [`Leading`].
+///
+/// # Specification
+/// trivial.
+enum KeepContext {}
+
+impl Keep for KeepContext
+{
+    type Kept = gandr_core_checker::Checkpoint;
+
+    /// The context's checkpoint.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keep(context: &CheckingContext<'_>) -> gandr_core_checker::Checkpoint
+    {
+        context.checkpoint()
+    }
+}
+
+/// A pass's resume, with the answers of the items it passed and what it kept
+/// of its context.
+///
+/// # Specification
+/// - executable: none — as [`Resume`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Leading`].
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+struct Advanced<Kept>
+{
+    /// The resume.
+    resume: Resume,
+    /// The answers of the items the pass passed itself, in order.
+    answers: Vec<Answer>,
+    /// What the pass kept of its context.
+    kept: Kept,
+}
+
+/// Run the pass from `base` over `edited`'s items after `start`'s, splice the
+/// order after the last leading handle, and assemble the resume.
+///
+/// # Specification
+/// - requires: `base` pairs `order`'s handles with the base items laid after
+///   the leading ones, in order; `leading` holds `order`'s handles of the
+///   leading items, one per item `start` holds, before every base handle.
+/// - ensures: as [`resume`] at the memo `Choice` builds, the leading items'
+///   checkpoints `start`'s, each adopted, under the leading handles.
 /// - fails: [`ResumeError::Order`] when the splice fails.
 /// - panics: none.
-/// - intension: encodes each edited item once, recalls each at most once,
-///   closes the value-changed set over each read edge at most once, and judges
-///   or adopts each item once.
+/// - intension: encodes each edited item after the leading ones once, recalls
+///   each at most once, closes the value-changed set over each read edge at
+///   most once, and judges or adopts each once.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — generated edits and a revision-handle chain compare the
@@ -1519,6 +2015,7 @@ enum Standing
 ///   predicate checks input identity correspondence and output census shape.
 /// - witness: `tests::incremental::incremental_equals_from_scratch`
 /// - witness: `checkpoint::tests::revision_handles_track_insertions_and_deletions`
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -1527,13 +2024,15 @@ enum Standing
     )
 )]
 #[spec(
-    requires: base_handles.len() == base.items.len()
-        && base_handles.iter().zip(&base.items).all(|(&handle, item)| {
-            order.reference(handle) == Maybe::Present(item.content.reference())
+    requires: base.1.len() == base.0.len()
+        && usize::from(start.leading()) == ordered.1.len()
+        && base.1.iter().zip(base.0).all(|(&handle, item)| {
+            ordered.0.reference(handle) == Maybe::Present(item.content().reference())
         }),
     ensures: |ret| {
-        ret.as_ref().is_ok_and(|resumed| {
-            resumed.checkpoints.budget == base.budget
+        ret.as_ref().is_ok_and(|advanced| {
+            let resumed = &advanced.resume;
+            resumed.checkpoints.budget == start.budget()
                 && resumed.checkpoints.items.len() == edited.items().len()
                 && resumed.adoptions.len() == edited.items().len()
                 && resumed.handles.len() == edited.items().len()
@@ -1545,71 +2044,102 @@ enum Standing
                     .checkpoints
                     .items
                     .iter()
-                    .map(|item| item.content.reference())
+                    .map(|item| item.content().reference())
                     .eq(edited.references().iter())
         }) || ret.is_err()
     },
 )]
-fn advance<Choice>(
-    base: &Checkpoints,
-    mut order: ItemOrder,
-    base_handles: &[ItemHandle],
+fn advance<Choice, Kept>(
+    base: (&[ItemCheckpoint], &[ItemHandle]),
+    ordered: (ItemOrder, &[ItemHandle]),
     edited: &mut Program,
-) -> Result<Resume, ResumeError>
+    start: Start<'_>,
+) -> Result<Advanced<Kept::Kept>, ResumeError>
 where
     Choice: MemoChoice,
+    Kept: Keep,
 {
-    let budget = base.budget;
+    let (base, base_handles) = base;
+    let (mut order, leading_handles) = ordered;
+    let budget = start.budget();
+    let skip = usize::from(start.leading());
+    let count = edited.layout().items.len();
     let mut census = ResumeCensus::default();
-    let encoded: Vec<Encoded> = (0 .. edited.layout().items.len())
+    let encoded: Vec<Encoded> = (skip .. count)
         .map(|index| encode_item(edited.arena(), edited.layout(), ItemOrdinal::from(index)))
         .collect();
-    census.items = ItemCount::from(encoded.len());
-    let outcomes = {
+    census.items = ItemCount::from(count);
+    let (outcomes, answers, kept) = {
         let memo = Choice::build(base);
-        pass::<Choice::Memo<'_>>(base, &memo, &encoded, edited, budget, &mut census)
+        pass::<Choice::Memo<'_>, Kept>(base, &memo, &encoded, edited, start, &mut census)
     };
-    let mut items = Vec::with_capacity(encoded.len());
-    let mut adoptions = Vec::with_capacity(encoded.len());
+    let mut items = Vec::with_capacity(count);
+    let mut adoptions = Vec::with_capacity(count);
+    if let Start::After(leading) = start {
+        items.extend(leading.checkpoints.iter().cloned());
+        adoptions.resize(skip, Adoption::Adopted);
+        census.adopted = ItemCount::from(usize::from(census.adopted).saturating_add(skip));
+    }
     for (encoded, outcome) in encoded.into_iter().zip(outcomes) {
         adoptions.push(outcome.adoption);
         items.push(ItemCheckpoint {
-            content: encoded.content,
-            footprint: outcome.footprint,
-            support: outcome.support,
-            typing: outcome.typing,
+            parts: Arc::new(CheckpointParts {
+                content: encoded.content,
+                footprint: outcome.footprint,
+                support: outcome.support,
+                typing: outcome.typing,
+            }),
         });
     }
     let base_references: Vec<&Reference> = base
-        .items
         .iter()
-        .map(|checkpoint| checkpoint.content.reference())
+        .map(|checkpoint| checkpoint.content().reference())
         .collect();
-    let (handles, splice) = order
-        .splice(base_handles, &base_references, edited.references())
+    let anchor = leading_handles.last().map_or(
+        Maybe::Absent(crate::order::handle::Absent::Stale),
+        |&handle| Maybe::Present(handle),
+    );
+    let (after, splice) = order
+        .splice(
+            anchor,
+            base_handles,
+            &base_references,
+            edited.references().get(skip ..).unwrap_or_default(),
+        )
         .map_err(ResumeError::Order)?;
     census.splice = splice;
-    Ok(Resume {
-        checkpoints: Checkpoints::new(budget, items),
-        adoptions,
-        handles,
-        order,
-        census,
+    let mut handles = Vec::with_capacity(count);
+    handles.extend_from_slice(leading_handles);
+    handles.extend(after);
+    Ok(Advanced {
+        resume: Resume {
+            checkpoints: Checkpoints::new(budget, items),
+            adoptions,
+            handles,
+            order,
+            census,
+            after: Maybe::Absent(leading::Absent::Whole),
+        },
+        answers,
+        kept,
     })
 }
 
-/// The forward pass: recall, seat, close, then adopt or judge each item in
-/// order.
+/// The forward pass: recall, seat, close, then adopt or judge each item after
+/// `start`'s in order.
 ///
 /// # Specification
-/// - requires: `encoded` holds `edited`'s items' encodings, in order.
-/// - ensures: one outcome per item, in order; an item is adopted only when its
-///   recalled checkpoint's support holds pointwise against the answers of the
-///   items already passed, no type position of it or of a recorded answer names
-///   a value-changed definition, and its type can be seated; every other item
-///   is judged in a context that has admitted exactly the items before it, as
-///   batch does. Support is ordered and unique by reference and signature
-///   table, retaining value and Data consultations separately.
+/// - requires: `encoded` holds the encodings of `edited`'s items after the ones
+///   `start` holds, in order.
+/// - ensures: one outcome and one answer per encoded item, in order, and what
+///   `Kept` keeps of the context after the last; an item is adopted only when
+///   its recalled checkpoint's support holds pointwise against the answers of
+///   the items before it, the leading ones' `start`'s, no type position of it
+///   or of a recorded answer names a value-changed definition, and its type can
+///   be seated; every other item is judged in a context that has admitted
+///   exactly the items before it, as batch does. Support is ordered and unique
+///   by reference and signature table, retaining value and Data consultations
+///   separately.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1622,6 +2152,7 @@ where
 /// - witness: `tests::incremental::a_stored_footprint_is_not_an_adoption_input`
 /// - witness: `tests::incremental::an_opaque_footprint_is_never_adopted`
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -1630,27 +2161,28 @@ where
     )
 )]
 #[spec(
-    requires: encoded.len() == edited.items().len()
+    requires: encoded.len().checked_add(usize::from(start.leading())) == Some(edited.items().len())
         && encoded
             .iter()
             .map(|item| item.content.reference())
-            .eq(edited.references().iter()),
+            .eq(edited.references().iter().skip(usize::from(start.leading()))),
     captures: [
         adopted = usize::from(census.adopted),
         judged = usize::from(census.judged),
         recalled = usize::from(census.recalled),
     ],
     ensures: |ret| {
-        ret.len() == encoded.len()
+        ret.0.len() == encoded.len()
+            && ret.1.len() == encoded.len()
             && usize::from(census.adopted)
                 == adopted.saturating_add(
-                    ret.iter()
+                    ret.0.iter()
                         .filter(|outcome| outcome.adoption == Adoption::Adopted)
                         .count(),
                 )
             && usize::from(census.judged)
                 == judged.saturating_add(
-                    ret.iter()
+                    ret.0.iter()
                         .filter(|outcome| outcome.adoption == Adoption::Judged)
                         .count(),
                 )
@@ -1661,7 +2193,7 @@ where
                 else {
                     0
                 })
-            && ret.iter().zip(encoded).all(|(outcome, item)| {
+            && ret.0.iter().zip(encoded).all(|(outcome, item)| {
                 outcome.footprint.opacity() == item.content.opacity()
                     && outcome.support.windows(2).all(|pair| {
                         pair.first()
@@ -1673,16 +2205,17 @@ where
             })
     },
 )]
-fn pass<'id, Memo>(
-    base: &'id Checkpoints,
+fn pass<'id, Memo, Kept>(
+    base: &'id [ItemCheckpoint],
     memo: &Memo,
     encoded: &'id [Encoded],
     edited: &mut Program,
-    budget: CheckBudget,
+    start: Start<'_>,
     census: &mut ResumeCensus,
-) -> Vec<Outcome>
+) -> (Vec<Outcome>, Vec<Answer>, Kept::Kept)
 where
     Memo: CheckMemo<ItemIdentity<'id>, ItemOrdinal>,
+    Kept: Keep,
 {
     let active = Memo::ACTIVITY == MemoActivity::Active;
     let footprints: Vec<Footprint> = encoded
@@ -1699,7 +2232,7 @@ where
                 Maybe::Present(identity) => {
                     memo.recall(&identity)
                         .map_or(Maybe::Absent(recall::Absent::Missed), |hit| {
-                            base.items.get(usize::from(*hit.outcome())).map_or(
+                            base.get(usize::from(*hit.outcome())).map_or(
                                 Maybe::Absent(recall::Absent::Missed),
                                 |checkpoint| {
                                     Maybe::Present(Candidate {
@@ -1720,17 +2253,24 @@ where
         value_changed = close_value_changes(base, encoded, &footprints, census);
     }
     let mut outcomes = Vec::with_capacity(encoded.len());
-    let mut supplied: Vec<Answer> = Vec::with_capacity(encoded.len());
+    let mut supplied = Supplied {
+        leading: start.answers(),
+        own: Vec::with_capacity(encoded.len()),
+    };
     let (arena, layout) = edited.parts_mut();
-    let mut context = CheckingContext::new(arena, budget);
+    let mut context = match start {
+        Start::Fresh(budget) => CheckingContext::new(arena, budget),
+        Start::After(leading) => CheckingContext::resume(arena, leading.context.clone()),
+    };
+    let skip = usize::from(start.leading());
     // The arena only grows within the pass, so each type it answers or
     // projects is encoded once.
     let types = crate::content::TypeMemo::default();
     for (index, (item, footprint)) in encoded.iter().zip(footprints).enumerate() {
-        let ordinal = ItemOrdinal::from(index);
+        let ordinal = ItemOrdinal::from(skip.saturating_add(index));
         let Some(declaration) = layout
             .items
-            .get(index)
+            .get(usize::from(ordinal))
             .map(super::region::Item::declaration)
         else {
             break;
@@ -1809,9 +2349,10 @@ where
             },
         };
         outcomes.push(outcome);
-        supplied.push(answer);
+        supplied.own.push(answer);
     }
-    outcomes
+    let kept = Kept::keep(&context);
+    (outcomes, supplied.own, kept)
 }
 
 /// Mint the seat an unsigned item's adopted synthesised type is read from.
@@ -1833,7 +2374,7 @@ where
     captures: [before = usize::from(census.minted)],
     ensures: |ret| {
         if matches!(
-            (item.content.declaration(), &checkpoint.typing),
+            (item.content.declaration(), checkpoint.typing()),
             (crate::content::DeclarationRoots::Value { signature:Maybe::Absent(_),.. }, &Typing::Synthesised { .. })
         ) {
             usize::from(census.minted) == before.saturating_add(1)
@@ -1856,7 +2397,7 @@ fn seat_of(
     census: &mut ResumeCensus,
 ) -> Maybe<ValueTypeId, seating::Absent>
 {
-    match (item.content.declaration(), &checkpoint.typing) {
+    match (item.content.declaration(), checkpoint.typing()) {
         (
             &crate::content::DeclarationRoots::Value {
                 signature: Maybe::Absent(_),
@@ -1896,7 +2437,7 @@ struct AdoptionInput<'input, 'base>
     /// The edited program.
     layout: &'input Layout,
     /// The answers of the items passed so far.
-    supplied: &'input [Answer],
+    supplied: &'input Supplied<'input>,
     /// The item's ordinal.
     ordinal: ItemOrdinal,
     /// The closed value-changed set.
@@ -1932,23 +2473,23 @@ struct AdoptionInput<'input, 'base>
 /// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
 /// - witness: `tests::native_formers::a_path_product_resumes_to_its_native_path`
 #[spec(
-    requires: input.supplied.len() == usize::from(input.ordinal),
+    requires: input.supplied.next() == input.ordinal,
     ensures: |ret| {
         let transparent = input.item.content.opacity() == Opacity::Transparent;
-        let derived = matches!(input.candidate.checkpoint.typing, Typing::Checked { .. } | Typing::Synthesised { .. })
+        let derived = matches!(*input.candidate.checkpoint.typing(), Typing::Checked { .. } | Typing::Synthesised { .. })
             && matches!(*input.declaration.content(), gandr_core_checker::DeclarationContent::Value { body: Maybe::Present(held), .. }
                 if matches!(context.arena().value(held), Some(gandr_core_term::Value::Ua { .. } | gandr_core_term::Value::PathProduct(..))));
         let supported =
-            support_holds(input, &input.candidate.checkpoint.support) == Standing::Stands;
-        let untouched = touches(input, &input.candidate.checkpoint.support) == Standing::Stands;
+            support_holds(input, input.candidate.checkpoint.support()) == Standing::Stands;
+        let untouched = touches(input, input.candidate.checkpoint.support()) == Standing::Stands;
         match ret {
             | Maybe::Present((ref support, ref typing, _)) => {
                 transparent
                     && supported
                     && untouched
                     && !derived
-                    && support == &input.candidate.checkpoint.support
-                    && typing == &input.candidate.checkpoint.typing
+                    && support.as_slice() == input.candidate.checkpoint.support()
+                    && typing == input.candidate.checkpoint.typing()
             },
             | Maybe::Absent(reason) => {
                 reason
@@ -1980,10 +2521,10 @@ fn adopt(
     if input.item.content.opacity() == Opacity::Opaque {
         return Maybe::Absent(recall::Absent::Opaque);
     }
-    if support_holds(input, &checkpoint.support) == Standing::Falls {
+    if support_holds(input, checkpoint.support()) == Standing::Falls {
         return Maybe::Absent(recall::Absent::Outdated);
     }
-    if touches(input, &checkpoint.support) == Standing::Falls {
+    if touches(input, checkpoint.support()) == Standing::Falls {
         return Maybe::Absent(recall::Absent::ValueRead);
     }
     let (signature, body) = match *(input.declaration.content()) {
@@ -1992,7 +2533,7 @@ fn adopt(
             ref body,
         } => (*signature, *body),
         gandr_core_checker::DeclarationContent::Data(ref signature) => {
-            let answer = match checkpoint.typing {
+            let answer = match *checkpoint.typing() {
                 Typing::Data => {
                     if context
                         .adopt_data(
@@ -2030,13 +2571,13 @@ fn adopt(
                 },
             };
             return Maybe::Present((
-                checkpoint.support.clone(),
-                checkpoint.typing.clone(),
+                checkpoint.support().to_vec(),
+                checkpoint.typing().clone(),
                 answer,
             ));
         },
         gandr_core_checker::DeclarationContent::Abstract(sealed) => {
-            match checkpoint.typing {
+            match *checkpoint.typing() {
                 Typing::Data => {
                     if context
                         .adopt_abstract(input.declaration.constant(), sealed)
@@ -2065,8 +2606,8 @@ fn adopt(
                 },
             }
             return Maybe::Present((
-                checkpoint.support.clone(),
-                checkpoint.typing.clone(),
+                checkpoint.support().to_vec(),
+                checkpoint.typing().clone(),
                 Answer::Untyped,
             ));
         },
@@ -2080,7 +2621,7 @@ fn adopt(
     };
     if let Maybe::Present(held) = body
         && matches!(
-            checkpoint.typing,
+            *checkpoint.typing(),
             Typing::Checked { .. } | Typing::Synthesised { .. }
         )
         && matches!(
@@ -2090,12 +2631,12 @@ fn adopt(
     {
         return Maybe::Absent(recall::Absent::Derived);
     }
-    if matches!(checkpoint.typing, Typing::Data) {
+    if matches!(*checkpoint.typing(), Typing::Data) {
         return Maybe::Absent(recall::Absent::Unseated);
     }
     let seat: Maybe<FormedValueType, signature_table::Absent>;
     let answer: Answer;
-    match (signature, &checkpoint.typing) {
+    match (signature, checkpoint.typing()) {
         (Maybe::Present(signature), _) => {
             if let Ok(formed) = form_value_type(context, signature) {
                 seat = Maybe::Present(formed);
@@ -2133,7 +2674,7 @@ fn adopt(
             answer = Answer::Untyped;
         },
     }
-    let unfolds = match (&checkpoint.typing, body) {
+    let unfolds = match (checkpoint.typing(), body) {
         (&(Typing::Checked { .. } | Typing::Synthesised { .. }), Maybe::Present(body)) => {
             Maybe::Present(body)
         },
@@ -2151,8 +2692,8 @@ fn adopt(
         return Maybe::Absent(recall::Absent::Unseated);
     }
     Maybe::Present((
-        checkpoint.support.clone(),
-        checkpoint.typing.clone(),
+        checkpoint.support().to_vec(),
+        checkpoint.typing().clone(),
         answer,
     ))
 }
@@ -2176,7 +2717,7 @@ fn adopt(
 /// - witness: `tests::incremental::body_edit_adopts_the_type_stable_dependent`
 /// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
 #[spec(
-    requires: input.supplied.len() == usize::from(input.ordinal),
+    requires: input.supplied.next() == input.ordinal,
     ensures: |ret| {
         (ret == Standing::Stands)
             == support.iter().all(|answered| {
@@ -2185,7 +2726,7 @@ fn adopt(
                     .references
                     .iter()
                     .take(usize::from(input.ordinal))
-                    .zip(input.supplied)
+                    .zip(input.supplied.iter())
                     .find(|&(reference, _)| *reference == answered.reference)
                     .map(|(_,current)| current).map_or_else(
                         || matches!(answered.answer,Answer::Untyped | Answer::Data(None)),
@@ -2207,9 +2748,7 @@ fn support_holds(
 {
     let holds = support.iter().all(|answered| {
         let current = match input.layout.ordinal_of(&answered.reference) {
-            Maybe::Present(ordinal) if ordinal < input.ordinal => {
-                input.supplied.get(usize::from(ordinal))
-            },
+            Maybe::Present(ordinal) if ordinal < input.ordinal => input.supplied.get(ordinal),
             Maybe::Present(_) | Maybe::Absent(_) => None,
         };
         match answered.answer {
@@ -2451,16 +2990,15 @@ fn answer_of(
     },
 )]
 fn close_value_changes(
-    base: &Checkpoints,
+    base: &[ItemCheckpoint],
     encoded: &[Encoded],
     footprints: &[Footprint],
     census: &mut ResumeCensus,
 ) -> BTreeSet<Reference>
 {
     let before: BTreeMap<&Reference, &ItemContent> = base
-        .items
         .iter()
-        .map(|checkpoint| (checkpoint.content.reference(), &checkpoint.content))
+        .map(|checkpoint| (checkpoint.content().reference(), checkpoint.content()))
         .collect();
     let mut changed: BTreeSet<Reference> = BTreeSet::new();
     let mut worklist: Vec<Reference> = Vec::new();

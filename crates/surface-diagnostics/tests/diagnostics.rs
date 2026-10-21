@@ -934,9 +934,14 @@ fn a_document_judged_after_its_closure_spells_as_the_whole_unit_776()
         CorpusRoot::Strict,
     )
     .expect("the closure lowers to its end");
-    let (lowering, checking) =
-        lower_onto_closure(&judged, parsed(), &unit, &mut LoweringCount::default())
-            .expect("the document lowers");
+    let (lowering, checking) = lower_onto_closure(
+        &judged,
+        judged.arena(),
+        parsed(),
+        &unit,
+        &mut LoweringCount::default(),
+    )
+    .expect("the document lowers");
     assert!(
         matches!(checking, Checking::After(_)),
         "the document is judged after its closure"

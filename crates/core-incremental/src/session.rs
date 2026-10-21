@@ -1,18 +1,19 @@
 //! A session: one call per revision that resumes, persists and streams.
 
+use alloc::sync::Arc;
 use core::fmt;
 
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use quenchant_shape::shape::Maybe;
 
-use crate::checkpoint::Checkpoints;
+use crate::checkpoint::Leading;
 use crate::checkpoint::Resume;
 use crate::checkpoint::ResumeCensus;
 use crate::checkpoint::ResumeError;
 use crate::checkpoint::check_program;
 use crate::checkpoint::resume;
-use crate::checkpoint::resume_from;
+use crate::checkpoint::resume_after;
 use crate::persistence::BackendArtifact;
 use crate::persistence::CheckpointObserver;
 use crate::persistence::CheckpointStore;
@@ -231,16 +232,14 @@ impl<Store> IncrementalSession<Store>
         self.persisted(program, next, observer)
     }
 
-    /// [`submit`](Self::submit), a session with nothing submitted resuming
-    /// from `seed`, the checkpoints of a program the revision may extend,
-    /// rather than judging the revision whole.
+    /// [`submit`](Self::submit) of a revision laid after `leading`, the state
+    /// [`lead`](crate::lead) left over a program the revision lays first: only
+    /// the items after that program's are judged or adopted.
     ///
     /// # Specification
-    /// - requires: nothing — `seed` may be any checkpoint set.
-    /// - ensures: as [`submit`](Self::submit), the pass of a session holding no
-    ///   resume being [`resume_from`] over `seed`: an item of the revision
-    ///   whose content and support a checkpoint of `seed` records is adopted,
-    ///   and every other judged.
+    /// - requires: as [`resume_after`].
+    /// - ensures: as [`submit`](Self::submit), the pass being [`resume_after`]
+    ///   from the resume the session holds, if any, after `leading`.
     /// - fails: as [`submit`](Self::submit).
     /// - panics: none.
     ///
@@ -248,10 +247,9 @@ impl<Store> IncrementalSession<Store>
     /// As [`submit`](Self::submit).
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a session seeded with the checkpoints of a program
-    ///   the revision extends adopts that program's items and judges the
-    ///   revision's own, answering what a whole judgement answers.
-    /// - witness: `session::tests::a_seeded_session_adopts_the_seed_s_items_and_judges_the_rest_776`
+    /// - hypothesis: L3 — a session's revisions after one leading state judge
+    ///   only their own items, each resumed from the one before.
+    /// - witness: `session::tests::a_session_after_a_leading_state_resumes_its_own_items_776`
     #[spec(ensures: |ret| match ret {
         | Ok(census) => {
             matches!(self.last, Maybe::Present(ref latest) if latest.census() == census && latest.checkpoints().items().len() == program.items().len())
@@ -264,10 +262,10 @@ impl<Store> IncrementalSession<Store>
         },
     })]
     #[inline]
-    pub fn submit_seeded<Observer>(
+    pub fn submit_after<Observer>(
         &mut self,
         program: &mut Program,
-        seed: &Checkpoints,
+        leading: &Arc<Leading>,
         observer: &mut Observer,
     ) -> Result<ResumeCensus, SessionError>
     where
@@ -275,11 +273,7 @@ impl<Store> IncrementalSession<Store>
         Observer: CheckpointObserver,
     {
         let previous = core::mem::replace(&mut self.last, Maybe::Absent(submitted::Absent::Fresh));
-        let next = match previous {
-            Maybe::Present(base) => resume(base, program),
-            Maybe::Absent(_) => resume_from(seed, program),
-        }
-        .map_err(SessionError::Resume)?;
+        let next = resume_after(previous, leading, program).map_err(SessionError::Resume)?;
         self.persisted(program, next, observer)
     }
 

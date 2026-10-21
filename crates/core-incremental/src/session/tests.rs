@@ -1,18 +1,23 @@
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::signature;
 use gandr_core_term::CoreArena;
 use quenchant_shape::shape::Maybe;
 
 use super::IncrementalSession;
 use crate::boundary::ItemCount;
-use crate::checkpoint::Checkpoints;
 use crate::checkpoint::Resume;
+use crate::checkpoint::lead;
 use crate::fixture::Digits;
 use crate::fixture::Key;
 use crate::fixture::Label;
+use crate::fixture::Position;
 use crate::fixture::Scratch;
+use crate::fixture::declaration;
+use crate::fixture::integer;
 use crate::fixture::integers;
 use crate::persistence::BackendArtifact;
 use crate::persistence::CheckpointObserver;
@@ -20,6 +25,8 @@ use crate::persistence::FileCheckpointStore;
 use crate::persistence::MemoryCheckpointStore;
 use crate::persistence::address_of;
 use crate::persistence::restore;
+use crate::region::Item;
+use crate::region::ItemKey;
 use crate::region::Program;
 use crate::stream::SynthesisEvent;
 
@@ -118,12 +125,11 @@ fn separately_reopened_file_session_resumes_supported_checkpoint()
     );
 }
 
-/// #776: a session with nothing submitted, seeded with the checkpoints of a
-/// program its revision extends, adopts that program's items and judges its
-/// own, recording what a whole judgement records; once it holds a resume it
-/// resumes from that, whatever the seed.
+/// #776: a session's revisions laid after one leading state judge only their
+/// own items, each resumed from the one before, and record what a whole
+/// judgement records.
 #[test]
-fn a_seeded_session_adopts_the_seed_s_items_and_judges_the_rest_776()
+fn a_session_after_a_leading_state_resumes_its_own_items_776()
 {
     let fresh = || {
         IncrementalSession::new(
@@ -132,62 +138,66 @@ fn a_seeded_session_adopts_the_seed_s_items_and_judges_the_rest_776()
             CheckBudget::DEFAULT,
         )
     };
+    let mut leading_program = integers(CoreArena::new(), &[
+        (Key("one"), Digits("1")),
+        (Key("two"), Digits("2")),
+    ]);
+    let (_, leading) = lead(&mut leading_program, CheckBudget::DEFAULT).expect("the order builds");
+    let leading = Arc::new(leading);
     let extended = || {
-        integers(CoreArena::new(), &[
-            (Key("one"), Digits("1")),
-            (Key("two"), Digits("2")),
-            (Key("three"), Digits("3")),
-        ])
+        let mut arena = leading_program.arena().clone();
+        let three = arena.value_literal(integer(Digits("3")));
+        let mut items = leading_program.items().to_vec();
+        items.push(Item::new(
+            ItemKey::from("three"),
+            declaration(
+                Position(2),
+                Maybe::Absent(signature::Absent::Unsigned),
+                Maybe::Present(three),
+            ),
+        ));
+        Program::new(arena, items).expect("positions ascend")
     };
-    let mut leading = fresh();
-    let _judged = leading
+    let mut session = fresh();
+    let census = session
+        .submit_after(&mut extended(), &leading, &mut Quiet)
+        .expect("the revision submits");
+    assert_eq!(
+        (census.adopted, census.judged),
+        (ItemCount::from(2_usize), ItemCount::from(1_usize)),
+        "the leading items are the state's and the revision's own is judged"
+    );
+    let again = session
+        .submit_after(&mut extended(), &leading, &mut Quiet)
+        .expect("the revision submits again");
+    assert_eq!(
+        (again.adopted, again.judged, again.recalled),
+        (
+            ItemCount::from(3_usize),
+            ItemCount::from(0_usize),
+            ItemCount::from(1_usize)
+        ),
+        "the next revision resumes from the one before, recalling only its own item"
+    );
+    let mut whole = fresh();
+    let _whole = whole
         .submit(
             &mut integers(CoreArena::new(), &[
                 (Key("one"), Digits("1")),
                 (Key("two"), Digits("2")),
+                (Key("three"), Digits("3")),
             ]),
             &mut Quiet,
         )
-        .expect("the leading program submits");
-    let Maybe::Present(held) = leading.last()
-    else {
-        panic!("a submitted session holds its resume");
-    };
-    let seed = held.checkpoints().clone();
-    let mut seeded = fresh();
-    let census = seeded
-        .submit_seeded(&mut extended(), &seed, &mut Quiet)
-        .expect("the seeded revision submits");
-    assert_eq!(
-        (census.adopted, census.judged),
-        (ItemCount::from(2_usize), ItemCount::from(1_usize)),
-        "the seed's items are adopted and the revision's own judged"
-    );
-    let mut whole = fresh();
-    let _whole = whole
-        .submit(&mut extended(), &mut Quiet)
         .expect("the whole revision submits");
-    let (Maybe::Present(seeded_resume), Maybe::Present(whole_resume)) =
-        (seeded.last(), whole.last())
+    let (Maybe::Present(after), Maybe::Present(whole_resume)) = (session.last(), whole.last())
     else {
         panic!("both sessions hold a resume");
     };
     assert_eq!(
-        seeded_resume.checkpoints(),
+        after.checkpoints(),
         whole_resume.checkpoints(),
         "to the checkpoints a whole judgement records"
-    );
-    let again = seeded
-        .submit_seeded(
-            &mut extended(),
-            &Checkpoints::new(CheckBudget::DEFAULT, Vec::new()),
-            &mut Quiet,
-        )
-        .expect("the revision submits again");
-    assert_eq!(
-        (again.adopted, again.judged),
-        (ItemCount::from(3_usize), ItemCount::from(0_usize)),
-        "a session holding a resume resumes from it, whatever the seed"
     );
 }
 

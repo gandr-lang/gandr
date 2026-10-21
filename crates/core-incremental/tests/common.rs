@@ -249,11 +249,70 @@ pub fn integer(value: Natural) -> Literal
 )]
 pub fn lower(statements: &[Stmt]) -> Program
 {
-    let mut arena = CoreArena::new();
+    lower_onto(CoreArena::new(), Vec::new(), statements)
+}
+
+/// The program `statements` lower to after `leading`, whose items they begin
+/// with: `leading`'s items and arena as they are, every node a pass over it
+/// minted included, and the statements after them lowered into that arena.
+///
+/// # Specification
+/// - requires: `statements` begin with the statements `leading` lowered from,
+///   and no statement of `leading` names an unbound statement.
+/// - ensures: one item per statement, `leading`'s first and unchanged.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a revision lowered after its leading program resumes from
+///   that program's leading state, answering what its whole pass does.
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+#[spec(
+    requires: leading.items().len() <= statements.len(),
+    ensures: |ret| ret.items().len() == statements.len()
+        && ret.items().get(.. leading.items().len()) == Some(leading.items()),
+)]
+pub fn lower_after(
+    leading: &Program,
+    statements: &[Stmt],
+) -> Program
+{
+    lower_onto(
+        leading.arena().clone(),
+        leading.items().to_vec(),
+        statements,
+    )
+}
+
+/// [`lower`] into `arena` after `items`, the statements' leading ones already
+/// lowered: their names are in scope, and every later statement is lowered.
+///
+/// # Specification
+/// - requires: `items` are the leading statements' lowering, into `arena`.
+/// - ensures: `items`, then one item per later statement, lowered as [`lower`]
+///   lowers it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`lower`] and [`lower_after`].
+/// - witness: `tests::common::lowering_handles_numeric_and_binding_boundaries`
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+#[spec(
+    requires: items.len() <= statements.len(),
+    ensures: |ret| ret.items().len() == statements.len(),
+)]
+fn lower_onto(
+    mut arena: CoreArena,
+    mut items: Vec<Item>,
+    statements: &[Stmt],
+) -> Program
+{
+    let held = items.len();
     let mut scope: BTreeMap<&str, usize> = BTreeMap::new();
     let unbound = ConstantIndex::from(statements.len());
-    let mut items = Vec::with_capacity(statements.len());
+    items.reserve(statements.len().saturating_sub(held));
     for (position, statement) in statements.iter().enumerate() {
+        if position < held {
+            let _shadowed = scope.insert(&statement.name, position);
+            continue;
+        }
         let resolve = |name: &str| {
             scope
                 .get(name)

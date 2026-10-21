@@ -950,8 +950,13 @@ impl TypeTable
     ) -> Result<Self, ComposeFault<'held>>
     {
         let source = parsed.tree().source();
-        let (lowering, checking) =
-            lower_onto_closure(judged, parsed, unit, &mut LoweringCount::default())?;
+        let (lowering, checking) = lower_onto_closure(
+            judged,
+            judged.arena(),
+            parsed,
+            unit,
+            &mut LoweringCount::default(),
+        )?;
         Ok(Self::typed(source, lowering, checking, unit, base))
     }
 

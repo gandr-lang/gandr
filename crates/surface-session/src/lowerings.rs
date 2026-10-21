@@ -10,8 +10,10 @@
 //! ([`ClosureLowering::resume`](gandr_surface_lowering::ClosureLowering::resume)).
 //! The closure's own declarations are judged, focused, settled and spelled
 //! once per corpus root, the first time a document laid after it is judged
-//! under that root ([`JudgedClosure`]), and every revision is lowered after
-//! that judgement's arena and judged on a copy of its state. A closure a
+//! under that root ([`JudgedClosure`]), and the incremental pass over their
+//! items is run once beside it ([`Led`]). Every revision is lowered after the
+//! arena that pass left and judged on a copy of the closure's state, and the
+//! incremental pass over it starts after the closure's items. A closure a
 //! document cannot be laid after
 //! ([`Unheld`](gandr_surface_dispatcher::Unheld)) is held as such, so its
 //! documents are lowered whole without the closure being parsed again. Every
@@ -28,7 +30,10 @@ use std::sync::OnceLock;
 use std::sync::PoisonError;
 
 use anodized::spec;
-use gandr_core_incremental::Checkpoints;
+use gandr_core_checker::CheckBudget;
+use gandr_core_incremental::Leading;
+use gandr_core_incremental::lead;
+use gandr_core_term::CoreArena;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::JudgedClosure;
@@ -38,6 +43,7 @@ use gandr_surface_syntax::GrammarFingerprint;
 use gandr_surface_syntax::SourceText;
 
 use crate::edit::Snapshot;
+use crate::item_source::program;
 
 /// The most closures [`LOWERINGS`] holds before it lets the one asked for
 /// longest ago go: the closures of the few documents an editor has open.
@@ -56,9 +62,10 @@ pub enum Held
     Whole,
 }
 
-/// A closure's lowering, with its own declarations' judgement under each root
-/// once a document laid after it asks for it, and the checkpoints and the
-/// snapshot images of its declarations' items once a submission has made them.
+/// A closure's lowering, with its own declarations' judgement and the
+/// incremental pass's state after their items, each under each root once a
+/// document laid after it asks for it, and the snapshot images of their items
+/// once a submission has made them.
 ///
 /// # Specification
 /// trivial.
@@ -67,18 +74,104 @@ pub struct Closure
 {
     /// The closure's lowering.
     lowering: Arc<ClosureLowering>,
-    /// Its own declarations judged under the unbounded grant a session judges
-    /// under and settled under the strict root, made the first time it is
-    /// asked for.
-    strict: OnceLock<Option<JudgedClosure>>,
-    /// The same, settled under the fixture root.
-    fixture: OnceLock<Option<JudgedClosure>>,
-    /// The checkpoints of the items its declarations lead a submitted program
-    /// with, kept by the first submission that judged them.
-    checkpoints: OnceLock<Checkpoints>,
+    /// What is made of it under the strict root.
+    strict: Rooted,
+    /// What is made of it under the fixture root.
+    fixture: Rooted,
     /// The snapshot of the items its declarations lead a submitted program
     /// with, kept by the first submission that read them.
     snapshot: OnceLock<Snapshot>,
+}
+
+/// What is made of a closure's own declarations under one root, each the
+/// first time it is asked for.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+struct Rooted
+{
+    /// The declarations judged under the unbounded grant a session judges
+    /// under and settled under the root.
+    judged: OnceLock<Option<JudgedClosure>>,
+    /// The incremental pass's state after their items.
+    led: OnceLock<Option<Led>>,
+}
+
+/// The incremental pass's state after a closure's items, and the arena the
+/// pass left.
+///
+/// A document laid after the closure is lowered onto that arena, so that the
+/// pass over each of its revisions starts after the closure's items.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+pub struct Led
+{
+    /// The closure's judged arena, the pass's nodes minted after it.
+    arena: CoreArena,
+    /// The pass's state after the closure's items.
+    leading: Arc<Leading>,
+}
+
+impl Led
+{
+    /// The incremental pass's state after the items of `judged`'s closure's
+    /// declarations, and the arena it left: `None` when the closure's lowering
+    /// has no module or its items cannot be ordered.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`lead`] over the program of the closure's own module
+    ///   ([`ClosureLowering::alone`]) on a copy of `judged`'s arena
+    ///   ([`JudgedClosure::arena`]), under the default allowance a session
+    ///   judges under, beside the arena the pass left.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause names a pass over a program no argument
+    ///   carries; the session's witness submits a document after it and
+    ///   compares with a fresh judgement on a fresh state.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a document laid after the closure, submitted after
+    ///   this state, judges only its own items and composes as a fresh
+    ///   judgement lowered onto a fresh state's arena does.
+    /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
+    #[inline]
+    #[must_use]
+    pub fn of(judged: &JudgedClosure) -> Option<Self>
+    {
+        let (module, _) = judged.lowering().alone()?;
+        let mut items = program(&module, judged.arena().clone()).ok()?;
+        let (_, leading) = lead(&mut items, CheckBudget::DEFAULT).ok()?;
+        Some(Self {
+            arena: items.arena().clone(),
+            leading: Arc::new(leading),
+        })
+    }
+
+    /// The arena a document laid after the closure is lowered onto.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn arena(&self) -> &CoreArena
+    {
+        &self.arena
+    }
+
+    /// The pass's state after the closure's items.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn leading(&self) -> &Arc<Leading>
+    {
+        &self.leading
+    }
 }
 
 impl Closure
@@ -92,9 +185,8 @@ impl Closure
     {
         Self {
             lowering: Arc::new(lowering),
-            strict: OnceLock::new(),
-            fixture: OnceLock::new(),
-            checkpoints: OnceLock::new(),
+            strict: Rooted::default(),
+            fixture: Rooted::default(),
             snapshot: OnceLock::new(),
         }
     }
@@ -107,6 +199,21 @@ impl Closure
     pub fn lowering(&self) -> &ClosureLowering
     {
         &self.lowering
+    }
+
+    /// What is made of the closure under `root`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn rooted(
+        &self,
+        root: CorpusRoot,
+    ) -> &Rooted
+    {
+        match root {
+            CorpusRoot::Strict => &self.strict,
+            CorpusRoot::Fixture => &self.fixture,
+        }
     }
 
     /// The closure's own declarations judged under
@@ -134,49 +241,40 @@ impl Closure
         root: CorpusRoot,
     ) -> Option<&JudgedClosure>
     {
-        let slot = match root {
-            CorpusRoot::Strict => &self.strict,
-            CorpusRoot::Fixture => &self.fixture,
-        };
-        slot.get_or_init(|| {
-            JudgedClosure::new(Arc::clone(&self.lowering), &HostGrant::UNBOUNDED, root)
-        })
-        .as_ref()
+        self.rooted(root)
+            .judged
+            .get_or_init(|| {
+                JudgedClosure::new(Arc::clone(&self.lowering), &HostGrant::UNBOUNDED, root)
+            })
+            .as_ref()
     }
 
-    /// The checkpoints of the items the closure's declarations lead a
-    /// submitted program with, once a submission has kept them.
+    /// The incremental pass's state after the closure's declarations' items,
+    /// beside the judgement under `root`, made the first time any session
+    /// asks under `root`: `None` when there is no judgement under `root` or
+    /// [`Led::of`] it is `None`.
     ///
     /// # Specification
-    /// trivial.
-    #[must_use]
-    pub fn checkpoints(&self) -> Option<&Checkpoints>
-    {
-        self.checkpoints.get()
-    }
-
-    /// Keep `checkpoints` as the closure's items' checkpoints, unless a
-    /// submission kept them before.
-    ///
-    /// # Specification
-    /// - requires: `checkpoints` are a submission's checkpoints of the items
-    ///   the closure's declarations lead its program with.
-    /// - ensures: the closure holds checkpoints, the first kept.
+    /// - requires: nothing.
+    /// - ensures: [`Led::of`] the judgement [`judged`](Self::judged) gives
+    ///   under `root`, the same answer on every call under `root`.
     /// - fails: never.
     /// - panics: none.
+    /// - executable: none — the clause names a pass the first call alone makes;
+    ///   the session's witness submits a document after it twice.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a second session's first submission over a document
-    ///   laid after the closure adopts the closure's items.
+    /// - hypothesis: L3 — as [`Led::of`].
     /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
-    #[spec(ensures: self.checkpoints.get().is_some())]
-    pub fn keep_checkpoints<Make>(
+    pub fn led(
         &self,
-        checkpoints: Make,
-    ) where
-        Make: FnOnce() -> Checkpoints,
+        root: CorpusRoot,
+    ) -> Option<&Led>
     {
-        let _kept = self.checkpoints.get_or_init(checkpoints);
+        self.rooted(root)
+            .led
+            .get_or_init(|| self.judged(root).and_then(Led::of))
+            .as_ref()
     }
 
     /// The snapshot of the items the closure's declarations lead a submitted
