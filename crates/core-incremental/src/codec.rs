@@ -1489,6 +1489,10 @@ where
                     writer.tag(Tag(3));
                     slot(writer, view);
                 },
+                MemoryForm::Consume { held } => {
+                    writer.tag(Tag(8));
+                    slot(writer, held);
+                },
             }
         },
         ContentNode::SessionRelated {
@@ -3746,6 +3750,9 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 },
                 3 => MemoryForm::Abort {
                     view: slot(reader)?,
+                },
+                8 => MemoryForm::Consume {
+                    held: slot(reader)?,
                 },
                 _ => return Err(CodecError::Corrupt),
             })
@@ -6631,6 +6638,7 @@ where
                 AccessDefect::Moved => (12, None),
                 AccessDefect::Kept => (13, None),
                 AccessDefect::KeptEscaped => (14, None),
+                AccessDefect::Consumed => (15, None),
             };
             writer.tag(Tag(kind));
             if let Some(by) = by {
@@ -7146,6 +7154,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 12 => AccessDefect::Moved,
                 13 => AccessDefect::Kept,
                 14 => AccessDefect::KeptEscaped,
+                15 => AccessDefect::Consumed,
                 _ => return Err(CodecError::NonCanonical),
             };
             Refusal::Access { at, defect }

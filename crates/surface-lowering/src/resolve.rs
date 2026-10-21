@@ -294,6 +294,54 @@ impl fmt::Display for OperandCount
     }
 }
 
+/// A number of candidates a name could resolve to, past those a refusal
+/// names.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CandidateCount(usize);
+
+impl From<usize> for CandidateCount
+{
+    /// The count `count`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: usize) -> Self
+    {
+        Self(count)
+    }
+}
+
+impl From<CandidateCount> for usize
+{
+    /// The number `count` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: CandidateCount) -> Self
+    {
+        count.0
+    }
+}
+
+impl fmt::Display for CandidateCount
+{
+    /// Writes the count in decimal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
+
 /// How many arguments a type head was written with.
 ///
 /// The tables are indexed by this, so a head that answers at one arity and

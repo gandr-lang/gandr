@@ -5803,7 +5803,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             )
             | Computation::Memory(
                 gandr_core_term::memory::MemoryForm::Resume { .. }
-                | gandr_core_term::memory::MemoryForm::Abort { .. },
+                | gandr_core_term::memory::MemoryForm::Abort { .. }
+                | gandr_core_term::memory::MemoryForm::Consume { .. },
             ) => {
                 self.wait(Frame::CompBridge { at: term, expected });
                 Ok(Step::Descend(Goal::Computation {

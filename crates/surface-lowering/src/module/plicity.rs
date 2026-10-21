@@ -350,9 +350,16 @@ impl<'source> Collector<'_, 'source>
         }
         while let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER) {
             let declared = match cursor.tile(TileName::COLON) {
-                Maybe::Present(_) => match cursor.read() {
-                    Maybe::Present(Piece::Operand(typed)) => Maybe::Present(typed),
-                    Maybe::Present(Piece::Tile { .. }) | Maybe::Absent(_) => return Ok(none),
+                Maybe::Present(_) => {
+                    // A receiver's mode word: the receivers table keeps it, and
+                    // the function's lowering refuses one off a receiver.
+                    if let Maybe::Absent(_) = cursor.tile(TileName::SHARED) {
+                        let _consumed = cursor.tile(TileName::CONSUMED);
+                    }
+                    match cursor.read() {
+                        Maybe::Present(Piece::Operand(typed)) => Maybe::Present(typed),
+                        Maybe::Present(Piece::Tile { .. }) | Maybe::Absent(_) => return Ok(none),
+                    }
                 },
                 Maybe::Absent(_) => Maybe::Absent(unstated::Absent::Unwritten),
             };

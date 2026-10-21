@@ -583,6 +583,9 @@ impl TileName
     /// The mode word `exclusive` of a temporary access, the mode an access
     /// with no word has.
     pub const EXCLUSIVE: Self = Self("exclusive");
+    /// The mode word `consumed` of a method's receiver, which the call gives
+    /// up.
+    pub const CONSUMED: Self = Self("consumed");
     /// The keyword `val`, opening a statement.
     pub const VAL: Self = Self("val");
     /// The match keyword `case`.

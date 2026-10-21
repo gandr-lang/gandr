@@ -1,6 +1,6 @@
 //! Temporary access in the judgement: a held value, the access that lends
-//! it to a view in a mode, the view's two eliminators, and the refusals that
-//! name them.
+//! it to a view in a mode, the view's two eliminators, the hold's end at a
+//! consuming read, and the refusals that name them.
 //!
 //! # Temporary access is a yield-once accessor
 //!
@@ -33,6 +33,7 @@
 //! |access at a place|`access x[i] as w { t } unwind { u }`, `access shared x[i] as w { t }`|`A` is `List E`; `i` checks against the integer type; `x` is lent in the mode; `t` runs with `w`, a slot of `Σ` at `E`|
 //! |resume|`resume(w, v)`|`w` is exclusive; `v` checks against `A`; `w` is spent; synthesises `F 1`|
 //! |abort|`abort(w)`|`w` is exclusive; `w` is spent; synthesises `F 1`|
+//! |consume|`s.f(a)`, `f`'s receiver consumed|`x` is held, not lent and not kept; its value moves out; synthesises `F A`|
 //!
 //! The rules run as frames of the judgement's one machine:
 //!
@@ -141,6 +142,19 @@
 //! same way, so no cancellation reaches an unwind already running. An unwind
 //! may read `x`: the machine restores the value `x` held before it runs.
 //!
+//! # The hold's end at a consuming read
+//!
+//! A method whose receiver is consumed takes the held value itself, so the
+//! call ends the caller's hold: the consume form moves the value out of `x`
+//! and answers it, and `x` is spent for the rest of its scope. A read, an
+//! access or a second consume of `x` after it is [`AccessDefect::Consumed`],
+//! and so is a branch that consumes `x` beside one that does not, since the
+//! rest of the scope could read it on one path alone. The consume is the
+//! exclusive lending's in what it excludes: a slot lent in either mode, or
+//! one a region keeps a shared view of, is [`AccessDefect::Lent`] or
+//! [`AccessDefect::Kept`]. The hold's own end closes the spent slot as it
+//! closes a live one.
+//!
 //! # Spelling
 //!
 //! `hold x = e;` binds the held value at grade `ω` and `hold[1] x = e;` at
@@ -234,4 +248,7 @@ pub enum AccessDefect
     /// names a value kept in the scope's own region or a deeper one, or a
     /// thunk or a stack kept in no region as deep names one.
     KeptEscaped,
+    /// A held slot is read, accessed or consumed after a consuming read
+    /// ended its hold, or consumed on one branch and not on another.
+    Consumed,
 }

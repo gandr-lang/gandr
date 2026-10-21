@@ -439,7 +439,7 @@ enum Kind
         | Former::Scope { .. } | Former::Resume(..) | Former::Abandon(_) | Former::Reset(_) | Former::Shift(_) | Former::Lazy(..) | Former::Ascription { .. }
         | Former::Project(..) | Former::Send { .. } | Former::Receive { .. } | Former::Place { .. } | Former::Select { .. } | Former::Offer { .. }
         | Former::Close(_) | Former::Fork { .. } | Former::Hold { .. } | Former::Access { .. } | Former::ResumeView { .. }
-        | Former::AbortView(_) | Former::WorldHold(_) | Former::Leta { .. } | Former::Migrate { .. }),
+        | Former::AbortView(_) | Former::ConsumeHeld(_) | Former::WorldHold(_) | Former::Leta { .. } | Former::Migrate { .. }),
     | Kind::Unknown => matches!(*former, Former::Unreadable(_)),
 })]
 const fn kind<Node>(former: &Former<'_, Node>) -> Kind
@@ -551,6 +551,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Access { .. }
         | Former::ResumeView { .. }
         | Former::AbortView(_)
+        | Former::ConsumeHeld(_)
         | Former::WorldHold(_)
         | Former::Leta { .. }
         | Former::Migrate { .. } => Kind::Computation,
@@ -1033,7 +1034,7 @@ where
     },
     | Former::BaseType(_) | Former::BufferType | Former::Universe { .. } | Former::Abstract(_) | Former::Capability { .. }
         | Former::Variable { .. } | Former::Constant(_) | Former::Unit | Former::ListNil | Former::Literal(_)
-        | Former::Reify | Former::Select { .. } | Former::Close(_) | Former::AbortView(_) | Former::Unreadable(_) => ret.is_empty(),
+        | Former::Reify | Former::Select { .. } | Former::Close(_) | Former::AbortView(_) | Former::ConsumeHeld(_) | Former::Unreadable(_) => ret.is_empty(),
     | _ => !ret.is_empty(),
 })]
 fn slots<S>(
@@ -1466,6 +1467,7 @@ where
         | Former::Select { .. }
         | Former::Close(_)
         | Former::AbortView(_)
+        | Former::ConsumeHeld(_)
         | Former::Unreadable(_) => Vec::new(),
     }
 }
@@ -5150,6 +5152,7 @@ impl Walk<'_, '_>
                 | Former::Access { .. }
                 | Former::ResumeView { .. }
                 | Former::AbortView(_)
+                | Former::ConsumeHeld(_)
                 | Former::Located { .. }
                 | Former::Kept { .. }
                 | Former::WorldHold(_)
@@ -6102,6 +6105,7 @@ impl Walk<'_, '_>
             | Former::Access { .. }
             | Former::ResumeView { .. }
             | Former::AbortView(_)
+            | Former::ConsumeHeld(_)
             | Former::Located { .. }
             | Former::Kept { .. }
             | Former::WorldHold(_)
@@ -8252,6 +8256,11 @@ impl Walk<'_, '_>
             Former::AbortView(view) => {
                 let _ = parts.text("abort(").part(Part::Endpoint(view)).text(")");
                 writes(Production("abort_expression"), Binding::Atom)
+            },
+            Former::ConsumeHeld(held) => {
+                self.note(Unspelled::Notation(Notation::Consume));
+                let _ = parts.text("consume(").part(Part::Endpoint(held)).text(")");
+                writes(Production("call_expression"), Binding::Atom)
             },
             // `A at w` binds as loosely as a word's cons, so a bridge over it
             // parenthesizes it and it parenthesizes any operand but an atom.

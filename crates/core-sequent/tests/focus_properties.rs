@@ -406,6 +406,7 @@ fn walked(
                     }
                     match *form {
                         MemoryForm::Access { held: index, .. }
+                        | MemoryForm::Consume { held: index }
                         | MemoryForm::Resume { view: index, .. }
                         | MemoryForm::Abort { view: index } => {
                             if let Some(past) = u32::from(index).checked_sub(depth.linears) {

@@ -118,6 +118,7 @@ use crate::form::FormName;
 use crate::form::Repair;
 use crate::import::ONE_SOURCE;
 use crate::lower::LoweringBudget;
+use crate::resolve::CandidateCount;
 use crate::resolve::HeadArity;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
@@ -1052,6 +1053,33 @@ pub enum LoweringRefusal<'source>
         name: SurfaceName<'source>,
     },
 
+    /// A receiver's mode word, `shared` or `consumed`, written on a parameter
+    /// that is no method's receiver: only a module member's first parameter,
+    /// `self`, takes one.
+    StrayReceiverMode
+    {
+        /// The bytes of the mode word.
+        span: ByteSpan,
+        /// The mode word as written.
+        mode: SurfaceName<'source>,
+    },
+
+    /// A call `s.f(…)` whose `f` is a method of more than one module in
+    /// scope.
+    AmbiguousMethod
+    {
+        /// The bytes of the method's name at the call.
+        span: ByteSpan,
+        /// The method's name.
+        method: SurfaceName<'source>,
+        /// The first module declaring it, in collection order.
+        first: SurfaceName<'source>,
+        /// The second module declaring it.
+        second: SurfaceName<'source>,
+        /// How many more modules declare it.
+        more: CandidateCount,
+    },
+
     /// A match some scrutinee reaches no arm of: a constructor, or an integer
     /// or boolean value, that every arm's pattern refuses.
     NonExhaustiveMatch
@@ -1421,6 +1449,33 @@ impl fmt::Display for LoweringRefusal<'_>
                 "`{name}` binds a region, which is no value: it is read only where a type keeps a \
                  value in it, `A at {name}`"
             ),
+            Self::StrayReceiverMode { mode, .. } => write!(
+                f,
+                "`{mode}` is a receiver's mode: only a module member's first parameter, `self`, \
+                 is written with it"
+            ),
+            Self::AmbiguousMethod {
+                method,
+                first,
+                second,
+                more,
+                ..
+            } => {
+                if usize::from(more) == 0_usize {
+                    write!(
+                        f,
+                        "`{method}` is a method of both `{first}` and `{second}`, and a call \
+                         selects exactly one"
+                    )
+                }
+                else {
+                    write!(
+                        f,
+                        "`{method}` is a method of `{first}`, `{second}` and {more} more modules, \
+                         and a call selects exactly one"
+                    )
+                }
+            },
             Self::NonExhaustiveMatch { .. } => {
                 f.write_str("the match leaves a value of its scrutinee that no arm matches")
             },
@@ -1591,6 +1646,8 @@ impl LoweringRefusal<'_>
             | Self::ImplicitUnsupplied { span, .. }
             | Self::ImplicitInParentheses { span, .. }
             | Self::RegionAsValue { span, .. }
+            | Self::StrayReceiverMode { span, .. }
+            | Self::AmbiguousMethod { span, .. }
             | Self::NonExhaustiveMatch { span }
             | Self::UnmarkedSelfReference { span, .. }
             | Self::UnguardedCorecursion { span, .. }
@@ -1641,6 +1698,7 @@ mod tests
     use crate::fixture::span;
     use crate::form::FormName;
     use crate::lower::LoweringBudget;
+    use crate::resolve::CandidateCount;
     use crate::resolve::HeadArity;
     use crate::resolve::OperandCount;
     use crate::resolve::SurfaceName;
@@ -1670,7 +1728,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 49_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 51_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -1896,6 +1954,17 @@ mod tests
                 span: s(89_usize, 90_usize),
                 name: SurfaceName::from("r"),
             },
+            LoweringRefusal::StrayReceiverMode {
+                span: s(91_usize, 92_usize),
+                mode: SurfaceName::from("shared"),
+            },
+            LoweringRefusal::AmbiguousMethod {
+                span: s(93_usize, 94_usize),
+                method: SurfaceName::from("len"),
+                first: SurfaceName::from("Str"),
+                second: SurfaceName::from("Bytes"),
+                more: CandidateCount::from(0_usize),
+            },
         ]
     }
 
@@ -1956,6 +2025,8 @@ mod tests
             s(85_usize, 86_usize),
             s(87_usize, 88_usize),
             s(89_usize, 90_usize),
+            s(91_usize, 92_usize),
+            s(93_usize, 94_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

@@ -1889,7 +1889,9 @@ impl Lowering<'_>
     /// it writes back at. A shared access's view of the whole value is the
     /// held cell itself: the held value is frozen for the body, nothing ends
     /// the view, and the body answers to the continuation directly. A shared
-    /// view at a place is a fresh cell holding the element.
+    /// view at a place is a fresh cell holding the element. A consume answers
+    /// the value its held cell holds, read as a read of the slot reads it; the
+    /// checker has spent the slot, so nothing reads the cell after it.
     ///
     /// # Specification
     /// trivial.
@@ -2003,6 +2005,22 @@ impl Lowering<'_>
                 self.tasks.push(Task::Deliver(continuation, scope));
                 self.tasks.push(call);
                 self.tasks.push(PUSH);
+                self.tasks
+                    .push(Task::Emit(StencilId::Var, cell.operand(), Operand::Unused));
+            },
+            MemoryForm::Consume { held } => {
+                let cell = self
+                    .scopes
+                    .slot(scope, Binding::Linear, Index(u32::from(held)))?;
+                let (_, read) = self.bind(scope, Binding::Temporary);
+                self.tasks.push(Task::Deliver(continuation, scope));
+                self.tasks
+                    .push(Task::Emit(StencilId::Var, read.operand(), Operand::Unused));
+                self.tasks.push(Task::Emit(
+                    StencilId::Field,
+                    read.operand(),
+                    Slot(0).operand(),
+                ));
                 self.tasks
                     .push(Task::Emit(StencilId::Var, cell.operand(), Operand::Unused));
             },

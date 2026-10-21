@@ -48,7 +48,7 @@ const COUNTER: &str = r"def counter(n : Integer) -> -F Integer {
 ///
 /// # Specification
 /// trivial.
-fn forms(
+pub(in crate::lower) fn forms(
     arena: &CoreArena,
     tail: ComputationId,
 ) -> Vec<String>
@@ -95,6 +95,7 @@ fn forms(
                     },
                     MemoryForm::Resume { view, .. } => format!("resume @{}", u32::from(view)),
                     MemoryForm::Abort { view } => format!("abort @{}", u32::from(view)),
+                    MemoryForm::Consume { held } => format!("consume @{}", u32::from(held)),
                 });
                 pending.extend(form.computations().rev());
             },

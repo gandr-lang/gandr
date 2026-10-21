@@ -203,6 +203,8 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::ImplicitUnsupplied { .. } => "an implicit left unsupplied",
         LoweringRefusal::ImplicitInParentheses { .. } => "an implicit among the arguments",
         LoweringRefusal::RegionAsValue { .. } => "a region named as a value",
+        LoweringRefusal::StrayReceiverMode { .. } => "a mode off a receiver",
+        LoweringRefusal::AmbiguousMethod { .. } => "a method of several modules",
         LoweringRefusal::NonExhaustiveMatch { .. } => "some value matches no arm",
         LoweringRefusal::UnmarkedSelfReference { .. } => "recursion without a claim",
         LoweringRefusal::UnguardedCorecursion { .. } => "not the whole arm of a copattern",
@@ -360,6 +362,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
             AccessDefect::Moved => "an abort after the value was moved out",
             AccessDefect::Kept => "a write to a value a live region keeps a view of",
             AccessDefect::KeptEscaped => "a value kept in the scope's own region",
+            AccessDefect::Consumed => "a held value a consumed receiver already took",
         },
         CheckRefusal::Codata { fault, .. } => match fault {
             CodataFault::Undeclared => "no codata declaration here",
@@ -413,6 +416,7 @@ mod tests
     use gandr_surface_corpus::Refusal;
     use gandr_surface_lowering::AscriptionForm;
     use gandr_surface_lowering::AttributeSchema;
+    use gandr_surface_lowering::CandidateCount;
     use gandr_surface_lowering::CrossedExit;
     use gandr_surface_lowering::Ending;
     use gandr_surface_lowering::FormFault;
@@ -560,6 +564,8 @@ mod tests
             LoweringRefusal::ImplicitUnsupplied { .. } => "an implicit left unsupplied",
             LoweringRefusal::ImplicitInParentheses { .. } => "an implicit among the arguments",
             LoweringRefusal::RegionAsValue { .. } => "a region named as a value",
+            LoweringRefusal::StrayReceiverMode { .. } => "a mode off a receiver",
+            LoweringRefusal::AmbiguousMethod { .. } => "a method of several modules",
             LoweringRefusal::NonExhaustiveMatch { .. } => "some value matches no arm",
             LoweringRefusal::UnmarkedSelfReference { .. } => "recursion without a claim",
             LoweringRefusal::UnguardedCorecursion { .. } => "not the whole arm of a copattern",
@@ -815,6 +821,17 @@ mod tests
                 implicit: name,
             },
             LoweringRefusal::RegionAsValue { span: at, name },
+            LoweringRefusal::StrayReceiverMode {
+                span: at,
+                mode: name,
+            },
+            LoweringRefusal::AmbiguousMethod {
+                span: at,
+                method: name,
+                first: name,
+                second: name,
+                more: CandidateCount::from(0_usize),
+            },
             LoweringRefusal::NonExhaustiveMatch { span: at },
             LoweringRefusal::UnmarkedSelfReference { span: at, name },
             LoweringRefusal::UnguardedCorecursion { span: at, name },

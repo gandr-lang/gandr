@@ -486,6 +486,7 @@ impl Source for ContentSource<'_>
                 },
                 MemoryForm::Resume { view, value } => Former::ResumeView { view, value },
                 MemoryForm::Abort { view } => Former::AbortView(view),
+                MemoryForm::Consume { held } => Former::ConsumeHeld(held),
             },
             ContentNode::Fixpoint { body, .. } => Former::Fixpoint(body),
             ContentNode::Ride {

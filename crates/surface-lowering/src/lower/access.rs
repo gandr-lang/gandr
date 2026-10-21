@@ -79,7 +79,7 @@ use crate::origin::Origin;
 use crate::resolve::Frame;
 
 #[cfg(test)]
-mod tests;
+pub(in crate::lower) mod tests;
 
 /// A temporary-access form, as the classification read it.
 ///

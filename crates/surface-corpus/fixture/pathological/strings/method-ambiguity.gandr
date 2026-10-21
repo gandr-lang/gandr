@@ -1,0 +1,26 @@
+// A method name two modules declare: a call resolves its name among the
+// methods of every module in scope, and refuses it when more than one module
+// declares it, naming each.
+
+// The lists; the byte lists; the string's methods.
+import "../../model/data/data-base.gandr" ;
+import "../../model/strings/string-base.gandr" ;
+import "../../model/strings/methods.gandr" ;
+
+/// A byte list's methods: its own length.
+module Bytes {
+  /// The number of bytes in the list, read from a list lent for reading.
+  @[ checks ]
+  def len(self : shared List(Integer)) -> -F Integer {
+    become count(self)
+  }
+}
+
+/// A string's length, which both `Str` and `Bytes` declare as `len`: the call
+/// is refused though only `Str`'s receives a string, since the receiver's
+/// type does not yet choose between them (#1470).
+@[ refuses("AmbiguousMethod") ]
+def measured() -> -F Integer {
+  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  s.len()
+}

@@ -930,6 +930,10 @@ pub enum Former<'source, Node>
     },
     /// A view's abort, `abort(w)`.
     AbortView(DeBruijnIndex),
+    /// The hold's end at a consuming read, which no source form writes alone:
+    /// a method call whose receiver is consumed lowers to it. Written
+    /// `consume(s)`.
+    ConsumeHeld(DeBruijnIndex),
     /// A handle at a world, `A at w`.
     Located
     {
@@ -1051,6 +1055,8 @@ pub enum Notation
     /// A path out of an equivalence, written as a call without its
     /// classifier or its replay evidence.
     PathEquiv,
+    /// The hold's end at a consuming read, written `consume(s)`.
+    Consume,
 }
 
 /// A part of a node the presentation leaves out: the text stands for the

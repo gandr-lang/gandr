@@ -1,0 +1,64 @@
+// What a method call may not do: read a string its hold no longer holds,
+// run inside a thunk that may run it other than once, write back to a string
+// no hold holds, lend a string already lent, or take a string on one path of
+// a match alone. A mode word is a receiver's alone.
+
+// The lists; the byte lists; the string's methods.
+import "../../model/data/data-base.gandr" ;
+import "../../model/strings/string-base.gandr" ;
+import "../../model/strings/methods.gandr" ;
+
+/// A string read after it was taken: the take ended its hold.
+@[ refuses("HeldConsumed") ]
+def readAfterTaken() -> -F Integer {
+  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  run bs <- s.bytes();
+  s.len()
+}
+
+/// A read of the held string inside a thunk forced later: the thunk captures
+/// the hold, which it may run other than once.
+@[ refuses("HeldCaptured") ]
+def readInThunk() -> -F Integer {
+  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  run k : () => Integer <- pure thunk { s.len() } ;
+  force k
+}
+
+/// A push onto a string no hold holds: nothing would keep what it writes back.
+@[ refuses("OutOfFragment") ]
+def pushedUnheld(t : Repr) -> -F Unit {
+  t.push(33)
+}
+
+/// A string read while a view of it is live: the access already lends it.
+@[ refuses("HeldLent") ]
+def readWhileLent() -> -F Unit {
+  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  access s as v { run n <- s.len() ; resume(v, v) }
+}
+
+/// A push onto a string a read lends: the push would write the string the
+/// read's view still reads.
+@[ refuses("HeldLent") ]
+def pushedWhileRead() -> -F Integer {
+  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  access shared s as w { s.push(33) ; run bs <- bytes(w) ; count(bs) }
+}
+
+/// A string taken in one arm of a match and kept in the other: the arms do not
+/// yet join into a hold ended after the match (#1488).
+@[ refuses("HeldCaptured") ]
+def takenInOneArm(t : Repr) -> -F List(Integer) {
+  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  case t {
+    Inline(bs) => s.bytes(),
+    Shared(n, bs) => bs
+  }
+}
+
+/// A mode written on a parameter that is no receiver.
+@[ refuses("StrayReceiverMode") ]
+def lent(t : shared Repr) -> -F Integer {
+  pure 0
+}

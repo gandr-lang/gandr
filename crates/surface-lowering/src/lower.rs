@@ -602,6 +602,7 @@ use crate::module::Member;
 use crate::module::Operand;
 use crate::module::ParameterForm;
 use crate::module::Payload;
+use crate::module::ReceiverMode;
 use crate::module::Role;
 use crate::module::SealedComponent;
 use crate::module::Sealing;
@@ -678,6 +679,8 @@ pub use exits::InferredExit;
 mod functor;
 
 mod loops;
+
+mod method;
 
 mod runs;
 
@@ -2140,6 +2143,8 @@ struct Function
     /// The frame binding the function's own name, between the staged
     /// parameter and the ones before it, when the tail recurses.
     recursion: Maybe<ScopeId, recursion::Absent>,
+    /// The receiver a written-through method holds over its body.
+    receiver: Maybe<method::HeldReceiver, method::unheld::Absent>,
 }
 
 /// The continuation type's head, resolved after every binder and earlier
@@ -2413,6 +2418,8 @@ enum Plan
     Effectful(BTreeSet<gandr_core_term::effect::EffectName>, NodeIndex),
     /// An operation exercised through a capability.
     Exercise(capability::Exercised),
+    /// A method called off its receiver.
+    Method(method::Called),
     /// A capability scope over its subject and clauses.
     Scope(capability::Scoped),
     /// The continuation at the node resumed with the reply the values in the
@@ -7533,6 +7540,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.merge_refusal(site.at.node)?;
         self.stage_telescope(site, &mut cursor)?;
         closed(function, &mut cursor, TileName::PAREN_OPEN)?;
+        let receiver = self.receiver_mode(site);
+        self.stray_modes(&cursor, receiver)?;
         let start = self.parameters.len();
         let mut frame = self.merged_parameters(site, function, &mut cursor, Frame::Outermost)?;
         let mut recursion = Maybe::Absent(recursion::Absent::Plain);
@@ -7583,6 +7592,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let _binder = cursor.tile(TileName::IDENTIFIER);
             let declared = match cursor.tile(TileName::COLON) {
                 Maybe::Present(_) => {
+                    // A receiver's mode word, which the collection read.
+                    if let Maybe::Absent(_) = cursor.tile(TileName::SHARED) {
+                        let _consumed = cursor.tile(TileName::CONSUMED);
+                    }
                     let declared = function.one(cursor.operands())?;
                     self.read(declared.node, Reading::ValueType(frame));
                     Maybe::Present(declared.node)
@@ -7659,7 +7672,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Maybe::Absent(_) => Maybe::Absent(stated::Absent::Unstated),
         };
-        let block = self.block(function, &mut cursor, frame)?;
+        let (body, receiver) = match receiver {
+            Some(ReceiverMode::Exclusive) => {
+                let (held, receiver) = self.hold_receiver(function, frame, parameters)?;
+                (held, Maybe::Present(receiver))
+            },
+            Some(ReceiverMode::Shared | ReceiverMode::Consumed) | None => (
+                frame,
+                Maybe::Absent(method::unheld::Absent::NotWrittenThrough),
+            ),
+        };
+        let block = self.block(function, &mut cursor, body)?;
         let answer = match result {
             Maybe::Present(node) => {
                 let answer = native::Answer {
@@ -7681,6 +7704,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 result,
                 block,
                 recursion,
+                receiver,
             }),
         );
 
@@ -8421,19 +8445,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   fields; a call whose head is `here`, `back` or `cong`, a name no
     ///   binder and no earlier declaration carries, is that identity operation
     ///   over the arguments; a call whose head selects an operation off a
-    ///   capability is that exercise, and one whose head is an operation
-    ///   clause's continuation resumes it, as [`Self::exercise`] and
-    ///   [`Self::resumption`] read them; a call standing where a value is read
-    ///   whose head is a type former's name, free — `Path` over three
-    ///   arguments, `List(A)`, `Flow`, `Stack`, `Run` — is the type it spells,
-    ///   as [`Self::applied_head`] plans it, quoted; any other call standing as
-    ///   a computation reads its head at the head position and each argument as
-    ///   a value, all in its own frame, and is planned as the head applied to
-    ///   the arguments left to right; a call whose head is an instantiation, a
-    ///   recursive call, records every argument for the head's claim to check
-    ///   and reads and applies those from the staged parameter's on, the ones
-    ///   its fixpoint takes; a call of no arguments is its head, whose force
-    ///   [`Self::mint_at`] marks as the call the source wrote.
+    ///   capability is that exercise, one whose head is an operation clause's
+    ///   continuation resumes it, and one whose head selects a method off its
+    ///   receiver is that method's call, as [`Self::exercise`],
+    ///   [`Self::resumption`] and [`Self::method`] read them; a call standing
+    ///   where a value is read whose head is a type former's name, free —
+    ///   `Path` over three arguments, `List(A)`, `Flow`, `Stack`, `Run` — is
+    ///   the type it spells, as [`Self::applied_head`] plans it, quoted; any
+    ///   other call standing as a computation reads its head at the head
+    ///   position and each argument as a value, all in its own frame, and is
+    ///   planned as the head applied to the arguments left to right; a call
+    ///   whose head is an instantiation, a recursive call, records every
+    ///   argument for the head's claim to check and reads and applies those
+    ///   from the staged parameter's on, the ones its fixpoint takes; a call of
+    ///   no arguments is its head, whose force [`Self::mint_at`] marks as the
+    ///   call the source wrote.
     /// - provides: the elimination of a lambda, curried over any argument
     ///   count.
     /// - fails: yields the wrong-sort refusal outside computation position, and
@@ -8480,7 +8506,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         constructed.fields.start == start
                             && constructed.fields.end == self.operands.len()
                     },
-                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Recorded(_) | Plan::Ride(..))) => true,
+                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Recorded(_) | Plan::Ride(..))) => true,
                     | Some(&(Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Former(..))) => {
                         matches!(site.reading, Reading::Value(_))
                     },
@@ -8539,6 +8565,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Ok(());
         }
         if self.abandonment(site, &cursor)? == arity::Planned(true) {
+            return Ok(());
+        }
+        if self.method(site, &cursor)? == arity::Planned(true) {
             return Ok(());
         }
         let frame = self.require(site, Produced::Computation)?;
@@ -12096,7 +12125,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Recorded(_)
                 | Plan::Constructor(_)
                 | Plan::Packed(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -12301,6 +12330,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.mint_application(head, arguments, sink, origin)
             },
             Plan::Function(function) => self.mint_function(&function, sink, origin),
+            Plan::Method(called) => self.mint_method(called, sink, origin),
             Plan::Data(constant, arguments) => self.mint_family(constant, arguments, sink, origin),
             Plan::Codata(constant, arguments) => {
                 self.mint_codata(constant, arguments, sink, origin)
@@ -13372,6 +13402,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Capability(..)
             | Plan::Effectful(..)
             | Plan::Exercise(_)
+            | Plan::Method(_)
             | Plan::Scope(_)
             | Plan::Resume(..)
             | Plan::Abandon(_)
@@ -13775,12 +13806,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   closes its staged parameter's lambda by a fixpoint marked as inserted
     ///   at the declaration form, its binder named where the function's own
     ///   name is written, `thunk (λ … λ. fix. λ … λ. b)`, claiming structural
-    ///   descent when a call claims it and partial otherwise; its declared type
-    ///   is `+U (A1 -> … -> An -> C)`, one arrow per parameter with the binder
-    ///   tile's origin and `+U` the declaration form's, an arrow dependent
-    ///   where a later type names its parameter; a tail missing a parameter or
-    ///   result type mints the body alone; nothing is minted when the block did
-    ///   not lower.
+    ///   descent when a call claims it and partial otherwise; a written-through
+    ///   method's `b` runs under the hold of its receiver [`Self::hold_body`]
+    ///   mints; its declared type is `+U (A1 -> … -> An -> C)`, one arrow per
+    ///   parameter with the binder tile's origin and `+U` the declaration
+    ///   form's, an arrow dependent where a later type names its parameter, and
+    ///   a written-through method's `C` the `F (T × R)`
+    ///   [`Self::written_result`] mints; a tail missing a parameter or result
+    ///   type mints the body alone; nothing is minted when the block did not
+    ///   lower.
     /// - provides: the function tail's two halves, from one reading.
     /// - fails: never.
     /// - panics: none.
@@ -13825,6 +13859,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Present(block) => block,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
+        if let Maybe::Present(receiver) = function.receiver {
+            body = Self::hold_body(receiver, body, sink, origin);
+        }
         let mut fixpoint = match self.evidence(function) {
             Maybe::Present(evidence) => Some(evidence),
             Maybe::Absent(_) => None,
@@ -13938,6 +13975,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Present(result) => result,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
+        if let Maybe::Present(receiver) = function.receiver {
+            declared = match self.written_result(receiver, parameters, declared, sink, origin) {
+                Maybe::Present(written) => written,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+        }
         for parameter in parameters {
             let Maybe::Present(written) = parameter.declared
             else {
@@ -16197,7 +16240,8 @@ impl Sink<'_>
                 | Insertion::Unwind
                 | Insertion::Model
                 | Insertion::Relation
-                | Insertion::Words,
+                | Insertion::Words
+                | Insertion::Method,
             ) => Maybe::Absent(lowered::Absent::OtherSort),
             (Maybe::Absent(reason), _) => Maybe::Absent(reason),
         }

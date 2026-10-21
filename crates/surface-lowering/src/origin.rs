@@ -232,6 +232,13 @@ pub enum Insertion
     /// located at the declaration: the source writes the loops and their
     /// sides, never the words type, its point, the path type or a letter.
     Words,
+    /// A node of the access a method call `s.f(…)` is, below the call itself,
+    /// every one located at the call: the source writes the receiver, the
+    /// method and the arguments, never the view, the application to it, the
+    /// split of a written-through result or the write-back. And a node of the
+    /// hold and the pair a written-through method's body is wrapped in,
+    /// located at the declaration.
+    Method,
 }
 
 /// Whether the source wrote a minted core node or the lowering inserted it.

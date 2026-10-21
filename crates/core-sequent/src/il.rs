@@ -2127,7 +2127,7 @@ pub fn consumer_named(node: &ConsumerNode) -> core::option::IntoIter<(Zone, DeBr
 }
 
 /// The producer occurrence a command names itself: the linear slot a memory
-/// form lends or ends.
+/// form lends, ends or consumes.
 ///
 /// # Specification
 /// trivial.
@@ -2137,6 +2137,7 @@ pub fn command_named(node: &CommandNode) -> core::option::IntoIter<(Zone, DeBrui
     match *node {
         CommandNode::Memory { ref form, .. } => match *form {
             gandr_core_term::memory::MemoryForm::Access { held: index, .. }
+            | gandr_core_term::memory::MemoryForm::Consume { held: index }
             | gandr_core_term::memory::MemoryForm::Resume { view: index, .. }
             | gandr_core_term::memory::MemoryForm::Abort { view: index } => {
                 Some((Zone::Linear, index))

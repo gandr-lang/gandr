@@ -1541,6 +1541,11 @@ fn covers_preserve_every_binding_former()
             ContentNode::Memory(MemoryForm::Abort { view: at(0_u32) }),
             linear,
         ),
+        (
+            "consume",
+            ContentNode::Memory(MemoryForm::Consume { held: at(0_u32) }),
+            linear,
+        ),
     ];
     assert_projects_back(
         cases

@@ -639,18 +639,59 @@ impl Machine<'_, '_>
             })
     }
 
+    /// The free linear indices `term` consumes, ascending.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the held slots a consume in `term` moves out of without
+    ///   binding them.
+    /// - fails: as [`Self::free_linear`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a branch consuming an outer hold is refused through
+    ///   it, and one reading the hold checks.
+    /// - witness: `judgement::access::tests::a_branch_reads_a_hold_but_consumes_none`
+    #[spec(ensures: |ret| match ret {
+        | Ok(ref indices) => indices.is_sorted(),
+        | Err(ref refusal) => matches!(*refusal, CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant),
+    })]
+    fn free_consumed(
+        &mut self,
+        term: CoreTerm,
+    ) -> Result<Vec<DeBruijnIndex>, CheckRefusal>
+    {
+        let node = match term {
+            CoreTerm::Value(id) => CoreNode::Term(TermNode::Value(id)),
+            CoreTerm::Computation(id) => CoreNode::Term(TermNode::Computation(id)),
+        };
+        self.sessions
+            .free
+            .consumed(self.context.arena(), term)
+            .map(<[DeBruijnIndex]>::to_vec)
+            .map_err(|fault| match fault {
+                gandr_core_nbe::FreeFault::Dangling => CheckRefusal::DanglingNode { node },
+                gandr_core_nbe::FreeFault::MachineInvariant => CheckRefusal::MachineInvariant,
+            })
+    }
+
     /// Refuse a linear resident named where its use may run other than once:
     /// a thunk, a fixpoint, a branching former, a first-class stack, a
     /// handler, a capability scope or a shift, while the run holds one. A
     /// branch may read a held value: a read copies, and each branch lends it
-    /// at most for its own extent. A capability scope's clause receives the
-    /// rest of its body as a continuation it may resume twice or drop, so the
-    /// body names only residents that owe nothing: a held value, whose slot
-    /// stands outside the scope, a received value and a shared view, each of
-    /// which a read copies. A thunk or a stack checked at a type kept in a
-    /// region may name a shared view whose held slot outlives that region:
-    /// the slot is kept, frozen until the region's scope ends. Inside a
-    /// capability scope, a thunk or a stack names no variable kept in a
+    /// at most for its own extent. A branch consumes no held value: a consume
+    /// would end the hold on the paths through its arm alone, and the arms'
+    /// uses of a held slot are not joined. A capability scope's clause
+    /// receives the rest of its body as a continuation it may resume twice or
+    /// drop, so the body names only residents that owe nothing: a held value,
+    /// whose slot stands outside the scope, a received value and a shared
+    /// view, each of which a read copies. A thunk or a stack checked at a type
+    /// kept in a region may name a shared view whose held slot outlives that
+    /// region: the slot is kept, frozen until the region's scope ends. Inside
+    /// a capability scope, a thunk or a stack names no variable kept in a
     /// region deeper than the one its own type is kept in. Every former but a
     /// branch names no continuation an operation clause owes.
     ///
@@ -666,9 +707,10 @@ impl Machine<'_, '_>
     ///   [`LinearityDefect::ContinuationCaptured`] for an owed continuation it
     ///   names; [`CheckRefusal::Access`] naming [`AccessDefect::Escaped`] for a
     ///   view no region keeps, [`AccessDefect::HeldCaptured`] for a held value
-    ///   and [`AccessDefect::KeptEscaped`] for a variable kept deeper than the
-    ///   goal; a shift names the innermost resident the run holds, which its
-    ///   captured continuation may resume twice.
+    ///   and for one a branch consumes, and [`AccessDefect::KeptEscaped`] for a
+    ///   variable kept deeper than the goal; a shift names the innermost
+    ///   resident the run holds, which its captured continuation may resume
+    ///   twice.
     /// - panics: none.
     ///
     /// # Errors
@@ -685,6 +727,7 @@ impl Machine<'_, '_>
     /// - witness: `judgement::session::tests::a_scope_names_only_residents_that_owe_nothing_1336`
     /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
     /// - witness: `judgement::access::tests::a_thunk_naming_a_value_kept_at_a_region_binder_is_kept_there_1221`
+    /// - witness: `judgement::access::tests::a_branch_reads_a_hold_but_consumes_none`
     #[spec(
         captures: [
             holding = self.context.depth(Zone::Linear) > self.sessions.base,
@@ -827,6 +870,16 @@ impl Machine<'_, '_>
         }
         if !holding {
             return Ok(());
+        }
+        if by == Capture::Branch {
+            for index in self.free_consumed(term)? {
+                if let Resident::Held { .. } = self.resided(node, index)?.resident {
+                    return Err(CheckRefusal::Access {
+                        at: node,
+                        defect: AccessDefect::HeldCaptured { by },
+                    });
+                }
+            }
         }
         for index in self.free_linear(term)? {
             let named = self.resided(node, index)?;
@@ -2175,7 +2228,13 @@ impl Machine<'_, '_>
                     at,
                     defect: LinearityDefect::BufferUnreturned { site },
                 },
-                Resident::Held { .. } | Resident::View { .. } => CheckRefusal::Access {
+                // Within its hold a held slot's use changes by a consume
+                // alone, so one arm consumed it and the other did not.
+                Resident::Held { .. } => CheckRefusal::Access {
+                    at,
+                    defect: AccessDefect::Consumed,
+                },
+                Resident::View { .. } => CheckRefusal::Access {
                     at,
                     defect: AccessDefect::Unended,
                 },

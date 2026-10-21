@@ -49,7 +49,8 @@ impl Machine<'_, '_>
 {
     /// The rules of the memory forms: a hold synthesises its value, an
     /// access lends its held slot, or a place of it, in its mode, a resume
-    /// checks its value, an abort ends its view at once.
+    /// checks its value, an abort ends its view at once, a consume moves its
+    /// held value out.
     ///
     /// # Specification
     /// - requires: `term` is a memory form.
@@ -58,14 +59,16 @@ impl Machine<'_, '_>
     ///   `direction`; an access at a place whose held slot it may lend waits on
     ///   its index's check against the integer type; a resume waits on its
     ///   value's check against the view's type; an abort spends its view and
-    ///   synthesises the returner of the unit.
+    ///   synthesises the returner of the unit; a consume leaves its held slot
+    ///   moved out and synthesises the returner of the slot's type.
     /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::NotHeld`] for
     ///   an access of a slot that holds no value, [`AccessDefect::Lent`] for an
     ///   access its slot's lending excludes, [`AccessDefect::NotAView`] for an
     ///   eliminator of a slot that is no view, [`AccessDefect::Spent`] for one
     ///   of a spent view and [`AccessDefect::ReadOnly`] for one of a shared
-    ///   view; [`CheckRefusal::Linearity`] naming [`LinearityDefect::Unbound`]
-    ///   for an index past the zone.
+    ///   view; for a consume, as [`Self::lendable`] at the exclusive mode;
+    ///   [`CheckRefusal::Linearity`] naming [`LinearityDefect::Unbound`] for an
+    ///   index past the zone.
     /// - panics: none.
     ///
     /// # Errors
@@ -79,6 +82,7 @@ impl Machine<'_, '_>
     /// - witness: `judgement::access::tests::a_held_value_lent_or_misnamed_is_refused`
     /// - witness: `judgement::access::tests::a_shared_view_reads_beside_its_held_value_and_ends_with_its_body`
     /// - witness: `judgement::access::tests::a_place_of_a_held_list_is_lent_at_its_index`
+    /// - witness: `judgement::access::tests::a_consume_ends_its_hold_and_answers_the_held_value`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(_) | Step::Ascend(Produced::CompType(_)))))]
     pub(super) fn memory(
         &mut self,
@@ -148,6 +152,18 @@ impl Machine<'_, '_>
                     });
                 }
                 self.spend_view(node, view)
+            },
+            MemoryForm::Consume { held } => {
+                let node = CoreNode::Term(TermNode::Computation(term));
+                let found = self.lendable(node, held, AccessMode::Exclusive { unwind: () })?;
+                let _moved = self
+                    .context
+                    .binders()
+                    .move_out(held)
+                    .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+                let ty = self.here(found.state, found.depth)?;
+                let returner = self.context.arena_mut().comp_type_returner(ty);
+                Ok(Step::Ascend(Produced::CompType(returner)))
             },
         }
     }
@@ -294,8 +310,8 @@ impl Machine<'_, '_>
     /// - requires: the scope was judged in `direction`, under the hold's
     ///   region.
     /// - ensures: the hold's region ended, every keep in it released; the held
-    ///   slot is closed and its entry dropped; the hold checked, or synthesised
-    ///   the scope's type.
+    ///   slot, live or moved out by a consume, is closed and its entry dropped;
+    ///   the hold checked, or synthesised the scope's type.
     /// - fails: as [`Self::answers_outside`] for a synthesised type that names
     ///   the hold's region; [`CheckRefusal::MachineInvariant`] when no region
     ///   is open or the innermost slot is not this hold's.
@@ -310,6 +326,7 @@ impl Machine<'_, '_>
     ///   kept a view checks.
     /// - witness: `judgement::access::tests::a_counter_observes_write_back_on_resume_and_none_on_abort`
     /// - witness: `judgement::access::tests::a_view_kept_in_a_hold_lives_as_long_as_the_hold`
+    /// - witness: `judgement::access::tests::a_consume_ends_its_hold_and_answers_the_held_value`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(_))))]
     pub(super) fn dropped(
         &mut self,
@@ -337,8 +354,9 @@ impl Machine<'_, '_>
         if innermost.resident != (Resident::Held { at }) {
             return Err(CheckRefusal::MachineInvariant);
         }
-        // The hold, not the program, spends its slot: a read copies.
-        if innermost.use_state == LinearUse::Available {
+        // The hold, not the program, spends its slot: a read copies, and a
+        // consume moved the value out without spending the slot.
+        if innermost.use_state != LinearUse::Consumed {
             let _held = self
                 .context
                 .binders()
@@ -360,7 +378,8 @@ impl Machine<'_, '_>
     /// - requires: nothing.
     /// - ensures: the slot's residence, unchanged.
     /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::NotHeld`] for a
-    ///   slot that holds no value, [`AccessDefect::Lent`] for a slot lent
+    ///   slot that holds no value, [`AccessDefect::Consumed`] for a held slot a
+    ///   consume has moved out, [`AccessDefect::Lent`] for a slot lent
     ///   exclusively, or lent shared to an exclusive access, and
     ///   [`AccessDefect::Kept`] for a slot a region keeps a shared view of, to
     ///   an exclusive access; [`CheckRefusal::Linearity`] naming
@@ -379,6 +398,7 @@ impl Machine<'_, '_>
     /// - witness: `judgement::access::tests::a_shared_view_reads_beside_its_held_value_and_ends_with_its_body`
     /// - witness: `judgement::access::tests::a_place_of_a_held_list_is_lent_at_its_index`
     /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
+    /// - witness: `judgement::access::tests::a_consumed_hold_is_read_lent_or_consumed_no_more`
     #[spec(
         captures: lent = self.sessions.lent.len(),
         ensures: |ret| self.sessions.lent.len() == lent && (ret.is_err() || ret.as_ref().is_ok_and(|found| matches!(found.resident, Resident::Held { .. }))),
@@ -404,6 +424,12 @@ impl Machine<'_, '_>
                     defect: AccessDefect::NotHeld,
                 });
             },
+        }
+        if found.use_state != LinearUse::Available {
+            return Err(CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Consumed,
+            });
         }
         // Shared beside shared is the one lending two accesses of a slot share.
         if self.sessions.lent.iter().any(|lent| {
@@ -858,9 +884,10 @@ impl Machine<'_, '_>
     ///   an exclusive view of a value held at grade one synthesises it once and
     ///   its value is moved out.
     /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::Lent`] for a
-    ///   held slot lent exclusively, [`AccessDefect::Spent`] for a spent view,
-    ///   and [`AccessDefect::HeldCopied`] for a slot held at grade one, a
-    ///   shared view of one, or an exclusive view of one moved already; as
+    ///   held slot lent exclusively, [`AccessDefect::Consumed`] for a held slot
+    ///   a consume moved out, [`AccessDefect::Spent`] for a spent view, and
+    ///   [`AccessDefect::HeldCopied`] for a slot held at grade one, a shared
+    ///   view of one, or an exclusive view of one moved already; as
     ///   [`Self::endpoint_as_value`] for an endpoint;
     ///   [`CheckRefusal::UnboundIndex`] for an index past the zone.
     /// - panics: none.
@@ -878,6 +905,7 @@ impl Machine<'_, '_>
     /// - witness: `judgement::access::tests::a_held_value_lent_or_misnamed_is_refused`
     /// - witness: `judgement::access::tests::a_shared_view_reads_beside_its_held_value_and_ends_with_its_body`
     /// - witness: `judgement::access::tests::a_value_held_at_grade_one_is_never_copied`
+    /// - witness: `judgement::access::tests::a_consumed_hold_is_read_lent_or_consumed_no_more`
     /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::ValueType(_)))))]
     pub(super) fn linear_read(
@@ -920,6 +948,9 @@ impl Machine<'_, '_>
                 AccessDefect::Lent
             },
             Resident::View { .. } if read.use_state == LinearUse::Consumed => AccessDefect::Spent,
+            Resident::Held { .. } if read.use_state != LinearUse::Available => {
+                AccessDefect::Consumed
+            },
             Resident::Held { at } => match self.hold_grade(at)? {
                 HoldGrade::Many => return self.read_type(&read),
                 HoldGrade::One => AccessDefect::HeldCopied,
