@@ -330,6 +330,51 @@ fn a_parameter_reads_only_types_and_values()
     }
 }
 
+/// A magma and a model of it, the integers under multiplication.
+const MAGMA: &str = "theory Mag {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\nmodule \
+                     Times : Model(Mag) {\n  type M = Integer;\n  def mul(a : Integer, b : \
+                     Integer) -> -F Integer { return a * b }\n}\n";
+
+/// Squaring in any magma: the parameter's signature is the one the magma
+/// derives.
+const SQUARE: &str = "module Square(S : Model(Mag)) {\n  def square(x : S.M) -> -F S.M { become \
+                      S.mul(x, x) }\n}\n";
+
+#[test]
+fn a_functor_over_a_model_applies_to_one_1226()
+{
+    let source = [MAGMA, SQUARE, "module Squared = Square(Times) ;\n"].concat();
+    let mut lowered = lower(source.as_str());
+    let found = rows(&lowered);
+    for witness in ["Squared.M", "Squared.mul"] {
+        assert!(
+            found.contains(&row(witness, Role::Witness, Amounts::Completed)),
+            "the model is matched against the derived parameter at `{witness}`: {found:?}"
+        );
+    }
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements
+            .iter()
+            .all(|&(_, judgement)| matches!(judgement, Judgement::Checked | Judgement::Declared)),
+        "and the application checks: {judgements:?}"
+    );
+
+    let halved = [
+        MAGMA,
+        SQUARE,
+        "module Halves {\n  type M = Integer;\n  def mul(a : Integer) -> -F Integer { return a \
+         }\n}\nmodule Squared = Square(Halves) ;\n",
+    ]
+    .concat();
+    let mut lowered = lower(halved.as_str());
+    let witness = declaration(&lowered, "Squared.mul", Role::Witness).constant();
+    assert!(
+        verdicts(&mut lowered).contains(&judged(witness, Judgement::Mismatched)),
+        "an operation at another type than the theory derives is refused at its witness"
+    );
+}
+
 #[test]
 fn an_instance_can_be_an_argument()
 {

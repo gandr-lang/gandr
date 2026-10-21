@@ -13,10 +13,14 @@
 //! components stand for the argument's: an abstract component is a slot whose
 //! position is the atom a reference `Elt.T` reads, a value component a slot
 //! whose position a reference `Elt.x` reads, a manifest one the type it
-//! states. Every one of those slots — parameter and body alike — is a
-//! template slot: it lowers, so a refusal inside the functor is reported where
-//! it was written, and it yields no declaration. The functor is a thunk the
-//! stratum holds; nothing of it reaches the core or the kernel.
+//! states. A parameter written `(S : Model(T))` takes the components the
+//! theory `T` derives, as a module ascribed `Model(T)` does: each unindexed
+//! sort an abstract component, each operation and each law a value component
+//! whose type the derivation mints, and an indexed sort refused as a written
+//! family component is. Every one of those slots — parameter and body
+//! alike — is a template slot: it lowers, so a refusal inside the functor is
+//! reported where it was written, and it yields no declaration. The functor
+//! is a thunk the stratum holds; nothing of it reaches the core or the kernel.
 //!
 //! An application forces the functor and applies it. The argument is matched
 //! against the parameter as transparent ascription matches a module, by
@@ -68,16 +72,15 @@
 //!
 //! # Held outside this rung
 //!
-//! A functor is declared and applied at the top level, over one inline
-//! parameter signature, and every application is generative. Not built here:
-//! an application whose argument's grades exhaust a parameter's, which the
-//! module grades question decides; a parameter a former derives, `(C :
-//! Model(S))`, and an application to a builtin model; applicative functors,
-//! whose instances share atoms by their arguments' paths; functor bodies in
-//! the kernel, which only ever sees instances; a functor whose body performs
-//! effects, which waits for effectful module members; and a family component
-//! of a functor's result, which an instance does not export until a family's
-//! expansion renames with its instance.
+//! A functor is declared and applied at the top level, over one parameter
+//! signature, and every application is generative. Not built here: an
+//! application whose argument's grades exhaust a parameter's, which the module
+//! grades question decides; an application to a builtin model; applicative
+//! functors, whose instances share atoms by their arguments' paths; functor
+//! bodies in the kernel, which only ever sees instances; a functor whose body
+//! performs effects, which waits for effectful module members; and a family
+//! component of a functor's result, which an instance does not export until a
+//! family's expansion renames with its instance.
 //!
 //! # References
 //!
@@ -100,11 +103,14 @@ use super::Coerced;
 use super::Collector;
 use super::Component;
 use super::ComponentForm;
+use super::ComponentPlace;
 use super::ComponentScope;
 use super::Container;
 use super::DeclarationSlot;
 use super::Half;
 use super::Member;
+use super::ModelIndex;
+use super::ModelPart;
 use super::Operand;
 use super::Role;
 use super::Sealed;
@@ -217,6 +223,9 @@ pub struct WrittenParameter<'source>
     pub named: Placed,
     /// The parameter signature's components, in signature order.
     pub components: Vec<Component<'source>>,
+    /// The model signature a parameter written `(S : Model(T))` derives from
+    /// `T`, or why none: a record signature states its components itself.
+    pub model: Maybe<crate::model::ModelSignature, super::derived::Absent>,
 }
 
 /// What one parameter component stands for in the template.
@@ -243,6 +252,9 @@ pub enum ParameterForm
     Abstract(Maybe<Placed, component_kind::Absent>),
     /// A manifest component `type T = τ`, with the type it states.
     Manifest(Placed),
+    /// An operation or a law of a parameter's `Model(S)`, at its place in the
+    /// model signature `S` derives, which mints its type.
+    Derived(ModelPart),
 }
 
 /// One component of a functor's parameter, with its template slot.
@@ -479,13 +491,15 @@ impl<'source> Collector<'_, 'source>
     /// # Specification
     /// - requires: `body` was just pushed and holds no slot yet.
     /// - ensures: the parameter is the next module, nested in the body under
-    ///   its own name, ascribed by its signature; each component takes a
+    ///   its own name, ascribed by its signature and carrying the model a
+    ///   `Model(S)` parameter derives; each component takes a
     ///   [`Role::Parameter`] slot in signature order — an abstract one owning
     ///   its written kind, a value one owning its type, which sees the
-    ///   parameter's earlier type components — and a manifest one a held slot
-    ///   owning its type; a family or an unread component refuses a held slot
-    ///   under its name; the body is marked as the functor's and the functor is
-    ///   recorded, its body's first slot past the parameter's.
+    ///   parameter's earlier type components, a derived one stated by its place
+    ///   in the model — and a manifest one a held slot owning its type; a
+    ///   family or an unread component refuses a held slot under its name; the
+    ///   body is marked as the functor's and the functor is recorded, its
+    ///   body's first slot past the parameter's.
     /// - provides: the parameter half of a functor's collection.
     /// - fails: never.
     /// - panics: none.
@@ -494,6 +508,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a parameter of an abstract type and a value of it is
     ///   read by the body at its atom and its constant.
     /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `tests::modules::functors::a_functor_over_a_model_applies_to_one_1226`
     #[spec(
         captures: before = (self.collected.functors.len(), self.collected.structures.len()),
         ensures: self.collected.functors.len() == before.0.saturating_add(1)
@@ -511,13 +526,18 @@ impl<'source> Collector<'_, 'source>
         let first = SlotIndex(self.collected.slots.len());
         let container = Container::Module(parameter);
         let components = written.components.clone();
+        let model = written.model.map(|derived| {
+            let index = ModelIndex(self.collected.models.len());
+            self.collected.models.push(derived);
+            index
+        });
         self.collected.structures.push(Structure {
             name: written.name,
             container: Container::Module(body),
             declared_by: written.named,
             named: written.named,
             ascription: Maybe::Present(written.components),
-            model: Maybe::Absent(super::derived::Absent::Written),
+            model,
             sealed: Sealed(true),
             members: Vec::new(),
             exports: Vec::new(),
@@ -534,7 +554,7 @@ impl<'source> Collector<'_, 'source>
         let mut stated = Vec::new();
         let mut types: Vec<TypeComponent<'source>> = Vec::new();
         let mut exports = Vec::new();
-        for component in components {
+        for (place, component) in components.into_iter().enumerate() {
             let scope = ComponentScope {
                 structure: parameter,
                 before: types.len(),
@@ -549,7 +569,17 @@ impl<'source> Collector<'_, 'source>
                 },
                 ComponentForm::Abstract(kind) => ParameterForm::Abstract(kind),
                 ComponentForm::Manifest(defined) => ParameterForm::Manifest(defined),
-                ComponentForm::Family(_) | ComponentForm::Derived => {
+                ComponentForm::Derived => match model {
+                    Maybe::Present(index) => ParameterForm::Derived(ModelPart {
+                        model: index,
+                        component: ComponentPlace(place),
+                    }),
+                    Maybe::Absent(_) => {
+                        self.refuse_component(container, component, AscriptionForm::Kinded);
+                        continue;
+                    },
+                },
+                ComponentForm::Family(_) => {
                     self.refuse_component(container, component, AscriptionForm::Kinded);
                     continue;
                 },
@@ -579,6 +609,21 @@ impl<'source> Collector<'_, 'source>
                     let slot = self.parameter_slot(container, component, Maybe::Present(typed));
                     self.collected.own(typed.node, slot);
                     self.collected.scopes.push((typed.node, scope));
+                    exports.push(Member::Slot(slot));
+                    slot
+                },
+                ParameterForm::Derived(part) => {
+                    let slot = self.parameter_slot(
+                        container,
+                        component,
+                        Maybe::Absent(declaration_half::Absent::Unwritten),
+                    );
+                    self.state(
+                        slot,
+                        Operand::Model(part),
+                        component.named,
+                        Maybe::Present(scope),
+                    );
                     exports.push(Member::Slot(slot));
                     slot
                 },
@@ -950,11 +995,10 @@ impl<'source> Collector<'_, 'source>
     /// `component`.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: for a value component, the argument's exported value member
-    ///   of its name, read through the witness a sealed argument exports in its
-    ///   place; for a type component, the argument's exported type component of
-    ///   its name that reads a type; absent otherwise.
+    /// - ensures: for a value or a derived component, the argument's exported
+    ///   value member of its name, read through the witness a sealed argument
+    ///   exports in its place; for a type component, the argument's exported
+    ///   type component of its name that reads a type; absent otherwise.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -964,8 +1008,8 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `tests::modules::functors::an_argument_is_matched_against_the_parameter`
     /// - witness: `tests::modules::functors::a_type_component_binds_the_argument_type_of_its_own_name`
     #[spec(ensures: |ret| match ret {
-        | Maybe::Present(Argued::Value(slot)) => matches!(component.form, ParameterForm::Value(_)) && slot.0 < self.collected.slots.len(),
-        | Maybe::Present(Argued::Type(found)) => !matches!(component.form, ParameterForm::Value(_)) && found.name == component.name,
+        | Maybe::Present(Argued::Value(slot)) => matches!(component.form, ParameterForm::Value(_) | ParameterForm::Derived(_)) && slot.0 < self.collected.slots.len(),
+        | Maybe::Present(Argued::Type(found)) => !matches!(component.form, ParameterForm::Value(_) | ParameterForm::Derived(_)) && found.name == component.name,
         | Maybe::Absent(_) => true,
     })]
     fn argument_component(
@@ -979,7 +1023,7 @@ impl<'source> Collector<'_, 'source>
             return Maybe::Absent(argued::Absent::Unexported);
         };
         match component.form {
-            ParameterForm::Value(_) => entry
+            ParameterForm::Value(_) | ParameterForm::Derived(_) => entry
                 .exports
                 .iter()
                 .find_map(|&export| match export {
@@ -1068,10 +1112,12 @@ impl<'source> Collector<'_, 'source>
         let mut matched = Vec::with_capacity(found.len());
         for (component, &argued) in template.components.iter().zip(found) {
             let paired = match (component.form, argued) {
-                (ParameterForm::Value(_), Argued::Value(member)) => Paired::Value(member),
+                (ParameterForm::Value(_) | ParameterForm::Derived(_), Argued::Value(member)) => {
+                    Paired::Value(member)
+                },
                 (ParameterForm::Abstract(_), Argued::Type(stated)) => Paired::Abstract(stated),
                 (ParameterForm::Manifest(_), Argued::Type(stated)) => Paired::Manifest(stated),
-                (ParameterForm::Value(_), Argued::Type(_))
+                (ParameterForm::Value(_) | ParameterForm::Derived(_), Argued::Type(_))
                 | (ParameterForm::Abstract(_) | ParameterForm::Manifest(_), Argued::Value(_)) => {
                     continue;
                 },

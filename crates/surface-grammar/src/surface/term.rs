@@ -573,20 +573,20 @@ fn module_ascription_tail() -> Regex
     ])
 }
 
-/// Build a functor's parameter, `(Elt : #{ … })`: the parameter's module name
-/// and the inline signature it is matched against, in parentheses.
+/// Build a functor's parameter, `(Elt : #{ … })` or `(S : Model(Mag))`: the
+/// parameter's module name and the signature it is matched against, in
+/// parentheses.
 ///
 /// Matching an argument against the parameter is transparent ascription, so
-/// the signature is spelled as an ascription spells an inline one. One
-/// parameter: a functor of several is spelled as a functor whose body applies
-/// another. The signature is written inline only: a parameter whose
-/// components a former derives, `(C : Model(S))`, adds the former as a second
-/// alternative here when a functor over models is written.
+/// the signature is spelled as an ascription spells one: inline, or computed
+/// by a signature former applied to a declaration, first-token-discriminated
+/// as there. One parameter: a functor of several is spelled as a functor
+/// whose body applies another.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: an opening parenthesis, one type name, a colon, the inline
-///   signature and the closer.
+///   signature or the applied signature former, and the closer.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -596,14 +596,14 @@ fn module_ascription_tail() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 5 && parts.iter().zip(["(", "type_identifier", ":"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label)) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref signature) if signature.first().is_some_and(|lead| matches!(lead.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "#{")))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 5 && parts.iter().zip(["(", "type_identifier", ":"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label)) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref signatures) if signatures.len() == 2)) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
 fn functor_parameter() -> Regex
 {
     seq([
         t(TileLabel("(")),
         t(TileLabel("type_identifier")),
         t(TileLabel(":")),
-        module_signature(),
+        alt([module_signature(), signature_former()]),
         t(TileLabel(")")),
     ])
 }

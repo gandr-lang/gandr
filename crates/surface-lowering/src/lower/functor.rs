@@ -35,6 +35,7 @@ use crate::module::DeclarationOutcome;
 use crate::module::InstanceIndex;
 use crate::module::Matched;
 use crate::module::Member;
+use crate::module::ParameterComponent;
 use crate::module::ParameterForm;
 use crate::module::Role;
 use crate::module::Sealing;
@@ -637,7 +638,7 @@ impl<'source> Lowerer<'_, 'source>
             };
             let mut outcomes = Vec::new();
             for (component, &matched) in functor.components.iter().zip(&instance.matched) {
-                let checked = self.witness_outcome(component.form, matched, renaming, sink, origin);
+                let checked = self.witness_outcome(*component, matched, renaming, sink, origin);
                 let witness = match matched {
                     Matched::Value { witness, .. }
                     | Matched::Abstract { witness, .. }
@@ -707,11 +708,12 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// The declaration the witness `matched` checks the argument by, for a
-    /// parameter component of form `form`, under `renaming`.
+    /// The declaration the witness `matched` checks the argument by, for the
+    /// parameter component `component`, under `renaming`.
     ///
     /// # Specification
-    /// - requires: the template's parameter types are minted.
+    /// - requires: the template's parameter types are minted, a derived
+    ///   component's among them.
     /// - ensures: as [`Self::mint_instances`] for one witness; absent when the
     ///   parameter's own type or kind did not lower, which its slot's refusal
     ///   reports.
@@ -721,22 +723,35 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::mint_instances`].
     /// - witness: `tests::modules::functors::an_argument_is_matched_against_the_parameter`
+    /// - witness: `tests::modules::functors::a_functor_over_a_model_applies_to_one_1226`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(DeclarationOutcome::Completed { .. })))]
     fn witness_outcome(
         &self,
-        form: ParameterForm,
+        component: ParameterComponent<'source>,
         matched: Matched<'source>,
         renaming: &Renaming,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<DeclarationOutcome<'source>, lowered::Absent>
     {
-        match (form, matched) {
-            (ParameterForm::Value(typed), Matched::Value { member, .. }) => {
-                let (Maybe::Present(stated), Some(read)) = (
-                    self.value_type_at(typed.node),
-                    self.collected.slots.get(usize::from(member)),
-                )
+        match (component.form, matched) {
+            (
+                ParameterForm::Value(_) | ParameterForm::Derived(_),
+                Matched::Value { member, .. },
+            ) => {
+                let stated = match component.form {
+                    ParameterForm::Value(typed) => self.value_type_at(typed.node),
+                    ParameterForm::Derived(_) => self
+                        .modelled
+                        .get(&component.slot)
+                        .copied()
+                        .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
+                    ParameterForm::Abstract(_) | ParameterForm::Manifest(_) => {
+                        Maybe::Absent(lowered::Absent::Unminted)
+                    },
+                };
+                let (Maybe::Present(stated), Some(read)) =
+                    (stated, self.collected.slots.get(usize::from(member)))
                 else {
                     return Maybe::Absent(lowered::Absent::Unminted);
                 };
@@ -805,7 +820,10 @@ impl<'source> Lowerer<'_, 'source>
                 })
             },
             (
-                ParameterForm::Value(_) | ParameterForm::Abstract(_) | ParameterForm::Manifest(_),
+                ParameterForm::Value(_)
+                | ParameterForm::Abstract(_)
+                | ParameterForm::Manifest(_)
+                | ParameterForm::Derived(_),
                 Matched::Value { .. } | Matched::Abstract { .. } | Matched::Manifest { .. },
             ) => Maybe::Absent(lowered::Absent::Unminted),
         }

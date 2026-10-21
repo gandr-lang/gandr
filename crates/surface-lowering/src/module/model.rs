@@ -25,7 +25,8 @@
 //!
 //! # `Model(S)` is the signature the theory `S` derives
 //!
-//! A module ascribed `: Model(S)` is matched against the components the theory
+//! A module ascribed `: Model(S)`, or the argument of a functor whose parameter
+//! is written `(P : Model(S))`, is matched against the components the theory
 //! `S`, declared before it, derives (`crate::model::derive`): each unindexed
 //! sort an abstract component, each indexed sort a family component, each
 //! operation and each law a value component whose type is minted from the
