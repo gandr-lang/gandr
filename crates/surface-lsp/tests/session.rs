@@ -20,6 +20,8 @@ use gandr_surface_diagnostics::AnnotationKind;
 use gandr_surface_diagnostics::Diagnostic;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_dispatcher::Goals;
+use gandr_surface_dispatcher::SourceRoot;
+use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
@@ -864,6 +866,27 @@ fn every_corpus_diagnostic_is_published_as_the_model_builds_it()
                 .get(usize::from(base) ..)
                 .expect("a source's own text starts inside its unit's");
             let index = LineIndex::new(own.into());
+            // A pending source carrying the refusal its set expects, which
+            // `check` prints nothing for, is reported as the fixture root
+            // reports it (#1248).
+            let step = match step {
+                Step::Source {
+                    path,
+                    text,
+                    base,
+                    composed,
+                    standing: Standing::Pending,
+                    ..
+                } => Step::Source {
+                    path,
+                    root: SourceRoot::Fixture,
+                    text,
+                    base,
+                    standing: Standing::of(SourceRoot::Fixture, &composed),
+                    composed,
+                },
+                other @ (Step::Source { .. } | Step::Fault { .. }) => other,
+            };
             let reports = entries(&step, Verb::Check(Goals::Reported))
                 .map(|diagnostic| rendered(&diagnostic, &index))
                 .collect::<Vec<_>>();

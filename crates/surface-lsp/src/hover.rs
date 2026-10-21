@@ -506,7 +506,7 @@ impl Style
 /// - witness: `hover::tests::an_include_and_a_model_hover_the_theory_they_name_1123`
 /// - witness: `hover::tests::the_parentheses_around_an_inverted_letter_answer_the_cons_pattern_408`
 /// - witness: `hover::tests::a_sum_pattern_s_positional_label_answers_as_a_label_408`
-/// - witness: `hover::tests::every_corpus_tile_hovers_or_names_its_issue_1206`
+/// - witness: `hover::tests::sweeps::every_corpus_tile_hovers_or_names_its_issue_1206`
 /// - witness: `hover::tests::an_import_hovers_the_file_it_reads_1203`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref hover) => hover.contents.value.starts_with(style.markup.opener().0)
@@ -862,7 +862,7 @@ struct Stub<'found>
 ///
 /// # Adequacy
 /// - hypothesis: L2 — every tile of every corpus source hovers.
-/// - witness: `hover::tests::every_corpus_tile_hovers_or_names_its_issue_1206`
+/// - witness: `hover::tests::sweeps::every_corpus_tile_hovers_or_names_its_issue_1206`
 #[must_use]
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|found| found.tile.span.start() <= offset && offset < found.tile.span.end()))]
 fn stub<'found>(
@@ -926,7 +926,7 @@ fn stub<'found>(
 ///
 /// # Adequacy
 /// - hypothesis: L2 — as [`stub`].
-/// - witness: `hover::tests::every_corpus_tile_hovers_or_names_its_issue_1206`
+/// - witness: `hover::tests::sweeps::every_corpus_tile_hovers_or_names_its_issue_1206`
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 #[spec(ensures: |ref ret| ret.as_ref().is_none_or(|hover| hover.contents.value.starts_with(style.markup.opener().0)))]
 fn stubbed<Store, Blocks>(
@@ -1392,12 +1392,10 @@ mod tests
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
-    use super::Quoted;
     use super::Style;
     use super::hover;
     use super::hovered;
     use super::hovering;
-    use super::stub;
     use crate::markup::Markup;
     use crate::position::Character;
     use crate::position::Line;
@@ -2109,118 +2107,6 @@ mod tests
         }
     }
 
-    /// Every `.gandr` source under the corpus's `fixture` and `strict`
-    /// roots, sorted.
-    ///
-    /// # Specification
-    /// trivial.
-    fn corpus() -> Vec<std::path::PathBuf>
-    {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus");
-        let mut pending = vec![root.join("fixture"), root.join("strict")];
-        let mut sources = Vec::new();
-        while let Some(directory) = pending.pop() {
-            for entry in std::fs::read_dir(&directory).expect("a corpus directory is read") {
-                let path = entry.expect("a corpus entry is read").path();
-                if path.is_dir() {
-                    pending.push(path);
-                }
-                else if path
-                    .extension()
-                    .is_some_and(|extension| extension == "gandr")
-                {
-                    sources.push(path);
-                }
-            }
-        }
-        sources.sort();
-        sources
-    }
-
-    /// No tile of the corpus hovers nothing: each answers what the engine
-    /// holds or a stub ending with its gap's tracking issue. A hover finds its
-    /// entry by a scan of the table, so each source hovers every fourth tile,
-    /// from a phase that turns with the source's position.
-    #[test]
-    fn every_corpus_tile_hovers_or_names_its_issue_1206()
-    {
-        let mut silent = Vec::new();
-        let mut misnamed = Vec::new();
-        let mut sources = 0_usize;
-        for path in corpus() {
-            let written = std::fs::read_to_string(&path).expect("a corpus source is read");
-            let text = SourceText::from(written.as_str());
-            let session = checked(text);
-            let reading = Reading::of(text);
-            let hovering = hovering(text, &path, &session, &gandr_surface_dispatcher::Unshadowed);
-            let index = LineIndex::new(written.as_str().into());
-            let quoted = Quoted {
-                text,
-                index: &index,
-                spans: reading.spans(),
-            };
-            let Maybe::Present(found) = reading.declarations()
-            else {
-                silent.push(format!("{}: unread", path.display()));
-                continue;
-            };
-            let phase = sources % 4_usize;
-            sources = sources.saturating_add(1_usize);
-            for tile in reading.tiles().iter().skip(phase).step_by(4_usize) {
-                let start = usize::from(tile.span.start());
-                let position = Position::of_byte(&index, RenderOffset::from(start))
-                    .expect("a tile starts on a boundary");
-                let spelled = written
-                    .get(start .. usize::from(tile.span.end()))
-                    .unwrap_or_default();
-                let line = written
-                    .get(.. start)
-                    .unwrap_or_default()
-                    .matches('\n')
-                    .count();
-                let at = format!("{}:{} `{spelled}`", path.display(), line.saturating_add(1));
-                match hover(text, &session, &reading, &hovering, position, PLAIN) {
-                    Maybe::Absent(reason) => silent.push(format!("{at}: {reason:?}")),
-                    Maybe::Present(shown)
-                        if reading.import_at(tile.span.start()).is_none()
-                            && shown
-                                .contents
-                                .value
-                                .contains("The tracking issue for this is:") =>
-                    {
-                        let named = stub(
-                            &hovering.table,
-                            &reading,
-                            found,
-                            &quoted,
-                            tile.span.start(),
-                            PLAIN,
-                        )
-                        .is_some_and(|stubbed| {
-                            shown.contents.value.ends_with(&stubbed.gap.closing())
-                        });
-                        if !named {
-                            misnamed.push(at);
-                        }
-                    },
-                    Maybe::Present(_) => {},
-                }
-            }
-        }
-        assert!(
-            silent.is_empty(),
-            "{} tiles hover nothing:\n{}",
-            silent.len(),
-            silent.join("\n")
-        );
-        assert!(
-            misnamed.is_empty(),
-            "{} stubs do not end with their gap's issue:\n{}",
-            misnamed.len(),
-            misnamed.join("\n")
-        );
-    }
-
     /// An import answers the file it reads, or why it reads none: a path the
     /// closure reads, a path naming no file, and an address with a scheme.
     #[test]
@@ -2285,5 +2171,129 @@ mod tests
             ),
             "an address with a scheme names its tracking issue: {shown}"
         );
+    }
+
+    /// The sweep over every tile of the corpus. A hover finds its entry by a
+    /// scan of the table, which the enforcing build scans again for each
+    /// specification, so a run visits the sources [`Sweep::visit`] names:
+    /// under a pull-request profile, plain or enforcing, the sample below and
+    /// every source the change adds or modifies; under `sweeps` and `nightly`,
+    /// every source. Each visited source hovers every tile.
+    mod sweeps
+    {
+        use gandr_surface_render_remote::ByteOffset as RenderOffset;
+        use gandr_surface_render_remote::LineIndex;
+        use gandr_surface_syntax::SourceText;
+        use gandr_workflow_sweep::Sample;
+        use gandr_workflow_sweep::SampleName;
+        use gandr_workflow_sweep::SampleSize;
+        use gandr_workflow_sweep::Sweep;
+        use gandr_workflow_sweep::corpus;
+        use quenchant_shape::shape::Maybe;
+
+        use super::super::Quoted;
+        use super::super::hover;
+        use super::super::hovering;
+        use super::super::stub;
+        use super::PLAIN;
+        use super::checked;
+        use crate::position::Position;
+        use crate::reading::Reading;
+
+        /// The sample: forty-eight sources, ranked by their BLAKE3 digest under
+        /// this name, at least one of each corpus class, and every source the
+        /// change adds or modifies (`gandr-workflow-sweep`).
+        const SAMPLE: Sample = Sample {
+            name: SampleName("every_corpus_tile_hovers_or_names_its_issue_1206"),
+            size: SampleSize(48),
+        };
+
+        /// No tile of the corpus hovers nothing: each answers what the engine
+        /// holds or a stub ending with its gap's tracking issue.
+        #[test]
+        fn every_corpus_tile_hovers_or_names_its_issue_1206()
+        {
+            let sweep = Sweep::asked().expect("the run's sweep resolves");
+            let sources = sweep.visit(SAMPLE, &corpus::sources().expect("the corpus reads"));
+            assert!(
+                sources.len() >= SAMPLE.size.0,
+                "the sample is drawn: {}",
+                sources.len()
+            );
+            let mut silent = Vec::new();
+            let mut misnamed = Vec::new();
+            for source in sources {
+                let path = &source.path;
+                let written = std::fs::read_to_string(path).expect("a corpus source is read");
+                let text = SourceText::from(written.as_str());
+                let session = checked(text);
+                let reading = Reading::of(text);
+                let hovering =
+                    hovering(text, path, &session, &gandr_surface_dispatcher::Unshadowed);
+                let index = LineIndex::new(written.as_str().into());
+                let quoted = Quoted {
+                    text,
+                    index: &index,
+                    spans: reading.spans(),
+                };
+                let Maybe::Present(found) = reading.declarations()
+                else {
+                    silent.push(format!("{}: unread", source.name));
+                    continue;
+                };
+                for tile in reading.tiles() {
+                    let start = usize::from(tile.span.start());
+                    let position = Position::of_byte(&index, RenderOffset::from(start))
+                        .expect("a tile starts on a boundary");
+                    let spelled = written
+                        .get(start .. usize::from(tile.span.end()))
+                        .unwrap_or_default();
+                    let line = written
+                        .get(.. start)
+                        .unwrap_or_default()
+                        .matches('\n')
+                        .count();
+                    let at = format!("{}:{} `{spelled}`", source.name, line.saturating_add(1));
+                    match hover(text, &session, &reading, &hovering, position, PLAIN) {
+                        Maybe::Absent(reason) => silent.push(format!("{at}: {reason:?}")),
+                        Maybe::Present(shown)
+                            if reading.import_at(tile.span.start()).is_none()
+                                && shown
+                                    .contents
+                                    .value
+                                    .contains("The tracking issue for this is:") =>
+                        {
+                            let named = stub(
+                                &hovering.table,
+                                &reading,
+                                found,
+                                &quoted,
+                                tile.span.start(),
+                                PLAIN,
+                            )
+                            .is_some_and(|stubbed| {
+                                shown.contents.value.ends_with(&stubbed.gap.closing())
+                            });
+                            if !named {
+                                misnamed.push(at);
+                            }
+                        },
+                        Maybe::Present(_) => {},
+                    }
+                }
+            }
+            assert!(
+                silent.is_empty(),
+                "{} tiles hover nothing:\n{}",
+                silent.len(),
+                silent.join("\n")
+            );
+            assert!(
+                misnamed.is_empty(),
+                "{} stubs do not end with their gap's issue:\n{}",
+                misnamed.len(),
+                misnamed.join("\n")
+            );
+        }
     }
 }
