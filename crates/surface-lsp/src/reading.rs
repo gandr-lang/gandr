@@ -109,9 +109,9 @@ pub struct Declaration
     pub head: Range,
     /// Whether a form of its own writes it, or the form holding it.
     pub written: Written,
-    /// For a theory, the span of each member it writes between its braces,
-    /// an `include` among them, in source order; none for another
-    /// declaration.
+    /// For a theory, a `data` or a `codata` declaration, the span of each
+    /// member it writes between its braces, an `include` or a rule among
+    /// them, in source order; none for another declaration.
     pub members: Vec<ByteSpan>,
 }
 
@@ -126,8 +126,8 @@ pub enum Written
     Member,
 }
 
-/// One tile of a read text: its bytes, the rule it is a tile of, and whether
-/// a declaration writes it among its own tiles.
+/// One tile of a read text: its bytes, the rule it is a tile of, the form it
+/// is a tile of, and whether a declaration writes it among its own tiles.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Tile
 {
@@ -135,6 +135,8 @@ pub struct Tile
     pub span: ByteSpan,
     /// The name of the rule the tile is a tile of.
     pub rule: &'static str,
+    /// The bytes of the form the tile is a tile of.
+    pub form: ByteSpan,
     /// Whether the tile is one of a declaration's own — a top-level item's or
     /// a module member's, past an atom written as its operand.
     pub declares: bool,
@@ -190,6 +192,7 @@ fn tiles(
                 tiles.push(Tile {
                     span: tile.span(),
                     rule: rule.name,
+                    form: node.span(),
                     declares: declaring == Some(rule.name),
                 });
             }
@@ -339,7 +342,7 @@ impl Reading
                         key: tree.key(at),
                         head: head(&tree, &index, at, &symbol),
                         members: match symbol.kind {
-                            SymbolKind::INTERFACE => {
+                            SymbolKind::INTERFACE | SymbolKind::ENUM | SymbolKind::STRUCT => {
                                 runs(&tree, at).into_iter().map(|run| run.span).collect()
                             },
                             _ => Vec::new(),

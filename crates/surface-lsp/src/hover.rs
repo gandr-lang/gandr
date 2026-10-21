@@ -56,6 +56,12 @@
 //!   lowering kept — a resolved use the line declaring what it refers to, a
 //!   name what it names, any other tile its grammar rule — then the refusal:
 //!   the declaration's hover, or the source's own.
+//! - **A declaration's own tile past its head**, about the tile, answers the
+//!   innermost declaration or member holding it: a constructor's `:` or `-->`
+//!   the constructor, a `data` declaration's or a module's brace the
+//!   declaration. A rule a `data` declaration writes answers as written. A
+//!   `rec` group's own tile answers the declarations the group writes, one to a
+//!   line.
 //! - **Any other tile** answers a stub, about the tile: the tile as written,
 //!   then the gap named and its tracking issue's line, by the families
 //!   [`crate::tracking`] lists. The corpus sweep refuses a tile that hovers
@@ -465,23 +471,25 @@ impl Style
 ///   the member as written, about the name. Else, on a use of a declaration the
 ///   text writes with no entry inside the use — the theory an `include` or a
 ///   `Model(…)` names — as on that declaration's name, about the use; in a run
-///   a theory writes that declares nothing, with no entry inside it, the same
-///   for the first such use in the run, about the run, and else the run as
-///   written, about it. Else, on the innermost typed node holding the position:
-///   inside a member whose entries are none of them there, the member as
-///   written, about the member; when the node spans a whole declaration — its
-///   body's term written over the declaration, or a module's instantiation
-///   written over the module (#405) — as on that declaration's name, about its
-///   head when the position is there and the node's range otherwise; else a
-///   block of its type — a binder's name, a written type's text or a term
-///   written as one name before ` : ` — and, for a term checked against a type
-///   spelled otherwise, that type in a second block, about the node's range.
-///   Else, in the head of a declaration — from its form's start to the brace
-///   opening its own body, a member's keyword to its name — as on its name,
-///   about the head, and in the attributes before the head, about them. Else,
-///   on a tile, [`stubbed`]'s answer, about what it is about. Absent in layout
-///   and comments. Every type is spelled in `style`'s form, and every block is
-///   written as [`Code`] writes it in `style`'s markup.
+///   a theory or a `data` declaration writes that declares nothing — an
+///   `include`, a rule — with no entry inside it and no orientation noted at
+///   the position, the same for the first such use in the run, about the run,
+///   and else the run as written, about it. Else, on the innermost typed node
+///   holding the position: inside a member whose entries are none of them
+///   there, the member as written, about the member; when the node spans a
+///   whole declaration — its body's term written over the declaration, or a
+///   module's instantiation written over the module (#405) — as on that
+///   declaration's name, about its head when the position is there and the
+///   node's range otherwise; else a block of its type — a binder's name, a
+///   written type's text or a term written as one name before ` : ` — and, for
+///   a term checked against a type spelled otherwise, that type in a second
+///   block, about the node's range. Else, in the head of a declaration — from
+///   its form's start to the brace opening its own body, a member's keyword to
+///   its name — as on its name, about the head, and in the attributes before
+///   the head, about them. Else, on a tile, [`stubbed`]'s answer, about what it
+///   is about. Absent in layout and comments. Every type is spelled in
+///   `style`'s form, and every block is written as [`Code`] writes it in
+///   `style`'s markup.
 /// - provides: the answer to `textDocument/hover`.
 /// - fails: never; an absence names its reason.
 /// - panics: none.
@@ -583,8 +591,9 @@ pub fn hover<Store, Blocks>(
             Written::Member => {},
         }
     }
-    // A run a theory writes that declares nothing — an `include` — answers the
-    // theory it names, below, else as written, where nothing inside it is typed.
+    // A run a theory or a `data` declaration writes that declares nothing — an
+    // `include`, a rule — answers the theory it names, below, else as written,
+    // where nothing inside it is typed and no orientation is noted.
     let at = usize::from(offset);
     let unnamed = forms()
         .flat_map(|form| form.members.iter())
@@ -597,6 +606,10 @@ pub fn hover<Store, Blocks>(
                     found.written == Written::Member
                         && usize::from(found.symbol.range.start.byte(&index)) == start
                 })
+                && !table
+                    .orientations()
+                    .iter()
+                    .any(|&(span, _)| span.start() <= offset && offset < span.end())
         });
     // A name that refers to a declaration this document writes and that no
     // entry types — the theory an `include` or a `Model(…)` names — answers as
@@ -840,7 +853,8 @@ fn imported(
 
 /// How a tile the table types nothing at stands: inside a refused
 /// declaration, in a source the lowering refused as a whole, in a source the
-/// table holds nothing for, or in a gap a tracking issue names.
+/// table holds nothing for, one of a declaration's own tiles, or in a gap a
+/// tracking issue names.
 #[derive(Clone, Copy, Debug)]
 enum Standing<'found>
 {
@@ -850,6 +864,12 @@ enum Standing<'found>
     Whole,
     /// In a source the table holds nothing for, refused by no lowering.
     Empty,
+    /// One of this declaration's or member's own tiles, the innermost holding
+    /// it.
+    Own(&'found Declaration),
+    /// One of a form's own tiles that is no declaration's but holds these,
+    /// the declarations the form writes: a `rec` group's.
+    Group(&'found [Declaration]),
     /// In this gap.
     Gap(Gap),
 }
@@ -867,9 +887,11 @@ struct Stub<'found>
 
 /// The stub at `offset`, by the first standing that holds it: inside a
 /// refused declaration, in a source refused as a whole, in a source the table
-/// holds nothing for, a tile a declaration writes itself, in a root form that
-/// declares nothing, else inside a declaration where the engine typed
-/// nothing. An import answers before any stub, by [`imported`].
+/// holds nothing for, a tile the innermost declaration or member holding it
+/// writes itself, a tile of a form that writes declarations and is none
+/// itself, in a root form that declares nothing, else inside a declaration
+/// where the engine typed nothing. An import answers before any stub, by
+/// [`imported`].
 ///
 /// # Specification
 /// - requires: `found` and `quoted` are of the text `reading` read, and `table`
@@ -905,6 +927,14 @@ fn stub<'found>(
             && offset
                 < ByteOffset::from(usize::from(declaration.symbol.range.end.byte(quoted.index)))
     };
+    let within = |declaration: &Declaration| {
+        tile.form.start()
+            <= ByteOffset::from(usize::from(
+                declaration.symbol.range.start.byte(quoted.index),
+            ))
+            && ByteOffset::from(usize::from(declaration.symbol.range.end.byte(quoted.index)))
+                <= tile.form.end()
+    };
     let refused = found
         .iter()
         .filter(|declaration| declaration.written == Written::Form && holds(declaration))
@@ -923,8 +953,27 @@ fn stub<'found>(
             {
                 Standing::Empty
             }
-            else if tile.declares {
-                Standing::Gap(Gap::Owned(tile.rule))
+            else if let Some(holder) = found
+                .iter()
+                .rfind(|declaration| tile.declares && holds(declaration))
+            {
+                Standing::Own(holder)
+            }
+            else if let Some(first) = found
+                .iter()
+                .position(|declaration| tile.declares && within(declaration))
+            {
+                let count = found
+                    .get(first ..)
+                    .unwrap_or_default()
+                    .iter()
+                    .take_while(|declaration| within(declaration))
+                    .count();
+                Standing::Group(
+                    found
+                        .get(first .. first.saturating_add(count))
+                        .unwrap_or_default(),
+                )
             }
             else if found.iter().any(|declaration| holds(&declaration)) {
                 Standing::Gap(Gap::Untyped)
@@ -946,20 +995,26 @@ fn stub<'found>(
 ///   [`kept`]'s answer, then the declaration's hover as [`declared`] writes it,
 ///   its refusal among it. In a source refused as a whole, [`kept`]'s answer,
 ///   then the lowering's refusal. In a source the table holds nothing for,
-///   [`kept`]'s answer and that the engine holds nothing for it. In a gap,
-///   about the tile, the tile as written in a block, then the gap named and its
-///   tracking issue's line as [`Gap::closing`] writes them.
+///   [`kept`]'s answer and that the engine holds nothing for it. On a
+///   declaration's own tile, about the tile, the declaration's hover as
+///   [`declared`] writes it, or a member's as [`member`] does. On a tile of a
+///   form that writes declarations, about the tile, each declaration as
+///   written, one to a line, then the form's rule named. In a gap, about the
+///   tile, the tile as written in a block, then the gap named and its tracking
+///   issue's line as [`Gap::closing`] writes them.
 /// - provides: the half of [`hover`] where the engine typed nothing.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — as [`stub`]; L3 — a binder's use, a declaration's use and
-///   a keyword inside a refused declaration, and a tile of a source refused
-///   whole, are asserted at their exact answers.
+///   a keyword inside a refused declaration, a tile of a source refused whole,
+///   and the own tiles of a `data` declaration, a constructor, a `module` and a
+///   `rec` are asserted at their exact answers.
 /// - witness: `hover::tests::sweeps::every_corpus_tile_hovers_or_names_its_issue_1206`
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::a_refused_declaration_hovers_what_the_lowering_kept_1201`
+/// - witness: `hover::tests::a_declaration_s_own_tile_hovers_the_declaration_1202`
 #[spec(ensures: |ref ret| ret.as_ref().is_none_or(|hover| hover.contents.value.starts_with(style.markup.opener().0)))]
 fn stubbed<Store, Blocks>(
     session: &Session<Store, Blocks>,
@@ -974,6 +1029,40 @@ fn stubbed<Store, Blocks>(
     let table = &hovering.table;
     let Stub { tile, standing } = stub(table, reading, found, quoted, offset, style)?;
     let (about, mut value) = match standing {
+        Standing::Own(holder) => {
+            let range = Range::of_bytes(
+                quoted.index,
+                RenderOffset::from(usize::from(tile.span.start())),
+                RenderOffset::from(usize::from(tile.span.end())),
+            )
+            .ok()?;
+            let shown = match holder.written {
+                Written::Form => declared(session, table, holder, range, quoted, style),
+                Written::Member => member(holder, range, quoted, style),
+            };
+            (tile.span, shown.contents.value)
+        },
+        Standing::Group(held) => {
+            let mut code = Code::new(style.markup);
+            for (at, declaration) in held
+                .iter()
+                .filter(|declaration| declaration.written == Written::Form)
+                .enumerate()
+            {
+                if at > 0 {
+                    code.plain(SourceText::from("\n"));
+                }
+                written(&mut code, declaration, quoted);
+            }
+            (
+                tile.span,
+                format!(
+                    "{}\n\nThe declarations this `{}` writes together.",
+                    code.block(),
+                    tile.rule
+                ),
+            )
+        },
         Standing::Gap(gap) => {
             let mut code = Code::new(style.markup);
             let start = RenderOffset::from(usize::from(tile.span.start()));
@@ -1011,7 +1100,7 @@ fn stubbed<Store, Blocks>(
         Standing::Empty => {
             value.push_str("\n\nThe engine holds nothing for this source.");
         },
-        Standing::Gap(_) => {},
+        Standing::Own(_) | Standing::Group(_) | Standing::Gap(_) => {},
     }
     Some(Hover {
         contents: MarkupContent {
@@ -2066,6 +2155,72 @@ mod tests
         Result<String, hovered::Absent>,
     );
 
+    /// A declaration's own tile answers what holds it: a constructor's its
+    /// constructor, a rule's the rule as written, a `data` declaration's or a
+    /// module's brace the declaration, and a `rec` group's tile the
+    /// declarations the group writes. None names a tracking issue.
+    #[test]
+    fn a_declaration_s_own_tile_hovers_the_declaration_1202()
+    {
+        let data = "data NatDiv : Type {\n  Zero : NatDiv;\n  Succ : (n : NatDiv) --> NatDiv;\n  \
+                    oper divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);\n  \
+                    rule divmod(m, Zero) ==> (Zero, m);\n}\n";
+        let module = "module Ints {\n  def one : Integer ;\n  def one = 1 ;\n}\n";
+        let rec = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\nrec {\n  def \
+                   rec ping(n : Nat) -> -F Nat { become pong(n) }\n  def rec pong(n : Nat) -> \
+                   -F Nat { return n }\n}\n";
+        let succ = fenced(SourceText::from("Succ : (n : NatDiv) --> NatDiv"));
+        let zero = fenced(SourceText::from("Zero : NatDiv"));
+        let rule = fenced(SourceText::from("rule divmod(m, Zero) ==> (Zero, m)"));
+        let ints = fenced(SourceText::from("module Ints"));
+        let group = format!(
+            "{}\n\nThe declarations this `rec_block` writes together.",
+            fenced(SourceText::from(
+                "def rec ping(n : Nat) -> -F Nat\ndef rec pong(n : Nat) -> -F Nat"
+            ))
+        );
+        let rows: [Row<'_>; 11] = [
+            (
+                "a constructor's parenthesis",
+                data,
+                (2, 9),
+                Ok(succ.clone()),
+            ),
+            ("a constructor's colon", data, (1, 7), Ok(zero.clone())),
+            ("a constructor's semicolon", data, (1, 15), Ok(zero)),
+            ("a constructor's arrow", data, (2, 22), Ok(succ)),
+            (
+                "a data declaration's closing brace",
+                data,
+                (5, 0),
+                Ok(fenced(SourceText::from("NatDiv : Type"))),
+            ),
+            ("a rule's keyword", data, (4, 2), Ok(rule)),
+            (
+                "a module's opening brace",
+                module,
+                (0, 12),
+                Ok(ints.clone()),
+            ),
+            ("a module's closing brace", module, (3, 0), Ok(ints)),
+            ("a rec group's keyword", rec, (4, 0), Ok(group.clone())),
+            (
+                "a rec group's opening brace",
+                rec,
+                (4, 4),
+                Ok(group.clone()),
+            ),
+            ("a rec group's closing brace", rec, (7, 0), Ok(group)),
+        ];
+        for (position, text, (line, character), expected) in rows {
+            assert_eq!(
+                shown(SourceText::from(text), (line.into(), character.into())),
+                expected,
+                "{position}"
+            );
+        }
+    }
+
     #[test]
     fn a_described_member_hovers_its_own_type()
     {
@@ -2076,7 +2231,7 @@ mod tests
                     oper id : (a : Ob) --> Hom(a, a);\n  \
                     oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  \
                     rule unitL : comp(id(a), f) ==> f;\n}\n";
-        let rows: [Row<'_>; 15] = [
+        let rows: [Row<'_>; 14] = [
             (
                 "a data family's name",
                 data,
@@ -2140,16 +2295,6 @@ mod tests
                 Ok(fenced(SourceText::from(
                     "oper divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv)",
                 ))),
-            ),
-            (
-                "a field's parenthesis",
-                data,
-                (2, 9),
-                Ok(format!(
-                    "{}\n\nA tile a `data_declaration` writes itself has no hover yet. The tracking issue \
-                     for this is: [#1202]\n\n[#1202]: https://github.com/gandr-lang/gandr/issues/1202",
-                    fenced(SourceText::from("("))
-                )),
             ),
             (
                 "an indexed sort",
@@ -2490,9 +2635,11 @@ mod tests
                                     Standing::Gap(gap) => {
                                         shown.contents.value.ends_with(&gap.closing())
                                     },
-                                    Standing::Refused(_) | Standing::Whole | Standing::Empty => {
-                                        true
-                                    },
+                                    Standing::Refused(_)
+                                    | Standing::Whole
+                                    | Standing::Empty
+                                    | Standing::Own(_)
+                                    | Standing::Group(_) => true,
                                 }
                             });
                             if !named {
