@@ -2173,9 +2173,15 @@ fn attr_inline() -> Regex
 
 /// Build an inline parameter, including uppercase type-variable binders.
 ///
+/// The annotation may open on a receiver's mode, `self : shared Str` or `self :
+/// consumed Str`: the words of the access form's mode, the written-through
+/// mode unwritten as there. The lowering reads the word on a method's `self`
+/// and refuses it anywhere else.
+///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a binder-name menu followed by an optional type annotation.
+/// - ensures: a binder-name menu followed by an optional type annotation,
+///   itself opening on an optional `shared` or `consumed`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2194,7 +2200,11 @@ fn param() -> Regex
             t(TileLabel("type_variable")),
             t(TileLabel("type_identifier")),
         ]),
-        opt(seq([t(TileLabel(":")), h(Sort::Type)])),
+        opt(seq([
+            t(TileLabel(":")),
+            opt(alt([t(TileLabel("shared")), t(TileLabel("consumed"))])),
+            h(Sort::Type),
+        ])),
     ])
 }
 
