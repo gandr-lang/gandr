@@ -37,10 +37,13 @@ use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::primitive::Arguments;
 use gandr_core_term::primitive::PRELUDE;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Sign;
+use gandr_kernel_term::StringLiteral;
+use gandr_kernel_term::Summand;
 use gandr_runtime_emitter::Declined;
 use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::HostHandler;
@@ -169,6 +172,27 @@ enum Answer
     Payload,
     /// Leave the operation unhandled.
     Decline,
+    /// Resume with a value the host builds itself.
+    Built(Built),
+}
+
+/// A value a host builds for its reply, of a kind the run holds by a table or
+/// does not hold at all.
+#[derive(Clone, Copy, Debug)]
+enum Built
+{
+    /// The text literal `reply`.
+    Text,
+    /// The unit in the left summand.
+    Left,
+    /// The opaque constant 7.
+    Opaque,
+    /// A capability, which no handler of the run introduced.
+    Capability,
+    /// Code the host built, which no function's code table holds.
+    Code,
+    /// The empty list, whose head no run of these programs builds.
+    Nil,
 }
 
 /// What a hosted run is expected to end with.
@@ -246,6 +270,30 @@ impl HostHandler for ScriptedHost<'_>
             ),
             Answer::Payload => HostReply::Resume(request.payload),
             Answer::Decline => HostReply::Decline,
+            Answer::Built(built) => {
+                let value = match built {
+                    Built::Text => {
+                        HeapValue::Literal(Literal::Text(StringLiteral::new("reply".into())))
+                    },
+                    Built::Left => HeapValue::Constructed {
+                        tag: ConstructorTag::Injection(Summand::from(0_usize)),
+                        fields: Box::new([values
+                            .allocate(HeapValue::Constructed {
+                                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
+                                fields: Box::new([]),
+                            })
+                            .expect("the field fits")]),
+                    },
+                    Built::Opaque => HeapValue::Opaque(ConstantIndex::from(7_usize)),
+                    Built::Capability => HeapValue::Capability,
+                    Built::Code => HeapValue::Code(self.core.value_unit()),
+                    Built::Nil => HeapValue::Constructed {
+                        tag: ConstructorTag::ListNil,
+                        fields: Box::new([]),
+                    },
+                };
+                HostReply::Resume(values.allocate(value).expect("the reply fits"))
+            },
         }
     }
 }
@@ -705,5 +753,103 @@ fn a_host_abort_never_resumes_and_a_missing_reply_declines()
             "{tier:?}"
         );
         assert_eq!(1, invalid.calls, "{tier:?}");
+    }
+}
+
+/// A reply the host builds of a text literal, an injection or an opaque
+/// constant is laid into the run and is the run's answer, read back as built.
+#[test]
+fn a_host_built_reply_of_a_tabled_kind_is_the_answer()
+{
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let unit_type = core.value_type_unit();
+    let text = core.value_literal(Literal::Text(StringLiteral::new("reply".into())));
+    let text_type = core.value_type_base(BaseType::String);
+    let left = core.value_injection(Summand::from(0_usize), unit);
+    let sum_type = core.value_type_sum(&[unit_type, unit_type]);
+    let opaque = core.value_constant(ConstantIndex::from(7_usize));
+    for (built, reply, reply_type) in [
+        (Built::Text, text, text_type),
+        (Built::Left, left, sum_type),
+        (Built::Opaque, opaque, unit_type),
+    ] {
+        let signature = EffectSig::new("Ask".into(), [EffectOp {
+            name: "ask".into(),
+            payload: unit_type,
+            reply: reply_type,
+        }])
+        .expect("one operation");
+        let program = core.computation_perform(signature, "ask".into(), unit);
+        assert_host(
+            &mut core,
+            program,
+            &[Offer {
+                signature: "Ask",
+                operation: "ask",
+                payload: unit,
+                answer: Answer::Built(built),
+            }],
+            Expected::Value(reply),
+        );
+    }
+}
+
+/// A reply the run cannot hold declines the run naming the reply: a
+/// capability or code the host built, and a list whose head the function's
+/// table lacks.
+#[test]
+fn a_host_built_reply_the_run_cannot_hold_declines()
+{
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let unit_type = core.value_type_unit();
+    let signature = EffectSig::new("Ask".into(), [EffectOp {
+        name: "ask".into(),
+        payload: unit_type,
+        reply: unit_type,
+    }])
+    .expect("one operation");
+    let program = core.computation_perform(signature, "ask".into(), unit);
+    let mut arena = CommandArena::new();
+    let root = focus_computation(&core, program, &mut arena, &mut Provenance::new())
+        .expect("the program focuses");
+    let definitions = Definitions::new();
+    for built in [Built::Capability, Built::Code, Built::Nil] {
+        for entry in tiers().iter().copied().map(Some).chain([None]) {
+            let mut store = Store::new();
+            let mut host = ScriptedHost {
+                core: &mut core,
+                offers: VecDeque::from([Offer {
+                    signature: "Ask",
+                    operation: "ask",
+                    payload: unit,
+                    answer: Answer::Built(built),
+                }]),
+            };
+            let ran = match entry {
+                Some(tier) => evaluate_on_with_host(
+                    tier,
+                    (&arena, &definitions, root),
+                    (budget(), &mut store),
+                    &mut host,
+                ),
+                None => evaluate_with_host(
+                    &arena,
+                    &definitions,
+                    root,
+                    (budget(), &mut store),
+                    &mut host,
+                ),
+            };
+            assert!(
+                host.offers.is_empty(),
+                "{built:?} on {entry:?}: offered once"
+            );
+            assert!(
+                matches!(ran, Err(Declined::Reply(_))),
+                "{built:?} on {entry:?}: {ran:?}"
+            );
+        }
     }
 }
