@@ -829,12 +829,44 @@ fn a_capability_at_a_scope_lives_in_its_region()
         "a parameter names no region: {:?}",
         outcome_of(&module, "unbound".into())
     );
+    let plain = tail_of(&module, &arena, "plain".into());
+    let Some(&Computation::Scope { subject, .. }) = arena.computation(plain)
+    else {
+        panic!("the scope");
+    };
+    let Some(&Computation::Bind(bound, _)) = arena.computation(subject)
+    else {
+        panic!("the typed bind");
+    };
+    let Some(&Computation::Ascribe { ty, .. }) = arena.computation(bound)
+    else {
+        panic!("a typed bind ascribes its computation");
+    };
+    let Some(&CompType::Returner { result, .. }) = arena.comp_type(ty)
+    else {
+        panic!("at a returner");
+    };
+    let Some(&ValueType::Kept { value, region }) = arena.value_type(result)
+    else {
+        panic!(
+            "an integer at `c` is kept in its region: {:?}",
+            arena.value_type(result)
+        );
+    };
+    assert_eq!(
+        (arena.value_type(value), region),
+        (
+            Some(&ValueType::Base(BaseType::Integer)),
+            RegionDepth::from(1_u32)
+        ),
+        "the integer kept in the scope's region"
+    );
     assert!(
         matches!(
-            outcome_of(&module, "plain".into()),
-            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment { .. })
+            verdict_of(&module, &report, "plain".into()),
+            Verdict::Checked { .. }
         ),
-        "only a capability lives in a region: {:?}",
-        outcome_of(&module, "plain".into())
+        "an integer enters the region: {:?}",
+        verdict_of(&module, &report, "plain".into())
     );
 }

@@ -1,0 +1,80 @@
+// What a kept view may not do: a view no region keeps escapes its access, an
+// exclusive view is kept nowhere, a held value a live region keeps a view of
+// is not written, and nothing kept in a region leaves it. A region is a static
+// extent erased before anything runs (Koronkevich and Bowman, _Type Universes
+// as Kripke Worlds_, ICFP 2025, doi:10.1145/3747532).
+
+/// The model's thunk at a type kept in no region: the view would outlive the
+/// access that lent it.
+@[ refuses("ViewEscaped") ]
+def unkept() -> -F Integer {
+  hold s = 3;
+  handle c : Proc {
+    run k : () => Integer <- access shared s as w { pure thunk { pure w } } ;
+    force k
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => pure 0
+  }
+}
+
+/// An exclusive view is kept in no region: its write-back runs when its access
+/// resumes, so nothing may read through it afterwards.
+@[ refuses("ViewEscaped") ]
+def keptExclusive() -> -F Integer {
+  hold s = 3;
+  handle c : Proc {
+    access s as v {
+      run k : (() => Integer) at c <- pure thunk { pure v } ;
+      resume(v, v)
+    };
+    pure 0
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => pure 0
+  }
+}
+
+/// An exclusive access inside the region that keeps a view of the held value:
+/// the kept thunk would read the value while it is written.
+@[ refuses("HeldKept") ]
+def written() -> -F Integer {
+  hold s = 3;
+  handle c : Proc {
+    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } } ;
+    access s as v { resume(v, v + 1) };
+    force k
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => pure 0
+  }
+}
+
+/// A thunk kept in no region that forces the kept one: the kept thunk would
+/// leave its region inside it.
+@[ refuses("KeptEscaped") ]
+def rewrapped() -> -F Integer {
+  hold s = 3;
+  handle c : Proc {
+    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } } ;
+    run j : () => Integer <- pure thunk { force k } ;
+    force j
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => pure 0
+  }
+}
+
+/// The kept thunk answered where a thunk kept in no region is promised: a value
+/// kept in a region never stands outside it.
+@[ refuses("TypeMismatch") ]
+def answered() -> -F (() => Integer) {
+  hold s = 3;
+  handle c : Proc {
+    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } } ;
+    pure k
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => pure thunk { pure 0 }
+  }
+}

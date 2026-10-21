@@ -1514,7 +1514,7 @@ ValueType::Capability { ref authority, .. } => authority.types().count(),
 ValueType::World(ref ty) => ty.types().count(),
 ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::Sigma { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Path { .. } | ValueType::Flow { .. } => 3,
-ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) | ValueType::Staged { .. } => 1,
+ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) | ValueType::Staged { .. } | ValueType::Kept { .. } => 1,
 }),
         | Node::CompType(id) => match self.arena.comp_type(id) {
             | None | Some(&CompType::Unknown) => 0_usize,
@@ -1943,7 +1943,9 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                             self.tasks.push(open(Node::CompType(output), depth));
                             self.tasks.push(open(Node::CompType(input), depth));
                         },
-                        ValueType::List(element) | ValueType::Staged { base: element, .. } => {
+                        ValueType::List(element)
+                        | ValueType::Staged { base: element, .. }
+                        | ValueType::Kept { value: element, .. } => {
                             self.tasks.push(open(Node::ValueType(element), depth));
                         },
                         ValueType::Data { ref arguments, .. } => self.tasks.extend(
@@ -3334,7 +3336,7 @@ ValueType::Capability { ref authority, .. } => authority.types().count(),
 ValueType::World(ref ty) => ty.types().count(),
 ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::Sigma { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Path { .. } | ValueType::Flow { .. } => 3,
-ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) | ValueType::Staged { .. } => 1,
+ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) | ValueType::Staged { .. } | ValueType::Kept { .. } => 1,
 })],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
             && (ret == id || self.arena.value_type(id).is_some_and(|original| self.arena.value_type(ret).is_some_and(|rewritten|
@@ -3412,6 +3414,15 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 }
                 else {
                     self.arena.value_type_staged(rewritten, stage)
+                }
+            },
+            ValueType::Kept { value, region } => {
+                let rewritten = Self::value_type(&mut self.results, value);
+                if rewritten == value {
+                    id
+                }
+                else {
+                    self.arena.value_type_kept(rewritten, region)
                 }
             },
             ValueType::PathUniverse(source, target) => {

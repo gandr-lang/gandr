@@ -1084,6 +1084,10 @@ where
                 Some(&ValueType::Staged { base, .. }) => {
                     pending.push((AnyNode::ValueType(base), reach));
                 },
+                // A region keeps its value without moving it.
+                Some(&ValueType::Kept { value, .. }) => {
+                    pending.push((AnyNode::ValueType(value), reach));
+                },
                 Some(&ValueType::Stack { input, output }) => {
                     pending.push((AnyNode::CompType(input), Reach::Nested {
                         polarity: Polarity::Negative,

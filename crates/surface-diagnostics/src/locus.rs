@@ -1446,6 +1446,12 @@ impl fmt::Display for Checked
                 | AccessDefect::Moved => f.write_str(
                     "the abort ends a view whose value a read moved out, so the held slot would keep nothing",
                 ),
+                | AccessDefect::Kept => f.write_str(
+                    "a view of the held value is kept in a region still live, and this exclusive access would write under it",
+                ),
+                | AccessDefect::KeptEscaped => f.write_str(
+                    "the scope's answer names a value kept in its own region, which ends with the scope",
+                ),
             },
             | CheckRefusal::Codata { fault, .. } => f.write_str(match fault {
                 | CodataFault::Undeclared => "the codata application names no admitted codata declaration",

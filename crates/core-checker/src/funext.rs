@@ -603,6 +603,7 @@ fn first_order(
             | ValueTypeView::Sigma { .. }
             | ValueTypeView::Abstract(_)
             | ValueTypeView::Staged { .. }
+            | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Session(_)
             | ValueTypeView::World(_)
@@ -739,6 +740,7 @@ fn coverage(
                     | ValueTypeView::Sigma { .. }
                     | ValueTypeView::Abstract(_)
                     | ValueTypeView::Staged { .. }
+                    | ValueTypeView::Kept { .. }
                     | ValueTypeView::Capability { .. }
                     | ValueTypeView::Session(_)
                     | ValueTypeView::World(_)

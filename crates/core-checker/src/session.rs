@@ -317,6 +317,7 @@ pub(crate) fn session_at(
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Staged { .. }
+        | ValueTypeView::Kept { .. }
         | ValueTypeView::World(_)
         | ValueTypeView::Unknown => Err(CheckRefusal::MachineInvariant),
     }
@@ -373,6 +374,7 @@ pub(crate) fn unrestricted(
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Staged { .. }
+        | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_)
@@ -404,6 +406,7 @@ pub(crate) fn unrestricted(
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Staged { .. }
+        | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::World(_)
         | ValueTypeView::Unknown => Ok(()),

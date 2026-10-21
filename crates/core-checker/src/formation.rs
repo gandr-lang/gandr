@@ -444,6 +444,7 @@ pub fn level_of(
                 ValueTypeView::Abstract(atom) => levels.push(context.abstract_level(atom)?),
                 ValueTypeView::List(element)
                 | ValueTypeView::Staged { base: element, .. }
+                | ValueTypeView::Kept { value: element, .. }
                 | ValueTypeView::Path {
                     carrier: element, ..
                 }

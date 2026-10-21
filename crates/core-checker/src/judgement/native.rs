@@ -1252,6 +1252,7 @@ impl Machine<'_, '_>
             | ValueTypeView::StaticPi { .. }
             | ValueTypeView::Abstract(_)
             | ValueTypeView::Staged { .. }
+            | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Session(_)
             | ValueTypeView::World(_) => return Err(CheckRefusal::MachineInvariant),

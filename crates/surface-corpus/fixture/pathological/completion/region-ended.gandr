@@ -1,16 +1,18 @@
 // A buffer's region ended under its pending completion: buffers passed to a
 // read "must remain valid until completion" (io_uring(7)), so the region the
 // buffer lives in may not end while the submission that holds it is pending.
-// Regions after Tofte and Talpin, _Region-Based Memory Management_
-// (doi:10.1006/inco.1996.2613).
+// A region is a static extent erased before anything runs (Koronkevich and
+// Bowman, _Type Universes as Kripke Worlds_, ICFP 2025, doi:10.1145/3747532).
 
 // The ring's protocol and its entries.
 import "../../model/completion/ring-base.gandr" ;
 
 /// The buffer placed in a handler's region and submitted, with the handler
-/// ending before the completion is reaped. Refused today at the placement:
-/// only a capability lives in a region (#1164).
-@[ refuses("OutOfFragment") ]
+/// ending before the completion is reaped. Refused today at the fork: an
+/// endpoint inside a handler's scope could be resumed twice. The buffer
+/// belongs in a hold's region, which a fork outside any handler can live in
+/// (#1220).
+@[ refuses("CapturedEndpoint") ]
 def regionEnded() -> -F Unit {
   handle c : Proc {
     run buffer : Ring.Sqe at c <- pure Ring.read ;

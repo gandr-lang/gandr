@@ -734,6 +734,14 @@ fn control_nodes_persist_names_frames_and_branch_order()
             grade: CapabilityGrade::Consumable,
             region: Region::Held,
         },
+        ContentNode::KeptType {
+            value: index(1_usize),
+            region: RegionDepth::from(0_u32),
+        },
+        ContentNode::KeptType {
+            value: index(1_usize),
+            region: RegionDepth::from(2_u32),
+        },
         ContentNode::Resume(index(1_usize), index(2_usize)),
         ContentNode::Reset(index(1_usize)),
         ContentNode::Shift(index(1_usize)),
@@ -2547,6 +2555,8 @@ fn every_refusal() -> Vec<Refusal>
             AccessDefect::HeldShared,
             AccessDefect::HeldCopied,
             AccessDefect::Moved,
+            AccessDefect::Kept,
+            AccessDefect::KeptEscaped,
         ]
         .map(|defect| Refusal::Access { at, defect }),
     );

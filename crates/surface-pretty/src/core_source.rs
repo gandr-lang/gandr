@@ -683,6 +683,7 @@ impl<'arena> CoreSource<'arena>
             | ValueType::Stack { .. }
             | ValueType::Session(_)
             | ValueType::Capability { .. }
+            | ValueType::Kept { .. }
             | ValueType::Staged { .. }
             | ValueType::World(_) => None,
         }
@@ -1071,6 +1072,8 @@ impl<'arena> CoreSource<'arena>
             grade == actual_grade && region == actual_region,
         | (Some(&ValueType::World(WorldType::At { inner, world })), Former::Located { inner: actual, world: named }) =>
             actual == CoreNode::ValueType(inner) && named == self.world_name(world),
+        | (Some(&ValueType::Kept { value, region }), Former::Kept { inner: actual, region: named }) =>
+            actual == CoreNode::ValueType(value) && named == region,
         | (Some(&(ValueType::Sigma { .. } | ValueType::Flow { .. })), Former::Relation { .. }) =>
             self.relations.binary_search_by_key(&id, |&(held, _)| held).is_ok(),
         | _ => false,
@@ -1193,6 +1196,10 @@ impl<'arena> CoreSource<'arena>
             ValueType::World(WorldType::At { inner, world }) => Former::Located {
                 inner: CoreNode::ValueType(inner),
                 world: self.world_name(world),
+            },
+            ValueType::Kept { value, region } => Former::Kept {
+                inner: CoreNode::ValueType(value),
+                region,
             },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
@@ -1831,6 +1838,7 @@ impl Source for CoreSource<'_>
                 | ValueType::Unknown
                 | ValueType::Stack { .. }
                 | ValueType::Capability { .. }
+                | ValueType::Kept { .. }
                 | ValueType::Staged { .. }
                 | ValueType::World(_) => None,
             },
@@ -2022,6 +2030,7 @@ impl Source for CoreSource<'_>
                 | ValueType::Stack { .. }
                 | ValueType::Session(_)
                 | ValueType::Capability { .. }
+                | ValueType::Kept { .. }
                 | ValueType::Staged { .. }
                 | ValueType::World(_) => None,
             },

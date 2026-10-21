@@ -206,6 +206,7 @@ pub fn component(
                 | ValueTypeView::Sigma { .. }
                 | ValueTypeView::Abstract(_)
                 | ValueTypeView::Staged { .. }
+                | ValueTypeView::Kept { .. }
                 | ValueTypeView::Capability { .. }
                 | ValueTypeView::Session(_)
                 | ValueTypeView::World(_)
@@ -231,6 +232,7 @@ pub fn component(
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Staged { .. }
+        | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_)
@@ -352,6 +354,7 @@ pub fn flow_component(
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Staged { .. }
+        | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_)

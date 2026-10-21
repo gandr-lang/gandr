@@ -379,6 +379,7 @@ fn first_order(
             | ValueTypeView::Sigma { .. }
             | ValueTypeView::Abstract(_)
             | ValueTypeView::Staged { .. }
+            | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Session(_)
             | ValueTypeView::World(_)
@@ -464,6 +465,7 @@ fn leaves(
             | ValueTypeView::Sigma { .. }
             | ValueTypeView::Abstract(_)
             | ValueTypeView::Staged { .. }
+            | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Session(_)
             | ValueTypeView::World(_)
@@ -571,6 +573,7 @@ fn natural(
             | ValueTypeView::Sigma { .. }
             | ValueTypeView::Abstract(_)
             | ValueTypeView::Staged { .. }
+            | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Session(_)
             | ValueTypeView::World(_)

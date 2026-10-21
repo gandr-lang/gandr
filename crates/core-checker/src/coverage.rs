@@ -701,6 +701,7 @@ impl Walker<'_, '_, '_>
                 | ValueType::Session(_)
                 | ValueType::StaticPi { .. }
                 | ValueType::Staged { .. }
+                | ValueType::Kept { .. }
                 | ValueType::World(_)),
             ) => Ok(Kind::Opaque),
         }

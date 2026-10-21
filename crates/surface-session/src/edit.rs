@@ -2635,6 +2635,7 @@ enum Agreement
                     )
                 }
                 ContentNode::Memory(ref left) => matches!(*new, ContentNode::Memory(ref right) if left.shape() == right.shape()),
+                ContentNode::KeptType { region: left, .. } => matches!(*new, ContentNode::KeptType { region: right, .. } if left == right),
                 _ if children(old).next().is_none() => old == new,
                 ContentNode::Univalence(..) | ContentNode::ListCase { .. } |
                 ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Thunk(_) | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::UnknownComputationType | ContentNode::Unresolved(_) => true,
@@ -2881,6 +2882,10 @@ fn agreement(
             &ContentNode::ComputationElement {
                 target: ref right, ..
             },
+        ) => left == right,
+        (
+            &ContentNode::KeptType { region: left, .. },
+            &ContentNode::KeptType { region: right, .. },
         ) => left == right,
         (&ContentNode::Memory(ref left), &ContentNode::Memory(ref right)) => {
             left.shape() == right.shape()
@@ -3738,6 +3743,7 @@ where
                 ValueType::Product(ref parts) => matches!(ret, ContentNode::Product(ref found) if found.len() == parts.len()),
                 ValueType::Sum(ref parts) => matches!(ret, ContentNode::Sum(ref found) if found.len() == parts.len()),
                 ValueType::List(_) => matches!(ret, ContentNode::List(_)),
+                ValueType::Kept { region, .. } => matches!(ret, ContentNode::KeptType { region: found, .. } if found == region),
                 ValueType::Thunk(_) => matches!(ret, ContentNode::ThunkType(_)),
                 ValueType::Universe { sort, ref level } => {
                     matches!(
@@ -3862,6 +3868,10 @@ where
                 .collect(),
         ),
         Some(&ValueType::List(element)) => ContentNode::List(child(Root::ValueType(element))),
+        Some(&ValueType::Kept { value, region }) => ContentNode::KeptType {
+            value: child(Root::ValueType(value)),
+            region,
+        },
         Some(&ValueType::Thunk(body)) => ContentNode::ThunkType(child(Root::CompType(body))),
         Some(&ValueType::Universe { sort, ref level }) => ContentNode::Universe {
             sort,

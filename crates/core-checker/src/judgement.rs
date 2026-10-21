@@ -3241,9 +3241,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - fails: [`CheckRefusal::ShapeMismatch`] for an answer that is no
     ///   returner; [`CheckRefusal::HandlerCoverage`] for clauses that do not
     ///   cover the interface exactly once; [`CheckRefusal::CapabilityEscaped`]
-    ///   for an answer that mentions the scope's own region or a deeper one;
-    ///   [`CheckRefusal::EffectSignatureConflict`] for an answer row giving the
-    ///   interface's name other operations.
+    ///   for an answer whose capability lives in the scope's own region or a
+    ///   deeper one, and [`CheckRefusal::Access`] naming
+    ///   [`crate::access::AccessDefect::KeptEscaped`] for one whose value is
+    ///   kept there; [`CheckRefusal::EffectSignatureConflict`] for an answer
+    ///   row giving the interface's name other operations.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3252,6 +3254,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   a conflicting answer row are each refused by name.
     /// - witness: `capability::tests::a_scope_handles_the_capability_it_introduces`
     /// - witness: `capability::tests::a_scoped_capability_never_leaves_its_scope`
+    /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
     #[spec(captures: depth = self.frames.len(), ensures: |ret| ret.is_err() || (self.frames.len() == depth.saturating_add(1) && matches!(self.frames.last(), Some(Waiting { frame: Frame::ScopeForm { at: site, .. }, .. }) if *site == at)))]
     fn scope(
         &mut self,
@@ -3282,13 +3285,24 @@ impl<'context, 'arena> Machine<'context, 'arena>
         }
         let signature = signature.clone();
         let region = self.next_region()?;
-        if crate::capability::reaches(self.context.arena(), answer, region)?
-            == crate::capability::Reach::Mentions
-        {
-            return Err(CheckRefusal::CapabilityEscaped {
-                at: TermNode::Computation(at),
-                found: TypeNode::Computation(answer),
-            });
+        match crate::capability::reaches(
+            self.context.arena(),
+            TypeNode::Computation(answer),
+            region,
+        )? {
+            crate::capability::Reach::Clear => {},
+            crate::capability::Reach::Mentions => {
+                return Err(CheckRefusal::CapabilityEscaped {
+                    at: TermNode::Computation(at),
+                    found: TypeNode::Computation(answer),
+                });
+            },
+            crate::capability::Reach::Keeps => {
+                return Err(CheckRefusal::Access {
+                    at: CoreNode::Term(TermNode::Computation(at)),
+                    defect: crate::access::AccessDefect::KeptEscaped,
+                });
+            },
         }
         let head = self.context.whnf_comp_type(answer)?;
         let ambient = match comp_type_view(self.context.arena(), head)? {
@@ -3332,15 +3346,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   the scope's own context.
     /// - ensures: one intuitionistic binder of the capability `Cap_ρ ⟨I⟩`,
     ///   durable, at the region one deeper than every enclosing scope; the
-    ///   subject is checked against `subject` shifted past it.
+    ///   region marked with the linear slots opened before it, whose shared
+    ///   views a value kept there may name; the subject is checked against
+    ///   `subject` shifted past it.
     /// - fails: [`CheckRefusal::MachineInvariant`] for a node that is no scope.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the subject exercising the binder checks, and the
-    ///   binder returned through the subject is refused as escaping.
+    ///   binder returned through the subject is refused as escaping; a shared
+    ///   view of a hold outside the scope is kept in its region, one of a hold
+    ///   inside it is refused.
     /// - witness: `capability::tests::a_scope_handles_the_capability_it_introduces`
     /// - witness: `capability::tests::a_scoped_capability_never_leaves_its_scope`
+    /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
     #[spec(captures: depth = usize::from(self.context.depth(Zone::Intuitionistic)), ensures: |ret| ret.is_err() || usize::from(self.context.depth(Zone::Intuitionistic)) == depth.saturating_add(1))]
     fn scope_subject(
         &mut self,
@@ -3365,6 +3384,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         self.context
             .binders()
             .open(Zone::Intuitionistic, capability);
+        self.sessions.regions.push(self.sessions.opened.len());
         self.wait(Frame::ScopeSubject { at, answer });
         Ok(Step::Descend(Goal::Computation {
             term: body,
@@ -4353,22 +4373,25 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///
     /// # Specification
     /// - requires: `expected` is formed.
-    /// - ensures: a thunk's body checks against the body `expected` matches as
-    ///   a thunk type at its weak head; a pair's components check against the
-    ///   factors it matches as an eager product, and against a dependent pair
-    ///   its first component checks against the first factor and its second
-    ///   against the second factor at the first component; a static lambda
-    ///   opens a binder of the domain it matches as a static Pi and its body
-    ///   checks against the codomain shifted past the binder; a hole and a mark
-    ///   check against any type at once; a computation written where a value is
-    ///   read is decided by `expected` — against a thunk type, or the unknown
-    ///   type, its computation checks against the thunk's body and it is
-    ///   recorded suspended, and against any other it runs: its computation
-    ///   synthesises a returner whose result crosses the value bridge to
-    ///   `expected`, and it is recorded run; a constructor checked at a staged
-    ///   type checks as [`Self::staged_constructor`] does; a synthesising value
-    ///   synthesises, then crosses the value bridge to `expected`. Every other
-    ///   rule descends.
+    /// - ensures: an introduction form checked at a type kept in a region
+    ///   checks at the type kept, the region's entry, and a synthesising value
+    ///   crosses the bridge to the kept type itself; a thunk's body checks
+    ///   against the body `expected` matches as a thunk type at its weak head;
+    ///   a pair's components check against the factors it matches as an eager
+    ///   product, and against a dependent pair its first component checks
+    ///   against the first factor and its second against the second factor at
+    ///   the first component; a static lambda opens a binder of the domain it
+    ///   matches as a static Pi and its body checks against the codomain
+    ///   shifted past the binder; a hole and a mark check against any type at
+    ///   once; a computation written where a value is read is decided by
+    ///   `expected` — against a thunk type, or the unknown type, its
+    ///   computation checks against the thunk's body and it is recorded
+    ///   suspended, and against any other it runs: its computation synthesises
+    ///   a returner whose result crosses the value bridge to `expected`, and it
+    ///   is recorded run; a constructor checked at a staged type checks as
+    ///   [`Self::staged_constructor`] does; a synthesising value synthesises,
+    ///   then crosses the value bridge to `expected`. Every other rule
+    ///   descends.
     /// - fails: [`CheckRefusal::ShapeMismatch`] for a thunk against no thunk
     ///   type, a pair against no eager product or dependent pair, a pair of
     ///   other than two components against a dependent pair, a static lambda
@@ -4378,13 +4401,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — one value of every former checked, against its own
-    ///   former and another.
+    ///   former and another; a thunk checked at a type kept in a region, and a
+    ///   variable already kept there bound again at that type.
     /// - witness: `judgement::tests::every_value_former_is_answered_in_both_modes`
     /// - witness: `judgement::tests::a_pair_synthesises_its_eager_product_and_checks_against_one`
     /// - witness: `judgement::tests::a_pair_checks_against_a_dependent_pair_at_its_first_components_fibre`
     /// - witness: `judgement::tests::a_static_lambda_checks_only_against_a_static_pi`
     /// - witness: `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`
     /// - witness: `module::tests::a_nested_computation_is_decided_by_its_expected_type`
+    /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
     ///
     /// # Judgement
     /// - expected: `expected`
@@ -4399,6 +4424,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
         expected: ValueTypeId,
     ) -> Result<Step, CheckRefusal>
     {
+        // An introduction form enters a region at the type it keeps; a value
+        // that synthesises crosses the bridge to the kept type itself, so a
+        // value already kept there stays kept.
+        let entered = expected;
+        let mut expected = expected;
+        while let ValueTypeView::Kept { value, .. } =
+            value_type_view(self.context.arena(), expected)?
+        {
+            expected = value;
+        }
         // A constructor checked at a stage stands above its recursive fields.
         if matches!(*self.value(term)?, Value::Constructor { .. })
             && let Maybe::Present(owed) =
@@ -4452,7 +4487,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         }))
                     },
                     Maybe::Absent(matching::Absent::Mismatched) => {
-                        self.wait(Frame::ValueBridge { at: term, expected });
+                        self.wait(Frame::ValueBridge {
+                            at: term,
+                            expected: entered,
+                        });
                         self.wait(Frame::Ran { at: term });
                         Ok(Step::Descend(Goal::Computation {
                             term: computation,
@@ -4558,7 +4596,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         record: record_type,
                         path,
                     } => {
-                        self.wait(Frame::ValueBridge { at: term, expected });
+                        self.wait(Frame::ValueBridge {
+                            at: term,
+                            expected: entered,
+                        });
                         self.wait(Frame::UnivalenceChecked { path });
                         Ok(Step::Descend(Goal::Value {
                             term: record,
@@ -4566,7 +4607,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         }))
                     },
                     crate::univalence::Reading::Synthesised => {
-                        self.wait(Frame::ValueBridge { at: term, expected });
+                        self.wait(Frame::ValueBridge {
+                            at: term,
+                            expected: entered,
+                        });
                         Ok(Step::Descend(Goal::Value {
                             term,
                             direction: Direction::Synthesise,
@@ -4594,7 +4638,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         direction: Direction::Check(carrier),
                     }));
                 }
-                self.wait(Frame::ValueBridge { at: term, expected });
+                self.wait(Frame::ValueBridge {
+                    at: term,
+                    expected: entered,
+                });
                 Ok(Step::Descend(Goal::Value {
                     term,
                     direction: Direction::Synthesise,
@@ -4628,7 +4675,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Then(..)
             | Value::FlowProduct(..)
             | Value::Forward(_) => {
-                self.wait(Frame::ValueBridge { at: term, expected });
+                self.wait(Frame::ValueBridge {
+                    at: term,
+                    expected: entered,
+                });
                 Ok(Step::Descend(Goal::Value {
                     term,
                     direction: Direction::Synthesise,
@@ -5983,7 +6033,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let _level = self.context.abstract_level(atom)?;
                 Ok(Step::Ascend(Produced::Checked))
             },
-            ValueTypeView::List(element) => Ok(Step::Descend(Goal::Form(TypeNode::Value(element)))),
+            ValueTypeView::List(element) | ValueTypeView::Kept { value: element, .. } => {
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(element))))
+            },
             ValueTypeView::Staged { base, stage } => {
                 // A stage is in scope where this judgement minted it: an order
                 // fits a stage within itself exactly when it minted it.
@@ -6364,6 +6416,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Sigma { .. }
                 | ValueTypeView::Abstract(_)
                 | ValueTypeView::Staged { .. }
+                | ValueTypeView::Kept { .. }
                 | ValueTypeView::Session(_)
                 | ValueTypeView::World(_) => {
                     return Err(CheckRefusal::StaticClassifierExpected {
@@ -6434,6 +6487,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::StaticPi { .. }
                 | ValueTypeView::Abstract(_)
                 | ValueTypeView::Staged { .. }
+                | ValueTypeView::Kept { .. }
                 | ValueTypeView::Session(_)
                 | ValueTypeView::World(_)
                 | ValueTypeView::Unknown => return Err(CheckRefusal::MachineInvariant),
@@ -6959,6 +7013,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Produced::Checked,
             ) => self.scope_subject(at, answer, subject),
             (Frame::ScopeSubject { at, answer }, Produced::Checked) => {
+                self.close_region()?;
                 self.scope_return(at, answer)
             },
             (Frame::HandlerReturn { at, answer }, Produced::Checked) => {
@@ -7786,7 +7841,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             (Frame::Force { value }, Produced::ValueType(synthesised)) => {
                 let synthesised = synthesised.settle(self.context.arena_mut());
-                let head = self.context.whnf_value_type(synthesised)?;
+                let mut head = self.context.whnf_value_type(synthesised)?;
+                // A thunk kept in a region forces as the thunk it keeps.
+                if let ValueTypeView::Kept { value: kept, .. } =
+                    value_type_view(self.context.arena(), head)?
+                {
+                    head = self.context.whnf_value_type(kept)?;
+                }
                 match matched_thunk(self.context.arena_mut(), head) {
                     Maybe::Present(body) => Ok(Step::Ascend(Produced::CompType(body))),
                     Maybe::Absent(absent) => Err(unmatched(
@@ -8462,6 +8523,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | ValueTypeView::Sigma { .. }
             | ValueTypeView::Abstract(_)
             | ValueTypeView::Staged { .. }
+            | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Session(_)
             | ValueTypeView::World(_) => Err(CheckRefusal::ShapeMismatch {

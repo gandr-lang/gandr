@@ -73,7 +73,8 @@
 //! and moves it out at grade one. A view is never a value, so the rule's side
 //! condition `w ∉ fv(B)` is that the view does not escape the body: a view
 //! named by a former that may run it other than once, or that outlives the
-//! body, is [`AccessDefect::Escaped`], in either mode.
+//! body, is [`AccessDefect::Escaped`], in either mode, unless a region keeps
+//! a shared one (§ Regions).
 //!
 //! # Modes: exclusive, or shared and frozen
 //!
@@ -102,6 +103,19 @@
 //! writes the element back at its index and the rest of the list stands as it
 //! was; an index that names no element stops the machine where the access
 //! runs.
+//!
+//! # Regions: a value kept past its access
+//!
+//! A capability scope carries a region, and a value checked at `A at c` is
+//! kept in the region of the scope binding `c`: it lives until that scope
+//! ends and never stands where a type kept in no region is asked. A thunk or
+//! a stack kept there may name a shared view whose hold encloses the scope:
+//! the view lives as long as the region, and the held value stays frozen, an
+//! exclusive access of it [`AccessDefect::Kept`], until the scope ends. An
+//! exclusive view is kept nowhere, since its write-back ends it. A scope
+//! whose answer names its own region, and a thunk or a stack kept in no
+//! region as deep that names a value kept there, are
+//! [`AccessDefect::KeptEscaped`].
 //!
 //! # Two eliminators, one shot
 //!
@@ -138,10 +152,6 @@
 //!
 //! # What later work may assume
 //!
-//! - A region index: a view is a slot of `Σ` declared at the held type; its
-//!   extent is its access's body, decided by the zone's discipline and refused
-//!   by [`AccessDefect::Escaped`]; no type mentions a view. The index replaces
-//!   that refusal and nothing else, in either mode.
 //! - An `io_uring` mock: a held value lives in one machine cell for its hold's
 //!   scope; an access pushes one constant frame, `resume` records the new value
 //!   and `abort` records nothing, and the frame's pop writes back or runs the
@@ -215,4 +225,11 @@ pub enum AccessDefect
     /// An abort names a view of a value held at grade one after a read moved
     /// the value out: the held slot would keep the value the read took.
     Moved,
+    /// An exclusive access names a held slot a view of which is kept in a
+    /// region still live: the kept view would observe the write-back.
+    Kept,
+    /// A value kept in a region would outlive it: a capability scope's answer
+    /// names a value kept in the scope's own region or a deeper one, or a
+    /// thunk or a stack kept in no region as deep names one.
+    KeptEscaped,
 }

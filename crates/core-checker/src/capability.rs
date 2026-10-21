@@ -92,7 +92,6 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::CompType;
-use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
@@ -328,10 +327,12 @@ impl HostGrant
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Reach
 {
-    /// No capability in the type lives in the region or a deeper one.
+    /// Nothing in the type lives in the region or a deeper one.
     Clear,
     /// A capability in the type lives in the region or a deeper one.
     Mentions,
+    /// A value in the type is kept in the region or a deeper one.
+    Keeps,
 }
 
 /// Decide whether the capability `capability`, of type `classifier` whose weak
@@ -407,7 +408,8 @@ pub fn authorise(
         | ValueTypeView::Session(_)
         | ValueTypeView::Abstract(_)
         | ValueTypeView::World(_)
-        | ValueTypeView::Staged { .. } => Err(CheckRefusal::ShapeMismatch {
+        | ValueTypeView::Staged { .. }
+        | ValueTypeView::Kept { .. } => Err(CheckRefusal::ShapeMismatch {
             at: TermNode::Value(capability),
             wanted: ExpectedShape::Capability,
             found: TypeNode::Value(classifier),
@@ -415,14 +417,16 @@ pub fn authorise(
     }
 }
 
-/// Whether the computation type `root` mentions the region `region` or one
-/// nested in it: the scope rule's side condition `ρ ∉ (A, ε)`.
+/// Whether the type `root` mentions the region `region` or one nested in it:
+/// the scope rule's side condition `ρ ∉ (A, ε)`, and the capture rule's.
 ///
 /// # Specification
 /// - ensures: [`Reach::Mentions`] when a capability type reachable through
 ///   `root`'s type formers lives in [`Region::Scoped`] at `region`'s depth or
-///   deeper; [`Reach::Clear`] otherwise, and always for [`Region::Held`]. A
-///   data type's quoted arguments are read; a code is not decoded.
+///   deeper, and [`Reach::Keeps`] when a kept type there is kept at that depth
+///   or deeper, whichever the walk meets first; [`Reach::Clear`] otherwise, and
+///   always for [`Region::Held`]. A data type's quoted arguments are read; a
+///   code is not decoded.
 /// - fails: [`CheckRefusal::DanglingNode`] for a reachable type that does not
 ///   resolve.
 /// - panics: none.
@@ -433,12 +437,14 @@ pub fn authorise(
 /// # Adequacy
 /// - hypothesis: L3 — an answer returning the scope's own capability, one whose
 ///   row carries it, and one returning a held capability, each asserted as
-///   refused or checked.
+///   refused or checked; a thunk kept at the scope's region returned from it is
+///   refused.
 /// - witness: `capability::tests::a_scoped_capability_never_leaves_its_scope`
+/// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
 #[spec(ensures: |ret| region != Region::Held || matches!(ret, Ok(Reach::Clear)))]
 pub fn reaches(
     arena: &CoreArena,
-    root: CompTypeId,
+    root: TypeNode,
     region: Region,
 ) -> Result<Reach, CheckRefusal>
 {
@@ -446,7 +452,7 @@ pub fn reaches(
     else {
         return Ok(Reach::Clear);
     };
-    let mut pending = alloc::vec![TypeNode::Computation(root)];
+    let mut pending = alloc::vec![root];
     while let Some(node) = pending.pop() {
         let dangling = CheckRefusal::DanglingNode {
             node: CoreNode::Type(node),
@@ -460,6 +466,10 @@ pub fn reaches(
                 ValueType::Capability { ref authority, .. } => {
                     pending.extend(authority.types().map(TypeNode::Value));
                 },
+                ValueType::Kept { region: depth, .. } if depth >= floor => {
+                    return Ok(Reach::Keeps);
+                },
+                ValueType::Kept { value, .. } => pending.push(TypeNode::Value(value)),
                 ValueType::Data { ref arguments, .. } => {
                     pending.extend(arguments.iter().filter_map(|&argument| {
                         match arena.value(argument) {

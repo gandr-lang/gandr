@@ -1,0 +1,69 @@
+// A shared view kept in a capability scope's region: it lives as long as the
+// scope rather than the access that lent it, and the held value stays frozen
+// until the scope ends. A region is a static extent, ordered by outlives and
+// erased before anything runs: a value enters a region at any time and never
+// leaves it. Lifetimes stated by control rather than by a reference type
+// follow boats, "References are like jumps" (2024,
+// https://without.boats/blog/references-are-like-jumps/); regions as ordered
+// extents follow Koronkevich and Bowman, _Type Universes as Kripke Worlds_
+// (ICFP 2025, doi:10.1145/3747532).
+
+/// A thunk kept in the scope's region reads the held value through a shared
+/// view after the access that lent the view has ended.
+@[ runs("3") ]
+def keptView() -> -F Integer {
+  hold s = 3;
+  handle c : Proc {
+    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } } ;
+    force k
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => pure 0
+  }
+}
+
+/// A value kept in the region stays kept when it is bound again at the type
+/// that keeps it, and forces as the thunk it keeps.
+@[ runs("3") ]
+def keptAgain() -> -F Integer {
+  hold s = 3;
+  handle c : Proc {
+    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } } ;
+    run j : (() => Integer) at c <- pure k ;
+    force j
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => pure 0
+  }
+}
+
+/// Once the scope ends, its region releases the held value, and an exclusive
+/// access writes it back.
+@[ runs("4") ]
+def released() -> -F Integer {
+  hold s = 3;
+  run n : Integer <- handle c : Proc {
+    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } } ;
+    force k
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => pure 0
+  } ;
+  access s as v { resume(v, n + 1) };
+  pure s
+}
+
+/// A value read out of a view enters the region as any value does: the read
+/// copies it, so it needs no keep.
+@[ runs("3") ]
+def keptRead() -> -F Integer {
+  hold s = 3;
+  handle c : Proc {
+    run n : Integer at c <- access shared s as w { pure w } ;
+    access s as v { resume(v, v + 1) };
+    pure 3
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => pure 0
+  }
+}

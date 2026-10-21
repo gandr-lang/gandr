@@ -815,6 +815,14 @@ pub enum ContentNode
     Sum(Vec<NodeIndex>),
     /// A finite-list type.
     List(NodeIndex),
+    /// A value type kept in the region of the capability scope at `region`.
+    KeptType
+    {
+        /// The kept value's type.
+        value: NodeIndex,
+        /// The capability scope it lives in.
+        region: gandr_core_term::effect::capability::RegionDepth,
+    },
     /// A thunk type.
     ThunkType(NodeIndex),
     /// A universe of one sort.
@@ -1279,6 +1287,7 @@ impl ContentNode
         | Self::Product(_)
         | Self::Sum(_)
         | Self::List(_)
+        | Self::KeptType { .. }
         | Self::ThunkType(_)
         | Self::Universe { .. }
         | Self::TypeLift { .. }
@@ -1387,6 +1396,7 @@ impl ContentNode
             | Self::Product(_)
             | Self::Sum(_)
             | Self::List(_)
+            | Self::KeptType { .. }
             | Self::ThunkType(_)
             | Self::Universe { .. }
             | Self::TypeLift { .. }
@@ -1512,7 +1522,10 @@ impl ContentNode
             } => actual == Some(&[(a, A), (b, A)][..]),
             | Self::ThunkType(a) | Self::QuoteComputation(a) => actual == Some(&[(a, C)][..]),
             | Self::Returner { result, ref effects } => ret.iter().eq(core::iter::once((result, A)).chain(effects.types().map(|ty| (ty, A)))),
-            | Self::List(a) | Self::TypeLift { inner: a, .. } | Self::Quote(a) => {
+            | Self::List(a)
+            | Self::KeptType { value: a, .. }
+            | Self::TypeLift { inner: a, .. }
+            | Self::Quote(a) => {
                 actual == Some(&[(a, A)][..])
             },
             | Self::Arrow {
@@ -1811,7 +1824,9 @@ impl ContentNode
                 Children::of(&[(first, A), (second, A)]).binding(ChildSlot(1), one)
             },
             Self::ThunkType(body) => Children::of(&[(body, C)]),
-            Self::List(element) => Children::of(&[(element, A)]),
+            Self::List(element) | Self::KeptType { value: element, .. } => {
+                Children::of(&[(element, A)])
+            },
             Self::Returner {
                 result,
                 ref effects,
@@ -1850,7 +1865,7 @@ impl ContentNode
     #[spec(ensures: |ret| match *self {
         Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } => matches!(ret, Maybe::Present(_)),
         Self::Univalence(..) |
-        Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::ListCase { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
+        Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::ListCase { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::KeptType { .. } | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
     })]
     pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
     {
@@ -1934,6 +1949,7 @@ impl ContentNode
             | Self::Product(_)
             | Self::Sum(_)
             | Self::List(_)
+            | Self::KeptType { .. }
             | Self::ThunkType(_)
             | Self::Universe { .. }
             | Self::TypeLift { .. }
@@ -4296,6 +4312,10 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             },
             ValueType::Run(code) => ContentNode::RunType(self.discover(ArenaNode::Value(code))),
             ValueType::Base(base) => ContentNode::Base(base),
+            ValueType::Kept { value, region } => ContentNode::KeptType {
+                value: self.discover(ArenaNode::ValueType(value)),
+                region,
+            },
             ValueType::List(element) => {
                 ContentNode::List(self.discover(ArenaNode::ValueType(element)))
             },
@@ -4880,6 +4900,10 @@ where
             ContentNode::Sum(parts.iter().map(|&part| image(part)).collect())
         },
         ContentNode::List(element) => ContentNode::List(image(element)),
+        ContentNode::KeptType { value, region } => ContentNode::KeptType {
+            value: image(value),
+            region,
+        },
         ContentNode::ThunkType(body) => ContentNode::ThunkType(image(body)),
         ContentNode::TypeLift { inner, ref target } => ContentNode::TypeLift {
             inner: image(inner),
@@ -5328,6 +5352,12 @@ fn mint_node(
         ContentNode::List(element) => match minted_value_type(states, element) {
             Maybe::Present(element) => {
                 Maybe::Present(Minted::ValueType(arena.value_type_list(element)))
+            },
+            Maybe::Absent(_) => ill_sorted,
+        },
+        ContentNode::KeptType { value, region } => match minted_value_type(states, value) {
+            Maybe::Present(value) => {
+                Maybe::Present(Minted::ValueType(arena.value_type_kept(value, region)))
             },
             Maybe::Absent(_) => ill_sorted,
         },

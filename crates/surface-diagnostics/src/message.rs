@@ -916,6 +916,14 @@ fn checked(
                 "the view's value was read out, so the view ends with `resume`, which writes a \
                  value back; `abort` would leave the held slot empty",
             ),
+            AccessDefect::Kept => f.write_str(
+                "a shared view of this value is kept in a region whose scope is still running; \
+                 an exclusive `access` waits until that scope ends",
+            ),
+            AccessDefect::KeptEscaped => f.write_str(
+                "a value kept `at c` lives only as long as the scope binding `c`; the scope \
+                 cannot answer it",
+            ),
         },
         CheckRefusal::Codata { fault, .. } => match fault {
             CodataFault::Undeclared => f.write_str("this names no codata declaration"),
@@ -1623,6 +1631,14 @@ mod tests
             CheckRefusal::Access {
                 at: node,
                 defect: AccessDefect::Moved,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Kept,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::KeptEscaped,
             },
             CheckRefusal::Codata {
                 at: node,

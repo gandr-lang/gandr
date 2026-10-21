@@ -528,6 +528,36 @@ impl FreeIndices
         Ok(self.of(core, term)?.linear.counts())
     }
 
+    /// The free intuitionistic indices of `term`, ascending: the variables it
+    /// reads without binding, counted from where it stands.
+    ///
+    /// # Specification
+    /// - requires: as [`FreeIndices::of`].
+    /// - ensures: on success, the intuitionistic half of [`FreeIndices::of`]'s
+    ///   answer, ascending and each once.
+    /// - provides: the reading a checker finds the variables a thunk captures
+    ///   with.
+    /// - fails: as [`FreeIndices::of`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`FreeIndices::of`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`FreeIndices::of`]: a binder lowers only its own
+    ///   zone's occurrences, so the intuitionistic half is read past it.
+    /// - witness: `free::tests::binders_lower_only_their_own_intuitionistic_occurrences`
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|counts| counts.windows(2).all(|pair| matches!(pair, [left, right] if left < right))))]
+    #[inline]
+    pub fn intuitionistic(
+        &mut self,
+        core: &CoreArena,
+        term: CoreTerm,
+    ) -> Result<&[DeBruijnIndex], FreeFault>
+    {
+        Ok(self.of(core, term)?.intuitionistic.counts())
+    }
+
     /// Answer `term` and everything beneath it not yet answered.
     ///
     /// # Specification
@@ -1334,7 +1364,9 @@ Err(_) => false,
                         Reached::CompType(output),
                         Lowering::NONE,
                     ),
-                    ValueType::List(element) | ValueType::Staged { base: element, .. } => {
+                    ValueType::List(element)
+                    | ValueType::Staged { base: element, .. }
+                    | ValueType::Kept { value: element, .. } => {
                         one(Reached::ValueType(element), Lowering::NONE)
                     },
                     ValueType::World(ref ty) => match *ty {

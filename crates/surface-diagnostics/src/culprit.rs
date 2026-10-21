@@ -343,6 +343,8 @@ const fn checked(refusal: CheckRefusal) -> Culprit
             AccessDefect::HeldShared => "a value that may have another holder",
             AccessDefect::HeldCopied => "a copy of a value held at grade one",
             AccessDefect::Moved => "an abort after the value was moved out",
+            AccessDefect::Kept => "a write to a value a live region keeps a view of",
+            AccessDefect::KeptEscaped => "a value kept in the scope's own region",
         },
         CheckRefusal::Codata { fault, .. } => match fault {
             CodataFault::Undeclared => "no codata declaration here",

@@ -902,6 +902,15 @@ pub enum Former<'source, Node>
         /// The world, when the source names it.
         world: Option<Name<'source>>,
     },
+    /// A value type kept in the region of the capability scope at `region`,
+    /// `A at c`.
+    Kept
+    {
+        /// The kept value's type.
+        inner: Node,
+        /// The capability scope it lives in, counted from the outermost.
+        region: gandr_core_term::effect::capability::RegionDepth,
+    },
     /// A hold of a value at the world it is computed at, `hold v`.
     WorldHold(Node),
     /// A handle opened, `leta x = v ; t`: the rest under the opened value's
