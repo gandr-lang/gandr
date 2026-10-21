@@ -46,13 +46,15 @@ stages = ["pre-commit"]
 
 # Identity requirements are checked by commitlint, not a stamping hook.
 
+# The staged paths only, without the gandr formatter (#1243): the gate and CI
+# check the whole tree, the corpus layout included.
 [[repos.hooks]]
-id = "treefmt-check"
-name = "treefmt --ci"
+id = "treefmt-staged"
+name = "treefmt on the staged paths"
 language = "system"
-entry = "mise run treefmt:check"
-pass_filenames = false
-always_run = true
+entry = "mise run treefmt:staged"
+pass_filenames = true
+require_serial = true
 stages = ["pre-commit"]
 
 [[repos.hooks]]

@@ -12,10 +12,24 @@ description = "Run treefmt"
 depends = ["aube:install"]
 run = "treefmt"
 
-["treefmt:check"]
-description = "Run treefmt in CI mode"
+# The pre-commit hook's pass: the staged paths prek passes, every formatter
+# but the gandr one (#1243). A whole-tree `--ci` pass on every commit cost
+# about 21 s, most of it one rustfmt process over a batch of 1024 files, and
+# the gandr formatter rebuilt the optimized driver after any Rust change. The
+# gate (`check:format`, `check:corpus-format`) and CI (`treefmt:check-ci`)
+# still check every file.
+["treefmt:staged"]
+description = "Check the staged paths with every formatter but the gandr one"
 depends = ["aube:install"]
-run = "treefmt --ci"
+tools.yq = "4.54.1"
+usage = 'arg "<paths>..." help="the staged paths prek passes"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+formatters=$(yq -p toml -o yaml '.formatter | keys | map(select(. != "gandr")) | join(",")' treefmt.toml)
+eval "paths=(${usage_paths:?})"
+treefmt --fail-on-change --no-cache --formatters "$formatters" "${paths[@]}"
+'''
 
 # CI's pass: every formatter but the gandr one, which runs the driver. The
 # plain lane, whose state holds the driver, checks the corpus layout instead
