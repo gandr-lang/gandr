@@ -1,0 +1,91 @@
+// An owned string ends in one zero byte, so a C function reads its bytes as
+// they are held: the owned string is already the C string, with no copy and
+// no re-encoding at the boundary (the C standard's string, ISO/IEC 9899:2018,
+// § 7.1.1; Rust's `CStr` is the borrowed form of the same layout). A string
+// with a zero inside it has no C reading, and the boundary says so instead of
+// cutting it short.
+
+// The lists; the byte lists; the UTF-8 encoder.
+import "../data/data-base.gandr" ;
+import "./string-base.gandr" ;
+import "./utf8.gandr" ;
+
+/// What C reads of a byte list: the list itself, borrowed, when its one zero
+/// is its last byte; nothing when a zero comes earlier.
+@[ checks ]
+data CView : Type {
+  Borrowed : (bytes : List(Integer)) --> CView;
+  Interior : CView;
+}
+
+/// An owned string's bytes: the code points encoded, then the terminating
+/// zero.
+@[ checks ]
+def terminated(cs : List(Integer)) -> -F List(Integer) {
+  run encoded <- encodeAll(cs);
+  become concat(encoded, (Cons(0, Nil) : List(Integer)))
+}
+
+/// The C reading of a byte list: borrowed whole when the only zero is the
+/// last byte, refused at an interior zero.
+@[ checks ]
+def rec cView(bs : List(Integer)) -> -F CView {
+  case bs {
+    Nil => return Interior,
+    Cons(b, rest) => {
+      run zero <- b == 0;
+      run left <- count(rest);
+      run last <- left == 0;
+      case last {
+        true => {
+          case zero {
+            true => return Borrowed(bs),
+            false => return Interior
+          }
+        },
+        false => {
+          case zero {
+            true => return Interior,
+            false => {
+              run tail <- cView[<](rest);
+              case tail {
+                Borrowed(t) => return Borrowed(bs),
+                Interior => return Interior
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/// `hi`, owned: its two bytes and the zero.
+@[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
+def hi : () => List(Integer) ;
+def hi = thunk { become terminated((Cons(104, Cons(105, Nil)) : List(Integer))) } ;
+
+/// C reads `hi` as the bytes it is held in: it borrows them whole.
+@[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
+def hiForC : () => List(Integer) ;
+def hiForC = thunk {
+  run bs <- force hi ;
+  run v <- cView(bs) ;
+  case v {
+    Borrowed(t) => return t,
+    Interior => return Nil
+  }
+} ;
+
+/// A zero inside the string: C would stop at it, so it has no C reading.
+@[ runs("Interior") ]
+def cut : () => CView ;
+def cut = thunk {
+  run bs <- terminated((Cons(104, Cons(0, Cons(105, Nil))) : List(Integer))) ;
+  become cView(bs)
+} ;
+
+/// Bytes with no terminating zero have no C reading either.
+@[ runs("Interior") ]
+def unterminated : () => CView ;
+def unterminated = thunk { become cView((Cons(104, Cons(105, Nil)) : List(Integer))) } ;

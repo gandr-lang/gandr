@@ -1,0 +1,152 @@
+// Copy-on-write: a copy of a long string shares its buffer and counts one
+// more holder, and a write copies the buffer only when another string holds
+// it; a buffer held once is written in place. A short string's bytes are its
+// own, so its copy is a copy of at most the inline capacity. Either way a
+// write to one string is never seen through another (Racordon et al.,
+// "Implementation strategies for mutable value semantics", _Journal of Object
+// Technology_ 21(2), 2022, doi:10.5381/jot.2022.21.2.a2, § 3).
+
+// The lists; the byte lists; the owned bytes; where they live.
+import "../data/data-base.gandr" ;
+import "./string-base.gandr" ;
+import "./nul-terminated.gandr" ;
+import "./small-string.gandr" ;
+
+/// A written string and the number of buffers the write filled anew: none
+/// in place, one when the bytes moved to a buffer of their own.
+@[ checks ]
+data Written : Type {
+  Written : (string : Repr, copies : Integer) --> Written;
+}
+
+/// The string a copy holds: the same inline bytes, or the same buffer with
+/// one more holder.
+@[ checks ]
+def copy(s : Repr) -> -F Repr {
+  case s {
+    Inline(bs) => return Inline(bs),
+    Shared(n, bs) => return Shared(n + 1, bs)
+  }
+}
+
+/// The bytes with `b` written before the terminating zero.
+@[ checks ]
+def rec beforeZero(bs : List(Integer), b : Integer) -> -F List(Integer) {
+  case bs {
+    Nil => return Nil,
+    Cons(x, rest) => {
+      case rest {
+        Nil => return (Cons(b, Cons(x, Nil)) : List(Integer)),
+        Cons(y, more) => {
+          run tail <- beforeZero[<](rest, b);
+          return (Cons(x, tail) : List(Integer))
+        }
+      }
+    }
+  }
+}
+
+/// `b` appended to a string: inline bytes written where they are, moved to the
+/// heap when they outgrow it; a buffer held once written in place; a shared
+/// buffer copied first.
+@[ checks ]
+def push(s : Repr, b : Integer) -> -F Written {
+  case s {
+    Inline(bs) => {
+      run grown <- beforeZero(bs, b);
+      run stored <- store(grown);
+      case stored {
+        Inline(kept) => return Written(stored, 0),
+        Shared(n, moved) => return Written(stored, 1)
+      }
+    },
+    Shared(n, bs) => {
+      run grown <- beforeZero(bs, b);
+      run alone <- n == 1;
+      case alone {
+        true => return Written(Shared(1, grown), 0),
+        false => return Written(Shared(1, grown), 1)
+      }
+    }
+  }
+}
+
+/// The buffers a write filled anew.
+@[ checks ]
+def copies(w : Written) -> -F Integer {
+  case w {
+    Written(s, n) => n
+  }
+}
+
+/// The written string.
+@[ checks ]
+def written(w : Written) -> -F Repr {
+  case w {
+    Written(s, n) => s
+  }
+}
+
+/// A long string, twenty-four bytes and the zero, held once.
+@[ checks ]
+def long : () => Repr ;
+def long = thunk { run cs <- repeatOnto(97, 24, (Nil : List(Integer))) ; become own(cs) } ;
+
+/// `!` appended to a long string held once: written in place, nothing copied.
+@[ runs("0") ]
+def alone : () => Integer ;
+def alone = thunk { run s <- force long ; run w <- push(s, 33) ; become copies(w) } ;
+
+/// The same write to a copy: the buffer has two holders, so the copy's write
+/// fills a buffer of its own.
+@[ runs("1") ]
+def shared : () => Integer ;
+def shared = thunk {
+  run s <- force long ;
+  run c <- copy(s) ;
+  run w <- push(c, 33) ;
+  become copies(w)
+} ;
+
+/// The copy's write leaves the original's bytes as they were.
+@[ runs("25") ]
+def untouched : () => Integer ;
+def untouched = thunk {
+  run s <- force long ;
+  run c <- copy(s) ;
+  run w <- push(c, 33) ;
+  run bs <- bytes(s) ;
+  become count(bs)
+} ;
+
+/// And the copy reads one byte more.
+@[ runs("26") ]
+def grown : () => Integer ;
+def grown = thunk {
+  run s <- force long ;
+  run c <- copy(s) ;
+  run w <- push(c, 33) ;
+  run t <- written(w) ;
+  run bs <- bytes(t) ;
+  become count(bs)
+} ;
+
+/// A short string written where its bytes are: `hi!` stays inline.
+@[ runs("Inside") ]
+def shout : () => Place ;
+def shout = thunk {
+  run s <- own((Cons(104, Cons(105, Nil)) : List(Integer))) ;
+  run w <- push(s, 33) ;
+  run t <- written(w) ;
+  become place(t)
+} ;
+
+/// A full inline string outgrows it: the write moves its bytes to the heap.
+@[ runs("1") ]
+def spill : () => Integer ;
+def spill = thunk {
+  run cs <- repeatOnto(97, 23, (Nil : List(Integer))) ;
+  run s <- own(cs) ;
+  run w <- push(s, 33) ;
+  become copies(w)
+} ;
