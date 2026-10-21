@@ -10,6 +10,7 @@ Language support for `.gandr` sources. The extension registers the `gandr` langu
 - [Check the connection](#check-the-connection)
 - [Hover colours](#hover-colours)
 - [Drop to import](#drop-to-import)
+- [Paste with imports](#paste-with-imports)
 - [Develop the extension](#develop-the-extension)
 
 ## Requirements
@@ -74,6 +75,8 @@ No setting selects the server's features. The client adopts what `initialize` ad
 
 `gandr.diagnostics.quiet` keeps the form you are typing free of red: a diagnostic of the form the cursor is in waits until the cursor leaves the form, the form's `;` or `}` arrives, or the file goes that many seconds without a change, 1.5 by default. A diagnostic elsewhere in the file shows at once. `0` shows every diagnostic at once.
 
+`gandr.inlineCompletion.trigger` chooses when the syntax the parser expects next shows as ghost text. `invoked`, the default, shows it only when asked for with **Trigger Inline Suggestion** (`Alt+\`), so typing never fills the line ahead of the cursor. `automatic` shows it as you type.
+
 `gandr.presentation.form` chooses how a hover spells a type. `sugared`, the default, writes every sugar the surface reads where the type has its shape: `Integer => String` for `+U (Integer -> -F String)`, `A * B`, `A + B`, `C & D`, and `(a, b)` for a tuple. `explicit` writes the formers the core is made of. **gandr: Toggle sugared/explicit types** in the Command Palette flips it and hovers again at the cursor.
 
 `gandr.presentation.spelling` chooses how hovers and diagnostics write a construct that has a glyph: `unicode` writes `≃`, `≅`, `⇝` and `∷`; `ascii` writes `<~>`, `Iso(A, B)`, `~~>` and `::`. Unset, the default, the server follows `presentation.spelling` in the user's `gandr/config.toml`, else Unicode. Changing it republishes the open files' diagnostics in the new spelling.
@@ -110,6 +113,10 @@ The server colours a hover by the roles its semantic tokens carry: the extension
 ## Drop to import
 
 Drag `.gandr` files from the Explorer into a gandr editor, holding Shift, and each source the document does not import yet is imported: the server writes an `import "…" ;` line for it after the document's last import, or at its start when it has none, addressed from the document's directory. Nothing is written where the files were dropped. A drop of only sources the document imports already falls back to the editor's own drop.
+
+## Paste with imports
+
+Copy text from one gandr editor and paste it into another, and the paste control offers _Paste with gandr imports_: the pasted text, plus an `import "…" ;` line for each source declaring a name it uses that the document does not import yet. A name declared in the text copied, or bound inside it, needs no import. The editor's plain paste stays the default; set `"editor.pasteAs.preferences": ["text.updateImports.gandr"]` to make the imports the default. A paste into the document copied from adds nothing.
 
 ## Develop the extension
 

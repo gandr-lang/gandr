@@ -105,8 +105,10 @@ use crate::hover::Style;
 use crate::hover::hover;
 use crate::hover::hovering;
 use crate::hover::hovering_laid;
+use crate::inlay::hints;
 use crate::inline::ghost;
 use crate::markup::Markup;
+use crate::paste::copied;
 use crate::position::Position;
 use crate::position::Range;
 use crate::proposal::Proposal;
@@ -134,6 +136,7 @@ use crate::protocol::ConfigurationParams;
 use crate::protocol::ContentChange;
 use crate::protocol::ContentParams;
 use crate::protocol::ContentResult;
+use crate::protocol::CopiedSourcesParams;
 use crate::protocol::DeltaParams;
 use crate::protocol::Diagnostic;
 use crate::protocol::DidChangeParams;
@@ -155,6 +158,8 @@ use crate::protocol::InitializeParams;
 use crate::protocol::InitializeResult;
 use crate::protocol::InlineCompletionItem;
 use crate::protocol::InlineCompletionList;
+use crate::protocol::InlineParams;
+use crate::protocol::InlineTriggerKind;
 use crate::protocol::LabelOffsets;
 use crate::protocol::LabelsDetailed;
 use crate::protocol::LensData;
@@ -195,6 +200,7 @@ use crate::protocol::TakesSnippets;
 use crate::protocol::TextEdit;
 use crate::protocol::Trace;
 use crate::protocol::TraceParams;
+use crate::protocol::TriggerSetting;
 use crate::protocol::TypedParams;
 use crate::protocol::UnregistrationParams;
 use crate::protocol::Unresolved;
@@ -1513,6 +1519,7 @@ impl Workspace
             offsets: LabelOffsets(true),
             detailing: LabelsDetailed(true),
             snipping: TakesSnippets(true),
+            inline_trigger: TriggerSetting::Automatic,
             collapsing: FoldsCollapsed(true),
             watching: WatchesFiles(false),
             progress: ShowsProgress(false),
@@ -1749,6 +1756,9 @@ pub struct Server
     /// Whether its client takes a completion's text as a snippet, read at
     /// `initialize`.
     snipping: TakesSnippets,
+    /// Which inline completion requests its client's
+    /// `gandr.inlineCompletion.trigger` answers, read as the verbosity is.
+    inline_trigger: TriggerSetting,
     /// Whether its client shows the text a fold names, read at `initialize`.
     collapsing: FoldsCollapsed,
     /// Whether its client watches files for it once asked, read at
@@ -1875,6 +1885,7 @@ impl Server
             offsets: LabelOffsets(false),
             detailing: LabelsDetailed(false),
             snipping: TakesSnippets(false),
+            inline_trigger: TriggerSetting::Invoked,
             collapsing: FoldsCollapsed(false),
             watching: WatchesFiles(false),
             progress: ShowsProgress(false),
@@ -1932,7 +1943,7 @@ impl Server
             return Vec::new();
         }
         let mut asked = Vec::new();
-        if self.refreshing.lenses {
+        if self.refreshing.lenses.0 {
             asked.push(self.asked(Refreshed::Lenses));
         }
         if self.showing.0 {
@@ -2005,7 +2016,7 @@ impl Server
     ///   not yet initialised, are asked exactly what they refresh.
     /// - witness: `server::tests::a_refreshing_client_is_asked_for_its_tokens_and_folds_once_invalidated`
     #[spec(ensures: |ret| ret.len() == if self.phase == Phase::Running {
-        usize::from(self.refreshing.tokens).saturating_add(usize::from(self.refreshing.folds))
+        usize::from(self.refreshing.tokens.0).saturating_add(usize::from(self.refreshing.folds.0))
     } else {
         0
     })]
@@ -2017,10 +2028,10 @@ impl Server
             return Vec::new();
         }
         let mut asked = Vec::new();
-        if self.refreshing.tokens {
+        if self.refreshing.tokens.0 {
             asked.push(self.asked(Refreshed::Tokens));
         }
-        if self.refreshing.folds {
+        if self.refreshing.folds.0 {
             asked.push(self.asked(Refreshed::Folds));
         }
         asked
@@ -3051,8 +3062,9 @@ impl Server
     /// Recheck the copies this connection holds that `picks` picks,
     /// republishing each to this connection alone, each import read as the
     /// editors hold it, and, when a copy was rechecked because its closure
-    /// changed, ask a client that refreshes its semantic tokens for them
-    /// again: each use is classified by what the new judgement resolved it to.
+    /// changed, ask a client that refreshes its semantic tokens or its inlay
+    /// hints for them again: each use is classified, and each binder typed, by
+    /// the new judgement.
     ///
     /// # Specification
     /// trivial.
@@ -3109,9 +3121,13 @@ impl Server
         for message in &outcome.messages {
             workspace.published_by(peer, message);
         }
-        if !matches!(picks, Picks::Every) && self.phase == Phase::Running && self.refreshing.tokens
-        {
-            outcome.messages.push(self.asked(Refreshed::Tokens));
+        if !matches!(picks, Picks::Every) && self.phase == Phase::Running {
+            if self.refreshing.tokens.0 {
+                outcome.messages.push(self.asked(Refreshed::Tokens));
+            }
+            if self.refreshing.hints.0 {
+                outcome.messages.push(self.asked(Refreshed::Hints));
+            }
         }
         outcome
     }
@@ -3184,6 +3200,12 @@ impl Server
             (Phase::Running, "textDocument/semanticTokens/full/delta") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Tokens(_) | Answer::Deltas(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
+            (Phase::Running, "textDocument/inlayHint") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Hints(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
@@ -3316,6 +3338,12 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
+            (Phase::Running, "gandr/copiedSources") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Sources(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
             (Phase::Running, "workspace/textDocumentContent") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Content(_), .. } => true,
@@ -3355,6 +3383,7 @@ impl Server
                 self.watching = initial_watching(&params);
                 self.progress = initial_progress(&params);
                 self.refreshing = initial_refreshing(&params);
+                self.inline_trigger = settings.trigger().unwrap_or_default();
                 self.trace = initial_trace(&params);
                 self.pulling = initial_pulling(&params);
                 self.applying = initial_applying(&params);
@@ -3422,6 +3451,20 @@ impl Server
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
+            (Phase::Running, "textDocument/inlayHint") => {
+                match serde_json::from_value::<RangeParams>(params) {
+                    Ok(params) => success(
+                        id,
+                        workspace.inlay_hints(
+                            &params.text_document.uri,
+                            self.peer,
+                            params.range,
+                            self.style.printed(),
+                        ),
+                    ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
             (Phase::Running, "textDocument/completion") => {
                 match serde_json::from_value::<PositionParams>(params) {
                     Ok(params) => success(
@@ -3479,10 +3522,19 @@ impl Server
                 }
             },
             (Phase::Running, "textDocument/inlineCompletion") => {
-                match serde_json::from_value::<PositionParams>(params) {
+                match serde_json::from_value::<InlineParams>(params) {
                     Ok(params) => success(
                         id,
-                        workspace.inline(&params.text_document.uri, self.peer, params.position),
+                        if self.inline_trigger == TriggerSetting::Invoked
+                            && params.context.is_some_and(|context| {
+                                context.trigger_kind == InlineTriggerKind::AUTOMATIC
+                            })
+                        {
+                            Answer::Inline(InlineCompletionList { items: Vec::new() })
+                        }
+                        else {
+                            workspace.inline(&params.text_document.uri, self.peer, params.position)
+                        },
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
@@ -3663,6 +3715,19 @@ impl Server
                             ),
                         )
                     },
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "gandr/copiedSources") => {
+                match serde_json::from_value::<CopiedSourcesParams>(params) {
+                    Ok(params) => success(
+                        id,
+                        workspace.copied_sources(
+                            &params.text_document.uri,
+                            self.peer,
+                            &params.ranges,
+                        ),
+                    ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
@@ -3967,7 +4032,8 @@ impl Server
                         "textDocument/didOpen" | "textDocument/didChange" | "textDocument/didClose"
                         | "workspace/didChangeWatchedFiles" | "workspace/didCreateFiles"
                         | "workspace/didDeleteFiles" | "workspace/didRenameFiles" => {
-                            called == "workspace/semanticTokens/refresh" && self.refreshing.tokens
+                            (called == "workspace/semanticTokens/refresh" && self.refreshing.tokens.0)
+                                || (called == "workspace/inlayHint/refresh" && self.refreshing.hints.0)
                         },
                         _ => false,
                     },
@@ -4205,8 +4271,9 @@ impl Server
     }
 
     /// Apply the `gandr` `settings` this connection's client gave, pushed or
-    /// pulled: the quiet interval and the form at once, and the verbosity and
-    /// spelling by republishing every copy it holds when either changed.
+    /// pulled: the quiet interval, the inline completion trigger and the form
+    /// at once, and the verbosity and spelling by republishing every copy it
+    /// holds when either changed.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -4232,6 +4299,9 @@ impl Server
     {
         if let Some(quiet) = settings.quiet() {
             self.quiet = quiet;
+        }
+        if let Some(trigger) = settings.trigger() {
+            self.inline_trigger = trigger;
         }
         if let Some(form) = settings.form() {
             self.style.form = form;
@@ -4546,7 +4616,8 @@ impl Workspace
         Answer::Initialize(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
-            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) => false,
+            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_)
+            | Answer::Sources(_) => false,
     })]
     fn tokens(
         &self,
@@ -4591,6 +4662,111 @@ impl Workspace
         })
     }
 
+    /// The inlay hints over `range` of the copy of the document at `uri` that
+    /// `peer` is answered from, each type spelled in `style`.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI and any range are admitted.
+    /// - ensures: an unknown document yields Nothing; a held document whose
+    ///   session did not build, and an empty or inverted range, yield no hint;
+    ///   otherwise the hints [`hints`] answers over the range, off the copy's
+    ///   tree and what it keeps for its hovers, made now when no request has
+    ///   asked since the text last changed.
+    /// - provides: the answer to `textDocument/inlayHint`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a held document's binders over a range, an inverted
+    ///   range and an unknown document distinguish the hints, none and null.
+    /// - witness: `server::tests::an_inlay_hint_request_answers_the_binders_in_its_range`
+    #[spec(ensures: |ret| match ret {
+        Answer::Nothing => !self.documents.contains_key(uri),
+        Answer::Hints(ref hints) => self.documents.contains_key(uri)
+            && (range.start < range.end || hints.is_empty()),
+        Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
+            | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
+            | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
+            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Sources(_) => false,
+    })]
+    fn inlay_hints(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        range: Range,
+        style: gandr_surface_pretty::Style,
+    ) -> Answer
+    {
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Answer::Nothing;
+        };
+        let index = LineIndex::new(<&str>::from(document.text.source()).into());
+        let window = ByteSpan::new(
+            ByteOffset::from(usize::from(range.start.byte(&index))),
+            ByteOffset::from(usize::from(range.end.byte(&index))),
+        );
+        Answer::Hints(match (document.session.as_ref(), window) {
+            (Ok(session), Ok(window)) if window.start() < window.end() => hints(
+                (
+                    document
+                        .text
+                        .hovering(&uri.path(), session, &self.shadowing(peer)),
+                    document.text.reading().tiles(),
+                ),
+                &index,
+                window,
+                style,
+            ),
+            (Ok(_) | Err(_), Ok(_) | Err(_)) => Vec::new(),
+        })
+    }
+
+    /// The sources declaring what `ranges` of the copy of the document at
+    /// `uri` that `peer` is answered from name.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI and any ranges are admitted.
+    /// - ensures: an unknown document yields Nothing; a held document whose
+    ///   session did not build yields none; otherwise the sources [`copied`]
+    ///   answers over the ranges, off what the copy keeps for its hovers, made
+    ///   now when no request has asked since the text last changed.
+    /// - provides: the answer to `gandr/copiedSources`, which a copy asks.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`copied`], and an unknown document answers
+    ///   `null`.
+    /// - witness: `server::tests::a_copy_answers_the_sources_its_names_are_declared_in`
+    #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Sources(_))
+        && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
+    fn copied_sources(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        ranges: &[Range],
+    ) -> Answer
+    {
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Answer::Nothing;
+        };
+        let index = LineIndex::new(<&str>::from(document.text.source()).into());
+        Answer::Sources(document.session.as_ref().map_or_else(
+            |_| Vec::new(),
+            |session| {
+                copied(
+                    document
+                        .text
+                        .hovering(&uri.path(), session, &self.shadowing(peer)),
+                    (uri, &index),
+                    ranges,
+                )
+            },
+        ))
+    }
+
     /// The inline completion of the copy of the document at `uri` that `peer`
     /// is answered from, at `position`.
     ///
@@ -4599,8 +4775,10 @@ impl Workspace
     /// - ensures: an unknown document yields Nothing; a held document yields
     ///   first the ghost text of each kept proposal whose range holds the
     ///   position, replacing that range, then each ghost text [`ghost()`] ranks
-    ///   at the position's byte, best first, its snippet inserted at the empty
-    ///   range at `position`; none of those when the grammar did not build.
+    ///   at the position's byte that writes no line break, best first, its
+    ///   snippet inserted at the empty range at `position`; none of those when
+    ///   the grammar did not build. Past a line comment, whose closing is a
+    ///   line break, the parser's ghost texts yield nothing.
     /// - provides: the answer to `textDocument/inlineCompletion`.
     /// - fails: never.
     /// - panics: none.
@@ -4609,9 +4787,11 @@ impl Workspace
     /// - hypothesis: L3 — a known document after an open bracket, the same
     ///   document before written text, and an unknown document distinguish the
     ///   ranked items and null through exact wire answers; a cursor inside a
-    ///   kept proposal sees it first.
+    ///   kept proposal sees it first; a cursor past a line comment, where every
+    ///   ghost text breaks the line, is offered none.
     /// - witness: `server::tests::inline_completion_answers_the_expected_closer`
     /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
+    /// - witness: `server::tests::a_ghost_text_never_breaks_its_line`
     #[spec(ensures: |ret| match ret {
         Answer::Nothing => !self.documents.contains_key(uri),
         Answer::Inline(ref list) => self.documents.get(uri).is_some_and(|held|
@@ -4620,7 +4800,8 @@ impl Workspace
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
-            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) => false,
+            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_)
+            | Answer::Sources(_) => false,
     })]
     fn inline(
         &self,
@@ -4638,18 +4819,21 @@ impl Workspace
         let at = position.byte(&index);
         let mut items = ghosts(&document.proposals, position);
         if let (Ok(grammar), Ok(forms)) = (grammar(), forms()) {
-            items.extend(ghost(grammar, forms, text, at).into_iter().map(|snippet| {
-                InlineCompletionItem {
-                    insert_text: StringValue {
-                        kind: "snippet",
-                        value: String::from(snippet),
-                    },
-                    range: Range {
-                        start: position,
-                        end: position,
-                    },
-                }
-            }));
+            items.extend(
+                ghost(grammar, forms, text, at)
+                    .into_iter()
+                    .filter(|snippet| !AsRef::<str>::as_ref(snippet).contains(['\n', '\r']))
+                    .map(|snippet| InlineCompletionItem {
+                        insert_text: StringValue {
+                            kind: "snippet",
+                            value: String::from(snippet),
+                        },
+                        range: Range {
+                            start: position,
+                            end: position,
+                        },
+                    }),
+            );
         }
         Answer::Inline(InlineCompletionList { items })
     }
@@ -6798,6 +6982,7 @@ mod tests
                         "inlineCompletionProvider":true,
                         "documentSymbolProvider":true,
                         "foldingRangeProvider":true,
+                        "inlayHintProvider":true,
                         "selectionRangeProvider":true,
                         "hoverProvider":true,
                         "signatureHelpProvider":{"triggerCharacters":["(",","],"retriggerCharacters":[")"]},
@@ -9271,6 +9456,25 @@ mod tests
             Some(2),
             "`one` is now a function the base declares"
         );
+        let mut hinting = started(r#"{"inlayHint":{"refreshSupport":true}}"#);
+        let _importing = open(&mut hinting, "importer.gandr", importer);
+        assert_eq!(
+            open(&mut hinting, "base.gandr", declares_one),
+            ["workspace/inlayHint/refresh"],
+            "a client that refreshes its inlay hints is asked for them again"
+        );
+        let mut both = started(
+            r#"{"semanticTokens":{"refreshSupport":true},"inlayHint":{"refreshSupport":true}}"#,
+        );
+        let _importing = open(&mut both, "importer.gandr", importer);
+        assert_eq!(
+            open(&mut both, "base.gandr", declares_one),
+            [
+                "workspace/semanticTokens/refresh",
+                "workspace/inlayHint/refresh"
+            ],
+            "a client that refreshes both is asked for its tokens, then its hints"
+        );
         let mut quiet = started("{}");
         let _importing = open(&mut quiet, "importer.gandr", importer);
         assert_eq!(
@@ -9418,7 +9622,7 @@ mod tests
                 r#"{{"jsonrpc":"2.0","id":7,"method":"textDocument/inlineCompletion","params":{{
                     "textDocument":{{"uri":"{uri}"}},
                     "position":{{"line":0,"character":{character}}},
-                    "context":{{"triggerKind":2}}}}}}"#
+                    "context":{{"triggerKind":1}}}}}}"#
             );
             send(server, Json(&request))
         };
@@ -9452,6 +9656,137 @@ mod tests
             ask(&mut server, "file:///tmp/closed.gandr", 0),
             wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":null}]"#)),
             "a document the server does not hold answers null"
+        );
+    }
+
+    /// Past a line comment the parser's ghost texts all open with the line
+    /// break that closes the comment, so the cursor is offered none: a ghost
+    /// text that breaks its line moves the editor's view as it is shown. A
+    /// closing on the same line is still offered.
+    #[test]
+    fn a_ghost_text_never_breaks_its_line()
+    {
+        let mut server = initialized();
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/open.gandr","languageId":"gandr","version":1,
+                     "text":"def x = 1; // note\ndef y = f(1 /* aside"}}}"#,
+            ),
+        );
+        let ask = |server: &mut Connected, line: u32, character: u32| {
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":7,"method":"textDocument/inlineCompletion","params":{{
+                    "textDocument":{{"uri":"file:///tmp/open.gandr"}},
+                    "position":{{"line":{line},"character":{character}}},
+                    "context":{{"triggerKind":1}}}}}}"#
+            );
+            send(server, Json(&request))
+        };
+        assert_eq!(
+            ask(&mut server, 0, 18),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":{"items":[]}}]"#)),
+            "past a line comment, no ghost text"
+        );
+        let block = ask(&mut server, 1, 20);
+        assert_eq!(
+            block.pointer("/0/result/items/0/insertText/value"),
+            Some(&Value::from(" */)")),
+            "a block comment closes on its line, then the call: {block}"
+        );
+    }
+
+    /// `gandr.inlineCompletion.trigger`, read from the initialization options:
+    /// by default a request the client makes as the author types is answered
+    /// with no item and one the author invokes with the ghost text; set to
+    /// `automatic`, both are answered. The author's own request is the
+    /// keystroke the box asks for, and the setting keeps a client with no way
+    /// to invoke one reachable.
+    #[test]
+    fn inline_completion_answers_the_requests_its_trigger_names()
+    {
+        let answers = |options: &str| {
+            let mut server = Connected::default();
+            let _answered = send(
+                &mut server,
+                Json(&format!(
+                    r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":{{}}{options}}}}}"#
+                )),
+            );
+            let _published = send(
+                &mut server,
+                Json(
+                    r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                        {"uri":"file:///tmp/open.gandr","languageId":"gandr","version":1,
+                         "text":"def x = f(1"}}}"#,
+                ),
+            );
+            [2_u8, 1_u8].map(|kind| {
+                let request = format!(
+                    r#"{{"jsonrpc":"2.0","id":7,"method":"textDocument/inlineCompletion","params":{{
+                        "textDocument":{{"uri":"file:///tmp/open.gandr"}},
+                        "position":{{"line":0,"character":11}},
+                        "context":{{"triggerKind":{kind}}}}}}}"#
+                );
+                send(&mut server, Json(&request))
+                    .pointer("/0/result/items/0/insertText/value")
+                    .cloned()
+            })
+        };
+        assert_eq!(
+            answers(""),
+            [None, Some(Value::from(")"))],
+            "by default, typing is answered with nothing and an invoked request with the closer"
+        );
+        assert_eq!(
+            answers(r#","initializationOptions":{"inlineCompletion":{"trigger":"automatic"}}"#),
+            [Some(Value::from(")")), Some(Value::from(")"))],
+            "set to automatic, both are answered"
+        );
+    }
+
+    #[test]
+    fn an_inlay_hint_request_answers_the_binders_in_its_range()
+    {
+        let mut server = initialized();
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/open.gandr","languageId":"gandr","version":1,
+                     "text":"def id : Integer => Integer ;\ndef id = thunk { fn (y) { return y } } ;\n"}}}"#,
+            ),
+        );
+        let ask = |server: &mut Connected, uri: &str, (from, to): (u32, u32)| {
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":2,"method":"textDocument/inlayHint","params":{{
+                    "textDocument":{{"uri":"{uri}"}},
+                    "range":{{"start":{{"line":{from},"character":0}},"end":{{"line":{to},"character":0}}}}}}}}"#
+            );
+            send(server, Json(&request))
+        };
+        assert_eq!(
+            ask(&mut server, "file:///tmp/open.gandr", (0, 2)),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":2,"result":[{"position":{"line":1,"character":22},"label":": Integer","kind":1}]}]"#
+            )),
+            "the lambda's binder, after its name, and not the signature"
+        );
+        assert_eq!(
+            ask(&mut server, "file:///tmp/open.gandr", (0, 1)),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":2,"result":[]}]"#)),
+            "a range short of the binder holds no hint"
+        );
+        assert_eq!(
+            ask(&mut server, "file:///tmp/open.gandr", (2, 0)),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":2,"result":[]}]"#)),
+            "an inverted range holds no hint"
+        );
+        assert_eq!(
+            ask(&mut server, "file:///tmp/unknown.gandr", (0, 2)),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":2,"result":null}]"#)),
+            "an unknown document answers null"
         );
     }
 
@@ -9673,6 +10008,112 @@ mod tests
             "a source imported already, or the document itself, adds nothing"
         );
         let _cleared = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_copy_answers_the_sources_its_names_are_declared_in()
+    {
+        let directory = std::fs::canonicalize(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../surface-corpus/fixture/model/data"),
+        )
+        .expect("the data subject is checked out");
+        let written = std::fs::read_to_string(directory.join("following.gandr"))
+            .expect("the corpus source reads");
+        let text = written.as_str();
+        let following = DocumentUri::of_path(&directory.join("following.gandr"))
+            .expect("an absolute path names a file URI");
+        let base = DocumentUri::of_path(&directory.join("data-base.gandr"))
+            .expect("an absolute path names a file URI");
+        let mut server = initialized();
+        let notification = format!(
+            r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":
+                {{"uri":"{following}","languageId":"gandr","version":1,"text":{}}}}}}}"#,
+            serde_json::to_string(text).expect("the text serializes")
+        );
+        drop(send(&mut server, Json(&notification)));
+        let position = |offset: usize| {
+            let before = text.get(.. offset).unwrap_or_default();
+            let line = before.matches('\n').count();
+            let character = before.rsplit('\n').next().map_or(0, str::len);
+            format!(r#"{{"line":{line},"character":{character}}}"#)
+        };
+        let copied = |server: &mut Connected, uri: &DocumentUri, needles: &[(&str, &str)]| {
+            let ranges = needles
+                .iter()
+                .map(|&(after, needle)| {
+                    let start = text
+                        .find(after)
+                        .map(|at| at.saturating_add(after.len()))
+                        .and_then(|from| {
+                            text.get(from ..)?
+                                .find(needle)
+                                .map(|at| at.saturating_add(from))
+                        })
+                        .expect("the needle occurs");
+                    format!(
+                        r#"{{"start":{},"end":{}}}"#,
+                        position(start),
+                        position(start.saturating_add(needle.len()))
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":9,"method":"gandr/copiedSources","params":{{
+                    "textDocument":{{"uri":"{uri}"}},"ranges":[{ranges}]}}}}"#
+            );
+            send(server, Json(&request))
+        };
+        let answered = |uris: &[&DocumentUri]| {
+            let uris = uris
+                .iter()
+                .map(|uri| format!("\"{uri}\""))
+                .collect::<Vec<_>>()
+                .join(",");
+            wire(Json(&format!(
+                r#"[{{"jsonrpc":"2.0","id":9,"result":[{uris}]}}]"#
+            )))
+        };
+        let minus = "def rec minus(n : Nat, k : Nat) -> -F Nat {\n  case k {\n    Zero => n,\n    \
+                     Succ(j) => case n {\n      Zero => Zero,\n      Succ(p) => minus[<](p, j)\n    \
+                     }\n  }\n}";
+        assert_eq!(
+            copied(&mut server, &following, &[(
+                "def difference = ",
+                "minus(three, Succ(Zero))"
+            )]),
+            answered(&[&base, &following]),
+            "a call of the document's own declaration, of a sibling's numeral and constructors"
+        );
+        assert_eq!(
+            copied(&mut server, &following, &[("", minus)]),
+            answered(&[&base]),
+            "a declaration copied whole answers the sibling its types and constructors come \
+             from, and not itself"
+        );
+        assert_eq!(
+            copied(&mut server, &following, &[
+                ("", minus),
+                ("def difference = ", "minus(three, Succ(Zero))")
+            ]),
+            answered(&[&base]),
+            "a call of a declaration the copy holds answers nothing for it"
+        );
+        assert_eq!(
+            copied(&mut server, &following, &[("  case ", "k")]),
+            answered(&[]),
+            "a parameter's use answers nothing"
+        );
+        assert_eq!(
+            copied(
+                &mut server,
+                &DocumentUri::from("file:///tmp/unknown.gandr"),
+                &[("", "def")]
+            ),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":null}]"#)),
+            "an unknown document answers null"
+        );
     }
 
     #[test]

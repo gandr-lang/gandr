@@ -47,9 +47,9 @@ export class GandrLanguageClient extends LanguageClient {
       debug: server,
     };
     // The server reads `gandr.diagnostics.verbosity`,
-    // `gandr.diagnostics.quiet`, `gandr.presentation.form` and
-    // `gandr.presentation.spelling` from the initialization options at
-    // startup, and from the `gandr` section each
+    // `gandr.diagnostics.quiet`, `gandr.presentation.form`,
+    // `gandr.presentation.spelling` and `gandr.inlineCompletion.trigger` from
+    // the initialization options at startup, and from the `gandr` section each
     // `workspace/didChangeConfiguration` pushes, republishing open documents
     // at a new verbosity or spelling. With `supportHtml` the client announces the `span`,
     // `pre` and `code` tags, and the server colours each hover by the roles
@@ -95,6 +95,7 @@ export class GandrLanguageClient extends LanguageClient {
 function settings(): {
   diagnostics: { verbosity: string; quiet: number };
   presentation: { form: string; spelling: string | null };
+  inlineCompletion: { trigger: string };
 } {
   const gandr = vscode.workspace.getConfiguration("gandr");
   return {
@@ -105,6 +106,9 @@ function settings(): {
     presentation: {
       form: gandr.get<string>("presentation.form", "sugared"),
       spelling: gandr.get<string | null>("presentation.spelling", null),
+    },
+    inlineCompletion: {
+      trigger: gandr.get<string>("inlineCompletion.trigger", "invoked"),
     },
   };
 }

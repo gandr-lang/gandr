@@ -349,6 +349,18 @@ pub struct ImportFilesParams
     pub files: Vec<DocumentUri>,
 }
 
+/// The parameters of `gandr/copiedSources`: the document copied from and the
+/// ranges copied.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CopiedSourcesParams
+{
+    /// The document copied from.
+    pub text_document: DocumentIdentifier,
+    /// The ranges copied.
+    pub ranges: Vec<Range>,
+}
+
 /// A document, by its URI alone.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[repr(transparent)]
@@ -643,7 +655,8 @@ impl InitializeParams
 
     /// Which answers this client requests again when asked to: each it
     /// declares `refreshSupport` for under `workspace.codeLens`,
-    /// `workspace.semanticTokens` and `workspace.foldingRange`.
+    /// `workspace.semanticTokens`, `workspace.foldingRange` and
+    /// `workspace.inlayHint`.
     ///
     /// # Specification
     /// trivial.
@@ -662,9 +675,10 @@ impl InitializeParams
                 .unwrap_or(false)
         };
         Refreshing {
-            lenses: refreshes(workspace.code_lens),
-            tokens: refreshes(workspace.semantic_tokens),
-            folds: refreshes(workspace.folding_range),
+            lenses: Refreshes(refreshes(workspace.code_lens)),
+            tokens: Refreshes(refreshes(workspace.semantic_tokens)),
+            folds: Refreshes(refreshes(workspace.folding_range)),
+            hints: Refreshes(refreshes(workspace.inlay_hint)),
         }
     }
 
@@ -980,25 +994,33 @@ pub struct WatchesFiles(pub bool);
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ShowsProgress(pub bool);
 
+/// Whether a client requests an answer again when the server asks.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Refreshes(pub bool);
+
 /// Which answers a client requests again when the server asks.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Refreshing
 {
     /// Its code lenses.
-    pub lenses: bool,
+    pub lenses: Refreshes,
     /// Its semantic tokens.
-    pub tokens: bool,
+    pub tokens: Refreshes,
     /// Its folding ranges.
-    pub folds: bool,
+    pub folds: Refreshes,
+    /// Its inlay hints.
+    pub hints: Refreshes,
 }
 
 impl Refreshing
 {
     /// A client that requests nothing again.
     pub const NONE: Self = Self {
-        lenses: false,
-        tokens: false,
-        folds: false,
+        lenses: Refreshes(false),
+        tokens: Refreshes(false),
+        folds: Refreshes(false),
+        hints: Refreshes(false),
     };
 }
 
@@ -1062,6 +1084,9 @@ pub struct WorkspaceCapabilities
     /// `workspace.foldingRange`.
     #[serde(default)]
     pub folding_range: Option<RefreshCapabilities>,
+    /// `workspace.inlayHint`.
+    #[serde(default)]
+    pub inlay_hint: Option<RefreshCapabilities>,
     /// `workspace.configuration`: whether it answers a pull of its settings.
     #[serde(default)]
     pub configuration: Option<bool>,
@@ -1577,6 +1602,35 @@ pub struct Settings
     /// `gandr.presentation`.
     #[serde(default)]
     pub presentation: Option<PresentationSettings>,
+    /// `gandr.inlineCompletion`.
+    #[serde(default, rename = "inlineCompletion")]
+    pub inline_completion: Option<InlineCompletionSettings>,
+}
+
+/// The `gandr.inlineCompletion` settings.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct InlineCompletionSettings
+{
+    /// `gandr.inlineCompletion.trigger`: which requests the parser's ghost
+    /// text answers.
+    #[serde(default)]
+    pub trigger: Option<TriggerSetting>,
+}
+
+/// A `gandr.inlineCompletion.trigger` value: which inline completion requests
+/// are answered.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum TriggerSetting
+{
+    /// Only a request the author invoked, as VS Code's
+    /// `editor.action.inlineSuggest.trigger` does; one the client makes as
+    /// the author types is answered with no item.
+    #[default]
+    Invoked,
+    /// Every request, invoked or made as the author types.
+    Automatic,
 }
 
 /// The `gandr.presentation` settings.
@@ -1787,16 +1841,28 @@ impl Settings
             .and_then(|presentation| presentation.spelling)
             .map(Spelling::from)
     }
+
+    /// The inline completion trigger these settings name, when they name one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn trigger(self) -> Option<TriggerSetting>
+    {
+        self.inline_completion?.trigger
+    }
 }
 
-/// The parameters of `textDocument/semanticTokens/range`.
+/// The parameters of `textDocument/semanticTokens/range` and
+/// `textDocument/inlayHint`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RangeParams
 {
     /// The document addressed.
     pub text_document: DocumentIdentifier,
-    /// The range whose tokens are asked for.
+    /// The range asked about.
     pub range: Range,
 }
 
@@ -1837,7 +1903,7 @@ pub struct RangesParams
 }
 
 /// The parameters of a request about one position of a document:
-/// `textDocument/inlineCompletion` and `textDocument/hover`.
+/// `textDocument/hover`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PositionParams
@@ -1846,6 +1912,45 @@ pub struct PositionParams
     pub text_document: DocumentIdentifier,
     /// The cursor the request is about.
     pub position: Position,
+}
+
+/// The parameters of `textDocument/inlineCompletion`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InlineParams
+{
+    /// The document addressed.
+    pub text_document: DocumentIdentifier,
+    /// The cursor the request is about.
+    pub position: Position,
+    /// Why the client asked, read as invoked when absent.
+    #[serde(default)]
+    pub context: Option<InlineContext>,
+}
+
+/// `InlineCompletionContext`, of which the server reads why the request was
+/// made.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct InlineContext
+{
+    /// `triggerKind`.
+    pub trigger_kind: InlineTriggerKind,
+}
+
+/// `InlineCompletionTriggerKind`, as the protocol numbers it: `1` when the
+/// author asked, by a command or a key, and `2` when the client asked as the
+/// author typed.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(transparent)]
+#[repr(transparent)]
+pub struct InlineTriggerKind(u8);
+
+impl InlineTriggerKind
+{
+    /// The client asked as the author typed.
+    pub const AUTOMATIC: Self = Self(2);
 }
 
 /// The parameters of `textDocument/onTypeFormatting`.
@@ -1971,6 +2076,7 @@ impl InitializeResult
             && ret.capabilities.inline_completion_provider.0
             && ret.capabilities.document_symbol_provider.0
             && ret.capabilities.folding_range_provider.0
+            && ret.capabilities.inlay_hint_provider.0
             && ret.capabilities.selection_range_provider.0
             && ret.capabilities.hover_provider.0
             && matches!(ret.capabilities.signature_help_provider.trigger_characters,
@@ -2028,6 +2134,7 @@ impl InitializeResult
                 inline_completion_provider: Provider::ANSWERED,
                 document_symbol_provider: Provider::ANSWERED,
                 folding_range_provider: Provider::ANSWERED,
+                inlay_hint_provider: Provider::ANSWERED,
                 selection_range_provider: Provider::ANSWERED,
                 hover_provider: Provider::ANSWERED,
                 signature_help_provider: SignatureHelpOptions {
@@ -2107,6 +2214,8 @@ pub struct ServerCapabilities
     pub document_symbol_provider: Provider,
     /// Folding ranges are answered.
     pub folding_range_provider: Provider,
+    /// Inlay hints are answered.
+    pub inlay_hint_provider: Provider,
     /// Selection ranges are answered.
     pub selection_range_provider: Provider,
     /// Hovers are answered.
@@ -2567,6 +2676,12 @@ pub enum Answer
     Symbols(DocumentSymbols),
     /// What a folding-range request answers for an open document.
     Folds(Vec<FoldingRange>),
+    /// What an inlay-hint request answers for an open document: the hints
+    /// over the range asked about, in document order.
+    Hints(Vec<InlayHint>),
+    /// What `gandr/copiedSources` answers for an open document: the sources
+    /// declaring what the copied ranges name, ascending.
+    Sources(Vec<DocumentUri>),
     /// What a selection-range request answers for an open document: one per
     /// position asked about, in order.
     Selections(Vec<SelectionRange>),
@@ -3053,6 +3168,32 @@ impl FoldingRange
             collapsed_text: collapsed.0.then(|| self.collapsed_text.clone()).flatten(),
         }
     }
+}
+
+/// A label a client draws between the characters of a line without writing
+/// it to the document.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InlayHint
+{
+    /// Where the label is drawn: before the character at this position.
+    pub position: Position,
+    /// The text drawn.
+    pub label: String,
+    /// What the label says.
+    pub kind: InlayHintKind,
+}
+
+/// `InlayHintKind`, as the protocol numbers it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+#[repr(transparent)]
+pub struct InlayHintKind(u8);
+
+impl InlayHintKind
+{
+    /// The label is a type.
+    pub const TYPE: Self = Self(1);
 }
 
 /// The ranges around a position, innermost first, written as the protocol's

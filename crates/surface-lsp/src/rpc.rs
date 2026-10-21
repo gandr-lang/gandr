@@ -77,6 +77,9 @@ const REFRESH_TOKENS: &str = "workspace/semanticTokens/refresh";
 /// with.
 const REFRESH_FOLDS: &str = "workspace/foldingRange/refresh";
 
+/// The method a server asks the client to request its inlay hints again with.
+const REFRESH_HINTS: &str = "workspace/inlayHint/refresh";
+
 /// The method a server asks the client to request a virtual document's text
 /// again with.
 const REFRESH_CONTENT: &str = "workspace/textDocumentContent/refresh";
@@ -969,6 +972,8 @@ pub enum Refreshed
     Tokens,
     /// Its folding ranges.
     Folds,
+    /// Its inlay hints.
+    Hints,
 }
 
 /// The request asking the client to request every `answer` again, the
@@ -987,6 +992,7 @@ pub fn refresh(
         Refreshed::Lenses => REFRESH_LENSES,
         Refreshed::Tokens => REFRESH_TOKENS,
         Refreshed::Folds => REFRESH_FOLDS,
+        Refreshed::Hints => REFRESH_HINTS,
     };
     Outgoing::Request {
         jsonrpc: VERSION,

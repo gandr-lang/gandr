@@ -62,6 +62,19 @@
           "default": 1.5,
           "markdownDescription": "Seconds a file goes without a change before a diagnostic of the form being typed shows. A diagnostic elsewhere shows at once; `0` shows every diagnostic at once."
         },
+        "gandr.inlineCompletion.trigger": {
+          "type": "string",
+          "enum": [
+            "invoked",
+            "automatic"
+          ],
+          "enumDescriptions": [
+            "Ghost text shows only when asked for, with **Trigger Inline Suggestion** (`Alt+\\`).",
+            "Ghost text shows as you type."
+          ],
+          "default": "invoked",
+          "markdownDescription": "When the expected syntax shows as ghost text."
+        },
         "gandr.presentation.form": {
           "type": "string",
           "enum": [

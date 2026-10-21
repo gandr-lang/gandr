@@ -2111,6 +2111,35 @@ impl TypeTable
         )
     }
 
+    /// Every written name lying wholly inside `within` and what it refers to,
+    /// ascending by where the name starts.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each use the table's referent index keeps whose span, in the
+    ///   source's own text, starts at or after `within`'s start and ends at or
+    ///   before its end, with its referent, ascending by start; a use crossing
+    ///   either end of `within` is not answered.
+    /// - provides: the names a copied range of the source uses.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a lazy iterator over the index.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a range holding a declaration's use and a parameter's
+    ///   use answers both, a range ending inside a name answers none of it.
+    /// - witness: `typed::tests::the_uses_within_a_range_answer_whole`
+    #[inline]
+    pub fn uses_within(
+        &self,
+        within: ByteSpan,
+    ) -> impl Iterator<Item = (ByteSpan, Referent)> + '_
+    {
+        self.referents
+            .within(within)
+            .map(|&(span, target)| (span, target.referent()))
+    }
+
     /// The site of the `half` of the declaration `referent` names, as
     /// written: its own name tile and form.
     ///
@@ -2490,6 +2519,46 @@ impl TypeTable
     {
         self.entries
             .iter()
+            .map(move |entry| self.answer(entry, page, style))
+    }
+
+    /// Every binder the source wrote whose name overlaps `within`, in table
+    /// order, each spelled in `style` on a page of `page` columns as
+    /// [`Self::entries`] spells it; the table's other entries are never
+    /// spelled.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one answer per entry whose subject is [`Subject::Binder`],
+    ///   whose provenance is [`Provenance::Written`] and whose span shares a
+    ///   byte with `within`, in table order, spelled as [`Self::entries`]
+    ///   spells it.
+    /// - provides: the binders a face annotates in a window of the source.
+    /// - fails: never; an absence names its reason.
+    /// - panics: none.
+    /// - executable: none — the answers are a lazy iterator, spelled only as
+    ///   the caller draws them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda's binder and a parameter each answer in a
+    ///   window holding them and not in one beside them.
+    /// - witness: `typed::tests::the_binders_in_a_window_answer_alone`
+    #[inline]
+    pub fn binders(
+        &self,
+        within: ByteSpan,
+        page: PageWidth,
+        style: Style,
+    ) -> impl Iterator<Item = Maybe<TypedSpan, typing::Absent>> + '_
+    {
+        self.entries
+            .iter()
+            .filter(move |entry| {
+                entry.subject == Subject::Binder
+                    && entry.provenance == Provenance::Written
+                    && entry.span.start() < within.end()
+                    && within.start() < entry.span.end()
+            })
             .map(move |entry| self.answer(entry, page, style))
     }
 
@@ -4161,6 +4230,7 @@ mod tests
     use gandr_surface_pretty::Form;
     use gandr_surface_pretty::PageWidth;
     use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::ByteSpan;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
@@ -4491,6 +4561,50 @@ mod tests
         );
         assert_eq!(at("case"), None, "a keyword refers to nothing");
         assert_eq!(at("m : Nat)"), None, "a binder is no use of itself");
+    }
+
+    #[test]
+    fn the_uses_within_a_range_answer_whole()
+    {
+        let referred = SourceText::from(REFERRED);
+        let table = table(referred);
+        let text = <&str>::from(referred);
+        let named = |span: ByteSpan| {
+            String::from(
+                text.get(usize::from(span.start()) .. usize::from(span.end()))
+                    .unwrap_or_default(),
+            )
+        };
+        let within = |needle: &str| {
+            let start = text.find(needle).expect("the needle occurs");
+            let span = ByteSpan::new(
+                ByteOffset::from(start),
+                ByteOffset::from(start.saturating_add(needle.len())),
+            )
+            .expect("an ordered span");
+            table
+                .uses_within(span)
+                .map(|(used, referent)| (named(used), named(referent.named())))
+                .collect::<Vec<_>>()
+        };
+        let pair = |used: &str, at: &str| (String::from(used), String::from(at));
+        assert_eq!(
+            within("Succ(plus[<](n, p))"),
+            [
+                pair("Succ", "Succ"),
+                pair("Succ(plus[<](n, p))", "Succ"),
+                pair("plus", "plus"),
+                pair("plus[<]", "plus"),
+                pair("n", "n"),
+                pair("p", "p")
+            ],
+            "each use the index keeps, a call's whole application and its staged head beside their names, in order"
+        );
+        assert_eq!(
+            within("Succ(pl"),
+            [pair("Succ", "Succ")],
+            "a name the range cuts is not answered"
+        );
     }
 
     /// #1371: the words a loop presents are minted at its data declaration
@@ -5367,6 +5481,59 @@ mod tests
             at("\n\n"),
             Maybe::Absent(typing::Absent::Untyped),
             "layout between declarations is no node's"
+        );
+    }
+
+    #[test]
+    fn the_binders_in_a_window_answer_alone()
+    {
+        let source = SourceText::from(
+            "def id : Integer => Integer ;\ndef id = thunk { fn (y) { return y } } ;\ndef f(x: \
+             Integer) -> -F Integer { return x }\n",
+        );
+        let table = table(source);
+        let line = |number: usize| {
+            let start: usize = <&str>::from(source)
+                .split_inclusive('\n')
+                .take(number)
+                .map(str::len)
+                .sum();
+            let end = start
+                + <&str>::from(source)
+                    .split_inclusive('\n')
+                    .nth(number)
+                    .map_or(0, str::len);
+            ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).expect("an ordered span")
+        };
+        let named = |within: ByteSpan| {
+            table
+                .binders(within, PageWidth::from(80_u32), Form::Explicit.into())
+                .filter_map(|binder| match binder {
+                    Maybe::Present(binder) => Some((
+                        String::from(
+                            <&str>::from(source)
+                                .get(
+                                    usize::from(binder.span().start())
+                                        .. usize::from(binder.span().end()),
+                                )
+                                .unwrap_or_default(),
+                        ),
+                        String::from(binder.ty().as_ref()),
+                    )),
+                    Maybe::Absent(_) => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(named(line(0)), [], "a signature binds nothing");
+        assert_eq!(
+            named(line(1)),
+            [(String::from("y"), String::from("Integer"))],
+            "the lambda's binder, at its uses' type"
+        );
+        assert_eq!(
+            named(line(2)),
+            [(String::from("x"), String::from("Integer"))],
+            "the parameter, and not the lambda's binder beside it"
         );
     }
 
