@@ -485,6 +485,7 @@ mod tests
 {
     use alloc::string::String;
     use alloc::vec::Vec;
+    use std::io;
     use std::sync::mpsc::channel;
 
     use gandr_surface_render_remote::ByteOffset;
@@ -500,14 +501,17 @@ mod tests
     use gandr_surface_render_remote::RenderFrame;
     use gandr_surface_render_remote::ReportView;
     use gandr_surface_repl::Ended;
+    use gandr_surface_repl::Fault;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
     use super::Following;
     use super::Heard;
     use super::Seen;
+    use super::detach;
     use super::drive_following;
     use super::follow_plain;
+    use super::frames;
     use crate::app::Key;
     use crate::run::Input;
 
@@ -663,6 +667,41 @@ mod tests
     }
 
     #[test]
+    fn a_hole_inside_a_character_is_placed_nowhere()
+    {
+        let uri = DocumentUri::from(String::from("file:///a.gandr"));
+        let mut following = Following::default();
+        let source = "def é = ?gap ;\n";
+        let inside = source
+            .find('é')
+            .expect("the letter")
+            .saturating_add(1_usize);
+        let report = ReportView {
+            source: String::from(source),
+            marks: Vec::from([MarkSpan {
+                range: bytes(
+                    ByteOffset::from(inside),
+                    ByteOffset::from(inside.saturating_add(4_usize)),
+                ),
+                kind: MarkKind::EmptyHole,
+                message: String::from("goal ?gap : Integer"),
+            }]),
+            ..ReportView::default()
+        };
+        assert_eq!(
+            following.hear(&RenderFrame::frame(
+                document(&uri, DocVersion::from(1_i32)),
+                report,
+            )),
+            Heard::Continue
+        );
+        assert_eq!(
+            following.rows().last(),
+            Some(&(OutKind::Goal, String::from("- goal ?gap : Integer")))
+        );
+    }
+
+    #[test]
     fn the_view_paints_what_the_bus_sends()
     {
         let uri = DocumentUri::from(String::from("file:///a.gandr"));
@@ -755,5 +794,70 @@ mod tests
             follow_plain(&b"not a frame\n"[..], &mut garbled),
             Ok(Ended::Faulted(_))
         ));
+    }
+
+    #[test]
+    fn a_detach_or_a_failed_input_ends_the_view()
+    {
+        let mut terminal = Terminal::new(TestBackend::new(64_u16, 10_u16)).expect("a test backend");
+        let (seen, inbox) = channel();
+        seen.send(Seen::Frame(RenderFrame::detach()))
+            .expect("the loop listens");
+        assert!(matches!(
+            drive_following(&mut terminal, &inbox),
+            Ok(Ended::Completed)
+        ));
+        let (seen, inbox) = channel();
+        seen.send(Seen::Input(Input::Failed(Fault::Input(io::Error::other(
+            "the keyboard is gone",
+        )))))
+        .expect("the loop listens");
+        assert!(matches!(
+            drive_following(&mut terminal, &inbox),
+            Ok(Ended::Faulted(Fault::Input(ref error))) if error.to_string() == "the keyboard is gone"
+        ));
+    }
+
+    #[test]
+    fn the_bus_reader_forwards_frames_until_a_line_is_not_one()
+    {
+        let detached = serde_json::to_string(&RenderFrame::detach()).expect("a frame encodes");
+        for bad in [&b"not a frame"[..], &b"\xff"[..]] {
+            let mut bus = Vec::from(detached.as_bytes());
+            bus.push(b'\n');
+            bus.extend_from_slice(bad);
+            bus.push(b'\n');
+            bus.extend_from_slice(detached.as_bytes());
+            bus.push(b'\n');
+            let (seen, inbox) = channel();
+            frames(bus.as_slice(), &seen);
+            let heard: Vec<Seen> = inbox.try_iter().collect();
+            assert!(
+                matches!(heard.as_slice(), [Seen::Frame(_), Seen::Closed]),
+                "{heard:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_view_leaves_the_hub_with_one_detach_line()
+    {
+        let mut written = Vec::new();
+        detach(&mut written).expect("a vector takes the line");
+        let line = String::from_utf8(written).expect("the line is text");
+        let frame: RenderFrame = serde_json::from_str(line.strip_suffix('\n').expect("one line"))
+            .expect("the line is a frame");
+        assert_eq!(Following::default().hear(&frame), Heard::Detached);
+    }
+
+    #[test]
+    fn a_piped_view_faults_on_a_line_that_is_not_text()
+    {
+        let mut output = Vec::new();
+        assert!(matches!(
+            follow_plain(&b"\xff\n"[..], &mut output),
+            Ok(Ended::Faulted(Fault::Input(ref error))) if error.kind() == io::ErrorKind::InvalidData
+        ));
+        assert!(output.is_empty());
     }
 }
