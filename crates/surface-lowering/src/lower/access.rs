@@ -193,6 +193,7 @@ impl<'source> Lowerer<'_, 'source>
             binding: StatementBinding::Held {
                 value: value.node,
                 grade,
+                name: binder.node,
             },
             rest: exits::Rest::Bound,
         });

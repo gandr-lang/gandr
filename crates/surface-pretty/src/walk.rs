@@ -2596,8 +2596,9 @@ enum Task<Node>
     /// Open a binder in a zone, of the former whose child follows: the former
     /// itself when it opens that one binder, whose name the source may write.
     Bind(Zone, Option<Node>),
-    /// Open the binder a capability scope's subject stands under, as
-    /// [`Task::Bind`] does, its region the innermost the walk is inside.
+    /// Open the binder that names a region — a capability scope's capability
+    /// or a hold's held name — as [`Task::Bind`] does, its region the
+    /// innermost the walk is inside.
     BindScope(Zone, Option<Node>),
     /// Close the innermost binder.
     Unbind,
@@ -3172,9 +3173,9 @@ struct Walk<'walk, 'names>
     /// The zone of each open binder, outermost first; a binder's position
     /// among them names it.
     opened: Vec<Zone>,
-    /// The positions of the open binders that name a capability scope,
-    /// outermost first: the regions the walk is inside, after the ones the
-    /// source's roots stand in.
+    /// The positions of the open binders that name a region, a capability
+    /// scope's or a hold's, outermost first: the regions the walk is inside,
+    /// after the ones the source's roots stand in.
     scopes: Vec<usize>,
     /// The positions whose binder an occurrence named since it last opened:
     /// a dependent arrow whose binder no occurrence names is spelled as the
@@ -5370,9 +5371,10 @@ impl Walk<'_, '_>
                 tasks.push(Task::Surface(surface));
             }
             let opener = (slot.binds.count == 1_usize).then_some(node);
-            // A capability scope's subject, its first slot, stands in the
-            // region the scope opens.
-            let scoped = index == 0_usize && matches!(former, Former::Scope { .. });
+            // A capability scope's subject, its first slot, and a hold's scope,
+            // its second, stand in the region the scope or the hold opens.
+            let scoped = (index == 0_usize && matches!(former, Former::Scope { .. }))
+                || (index == 1_usize && matches!(former, Former::Hold { .. }));
             for _ in 0_usize .. slot.binds.count {
                 tasks.push(if scoped {
                     Task::BindScope(slot.binds.zone, opener)
@@ -5923,26 +5925,27 @@ impl Walk<'_, '_>
         self.opened.push(zone);
     }
 
-    /// The name of the capability scope whose region is `depth`, counted
-    /// from the outermost: the scopes the source's roots stand in first,
-    /// then the ones the walk is inside.
+    /// The name of the capability scope or hold whose region is `depth`,
+    /// counted from the outermost: the regions the source's roots stand in
+    /// first, then the ones the walk is inside.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the name the source writes for an ambient scope, or the name
-    ///   the walk gave the binder of a scope it is inside; none for depth zero,
-    ///   for a depth past every scope open around the node, and for a scope
-    ///   whose binder took no name.
-    /// - provides: the scope a capability type's and a kept type's `at` names.
+    /// - ensures: the name the source writes for an ambient region, or the name
+    ///   the walk gave the binder of a scope or hold it is inside; none for
+    ///   depth zero, for a depth past every region open around the node, and
+    ///   for a region whose binder took no name.
+    /// - provides: the region a capability type's and a kept type's `at` names.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an ambient scope and a scope the walk enters each
-    ///   name the region they open, counted on from the ambient ones; a region
-    ///   past both goes unnamed.
+    /// - hypothesis: L3 — an ambient scope, a scope the walk enters and a hold
+    ///   it enters each name the region they open, counted on from the ambient
+    ///   ones; a region past them goes unnamed.
     /// - witness: `tests::goldens::a_scoped_capability_names_its_scope_400`
     /// - witness: `tests::goldens::a_kept_value_names_the_scope_it_is_kept_in`
+    /// - witness: `tests::goldens::a_kept_value_names_the_hold_it_is_kept_in`
     #[spec(ensures: |ret| u32::from(depth) != 0_u32 || ret.is_none())]
     fn region<S>(
         &self,

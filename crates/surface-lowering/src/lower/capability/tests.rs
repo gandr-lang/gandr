@@ -23,6 +23,7 @@ use gandr_core_term::effect::EffectRow;
 use gandr_core_term::effect::capability::CapabilityGrade;
 use gandr_core_term::effect::capability::Region;
 use gandr_core_term::effect::capability::RegionDepth;
+use gandr_core_term::memory::MemoryForm;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::SourceText;
@@ -776,7 +777,8 @@ fn a_capability_at_a_scope_lives_in_its_region()
     let source = alloc::format!(
         "def regions() -> -F Unit {{ handle c : Proc {{ handle e : Proc {{ run d : Cap {{exit}} at c <- pure c ; run f : Cap {{exit}} at e <- pure e ; pure unit }} {clauses} }} {clauses} }}\n\
          def unbound(c : Integer) -> -F Unit {{ handle e : Proc {{ run d : Cap {{exit}} at c <- pure e ; pure unit }} {clauses} }}\n\
-         def plain() -> -F Unit {{ handle c : Proc {{ run d : Integer at c <- pure 1 ; pure unit }} {clauses} }}\n"
+         def plain() -> -F Unit {{ handle c : Proc {{ run d : Integer at c <- pure 1 ; pure unit }} {clauses} }}\n\
+         def held() -> -F Unit {{ hold s = 1 ; handle c : Proc {{ run d : Integer at s <- pure 1 ; run e : Integer at c <- pure 2 ; pure unit }} {clauses} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let outer = tail_of(&module, &arena, "regions".into());
@@ -829,44 +831,72 @@ fn a_capability_at_a_scope_lives_in_its_region()
         "a parameter names no region: {:?}",
         outcome_of(&module, "unbound".into())
     );
+    // The value type a typed bind keeps, and the region it keeps it in.
+    let kept = |bind: ComputationId| {
+        let Some(&Computation::Bind(bound, _)) = arena.computation(bind)
+        else {
+            panic!("the typed bind");
+        };
+        let Some(&Computation::Ascribe { ty, .. }) = arena.computation(bound)
+        else {
+            panic!("a typed bind ascribes its computation");
+        };
+        let Some(&CompType::Returner { result, .. }) = arena.comp_type(ty)
+        else {
+            panic!("at a returner");
+        };
+        let Some(&ValueType::Kept { value, region }) = arena.value_type(result)
+        else {
+            panic!(
+                "an integer at a region is kept in it: {:?}",
+                arena.value_type(result)
+            );
+        };
+        (arena.value_type(value).cloned(), region)
+    };
     let plain = tail_of(&module, &arena, "plain".into());
     let Some(&Computation::Scope { subject, .. }) = arena.computation(plain)
     else {
         panic!("the scope");
     };
-    let Some(&Computation::Bind(bound, _)) = arena.computation(subject)
-    else {
-        panic!("the typed bind");
-    };
-    let Some(&Computation::Ascribe { ty, .. }) = arena.computation(bound)
-    else {
-        panic!("a typed bind ascribes its computation");
-    };
-    let Some(&CompType::Returner { result, .. }) = arena.comp_type(ty)
-    else {
-        panic!("at a returner");
-    };
-    let Some(&ValueType::Kept { value, region }) = arena.value_type(result)
-    else {
-        panic!(
-            "an integer at `c` is kept in its region: {:?}",
-            arena.value_type(result)
-        );
-    };
     assert_eq!(
-        (arena.value_type(value), region),
+        kept(subject),
         (
-            Some(&ValueType::Base(BaseType::Integer)),
+            Some(ValueType::Base(BaseType::Integer)),
             RegionDepth::from(1_u32)
         ),
         "the integer kept in the scope's region"
     );
-    assert!(
-        matches!(
-            verdict_of(&module, &report, "plain".into()),
-            Verdict::Checked { .. }
+    let held = tail_of(&module, &arena, "held".into());
+    let Some(&Computation::Memory(MemoryForm::Hold { body, .. })) = arena.computation(held)
+    else {
+        panic!("the hold: {:?}", arena.computation(held));
+    };
+    let Some(&Computation::Scope { subject, .. }) = arena.computation(body)
+    else {
+        panic!("the scope: {:?}", arena.computation(body));
+    };
+    let Some(&Computation::Bind(_, rest)) = arena.computation(subject)
+    else {
+        panic!("the first typed bind");
+    };
+    let integer = Some(ValueType::Base(BaseType::Integer));
+    assert_eq!(
+        (kept(subject), kept(rest)),
+        (
+            (integer.clone(), RegionDepth::from(1_u32)),
+            (integer, RegionDepth::from(2_u32))
         ),
-        "an integer enters the region: {:?}",
-        verdict_of(&module, &report, "plain".into())
+        "`at s` names the hold's region and `at c` the scope's inside it"
     );
+    for name in ["plain", "held"] {
+        assert!(
+            matches!(
+                verdict_of(&module, &report, name.into()),
+                Verdict::Checked { .. }
+            ),
+            "an integer enters the region at `{name}`: {:?}",
+            verdict_of(&module, &report, name.into())
+        );
+    }
 }

@@ -1716,6 +1716,8 @@ enum StatementBinding
         value: NodeIndex,
         /// The grade it is held at.
         grade: gandr_core_term::memory::HoldGrade,
+        /// The name's own node.
+        name: NodeIndex,
     },
     /// `leta x = v ;` opens the handle `v`, binding `x`, an intuitionistic
     /// hypothesis located at the handle's world, over the rest of the block.
@@ -12980,7 +12982,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
-            if let StatementBinding::Held { value, grade } = statement.binding {
+            if let StatementBinding::Held { value, grade, name } = statement.binding {
                 let Maybe::Present(value) = self.value_at(value)
                 else {
                     return Maybe::Absent(lowered::Absent::Unminted);
@@ -12991,6 +12993,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     grade,
                 });
                 sink.origins.record_computation(id, origin);
+                if let Maybe::Present(name) = self.origin_at(name) {
+                    sink.origins.record_binder(id, name);
+                }
                 chain = id;
                 continue;
             }

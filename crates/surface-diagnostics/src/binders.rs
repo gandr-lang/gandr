@@ -21,6 +21,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::identity::Relation;
+use gandr_core_term::memory::MemoryForm;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_lowering::ComponentName;
 use gandr_surface_lowering::DeclarationOutcome;
@@ -355,11 +356,16 @@ impl Naming
                         });
                         (
                             name,
-                            binder.slot() == ChildSlot::FIRST
+                            (binder.slot() == ChildSlot::FIRST
                                 && matches!(
                                     arena.computation(opener),
                                     Some(&Computation::Scope { .. })
-                                ),
+                                ))
+                                || (binder.slot() == ChildSlot::SECOND
+                                    && matches!(
+                                        arena.computation(opener),
+                                        Some(&Computation::Memory(MemoryForm::Hold { .. }))
+                                    )),
                         )
                     },
                     CoreNode::ValueType(opener) => {
@@ -380,7 +386,7 @@ impl Naming
                 Bound {
                     around: intuitionistic(&scopes, binder.parent()),
                     name,
-                    scope,
+                    region: scope,
                     opener: binder.opener(),
                 }
             })
@@ -435,9 +441,9 @@ impl Naming
     }
 }
 
-/// One intuitionistic binder a node stands under: the binder around it, the
-/// name the source writes for it, whether it is a capability scope's own,
-/// whose region a capability type may name, and the former opening it.
+/// One binder a node stands under: the intuitionistic binder around it, the
+/// name the source writes for it, whether it names a region a type may be
+/// kept in, and the former opening it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Bound
 {
@@ -446,8 +452,9 @@ struct Bound
     /// The name written at the binder, or at a use resolving to it; none
     /// where the source writes none.
     name: Option<String>,
-    /// Whether the binder is the capability a scope binds over its subject.
-    scope: bool,
+    /// Whether the binder names a region: the capability a scope binds over
+    /// its subject, or the value a hold holds over its scope.
+    region: bool,
     /// The former that opens it, whose type, or whose judgement's, states
     /// the type it binds.
     opener: CoreNode,
@@ -463,8 +470,6 @@ pub struct Around<'scoped>
     /// The name written at the binder, or at a use resolving to it; none
     /// where the source writes none.
     pub name: Option<&'scoped str>,
-    /// Whether the binder is the capability a scope binds over its subject.
-    pub scope: bool,
     /// The former that opens it.
     pub opener: CoreNode,
 }
@@ -492,8 +497,7 @@ impl Scoped
     /// - requires: nothing.
     /// - ensures: `None` exactly when the scopes hold no position for `node`;
     ///   otherwise each intuitionistic binder from the outermost around `node`
-    ///   to the innermost, with its name, whether it is a capability scope's
-    ///   own and its opener.
+    ///   to the innermost, with its name and its opener.
     /// - provides: the context `node` is spelled in.
     /// - fails: never.
     /// - panics: none.
@@ -522,13 +526,62 @@ impl Scoped
             };
             around.push(Around {
                 name: binder.name.as_deref(),
-                scope: binder.scope,
                 opener: binder.opener,
             });
             at = binder.around.filter(|&around| around < index);
         }
         around.reverse();
         Some(around)
+    }
+    /// The names of the regions `node` stands in, outermost first: one per
+    /// capability scope and per hold around it, in the order they nest, the
+    /// order a region's depth counts; none when the declaration's roots do
+    /// not reach `node`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `None` exactly when the scopes hold no position for `node`;
+    ///   otherwise, for each binder of any zone around `node` that names a
+    ///   region, from the outermost to the innermost, its name and opener.
+    /// - provides: the regions a kept type's and a capability's `at` names.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// A binder's parent precedes it, so the chain strictly descends.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a use inside a capability scope inside a hold stands
+    ///   in the hold's region, then the scope's.
+    /// - witness: `tests::diagnostics::a_node_stands_in_the_regions_of_each_scope_and_hold_around_it`
+    #[spec(ensures: |ret| ret.is_none() == self.scopes.innermost(node).is_none())]
+    #[inline]
+    #[must_use]
+    pub fn regions(
+        &self,
+        node: CoreNode,
+    ) -> Option<Vec<Around<'_>>>
+    {
+        let innermost = self.scopes.innermost(node)?;
+        let mut regions = Vec::new();
+        let mut at = innermost;
+        while let Some(index) = at {
+            let Some(binder) = self.scopes.binder(index)
+            else {
+                break;
+            };
+            if let Some(bound) = self.bound.get(usize::from(index))
+                && bound.region
+            {
+                regions.push(Around {
+                    name: bound.name.as_deref(),
+                    opener: bound.opener,
+                });
+            }
+            at = binder.parent().filter(|&parent| parent < index);
+        }
+        regions.reverse();
+        Some(regions)
     }
 }
 

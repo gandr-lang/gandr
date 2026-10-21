@@ -655,6 +655,60 @@ fn a_declaration_s_binders_are_named_as_written_803()
     ]]);
 }
 
+/// A node stands in the region of each capability scope and each hold around
+/// it, outermost first, named as the source writes their binders.
+#[test]
+fn a_node_stands_in_the_regions_of_each_scope_and_hold_around_it()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let text = SourceText::from(
+        "def f() -> -F Unit {\n  hold s = 3;\n  handle c : Proc {\n    run k : Integer at s <- \
+         pure 1 ;\n    run m <- pure k ;\n    c.exit(1)\n  } with {\n    pure(x) => return x,\n    \
+         oper exit(code, k) => return unit\n  }\n}\n",
+    );
+    let Lowered::Module { module, arena } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is one module");
+    };
+    let used = <&str>::from(text)
+        .find("pure k")
+        .expect("the body uses the kept value")
+        .saturating_add(5);
+    let variables: Vec<_> = module
+        .origins()
+        .values()
+        .iter()
+        .filter(|&&(_, origin)| usize::from(origin.span().start()) == used)
+        .map(|&(variable, _)| variable)
+        .collect();
+    let naming = Naming::of(&module, text);
+    let names = constant_names(&module);
+    let regions: Vec<Vec<Option<String>>> = naming
+        .declarations()
+        .flat_map(|(_, roots)| {
+            let scoped = naming.scoped(&arena, &names, roots);
+            variables
+                .iter()
+                .filter_map(|&variable| scoped.regions(CoreNode::Value(variable)))
+                .map(|regions| {
+                    regions
+                        .into_iter()
+                        .map(|region| region.name.map(String::from))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert_eq!(
+        regions,
+        [[Some(String::from("s")), Some(String::from("c"))]],
+        "the hold's region, then the scope's inside it"
+    );
+}
+
 /// A match over a family with a loop writes the loop's arm under the loop's
 /// name: the lowering appends a branch per loop after the constructors', and a
 /// table naming the constructors alone printed that arm `?` (#813, #823).

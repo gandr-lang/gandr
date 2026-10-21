@@ -147,9 +147,9 @@ pub(super) struct Sessions
     pub lent: Vec<Lent>,
     /// Each held slot a region keeps a shared view of, in the order kept.
     pub kept: Vec<Keep>,
-    /// How many linear slots above `base` stood open as each capability
-    /// scope's subject began, outermost first: a slot below a scope's mark
-    /// outlives the scope's region.
+    /// How many linear slots above `base` stood open as each region began —
+    /// a capability scope's subject, or a hold's scope past its held slot —
+    /// outermost first: a slot below a region's mark outlives the region.
     pub regions: Vec<usize>,
     /// Each open offer's zone as the offer found it, then as its first arm
     /// left it, innermost offer last.
@@ -849,11 +849,11 @@ impl Machine<'_, '_>
         Ok(())
     }
 
-    /// End the innermost capability scope's region: its mark dropped and every
-    /// slot kept in it released to an exclusive access.
+    /// End the innermost region, a capability scope's or a hold's: its mark
+    /// dropped and every slot kept in it released to an exclusive access.
     ///
     /// # Specification
-    /// - requires: a scope's subject was judged under the innermost mark.
+    /// - requires: the region's body was judged under the innermost mark.
     /// - ensures: one region fewer; every keep in the region that ended or a
     ///   deeper one released.
     /// - fails: [`CheckRefusal::MachineInvariant`] when no region is open.
@@ -1858,9 +1858,13 @@ impl Machine<'_, '_>
     ///   `ForkChild` frame waits on the child's check.
     /// - fails: [`CheckRefusal::ShapeMismatch`] wanting
     ///   [`ExpectedShape::Session`] for an annotation that is no session type
-    ///   at its weak head; [`CheckRefusal::Linearity`] naming
-    ///   [`LinearityDefect::UsedTwice`] for an enclosing endpoint both halves
-    ///   name.
+    ///   at its weak head; [`CheckRefusal::Access`] naming
+    ///   [`AccessDefect::KeptEscaped`] for a protocol that carries a value kept
+    ///   in a region, and [`CheckRefusal::CapabilityEscaped`] for one that
+    ///   carries a capability living in one: the child runs as a peer no region
+    ///   bounds, so a region could end while it holds the value;
+    ///   [`CheckRefusal::Linearity`] naming [`LinearityDefect::UsedTwice`] for
+    ///   an enclosing endpoint both halves name.
     /// - panics: none.
     ///
     /// # Errors
@@ -1868,10 +1872,13 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the seat exchange forks at its protocol's alias, and
-    ///   an endpoint both halves of an inner fork name is refused.
+    ///   an endpoint both halves of an inner fork name is refused; a protocol
+    ///   receiving a string checks and one receiving a string kept in a region
+    ///   is refused.
     /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
     /// - witness: `judgement::session::tests::an_endpoint_used_twice_in_one_action_is_refused`
     /// - witness: `judgement::session::tests::an_inner_child_takes_an_outer_endpoint_only_when_its_parent_leaves_it`
+    /// - witness: `judgement::session::tests::a_fork_carries_nothing_kept_in_a_region`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Computation { .. }))))]
     pub(super) fn fork_formed(
         &mut self,
@@ -1899,6 +1906,27 @@ impl Machine<'_, '_>
             });
         }
         let node = CoreNode::Term(TermNode::Computation(at));
+        // The child runs as a peer no region bounds: a value its protocol
+        // carries in a region would outlive the region's end.
+        match crate::capability::reaches(
+            self.context.arena(),
+            TypeNode::Value(head),
+            Region::Scoped(RegionDepth::from(1_u32)),
+        )? {
+            crate::capability::Reach::Clear => {},
+            crate::capability::Reach::Mentions => {
+                return Err(CheckRefusal::CapabilityEscaped {
+                    at: TermNode::Computation(at),
+                    found: TypeNode::Value(protocol),
+                });
+            },
+            crate::capability::Reach::Keeps => {
+                return Err(CheckRefusal::Access {
+                    at: node,
+                    defect: AccessDefect::KeptEscaped,
+                });
+            },
+        }
         let shared = self.free_linear(CoreTerm::Computation(parent))?;
         let shared: BTreeSet<DeBruijnIndex> = shared.into_iter().collect();
         for index in self.free_linear(CoreTerm::Computation(child))? {

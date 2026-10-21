@@ -14,6 +14,8 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::effect::Purity;
 use gandr_core_term::effect::RowInclusion;
+use gandr_core_term::effect::capability::Region;
+use gandr_core_term::effect::capability::RegionDepth;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::HoldGrade;
 use gandr_core_term::memory::MemoryForm;
@@ -37,6 +39,7 @@ use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::Mismatch;
 use crate::refusal::TermNode;
+use crate::refusal::TypeNode;
 use crate::session::Capture;
 use crate::session::LinearityDefect;
 use crate::view::CompTypeView;
@@ -208,14 +211,92 @@ impl Machine<'_, '_>
         })
     }
 
+    /// Refuse an answer that names the innermost region, `region`, deep: the
+    /// side condition `ρ ∉ fv(A)` of a region's body.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: nothing changes.
+    /// - fails: [`CheckRefusal::CapabilityEscaped`] at `at` for an answer whose
+    ///   capability lives in `region` or a deeper one, and
+    ///   [`CheckRefusal::Access`] naming [`AccessDefect::KeptEscaped`] at `at`
+    ///   for one whose value is kept there; [`CheckRefusal::DanglingNode`] for
+    ///   an answer outside the arena.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a hold answering a thunk kept in its own region is
+    ///   refused, and one answering a value outside it checks.
+    /// - witness: `judgement::access::tests::a_view_kept_in_a_hold_lives_as_long_as_the_hold`
+    #[spec(ensures: |ret| match ret {
+        | Err(CheckRefusal::Access { at: refused, defect }) => refused == CoreNode::Term(TermNode::Computation(at))
+            && defect == AccessDefect::KeptEscaped,
+        | Ok(()) | Err(_) => true,
+    })]
+    fn answers_outside(
+        &self,
+        at: ComputationId,
+        answer: CompTypeId,
+        region: RegionDepth,
+    ) -> Result<(), CheckRefusal>
+    {
+        match crate::capability::reaches(
+            self.context.arena(),
+            TypeNode::Computation(answer),
+            Region::Scoped(region),
+        )? {
+            crate::capability::Reach::Clear => Ok(()),
+            crate::capability::Reach::Mentions => Err(CheckRefusal::CapabilityEscaped {
+                at: TermNode::Computation(at),
+                found: TypeNode::Computation(answer),
+            }),
+            crate::capability::Reach::Keeps => Err(CheckRefusal::Access {
+                at: CoreNode::Term(TermNode::Computation(at)),
+                defect: AccessDefect::KeptEscaped,
+            }),
+        }
+    }
+
+    /// The region the innermost open region stands at.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the number of regions open, as a depth.
+    /// - fails: [`CheckRefusal::MachineInvariant`] past the depth a region
+    ///   counts.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a view kept at a hold's own depth and at an inner
+    ///   hold's depth each stand in the hold that opened it.
+    /// - witness: `judgement::access::tests::a_view_kept_in_a_hold_lives_as_long_as_the_hold`
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|depth| usize::try_from(u32::from(*depth)).ok() == Some(self.sessions.regions.len())))]
+    fn innermost_region(&self) -> Result<RegionDepth, CheckRefusal>
+    {
+        u32::try_from(self.sessions.regions.len())
+            .map(RegionDepth::from)
+            .map_err(|_overflow| CheckRefusal::MachineInvariant)
+    }
+
     /// Continue a hold whose value synthesised `held`: open the held slot at
-    /// `held` and judge the scope in the hold's direction.
+    /// `held`, then the hold's region past it, and judge the scope in the
+    /// hold's direction.
     ///
     /// # Specification
     /// - requires: the hold's value synthesised `held`.
-    /// - ensures: one linear slot more, at `held`, held by `at`; one `HoldBody`
-    ///   frame waits on the scope.
-    /// - fails: [`CheckRefusal::MachineInvariant`] when `at` is no hold.
+    /// - ensures: one linear slot more, at `held`, held by `at`; one region
+    ///   more, its mark past the held slot, so a shared view of the held value
+    ///   may be kept in the hold's own region; one `HoldBody` frame waits on
+    ///   the scope.
+    /// - fails: as [`Self::answers_outside`] for a checked answer that names
+    ///   the hold's region; [`CheckRefusal::MachineInvariant`] when `at` is no
+    ///   hold.
     /// - panics: none.
     ///
     /// # Errors
@@ -223,12 +304,16 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the counter's hold opens its slot at the integer type
-    ///   its value synthesised.
+    ///   its value synthesised; a view of a held value kept in its own hold's
+    ///   region checks, and a hold checked against a type kept there is
+    ///   refused.
     /// - witness: `judgement::access::tests::a_counter_observes_write_back_on_resume_and_none_on_abort`
+    /// - witness: `judgement::access::tests::a_view_kept_in_a_hold_lives_as_long_as_the_hold`
     #[spec(
-        captures: before = self.context.depth(Zone::Linear),
+        captures: [before = self.context.depth(Zone::Linear), regions = self.sessions.regions.len()],
         ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(Goal::Computation { .. })))
-            && self.context.depth(Zone::Linear) > before),
+            && self.context.depth(Zone::Linear) > before
+            && self.sessions.regions.len() == regions.saturating_add(1)),
     )]
     pub(super) fn held(
         &mut self,
@@ -241,12 +326,21 @@ impl Machine<'_, '_>
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
+        if let Direction::Check(expected) = direction {
+            let region = u32::try_from(self.sessions.regions.len())
+                .ok()
+                .and_then(|open| open.checked_add(1_u32))
+                .map(RegionDepth::from)
+                .ok_or(CheckRefusal::MachineInvariant)?;
+            self.answers_outside(at, expected, region)?;
+        }
         let depth = self.context.depth(Zone::Intuitionistic);
         self.context.binders().open(Zone::Linear, held);
         self.sessions.opened.push(Opened {
             resident: Resident::Held { at },
             depth,
         });
+        self.sessions.regions.push(self.sessions.opened.len());
         self.wait(Frame::HoldBody { at, direction });
         Ok(Step::Descend(Goal::Computation {
             term: body,
@@ -254,16 +348,20 @@ impl Machine<'_, '_>
         }))
     }
 
-    /// Finish a hold whose scope was judged: drop the held slot and hand the
-    /// scope's result on, a synthesised type required pure.
+    /// Finish a hold whose scope was judged: end the hold's region, drop the
+    /// held slot and hand the scope's result on, a synthesised type required
+    /// pure and outside the hold's region.
     ///
     /// # Specification
-    /// - requires: the scope was judged in `direction`.
-    /// - ensures: the held slot is closed and its entry dropped; the hold
-    ///   checked, or synthesised the scope's type.
-    /// - fails: as [`Self::pure_hold`] for a synthesised type;
-    ///   [`CheckRefusal::MachineInvariant`] when the innermost slot is not this
-    ///   hold's.
+    /// - requires: the scope was judged in `direction`, under the hold's
+    ///   region.
+    /// - ensures: the hold's region ended, every keep in it released; the held
+    ///   slot is closed and its entry dropped; the hold checked, or synthesised
+    ///   the scope's type.
+    /// - fails: as [`Self::answers_outside`] for a synthesised type that names
+    ///   the hold's region, then as [`Self::pure_hold`];
+    ///   [`CheckRefusal::MachineInvariant`] when no region is open or the
+    ///   innermost slot is not this hold's.
     /// - panics: none.
     ///
     /// # Errors
@@ -271,8 +369,10 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the counter's hold synthesises its scope's type and
-    ///   checks against it.
+    ///   checks against it; an exclusive access after the hold whose region
+    ///   kept a view checks.
     /// - witness: `judgement::access::tests::a_counter_observes_write_back_on_resume_and_none_on_abort`
+    /// - witness: `judgement::access::tests::a_view_kept_in_a_hold_lives_as_long_as_the_hold`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(_))))]
     pub(super) fn dropped(
         &mut self,
@@ -282,6 +382,17 @@ impl Machine<'_, '_>
     ) -> Result<Step, CheckRefusal>
     {
         let node = CoreNode::Term(TermNode::Computation(at));
+        let synthesised = match (direction, produced) {
+            (Direction::Check(_), Produced::Checked) => None,
+            (Direction::Synthesise, Produced::CompType(ty)) => Some(ty),
+            (Direction::Check(_) | Direction::Synthesise, _) => {
+                return Err(CheckRefusal::MachineInvariant);
+            },
+        };
+        if let Some(ty) = synthesised {
+            self.answers_outside(at, ty, self.innermost_region()?)?;
+        }
+        self.close_region()?;
         let innermost = self.resided(node, DeBruijnIndex::from(0_u32))?;
         if innermost.resident != (Resident::Held { at }) {
             return Err(CheckRefusal::MachineInvariant);
@@ -295,14 +406,12 @@ impl Machine<'_, '_>
                 .map_err(|_fault| CheckRefusal::MachineInvariant)?;
         }
         self.close_resident()?;
-        match (direction, produced) {
-            (Direction::Check(_), Produced::Checked) => Ok(Step::Ascend(Produced::Checked)),
-            (Direction::Synthesise, Produced::CompType(ty)) => {
-                self.pure_hold(at, ty)?;
-                Ok(Step::Ascend(Produced::CompType(ty)))
-            },
-            (Direction::Check(_) | Direction::Synthesise, _) => Err(CheckRefusal::MachineInvariant),
-        }
+        let Some(ty) = synthesised
+        else {
+            return Ok(Step::Ascend(Produced::Checked));
+        };
+        self.pure_hold(at, ty)?;
+        Ok(Step::Ascend(Produced::CompType(ty)))
     }
 
     /// The held slot `held` an access at `node` lends in `mode`, if its
