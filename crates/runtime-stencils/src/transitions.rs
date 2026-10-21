@@ -191,6 +191,42 @@ pub extern "rust-preserve-none" fn stencil_push(
     become hole_next(runtime, heap, frames.wrapping_add(1), environment, value)
 }
 
+/// Take an object of `$words` words, header and fields, from the free list
+/// of its block's size, or else from the heap's top, and write its count of
+/// one: evaluates to the object's address and the heap pointer after it.
+/// Takes the heap exit when no block waits and the heap has no room.
+macro_rules! allocate {
+    ($runtime:ident, $heap:ident, $frames:expr, $environment:expr, $value:expr, $words:expr) => {{
+        let size: usize = $words.wrapping_add(1);
+        let mut block = core::ptr::null_mut::<Word>();
+        if size < layout::FREE_CLASSES {
+            // SAFETY: the runtime record outlives the run and keeps
+            // `FREE_CLASSES` lists.
+            let lists = unsafe { &raw mut (*$runtime).free };
+            let head = lists.cast::<*mut Word>().wrapping_add(size);
+            // SAFETY: as above.
+            block = unsafe { *head };
+            if !block.is_null() {
+                // SAFETY: a freed block links the next through its count word.
+                unsafe { *head = (*block).to_pointer::<Word>() };
+            }
+        }
+        let mut next = $heap;
+        if block.is_null() {
+            next = $heap.wrapping_add(size);
+            // SAFETY: the runtime record outlives the run.
+            let limit = unsafe { (*$runtime).heap_limit };
+            if next > limit {
+                become hole_heap_exhausted($runtime, $heap, $frames, $environment, $value)
+            }
+            block = $heap;
+        }
+        // SAFETY: the block spans `size` words of the run's heap.
+        unsafe { *block = layout::COUNT_ONE };
+        (block.wrapping_add(1), next)
+    }};
+}
+
 /// Generate a constructor stencil over a fixed number of pushed fields.
 macro_rules! constructor {
     ($name:ident, $count:literal) => {
@@ -220,26 +256,34 @@ macro_rules! constructor {
             value: Word,
         ) -> Word
         {
-            let next = heap.wrapping_add(1_usize.wrapping_add($count));
-            // SAFETY: the runtime record outlives the run.
-            let limit = unsafe { (*runtime).heap_limit };
-            if next > limit {
-                become hole_heap_exhausted(runtime, heap, frames, environment, value)
-            }
+            let (object, next) = allocate!(
+                runtime,
+                heap,
+                frames,
+                environment,
+                value,
+                1_usize.wrapping_add($count)
+            );
             let header =
                 operand!(runtime, A) | operand!(runtime, B).wrapping_shl(layout::FAMILY_SHIFT);
-            // SAFETY: the object fits below the heap's limit.
-            unsafe { *heap = Word::from(header) };
+            // SAFETY: the object's block is the run's.
+            unsafe { *object = Word::from(header) };
             let fields = frames.wrapping_sub($count);
             let mut index = 0_usize;
             while index < $count {
                 // SAFETY: the lowering pushed the fields below the top.
                 let field = unsafe { *fields.wrapping_add(index) };
-                // SAFETY: the object fits below the heap's limit.
-                unsafe { *heap.wrapping_add(index.wrapping_add(1)) = field };
+                // SAFETY: the object's block is the run's.
+                unsafe { *object.wrapping_add(index.wrapping_add(1)) = field };
                 index = index.wrapping_add(1);
             }
-            become hole_next(runtime, next, fields, environment, Word::from_pointer(heap))
+            become hole_next(
+                runtime,
+                next,
+                fields,
+                environment,
+                Word::from_pointer(object),
+            )
         }
     };
 }
@@ -272,29 +316,37 @@ pub extern "rust-preserve-none" fn stencil_ctor_n(
 {
     let low = operand!(runtime, A);
     let count = low.wrapping_shr(layout::ARITY_SHIFT) & layout::ARITY_MASK;
-    let next = heap.wrapping_add(count.wrapping_add(1));
-    // SAFETY: the runtime record outlives the run.
-    let limit = unsafe { (*runtime).heap_limit };
-    if next > limit {
-        become hole_heap_exhausted(runtime, heap, frames, environment, value)
-    }
+    let (object, next) = allocate!(
+        runtime,
+        heap,
+        frames,
+        environment,
+        value,
+        count.wrapping_add(1)
+    );
     let header = low | operand!(runtime, B).wrapping_shl(layout::FAMILY_SHIFT);
-    // SAFETY: the object fits below the heap's limit.
+    // SAFETY: the object's block is the run's.
     unsafe {
-        *heap = Word::from(header);
+        *object = Word::from(header);
     }
     let fields = frames.wrapping_sub(count);
     let mut index = 0_usize;
     while index < count {
         // SAFETY: the lowering pushed the fields below the top.
         let field = unsafe { *fields.wrapping_add(index) };
-        // SAFETY: the object fits below the heap's limit.
+        // SAFETY: the object's block is the run's.
         unsafe {
-            *heap.wrapping_add(index.wrapping_add(1)) = field;
+            *object.wrapping_add(index.wrapping_add(1)) = field;
         }
         index = index.wrapping_add(1);
     }
-    become hole_next(runtime, next, fields, environment, Word::from_pointer(heap))
+    become hole_next(
+        runtime,
+        next,
+        fields,
+        environment,
+        Word::from_pointer(object),
+    )
 }
 
 /// Test the constructor in hand against one case arm: the arm on a match,
@@ -546,29 +598,31 @@ pub extern "rust-preserve-none" fn stencil_closure(
 {
     let header = operand!(runtime, B);
     let count = header.wrapping_shr(layout::ARITY_SHIFT) & layout::ARITY_MASK;
-    let next = heap.wrapping_add(count.wrapping_add(2));
-    // SAFETY: the runtime record outlives the run.
-    let limit = unsafe { (*runtime).heap_limit };
-    if next > limit {
-        become hole_heap_exhausted(runtime, heap, frames, environment, value)
-    }
+    let (object, next) = allocate!(
+        runtime,
+        heap,
+        frames,
+        environment,
+        value,
+        count.wrapping_add(2)
+    );
     let code = address!(runtime, A);
-    // SAFETY: the closure fits below the heap's limit.
+    // SAFETY: the object's block is the run's.
     unsafe {
-        *heap = Word::from(header);
+        *object = Word::from(header);
     }
     // SAFETY: as above.
     unsafe {
-        *heap.wrapping_add(1) = code;
+        *object.wrapping_add(1) = code;
     }
     let captures = frames.wrapping_sub(count);
     let mut index = 0_usize;
     while index < count {
         // SAFETY: the lowering pushed the captures below the top.
         let capture = unsafe { *captures.wrapping_add(index) };
-        // SAFETY: the closure fits below the heap's limit.
+        // SAFETY: the object's block is the run's.
         unsafe {
-            *heap.wrapping_add(index.wrapping_add(2)) = capture;
+            *object.wrapping_add(index.wrapping_add(2)) = capture;
         }
         index = index.wrapping_add(1);
     }
@@ -577,7 +631,7 @@ pub extern "rust-preserve-none" fn stencil_closure(
         next,
         captures,
         environment,
-        Word::from_pointer(heap),
+        Word::from_pointer(object),
     )
 }
 
@@ -1784,6 +1838,99 @@ pub extern "rust-preserve-none" fn stencil_call(
     }
     // A refusal observed no value: the stuck exit's word is zero.
     become hole_stuck(runtime, top, frames, environment, Word::ZERO)
+}
+
+/// Count one more owner of the object in hand: its count word grows by one,
+/// unless it is [`layout::COUNT_IMMORTAL`].
+///
+/// # Specification
+/// - requires: the value register addresses an object.
+/// - ensures: the object's count is one higher, or unchanged when immortal; the
+///   value in hand is unchanged.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a tuple duplicated once survives one drop and is freed by
+///   the second; an immortal constant survives any number of drops.
+/// - witness: `tests::count::a_dup_keeps_an_object_through_one_drop`
+/// - witness: `tests::count::an_immortal_constant_is_never_freed`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_dup(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    let count = value.to_pointer::<Word>().wrapping_sub(1);
+    // SAFETY: an object is preceded by its count word.
+    let held = unsafe { *count };
+    if held != layout::COUNT_IMMORTAL {
+        // SAFETY: as above.
+        unsafe {
+            *count = Word(held.0.wrapping_add(1));
+        }
+    }
+    become hole_next(runtime, heap, frames, environment, value)
+}
+
+/// Give up one owner of the object in hand: its count word shrinks by one,
+/// and at its last owner the host's [`layout::RELEASE`] entry frees it and
+/// drops what it holds. An immortal object is left alone.
+///
+/// # Specification
+/// - requires: the value register addresses an object; the record's host entry
+///   answers [`layout::RELEASE`].
+/// - ensures: the object's count is one lower, or the object is released when
+///   the count was one, or unchanged when immortal; the value in hand is
+///   unchanged, and a released one is dead.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a dropped tuple's block is the next tuple's of its size,
+///   the heap's top unmoved, and a pair dropped frees the fields it held last.
+/// - witness: `tests::count::a_freed_block_is_the_next_of_its_size`
+/// - witness: `tests::count::a_released_object_drops_what_it_holds`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_drop(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    let count = value.to_pointer::<Word>().wrapping_sub(1);
+    // SAFETY: an object is preceded by its count word.
+    let held = unsafe { *count };
+    if held == layout::COUNT_ONE {
+        // SAFETY: the runtime record outlives the run.
+        unsafe {
+            (*runtime).heap_top = heap;
+        }
+        // SAFETY: as above.
+        unsafe {
+            (*runtime).frame_top = frames;
+        }
+        // SAFETY: as above.
+        unsafe {
+            (*runtime).environment = environment;
+        }
+        // SAFETY: as above.
+        let host = unsafe { (*runtime).host };
+        let _released = host(runtime, layout::RELEASE, value, Word::ZERO);
+        become hole_next(runtime, heap, frames, environment, value)
+    }
+    if held != layout::COUNT_IMMORTAL {
+        // SAFETY: as above.
+        unsafe {
+            *count = Word(held.0.wrapping_sub(1));
+        }
+    }
+    become hole_next(runtime, heap, frames, environment, value)
 }
 
 /// Answer the value an aborted access's frame saved: the frame resumes here,

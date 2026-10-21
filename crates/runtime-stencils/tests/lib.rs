@@ -8,6 +8,8 @@ extern crate alloc;
 #[cfg(test)]
 mod agreement;
 #[cfg(test)]
+mod count;
+#[cfg(test)]
 mod exits;
 #[cfg(test)]
 mod generate;

@@ -163,6 +163,7 @@ pub use crate::fuse::FusionRefusal;
 pub use crate::fuse::Rule;
 pub use crate::fuse::dispatches;
 pub use crate::fuse::replay;
+pub use crate::host::release;
 pub use crate::lower::Form;
 pub use crate::lower::Lowered;
 pub use crate::lower::lower;

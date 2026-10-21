@@ -5,6 +5,7 @@
 //! run the same code, so a function is compared by value — every instruction,
 //! label, constant and the slot count — and hashed the same way.
 
+use gandr_runtime_stencils::COUNT_IMMORTAL;
 use gandr_runtime_stencils::StencilId;
 use gandr_runtime_stencils::Word;
 
@@ -323,6 +324,21 @@ impl Function
         let at = Constant(self.constants.len());
         self.constants.extend_from_slice(words);
         at
+    }
+
+    /// Lay out an object's words, header first, after an immortal count
+    /// word, answering the header's offset: a constant no drop frees.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn object(
+        &mut self,
+        words: &[Word],
+    ) -> Constant
+    {
+        self.constants.push(COUNT_IMMORTAL);
+        self.constant(words)
     }
 
     /// Set the entry window's slot count.

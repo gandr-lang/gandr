@@ -17,8 +17,8 @@
 //! family against the other, so a header a stencil tests is two operands
 //! below 2³²; a nominal match compares the kind and the tag alone, as the
 //! machine matches by ordinal. A closure is `[header, code, capture…]`: the
-//! code word is the entry its observation jumps to, the captures a copy of
-//! the creating window's first slots.
+//! code word is the entry its observation jumps to, the captures the words
+//! its support names, which its body's entry copies into a fresh window.
 //!
 //! Three kinds only the host reads, as the host makes them. A capability is
 //! compared by its address alone. A stack is `[header, base, top, frame…,
@@ -26,6 +26,22 @@
 //! region `[base, top)`, each window a frame resumes in copied after them. A
 //! cell is a held binding's or a view's mutable words, which a linear
 //! variable reads its first field of.
+//!
+//! # The count
+//!
+//! Every object is preceded by its count word, so a value addresses its
+//! header and every field offset is the same whether or not a count is read.
+//! A fresh object's count is one; a constant the function lays out in its
+//! data carries [`COUNT_IMMORTAL`], zero, which `dup` and `drop` leave alone.
+//! A `drop` that finds a count of one calls the host's [`RELEASE`] entry,
+//! which frees the object's block and drops what it holds through a
+//! worklist. A freed block joins the runtime record's free list for its size
+//! ([`Header::block`]), its count word holding the next block, and the next
+//! allocation of that size takes it before the bump pointer moves. A block of
+//! [`FREE_CLASSES`] words or more, and a stack, whose size its header does
+//! not hold, are never reused; a window is allocated by the bump pointer
+//! alone and holds no count. The alternative, a count inside the header,
+//! needs bits the header has none of: its four fields fill the word.
 
 use crate::Word;
 
@@ -530,7 +546,64 @@ impl Header
     {
         Arity(u16::try_from(self.0.0.wrapping_shr(ARITY_SHIFT) & ARITY_MASK).unwrap_or(0))
     }
+
+    /// The words the object's block spans, its count word included, when the
+    /// header alone says: a closure's code word and captures, every other
+    /// kind's fields, and none for a stack, whose window copies its arity
+    /// does not count.
+    ///
+    /// # Specification
+    /// - ensures: `ret` is `None` exactly for a stack or an unknown kind, and
+    ///   otherwise two words past the arity, three for a closure.
+    /// - executable: none — the arithmetic is the body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a freed tuple's block is the one the next tuple of
+    ///   its arity reuses, and a freed closure's the next closure's.
+    /// - witness: `tests::count::a_freed_block_is_the_next_of_its_size`
+    #[inline]
+    #[must_use]
+    pub fn block(self) -> Option<Words>
+    {
+        let fields = usize::from(self.arity());
+        match self.kind() {
+            Ok(Kind::Closure) => Some(Words(fields.wrapping_add(3))),
+            Ok(Kind::Stack) | Err(_) => None,
+            Ok(
+                Kind::Integer
+                | Kind::Tuple
+                | Kind::Injection
+                | Kind::Data
+                | Kind::Head
+                | Kind::Literal
+                | Kind::Opaque
+                | Kind::Capability
+                | Kind::Cell
+                | Kind::Code,
+            ) => Some(Words(fields.wrapping_add(2))),
+        }
+    }
 }
+
+/// A count of heap words.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Words(pub usize);
+
+/// The count word of an object no drop frees: a constant laid out in the
+/// function's data.
+pub const COUNT_IMMORTAL: Word = Word(0);
+/// The count word of a fresh object: its one owner.
+pub const COUNT_ONE: Word = Word(1);
+/// The free lists the runtime record keeps, by block size in words: a block
+/// of this many words or more is never reused.
+pub const FREE_CLASSES: usize = 16;
+/// The host entry a drop calls with the object whose count it found at one:
+/// no callee table numbers an entry this high.
+pub const RELEASE: Word = Word(usize::MAX);
 
 /// Why a run returned to its entry.
 ///

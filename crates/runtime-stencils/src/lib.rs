@@ -43,8 +43,10 @@
 //! | `environment` | the current window of slots | `x23` | `r15` |
 //! | `value` | the value in hand | `x24` | `rdi` |
 //!
-//! The heap region is a bump pointer over [`Word`]s; the frame region a stack
-//! of two-word frames, a code word and the environment it resumes in, above a
+//! The heap region is a bump pointer over [`Word`]s, with a free list per
+//! small block size in the [`Runtime`] record that an allocation takes from
+//! first (the layout module's count section); the frame region a stack of
+//! two-word frames, a code word and the environment it resumes in, above a
 //! sentinel frame whose code halts; the environment a window of slots, one per
 //! binder. `gandr-runtime-emitter`'s lowering documents the linear form that
 //! assigns them.
@@ -183,6 +185,9 @@ pub use crate::executor::enter;
 #[cfg(not(gandr_stencil_object))]
 pub use crate::executor::execute;
 pub use crate::layout::Arity;
+pub use crate::layout::COUNT_IMMORTAL;
+pub use crate::layout::COUNT_ONE;
+pub use crate::layout::FREE_CLASSES;
 pub use crate::layout::Family;
 pub use crate::layout::FieldOverflow;
 pub use crate::layout::Flavour;
@@ -190,11 +195,13 @@ pub use crate::layout::Fuel;
 pub use crate::layout::Header;
 pub use crate::layout::Kind;
 pub use crate::layout::Observed;
+pub use crate::layout::RELEASE;
 pub use crate::layout::Status;
 pub use crate::layout::Tag;
 pub use crate::layout::UnknownKind;
 pub use crate::layout::UnknownStatus;
 pub use crate::layout::Unnamed;
+pub use crate::layout::Words;
 
 /// One stencil, and every continuation it reaches.
 ///
@@ -430,6 +437,9 @@ pub struct Runtime
     /// The run's constants, one word each: zero until unfolded, one while
     /// unfolding, the value once unfolded.
     globals: *mut Word,
+    /// The freed blocks waiting to be reused, by size in words, count word
+    /// included; each links the next through its count word, null ending it.
+    free: [*mut Word; FREE_CLASSES],
 }
 
 impl Runtime
@@ -480,6 +490,7 @@ impl Runtime
             jump_window: core::ptr::null_mut(),
             observed: Word::ZERO,
             globals: core::ptr::null_mut(),
+            free: [core::ptr::null_mut(); FREE_CLASSES],
         }
     }
 
@@ -717,6 +728,129 @@ impl Runtime
     {
         Fuel::from_word(self.fuel)
     }
+
+    /// Allocate an object of `words` words, header and fields: a block of its
+    /// size from the free list when one waits there, else at the heap's top;
+    /// its count is one. Answers the object's address, past its count word.
+    ///
+    /// # Specification
+    /// - requires: called across a host call, when [`Self::heap_top`] is the
+    ///   run's heap pointer.
+    /// - ensures: the object's count word reads [`COUNT_ONE`], and the heap's
+    ///   top moves only when no freed block of the size waits.
+    /// - executable: none — the requirement is about the run's registers.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block freed by a release is the next of its size a
+    ///   host allocation takes, and the heap's top stays.
+    /// - witness: `tests::count::a_freed_block_is_the_next_of_its_size`
+    ///
+    /// # Errors
+    /// [`Refusal::Heap`] when no block waits and the words would pass the
+    /// heap's limit.
+    #[inline]
+    pub fn reserve(
+        &mut self,
+        words: Words,
+    ) -> Result<*mut Word, Refusal>
+    {
+        let size = words.0.wrapping_add(1);
+        let block = match self.free.get_mut(size) {
+            Some(head) if !head.is_null() => {
+                let block = *head;
+                // SAFETY: a free list holds freed blocks, each linking the
+                // next through its count word.
+                *head = unsafe { *block }.to_pointer::<Word>();
+                block
+            },
+            Some(_) | None => self.bump(Words(size))?,
+        };
+        // SAFETY: the block spans `size` words of the run's heap.
+        unsafe {
+            *block = COUNT_ONE;
+        }
+        Ok(block.wrapping_add(1))
+    }
+
+    /// Allocate `words` words at the heap's top, with no count: a window.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::reserve`].
+    /// - ensures: the heap's top moves past the words.
+    /// - executable: none — as [`Self::reserve`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the corpus's handlers replay captured stacks, each
+    ///   window copied here; a window overlapping a live object changes the
+    ///   answer.
+    /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+    ///
+    /// # Errors
+    /// [`Refusal::Heap`] when the words would pass the heap's limit.
+    #[inline]
+    pub fn bump(
+        &mut self,
+        words: Words,
+    ) -> Result<*mut Word, Refusal>
+    {
+        let top = self.heap_top;
+        let next = top.wrapping_add(words.0);
+        if next > self.heap_limit {
+            return Err(Refusal::Heap);
+        }
+        self.heap_top = next;
+        Ok(top)
+    }
+
+    /// Return the block of the object `object` to the free list of its
+    /// size, when its header says the size and a list keeps it.
+    ///
+    /// # Specification
+    /// - requires: `object` addresses a heap object no live value reaches.
+    /// - ensures: the next [`Self::reserve`] or constructor of the block's size
+    ///   takes it.
+    /// - executable: none — the requirement is about the run's values.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::reserve`].
+    /// - witness: `tests::count::a_freed_block_is_the_next_of_its_size`
+    ///
+    /// # Safety
+    /// - unsafe invariants: `object` addresses a heap object of this run,
+    ///   preceded by its count word, and nothing reads its block again before
+    ///   an allocation takes it.
+    #[inline]
+    pub unsafe fn reclaim(
+        &mut self,
+        object: Word,
+    )
+    {
+        let header = object.to_pointer::<Word>();
+        // SAFETY: the caller's object addresses its header.
+        let Some(Words(size)) = Header::from_word(unsafe { *header }).block()
+        else {
+            return;
+        };
+        if let Some(head) = self.free.get_mut(size) {
+            let block = header.wrapping_sub(1);
+            // SAFETY: the block's count word is the caller's to overwrite.
+            unsafe {
+                *block = Word::from_pointer(*head);
+            }
+            *head = block;
+        }
+    }
+}
+
+/// The count word of the object `object`, the word before its header.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn count_word(object: Word) -> *mut Word
+{
+    object.to_pointer::<Word>().wrapping_sub(1)
 }
 
 /// One instruction of the portable executor: the stencil that runs it, its

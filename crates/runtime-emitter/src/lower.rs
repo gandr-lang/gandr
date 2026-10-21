@@ -1347,7 +1347,7 @@ impl Lowering<'_>
                 Arity::try_from(1_usize).map_err(width)?,
                 Family::UNNAMED,
             );
-            return Ok(self.function.constant(&[header.word(), value]));
+            return Ok(self.function.object(&[header.word(), value]));
         }
         let header = Header::new(
             Kind::Literal,
@@ -1355,7 +1355,7 @@ impl Lowering<'_>
             Arity::try_from(0_usize).map_err(width)?,
             intern(&mut self.literals, literal).family()?,
         );
-        Ok(self.function.constant(&[header.word()]))
+        Ok(self.function.object(&[header.word()]))
     }
 
     /// Select by `selector` from the value in hand for the selection
@@ -1655,7 +1655,7 @@ impl Lowering<'_>
                         Arity::try_from(0_usize).map_err(width)?,
                         Family::UNNAMED,
                     );
-                    let unit = self.function.constant(&[unit.word()]);
+                    let unit = self.function.object(&[unit.word()]);
                     let (low, family) = header_operands(Header::new(
                         Kind::Capability,
                         Tag::try_from(0_usize).map_err(width)?,
@@ -1720,7 +1720,7 @@ impl Lowering<'_>
                     Arity::try_from(0_usize).map_err(width)?,
                     Family::UNNAMED,
                 );
-                let unit = self.function.constant(&[unit.word()]);
+                let unit = self.function.object(&[unit.word()]);
                 self.tasks.push(Task::Deliver(continuation, scope));
                 self.tasks.push(Task::Emit(
                     StencilId::Const,
@@ -2148,7 +2148,7 @@ impl Lowering<'_>
                     Arity::try_from(0_usize).map_err(width)?,
                     intern(&mut self.codes, &code).family()?,
                 );
-                let at = self.function.constant(&[header.word()]);
+                let at = self.function.object(&[header.word()]);
                 self.emit(StencilId::Const, Operand::Data(at), Operand::Unused);
             },
             ProducerNode::Variable {
@@ -2184,7 +2184,7 @@ impl Lowering<'_>
                 let header = self.header(tag)?;
                 let stencil = match producers.len() {
                     0 => {
-                        let at = self.function.constant(&[header.word()]);
+                        let at = self.function.object(&[header.word()]);
                         self.emit(StencilId::Const, Operand::Data(at), Operand::Unused);
                         return Ok(());
                     },
@@ -2253,7 +2253,7 @@ impl Lowering<'_>
                         Arity::try_from(0_usize).map_err(width)?,
                         Family::try_from(usize::from(constant)).map_err(width)?,
                     );
-                    let at = self.function.constant(&[header.word()]);
+                    let at = self.function.object(&[header.word()]);
                     self.emit(StencilId::Const, Operand::Data(at), Operand::Unused);
                 },
                 None => {
