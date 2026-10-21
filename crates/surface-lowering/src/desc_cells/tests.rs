@@ -13,6 +13,7 @@ use quenchant_shape::shape::Maybe;
 use super::*;
 use crate::LoweringBudget;
 use crate::description::DescriptionReport;
+use crate::description::MemberFault;
 use crate::description::elaborate_descriptions;
 use crate::fixture::grammar;
 use crate::lower_module;
@@ -327,6 +328,66 @@ fn a_two_redex_body_declines_with_both_occurrences()
         Coincidence::Unexamined,
         "nor is one with a declined circuit"
     );
+}
+
+#[test]
+fn each_cell_fault_is_refused_by_its_own_member_fault()
+{
+    // One source per fault the corpus reaches: the cell gate's cause becomes
+    // the member fault the refusal carries, at the member it stops.
+    let rows = [
+        (
+            "data NatDiv2 : Type { Zero : NatDiv2; oper divmod(m : NatDiv2, n : NatDiv2) -> (q : NatDiv2, r : NatDiv2); rule divmod(Zero, n) ==> Zero; }",
+            "rule divmod(Zero, n) ==> Zero",
+            MemberFault::ResultArity,
+        ),
+        (
+            r#"theory Shared { sort Nat : Type; oper f : (a : Nat) --> (b : Nat);
+        rule twice : (rule p : Nat ==> Nat, data x : Nat) ==> (o : Nat) {
+            node : p(x) ==> (m); node : f(x) --> (m);
+        };
+    }"#,
+            "rule twice",
+            MemberFault::LhsNotOperation,
+        ),
+        (
+            r#"theory Nat { sort Nat : Type; oper add : (Nat, Nat) --> Nat;
+        rule cong2 : (rule p : Nat ==> Nat, rule q : Nat ==> Nat, data x : Nat, data y : Nat) ==> (z : Nat) {
+            node : p(x) ==> (xp); node : q(y) ==> (yp); node : add(xp, yp) --> (z);
+        };
+    }"#,
+            "rule cong2",
+            MemberFault::ParallelRedexes,
+        ),
+    ];
+    for (source, member, expected) in rows {
+        let descriptions = descriptions(source);
+        assert_eq!(
+            descriptions.diagnostics,
+            [],
+            "{member} passes the description route"
+        );
+        let cells = elaborate_desc_cells(&descriptions.declarations);
+        let [ref diagnostic] = *cells.diagnostics.as_slice()
+        else {
+            panic!("{member} alone declines: {:?}", cells.diagnostics)
+        };
+        let refusal = diagnostic.lowering_refusal();
+        assert_eq!(
+            refusal,
+            crate::LoweringRefusal::UndescribedMember {
+                span: diagnostic.span,
+                fault: expected,
+            },
+            "{member} is refused by its own fault"
+        );
+        assert!(
+            source
+                .get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end()))
+                .is_some_and(|written| written.starts_with(member)),
+            "{member} is refused at its own span"
+        );
+    }
 }
 
 #[test]

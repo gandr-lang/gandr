@@ -26,9 +26,10 @@ import "../model-in-source.gandr" ;
 /// substitutions between them and terms in a context; the empty context,
 /// substitution, context extension, weakening, the newest variable, single
 /// substitution and lifting; abstraction and application; the six
-/// substitution laws. Its rules over the indexed sorts are outside the
-/// fragment (#522); `Model(LC)` derives from it all the same.
-@[ refuses("OutOfFragment") ]
+/// substitution laws. Its laws over the indexed sorts nest an operation the
+/// cell layer does not read there (#1510); `Model(LC)` derives from it all the
+/// same.
+@[ refuses("UndescribedMember") ]
 theory LC {
   sort Con : Type;
   sort Sub(d : Con, g : Con) : Type;

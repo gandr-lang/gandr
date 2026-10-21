@@ -20,18 +20,37 @@
 //! # A form out of the fragment names its issue by what it is
 //!
 //! A form the fragment reserves or does not admit names the issue tracking
-//! that form; a form no issue tracks yet names the issue splitting the
-//! refusal by feature. A form of the wrong sort where a declaration is read is
-//! an expression at a module's root, which is a run target, unimplemented,
-//! except the operator declaration, which names its own issue; a form of the
-//! wrong sort anywhere else is misplaced and malformed source. An action on a
-//! name that is no fork's end is delegation, and a family read at an index is
-//! the indexed family, both unimplemented. Every other boundary — an operand
-//! count, a type the source does not state, a descent that is not uniform or
-//! names another function, `cong` at a constructor, an exit off every path, a
-//! match whose arms continue its block, the empty list, a protocol recursing
-//! before any action, a lent or ended name that is no linear slot — is a
-//! boundary the language draws, and malformed source.
+//! that form, read off the form and the sort its position demands: an
+//! instantiation is a recursive call's claim where a computation is read and a
+//! partial supply where a value is. A form no issue of its own tracks yet names
+//! the epic that files one once a source reaches it; the refusal still carries
+//! the form, so the feature stays named. The universe of representable sorts
+//! classifies a theory's sort member only, so read anywhere else it is
+//! misplaced, malformed source. A form of the wrong sort where a declaration
+//! is read is an expression at a module's root, which is a run target,
+//! unimplemented, except the operator declaration, which names its own issue; a
+//! form of the wrong sort anywhere else is misplaced and malformed source. An
+//! action on a name that is no fork's end is delegation, and a family read at
+//! an index is the indexed family, both unimplemented. Every other boundary —
+//! an operand count, a type the source does not state, a descent that is not
+//! uniform or names another function, `cong` at a constructor, an exit off
+//! every path, a match whose arms continue its block, the empty list, a
+//! protocol recursing before any action, a lent or ended name that is no linear
+//! slot — is a boundary the language draws, and malformed source.
+//!
+//! # A description member names its issue by its fault
+//!
+//! A member of a `data`, `codata` or `theory` block that the description route
+//! or its cell layer does not read is refused at its own span by the fault that
+//! stops it, not as one form of the declaration: an operation's circuit body, a
+//! rule between rules, the reserved `<->`, a law nesting an operation, and a
+//! circuit rule with two redexes are five features, each naming its issue. A
+//! rule from no operation, a copied variable, a variable worn at both
+//! polarities or a wiring with no boundary is the author's mistake, malformed
+//! source. **Choice.** The refusal keeps the fault the route and the cell gate
+//! already distinguish; the alternative, one unadmitted declaration form for
+//! all of them, named one issue for several features and classed the author's
+//! mistakes as unbuilt.
 //!
 //! # The absence class has no inhabitant here, and that is the point
 //!
@@ -54,6 +73,7 @@ use anodized::spec;
 pub use gandr_core_term::FailureClass;
 pub use gandr_core_term::TrackingIssue;
 
+use crate::description::MemberFault;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
 use crate::error::LoweringRefusal;
@@ -68,15 +88,18 @@ impl LoweringRefusal<'_>
     /// - requires: nothing; the function is total over the vocabulary.
     /// - ensures: the class is a function of the refusal's kind — the variant,
     ///   a form out of the fragment's form, sort and boundary, an unstated
-    ///   component's fault — and never of a span or a name. A form reserved or
-    ///   unadmitted, an indexed reading, an action on no endpoint, a form of
-    ///   the wrong sort where a declaration is read, a graded bridge, an unread
-    ///   ascription, an implicit telescope out of shape and a model component
-    ///   that relates a many-out operation's results, states a circuit rule or
-    ///   binds a variable are unimplemented, each naming its issue; the
-    ///   exhausted allowance, the grammar mismatch, the unknown mold, an
-    ///   undecided coincidence check and an unminted declaration are engine
-    ///   faults; every other refusal is malformed source.
+    ///   component's or an undescribed member's fault — and never of a span or
+    ///   a name. A form reserved or unadmitted, but for the universe of
+    ///   representable sorts out of its sort member, an indexed reading, an
+    ///   action on no endpoint, a form of the wrong sort where a declaration is
+    ///   read, a graded bridge, an unread ascription, an implicit telescope out
+    ///   of shape, a model component that relates a many-out operation's
+    ///   results, states a circuit rule or binds a variable, and a member the
+    ///   description route or its cell layer has not built a reading for are
+    ///   unimplemented, each naming its issue; the exhausted allowance, the
+    ///   grammar mismatch, the unknown mold, an undecided coincidence check, an
+    ///   unminted declaration and a circuit redex off its own boundary are
+    ///   engine faults; every other refusal is malformed source.
     /// - provides: the fact a report groups by, and the issue every face of an
     ///   unimplemented refusal names.
     /// - fails: never.
@@ -94,6 +117,13 @@ impl LoweringRefusal<'_>
     #[spec(
         ensures: |ret| match *self {
             | Self::OutOfFragment {
+                boundary: FragmentBoundary::Reserved | FragmentBoundary::Unadmitted,
+                form,
+                ..
+            } if form == FormName::REPRESENTABLE_UNIVERSE_TYPE => {
+                matches!(ret, FailureClass::MalformedSource)
+            },
+            | Self::OutOfFragment {
                 boundary: FragmentBoundary::Reserved
                     | FragmentBoundary::Unadmitted
                     | FragmentBoundary::Indexed
@@ -109,9 +139,27 @@ impl LoweringRefusal<'_>
                 fault: ModelFault::ManyOut | ModelFault::Circuit | ModelFault::Binding,
                 ..
             }
+            | Self::UndescribedMember {
+                fault: MemberFault::HigherOrderField
+                    | MemberFault::DependentField
+                    | MemberFault::TypeShape
+                    | MemberFault::NativeDecode
+                    | MemberFault::OperationFiller
+                    | MemberFault::HigherCell
+                    | MemberFault::Reversible
+                    | MemberFault::AggregatedOutput
+                    | MemberFault::NestedOperation
+                    | MemberFault::UnrepresentableOperation
+                    | MemberFault::ParallelRedexes,
+                ..
+            }
             | Self::GradedBridge { .. }
             | Self::UnreadAscription { .. }
             | Self::ImplicitTelescope { .. } => matches!(ret, FailureClass::Unimplemented(_)),
+            | Self::UndescribedMember {
+                fault: MemberFault::OffBoundary,
+                ..
+            }
             | Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::RulesUndecided { .. }
@@ -119,6 +167,7 @@ impl LoweringRefusal<'_>
             | Self::Unminted { .. } => matches!(ret, FailureClass::EngineFault),
             | Self::OutOfFragment { .. }
             | Self::UnstatedComponent { .. }
+            | Self::UndescribedMember { .. }
             | Self::WithoutK { .. }
             | Self::DirectedCell { .. }
             | Self::CellNotALoop { .. }
@@ -229,9 +278,10 @@ impl LoweringRefusal<'_>
                 ..
             } => out_of_fragment(form, sort, boundary),
             Self::UnstatedComponent { fault, .. } => unstated(fault),
+            Self::UndescribedMember { fault, .. } => undescribed(fault),
             Self::GradedBridge { .. } => FailureClass::Unimplemented(TrackingIssue::THUNK_GRADE),
             Self::UnreadAscription { .. } => FailureClass::Unimplemented(TrackingIssue::ASCRIPTION),
-            Self::ImplicitTelescope { .. } => FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
+            Self::ImplicitTelescope { .. } => FailureClass::Unimplemented(TrackingIssue::UNFILED),
             Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::RulesUndecided { .. }
@@ -246,11 +296,13 @@ impl LoweringRefusal<'_>
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a reserved or unadmitted form names the issue [`tracked_form`]
-///   answers; a form of the wrong sort where a declaration is read names the
-///   operator declaration's issue for an operator declaration and the run
-///   target's for every other; an indexed reading names the indexed family's,
-///   an action on no endpoint delegation's; every other boundary is malformed
-///   source.
+///   answers, but the universe of representable sorts, which classifies a
+///   theory's sort member only and is misplaced anywhere the lowering reads it,
+///   is malformed source; a form of the wrong sort where a declaration is read
+///   names the operator declaration's issue for an operator declaration and the
+///   run target's for every other; an indexed reading names the indexed
+///   family's, an action on no endpoint delegation's; every other boundary is
+///   malformed source.
 /// - provides: the lowering classifier's arm for `OutOfFragment`.
 /// - fails: never.
 /// - panics: none.
@@ -261,13 +313,10 @@ impl LoweringRefusal<'_>
 /// - witness: `classify::tests::a_form_out_of_the_fragment_names_the_issue_tracking_it`
 #[spec(
     ensures: |ret| matches!(ret, FailureClass::Unimplemented(_))
-        == (matches!(
-            boundary,
-            FragmentBoundary::Reserved
-                | FragmentBoundary::Unadmitted
-                | FragmentBoundary::Indexed
-                | FragmentBoundary::Endpoint
-        ) || (boundary == FragmentBoundary::WrongSort && sort == FragmentSort::Declaration))
+        == ((matches!(boundary, FragmentBoundary::Reserved | FragmentBoundary::Unadmitted)
+            && form != FormName::REPRESENTABLE_UNIVERSE_TYPE)
+            || matches!(boundary, FragmentBoundary::Indexed | FragmentBoundary::Endpoint)
+            || (boundary == FragmentBoundary::WrongSort && sort == FragmentSort::Declaration))
         && matches!(ret, FailureClass::Unimplemented(_) | FailureClass::MalformedSource),
 )]
 #[must_use]
@@ -278,6 +327,11 @@ fn out_of_fragment(
 ) -> FailureClass
 {
     match boundary {
+        FragmentBoundary::Reserved | FragmentBoundary::Unadmitted
+            if form == FormName::REPRESENTABLE_UNIVERSE_TYPE =>
+        {
+            FailureClass::MalformedSource
+        },
         FragmentBoundary::Reserved | FragmentBoundary::Unadmitted => {
             FailureClass::Unimplemented(tracked_form(form, sort))
         },
@@ -315,10 +369,11 @@ fn out_of_fragment(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a form an open issue tracks names that issue — a grade where a
-///   declaration is read, the field grade's, and a parameter where a
-///   computation is read, the annotated lambda parameter's; every other form
-///   names [`TrackingIssue::UNSPLIT`], the issue splitting the refusal by
-///   feature.
+///   declaration is read, the field grade's, a parameter where a computation is
+///   read, the annotated lambda parameter's, and an instantiation, a recursive
+///   call's claim where a computation is read and a partial supply where a
+///   value is; every other form names [`TrackingIssue::UNFILED`], the epic that
+///   files an issue for a feature once a source reaches it.
 /// - provides: the issue of a reserved or unadmitted form.
 /// - fails: never.
 /// - panics: none.
@@ -359,7 +414,23 @@ fn tracked_form(
         FormName::FORALL_TYPE => TrackingIssue::FORALL,
         FormName::UNION_TYPE | FormName::INTERSECTION_TYPE => TrackingIssue::UNION_INTERSECTION,
         FormName::OPERATOR_DECLARATION => TrackingIssue::OPERATOR_DECLARATION,
-        _ => TrackingIssue::UNSPLIT,
+        FormName::INSTANTIATION if matches!(sort, FragmentSort::Computation) => {
+            TrackingIssue::RECURSIVE_CLAIM
+        },
+        FormName::INSTANTIATION if matches!(sort, FragmentSort::Value) => {
+            TrackingIssue::PARTIAL_SUPPLY
+        },
+        FormName::RECURSIVE => TrackingIssue::NULLARY_RECURSION,
+        FormName::FORK_STATEMENT | FormName::HOLD_STATEMENT => TrackingIssue::JOINED_SCOPE,
+        FormName::FORK_SHARED_STATEMENT
+        | FormName::DUP
+        | FormName::ACQUIRE_STATEMENT
+        | FormName::RELEASE_STATEMENT => TrackingIssue::SHARED_SESSIONS,
+        FormName::STAGED_TYPE => TrackingIssue::PLACED_STAGE,
+        FormName::UNKNOWN_TYPE => TrackingIssue::UNKNOWN_TYPE,
+        FormName::INTERPOLATION => TrackingIssue::INTERPOLATION,
+        FormName::CASE_WITH_VIEW => TrackingIssue::CASE_VIEW,
+        _ => TrackingIssue::UNFILED,
     }
 }
 
@@ -397,6 +468,65 @@ fn unstated(fault: ModelFault) -> FailureClass
         | ModelFault::Unsorted
         | ModelFault::Constructor
         | ModelFault::Inherited => FailureClass::MalformedSource,
+    }
+}
+
+/// The class of a description member the route or its cell layer does not
+/// read.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an operation filler, a higher cell, the reversible glyph, a
+///   nested operation and two redexes in one circuit rule are unimplemented,
+///   each naming its issue; a field past the first-order code, an undecodable
+///   description, an aggregated output and an operation the cell frame cannot
+///   hold are unimplemented under the epic that files their issues; a circuit
+///   redex off its own derived boundary is an engine fault; every other fault —
+///   a rule from no operation, from an empty one, of the wrong result count,
+///   copying a variable, wearing one name at both polarities, a wiring with no
+///   boundary, an operation with no output — is malformed source.
+/// - provides: the lowering classifier's arm for `UndescribedMember`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every fault is pinned to its class, each feature to its
+///   own issue.
+/// - witness: `classify::tests::a_member_the_description_does_not_read_names_its_issue_by_its_fault`
+#[spec(
+    ensures: |ret| matches!(ret, FailureClass::EngineFault) == (fault == MemberFault::OffBoundary)
+        && matches!(ret, FailureClass::Unimplemented(_) | FailureClass::MalformedSource | FailureClass::EngineFault),
+)]
+#[must_use]
+fn undescribed(fault: MemberFault) -> FailureClass
+{
+    match fault {
+        MemberFault::OperationFiller => {
+            FailureClass::Unimplemented(TrackingIssue::OPERATION_FILLER)
+        },
+        MemberFault::HigherCell => FailureClass::Unimplemented(TrackingIssue::HIGHER_CELL),
+        MemberFault::Reversible => FailureClass::Unimplemented(TrackingIssue::REVERSIBLE),
+        MemberFault::NestedOperation => {
+            FailureClass::Unimplemented(TrackingIssue::NESTED_OPERATION)
+        },
+        MemberFault::ParallelRedexes => {
+            FailureClass::Unimplemented(TrackingIssue::PARALLEL_REDEXES)
+        },
+        MemberFault::HigherOrderField
+        | MemberFault::DependentField
+        | MemberFault::TypeShape
+        | MemberFault::NativeDecode
+        | MemberFault::AggregatedOutput
+        | MemberFault::UnrepresentableOperation => {
+            FailureClass::Unimplemented(TrackingIssue::UNFILED)
+        },
+        MemberFault::OffBoundary => FailureClass::EngineFault,
+        MemberFault::NoOutput
+        | MemberFault::LhsNotOperation
+        | MemberFault::EmptyOperation
+        | MemberFault::ResultArity
+        | MemberFault::MixedPolarity
+        | MemberFault::UnderivedWiring => FailureClass::MalformedSource,
     }
 }
 
@@ -454,7 +584,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 54_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 55_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -686,6 +816,10 @@ mod tests
                 second: SurfaceName::from("Bytes"),
                 more: crate::CandidateCount::from(1_usize),
             },
+            LoweringRefusal::UndescribedMember {
+                span: empty,
+                fault: crate::description::MemberFault::HigherCell,
+            },
         ]
     }
 
@@ -697,7 +831,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
-            FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
+            FailureClass::Unimplemented(TrackingIssue::UNFILED),
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
@@ -740,13 +874,14 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
-            FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
+            FailureClass::Unimplemented(TrackingIssue::UNFILED),
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
+            FailureClass::Unimplemented(TrackingIssue::HIGHER_CELL),
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {
@@ -787,7 +922,67 @@ mod tests
                 "def_value",
                 FragmentSort::Declaration,
                 FragmentBoundary::Reserved,
-                FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
+                FailureClass::Unimplemented(TrackingIssue::UNFILED),
+            ),
+            (
+                "instantiation_expression",
+                FragmentSort::Computation,
+                FragmentBoundary::Reserved,
+                FailureClass::Unimplemented(TrackingIssue::RECURSIVE_CLAIM),
+            ),
+            (
+                "instantiation_expression",
+                FragmentSort::Value,
+                FragmentBoundary::Unadmitted,
+                FailureClass::Unimplemented(TrackingIssue::PARTIAL_SUPPLY),
+            ),
+            (
+                "def_rec",
+                FragmentSort::Declaration,
+                FragmentBoundary::Unadmitted,
+                FailureClass::Unimplemented(TrackingIssue::NULLARY_RECURSION),
+            ),
+            (
+                "fork_statement",
+                FragmentSort::Computation,
+                FragmentBoundary::Unadmitted,
+                FailureClass::Unimplemented(TrackingIssue::JOINED_SCOPE),
+            ),
+            (
+                "dup_expression",
+                FragmentSort::Value,
+                FragmentBoundary::Reserved,
+                FailureClass::Unimplemented(TrackingIssue::SHARED_SESSIONS),
+            ),
+            (
+                "staged_type",
+                FragmentSort::ValueType,
+                FragmentBoundary::Unadmitted,
+                FailureClass::Unimplemented(TrackingIssue::PLACED_STAGE),
+            ),
+            (
+                "unknown_type",
+                FragmentSort::ValueType,
+                FragmentBoundary::Reserved,
+                FailureClass::Unimplemented(TrackingIssue::UNKNOWN_TYPE),
+            ),
+            (
+                "string_interpolation",
+                FragmentSort::Value,
+                FragmentBoundary::Reserved,
+                FailureClass::Unimplemented(TrackingIssue::INTERPOLATION),
+            ),
+            (
+                "case_with_view",
+                FragmentSort::Computation,
+                FragmentBoundary::Reserved,
+                FailureClass::Unimplemented(TrackingIssue::CASE_VIEW),
+            ),
+            (
+                "representable_universe_type",
+                FragmentSort::ValueType,
+                FragmentBoundary::Unadmitted,
+                FailureClass::MalformedSource,
             ),
             (
                 "call_expression",
@@ -829,7 +1024,7 @@ mod tests
                 "grade",
                 FragmentSort::CompType,
                 FragmentBoundary::Unadmitted,
-                FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
+                FailureClass::Unimplemented(TrackingIssue::UNFILED),
             ),
             (
                 "parameter",
@@ -841,7 +1036,7 @@ mod tests
                 "parameter",
                 FragmentSort::Declaration,
                 FragmentBoundary::Unadmitted,
-                FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
+                FailureClass::Unimplemented(TrackingIssue::UNFILED),
             ),
         ];
 
@@ -856,6 +1051,78 @@ mod tests
                 refusal.classify(),
                 class,
                 "`{form}` read as {sort} with the {boundary:?} boundary"
+            );
+        }
+    }
+
+    #[test]
+    fn a_member_the_description_does_not_read_names_its_issue_by_its_fault()
+    {
+        use crate::description::MemberFault;
+
+        let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
+        // One row per fault: a feature names its own issue or the epic, the
+        // author's mistake is malformed, and a redex off its own boundary is
+        // the engine's.
+        let rows = [
+            (
+                MemberFault::OperationFiller,
+                FailureClass::Unimplemented(TrackingIssue::OPERATION_FILLER),
+            ),
+            (
+                MemberFault::HigherCell,
+                FailureClass::Unimplemented(TrackingIssue::HIGHER_CELL),
+            ),
+            (
+                MemberFault::Reversible,
+                FailureClass::Unimplemented(TrackingIssue::REVERSIBLE),
+            ),
+            (
+                MemberFault::NestedOperation,
+                FailureClass::Unimplemented(TrackingIssue::NESTED_OPERATION),
+            ),
+            (
+                MemberFault::ParallelRedexes,
+                FailureClass::Unimplemented(TrackingIssue::PARALLEL_REDEXES),
+            ),
+            (
+                MemberFault::HigherOrderField,
+                FailureClass::Unimplemented(TrackingIssue::UNFILED),
+            ),
+            (
+                MemberFault::DependentField,
+                FailureClass::Unimplemented(TrackingIssue::UNFILED),
+            ),
+            (
+                MemberFault::TypeShape,
+                FailureClass::Unimplemented(TrackingIssue::UNFILED),
+            ),
+            (
+                MemberFault::NativeDecode,
+                FailureClass::Unimplemented(TrackingIssue::UNFILED),
+            ),
+            (
+                MemberFault::AggregatedOutput,
+                FailureClass::Unimplemented(TrackingIssue::UNFILED),
+            ),
+            (
+                MemberFault::UnrepresentableOperation,
+                FailureClass::Unimplemented(TrackingIssue::UNFILED),
+            ),
+            (MemberFault::NoOutput, FailureClass::MalformedSource),
+            (MemberFault::LhsNotOperation, FailureClass::MalformedSource),
+            (MemberFault::EmptyOperation, FailureClass::MalformedSource),
+            (MemberFault::ResultArity, FailureClass::MalformedSource),
+            (MemberFault::MixedPolarity, FailureClass::MalformedSource),
+            (MemberFault::UnderivedWiring, FailureClass::MalformedSource),
+            (MemberFault::OffBoundary, FailureClass::EngineFault),
+        ];
+
+        for (fault, class) in rows {
+            assert_eq!(
+                LoweringRefusal::UndescribedMember { span: empty, fault }.classify(),
+                class,
+                "a member refused for {fault} carries its pinned class"
             );
         }
     }

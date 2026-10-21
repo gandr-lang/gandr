@@ -8,7 +8,7 @@ theory ConsumedTwice {
   };
 }
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("UndescribedMember") ]
 theory ProducedTwice {
   sort Nat : Type;
   oper f : (a : Nat) --> (b : Nat);
@@ -20,7 +20,7 @@ theory ProducedTwice {
   };
 }
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("UndescribedMember") ]
 theory SharedRedexPort {
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (sum : Nat);

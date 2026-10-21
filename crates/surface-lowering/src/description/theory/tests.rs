@@ -14,6 +14,7 @@ use gandr_theory_levitation::SortIndex;
 use super::*;
 use crate::circuit::JoinFault;
 use crate::description::DescriptionReport;
+use crate::description::MemberFault;
 use crate::description::elaborate_descriptions;
 use crate::fixture::grammar;
 use crate::unit::Unit;
@@ -582,22 +583,23 @@ fn theory_declines_and_malformed_wiring_are_refused_apart()
 {
     let span = ByteSpan::new(0_usize.into(), 1_usize.into()).unwrap();
     let refusal = |fault| DescriptionDiagnostic { span, fault }.lowering_refusal();
-    for fault in [SignatureFault::OperationFiller, SignatureFault::HigherCell] {
-        assert!(matches!(
+    for (fault, member) in [
+        (
+            SignatureFault::OperationFiller,
+            MemberFault::OperationFiller,
+        ),
+        (SignatureFault::HigherCell, MemberFault::HigherCell),
+        (SignatureFault::Reversible, MemberFault::Reversible),
+    ] {
+        assert_eq!(
             refusal(DescriptionFault::Signature(fault)),
-            crate::LoweringRefusal::OutOfFragment {
-                boundary: crate::FragmentBoundary::Unadmitted,
-                ..
-            }
-        ));
+            crate::LoweringRefusal::UndescribedMember {
+                span,
+                fault: member
+            },
+            "each declined member is refused by its own fault"
+        );
     }
-    assert!(matches!(
-        refusal(DescriptionFault::Signature(SignatureFault::Reversible)),
-        crate::LoweringRefusal::OutOfFragment {
-            boundary: crate::FragmentBoundary::Reserved,
-            ..
-        }
-    ));
     let rule = ByteSpan::new(2_usize.into(), 3_usize.into()).unwrap();
     assert_eq!(
         refusal(DescriptionFault::Signature(SignatureFault::BareFeedback {
@@ -718,8 +720,8 @@ fn a_refused_top_level_operation_states_its_refusal()
     );
     assert!(matches!(
         split.outcome(),
-        crate::DeclarationOutcome::Refused(crate::LoweringRefusal::OutOfFragment {
-            boundary: crate::FragmentBoundary::Unadmitted,
+        crate::DeclarationOutcome::Refused(crate::LoweringRefusal::UndescribedMember {
+            fault: MemberFault::OperationFiller,
             ..
         })
     ));
@@ -1223,7 +1225,10 @@ fn a_rule_bearing_theory_defines_its_presentation_with_its_laws()
     assert!(
         matches!(
             cat.outcome(),
-            crate::DeclarationOutcome::Refused(crate::LoweringRefusal::OutOfFragment { .. })
+            crate::DeclarationOutcome::Refused(crate::LoweringRefusal::UndescribedMember {
+                fault: MemberFault::NestedOperation,
+                ..
+            })
         ),
         "a law over an indexed sort stays declined, so its block defines no value: {:?}",
         cat.outcome()

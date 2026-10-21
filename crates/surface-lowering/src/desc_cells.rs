@@ -70,6 +70,7 @@ use gandr_theory_computads::PresentedRules;
 use gandr_theory_computads::elaborate_data_desc;
 use gandr_theory_computads::elaborate_theory_desc;
 use gandr_theory_computads::presented_reading;
+use gandr_theory_levitation::CircuitElaborationError;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::SurfaceSpan;
@@ -84,6 +85,7 @@ use crate::coincide::decide;
 use crate::coincide::orient_block;
 use crate::coincide::rewriting_store;
 use crate::description::DescribedDeclaration;
+use crate::description::MemberFault;
 use crate::description::written::RuleDirection;
 use crate::description::written::WrittenCircuit;
 use crate::description::written::WrittenTerm;
@@ -131,25 +133,53 @@ pub struct CellDiagnostic
 
 impl CellDiagnostic
 {
-    /// Present the diagnostic as a refusal: a cell-language boundary as a
-    /// held declaration out of the fragment, a coherence fault by its own name.
+    /// Present the diagnostic as a refusal: a copied variable as a non-linear
+    /// rule at its copy, any other cell-language boundary as the member it
+    /// stops, by its own fault, a coherence fault by its own name.
     ///
     /// # Specification
     /// trivial.
     pub(crate) const fn lowering_refusal(&self) -> crate::LoweringRefusal<'static>
     {
-        match self.fault {
-            CellFault::Coherence(ref fault) => fault.lowering_refusal(self.span),
-            CellFault::Operation(_) | CellFault::Rule(_) => crate::LoweringRefusal::OutOfFragment {
-                span: self.span,
-                form: crate::FormName::DECLARATION,
-                sort: crate::FragmentSort::Declaration,
-                boundary: crate::FragmentBoundary::Unadmitted,
+        let fault = match self.fault {
+            CellFault::Coherence(ref fault) => return fault.lowering_refusal(self.span),
+            CellFault::Operation(OpElaborateError::NoOutput) => MemberFault::NoOutput,
+            CellFault::Operation(OpElaborateError::AggregatedOutput) => {
+                MemberFault::AggregatedOutput
             },
-            CellFault::NonLinear { copy, .. } => crate::LoweringRefusal::RulesNonLinear {
-                span: self.span,
-                copy,
+            CellFault::NonLinear { copy, .. } => {
+                return crate::LoweringRefusal::RulesNonLinear {
+                    span: self.span,
+                    copy,
+                };
             },
+            CellFault::Rule(ElaborateError::NonLinear(_)) => {
+                return crate::LoweringRefusal::RulesNonLinear {
+                    span: self.span,
+                    copy: self.span,
+                };
+            },
+            CellFault::Rule(ElaborateError::LhsNotOperation) => MemberFault::LhsNotOperation,
+            CellFault::Rule(ElaborateError::EmptyOperation) => MemberFault::EmptyOperation,
+            CellFault::Rule(ElaborateError::UnsupportedShape) => MemberFault::NestedOperation,
+            CellFault::Rule(ElaborateError::UnrepresentableOperation) => {
+                MemberFault::UnrepresentableOperation
+            },
+            CellFault::Rule(ElaborateError::ResultArity { .. }) => MemberFault::ResultArity,
+            CellFault::Rule(ElaborateError::MixedPolarity(_)) => MemberFault::MixedPolarity,
+            CellFault::Rule(ElaborateError::NoCircuitComposite(
+                CircuitElaborationError::Derivation(_),
+            )) => MemberFault::UnderivedWiring,
+            CellFault::Rule(ElaborateError::NoCircuitComposite(
+                CircuitElaborationError::ManyRedexOccurrences { .. },
+            )) => MemberFault::ParallelRedexes,
+            CellFault::Rule(ElaborateError::NoCircuitComposite(
+                CircuitElaborationError::PositionOffBoundary { .. },
+            )) => MemberFault::OffBoundary,
+        };
+        crate::LoweringRefusal::UndescribedMember {
+            span: self.span,
+            fault,
         }
     }
 }

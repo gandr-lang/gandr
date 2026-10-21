@@ -92,6 +92,9 @@ impl TrackingIssue
     /// A form the fragment refuses under a name that covers several features,
     /// which names its own issue once its refusal is split by feature.
     pub const UNSPLIT: Self = Self(1200);
+    /// An unimplemented form or member whose feature no issue of its own
+    /// tracks yet: the epic files one for it once a source reaches it.
+    pub const UNFILED: Self = Self(1207);
     /// An import whose address has a scheme, which nothing resolves.
     pub const SCHEME: Self = Self(1233);
     /// A constructor field's grade other than the default `ω`.
@@ -120,6 +123,34 @@ impl TrackingIssue
     pub const MODEL_CIRCUIT: Self = Self(1323);
     /// A model signature's binding operation.
     pub const MODEL_BINDING: Self = Self(1324);
+    /// A recursive call's claim naming a measure, a stage or a cost.
+    pub const RECURSIVE_CLAIM: Self = Self(1497);
+    /// A function passed as a value with only some of its implicits supplied.
+    pub const PARTIAL_SUPPLY: Self = Self(1498);
+    /// A recursive definition with no parameters.
+    pub const NULLARY_RECURSION: Self = Self(1499);
+    /// A `fork` or a `hold` in a match arm that continues its block.
+    pub const JOINED_SCOPE: Self = Self(1500);
+    /// Shared sessions: `fork !`, `dup`, `acquire` and `release`.
+    pub const SHARED_SESSIONS: Self = Self(1501);
+    /// A stage written under a form that places none, a path's carrier.
+    pub const PLACED_STAGE: Self = Self(1502);
+    /// The unknown type `?`.
+    pub const UNKNOWN_TYPE: Self = Self(1503);
+    /// String interpolation, `"…${ e }…"`.
+    pub const INTERPOLATION: Self = Self(1505);
+    /// A match on a view, `case e with v { … }`.
+    pub const CASE_VIEW: Self = Self(1506);
+    /// An operation written with a circuit body.
+    pub const OPERATION_FILLER: Self = Self(1507);
+    /// A fillerless higher cell: a rule between rules.
+    pub const HIGHER_CELL: Self = Self(1508);
+    /// A reversible map, `<->`.
+    pub const REVERSIBLE: Self = Self(1509);
+    /// A theory law with an operation nested in producer position.
+    pub const NESTED_OPERATION: Self = Self(1510);
+    /// A circuit rule rewriting two redexes at once.
+    pub const PARALLEL_REDEXES: Self = Self(1511);
 
     /// The issue's page.
     ///

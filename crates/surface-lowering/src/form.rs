@@ -140,7 +140,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 69_usize] = [
+    pub const ALL: [Self; 73_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -210,6 +210,10 @@ impl FormName
         Self::UNION_TYPE,
         Self::INTERSECTION_TYPE,
         Self::OPERATOR_DECLARATION,
+        Self::DUP,
+        Self::STAGED_TYPE,
+        Self::UNKNOWN_TYPE,
+        Self::REPRESENTABLE_UNIVERSE_TYPE,
     ];
     /// The statement `acquire …;`, inlined into its block.
     pub const ACQUIRE_STATEMENT: Self = Self("acquire_statement");
@@ -367,6 +371,15 @@ impl FormName
     pub const INTERSECTION_TYPE: Self = Self("intersection_type");
     /// The operator declaration `op infixl 6 "spelling" ;`.
     pub const OPERATOR_DECLARATION: Self = Self("operator_declaration");
+    /// The reserved endpoint copy `dup(e)`.
+    pub const DUP: Self = Self("dup_expression");
+    /// A type at a stage, `T[i]`.
+    pub const STAGED_TYPE: Self = Self("staged_type");
+    /// The unknown type `?`.
+    pub const UNKNOWN_TYPE: Self = Self("unknown_type");
+    /// The universe of representable sorts `Type+`, which classifies a
+    /// theory's sort member.
+    pub const REPRESENTABLE_UNIVERSE_TYPE: Self = Self("representable_universe_type");
 }
 
 impl From<NamedKind<'static>> for FormName
