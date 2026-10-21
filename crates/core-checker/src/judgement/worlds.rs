@@ -16,7 +16,6 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
-use gandr_core_term::effect::Purity;
 use gandr_core_term::shift_comp_type;
 use gandr_core_term::strengthen_comp_type;
 use gandr_core_term::world::World;
@@ -39,9 +38,7 @@ use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
 use crate::session::Capture;
-use crate::view::CompTypeView;
 use crate::view::ValueTypeView;
-use crate::view::comp_type_view;
 use crate::view::value_type_view;
 use crate::worlds::Crossed;
 use crate::worlds::Crossing;
@@ -380,8 +377,7 @@ impl Machine<'_, '_>
     ///   with the linear zone before and after the spend.
     /// - fails: [`LocatedDefect::UndeclaredWorld`] for a position no world
     ///   declaration holds; [`LocatedDefect::CapabilityCaptured`] under a
-    ///   former that may run the migration other than once, and for a body
-    ///   checked against an impure returner;
+    ///   former that may run the migration other than once;
     ///   [`LocatedDefect::CapabilityMissing`] when no such capability is left.
     /// - panics: none.
     ///
@@ -410,9 +406,6 @@ impl Machine<'_, '_>
             .named(to)
             .map_err(|defect| located(node, defect))?;
         self.uncaptured(node, to)?;
-        if let Direction::Check(expected) = direction {
-            self.pure_migration(node, to, expected)?;
-        }
         let register = self.context.binders().world();
         let index = self.capability(node, to, register)?;
         let recording = self.context.recording() == Recording::On;
@@ -453,9 +446,7 @@ impl Machine<'_, '_>
     /// - ensures: the register is `from`; the migration checked, or synthesised
     ///   the body's type. A typed run keeps the return.
     /// - fails: [`LocatedDefect::Immobile`] naming [`Crossed::Result`] for a
-    ///   result whose type does not cross;
-    ///   [`LocatedDefect::CapabilityCaptured`] for a synthesised type that is
-    ///   not pure.
+    ///   result whose type does not cross.
     /// - panics: none.
     ///
     /// # Errors
@@ -477,13 +468,10 @@ impl Machine<'_, '_>
     ) -> Result<Step, CheckRefusal>
     {
         let node = CoreNode::Term(TermNode::Computation(at));
-        let to = self.context.binders().relocate(from);
+        let _left = self.context.binders().relocate(from);
         let ty = match (direction, produced) {
             (Direction::Check(expected), Produced::Checked) => expected,
-            (Direction::Synthesise, Produced::CompType(synthesised)) => {
-                self.pure_migration(node, to, synthesised)?;
-                synthesised
-            },
+            (Direction::Synthesise, Produced::CompType(synthesised)) => synthesised,
             (Direction::Check(_) | Direction::Synthesise, _) => {
                 return Err(CheckRefusal::MachineInvariant);
             },
@@ -499,55 +487,6 @@ impl Machine<'_, '_>
         }
         self.context.keep_move(WorldMove::Returned { at, to: from });
         Ok(Step::Ascend(produced))
-    }
-
-    /// Refuse a migration to `to` at `at` whose computation type `ty` may
-    /// perform an operation: a handler outside the migration, at the world it
-    /// left, could resume it twice.
-    ///
-    /// # Specification
-    /// - requires: `ty` is formed.
-    /// - ensures: nothing changes.
-    /// - fails: [`LocatedDefect::CapabilityCaptured`] by
-    ///   [`Capture::Continuation`] unless `ty` is a pure returner or unknown.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As above.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a migration checked against the pure returner of a
-    ///   report checks; its capability accounting is the witness's subject.
-    /// - witness: `worlds::tests::a_migration_consumes_its_capability_visibly`
-    #[spec(ensures: |ret| match ret {
-        | Err(CheckRefusal::Located { at: node, defect }) => node == at
-            && defect == (LocatedDefect::CapabilityCaptured { world: to, by: Capture::Continuation }),
-        | Ok(()) | Err(_) => true,
-    })]
-    fn pure_migration(
-        &mut self,
-        at: CoreNode,
-        to: World,
-        ty: CompTypeId,
-    ) -> Result<(), CheckRefusal>
-    {
-        let head = self.context.whnf_comp_type(ty)?;
-        let pure = match comp_type_view(self.context.arena(), head)? {
-            CompTypeView::Returner { effects, .. } => effects.purity() == Purity::Pure,
-            CompTypeView::Unknown => true,
-            CompTypeView::With(..)
-            | CompTypeView::Arrow { .. }
-            | CompTypeView::Pi { .. }
-            | CompTypeView::Element { .. }
-            | CompTypeView::Codata { .. } => false,
-        };
-        if pure {
-            return Ok(());
-        }
-        Err(located(at, LocatedDefect::CapabilityCaptured {
-            world: to,
-            by: Capture::Continuation,
-        }))
     }
 
     /// Refuse a migration to `to` at `at` standing under a former that may run

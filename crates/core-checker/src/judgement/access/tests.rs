@@ -568,20 +568,34 @@ fn a_held_value_lent_or_misnamed_is_refused()
         [Err(at(misnamed, AccessDefect::NotAView)); 2],
         "a held value is no view"
     );
-    // hold c = 0; (c,).0, checked under the row `Probe`
+    // hold c = 0; poke(); (c,).0, checked under the row `Probe`: the clause
+    // answering `poke` receives the rest of the hold, its end with it.
     let probe = probe(&mut arena);
+    let unit = arena.value_unit();
+    let poked = arena.computation_perform(probe.clone(), "poke".into(), unit);
+    let (_held, read) = copied(&mut arena, l0());
+    let then = arena.computation_bind(poked, read);
+    let performing = hold(&mut arena, then);
     let integer = arena.value_type_base(BaseType::Integer);
     let effectful = arena.comp_type_returner_with_effects(integer, EffectRow::singleton(probe));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let expected = form_comp_type(&mut context, effectful).expect("an effectful returner");
+    assert_eq!(
+        check_comp(&mut context, performing, expected).map(|_| ()),
+        Err(at(poked, AccessDefect::HeldCaptured {
+            by: Capture::Continuation
+        })),
+        "an operation in a hold's scope could be resumed twice"
+    );
+    // hold c = 0; (c,).0, checked under the row `Probe`
     let (_held, read) = copied(&mut arena, l0());
     let read_hold = hold(&mut arena, read);
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     let expected = form_comp_type(&mut context, effectful).expect("an effectful returner");
     assert_eq!(
         check_comp(&mut context, read_hold, expected).map(|_| ()),
-        Err(at(read_hold, AccessDefect::HeldCaptured {
-            by: Capture::Continuation
-        })),
-        "an operation in a hold's scope could be resumed twice"
+        Ok(()),
+        "a hold performing nothing checks under any row"
     );
     assert_eq!(
         both(&mut arena, read_hold, integers),

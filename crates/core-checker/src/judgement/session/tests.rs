@@ -686,6 +686,186 @@ fn a_scope_names_only_residents_that_owe_nothing_1336()
     );
 }
 
+/// `exit(1)` through `capability`, a variable of the run.
+///
+/// # Specification
+/// trivial.
+fn exit(
+    arena: &mut CoreArena,
+    host: &HostSignatures,
+    capability: DeBruijnIndex,
+) -> ComputationId
+{
+    let code = arena.value_literal(crate::fixture::integer_literal());
+    let capability = arena.value_variable(Zone::Intuitionistic, capability);
+    arena.computation_exercise(capability, host.proc.clone(), "exit".into(), code)
+}
+
+/// `handle c : Proc { subject } with { pure(x) => pure x, exit(code, k) =>
+/// pure unit }`, its clause dropping the continuation.
+///
+/// # Specification
+/// trivial.
+fn dropping(
+    arena: &mut CoreArena,
+    host: &HostSignatures,
+    subject: ComputationId,
+) -> ComputationId
+{
+    let unit = arena.value_unit();
+    let returned = arena.computation_return(unit);
+    let answered = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let passes = arena.computation_return(answered);
+    let clauses: Arc<[EffectClause]> = [EffectClause {
+        operation: "exit".into(),
+        body: returned,
+    }]
+    .into();
+    arena.computation_scope(host.proc.clone(), subject, passes, clauses)
+}
+
+/// `Cap {exit}`, held by the host for the run.
+///
+/// # Specification
+/// trivial.
+fn held_exit(
+    arena: &mut CoreArena,
+    host: &HostSignatures,
+) -> ValueTypeId
+{
+    let authority = gandr_core_term::effect::EffectRow::authority(&[host
+        .proc
+        .restrict(&["exit".into()])
+        .expect("`Proc` performs `exit`")])
+    .expect("one interface");
+    arena.value_type_capability(
+        authority,
+        gandr_core_term::effect::capability::CapabilityGrade::Durable,
+        gandr_core_term::effect::capability::Region::Held,
+    )
+}
+
+/// Check `term` against the returner of the unit at the row `Proc`, under a
+/// `Cap {exit}` the host holds for the run.
+///
+/// # Specification
+/// trivial.
+fn check_held_exit(
+    arena: &mut CoreArena,
+    host: &HostSignatures,
+    term: ComputationId,
+) -> Result<(), CheckRefusal>
+{
+    let cap = held_exit(arena, host);
+    let unit = arena.value_type_unit();
+    let returner = arena.comp_type_returner_with_effects(
+        unit,
+        gandr_core_term::effect::EffectRow::singleton(host.proc.clone()),
+    );
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    context.binders().open(Zone::Intuitionistic, cap);
+    let returner = form_comp_type(&mut context, returner)?;
+    check_comp(&mut context, term, returner).map(|_| ())
+}
+
+/// An operation a capability scope answers hands the rest of the scope to
+/// the scope's clause, which may drop it or run it twice, so an endpoint the
+/// scope opened is refused across it; an operation the host answers runs the
+/// rest once, and the endpoint stays open across it (#1334).
+#[test]
+fn an_operation_a_scope_answers_captures_what_the_scope_opened_1334()
+{
+    let mut arena = CoreArena::new();
+    let host = HostSignatures::new(&mut arena).unwrap();
+    let protocol = end(&mut arena);
+    // handle c : Proc { fork (s : end) { close(s) } as d; c.exit(1); close(d) }
+    let exited = exit(&mut arena, &host, DeBruijnIndex::from(0_u32));
+    let closed = Program::new(&mut arena).close();
+    let parent = arena.computation_bind(exited, closed);
+    let child_closed = Program::new(&mut arena).close();
+    let exchange = fork(&mut arena, protocol, child_closed, parent);
+    let scoped = dropping(&mut arena, &host, exchange);
+    assert_eq!(
+        check_unit(&mut arena, scoped),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Computation(exited)),
+            defect: LinearityDefect::Captured {
+                endpoint: Endpoint {
+                    fork: exchange,
+                    side: ForkSide::Parent,
+                },
+                by: Capture::Continuation,
+            },
+        }),
+        "the scope's clause may drop the close"
+    );
+    // handle c : Proc { fork (s : end) { close(s) } as d; close(d); c.exit(1) }
+    let closed = Program::new(&mut arena).close();
+    let exited_after = exit(&mut arena, &host, DeBruijnIndex::from(1_u32));
+    let parent = arena.computation_bind(closed, exited_after);
+    let child_closed = Program::new(&mut arena).close();
+    let exchange = fork(&mut arena, protocol, child_closed, parent);
+    let scoped = dropping(&mut arena, &host, exchange);
+    assert_eq!(
+        check_unit(&mut arena, scoped),
+        Ok(()),
+        "the same exit after the close leaves the clause nothing owed"
+    );
+    // c : Cap {exit}; fork (s : end) { close(s) } as d; c.exit(1); close(d)
+    let child_closed = Program::new(&mut arena).close();
+    let parent = parent_open(&mut arena, exited);
+    let exchange = fork(&mut arena, protocol, child_closed, parent);
+    assert_eq!(
+        check_held_exit(&mut arena, &host, exchange),
+        Ok(()),
+        "the host answers the exit once, so the close runs once"
+    );
+}
+
+/// `operation; close(d)`.
+///
+/// # Specification
+/// trivial.
+fn parent_open(
+    arena: &mut CoreArena,
+    operation: ComputationId,
+) -> ComputationId
+{
+    let closed = Program::new(arena).close();
+    arena.computation_bind(operation, closed)
+}
+
+/// A forked child runs as its parent's peer, which no region bounds: it may
+/// exercise a capability the host holds for the run, and one its scope
+/// introduced is refused at the fork, since the scope could end while the
+/// child runs (#1334).
+#[test]
+fn a_child_exercises_only_what_outlives_every_region_1334()
+{
+    let mut arena = CoreArena::new();
+    let host = HostSignatures::new(&mut arena).unwrap();
+    let protocol = end(&mut arena);
+    // c : Cap {exit}; fork (s : end) { c.exit(1); close(s) } as d; close(d)
+    let exited = exit(&mut arena, &host, DeBruijnIndex::from(0_u32));
+    let child = parent_open(&mut arena, exited);
+    let closed = Program::new(&mut arena).close();
+    let exchange = fork(&mut arena, protocol, child, closed);
+    assert_eq!(
+        check_held_exit(&mut arena, &host, exchange),
+        Ok(()),
+        "the child exits through the run's capability"
+    );
+    // handle c : Proc { fork (s : end) { c.exit(1); close(s) } as d; close(d) }
+    let scoped = dropping(&mut arena, &host, exchange);
+    assert!(
+        matches!(
+            check_unit(&mut arena, scoped),
+            Err(CheckRefusal::CapabilityEscaped { at, .. }) if at == TermNode::Computation(exchange)
+        ),
+        "the scope's capability would outlive the scope in the child"
+    );
+}
+
 #[test]
 fn offer_arms_leaving_different_endpoints_are_refused()
 {
