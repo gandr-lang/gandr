@@ -1,0 +1,16 @@
+// A receive's payload written in parentheses reads as the payload whatever
+// type it holds, as a send's does, a sum among them (#1229). The receive and
+// the unknown type share the tile `?`, and the parenthesis after it settles
+// the receive: the unknown type is a whole type, and no type form goes on
+// with `(` after one.
+
+/// A seat that receives an order, a sum written in place, and closes.
+@[ checks ]
+def receivesAnOrder() -> -F Unit {
+  fork (seat : ?(+{go : Integer, stop : Unit}). end) {
+    recv(seat) as order;
+    close(seat)
+  } as desk;
+  send(desk, (+{.go = 1} : +{go : Integer, stop : Unit}));
+  close(desk)
+}

@@ -85,6 +85,15 @@
 //! the windows decide as before. Over the corpus the trees are unchanged and
 //! parsing takes half the time.
 //!
+//! A tied mold that can end its form is followed, past the form, by a tile a
+//! hole of the form's sort faces on its left, since the whole form fills that
+//! hole: a token none of whose molds faces such a hole cannot follow it. This
+//! settles the receive `?(P). S` against the unknown type `?`, which tie at
+//! `?`. No type form goes on with `(` after a whole type, so the parenthesis
+//! refutes the unknown type, where a window of eight tokens ending inside a
+//! payload such as `?(+{go : end})` read both readings as alike and kept the
+//! unknown type, whose `.` then read as a path.
+//!
 //! The same pruning runs on every tie inside a window. A trailing separator
 //! ties its list's two readings, the separator an element follows and the one
 //! the closer follows, and a window has no window of its own to read past it.
@@ -102,7 +111,8 @@
 //!   a tile that is not one of its same-form successors voids the check; the
 //!   table's successor relation then has to carry that tile. A form whose hole
 //!   can be filled by something that opens with a tile no form begins with
-//!   voids the hole check.
+//!   voids the hole check. A form of one sort that stands in a hole of another,
+//!   beyond the item sort every hole admits, voids the whole-form check.
 //!
 //! ### A window counts eight tokens
 //!
@@ -3499,27 +3509,31 @@ impl<'pbg> Molder<'pbg>
     ///
     /// A mold a hole follows on its right is followed by what fills the hole,
     /// which begins with a form's first tile: a token none of whose labels
-    /// can begin a form refutes it. A mold that no hole follows, and that
-    /// cannot end its form, is followed by one of its same-form successors: a
-    /// token carrying none of their labels refutes it. A mold that can end its
-    /// form admits any token, since what follows the form is not read here.
+    /// can begin a form refutes it. A mold that no hole follows is followed
+    /// by one of its same-form successors or, when it can end its form, by
+    /// what follows the whole form: the form fills a hole, so the next tile is
+    /// one a hole of the form's sort faces on its left, or nothing at all. A
+    /// token carrying none of those refutes it.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Follow::Refuted`] exactly when either `mold`'s right bound
     ///   is not the root and no label in `labels` names a tile that begins a
-    ///   form, or its right bound is the root, it is not form-last, and none of
-    ///   its same-form successors is labelled with one of `labels`.
+    ///   form, or its right bound is the root, none of its same-form successors
+    ///   is labelled with one of `labels`, and either it is not form-last or
+    ///   [`Molder::after_form`] refutes `labels`.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a parameter comma read before a name, before a closer
     ///   and before nothing, an argument comma before an argument and before a
-    ///   closer, and a call's form-last closer expose each branch: dropping the
-    ///   hole check keeps the argument comma before a closer, reading the hole
-    ///   check as the successor check refutes it before an argument, dropping
-    ///   the form-last check refutes the closer, dropping the successor check
-    ///   refutes the parameter comma before a name.
+    ///   closer, a call's form-last closer, and the unknown type before `(`
+    ///   expose each branch: dropping the hole check keeps the argument comma
+    ///   before a closer, reading the hole check as the successor check refutes
+    ///   it before an argument, dropping the form-last check refutes the
+    ///   closer, dropping the successor check refutes the parameter comma
+    ///   before a name, and dropping the whole-form check keeps the unknown
+    ///   type before `(`.
     /// - witness: `mold::tests::a_mold_is_refuted_only_by_a_token_that_cannot_stand_after_it`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -3536,7 +3550,8 @@ impl<'pbg> Molder<'pbg>
         )
     )]
     #[spec(ensures: |ret| (ret == Follow::Refuted) == if matches!(self.pbg.bounds(mold), Ok((_, Bound::Root))) {
-        !bool::from(self.pbg.mold_is_form_last(mold)) && !self.pbg.mold_successors(mold).iter().any(|&(_, right)| self.pbg.mold(right).is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label))))
+        !self.pbg.mold_successors(mold).iter().any(|&(_, right)| self.pbg.mold(right).is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label))))
+            && (!bool::from(self.pbg.mold_is_form_last(mold)) || self.after_form(mold, labels) == Follow::Refuted)
     } else {
         !labels.iter().any(|&label| self.candidate_label(label).is_some_and(|label| !self.pbg.fresh_candidates(label).is_empty()))
     })]
@@ -3548,11 +3563,11 @@ impl<'pbg> Molder<'pbg>
     {
         let pbg = self.pbg;
         let continued = if matches!(pbg.bounds(mold), Ok((_, Bound::Root))) {
-            bool::from(pbg.mold_is_form_last(mold))
-                || pbg.mold_successors(mold).iter().any(|&(_, right)| {
-                    pbg.mold(right)
-                        .is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label)))
-                })
+            pbg.mold_successors(mold).iter().any(|&(_, right)| {
+                pbg.mold(right)
+                    .is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label)))
+            }) || (bool::from(pbg.mold_is_form_last(mold))
+                && self.after_form(mold, labels) == Follow::Possible)
         }
         else {
             labels.iter().any(|&label| {
@@ -3561,6 +3576,65 @@ impl<'pbg> Molder<'pbg>
             })
         };
         if continued {
+            Follow::Possible
+        }
+        else {
+            Follow::Refuted
+        }
+    }
+
+    /// Whether a token carrying one of `labels` can stand right after a whole
+    /// form that `mold` ends: one of the token's molds faces on its left a
+    /// hole that admits `mold`'s sort, or no token follows at all.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Follow::Possible`] exactly when `labels` is empty or some
+    ///   label in it names a tile with a mold whose left context crosses a hole
+    ///   of `mold`'s sort, or of any sort when `mold`'s sort is [`Sort::Item`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call's closer before nothing and before `(`, and
+    ///   the unknown type before `(`, which no type form takes after a whole
+    ///   type, and before `.` and `)`, which a type operand precedes: dropping
+    ///   the sort check admits `(` after the unknown type through the call's
+    ///   left hole, and dropping the empty case refutes the closer at the
+    ///   stream's end.
+    /// - witness: `mold::tests::a_mold_is_refuted_only_by_a_token_that_cannot_stand_after_it`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same candidate menus and contexts"
+        )
+    )]
+    #[spec(ensures: |ret| (ret == Follow::Possible) == (labels.is_empty() || self.pbg.mold(mold).is_ok_and(|ended| labels.iter().any(|&label| self.candidate_label(label).is_some_and(|label| self.pbg.candidates(label).iter().any(|&next| self.pbg.mold(next).is_ok_and(|def| self.pbg.step(def.rctx, Dir::Left).is_ok_and(|steps| steps.iter().any(|step| matches!(step.crossed, StepSym::Sort(sort) if sort == ended.sort || ended.sort == Sort::Item))))))))))]
+    fn after_form(
+        &self,
+        mold: MoldId,
+        labels: &[CandidateLabel<'_>],
+    ) -> Follow
+    {
+        let pbg = self.pbg;
+        let precedes = labels.is_empty()
+            || pbg.mold(mold).is_ok_and(|ended| {
+                labels.iter().any(|&label| {
+                    self.candidate_label(label).is_some_and(|label| {
+                        pbg.candidates(label).iter().any(|&next| {
+                            pbg.mold(next).is_ok_and(|def| {
+                                pbg.step(def.rctx, Dir::Left).is_ok_and(|steps| {
+                                    steps.iter().any(|step| {
+                                        matches!(step.crossed, StepSym::Sort(sort)
+                                            if sort == ended.sort || ended.sort == Sort::Item)
+                                    })
+                                })
+                            })
+                        })
+                    })
+                })
+            });
+        if precedes {
             Follow::Possible
         }
         else {
@@ -4523,11 +4597,30 @@ mod tests
         let argument_comma = mold_in(&pbg, CALL, COMMA, RightSide::Hole, &[])?;
         assert_eq!(molder.follow(argument_comma, &identifier), Follow::Possible);
         assert_eq!(molder.follow(argument_comma, &close), Follow::Refuted);
-        // `f(x)`: the closer ends its form, so whatever follows the form may
-        // follow it.
+        // `f(x)`: the closer ends its form, so it may end the stream, and
+        // whatever a hole of its sort precedes may follow it: a call of the
+        // call.
         let call_close = mold_in(&pbg, CALL, TileLabel(")"), RightSide::Closed, &[])?;
         assert!(bool::from(pbg.mold_is_form_last(call_close)));
         assert_eq!(molder.follow(call_close, &[]), Follow::Possible);
+        let open = [CandidateLabel::from("(")];
+        assert_eq!(molder.follow(call_close, &open), Follow::Possible);
+        // `?(P). S` (#1229): the unknown type is a whole type, and no type
+        // form goes on with `(` after one, while `.` and `)` stand after a
+        // type operand.
+        let unknown = mold_in(
+            &pbg,
+            RuleName("unknown_type"),
+            TileLabel("?"),
+            RightSide::Closed,
+            &[],
+        )?;
+        assert_eq!(molder.follow(unknown, &open), Follow::Refuted);
+        assert_eq!(
+            molder.follow(unknown, &[CandidateLabel::from(".")]),
+            Follow::Possible
+        );
+        assert_eq!(molder.follow(unknown, &close), Follow::Possible);
         Ok(())
     }
 
