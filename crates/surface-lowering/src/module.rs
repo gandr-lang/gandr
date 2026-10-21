@@ -3350,6 +3350,7 @@ impl<'source> Collector<'_, 'source>
                 | Former::CapabilityType
                 | Former::AtType
                 | Former::StagedType
+                | Former::ModedType
                 | Former::Scope
                 | Former::Import
                 | Former::Module
@@ -4263,7 +4264,11 @@ impl<'source> Collector<'_, 'source>
                 let _first = self.collected.stage_binders.insert(slot, binders);
             }
             if let Container::Module(_) = container
-                && let Some(mode) = receiver_of(&header, |tile| self.name_of(tile))
+                && let Some(mode) = receiver_of(
+                    &header,
+                    |tile| self.name_of(tile),
+                    |operand| self.root_former(operand).ok(),
+                )
             {
                 let _first = self.collected.receivers.insert(slot, mode);
             }

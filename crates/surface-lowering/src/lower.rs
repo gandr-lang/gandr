@@ -1278,7 +1278,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1334,6 +1334,7 @@ fn ending(former: Former) -> Ending
         | Former::CapabilityType
         | Former::AtType
         | Former::StagedType
+        | Former::ModedType
         | Former::Scope
         | Former::Declaration
         | Former::AttributeBlock
@@ -1371,7 +1372,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1471,6 +1472,7 @@ fn iterating(former: Former) -> Ending
                     | Former::CapabilityType
                     | Former::AtType
                     | Former::StagedType
+                    | Former::ModedType
                     | Former::SessionType,
                 Family::Type
             ) | (
@@ -1549,6 +1551,7 @@ const fn family_of(former: Former) -> Family
         | Former::CapabilityType
         | Former::AtType
         | Former::StagedType
+        | Former::ModedType
         | Former::SessionType => Family::Type,
         Former::Declaration
         | Former::AttributeBlock
@@ -3087,6 +3090,18 @@ struct Lowerer<'run, 'source>
         SlotIndex,
         BTreeMap<SurfaceName<'source>, gandr_core_term::effect::capability::RegionBinder>,
     >,
+    /// Each mode binder of each method a deduced mode receives through, by
+    /// its name, by the slot of the method.
+    mode_binders: BTreeMap<SlotIndex, BTreeSet<SurfaceName<'source>>>,
+    /// The body a method answering a view ends in, by its node: the place of
+    /// the receiver the body answers, `self[e]`.
+    view_places: BTreeMap<NodeIndex, method::ViewPlace>,
+    /// The view types, `View[m](a)`, a method answering a place declares its
+    /// result at, by node: each stands as the place's index.
+    view_types: BTreeSet<NodeIndex>,
+    /// The linear binders a `resume` or an `abort` ends: a view a block ends
+    /// asks its call for an exclusive lend.
+    ended_views: BTreeSet<ScopeId>,
     /// The stages a call supplies its callee's binders at, `f[i = s]`, by the
     /// node of the callee's name, beside the declaration making the call.
     planned_supplies: BTreeMap<
@@ -4395,6 +4410,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             stage_marks: BTreeMap::new(),
             stage_bounds: BTreeMap::new(),
             region_binders: BTreeMap::new(),
+            mode_binders: BTreeMap::new(),
+            view_places: BTreeMap::new(),
+            view_types: BTreeSet::new(),
+            ended_views: BTreeSet::new(),
             planned_supplies: BTreeMap::new(),
             supplies: BTreeMap::new(),
             ran: BTreeMap::new(),
@@ -5824,6 +5843,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::CapabilityType => self.capability_type(site, cursor),
             Former::AtType => self.at_type(site, cursor),
             Former::StagedType => self.staged_type(site, cursor),
+            Former::ModedType => self.moded_type(site, cursor),
             Former::Scope => self.capability_scope(site, pieces),
             Former::Instantiation => self.instantiation(site, cursor),
             Former::SessionType => self.session_type(site),
@@ -7545,6 +7565,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let start = self.parameters.len();
         let mut frame = self.merged_parameters(site, function, &mut cursor, Frame::Outermost)?;
         let mut recursion = Maybe::Absent(recursion::Absent::Plain);
+        // The mode variable a deduced receiver is written at, `self : m T`.
+        let mut deduced: Option<SurfaceName<'source>> = None;
         // A recursive tail stages the parameter its body's matches take
         // apart, read off the syntax ahead before anything binds.
         let staged = match (recursive, named) {
@@ -7596,7 +7618,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     if let Maybe::Absent(_) = cursor.tile(TileName::SHARED) {
                         let _consumed = cursor.tile(TileName::CONSUMED);
                     }
-                    let declared = function.one(cursor.operands())?;
+                    let mut declared = function.one(cursor.operands())?;
+                    // A receiver at a mode variable, `self : m T`: the variable
+                    // names a mode binder, and `T` is the receiver's type.
+                    if let Some((mode, typed)) = self.moded(declared)? {
+                        deduced = Some(self.mode_variable(site, mode)?);
+                        declared = typed;
+                    }
                     self.read(declared.node, Reading::ValueType(frame));
                     Maybe::Present(declared.node)
                 },
@@ -7664,25 +7692,37 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let _first = self.staged_parameters.insert(parameter.frame, scrutiny);
             }
         }
-        let result = match cursor.tile(TileName::ARROW) {
+        let (result, viewed) = match cursor.tile(TileName::ARROW) {
             Maybe::Present(_) => {
                 let result = function.one(cursor.operands())?;
+                let viewed = match deduced {
+                    Some(mode) => Some(self.view_result(result, mode, frame)?),
+                    None => None,
+                };
                 self.read(result.node, Reading::Result(frame));
-                Maybe::Present(result.node)
+                (Maybe::Present(result.node), viewed)
             },
-            Maybe::Absent(_) => Maybe::Absent(stated::Absent::Unstated),
+            Maybe::Absent(_) if deduced.is_some() => {
+                return Err(LoweringRefusal::ViewNotPlace {
+                    span: function.at.span,
+                });
+            },
+            Maybe::Absent(_) => (Maybe::Absent(stated::Absent::Unstated), None),
         };
         let (body, receiver) = match receiver {
             Some(ReceiverMode::Exclusive) => {
                 let (held, receiver) = self.hold_receiver(function, frame, parameters)?;
                 (held, Maybe::Present(receiver))
             },
-            Some(ReceiverMode::Shared | ReceiverMode::Consumed) | None => (
+            Some(ReceiverMode::Shared | ReceiverMode::Consumed | ReceiverMode::Deduced) | None => (
                 frame,
                 Maybe::Absent(method::unheld::Absent::NotWrittenThrough),
             ),
         };
         let block = self.block(function, &mut cursor, body)?;
+        if let Some(element) = viewed {
+            self.view_body(function, block, element)?;
+        }
         let answer = match result {
             Maybe::Present(node) => {
                 let answer = native::Answer {
@@ -17072,6 +17112,7 @@ pub fn parse_literal(
         | Former::CapabilityType
         | Former::AtType
         | Former::StagedType
+        | Former::ModedType
         | Former::Scope
         | Former::Declaration
         | Former::AttributeBlock

@@ -1210,6 +1210,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::CapabilityType
                 | Former::AtType
                 | Former::StagedType
+                | Former::ModedType
                 | Former::Scope
                 | Former::Declaration
                 | Former::AttributeBlock

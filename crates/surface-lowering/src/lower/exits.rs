@@ -571,6 +571,7 @@ impl<'source> Lowerer<'_, 'source>
             | Former::CapabilityType
             | Former::AtType
             | Former::StagedType
+            | Former::ModedType
             | Former::AttributeBlock
             | Former::Import
             | Former::Data

@@ -42,11 +42,13 @@
 //! renumbered past the held slot, which the commuting does not carry.
 
 use anodized::spec;
+use gandr_core_term::Binders;
 use gandr_core_term::Zone;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::HoldGrade;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place;
+use gandr_core_term::shift_value;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
@@ -75,8 +77,10 @@ use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::TileName;
+use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::resolve::Frame;
+use crate::resolve::ScopeId;
 
 #[cfg(test)]
 pub(in crate::lower) mod tests;
@@ -125,6 +129,19 @@ pub(super) enum Accessed
     {
         /// The view ended, a linear index.
         view: DeBruijnIndex,
+    },
+    /// The place `self[e]` a method answering a view ends in: its receiver
+    /// held and lent shared at `e`, the view judged at the element type, and
+    /// the index answered.
+    Place
+    {
+        /// The receiver, an intuitionistic index where the place stands.
+        receiver: DeBruijnIndex,
+        /// The index `e`, read as a value where the place stands.
+        index: NodeIndex,
+        /// The element type the method's result names, read as a value type
+        /// where the place stands.
+        element: NodeIndex,
     },
 }
 
@@ -283,7 +300,7 @@ impl<'source> Lowerer<'_, 'source>
         frame: Frame,
         written: Placed,
         boundary: FragmentBoundary,
-    ) -> Result<DeBruijnIndex, LoweringRefusal<'source>>
+    ) -> Result<(DeBruijnIndex, ScopeId), LoweringRefusal<'source>>
     {
         let subject = Site {
             at: written,
@@ -293,7 +310,7 @@ impl<'source> Lowerer<'_, 'source>
         let spelled = self.name_at(written);
         match self.resolve_name(subject, frame, spelled)? {
             Maybe::Present(Resolved::Binder(bound)) if bound.zone == Zone::Linear => {
-                Ok(bound.index)
+                Ok((bound.index, bound.binder))
             },
             Maybe::Present(_) => Err(subject.out(boundary)),
             Maybe::Absent(_) => Err(LoweringRefusal::UnresolvedName {
@@ -304,7 +321,7 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Classify a temporary-access form: `access x as v { t } unwind { u }`,
-    /// `resume(v, e)` or `abort(v)`.
+    /// `resume(v, e)`, `abort(v)` or a call's view block `e as v { t }`.
     ///
     /// # Specification
     /// - requires: `site` is a temporary-access expression.
@@ -312,12 +329,14 @@ impl<'source> Lowerer<'_, 'source>
     ///   slot `x` names, binds `v` linearly over its body and reads its unwind,
     ///   when written, under the form's frame, each block's last computation
     ///   its result; an eliminator ends the view its name resolves to, a
-    ///   resume's value read as a value under the form's frame.
+    ///   resume's value read as a value under the form's frame, and the view's
+    ///   binder is recorded as one a block ends; a view block stands as its
+    ///   call, as [`Self::view_call`] plans it.
     /// - fails: the wrong-sort refusal where no computation is read;
     ///   [`FragmentBoundary::Held`] and [`FragmentBoundary::View`] at a name
     ///   that resolves to no linear binder; [`LoweringRefusal::UnresolvedName`]
     ///   for one nothing binds; a misplaced-tile fault for a form out of shape;
-    ///   each block's and hole's own refusal.
+    ///   each block's and hole's own refusal; the view block's refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -329,15 +348,22 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::access::tests::the_counter_lowers_to_its_memory_forms`
     /// - witness: `lower::access::tests::an_access_names_a_held_value_and_an_eliminator_its_view`
     /// - witness: `lower::access::tests::an_exit_inside_an_access_is_refused`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Access(_))))]
+    /// - witness: `lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Access(_) | Plan::Method(_)))))]
     pub(super) fn access_form(
         &mut self,
         site: Site,
         pieces: &Pieces,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = self.require(site, Produced::Computation)?;
         let mut cursor = Cursor::new(&pieces.pieces, site.at.span);
+        if super::method::indexed(pieces).is_some() {
+            return self.index_form(site, cursor);
+        }
+        if let Maybe::Present(Piece::Operand(_)) = cursor.peek() {
+            return self.view_call(site, pieces);
+        }
+        let frame = self.require(site, Produced::Computation)?;
         let Maybe::Present(Piece::Tile { label: keyword, .. }) = cursor.read()
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
@@ -356,7 +382,8 @@ impl<'source> Lowerer<'_, 'source>
                 let value = site.one(cursor.operands())?;
                 closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
                 exhausted(site, &cursor)?;
-                let view = self.linear_slot(frame, written, FragmentBoundary::View)?;
+                let (view, ended) = self.linear_slot(frame, written, FragmentBoundary::View)?;
+                let _first = self.ended_views.insert(ended);
                 self.read(value.node, Reading::Value(frame));
                 Accessed::Resume {
                     view,
@@ -366,9 +393,9 @@ impl<'source> Lowerer<'_, 'source>
             else if keyword == TileName::ABORT {
                 closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
                 exhausted(site, &cursor)?;
-                Accessed::Abort {
-                    view: self.linear_slot(frame, written, FragmentBoundary::View)?,
-                }
+                let (view, ended) = self.linear_slot(frame, written, FragmentBoundary::View)?;
+                let _first = self.ended_views.insert(ended);
+                Accessed::Abort { view }
             }
             else {
                 return Err(site.fault(site.at.span, FormFault::MisplacedTile));
@@ -450,7 +477,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
-        let held = self.linear_slot(frame, lent, FragmentBoundary::Held)?;
+        let (held, _) = self.linear_slot(frame, lent, FragmentBoundary::Held)?;
         let name = self.name_at(viewer);
         self.note_binder(viewer, name)?;
         let viewed = self
@@ -494,14 +521,18 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the memory form over its children's lowered nodes at
     ///   `origin`, an access's blocks minted as blocks, its index as a value,
     ///   and an exclusive access's missing unwind minted as `pure unit` at
-    ///   `origin`; the first absence among the children otherwise.
+    ///   `origin`; a method's place `self[e]` minted as `hold p = self ; access
+    ///   shared p[e] as v { run _ : a <- pure v ; pure e }`, `a` the element
+    ///   type, every node below the hold marked as inserted for the method; the
+    ///   first absence among the children otherwise.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the counter's forms, an unwind written and one left
-    ///   out, and a shared access with none.
+    ///   out, a shared access with none, and a method's place.
     /// - witness: `lower::access::tests::the_counter_lowers_to_its_memory_forms`
+    /// - witness: `lower::method::tests::a_view_method_answers_its_place_index`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
         | Maybe::Present(_) => false,
@@ -562,6 +593,54 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             },
             Accessed::Abort { view } => MemoryForm::Abort { view },
+            Accessed::Place {
+                receiver,
+                index,
+                element,
+            } => {
+                let (index, element) = match (self.value_at(index), self.value_type_at(element)) {
+                    (Maybe::Present(index), Maybe::Present(element)) => (index, element),
+                    (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
+                        return Maybe::Absent(reason);
+                    },
+                };
+                let inner = origin.inserted(Insertion::Method);
+                let viewed = sink
+                    .arena
+                    .value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+                sink.origins.record_value(viewed, inner);
+                let read = sink.arena.computation_return(viewed);
+                sink.origins.record_computation(read, inner);
+                let judged = sink.arena.comp_type_returner(element);
+                sink.origins.record_comp_type(judged, inner);
+                let ascribed = sink.arena.computation_ascribe(read, judged);
+                sink.origins.record_computation(ascribed, inner);
+                // Past the ascription's binder the index's free variables are
+                // one deeper.
+                let answered =
+                    shift_value(sink.arena, index, Binders::from(1_u32)).settle(sink.arena);
+                if answered != index {
+                    sink.origins.record_value(answered, inner);
+                }
+                let answer = sink.arena.computation_return(answered);
+                sink.origins.record_computation(answer, inner);
+                let body = sink.arena.computation_bind(ascribed, answer);
+                sink.origins.record_computation(body, inner);
+                let lent = sink.arena.computation_memory(MemoryForm::Access {
+                    mode: AccessMode::Shared,
+                    held: DeBruijnIndex::from(0_u32),
+                    place: Place::At { index },
+                    body,
+                });
+                sink.origins.record_computation(lent, inner);
+                let receiver = sink.arena.value_variable(Zone::Intuitionistic, receiver);
+                sink.origins.record_value(receiver, inner);
+                MemoryForm::Hold {
+                    value: receiver,
+                    body: lent,
+                    grade: HoldGrade::Many,
+                }
+            },
         };
         let id = sink.arena.computation_memory(form);
 

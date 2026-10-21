@@ -1,0 +1,4 @@
+/// `moded_type`: a receiver's type at the mode its method's telescope binds.
+module Places {
+  def first @[m : Mode] (self : m List(Integer)) -> -F View[m](Integer) { self[0] }
+}

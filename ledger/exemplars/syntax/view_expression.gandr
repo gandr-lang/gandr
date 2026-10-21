@@ -1,0 +1,5 @@
+/// `view_expression`: a call's place lent to a block, at the mode it asks.
+def raised() -> -F Unit {
+  hold xs = cons(1, nil);
+  xs.first() as w { resume(w, 2) }
+}

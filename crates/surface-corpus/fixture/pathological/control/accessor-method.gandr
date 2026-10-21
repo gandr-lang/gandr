@@ -1,0 +1,73 @@
+// What a method answering a place may not be: a method at a deduced mode
+// answers a view of its receiver at that mode and ends in the place itself,
+// its view type stands only as such a method's result, and its element type is
+// the element's. A view block follows only a call of such a method, on a
+// receiver a hold holds, and its exclusive lend waits for the held list's
+// other lends to end.
+
+// The list each call below holds; the list's places.
+import "../../model/control/accessor-place.gandr" ;
+import "../../model/control/accessor-method.gandr" ;
+
+/// A list's places out of shape.
+module Misplaced {
+  /// A method at a deduced mode whose result is a value, not a view.
+  @[ refuses("ViewNotPlace") ]
+  def valued @[m : Mode] (self : m List(Integer)) -> -F Integer { self[0] }
+  /// A method answering a view whose body computes a value rather than
+  /// naming a place.
+  @[ refuses("ViewNotPlace") ]
+  def computed @[m : Mode] (self : m List(Integer)) -> -F View[m](Integer) { pure 0 }
+  /// A view at a mode other than the receiver's.
+  @[ refuses("ViewNotPlace") ]
+  def crossed @[m : Mode, n : Mode] (self : m List(Integer)) -> -F View[n](Integer) { self[0] }
+  /// A view whose element type is not the list's.
+  @[ refuses("TypeMismatch") ]
+  def mistyped @[m : Mode] (self : m List(Integer)) -> -F View[m](String) { self[0] }
+  /// The length, read from a list lent for reading: a method answering no
+  /// place.
+  @[ checks ]
+  def size(self : shared List(Integer)) -> -F Integer { pure 2 }
+}
+
+/// A view block after a call of a method that answers no place.
+@[ refuses("ViewOfNoPlace") ]
+def sized() -> -F Integer {
+  hold xs = pair;
+  xs.size() as w { pure w }
+}
+
+/// A view block on a list no hold holds: nothing keeps what an exclusive
+/// view would write back.
+@[ refuses("OutOfFragment") ]
+def unheld(ys : List(Integer)) -> -F Integer {
+  ys.first() as w { pure w }
+}
+
+/// An exclusive view of a list a shared access already lends.
+@[ refuses("HeldLent") ]
+def raisedWhileRead() -> -F Integer {
+  hold xs = pair;
+  access shared xs as v { xs.first() as w { resume(w, 3) } ; pure 0 }
+}
+
+/// A bare index outside a method's body, which does not yet read its place
+/// (#1536).
+@[ refuses("OutOfFragment") ]
+def bare(i : Integer) -> -F Integer {
+  hold xs = pair;
+  run y <- xs[i];
+  pure y
+}
+
+/// A view type standing as a parameter's type.
+@[ refuses("ViewNotPlace") ]
+def stray(v : View[m](Integer)) -> -F Integer {
+  pure 0
+}
+
+/// A mode variable on a parameter that is no receiver.
+@[ refuses("StrayReceiverMode") ]
+def lent @[m : Mode] (ys : m List(Integer)) -> -F Integer {
+  pure 0
+}
