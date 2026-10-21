@@ -47,6 +47,7 @@ use core::fmt;
 use anodized::spec;
 use gandr_core_checker::ObligationCount;
 use gandr_core_term::FailureClass;
+use gandr_core_term::TrackingIssue;
 use gandr_surface_lowering::DeclarationCount;
 use gandr_surface_syntax::ByteOffset;
 use quenchant_shape::shape::Maybe;
@@ -308,8 +309,8 @@ pub struct ClassCounts
 {
     /// Refusals of [`FailureClass::UserAbsence`].
     user_absence: DeclarationCount,
-    /// Refusals of [`FailureClass::Unrepresentable`].
-    unrepresentable: DeclarationCount,
+    /// Refusals of [`FailureClass::Unimplemented`], whatever issue each names.
+    unimplemented: DeclarationCount,
     /// Refusals of [`FailureClass::MalformedSource`].
     malformed_source: DeclarationCount,
     /// Refusals of [`FailureClass::EngineFault`].
@@ -323,7 +324,8 @@ impl ClassCounts
     /// # Specification
     /// - requires: nothing.
     /// - ensures: enumerates every failure class exactly once for accumulation
-    ///   and reporting.
+    ///   and reporting; the unimplemented class is counted whatever issue a
+    ///   refusal names, so one issue stands for all of them.
     /// - panics: none.
     /// - executable: none — the constant has no invocation for a specification
     ///   attribute; its consumer witness supplies distinct independent counts
@@ -336,10 +338,38 @@ impl ClassCounts
     /// - witness: `report::tests::saturating_tallies_preserve_every_count_channel`
     const CLASSES: [FailureClass; 4_usize] = [
         FailureClass::UserAbsence,
-        FailureClass::Unrepresentable,
+        FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
         FailureClass::MalformedSource,
         FailureClass::EngineFault,
     ];
+
+    /// The refused declarations of every class together.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the saturating sum of the four class counts.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — four distinct counts sum to their total, and a
+    ///   saturated count saturates the total.
+    /// - witness: `report::tests::saturating_tallies_preserve_every_count_channel`
+    #[spec(
+        ensures: |ret| usize::from(ret)
+            == Self::CLASSES.into_iter().fold(0_usize, |sum, class| {
+                sum.saturating_add(usize::from(self.count(class)))
+            }),
+    )]
+    #[inline]
+    #[must_use]
+    pub fn total(&self) -> DeclarationCount
+    {
+        Self::CLASSES
+            .into_iter()
+            .fold(DeclarationCount::default(), |sum, class| {
+                declarations_sum(sum, self.count(class))
+            })
+    }
 
     /// The refused declarations of `class`.
     ///
@@ -368,7 +398,7 @@ impl ClassCounts
     {
         match class {
             FailureClass::UserAbsence => self.user_absence,
-            FailureClass::Unrepresentable => self.unrepresentable,
+            FailureClass::Unimplemented(_) => self.unimplemented,
             FailureClass::MalformedSource => self.malformed_source,
             FailureClass::EngineFault => self.engine_fault,
         }
@@ -394,7 +424,7 @@ impl ClassCounts
         captures: expected = core::ptr::from_ref(
     match class {
         FailureClass::UserAbsence => &self.user_absence,
-        FailureClass::Unrepresentable => &self.unrepresentable,
+        FailureClass::Unimplemented(_) => &self.unimplemented,
         FailureClass::MalformedSource => &self.malformed_source,
         FailureClass::EngineFault => &self.engine_fault,
     },
@@ -408,7 +438,7 @@ impl ClassCounts
     {
         match class {
             FailureClass::UserAbsence => &mut self.user_absence,
-            FailureClass::Unrepresentable => &mut self.unrepresentable,
+            FailureClass::Unimplemented(_) => &mut self.unimplemented,
             FailureClass::MalformedSource => &mut self.malformed_source,
             FailureClass::EngineFault => &mut self.engine_fault,
         }
@@ -773,8 +803,9 @@ impl Tally
                         .saturating_add(
                             usize::from(
                                 matches!(
-                                    refusal, Maybe::Present(refused) if refused.classify() ==
-                                    class
+                                    refusal, Maybe::Present(refused)
+                                        if core::mem::discriminant(&refused.classify())
+                                            == core::mem::discriminant(&class)
                                 ),
                             ),
                         )
@@ -1056,8 +1087,9 @@ impl<'source> SettleReport<'source>
                         .iter()
                         .filter(|declaration| {
                             matches!(
-                                declaration.produced().refusal(), Maybe::Present(refusal) if
-                                refusal.classify() == class
+                                declaration.produced().refusal(), Maybe::Present(refusal)
+                                    if core::mem::discriminant(&refusal.classify())
+                                        == core::mem::discriminant(&class)
                             )
                         })
                         .count()
@@ -1208,6 +1240,7 @@ mod tests
 
     use gandr_core_checker::ObligationCount;
     use gandr_core_term::FailureClass;
+    use gandr_core_term::TrackingIssue;
     use gandr_surface_lowering::DeclarationCount;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::SourceText;
@@ -1330,7 +1363,7 @@ mod tests
             surviving: Surviving::new(owed(17_usize), owed(usize::MAX)),
             refusals: ClassCounts {
                 user_absence: count(0_usize),
-                unrepresentable: count(17_usize),
+                unimplemented: count(17_usize),
                 malformed_source: count(29_usize),
                 engine_fault: count(usize::MAX.saturating_sub(1_usize)),
             },
@@ -1348,11 +1381,25 @@ mod tests
             surviving: Surviving::new(owed(19_usize), owed(1_usize)),
             refusals: ClassCounts {
                 user_absence: count(3_usize),
-                unrepresentable: count(5_usize),
+                unimplemented: count(5_usize),
                 malformed_source: count(31_usize),
                 engine_fault: count(2_usize),
             },
         };
+        assert_eq!(
+            usize::from(other.refusals().total()),
+            41_usize,
+            "the total sums every class"
+        );
+        assert_eq!(
+            other
+                .refusals()
+                .count(FailureClass::Unimplemented(TrackingIssue::PROJECTION)),
+            other
+                .refusals()
+                .count(FailureClass::Unimplemented(TrackingIssue::RUN_TARGET)),
+            "an unimplemented refusal is counted whatever issue it names"
+        );
         total.absorb(&other);
         assert_eq!(
             (
@@ -1379,12 +1426,17 @@ mod tests
         assert_eq!(
             [
                 FailureClass::UserAbsence,
-                FailureClass::Unrepresentable,
+                FailureClass::Unimplemented(TrackingIssue::RUN_TARGET),
                 FailureClass::MalformedSource,
                 FailureClass::EngineFault
             ]
             .map(|class| usize::from(total.refusals().count(class))),
             [3_usize, 22_usize, 60_usize, usize::MAX]
+        );
+        assert_eq!(
+            usize::from(total.refusals().total()),
+            usize::MAX,
+            "a saturated class saturates the total"
         );
         let before = total;
         total.absorb(&Tally::default());
@@ -1465,7 +1517,7 @@ def plain_hole : Integer ;
             surviving: Surviving::new(owed(109_usize), owed(113_usize)),
             refusals: ClassCounts {
                 user_absence: count(127_usize),
-                unrepresentable: count(131_usize),
+                unimplemented: count(131_usize),
                 malformed_source: count(137_usize),
                 engine_fault: count(139_usize),
             },
@@ -1485,7 +1537,7 @@ def plain_hole : Integer ;
         assert!(rendered.contains(&tally.seal().to_string()));
         for class in [
             FailureClass::UserAbsence,
-            FailureClass::Unrepresentable,
+            FailureClass::Unimplemented(TrackingIssue::RUN_TARGET),
             FailureClass::MalformedSource,
             FailureClass::EngineFault,
         ] {
@@ -1515,7 +1567,7 @@ def plain_hole : Integer ;
         let source = SourceText::from(
             r#"def helper = 3 ;
 @[ owes(2) ] def owed : Integer ;
-@[ refuses("OutOfFragment") ] def lazy : -F Integer & -F Integer ;
+@[ refuses("OutOfFragment") ] def annotated = (3 : Integer) ;
 @[ checks ] def wrong : Integer ; def wrong = "text" ;"#,
         );
         let tally = settled(CorpusRoot::Fixture, source).tally();
@@ -1526,7 +1578,7 @@ def plain_hole : Integer ;
                 usize::from(tally.declarations().unsettled())
             ),
             (2_usize, 2_usize),
-            "the helper and the refused lazy product settle; the owed and the wrong do not"
+            "the helper and the refused annotation settle; the owed and the wrong do not"
         );
         assert_eq!(
             (
@@ -1549,7 +1601,7 @@ def plain_hole : Integer ;
         assert_eq!(
             [
                 FailureClass::UserAbsence,
-                FailureClass::Unrepresentable,
+                FailureClass::Unimplemented(TrackingIssue::ANNOTATION_VALUE),
                 FailureClass::MalformedSource,
                 FailureClass::EngineFault,
             ]
@@ -1569,7 +1621,9 @@ def plain_hole : Integer ;
         .tally();
         let other = settled(
             CorpusRoot::Fixture,
-            SourceText::from(r#"@[ owes(1) ] def a = 3 ; @[ refuses("OutOfFragment") ] def b : -F Integer & -F Integer ;"#),
+            SourceText::from(
+                r#"@[ owes(1) ] def a = 3 ; @[ refuses("OutOfFragment") ] def b = (3 : Integer) ;"#,
+            ),
         )
         .tally();
         total.absorb(&other);
@@ -1596,7 +1650,11 @@ def plain_hole : Integer ;
         assert_eq!(
             (
                 usize::from(total.refusals().count(FailureClass::MalformedSource)),
-                usize::from(total.refusals().count(FailureClass::Unrepresentable)),
+                usize::from(
+                    total
+                        .refusals()
+                        .count(FailureClass::Unimplemented(TrackingIssue::ANNOTATION_VALUE))
+                ),
             ),
             (1_usize, 1_usize),
             "the refusal counts sum by class"

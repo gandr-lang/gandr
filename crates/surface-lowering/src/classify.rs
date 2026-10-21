@@ -1,19 +1,37 @@
 //! The four-class failure classifier every refusal carries.
 //!
-//! # Whose fact a failure is, decided by a type
+//! # Whose fact a failure is, decided by its kind
 //!
 //! The four classes record whose fact a failure is: an absence the author has
-//! not supplied yet, a form the lowering cannot represent, a form the author
-//! wrote wrongly, or a fault of the lowering's own. The split is sharper than a
-//! three-way one, because an author-written form the lowering declines to
-//! represent is a different fact from an author-written form that is simply
-//! wrong, and only the first says anything about the fragment's reach.
+//! not supplied yet, a feature gandr has not implemented, a form the author
+//! wrote wrongly or the language's design refuses, or a fault of the
+//! lowering's own. An unimplemented refusal carries the issue that tracks the
+//! feature, which every face showing the refusal names.
 //!
 //! The classes are `gandr-core-term`'s, shared with every other producer of
-//! refusals in the core pipeline; the classifier below is this crate's own. It
-//! is a `const` function, exhaustive and wildcard-free, and it is blind to its
-//! payload: a classification cannot vary with a span or a name, and a refusal
-//! added without a class does not compile.
+//! refusals in the core pipeline; the classifier below is this crate's own.
+//! It is an exhaustive, wildcard-free match over the variants that reads a
+//! refusal's kind — its variant, and for a form out of the fragment the form,
+//! the sort its position demanded and the boundary it crossed, for an
+//! unstated model component the fault — and never a span or a name: two
+//! refusals of one kind classify alike, and a refusal added without a class
+//! does not compile.
+//!
+//! # A form out of the fragment names its issue by what it is
+//!
+//! A form the fragment reserves or does not admit names the issue tracking
+//! that form; a form no issue tracks yet names the issue splitting the
+//! refusal by feature. A form of the wrong sort where a declaration is read is
+//! an expression at a module's root, which is a run target, unimplemented,
+//! except the operator declaration, which names its own issue; a form of the
+//! wrong sort anywhere else is misplaced and malformed source. An action on a
+//! name that is no fork's end is delegation, and a family read at an index is
+//! the indexed family, both unimplemented. Every other boundary — an operand
+//! count, a type the source does not state, a descent that is not uniform or
+//! names another function, `cong` at a constructor, an exit off every path, a
+//! match whose arms continue its block, the empty list, a protocol recursing
+//! before any action, a lent or ended name that is no linear slot — is a
+//! boundary the language draws, and malformed source.
 //!
 //! # The absence class has no inhabitant here, and that is the point
 //!
@@ -31,25 +49,16 @@
 //! grammar, or carrying a mold the grammar does not hold, says nothing about
 //! the source: the caller handed the lowering a tree and a grammar that do not
 //! belong together, which is a fault of the run, never of the text.
-//!
-//! # The failure classifier
-//!
-//! `LoweringRefusal::classify` is a `const`, wildcard-free match: adding a
-//! refusal variant fails to compile until its class is chosen.
-//! `MalformedSource` is the author's mistake, rules that may not end or that
-//! rewrite one term apart among them; `Unrepresentable` is `OutOfFragment`,
-//! `GradedBridge` and `UnreadAscription`; `EngineFault` is the budget, the
-//! grammar mismatch, the unknown mold, a coincidence check its step budget
-//! left undecided, and a declaration the lowering minted nothing for and
-//! refused nothing in. `UserAbsence` — what the author has not yet supplied,
-//! the only class that may become an obligation — has no refusal in it:
-//! obligations come from declaration shape, an uncompleted signature, and
-//! never from a classified failure.
 
 use anodized::spec;
 pub use gandr_core_term::FailureClass;
+pub use gandr_core_term::TrackingIssue;
 
+use crate::error::FragmentBoundary;
+use crate::error::FragmentSort;
 use crate::error::LoweringRefusal;
+use crate::form::FormName;
+use crate::model::ModelFault;
 
 impl LoweringRefusal<'_>
 {
@@ -57,48 +66,65 @@ impl LoweringRefusal<'_>
     ///
     /// # Specification
     /// - requires: nothing; the function is total over the vocabulary.
-    /// - ensures: the class is a function of the variant alone — two refusals
-    ///   of one variant classify alike whatever their spans, names or
-    ///   suggestions hold — and every reserved, unadmitted, wrong-sort or
-    ///   wrong-arity form, every graded bridge, every unread ascription, every
-    ///   model component the derivation cannot state, every cell between terms
-    ///   but a loop and every unguarded corecursion or feedback classifies as
-    ///   unrepresentable, the exhausted allowance, the grammar mismatch, the
-    ///   unknown mold, an undecided coincidence check and an unminted
-    ///   declaration as engine faults, and every other refusal — a family
-    ///   member of the wrong telescope, a loop exit off every loop and rules
-    ///   that part among them — as malformed source.
-    /// - provides: the fact a report groups by and a job alarming on the
-    ///   fragment's reach counts.
+    /// - ensures: the class is a function of the refusal's kind — the variant,
+    ///   a form out of the fragment's form, sort and boundary, an unstated
+    ///   component's fault — and never of a span or a name. A form reserved or
+    ///   unadmitted, an indexed reading, an action on no endpoint, a form of
+    ///   the wrong sort where a declaration is read, a graded bridge, an unread
+    ///   ascription, an implicit telescope out of shape and a model component
+    ///   that relates a many-out operation's results, states a circuit rule or
+    ///   binds a variable are unimplemented, each naming its issue; the
+    ///   exhausted allowance, the grammar mismatch, the unknown mold, an
+    ///   undecided coincidence check and an unminted declaration are engine
+    ///   faults; every other refusal is malformed source.
+    /// - provides: the fact a report groups by, and the issue every face of an
+    ///   unimplemented refusal names.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the vocabulary is a finite class, enumerated
-    ///   exhaustively against a pinned class table, and the payload-blindness
-    ///   claim is separated by two inhabitants of one variant differing in
-    ///   every payload field, asserted to classify alike.
+    ///   exhaustively against a pinned class table; the census's forms out of
+    ///   the fragment are pinned to their issues, and two refusals of one kind
+    ///   at different positions and names are asserted to classify alike.
     /// - witness: `classify::tests::every_refusal_carries_its_pinned_class`
-    /// - witness: `classify::tests::the_classification_ignores_the_payload`
+    /// - witness: `classify::tests::a_form_out_of_the_fragment_names_the_issue_tracking_it`
+    /// - witness: `classify::tests::the_classification_ignores_position_and_name`
     /// - witness: `classify::tests::the_absence_class_has_no_inhabitant`
     #[spec(
         ensures: |ret| match *self {
-            | Self::OutOfFragment { .. }
+            | Self::OutOfFragment {
+                boundary: FragmentBoundary::Reserved
+                    | FragmentBoundary::Unadmitted
+                    | FragmentBoundary::Indexed
+                    | FragmentBoundary::Endpoint,
+                ..
+            }
+            | Self::OutOfFragment {
+                boundary: FragmentBoundary::WrongSort,
+                sort: FragmentSort::Declaration,
+                ..
+            }
+            | Self::UnstatedComponent {
+                fault: ModelFault::ManyOut | ModelFault::Circuit | ModelFault::Binding,
+                ..
+            }
             | Self::GradedBridge { .. }
             | Self::UnreadAscription { .. }
-            | Self::UnstatedComponent { .. }
-            | Self::WithoutK { .. }
-            | Self::DirectedCell { .. }
-            | Self::CellNotALoop { .. }
-            | Self::DescentOnSeveralParameters { .. }
-            | Self::ImplicitTelescope { .. }
-            | Self::UnguardedCorecursion { .. }
-            | Self::BareFeedback { .. } => matches!(ret, FailureClass::Unrepresentable),
+            | Self::ImplicitTelescope { .. } => matches!(ret, FailureClass::Unimplemented(_)),
             | Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::RulesUndecided { .. }
             | Self::UnknownMold { .. }
             | Self::Unminted { .. } => matches!(ret, FailureClass::EngineFault),
+            | Self::OutOfFragment { .. }
+            | Self::UnstatedComponent { .. }
+            | Self::WithoutK { .. }
+            | Self::DirectedCell { .. }
+            | Self::CellNotALoop { .. }
+            | Self::DescentOnSeveralParameters { .. }
+            | Self::UnguardedCorecursion { .. }
+            | Self::BareFeedback { .. }
             | Self::UnresolvedName { .. }
             | Self::UnresolvedDocLink { .. }
             | Self::UnresolvedTypeHead { .. }
@@ -141,7 +167,7 @@ impl LoweringRefusal<'_>
     )]
     #[inline]
     #[must_use]
-    pub const fn classify(&self) -> FailureClass
+    pub fn classify(&self) -> FailureClass
     {
         match *self {
             Self::UnresolvedName { .. }
@@ -179,18 +205,23 @@ impl LoweringRefusal<'_>
             | Self::RulesUnoriented { .. }
             | Self::RulesDiverge { .. }
             | Self::RulesUncompleted { .. }
-            | Self::AcrossHandler { .. } => FailureClass::MalformedSource,
-            Self::OutOfFragment { .. }
-            | Self::GradedBridge { .. }
-            | Self::UnreadAscription { .. }
-            | Self::UnstatedComponent { .. }
+            | Self::AcrossHandler { .. }
             | Self::WithoutK { .. }
             | Self::DirectedCell { .. }
             | Self::CellNotALoop { .. }
             | Self::DescentOnSeveralParameters { .. }
-            | Self::ImplicitTelescope { .. }
             | Self::UnguardedCorecursion { .. }
-            | Self::BareFeedback { .. } => FailureClass::Unrepresentable,
+            | Self::BareFeedback { .. } => FailureClass::MalformedSource,
+            Self::OutOfFragment {
+                form,
+                sort,
+                boundary,
+                ..
+            } => out_of_fragment(form, sort, boundary),
+            Self::UnstatedComponent { fault, .. } => unstated(fault),
+            Self::GradedBridge { .. } => FailureClass::Unimplemented(TrackingIssue::THUNK_GRADE),
+            Self::UnreadAscription { .. } => FailureClass::Unimplemented(TrackingIssue::ASCRIPTION),
+            Self::ImplicitTelescope { .. } => FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
             Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::RulesUndecided { .. }
@@ -200,10 +231,169 @@ impl LoweringRefusal<'_>
     }
 }
 
+/// The class of a form out of the fragment.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a reserved or unadmitted form names the issue [`tracked_form`]
+///   answers; a form of the wrong sort where a declaration is read names the
+///   operator declaration's issue for an operator declaration and the run
+///   target's for every other; an indexed reading names the indexed family's,
+///   an action on no endpoint delegation's; every other boundary is malformed
+///   source.
+/// - provides: the lowering classifier's arm for `OutOfFragment`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each boundary and the declaration sort's two cases are
+///   pinned by a census row.
+/// - witness: `classify::tests::a_form_out_of_the_fragment_names_the_issue_tracking_it`
+#[spec(
+    ensures: |ret| matches!(ret, FailureClass::Unimplemented(_))
+        == (matches!(
+            boundary,
+            FragmentBoundary::Reserved
+                | FragmentBoundary::Unadmitted
+                | FragmentBoundary::Indexed
+                | FragmentBoundary::Endpoint
+        ) || (boundary == FragmentBoundary::WrongSort && sort == FragmentSort::Declaration))
+        && matches!(ret, FailureClass::Unimplemented(_) | FailureClass::MalformedSource),
+)]
+#[must_use]
+fn out_of_fragment(
+    form: FormName,
+    sort: FragmentSort,
+    boundary: FragmentBoundary,
+) -> FailureClass
+{
+    match boundary {
+        FragmentBoundary::Reserved | FragmentBoundary::Unadmitted => {
+            FailureClass::Unimplemented(tracked_form(form, sort))
+        },
+        FragmentBoundary::WrongSort => match sort {
+            FragmentSort::Declaration if form == FormName::OPERATOR_DECLARATION => {
+                FailureClass::Unimplemented(TrackingIssue::OPERATOR_DECLARATION)
+            },
+            FragmentSort::Declaration => FailureClass::Unimplemented(TrackingIssue::RUN_TARGET),
+            FragmentSort::Module
+            | FragmentSort::ValueType
+            | FragmentSort::CompType
+            | FragmentSort::Value
+            | FragmentSort::Computation
+            | FragmentSort::Pattern
+            | FragmentSort::Continuation => FailureClass::MalformedSource,
+        },
+        FragmentBoundary::Indexed => FailureClass::Unimplemented(TrackingIssue::INDEXED),
+        FragmentBoundary::Endpoint => FailureClass::Unimplemented(TrackingIssue::DELEGATION),
+        FragmentBoundary::Arity(_)
+        | FragmentBoundary::Unannotated
+        | FragmentBoundary::NonUniform
+        | FragmentBoundary::ForeignClaim
+        | FragmentBoundary::NotAFunction
+        | FragmentBoundary::NotInTail
+        | FragmentBoundary::JoinsBlock
+        | FragmentBoundary::EmptyList
+        | FragmentBoundary::NonContractive
+        | FragmentBoundary::Held
+        | FragmentBoundary::View => FailureClass::MalformedSource,
+    }
+}
+
+/// The issue tracking a form the fragment reserves or does not admit.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a form an open issue tracks names that issue — a grade where a
+///   declaration is read, the field grade's, and a parameter where a
+///   computation is read, the annotated lambda parameter's; every other form
+///   names [`TrackingIssue::UNSPLIT`], the issue splitting the refusal by
+///   feature.
+/// - provides: the issue of a reserved or unadmitted form.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the table is the specification; a predicate would
+///   restate it row by row.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the census's tracked forms and an untracked one are
+///   pinned to their issues, the grade and the parameter at the sort that names
+///   an issue and at one that does not.
+/// - witness: `classify::tests::a_form_out_of_the_fragment_names_the_issue_tracking_it`
+#[must_use]
+fn tracked_form(
+    form: FormName,
+    sort: FragmentSort,
+) -> TrackingIssue
+{
+    match form {
+        FormName::PROJECTION => TrackingIssue::PROJECTION,
+        FormName::PACK | FormName::PACKAGE_TYPE | FormName::UNPACK_STATEMENT => {
+            TrackingIssue::PACKAGES
+        },
+        FormName::ANNOTATION => TrackingIssue::ANNOTATION_VALUE,
+        FormName::RECORD_UPDATE => TrackingIssue::RECORD_UPDATE,
+        FormName::TYPED_NUMBER => TrackingIssue::TYPED_NUMBER,
+        FormName::SHELL_BLOCK => TrackingIssue::SHELL_BLOCK,
+        FormName::GRADE if matches!(sort, FragmentSort::Declaration) => TrackingIssue::FIELD_GRADE,
+        FormName::PARAMETER if matches!(sort, FragmentSort::Computation) => {
+            TrackingIssue::LAMBDA_PARAMETER
+        },
+        FormName::AS_PATTERN | FormName::LIST_PATTERN | FormName::REST_PATTERN => {
+            TrackingIssue::PATTERNS
+        },
+        FormName::CHARACTER => TrackingIssue::CHARACTER,
+        FormName::CO_BUNDLE => TrackingIssue::CO_BUNDLE,
+        FormName::DROP => TrackingIssue::DROP,
+        FormName::FORALL_TYPE => TrackingIssue::FORALL,
+        FormName::UNION_TYPE | FormName::INTERSECTION_TYPE => TrackingIssue::UNION_INTERSECTION,
+        FormName::OPERATOR_DECLARATION => TrackingIssue::OPERATOR_DECLARATION,
+        _ => TrackingIssue::UNSPLIT,
+    }
+}
+
+/// The class of a model component the derivation cannot state.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a component relating a many-out operation's results, a circuit
+///   rule and a binding operation are unimplemented, each naming its issue; an
+///   unknown head, a wrong arity, an ill-sorted term, an unsorted variable, a
+///   constructor term and a component inheriting another's failure are
+///   malformed source.
+/// - provides: the lowering classifier's arm for `UnstatedComponent`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circuit fault is pinned in the class table.
+/// - witness: `classify::tests::every_refusal_carries_its_pinned_class`
+#[spec(
+    ensures: |ret| matches!(ret, FailureClass::Unimplemented(_))
+        == matches!(fault, ModelFault::ManyOut | ModelFault::Circuit | ModelFault::Binding)
+        && matches!(ret, FailureClass::Unimplemented(_) | FailureClass::MalformedSource),
+)]
+#[must_use]
+fn unstated(fault: ModelFault) -> FailureClass
+{
+    match fault {
+        ModelFault::ManyOut => FailureClass::Unimplemented(TrackingIssue::MODEL_MANY_OUT),
+        ModelFault::Circuit => FailureClass::Unimplemented(TrackingIssue::MODEL_CIRCUIT),
+        ModelFault::Binding => FailureClass::Unimplemented(TrackingIssue::MODEL_BINDING),
+        ModelFault::UnknownHead
+        | ModelFault::Arity
+        | ModelFault::IllSorted
+        | ModelFault::Unsorted
+        | ModelFault::Constructor
+        | ModelFault::Inherited => FailureClass::MalformedSource,
+    }
+}
+
 #[cfg(test)]
 mod tests
 {
     use anodized::spec;
+    use gandr_core_term::TrackingIssue;
     use gandr_surface_grammar::NamedKind;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::GrammarFingerprint;
@@ -477,7 +667,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
-            FailureClass::Unrepresentable,
+            FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
@@ -490,17 +680,17 @@ mod tests
             FailureClass::EngineFault,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
-            FailureClass::Unrepresentable,
+            FailureClass::Unimplemented(TrackingIssue::THUNK_GRADE),
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
-            FailureClass::Unrepresentable,
+            FailureClass::Unimplemented(TrackingIssue::ASCRIPTION),
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
-            FailureClass::Unrepresentable,
-            FailureClass::Unrepresentable,
+            FailureClass::MalformedSource,
+            FailureClass::Unimplemented(TrackingIssue::MODEL_CIRCUIT),
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
@@ -509,17 +699,17 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::EngineFault,
-            FailureClass::Unrepresentable,
-            FailureClass::Unrepresentable,
+            FailureClass::MalformedSource,
+            FailureClass::MalformedSource,
             FailureClass::EngineFault,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
-            FailureClass::Unrepresentable,
             FailureClass::MalformedSource,
-            FailureClass::Unrepresentable,
-            FailureClass::Unrepresentable,
+            FailureClass::MalformedSource,
+            FailureClass::MalformedSource,
+            FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
@@ -535,32 +725,132 @@ mod tests
     }
 
     #[test]
-    fn the_classification_ignores_the_payload()
+    fn a_form_out_of_the_fragment_names_the_issue_tracking_it()
     {
-        // One variant, every payload field different: a classifier reading a
-        // span, a form or a boundary would separate these two.
-        let reserved = LoweringRefusal::OutOfFragment {
+        let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
+        // One row per census reading: the form, the sort its position read,
+        // the boundary, and the class with the issue it names.
+        let rows = [
+            (
+                "projection_expression",
+                FragmentSort::Computation,
+                FragmentBoundary::Unadmitted,
+                FailureClass::Unimplemented(TrackingIssue::PROJECTION),
+            ),
+            (
+                "unpack_statement",
+                FragmentSort::Computation,
+                FragmentBoundary::Unadmitted,
+                FailureClass::Unimplemented(TrackingIssue::PACKAGES),
+            ),
+            (
+                "grade",
+                FragmentSort::Declaration,
+                FragmentBoundary::Unadmitted,
+                FailureClass::Unimplemented(TrackingIssue::FIELD_GRADE),
+            ),
+            (
+                "def_value",
+                FragmentSort::Declaration,
+                FragmentBoundary::Reserved,
+                FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
+            ),
+            (
+                "call_expression",
+                FragmentSort::Declaration,
+                FragmentBoundary::WrongSort,
+                FailureClass::Unimplemented(TrackingIssue::RUN_TARGET),
+            ),
+            (
+                "operator_declaration",
+                FragmentSort::Declaration,
+                FragmentBoundary::WrongSort,
+                FailureClass::Unimplemented(TrackingIssue::OPERATOR_DECLARATION),
+            ),
+            (
+                "lazy_product_type",
+                FragmentSort::ValueType,
+                FragmentBoundary::WrongSort,
+                FailureClass::MalformedSource,
+            ),
+            (
+                "identifier",
+                FragmentSort::Value,
+                FragmentBoundary::Endpoint,
+                FailureClass::Unimplemented(TrackingIssue::DELEGATION),
+            ),
+            (
+                "data_generator",
+                FragmentSort::Declaration,
+                FragmentBoundary::Indexed,
+                FailureClass::Unimplemented(TrackingIssue::INDEXED),
+            ),
+            (
+                "labelled_sum_pattern",
+                FragmentSort::Computation,
+                FragmentBoundary::Unannotated,
+                FailureClass::MalformedSource,
+            ),
+            (
+                "grade",
+                FragmentSort::CompType,
+                FragmentBoundary::Unadmitted,
+                FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
+            ),
+            (
+                "parameter",
+                FragmentSort::Computation,
+                FragmentBoundary::Unadmitted,
+                FailureClass::Unimplemented(TrackingIssue::LAMBDA_PARAMETER),
+            ),
+            (
+                "parameter",
+                FragmentSort::Declaration,
+                FragmentBoundary::Unadmitted,
+                FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
+            ),
+        ];
+
+        for (form, sort, boundary, class) in rows {
+            let refusal = LoweringRefusal::OutOfFragment {
+                span: empty,
+                form: FormName::from(NamedKind(form)),
+                sort,
+                boundary,
+            };
+            assert_eq!(
+                refusal.classify(),
+                class,
+                "`{form}` read as {sort} with the {boundary:?} boundary"
+            );
+        }
+    }
+
+    #[test]
+    fn the_classification_ignores_position_and_name()
+    {
+        // Two refusals of one kind, at different bytes and with different
+        // names: a classifier reading either would separate them.
+        let first = LoweringRefusal::UnstatedComponent {
             span: span(ByteOffset::from(0_usize), ByteOffset::from(1_usize)),
-            form: FormName::from(NamedKind("lazy_product_type")),
-            sort: FragmentSort::ValueType,
-            boundary: FragmentBoundary::Reserved,
+            name: SurfaceName::from("assoc"),
+            fault: crate::model::ModelFault::Binding,
         };
-        let arity = LoweringRefusal::OutOfFragment {
+        let second = LoweringRefusal::UnstatedComponent {
             span: span(ByteOffset::from(40_usize), ByteOffset::from(90_usize)),
-            form: FormName::from(NamedKind("lambda_expression")),
-            sort: FragmentSort::Computation,
-            boundary: FragmentBoundary::Arity(OperandCount::from(7_usize)),
+            name: SurfaceName::from("lambda"),
+            fault: crate::model::ModelFault::Binding,
         };
 
         assert_eq!(
-            reserved.classify(),
-            arity.classify(),
-            "classification is a function of the variant alone"
+            first.classify(),
+            second.classify(),
+            "the class is a function of the kind alone"
         );
         assert_eq!(
-            arity.classify(),
-            FailureClass::Unrepresentable,
-            "both inhabitants classify as the fragment's own boundary"
+            second.classify(),
+            FailureClass::Unimplemented(TrackingIssue::MODEL_BINDING),
+            "a binding operation names its issue"
         );
     }
 

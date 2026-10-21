@@ -13,7 +13,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 
 ## Synopsis
 
-**What.** `check_module` judges name-free `Declaration`s in a `CheckingContext` over a core arena. Each input carries an admission position, an echoed `OriginToken`, and either optional value signature/body halves or a complete nominal data signature. Its `Verdict` records an admitted data signature, a checked body, a synthesised type, an owed hole, a suspension or a refusal. Four public faces judge individual values and computations. The ledger collects holes; refusal classification separates malformed source, unrepresentable syntax and engine faults. The kernel independently checks the exportable pure fragment.
+**What.** `check_module` judges name-free `Declaration`s in a `CheckingContext` over a core arena. Each input carries an admission position, an echoed `OriginToken`, and either optional value signature/body halves or a complete nominal data signature. Its `Verdict` records an admitted data signature, a checked body, a synthesised type, an owed hole, a suspension or a refusal. Four public faces judge individual values and computations. The ledger collects holes; refusal classification separates malformed source, unimplemented features and engine faults. The kernel independently checks the exportable pure fragment.
 
 **Why.** A frontend needs stable per-declaration verdicts that distinguish what the author owes from what is wrong. A mode per former and comparison only at mode changes are enforced by lint and module visibility, not review. Kernel readmission independently checks pure acceptances.
 

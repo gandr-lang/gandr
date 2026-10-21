@@ -20,6 +20,7 @@ use gandr_core_checker::Mismatch;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
 use gandr_core_term::FailureClass;
+use gandr_core_term::TrackingIssue;
 use gandr_core_term::Value;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_corpus::Settlement;
@@ -2145,7 +2146,7 @@ fn each_verb_prints_its_entries()
             (
                 PathBuf::from("strict/whole.gandr"),
                 Severity::Error,
-                Class::Refusal(FailureClass::Unrepresentable),
+                Class::Refusal(FailureClass::Unimplemented(TrackingIssue::RUN_TARGET)),
             ),
         ]
     };
@@ -2186,7 +2187,7 @@ fn each_verb_prints_its_entries()
         (
             PathBuf::from("strict/whole.gandr"),
             Severity::Error,
-            Class::Refusal(FailureClass::Unrepresentable)
+            Class::Refusal(FailureClass::Unimplemented(TrackingIssue::RUN_TARGET))
         ),
     ]);
 }

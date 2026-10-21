@@ -1583,17 +1583,12 @@ impl Refusal<'_>
         Self::Checking(ref refusal) => refusal.classify(),
         Self::Corpus(ref refusal) => refusal.classify(),
     };
-    matches!(
-        (expected, ret), (FailureClass::UserAbsence, FailureClass::UserAbsence) |
-        (FailureClass::Unrepresentable, FailureClass::Unrepresentable) |
-        (FailureClass::MalformedSource, FailureClass::MalformedSource) |
-        (FailureClass::EngineFault, FailureClass::EngineFault)
-    )
+    expected == ret
 },
     )]
     #[inline]
     #[must_use]
-    pub const fn classify(&self) -> FailureClass
+    pub fn classify(&self) -> FailureClass
     {
         match *self {
             Self::Lowering(ref refusal) => refusal.classify(),

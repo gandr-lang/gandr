@@ -29,7 +29,7 @@ ledger size: 0
 declarations: 11 settled, 0 unsettled
 fixtures: 0 settled, 0 unsettled
 surviving obligations: 0 undeclared, 0 unproduced
-refusals: 0 user absence, 0 unrepresentable, 0 malformed source, 0 engine fault
+refusals: 0 user absence, 0 unimplemented, 0 malformed source, 0 engine fault
 run: settled
 seal: sealed
 verdict: settled

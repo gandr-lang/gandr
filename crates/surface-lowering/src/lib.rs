@@ -83,8 +83,8 @@
 //! the core's product, record, sum and lazy product.
 //!
 //! **Reserved forms are declined by name.** A recursive call's claim other
-//! than `<` parses and then refuses, so the classifier's unrepresentable class
-//! keeps a real inhabitant.
+//! than `<` parses and then refuses as unimplemented, naming the issue that
+//! tracks it.
 //!
 //! **Origins are carried for types as well as terms.** Every minted core node
 //! records the syntax node that produced it, and a declaration's own origin
@@ -382,6 +382,7 @@ pub use crate::attribute::RegisteredAttribute;
 pub use crate::attribute::payload_form;
 pub use crate::attribute::payload_verdict;
 pub use crate::classify::FailureClass;
+pub use crate::classify::TrackingIssue;
 pub use crate::doc::DocLink;
 pub use crate::doc::Documentation;
 pub use crate::doc::DocumentationText;

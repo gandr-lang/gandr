@@ -115,7 +115,7 @@ pub struct CellDiagnostic
 impl CellDiagnostic
 {
     /// Present the diagnostic as a refusal: a cell-language boundary as a
-    /// held, unrepresentable declaration, a coherence fault by its own name.
+    /// held declaration out of the fragment, a coherence fault by its own name.
     ///
     /// # Specification
     /// trivial.

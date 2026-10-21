@@ -427,7 +427,7 @@
 //!
 //! `+U[ω] C` is `+U C`: `ω`, the unrestricted grade, is the only one the core's
 //! thunk type carries. Any other grade, a numeral or a name, is `GradedBridge`,
-//! at the grade and naming it, classed unrepresentable. A grade on `-F` is
+//! at the grade and naming it, classed unimplemented. A grade on `-F` is
 //! `Unadmitted`, since the returner carries none in any design. The alternative
 //! was folding a graded bridge into `OutOfFragment` with the grade as its form;
 //! it was declined because the grade is the one bridge parameter a later unit
@@ -18193,8 +18193,8 @@ mod tests
             );
             assert_eq!(
                 refused.classify(),
-                FailureClass::Unrepresentable,
-                "a grade is a form the fragment does not represent"
+                FailureClass::Unimplemented(gandr_core_term::TrackingIssue::THUNK_GRADE),
+                "a grade names the issue tracking thunk grades"
             );
         }
     }
@@ -20277,10 +20277,9 @@ mod tests
         for (source, expected) in rows {
             let refused = refusal(SourceText::from(source));
             assert_eq!(refused, expected, "`{source}` is outside the fragment");
-            assert_eq!(
-                refused.classify(),
-                FailureClass::Unrepresentable,
-                "`{source}` is unrepresentable, not malformed"
+            assert!(
+                matches!(refused.classify(), FailureClass::Unimplemented(_)),
+                "`{source}` is unimplemented, not malformed"
             );
         }
     }
@@ -20296,7 +20295,7 @@ mod tests
         );
         assert_eq!(
             refused.classify(),
-            FailureClass::Unrepresentable,
+            FailureClass::Unimplemented(gandr_core_term::TrackingIssue::UNSPLIT),
             "it is outside the fragment, not malformed"
         );
     }

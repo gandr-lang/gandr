@@ -27,23 +27,24 @@
 //! argument of the wrong classifier, a static lambda handed to a dynamic
 //! parameter and a static Pi over a classifier that holds no codes are
 //! malformed source, the author's mistake. A former outside the fragment is
-//! unrepresentable. An unbound index, an exhausted allowance, a dangling id, an
-//! admission out of order, a sealing site claimed twice, a machine invariant
-//! and an unfolding the normaliser did not certify are engine faults: a
-//! producer that resolves binders and positions never hands the checker an
-//! unbound index or an out-of-order admission, and one that numbers each
-//! ascription's abstract components never repeats a site, so each is the
-//! producer's fault, not the author's; the machine invariant reports a
-//! miscount of the machine's own frames instead of asserting it. An abstract
-//! type's kind that is no value universe, a representation above it and an
-//! atom naming no admitted abstract type are the author's. The alternative for
-//! the unbound index — classing it as the author's — would hide a resolution
-//! bug in the producer behind a source diagnostic; it reverses if a producer
-//! ever hands over unresolved author text. A session action the endpoint's
-//! state does not admit and every break of an endpoint's linear use are the
-//! author's, an action naming a linear index no fork or receive bound among
-//! them: the linearity refusal is one variant, and the lowering binds every
-//! endpoint it names, so that defect is unreachable from source.
+//! unimplemented, naming the issue that tracks it. An unbound index, an
+//! exhausted allowance, a dangling id, an admission out of order, a sealing
+//! site claimed twice, a machine invariant and an unfolding the normaliser did
+//! not certify are engine faults: a producer that resolves binders and
+//! positions never hands the checker an unbound index or an out-of-order
+//! admission, and one that numbers each ascription's abstract components never
+//! repeats a site, so each is the producer's fault, not the author's; the
+//! machine invariant reports a miscount of the machine's own frames instead of
+//! asserting it. An abstract type's kind that is no value universe, a
+//! representation above it and an atom naming no admitted abstract type are the
+//! author's. The alternative for the unbound index — classing it as the
+//! author's — would hide a resolution bug in the producer behind a source
+//! diagnostic; it reverses if a producer ever hands over unresolved author
+//! text. A session action the endpoint's state does not admit and every break
+//! of an endpoint's linear use are the author's, an action naming a linear
+//! index no fork or receive bound among them: the linearity refusal is one
+//! variant, and the lowering binds every endpoint it names, so that defect is
+//! unreachable from source.
 //!
 //! # The absence class has no refusal, and that is the point
 //!
@@ -59,6 +60,7 @@ use gandr_core_term::BinderDepth;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::FailureClass;
+use gandr_core_term::TrackingIssue;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
@@ -1127,9 +1129,11 @@ impl CheckRefusal
     ///   subtyping, an operand that is no session code, a ride whose motive is
     ///   not covariant, a run its session does not admit and a function flow's
     ///   boundary against its variance are malformed source; a former outside
-    ///   the fragment, a case on an indexed family, a stratum the checker does
-    ///   not certify, a ride the checker does not move and a translator
-    ///   `forward` cannot image are unrepresentable; an unbound index, an
+    ///   the fragment, a case on an indexed family, a function extensionality
+    ///   or a universe equivalence or a `forward` the rule does not decide, a
+    ///   list round trip reading its tail, univalence at a stratum the checker
+    ///   does not certify and a ride the checker does not move are
+    ///   unimplemented, each naming the issue tracking it; an unbound index, an
     ///   exhausted allowance, a dangling id, an admission out of order, a
     ///   repeated sealing site, a machine invariant and an undecided unfolding
     ///   are engine faults; nothing is a user absence.
@@ -1144,7 +1148,7 @@ impl CheckRefusal
     /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
     #[spec(ensures: |ret| match *self {
         | Self::IndexedCase(_)
-        | Self::OutOfFragment { .. } | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } | Self::UaUncertified { .. } | Self::RideUnsupported { .. } | Self::ForwardUnsupported { .. } => matches!(ret, FailureClass::Unrepresentable),
+        | Self::OutOfFragment { .. } | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } | Self::UaUncertified { .. } | Self::RideUnsupported { .. } | Self::ForwardUnsupported { .. } => matches!(ret, FailureClass::Unimplemented(_)),
         | Self::UnboundIndex { .. }
         | Self::BudgetExceeded { .. }
         | Self::DanglingNode { .. }
@@ -1245,14 +1249,16 @@ impl CheckRefusal
             | Self::NonCovariantMotive { .. }
             | Self::RunNotAdmitted { .. }
             | Self::Boundary { .. } => FailureClass::MalformedSource,
-            Self::IndexedCase(_)
-            | Self::OutOfFragment { .. }
-            | Self::FunextUnsupported { .. }
-            | Self::EquivUnsupported { .. }
-            | Self::UncertifiedStratum { .. }
-            | Self::UaUncertified { .. }
-            | Self::RideUnsupported { .. }
-            | Self::ForwardUnsupported { .. } => FailureClass::Unrepresentable,
+            Self::IndexedCase(_) => FailureClass::Unimplemented(TrackingIssue::INDEXED),
+            Self::OutOfFragment { .. } => FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
+            Self::FunextUnsupported { .. } => FailureClass::Unimplemented(TrackingIssue::FUNEXT),
+            Self::EquivUnsupported { .. } => FailureClass::Unimplemented(TrackingIssue::EQUIV),
+            Self::UncertifiedStratum { .. } => {
+                FailureClass::Unimplemented(TrackingIssue::LIST_TAIL)
+            },
+            Self::UaUncertified { .. } => FailureClass::Unimplemented(TrackingIssue::UNIVALENCE),
+            Self::RideUnsupported { .. } => FailureClass::Unimplemented(TrackingIssue::RIDE),
+            Self::ForwardUnsupported { .. } => FailureClass::Unimplemented(TrackingIssue::FORWARD),
             Self::UnboundIndex { .. }
             | Self::BudgetExceeded { .. }
             | Self::DanglingNode { .. }

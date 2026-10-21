@@ -9316,6 +9316,7 @@ mod tests
 {
     use alloc::vec::Vec;
 
+    use gandr_core_term::TrackingIssue;
     use gandr_kernel_term::ConstantIndex;
     use gandr_surface_grammar::NamedKind;
     use gandr_surface_syntax::ByteOffset;
@@ -9873,12 +9874,12 @@ mod tests
                 (
                     SurfaceName::from("leta"),
                     Role::Held,
-                    Maybe::Present(FailureClass::Unrepresentable)
+                    Maybe::Present(FailureClass::Unimplemented(TrackingIssue::RUN_TARGET))
                 ),
                 (
                     SurfaceName::from("1"),
                     Role::Held,
-                    Maybe::Present(FailureClass::Unrepresentable)
+                    Maybe::Present(FailureClass::Unimplemented(TrackingIssue::RUN_TARGET))
                 ),
             ],
             "both declarations are kept, and each stray refused on its own"

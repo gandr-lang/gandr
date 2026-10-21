@@ -2206,7 +2206,7 @@ data NatUnits : Type {{
             (
                 r#"@[ refuses("OutOfFragment") ] def a : -F Integer & -F Integer ;"#,
                 RefusalName::OutOfFragment,
-                FailureClass::Unrepresentable,
+                FailureClass::MalformedSource,
             ),
             (
                 r#"@[ refuses("UnknownAttribute"), check ] def a = 3 ;"#,

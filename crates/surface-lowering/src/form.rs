@@ -140,7 +140,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 54_usize] = [
+    pub const ALL: [Self; 68_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -195,6 +195,20 @@ impl FormName
         Self::BOOLEAN,
         Self::NUMBER,
         Self::STRING,
+        Self::PACK,
+        Self::PACKAGE_TYPE,
+        Self::PROJECTION,
+        Self::SHELL_BLOCK,
+        Self::TYPED_NUMBER,
+        Self::LIST_PATTERN,
+        Self::REST_PATTERN,
+        Self::CHARACTER,
+        Self::CO_BUNDLE,
+        Self::DROP,
+        Self::FORALL_TYPE,
+        Self::UNION_TYPE,
+        Self::INTERSECTION_TYPE,
+        Self::OPERATOR_DECLARATION,
     ];
     /// The statement `acquire …;`, inlined into its block.
     pub const ACQUIRE_STATEMENT: Self = Self("acquire_statement");
@@ -230,11 +244,17 @@ impl FormName
     pub const LETA_STATEMENT: Self = Self("leta_statement");
     /// The module family `module M …`, its members included.
     pub const MODULE: Self = Self("module_declaration");
+    /// The pack `pack [T, …] e`, a module packed into a value.
+    pub const PACK: Self = Self("pack_expression");
+    /// The package type `package [T, …] P`, the type of a packed module.
+    pub const PACKAGE_TYPE: Self = Self("package_type");
     /// One typed parameter `name : T`, folded into its parameter list.
     pub const PARAMETER: Self = Self("parameter");
     /// A parameter list, explicit `( … )` or implicit `@[ … ]`, folded into the
     /// declaration and the lambda.
     pub const PARAMETERS: Self = Self("parameters");
+    /// The projection `e.1` or `e.field`.
+    pub const PROJECTION: Self = Self("projection_expression");
     /// The recursive tail `rec name (params) { … }`, folded into the
     /// declaration.
     pub const RECURSIVE: Self = Self("def_rec");
@@ -244,12 +264,16 @@ impl FormName
     pub const RELEASE_STATEMENT: Self = Self("release_statement");
     /// The source root, which holds a module's declarations.
     pub const ROOT: Self = Self("source_file");
+    /// The shell block `#!{ … }`.
+    pub const SHELL_BLOCK: Self = Self("shell_block");
     /// The signature tail `: T ;`, folded into the declaration.
     pub const SIGNATURE: Self = Self("def_signature");
     /// The tuple `(a, b)`, folded into the parenthesised expression.
     pub const TUPLE: Self = Self("tuple_expression");
     /// The type abstraction `fn [T] { … }`, folded into the lambda.
     pub const TYPE_ABSTRACTION: Self = Self("type_abstraction");
+    /// A number written with its type.
+    pub const TYPED_NUMBER: Self = Self("typed_number");
     /// The unit value: the keyword `unit`, and the empty parentheses `()` the
     /// grammar folds into the parenthesised expression, which the lowering
     /// refuses as an empty list.
@@ -294,6 +318,10 @@ impl FormName
     pub const OR_PATTERN: Self = Self("or_pattern");
     /// The as-pattern `p as x`.
     pub const AS_PATTERN: Self = Self("as_pattern");
+    /// The list pattern `[p, …]`.
+    pub const LIST_PATTERN: Self = Self("list_pattern");
+    /// The rest pattern `..p` inside a list pattern.
+    pub const REST_PATTERN: Self = Self("rest_pattern");
     /// The telescope pattern `#{p, …}` or `#{.l = p, …}`.
     pub const TELESCOPE_PATTERN: Self = Self("telescope_pattern");
     /// The injection pattern `+{ .l = p }`.
@@ -322,6 +350,20 @@ impl FormName
     pub const NUMBER: Self = Self("number");
     /// A string standing as its own pattern.
     pub const STRING: Self = Self("string");
+    /// A character literal.
+    pub const CHARACTER: Self = Self("character");
+    /// The bundle `co { id = e, … }`.
+    pub const CO_BUNDLE: Self = Self("co_expression");
+    /// The endpoint drop `drop(e)`.
+    pub const DROP: Self = Self("drop_expression");
+    /// The type `forall a. T`.
+    pub const FORALL_TYPE: Self = Self("forall_type");
+    /// The union type `A | B`.
+    pub const UNION_TYPE: Self = Self("union_type");
+    /// The intersection type `A /\ B`.
+    pub const INTERSECTION_TYPE: Self = Self("intersection_type");
+    /// The operator declaration `op infixl 6 "spelling" ;`.
+    pub const OPERATOR_DECLARATION: Self = Self("operator_declaration");
 }
 
 impl From<NamedKind<'static>> for FormName

@@ -387,6 +387,7 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
 use gandr_core_term::SplitMotive;
+use gandr_core_term::TrackingIssue;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
@@ -700,11 +701,12 @@ impl Refusal
     /// - ensures: the class is a function of the variant alone. A withheld
     ///   constant is malformed source, since the declaration it names was
     ///   turned away for a reason its own entry reports; a former outside the
-    ///   fragment and a session are unrepresentable; a dangling id, a cyclic
-    ///   node, a declined certificate and a machine invariant are engine
-    ///   faults, because a judged term from the judged arena holds none of them
-    ///   and an unfolding holds by definition; a term hole and the unknown type
-    ///   are user absences.
+    ///   fragment, a session and a world are unimplemented, each naming the
+    ///   issue tracking it; a dangling id, a cyclic node, a declined
+    ///   certificate and a machine invariant are engine faults, because a
+    ///   judged term from the judged arena holds none of them and an unfolding
+    ///   holds by definition; a term hole and the unknown type are user
+    ///   absences.
     /// - provides: the fact a report groups by, in the same four classes the
     ///   judgement's refusals answer to.
     /// - fails: never.
@@ -719,7 +721,7 @@ impl Refusal
     /// - witness: `bridge::tests::a_hole_is_refused_where_it_stands_and_its_filling_is_admitted`
     #[spec(ensures: |ret| match *self {
         | Self::Withheld { .. } | Self::WithheldData { .. } => matches!(ret, FailureClass::MalformedSource),
-        | Self::OutOfFragment { .. } | Self::Session { .. } | Self::Located { .. } => matches!(ret, FailureClass::Unrepresentable),
+        | Self::OutOfFragment { .. } | Self::Session { .. } | Self::Located { .. } => matches!(ret, FailureClass::Unimplemented(_)),
         | Self::DanglingNode { .. } | Self::Cyclic { .. }
             | Self::CertificateDeclined { .. } | Self::MachineInvariant => matches!(ret, FailureClass::EngineFault),
         | Self::Hole { .. } | Self::Unknown { .. } => matches!(ret, FailureClass::UserAbsence),
@@ -730,9 +732,9 @@ impl Refusal
     {
         match *self {
             Self::Withheld { .. } | Self::WithheldData { .. } => FailureClass::MalformedSource,
-            Self::OutOfFragment { .. } | Self::Session { .. } | Self::Located { .. } => {
-                FailureClass::Unrepresentable
-            },
+            Self::OutOfFragment { .. } => FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
+            Self::Session { .. } => FailureClass::Unimplemented(TrackingIssue::KERNEL_SESSION),
+            Self::Located { .. } => FailureClass::Unimplemented(TrackingIssue::KERNEL_WORLD),
             Self::DanglingNode { .. }
             | Self::Cyclic { .. }
             | Self::CertificateDeclined { .. }
