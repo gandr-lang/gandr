@@ -339,6 +339,58 @@ fn a_thunk_type_reads_as_the_operation_it_curries_1226()
     );
 }
 
+/// #1329: the value-function alias reads as the thunk it stands for, so
+/// `oper next : T => T` is the operation `(_ : T) --> T` that
+/// `+U (T -> -F T)` is, a builtin result a closed sort.
+#[test]
+fn the_value_function_alias_reads_as_its_thunk_1329()
+{
+    let operations = |source: &str| {
+        let report = described(source);
+        assert_eq!(report.diagnostics, [], "{source}");
+        let Maybe::Present(ref presentation) = report.declarations[0].presentation
+        else {
+            panic!("the theory presents its members")
+        };
+        let model = crate::model::derive(presentation).unwrap();
+        let mut spelled = alloc::string::String::new();
+        for component in &model.components {
+            if let Ok(crate::model::ModelForm::Operation {
+                ref telescope,
+                ref results,
+            }) = component.form
+            {
+                write!(spelled, "{} :", component.name).unwrap();
+                for binder in telescope {
+                    spelled.push(' ');
+                    spelled.push_str(binder.sort.sort.as_ref());
+                }
+                spelled.push_str(" -->");
+                for result in results {
+                    spelled.push(' ');
+                    spelled.push_str(result.sort.as_ref());
+                }
+                spelled.push_str("; ");
+            }
+        }
+        spelled
+    };
+    assert_eq!(
+        operations(
+            "theory Counting { sort T : Type; oper next : T => T; oper read : T => Integer; }"
+        ),
+        operations(
+            "theory Counting { sort T : Type; oper next : +U (T -> -F T); oper read : +U (T -> -F Integer); }"
+        ),
+    );
+    assert_eq!(
+        operations(
+            "theory Counting { sort T : Type; oper next : T => T; oper read : T => Integer; }"
+        ),
+        "next : T --> T; read : T --> Integer; "
+    );
+}
+
 #[test]
 fn a_reversible_map_is_reserved_and_an_equation_is_a_face()
 {
