@@ -25,7 +25,7 @@
 //!
 //! The crate is `no_std` and depends only on `core` and `alloc`.
 //!
-//! # Target requirement
+//! # Boundaries
 //!
 //! Structures carry a process-unique identity drawn from a shared atomic
 //! counter, so that a handle from one structure is rejected by another instead
@@ -38,17 +38,10 @@
 //! obtain. The requirement is checked below rather than surfacing as a missing
 //! atomic type.
 //!
+//! # References
+//!
 //! The papers the crate draws on are in its `README.md`, § References.
 
-// Module documentation that predates the shape lint: 1 heading outside the
-// vocabulary. Each allow leaves with the rewrite that clears its count.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        module_doc_heading,
-        reason = "module documentation that predates the shape lint"
-    )
-)]
 #![no_std]
 
 #[cfg(not(target_has_atomic = "ptr"))]

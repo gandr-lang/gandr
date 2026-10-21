@@ -80,7 +80,7 @@ Labels are internal and never exposed, so no caller depends on a numeric encodin
 
 ## Handles and failures
 
-A slot's generation counter is bumped each time the slot is freed, so a handle minted before the reuse no longer resolves. A slot whose generation counter is exhausted is retired rather than wrapped. A handle carries its structure's identity, and a handle from another structure is refused.
+A slot's generation counter is bumped each time the slot is freed, so a handle minted before the reuse does not resolve. A slot whose generation counter is exhausted is retired rather than wrapped. A handle carries its structure's identity, and a handle from another structure is refused.
 
 Handle liveness is a returned classification, never a precondition: an operation on a stale or foreign handle returns `None` or `OrderError::UnknownPosition`. Every internal write returns a typed result, so a violated arena invariant surfaces as `OrderError::Inconsistent` rather than as a dropped write. `remove` returns `Result<Option<T>, OrderError>`: `Ok(None)` is a stale handle, `Err` a corrupted arena. Construction is fallible too, so the process-wide structure-id counter never wraps.
 
