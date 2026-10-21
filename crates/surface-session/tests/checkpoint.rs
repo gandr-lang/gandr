@@ -11,6 +11,7 @@ use gandr_core_incremental::CheckpointAddress;
 use gandr_core_incremental::CheckpointStore;
 use gandr_core_incremental::CheckpointStoreError;
 use gandr_core_incremental::Checkpoints;
+use gandr_core_incremental::DiscardingCheckpointStore;
 use gandr_core_incremental::FileCheckpointStore;
 use gandr_core_incremental::ItemCount;
 use gandr_core_incremental::ItemSource as _;
@@ -30,6 +31,7 @@ use gandr_storage_records::FailureContext;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_storage_records::NodeHash;
 use gandr_storage_records::RecordTreeError;
+use gandr_storage_records::StoreOccupancy;
 use gandr_storage_records::StoredNode;
 use gandr_storage_records::TreeParams;
 use gandr_surface_dispatcher::Composed;
@@ -679,5 +681,63 @@ fn a_kernel_store_failure_preserves_resume_and_edit_state()
     assert_eq!(
         gandr_surface_session::apply(before.items(), edits),
         session.snapshot().items()
+    );
+}
+
+/// An open document's session kept every revision's checkpoint set and kernel
+/// checkpoint, one closure-sized record per keystroke that nothing read
+/// (#1287): over a store that keeps nothing, a session commits neither and
+/// judges and resumes as one that keeps them.
+#[test]
+fn a_session_over_a_store_that_keeps_nothing_commits_nothing_and_resumes_alike_1287()
+{
+    let mut keeping = Session::new(
+        grammar(),
+        SourceRoot::Strict,
+        MemoryCheckpointStore::default(),
+        InMemoryBlockStore::default(),
+        backend(),
+    );
+    let mut discarding = Session::new(
+        grammar(),
+        SourceRoot::Strict,
+        DiscardingCheckpointStore,
+        InMemoryBlockStore::default(),
+        backend(),
+    );
+    for text in [WRITTEN, APPENDED] {
+        let kept = keeping
+            .submit(SourceText::from(text))
+            .expect("the keeping session accepts the revision");
+        let discarded = discarding
+            .submit(SourceText::from(text))
+            .expect("and the discarding one");
+        assert_eq!(
+            discarded.composed(),
+            kept.composed(),
+            "the revision composes alike: {text}"
+        );
+        let (Maybe::Present(kept), Maybe::Present(discarded_resume)) =
+            (kept.resumed(), discarded.resumed())
+        else {
+            panic!("both sessions resume: {text}");
+        };
+        assert_eq!(
+            (discarded_resume.census(), discarded_resume.persistence()),
+            (kept.census(), Persistence::Discarded),
+            "the same pass, nothing persisted: {text}"
+        );
+        assert!(
+            matches!(
+                discarded.kernel(),
+                Maybe::Present(&KernelCheckpoint::Discarded)
+            ),
+            "no kernel checkpoint: {text}"
+        );
+    }
+    assert_eq!(
+        discarding.blocks().is_empty(),
+        StoreOccupancy::Empty,
+        "nothing reached the block store"
     );
 }

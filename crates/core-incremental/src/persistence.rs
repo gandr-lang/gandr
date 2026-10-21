@@ -324,6 +324,20 @@ pub trait CheckpointObserver
     }
 }
 
+/// Whether a checkpoint store keeps the sets it is handed.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Keeping
+{
+    /// It keeps them: a session addresses, encodes and stores each set.
+    Kept,
+    /// It keeps nothing: a session neither addresses nor encodes a set for
+    /// it.
+    Discarded,
+}
+
 /// A persistence boundary for complete checkpoint sets.
 ///
 /// # Specification
@@ -340,6 +354,13 @@ pub trait CheckpointObserver
 /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
 pub trait CheckpointStore
 {
+    /// Whether the store keeps the sets it is handed: a session persists a
+    /// set only to a store that keeps it.
+    ///
+    /// # Specification
+    /// trivial.
+    const KEEPING: Keeping = Keeping::Kept;
+
     /// Load the set stored at `address` by `backend`.
     ///
     /// # Specification
@@ -374,9 +395,10 @@ pub trait CheckpointStore
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: on success the new record decodes to `checkpoints`; a later
-    ///   load returns that set absent intervening changes or read failures. On
-    ///   failure the store holds what it held before.
+    /// - ensures: on success, in a store that keeps sets ([`Keeping::Kept`]),
+    ///   the new record decodes to `checkpoints` and a later load returns that
+    ///   set absent intervening changes or read failures; a store that keeps
+    ///   nothing holds nothing. On failure the store holds what it held before.
     /// - fails: unsupported data, capped levels, unrepresentable counts, or a
     ///   backing-store failure.
     /// - panics: none.
@@ -572,6 +594,51 @@ impl CheckpointStore for MemoryCheckpointStore
     {
         let bytes = crate::codec::encode_checkpoints(checkpoints)?;
         let _replaced = self.records.insert((address, backend), bytes);
+        Ok(())
+    }
+}
+
+/// A checkpoint store that keeps nothing.
+///
+/// It suits a session whose checkpoints no later session restores, such as an
+/// editor's open document: a session over it judges and resumes as over a
+/// store that keeps them, and never addresses or encodes a set for it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DiscardingCheckpointStore;
+
+impl CheckpointStore for DiscardingCheckpointStore
+{
+    const KEEPING: Keeping = Keeping::Discarded;
+
+    /// Nothing is stored.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn load(
+        &mut self,
+        _address: CheckpointAddress,
+        _backend: BackendArtifact,
+    ) -> Result<Maybe<Checkpoints, stored::Absent>, CheckpointStoreError>
+    {
+        Ok(Maybe::Absent(stored::Absent::NotStored))
+    }
+
+    /// Hold nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn store(
+        &mut self,
+        _address: CheckpointAddress,
+        _backend: BackendArtifact,
+        _checkpoints: &Checkpoints,
+    ) -> Result<(), CheckpointStoreError>
+    {
         Ok(())
     }
 }

@@ -153,7 +153,7 @@ use std::time::Instant;
 
 use anodized::spec;
 use gandr_core_incremental::BackendArtifact;
-use gandr_core_incremental::MemoryCheckpointStore;
+use gandr_core_incremental::DiscardingCheckpointStore;
 use gandr_core_incremental::ResumeCensus;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_diagnostics::AnnotationKind;
@@ -203,9 +203,10 @@ use crate::quiet::caret_form;
 use crate::quiet::formless;
 
 /// The session one open document's revisions are submitted to, or the fault
-/// that kept the grammar it parses under from building.
+/// that kept the grammar it parses under from building. Nothing restores an
+/// open document's checkpoints, so its session keeps none.
 pub type DocumentSession =
-    Result<Session<MemoryCheckpointStore, InMemoryBlockStore>, &'static PbgError>;
+    Result<Session<DiscardingCheckpointStore, InMemoryBlockStore>, &'static PbgError>;
 
 /// The built-in grammar, the role table read off it and the forms an inline
 /// completion offers under it.
@@ -334,8 +335,9 @@ pub fn roles() -> Result<&'static RoleTable, &'static PbgError>
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a session with nothing submitted, parsing under the process's
-///   grammar, under the classified root, over memory stores; the grammar's
-///   build fault when it did not build.
+///   grammar, under the classified root, over a checkpoint store that keeps
+///   nothing and an empty block store, which it therefore never writes; the
+///   grammar's build fault when it did not build.
 /// - provides: the session a document opened in the editor keeps.
 /// - fails: the grammar's [`PbgError`], carried for the document's diagnostics.
 /// - panics: none.
@@ -355,7 +357,7 @@ pub fn open(uri: &DocumentUri) -> DocumentSession
     Ok(Session::new(
         toolkit.grammar.clone(),
         classify(&uri.path()),
-        MemoryCheckpointStore::default(),
+        DiscardingCheckpointStore,
         InMemoryBlockStore::default(),
         BackendArtifact::from(b"gandr-surface-lsp".as_slice()),
     ))
