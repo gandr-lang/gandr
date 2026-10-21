@@ -60,6 +60,7 @@ use crate::desc::TheoryShape;
 use crate::rule::FreeTerm;
 use crate::rule::RuleFace;
 use crate::rule::RuleVarMeta;
+use crate::rule::TermNode;
 use crate::rule::TermView;
 use crate::rule::Variance;
 
@@ -121,6 +122,9 @@ pub enum WfKind
     /// to one argument per variable it binds, or applies a variable no binding
     /// port binds.
     UnsortedBinding,
+    /// A rule abstracts an atom, `bind a . t`, where no operation's port
+    /// abstracts as many atoms.
+    MisplacedAbstraction,
     /// An operation's output port sits at an atom sort: an atom is compared
     /// and swapped, never produced.
     AtomResult,
@@ -257,11 +261,11 @@ fn located(
 ///   declaration's, an ordinary or undeclared π⁺ domain, a face named twice, a
 ///   face past its shape, an out-of-signature face, a fresh right-hand-side
 ///   variable, a variable a binding port binds used where no port binds the
-///   same variables or instantiated at the wrong count, a non-composing arity,
-///   a reserved-derived attribute, a circuit rule whose wiring derives a
-///   boundary its sphere does not fix, a cyclic wiring, and a redex applying a
-///   rewrite the rule's telescope does not declare each surface exactly their
-///   diagnostic.
+///   same variables or instantiated at the wrong count, an abstraction where no
+///   port abstracts as many atoms, a non-composing arity, a reserved-derived
+///   attribute, a circuit rule whose wiring derives a boundary its sphere does
+///   not fix, a cyclic wiring, and a redex applying a rewrite the rule's
+///   telescope does not declare each surface exactly their diagnostic.
 /// - witness: `wellformed::tests::the_sorting_discipline_indexes_the_description`
 /// - witness: `wellformed::tests::a_clean_description_passes`
 /// - witness: `wellformed::tests::an_out_of_signature_cell_is_declined`
@@ -282,12 +286,14 @@ fn located(
 /// - witness: `wellformed::tests::a_results_tuple_stands_only_at_a_right_hand_root`
 /// - witness: `wellformed::tests::a_shape_refuses_a_repeated_face_and_a_point_past_it`
 /// - witness: `wellformed::tests::a_bound_variable_is_used_under_its_binders_or_instantiated`
+/// - witness: `wellformed::tests::an_abstraction_stands_at_a_port_that_abstracts`
 #[inline]
 #[must_use]
 #[spec(ensures: |ref diagnostics| diagnostics.iter().all(|diagnostic| match diagnostic.kind {
     WfKind::OutOfSignatureRule | WfKind::UnboundRhsVariable | WfKind::DerivedBoundaryMismatch
     | WfKind::CyclicCircuitWiring | WfKind::UnknownRewritePort | WfKind::CircuitDerivationBudget
-    | WfKind::MisplacedResults | WfKind::SplitCircuitOutputs | WfKind::UnsortedBinding => matches!(diagnostic.span, Maybe::Present(_)),
+    | WfKind::MisplacedResults | WfKind::SplitCircuitOutputs | WfKind::UnsortedBinding
+    | WfKind::MisplacedAbstraction => matches!(diagnostic.span, Maybe::Present(_)),
     WfKind::ArityDoesNotCompose | WfKind::DeclaresDerivedMetadata | WfKind::DuplicateSortName
     | WfKind::UnknownResultSort | WfKind::UnknownVarSort | WfKind::SortPolarityDisagreement
     | WfKind::NonRepresentableBinder | WfKind::DuplicateFaceName | WfKind::FaceOutsideShape
@@ -416,6 +422,7 @@ pub fn check_desc<G>(desc: &TheoryDesc<G>) -> Vec<WfDiagnostic>
     for rule in &desc.rules {
         check_rule_face(rule, &signature, &mut diagnostics);
         check_rule_binders(rule, &operations, &mut diagnostics);
+        check_abstractions(rule, &operations, &mut diagnostics);
     }
 
     // Bridge arities: the three maps compose.
@@ -976,7 +983,8 @@ fn check_rule_binders(
             },
             TermView::Ctor { args, .. }
             | TermView::Results { args }
-            | TermView::Inst { args, .. } => {
+            | TermView::Inst { args, .. }
+            | TermView::Abs { args, .. } => {
                 pending.extend(args);
             },
             TermView::Var(_) => {},
@@ -1046,9 +1054,81 @@ fn check_rule_binders(
                     (arg, ports.get(place).map_or(Site::Elsewhere, Site::Port))
                 }));
             },
-            TermView::Ctor { args, .. } | TermView::Results { args } => {
+            TermView::Ctor { args, .. }
+            | TermView::Results { args }
+            | TermView::Abs { args, .. } => {
                 sited.extend(args.map(|arg| (arg, Site::Elsewhere)));
             },
+        }
+    }
+}
+
+/// Append a `MisplacedAbstraction` diagnostic for each atom abstraction of
+/// `cell` that stands where no port abstracts as many atoms.
+///
+/// # Specification
+/// - ensures: one diagnostic per maximal chain of `bind a . …` that is not an
+///   operation's argument at a port abstracting exactly as many atoms as the
+///   chain is long, on either side, at the rule's provenance.
+/// - panics: none.
+/// - intension: one worklist pass over each side, each chain read once.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an abstraction at a `bind` port passes, and one at a port
+///   that abstracts nothing, one at the root and one of the wrong length each
+///   earn one diagnostic.
+/// - witness: `wellformed::tests::an_abstraction_stands_at_a_port_that_abstracts`
+#[spec(
+    captures: before = diagnostics.len(),
+    ensures: diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic| diagnostic.span == Maybe::Present(cell.provenance)
+        && diagnostic.kind == WfKind::MisplacedAbstraction)),
+)]
+fn check_abstractions(
+    cell: &RuleFace,
+    operations: &BTreeMap<&Name, &OperDesc>,
+    diagnostics: &mut Vec<WfDiagnostic>,
+)
+{
+    for side in [&cell.lhs, &cell.rhs] {
+        let mut pending: Vec<(TermNode<'_>, Option<&SortRef>)> = vec![(side.to_node(), None)];
+        while let Some((node, port)) = pending.pop() {
+            let mut depth = 0_usize;
+            let mut body = node;
+            while let TermView::Abs { mut args, .. } = body.view() {
+                let Some(next) = args.next()
+                else {
+                    break;
+                };
+                depth = depth.saturating_add(1);
+                body = next;
+            }
+            if depth > 0 && port.is_none_or(|port| port.abstractions.len() != depth) {
+                diagnostics.push(located(
+                    WfKind::MisplacedAbstraction,
+                    named(&[]),
+                    format!(
+                        "rule abstracts {depth} atoms at `{body}` where no port abstracts as many: \
+                         write `bind a . t` as an argument at a port written `bind (a : N) . T`",
+                        body = body.to_term()
+                    ),
+                    cell.provenance,
+                ));
+            }
+            match body.view() {
+                TermView::Op { name, args } => {
+                    let ports = operations
+                        .get(name)
+                        .map_or(&[][..], |operation| &*operation.arity.inputs);
+                    pending.extend(args.enumerate().map(|(place, arg)| (arg, ports.get(place))));
+                },
+                TermView::Ctor { args, .. }
+                | TermView::Results { args }
+                | TermView::Inst { args, .. }
+                | TermView::Abs { args, .. } => {
+                    pending.extend(args.map(|arg| (arg, None)));
+                },
+                TermView::Var(_) => {},
+            }
         }
     }
 }
@@ -1587,6 +1667,81 @@ mod tests
             kinds(&named(Representability::Representable, vec![nu("Name")])),
             [WfKind::NonAtomAbstraction],
             "a representable sort is bound by `pi+`, never abstracted"
+        );
+    }
+
+    #[test]
+    fn an_abstraction_stands_at_a_port_that_abstracts()
+    {
+        let atoms = |count: usize| {
+            ["a0", "a1"]
+                .into_iter()
+                .take(count)
+                .map(|name| SortIndex::new(name, "Name"))
+                .collect::<Vec<_>>()
+        };
+        let op = |name: &str, inputs: Vec<SortRef>| {
+            OperDesc::new(
+                name,
+                BridgeArity::single_output(inputs, SortRef::new("r", "Nat")),
+                Attrs::empty(),
+            )
+        };
+        let ops = || {
+            vec![
+                op("nu", vec![SortRef::new("p", "Nat").abstracting(atoms(1))]),
+                op("nu2", vec![SortRef::new("p", "Nat").abstracting(atoms(2))]),
+                op("par", vec![
+                    SortRef::new("p", "Nat"),
+                    SortRef::new("q", "Nat"),
+                ]),
+            ]
+        };
+        let desc = |lhs: FreeTerm, rhs: FreeTerm| {
+            nat_with(
+                vec![RuleFace::new(lhs, rhs, Vec::new(), span())],
+                ops(),
+                Attrs::empty(),
+            )
+            .with_sorts([SortDesc::new("Nat", DeclPolarity::Data), SortDesc {
+                representability: Representability::Atom,
+                ..SortDesc::new("Name", DeclPolarity::Data)
+            }])
+        };
+        let misplaced = |lhs: FreeTerm, rhs: FreeTerm| {
+            check_desc(&desc(lhs, rhs))
+                .into_iter()
+                .filter(|diagnostic| diagnostic.kind == WfKind::MisplacedAbstraction)
+                .count()
+        };
+        let var = FreeTerm::var;
+        let abs = |body: FreeTerm| FreeTerm::abs("a", body);
+        let scope = || FreeTerm::op("par", [FreeTerm::op("nu", [abs(var("p"))]), var("q")]);
+        let extruded = || FreeTerm::op("nu", [abs(FreeTerm::op("par", [var("p"), var("q")]))]);
+        assert_eq!(
+            0,
+            misplaced(scope(), extruded()),
+            "scope extrusion abstracts at `nu`"
+        );
+        assert_eq!(
+            0,
+            misplaced(FreeTerm::op("nu2", [abs(abs(var("p")))]), var("p")),
+            "two abstractions at a port abstracting two atoms"
+        );
+        assert_eq!(
+            1,
+            misplaced(FreeTerm::op("par", [abs(var("p")), var("q")]), var("q")),
+            "`par` abstracts nothing"
+        );
+        assert_eq!(
+            1,
+            misplaced(scope(), abs(var("q"))),
+            "an abstraction at the root"
+        );
+        assert_eq!(
+            1,
+            misplaced(FreeTerm::op("nu2", [abs(var("p"))]), var("p")),
+            "one abstraction where the port abstracts two"
         );
     }
 

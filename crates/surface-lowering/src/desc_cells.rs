@@ -526,7 +526,8 @@ fn second_leaf(
             TermView::Ctor { args, .. }
             | TermView::Op { args, .. }
             | TermView::Results { args }
-            | TermView::Inst { args, .. } => pending.push(args),
+            | TermView::Inst { args, .. }
+            | TermView::Abs { args, .. } => pending.push(args),
         }
         next = None;
         while let Some(arguments) = pending.last_mut() {

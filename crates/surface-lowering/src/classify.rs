@@ -163,7 +163,8 @@ impl LoweringRefusal<'_>
                     | MemberFault::AggregatedOutput
                     | MemberFault::NestedOperation
                     | MemberFault::UnrepresentableOperation
-                    | MemberFault::ParallelRedexes,
+                    | MemberFault::ParallelRedexes
+                    | MemberFault::AtomOccurrence,
                 ..
             }
             | Self::GradedBridge { .. }
@@ -631,6 +632,7 @@ fn undescribed(fault: MemberFault) -> FailureClass
         MemberFault::ParallelRedexes => {
             FailureClass::Unimplemented(TrackingIssue::PARALLEL_REDEXES)
         },
+        MemberFault::AtomOccurrence => FailureClass::Unimplemented(TrackingIssue::ATOM_OCCURRENCE),
         MemberFault::HigherOrderField
         | MemberFault::DependentField
         | MemberFault::TypeShape
@@ -1282,6 +1284,10 @@ mod tests
             (
                 MemberFault::ParallelRedexes,
                 FailureClass::Unimplemented(TrackingIssue::PARALLEL_REDEXES),
+            ),
+            (
+                MemberFault::AtomOccurrence,
+                FailureClass::Unimplemented(TrackingIssue::ATOM_OCCURRENCE),
             ),
             (
                 MemberFault::HigherOrderField,

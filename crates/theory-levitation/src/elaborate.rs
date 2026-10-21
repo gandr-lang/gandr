@@ -830,9 +830,9 @@ pub fn elaborate_body(body: &CircuitBody) -> Result<WhiskeredCell, CircuitElabor
         | TermView::Ctor { name, args: expected } => matches!(*head, WhiskerHead::Frame(FrameHead::Ctor(ref actual)) if actual == name) && args.iter().copied().eq(expected),
         | TermView::Op { name, args: expected } => matches!(*head, WhiskerHead::Frame(FrameHead::Op(ref actual)) if actual == name) && args.iter().copied().eq(expected),
         | TermView::Results { args: expected } => matches!(*head, WhiskerHead::Results) && args.iter().copied().eq(expected),
-        | TermView::Var(_) | TermView::Inst { .. } => false,
+        | TermView::Var(_) | TermView::Inst { .. } | TermView::Abs { .. } => false,
     },
-    | Err(_) => matches!(node.view(), TermView::Var(_) | TermView::Inst { .. }),
+    | Err(_) => matches!(node.view(), TermView::Var(_) | TermView::Inst { .. } | TermView::Abs { .. }),
 })]
 fn application<E, O>(
     node: TermNode<'_>,
@@ -851,7 +851,7 @@ where
             args.collect(),
         )),
         TermView::Results { args } => Ok((WhiskerHead::Results, args.collect())),
-        TermView::Var(_) | TermView::Inst { .. } => Err(off_boundary()),
+        TermView::Var(_) | TermView::Inst { .. } | TermView::Abs { .. } => Err(off_boundary()),
     }
 }
 
@@ -1116,7 +1116,8 @@ pub fn redex_occurrences(body: &CircuitBody)
                 TermView::Ctor { args, .. }
                 | TermView::Op { args, .. }
                 | TermView::Results { args }
-                | TermView::Inst { args, .. } => {
+                | TermView::Inst { args, .. }
+                | TermView::Abs { args, .. } => {
                     push_args(&mut stack, args);
                 },
             },

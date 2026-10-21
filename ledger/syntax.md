@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x1010794e0a2c6197`
-- Rules: 158 — 157 committed, 1 internal
-- Molds: 3092
+- Grammar fingerprint: `0x008e37bddc69fb8d`
+- Rules: 159 — 158 committed, 1 internal
+- Molds: 3095
 - Attributes: 11
 
 ## Reading a form
@@ -61,13 +61,14 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`identifier.pattern`](exemplars/syntax/identifier.pattern.gandr) | `‹identifier›` | `pattern.atom` | `identifier` | Variable |
 | [`unit.pattern`](exemplars/syntax/unit.pattern.gandr) | `unit` | `pattern.atom` | `unit` | Keyword |
 
-## `expression` — 82 rules
+## `expression` — 83 rules
 
 | Rule | Form | Group | Kind | Roles |
 | ---- | ---- | ----- | ---- | ----- |
 | [`pure_expression`](exemplars/syntax/pure_expression.gandr) | `pure EXPRESSION` | `expression.pure` | `pure_expression` | Keyword |
 | [`return_expression`](exemplars/syntax/return_expression.gandr) | `return EXPRESSION` | `expression.pure` | `return_expression` * | Keyword |
 | [`become_expression`](exemplars/syntax/become_expression.gandr) | `become EXPRESSION` | `expression.pure` | `become_expression` * | Keyword |
+| [`bind_expression`](exemplars/syntax/bind_expression.gandr) | `bind ‹identifier› . EXPRESSION` | `expression.pure` | `bind_expression` * | Keyword, Variable, Other |
 | [`binary_expression.or`](exemplars/syntax/binary_expression.or.gandr) | `EXPRESSION \|\| EXPRESSION` | `expression.or` | `binary_expression` | Operator |
 | [`binary_expression.and`](exemplars/syntax/binary_expression.and.gandr) | `EXPRESSION && EXPRESSION` | `expression.and` | `binary_expression` | Operator |
 | [`binary_expression.cmp.eq`](exemplars/syntax/binary_expression.cmp.eq.gandr) | `EXPRESSION == EXPRESSION` | `expression.cmp` | `binary_expression` | Operator |

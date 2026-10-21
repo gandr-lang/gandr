@@ -457,7 +457,9 @@ fn term_diagram(term: &FreeTerm) -> Option<Wiring>
                     },
                     TermView::Ctor { name, args } => (name, GeneratorSort::Value, args),
                     TermView::Op { name, args } => (name, GeneratorSort::Operation, args),
-                    TermView::Results { .. } | TermView::Inst { .. } => return None,
+                    TermView::Results { .. } | TermView::Inst { .. } | TermView::Abs { .. } => {
+                        return None;
+                    },
                 };
                 stack.push(Step::Finish(
                     GeneratorLabel::new(name.as_ref(), sort),

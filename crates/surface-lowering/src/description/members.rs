@@ -1,5 +1,6 @@
 //! Operations and rewrite faces read from declaration members.
 
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -223,7 +224,8 @@ impl Reader<'_, '_>
     }
 
     /// Read free terms iteratively, distinguishing constructors, operations,
-    /// instantiations and results tuples, and keep where each node is written.
+    /// instantiations, results tuples and abstractions, and keep where each
+    /// node is written.
     ///
     /// # Specification
     /// - ensures: every application preserves its head and ordered argument
@@ -231,27 +233,32 @@ impl Reader<'_, '_>
     ///   variable of the rule's left side, read on its right — is that
     ///   variable's instantiation; a parenthesized term is its one component,
     ///   and a parenthesized list of several is a results tuple of them in
-    ///   order; a variable spelled in a type hole, as a pinned rewrite endpoint
-    ///   is, is a variable. The written term holds one node per node of the
-    ///   term, in pre-order, each at its own bytes and an application with its
-    ///   head's.
-    /// - fails: forms outside names, applications and parenthesized lists are
-    ///   located.
+    ///   order; `bind a . t` is the abstraction of the atom `a` over `t`; a
+    ///   variable spelled in a type hole, as a pinned rewrite endpoint is, is a
+    ///   variable. The written term holds one node per node of the term, in
+    ///   pre-order, each at its own bytes and an application or an abstraction
+    ///   with its head's or its atom's.
+    /// - fails: forms outside names, applications, parenthesized lists and
+    ///   abstractions are located; a name an enclosing abstraction binds is
+    ///   located as [`DescriptionFault::AtomOccurrence`].
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `Malformed` for an unreadable term.
+    /// Returns `Malformed` for an unreadable term and `AtomOccurrence` for an
+    /// atom named inside its abstraction.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — constructor-wrapped operation calls distinguish head
     ///   category and child order; a two-component tuple and a parenthesized
     ///   variable distinguish a results tuple from grouping and a swapped
-    ///   component.
+    ///   component; an atom named inside and beside its abstraction separate
+    ///   the abstraction's scope from the term after it.
     /// - witness: `description::tests::operations_and_rules_preserve_their_boundaries`
     /// - witness: `description::tests::a_parenthesized_result_list_reads_as_a_results_tuple`
     /// - witness: `description::theory::tests::a_pinned_rewrite_endpoint_reads_as_a_variable`
     /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
     /// - witness: `description::theory::tests::an_applied_left_variable_reads_as_its_instantiation`
+    /// - witness: `description::theory::tests::a_rule_term_abstracts_an_atom_and_names_none`
     #[spec(ensures: |result| result.is_ok() || self.tree.node(at.node).is_some())]
     pub(super) fn free_term(
         &self,
@@ -260,6 +267,9 @@ impl Reader<'_, '_>
     ) -> Result<(FreeTerm, WrittenTerm), DescriptionDiagnostic>
     {
         let mut pending = vec![TermFrame::Read(at)];
+        // The atoms the enclosing `bind`s abstract, each with how many of them
+        // abstract it.
+        let mut atoms: BTreeMap<&str, usize> = BTreeMap::new();
         let mut terms = Vec::new();
         let mut written = WrittenTerm::default();
         let leaf = |span| WrittenNode {
@@ -273,7 +283,14 @@ impl Reader<'_, '_>
                     if let [Piece::Tile { label, .. }] = *pieces.as_slice() {
                         match label.as_ref() {
                             "identifier" | "type_variable" => {
-                                terms.push(FreeTerm::var(self.text(at).0));
+                                let name = self.text(at).0;
+                                if atoms.contains_key(name) {
+                                    return Err(DescriptionDiagnostic {
+                                        span: at.span,
+                                        fault: DescriptionFault::AtomOccurrence,
+                                    });
+                                }
+                                terms.push(FreeTerm::var(name));
                                 written.nodes.push(leaf(at.span));
                             },
                             "constructor" => {
@@ -313,6 +330,25 @@ impl Reader<'_, '_>
                                 pending.extend(components.into_iter().rev().map(TermFrame::Read));
                             },
                         }
+                        continue;
+                    }
+                    if run.eat(Spelling("bind")).0 {
+                        let atom = run.take()?;
+                        if !run.eat(Spelling(".")).0 {
+                            return Err(run.fault(DescriptionFault::Malformed));
+                        }
+                        let body = run.take()?;
+                        run.end()?;
+                        written.nodes.push(WrittenNode {
+                            span: at.span,
+                            head: Maybe::Present(atom.span),
+                        });
+                        let spelled = self.text(atom).0;
+                        let binds = atoms.entry(spelled).or_insert(0);
+                        *binds = binds.saturating_add(1);
+                        let atom = Name::from(spelled);
+                        pending.push(TermFrame::Abstract(atom));
+                        pending.push(TermFrame::Read(body));
                         continue;
                     }
                     let head = run.take()?;
@@ -373,6 +409,22 @@ impl Reader<'_, '_>
                     let term = FreeTerm::results(components);
                     terms.push(term);
                 },
+                TermFrame::Abstract(atom) => {
+                    if let Some(binds) = atoms.get_mut(atom.as_ref()) {
+                        *binds = binds.saturating_sub(1);
+                        if *binds == 0 {
+                            let _closed = atoms.remove(atom.as_ref());
+                        }
+                    }
+                    let Some(body) = terms.pop()
+                    else {
+                        return Err(DescriptionDiagnostic {
+                            span: at.span,
+                            fault: DescriptionFault::Malformed,
+                        });
+                    };
+                    terms.push(FreeTerm::abs(atom, body));
+                },
             }
         }
         let term = terms.pop().ok_or(DescriptionDiagnostic {
@@ -403,4 +455,6 @@ enum TermFrame
     Apply(Name, ArgumentCount, TermKind),
     /// Assemble an ordered suffix into a results tuple.
     Gather(ArgumentCount),
+    /// Abstract the atom over the body read before it, closing its scope.
+    Abstract(Name),
 }

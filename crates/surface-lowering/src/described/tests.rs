@@ -628,3 +628,47 @@ fn a_second_order_law_answers_at_its_written_sorts()
         );
     }
 }
+
+/// A law over an abstracting port answers the variable its abstraction holds
+/// at the port's sort, on both sides, as a first-order port's variable
+/// answers, and the atom it abstracts at the atom sort the port abstracts;
+/// the abstraction itself answers nowhere, as its port does.
+#[test]
+fn a_variable_under_an_abstraction_answers_at_its_port()
+{
+    let source = SourceText::from(
+        "theory Scope {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper par : (p : Proc, q : \
+         Proc) --> Proc;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule scope : \
+         par(nu(bind a . p), q) <=> nu(bind a . par(p, q));\n}\n",
+    );
+    let span = |around: &'static str, inner: &'static str| {
+        at(source, SourceText::from(around), SourceText::from(inner))
+    };
+    let (types, arena) = described(source);
+    let code = |entry: DescribedType| match arena.value_type(entry.ty) {
+        Some(&ValueType::Element { code, .. }) => arena.value(code).cloned(),
+        _ => None,
+    };
+    let process = code(entry(&types, span(", q)", "q"), DescribedRole::Term));
+    assert!(
+        process.is_some(),
+        "a first-order variable at its port's sort"
+    );
+    for around in [". p)", "(p, q))"] {
+        assert_eq!(
+            code(entry(&types, span(around, "p"), DescribedRole::Term)),
+            process,
+            "`p` in `{around}` at the abstracting port's sort"
+        );
+    }
+    let [left, right] = ["(bind a . p)", "nu(bind a . par"]
+        .map(|around| code(entry(&types, span(around, "a"), DescribedRole::Name)));
+    assert!(left.is_some(), "an abstraction's atom answers");
+    assert_eq!(left, right, "both sides' atoms at the port's one atom sort");
+    assert_ne!(left, process, "an atom at the atom sort, not the body's");
+    let abstraction = span("nu(bind a . p)", "bind a . p");
+    assert!(
+        types.entries.iter().all(|held| held.span != abstraction),
+        "an abstraction answers nowhere"
+    );
+}

@@ -175,6 +175,8 @@ enum Class
     Constructor,
     /// A results tuple.
     Tuple,
+    /// An atom's abstraction, keyed without its atom's name.
+    Abstraction,
 }
 
 impl<'term> Symbols<'term>
@@ -202,7 +204,7 @@ impl<'term> Symbols<'term>
             .iter()
             .filter_map(|&(class, name, _)| match class {
                 Class::Operation => name.cloned(),
-                Class::Constructor | Class::Tuple => None,
+                Class::Constructor | Class::Tuple | Class::Abstraction => None,
             })
             .collect()
     }
@@ -223,7 +225,8 @@ impl<'term> Symbols<'term>
                             u32::try_from(rank).unwrap_or(u32::MAX),
                         ))
                     },
-                    (Class::Operation, None) | (Class::Constructor | Class::Tuple, _) => {
+                    (Class::Operation, None)
+                    | (Class::Constructor | Class::Tuple | Class::Abstraction, _) => {
                         SymbolKind::Constructor
                     },
                 };
@@ -291,6 +294,10 @@ impl<'term> Symbols<'term>
                 TermView::Results { args } => {
                     arguments.extend(args);
                     (Class::Tuple, None)
+                },
+                TermView::Abs { args, .. } => {
+                    arguments.extend(args);
+                    (Class::Abstraction, None)
                 },
             };
             let key = (class, name, arguments.len());

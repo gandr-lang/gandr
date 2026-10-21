@@ -105,6 +105,13 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression access", Standing::Owed(0)),
     ("Expression as", Standing::Owed(0)),
     ("Expression become", Standing::Design(EXIT)),
+    (
+        "Expression bind",
+        Standing::Design(
+            "an abstraction in a rule term: its atom is no term, and its body answers at its \
+             port's sort",
+        ),
+    ),
     ("Expression break", Standing::Design(EXIT)),
     ("Expression case", Standing::Owed(0)),
     ("Expression close", Standing::Owed(0)),
@@ -431,11 +438,13 @@ fn gated(
             .map_or(0_usize, |at| at.saturating_add(1));
         before.get(start ..).map(str::to_owned)
     };
-    // The ports that bind, `t` in `t : pi+ (x : Tm) . Tm`, and the operations
-    // declaring them, `let` in `oper let : (u : Tm, t : pi+ …) --> Tm`, by
-    // name; and the bytes of every rule a theory writes, `rule` to its `;`.
+    // The ports that bind or abstract, `t` in `t : pi+ (x : Tm) . Tm` and `p`
+    // in `p : bind (a : Name) . Proc`, and the operations declaring them, `let`
+    // in `oper let : (u : Tm, t : pi+ …) --> Tm`, by name; and the bytes of
+    // every rule a theory writes, `rule` to its `;`.
     let binding: BTreeSet<String> = source
         .match_indices(": pi+")
+        .chain(source.match_indices(": bind"))
         .flat_map(|(at, _)| {
             let before = source.get(.. at).unwrap_or("");
             let operation = before.rfind("oper ").and_then(|oper| {

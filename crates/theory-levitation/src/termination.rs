@@ -483,7 +483,7 @@ pub fn path_greater(
         |node: &Node<'_>| matches!(node.symbol, Symbol::Var(name) if metavariables.contains(name));
     let mut table: Table<Comparison> = Table::new(&above, &below);
     let precedes = |above: Symbol<'_>, below: Symbol<'_>| match (above, below) {
-        (Symbol::Op(_), Symbol::Ctor(_) | Symbol::Results) => true,
+        (Symbol::Op(_), Symbol::Ctor(_) | Symbol::Results | Symbol::Abs) => true,
         (Symbol::Op(left), Symbol::Op(right)) => precedence.rank(left) > precedence.rank(right),
         _ => false,
     };
@@ -531,7 +531,7 @@ pub fn path_greater(
                             .arguments()
                             .all(|argument| covers(&table, node, row, argument))
                     },
-                    Symbol::Ctor(_) | Symbol::Op(_) | Symbol::Results => {
+                    Symbol::Ctor(_) | Symbol::Op(_) | Symbol::Results | Symbol::Abs => {
                         other
                             .arguments()
                             .all(|argument| covers(&table, node, row, argument))
@@ -556,9 +556,9 @@ pub fn path_greater(
 /// # Specification
 /// - ensures: positive exactly when some argument of `big` holds an embedding
 ///   of `small`, or the two apply one symbol — one constructor, one operation,
-///   a results tuple, an instantiation each, or a variable each — to as many
-///   arguments, and each argument of `small` embeds in the argument of `big` at
-///   its place.
+///   a results tuple, an abstraction, whatever atom each names, an
+///   instantiation each, or a variable each — to as many arguments, and each
+///   argument of `small` embeds in the argument of `big` at its place.
 /// - ensures: every term embeds in itself.
 /// - panics: none.
 /// - intension: one table of every node pair of the two terms, filled from the
@@ -628,7 +628,9 @@ fn metavariables<'term>(nodes: &[Node<'term>]) -> BTreeSet<&'term Name>
         .iter()
         .filter_map(|node| match node.symbol {
             Symbol::Inst(name) => Some(name),
-            Symbol::Var(_) | Symbol::Ctor(_) | Symbol::Op(_) | Symbol::Results => None,
+            Symbol::Var(_) | Symbol::Ctor(_) | Symbol::Op(_) | Symbol::Results | Symbol::Abs => {
+                None
+            },
         })
         .collect()
 }
@@ -647,6 +649,9 @@ enum Symbol<'term>
     Results,
     /// A metavariable's instantiation.
     Inst(&'term Name),
+    /// An atom's abstraction: two abstractions are one symbol whatever atoms
+    /// they name, as the canonical form at admission reads them.
+    Abs,
 }
 
 /// One node of a term read breadth first: what it applies, how many
@@ -690,6 +695,7 @@ fn flatten(term: &FreeTerm) -> Vec<Node<'_>>
             TermView::Op { name, args } => (Symbol::Op(name), Some(args)),
             TermView::Results { args } => (Symbol::Results, Some(args)),
             TermView::Inst { name, args } => (Symbol::Inst(name), Some(args)),
+            TermView::Abs { args, .. } => (Symbol::Abs, Some(args)),
         };
         let arity = arguments.map_or(0, |arguments| {
             let count = arguments.len();

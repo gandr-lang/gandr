@@ -64,7 +64,7 @@
 //!
 //! # One sort, chained
 //!
-//! `Theory` is one self-recursive sort of twenty-four constructors, in tag
+//! `Theory` is one self-recursive sort of twenty-five constructors, in tag
 //! order:
 //!
 //! | tag | constructor | fields |
@@ -93,6 +93,7 @@
 //! | 21 | `Inst` | a metavariable's name, its arguments |
 //! | 22 | `Atom` | as `Sort`, for an atom sort |
 //! | 23 | `Abstracted` | as `Bound`, its atom binders before its binders |
+//! | 24 | `Abs` | an atom's name, its body as a chain of one argument |
 //!
 //! Every list a presentation holds is a chain of its member constructor ended
 //! by `End`, and every name is a `String` field; an unnamed port carries the
@@ -155,6 +156,14 @@
 //! and a sort's index port abstracts nothing, so the value of a port has one
 //! spelling; [`crate::check_desc`] refuses an abstraction over a sort that is
 //! not an atom sort.
+//!
+//! A rule term writes `bind a . t` as an argument at such a port: an `Abs`
+//! node with the atom's name and its body as a chain of one argument, kept as
+//! written, as a rule's variables are. Matching, the critical pairs and the
+//! kernel's reading compare abstractions by depth rather than by atom
+//! ([`FreeTerm::canonical_atoms`]), so a rule that renames an abstraction's
+//! atom is the same rule; [`crate::check_desc`] refuses an abstraction where
+//! no port abstracts as many atoms.
 //!
 //! # The shape parameter
 //!
@@ -301,7 +310,7 @@ use crate::wellformed::derive_cell_var_meta;
 
 /// The names of `Theory`'s constructors, in tag order: the names a program that
 /// matches on a presentation writes.
-pub const THEORY_CONSTRUCTORS: [&str; 24] = [
+pub const THEORY_CONSTRUCTORS: [&str; 25] = [
     "Presents",
     "End",
     "Sort",
@@ -326,11 +335,12 @@ pub const THEORY_CONSTRUCTORS: [&str; 24] = [
     "Inst",
     "Atom",
     "Abstracted",
+    "Abs",
 ];
 
 /// Each constructor of `Theory`, in tag order, with its count of `String`
 /// fields, which come first, and its count of recursive fields after them.
-const CONSTRUCTORS: [(&str, usize, usize); 24] = [
+const CONSTRUCTORS: [(&str, usize, usize); 25] = [
     (THEORY_CONSTRUCTORS[0], 0, 3),
     (THEORY_CONSTRUCTORS[1], 0, 0),
     (THEORY_CONSTRUCTORS[2], 1, 2),
@@ -355,6 +365,7 @@ const CONSTRUCTORS: [(&str, usize, usize); 24] = [
     (THEORY_CONSTRUCTORS[21], 1, 1),
     (THEORY_CONSTRUCTORS[22], 1, 2),
     (THEORY_CONSTRUCTORS[23], 2, 4),
+    (THEORY_CONSTRUCTORS[24], 1, 1),
 ];
 
 /// One constructor of `Theory`, by its tag.
@@ -410,6 +421,8 @@ enum Tag
     /// A port under its atom abstractions and its binders, and the rest of
     /// the ports.
     Abstracted,
+    /// An atom's abstraction over its body.
+    Abs,
 }
 
 impl Tag
@@ -446,11 +459,12 @@ impl Tag
             Self::Inst => 21,
             Self::Atom => 22,
             Self::Abstracted => 23,
+            Self::Abs => 24,
         })
     }
 }
 
-/// The description of `Theory`, one data sort of twenty-four constructors.
+/// The description of `Theory`, one data sort of twenty-five constructors.
 ///
 /// The constructors stand in the order the module documentation tables; every
 /// name is a `String` field and every other field a recursive occurrence.
@@ -459,8 +473,8 @@ impl Tag
 /// - ensures: no parameters, one data sort `Theory`, and the constructors
 ///   `Presents`, `End`, `Sort`, `Oper`, `Port`, `Rule`, `Var`, `App`, `Con`,
 ///   `Tuple`, `Arg`, `Representable`, `Bound`, `Shape`, `Face`, `Obs`,
-///   `Turned`, `Derived`, `Rank`, `Const`, `Nested`, `Inst`, `Atom` and
-///   `Abstracted` in that order, each at the result sort `Theory`; a
+///   `Turned`, `Derived`, `Rank`, `Const`, `Nested`, `Inst`, `Atom`,
+///   `Abstracted` and `Abs` in that order, each at the result sort `Theory`; a
 ///   constructor's `String` fields carry `grade` and come first, three for
 ///   `Derived`, two for `Port`, `Bound`, `Shape`, `Face`, `Rank` and
 ///   `Abstracted` and one for every other constructor that names something, and
@@ -1586,9 +1600,9 @@ quenchant_shape::reason_enum! {
 ///
 /// # Specification
 /// - ensures: a variable is `Var`, an operation application `App`, a
-///   constructor application `Con`, a results tuple `Tuple` and a
-///   metavariable's instantiation `Inst`, each application over the argument
-///   chain of its arguments in order.
+///   constructor application `Con`, a results tuple `Tuple`, a metavariable's
+///   instantiation `Inst` and an atom's abstraction `Abs`, each application
+///   over the argument chain of its arguments in order.
 /// - panics: none.
 /// - executable: none — the coding is observed by reading it back, which the
 ///   round trip of [`TheoryValue::decode`] does.
@@ -1615,6 +1629,7 @@ fn term(root: TermNode<'_>) -> DescValue
                         (Tag::Tuple, Maybe::Absent(applied::Absent::Tuple), args)
                     },
                     TermView::Inst { name, args } => (Tag::Inst, Maybe::Present(name), args),
+                    TermView::Abs { atom, args } => (Tag::Abs, Maybe::Present(atom), args),
                 };
                 pending.push(Build::Apply(tag, head, args.len()));
                 let first = pending.len();
@@ -2194,6 +2209,8 @@ enum Applied
     Tuple,
     /// A metavariable's instantiation, by the metavariable's name.
     Instantiation(Name),
+    /// An atom's abstraction over its one body, by the atom's name.
+    Abstraction(Name),
 }
 
 /// One pending step of [`read_term`].
@@ -2208,11 +2225,13 @@ enum Read<'value>
 /// The free term the value at `root` codes.
 ///
 /// # Specification
-/// - ensures: the inverse of [`term`]: `Var`, `App`, `Con`, `Tuple` and `Inst`
-///   read back to a variable, an operation application, a constructor
-///   application, a results tuple and a metavariable's instantiation.
-/// - fails: [`TheoryFault::Misplaced`] for any other constructor; as
-///   [`expect`], [`text`] and [`argument_nodes`] beneath.
+/// - ensures: the inverse of [`term`]: `Var`, `App`, `Con`, `Tuple`, `Inst` and
+///   `Abs` read back to a variable, an operation application, a constructor
+///   application, a results tuple, a metavariable's instantiation and an atom's
+///   abstraction.
+/// - fails: [`TheoryFault::Misplaced`] for any other constructor, and for an
+///   `Abs` whose chain is not one body; as [`expect`], [`text`] and
+///   [`argument_nodes`] beneath.
 /// - panics: none.
 /// - executable: none — the reading is observed by coding it again, which the
 ///   round trip of [`TheoryValue::decode`] does.
@@ -2257,11 +2276,19 @@ fn read_term(root: Node<'_>) -> Result<FreeTerm, TheoryFault>
                     let head = text(head)?;
                     (Applied::Instantiation(head), chain)
                 }
+                else if node.ctor == Tag::Abs.constructor() {
+                    let [atom, chain] = expect::<2>(node, Tag::Abs)?;
+                    let atom = text(atom)?;
+                    (Applied::Abstraction(atom), chain)
+                }
                 else {
                     return Err(TheoryFault::Misplaced(node.ctor));
                 };
                 let chain = nested(chain)?;
                 let arguments = argument_nodes(chain)?;
+                if matches!(applied, Applied::Abstraction(_)) && arguments.len() != 1 {
+                    return Err(TheoryFault::Misplaced(Tag::Abs.constructor()));
+                }
                 pending.push(Read::Apply(applied, arguments.len()));
                 pending.extend(arguments.into_iter().rev().map(Read::Visit));
             },
@@ -2273,6 +2300,13 @@ fn read_term(root: Node<'_>) -> Result<FreeTerm, TheoryFault>
                     Applied::Constructor(head) => FreeTerm::ctor(head, arguments),
                     Applied::Tuple => FreeTerm::results(arguments),
                     Applied::Instantiation(head) => FreeTerm::inst(head, arguments),
+                    Applied::Abstraction(atom) => {
+                        let mut arguments = arguments.into_iter();
+                        match (arguments.next(), arguments.next()) {
+                            (Some(body), None) => FreeTerm::abs(atom, body),
+                            _ => return Err(TheoryFault::Misplaced(Tag::Abs.constructor())),
+                        }
+                    },
                 });
             },
         }

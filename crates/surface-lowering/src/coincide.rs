@@ -1332,7 +1332,10 @@ fn orient_derived<G>(
                     }
                 },
                 TermView::Ctor { args, .. } => pending.extend(args),
-                TermView::Op { .. } | TermView::Results { .. } | TermView::Inst { .. } => {
+                TermView::Op { .. }
+                | TermView::Results { .. }
+                | TermView::Inst { .. }
+                | TermView::Abs { .. } => {
                     return false;
                 },
             }
@@ -1830,9 +1833,11 @@ fn spell(term: &FreeTerm) -> String
                 format!("#{{{joined}}}")
             }
         },
-        TermView::Var(_) | TermView::Ctor { .. } | TermView::Op { .. } | TermView::Inst { .. } => {
-            term.to_string()
-        },
+        TermView::Var(_)
+        | TermView::Ctor { .. }
+        | TermView::Op { .. }
+        | TermView::Inst { .. }
+        | TermView::Abs { .. } => term.to_string(),
     }
 }
 

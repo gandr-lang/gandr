@@ -437,6 +437,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "abort_expression",
     "access_expression",
     "become_expression",
+    "bind_expression",
     "break_expression",
     "break_value_expression",
     "capability_type",

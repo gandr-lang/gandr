@@ -35,15 +35,19 @@
 //! in step 4 or is refused by name in step 3.
 //!
 //! The terms are first order but for instantiations. A symbol is an
-//! operation application, a constructor application or a results tuple,
-//! interned by its kind, its name and its argument count; two symbols are one
-//! exactly when all three agree. A left side may repeat a variable, so
-//! matching compares the subterms a repeated variable binds and the critical
-//! pairs come from unification with an occurs check. A rule that instantiates
-//! a variable — a second-order rule, `let(u, t) ==> t(u)` — substitutes under
-//! a binder no first-order term marks, so it rewrites no term the decision
-//! normalizes; the orthogonality step 4 asks of it is what keeps the critical
-//! pair lemma in reach for patterns (Mayr and Nipkow).
+//! operation application, a constructor application, a results tuple or an
+//! atom's abstraction, interned by its kind, its name and its argument count;
+//! two symbols are one exactly when all three agree. An abstraction is
+//! interned without the atom it names, so its symbol is the canonical
+//! re-minting the checker admits it under: a rule that renames the atom is the
+//! same rule. The order and matching read it as a constructor of one field.
+//! A left side may repeat a variable, so matching compares the subterms a
+//! repeated variable binds and the critical pairs come from unification with
+//! an occurs check. A rule that instantiates a variable — a second-order rule,
+//! `let(u, t) ==> t(u)` — substitutes under a binder no first-order term
+//! marks, so it rewrites no term the decision normalizes; the orthogonality
+//! step 4 asks of it is what keeps the critical pair lemma in reach for
+//! patterns (Mayr and Nipkow).
 //!
 //! # References
 //!
@@ -89,7 +93,7 @@ pub const PRESENTATION_FUEL: u64 = 1 << 26;
 /// Each constructor of the presentation code, in tag order: its count of
 /// string fields, which come first, and its count of recursive fields after
 /// them.
-pub const PRESENTATION_CODE: [(usize, usize); 24] = [
+pub const PRESENTATION_CODE: [(usize, usize); 25] = [
     (0, 3),
     (0, 0),
     (1, 2),
@@ -114,6 +118,7 @@ pub const PRESENTATION_CODE: [(usize, usize); 24] = [
     (1, 1),
     (1, 2),
     (2, 4),
+    (1, 1),
 ];
 
 /// The presentation code's constructor tags this module reads.
@@ -143,6 +148,8 @@ mod tag
     pub(super) const RANK: usize = 18;
     /// A variable's instantiation.
     pub(super) const INST: usize = 21;
+    /// An atom's abstraction over its body.
+    pub(super) const ABS: usize = 24;
 }
 
 /// Whether a data declaration's constructor table is the presentation code's.
@@ -2144,6 +2151,9 @@ enum Class
     Constructor,
     /// A results tuple.
     Tuple,
+    /// An atom's abstraction, its atom's name not part of its key, so two
+    /// abstractions that differ only in the atom they name are one symbol.
+    Abstraction,
 }
 
 /// What a term node over an argument chain applies.
@@ -2316,7 +2326,8 @@ impl<'arena> Reader<'arena>
                     (Class::Operation, Some(name)) => {
                         SymbolKind::Operation(self.ranks.get(name).copied().unwrap_or_default())
                     },
-                    (Class::Operation, None) | (Class::Constructor | Class::Tuple, _) => {
+                    (Class::Operation, None)
+                    | (Class::Constructor | Class::Tuple | Class::Abstraction, _) => {
                         SymbolKind::Constructor
                     },
                 };
@@ -2431,8 +2442,8 @@ impl<'arena> Reader<'arena>
     ///
     /// # Specification
     /// - ensures: [`Some`] when every node reached is a `Var`, or an `App`,
-    ///   `Con`, `Tuple` or `Inst` whose arguments are an `Arg` chain ended by
-    ///   `End`; a variable, instantiated or not, takes its place among
+    ///   `Con`, `Tuple`, `Inst` or `Abs` whose arguments are an `Arg` chain
+    ///   ended by `End`; a variable, instantiated or not, takes its place among
     ///   `buffers.variables`, appended when new.
     /// - panics: none.
     /// - executable: none — [`TheoryRules::read`] carries the predicate.
@@ -2469,6 +2480,10 @@ impl<'arena> Reader<'arena>
                     chain,
                 ),
                 (tag::TUPLE, &[chain]) => (Applied::Symbol(Class::Tuple, None), chain),
+                (tag::ABS, &[name, chain]) => {
+                    self.text(name)?;
+                    (Applied::Symbol(Class::Abstraction, None), chain)
+                },
                 (tag::INST, &[name, chain]) => (
                     Applied::Instance(variable(self.text(name)?, buffers)?),
                     chain,
