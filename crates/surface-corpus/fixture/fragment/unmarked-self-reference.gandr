@@ -15,20 +15,20 @@ def rec bare(n : Nat) -> -F Nat {
 @[ checks ]
 def rec marked(n : Nat) -> -F Nat {
   case n {
-    Zero => return n,
+    Zero => n,
     Succ(p) => become marked[<](p)
   }
 }
 
 @[ checks ]
-def rec idle(n : Nat) -> -F Nat { return n }
+def rec idle(n : Nat) -> -F Nat { n }
 
 /// A parameter written before the staged one may vary across the call: it is
 /// passed to the fixpoint as a leading argument (#626).
 @[ checks ]
 def rec varied(n : Nat, m : Nat) -> -F Nat {
   case m {
-    Zero => return n,
+    Zero => n,
     Succ(p) => become varied[<](p, p)
   }
 }

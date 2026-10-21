@@ -6,7 +6,7 @@ data Nat : Type {
 
 @[ checks ]
 def tick(n : Nat) -> -F Unit {
-  return unit
+  unit
 }
 
 @[ checks ]
@@ -17,7 +17,7 @@ def spin(n : Nat) -> -F Nat {
 @[ checks ]
 def first(n : Nat) -> -F Nat {
   run m <- loop { break(Succ(n)) } ;
-  return Succ(m)
+  Succ(m)
 }
 
 @[ runs("Succ(Succ(Zero))") ]
@@ -32,7 +32,7 @@ def pick(n : Nat) -> -F Nat {
       Succ(p) => break(p),
     }
   } ;
-  return Succ(m)
+  Succ(m)
 }
 
 @[ runs("Succ(Succ(Zero))") ]
@@ -65,7 +65,7 @@ def hand_one = thunk { become hand(Succ(Zero)) } ;
 @[ checks ]
 def until_done(n : Integer) -> -F Integer {
   while n > 0 { return n } ;
-  return 0
+  0
 }
 
 @[ runs("3") ]
@@ -84,7 +84,7 @@ def sift(n : Nat) -> -F Nat {
       Succ(p) => { tick(p); continue; },
     }
   } ;
-  return n
+  n
 }
 
 @[ runs("Zero") ]
@@ -135,7 +135,7 @@ def find_succ(xs : List(Nat), otherwise : Nat) -> -F Nat {
       Succ(p) => return p,
     }
   } ;
-  return otherwise
+  otherwise
 }
 
 /// The search returns from the second cell (#283).
@@ -160,5 +160,5 @@ def for_each(xs : List(Nat)) -> -F Unit {
 @[ refuses("TypeMismatch") ]
 def for_value(xs : List(Nat)) -> -F Nat {
   run m <- for x in xs { break(x) } ;
-  return m
+  m
 }

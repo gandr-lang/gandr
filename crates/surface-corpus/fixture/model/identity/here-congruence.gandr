@@ -29,5 +29,5 @@ def here_two_up = here(here(refl_two)) ;
 /// A parameter does not unfold to `here(2)`.
 @[ refuses("EndpointMismatch") ]
 def apart(q: Path(Integer, 2, 2)) -> -F Path(Path(Integer, 2, 2), q, here(2)) {
-  return here(q)
+  here(q)
 }

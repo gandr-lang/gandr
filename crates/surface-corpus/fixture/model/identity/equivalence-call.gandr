@@ -10,7 +10,7 @@ import "./equivalence.gandr" ;
 /// The quasi-inverse handed back unchanged.
 @[ checks ]
 def kept(a : Type, b : Type, i : a ≅ b) -> -F (a ≅ b) {
-  return i
+  i
 }
 
 /// A quasi-inverse a call returns is bi-invertible, split as `isoToEquiv`

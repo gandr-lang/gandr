@@ -11,7 +11,7 @@ data Box : Type {
 /// The constructor as a function.
 @[ checks ]
 def wrap(x: Integer) -> -F Box {
-  return Wrap(x)
+  Wrap(x)
 }
 
 /// A path between integers carried along the wrapper, to the boxes around

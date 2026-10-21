@@ -13,8 +13,8 @@ import "./circle-base.gandr" ;
 @[ checks ]
 def rec doubleNat(n : Nat) -> -F Nat {
   case n {
-    Zero => return Zero,
-    Succ(p) => { run d <- doubleNat[<](p); return Succ(Succ(d)) }
+    Zero => Zero,
+    Succ(p) => { run d <- doubleNat[<](p); Succ(Succ(d)) }
   }
 }
 
@@ -39,7 +39,7 @@ def turned_back = here(Z) ;
 /// and the rule cancels around it.
 @[ checks ]
 def turn_unturn(n : Int) -> -F Path(Int, up(down(n)), n) {
-  return here(n)
+  here(n)
 }
 
 /// Reading the inner call cancels a step; it does not add one.

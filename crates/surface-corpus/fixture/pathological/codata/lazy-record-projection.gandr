@@ -5,7 +5,7 @@ def wrong_side(m : +U &{get : -F Integer, put : -F String}) -> -F Integer {
 
 @[ refuses("TypeMismatch") ]
 def swapped(n : Integer) -> &{get : -F Integer, put : -F String} {
-  &{.get => return "s", .put => return n}
+  &{.get => "s", .put => n}
 }
 
 @[ refuses("UnresolvedName") ]

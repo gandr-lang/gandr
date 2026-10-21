@@ -12,7 +12,7 @@ import "../../model/data/vectors.gandr" ;
 /// is empty.
 @[ refuses("TypeMismatch") ]
 def overstated() -> -F Vec(Integer, Succ(Succ(Zero))) {
-  return VCons(Zero, 3, (VNil : Vec(Integer, Zero)))
+  VCons(Zero, 3, (VNil : Vec(Integer, Zero)))
 }
 
 /// A family whose constructor states its element where its length goes.
@@ -26,7 +26,7 @@ data Misindexed(a : Type) : Nat -> Type {
 @[ refuses("IndexedCase") ]
 def size(v : Vec(Integer, Succ(Zero))) -> -F Nat {
   case v {
-    VNil => return Zero,
-    VCons(n, head, tail) => return Succ(n)
+    VNil => Zero,
+    VCons(n, head, tail) => Succ(n)
   }
 }

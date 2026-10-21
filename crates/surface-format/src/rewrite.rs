@@ -37,6 +37,8 @@ use crate::leaf::Leaf;
 use crate::leaf::Material;
 use crate::leaf::Owner;
 use crate::leaf::copied;
+use crate::tail::Exit;
+use crate::tail::Tails;
 
 #[cfg(test)]
 mod tests;
@@ -77,6 +79,10 @@ pub enum RewriteName
     /// A map's action on a path: `transport(\y. Path(B, f(a), f(y)), p,
     /// here(f(a)))` and `cong(f, p)`.
     PathAction,
+    /// A tail's exit: `return v` where a path through a body ends, over a
+    /// value, and `v`; only the sugared form moves it, leaving out the
+    /// keyword the lowering infers.
+    TailReturn,
 }
 
 impl fmt::Display for RewriteName
@@ -101,6 +107,7 @@ impl fmt::Display for RewriteName
             Self::PathComposite => "path-composite",
             Self::PathInverse => "path-inverse",
             Self::PathAction => "path-action",
+            Self::TailReturn => "tail-return",
         })
     }
 }
@@ -144,7 +151,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 18] = [
+pub const REWRITES: [Rewrite; 19] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -287,6 +294,14 @@ pub const REWRITES: [Rewrite; 18] = [
         mold: MoldName("call_expression"),
         from: Spelling("cong(f, p)"),
         to: Spelling("transport(\\y. Path(B, f(a), f(y)), p, here(f(a)))"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TailReturn,
+        direction: Direction::Sugar,
+        mold: MoldName("return_expression"),
+        from: Spelling("return v"),
+        to: Spelling("v"),
         enabled: Enabled::On,
     },
 ];
@@ -587,6 +602,8 @@ struct Respelling<'run, 'source>
     refused: &'run [ByteSpan],
     /// The motive of each path composite, by its span.
     motives: &'source Motives,
+    /// The `return` forms written as their value.
+    tails: &'source Tails,
     /// Each nested form respelled, by position.
     spelled: BTreeMap<NodeIndex, Spelled<'source>>,
     /// Each node's extent: its first leaf's start to its last leaf's end.
@@ -657,7 +674,8 @@ enum Visit
 }
 
 /// What one formatting's rewrites read: the rewrites chosen, the spans they
-/// do not enter, and the motives of the path composites the lowering derived.
+/// do not enter, the motives of the path composites the lowering derived and
+/// the tails whose `return` it would infer.
 #[derive(Clone, Copy, Debug)]
 pub struct Rewrites<'run, 'source>
 {
@@ -668,6 +686,8 @@ pub struct Rewrites<'run, 'source>
     pub withdrawn: &'run [ByteSpan],
     /// The motive of each path composite, by its span.
     pub motives: &'source Motives,
+    /// The `return` forms written as their value.
+    pub tails: &'source Tails,
 }
 
 /// The top-level form `form` of `tree`, whose leaves are `leaves`, respelled
@@ -714,6 +734,7 @@ pub fn respell<'source>(
         chosen: rewrites.chosen,
         refused: rewrites.withdrawn,
         motives: rewrites.motives,
+        tails: rewrites.tails,
         spelled: BTreeMap::new(),
         extents: BTreeMap::new(),
         parents: BTreeMap::new(),
@@ -1455,6 +1476,13 @@ impl<'source> Respelling<'_, 'source>
                 self.transport(&mut out, extent, path, Moved::Derived)?;
                 Band::Atom
             },
+            (RewriteName::TailReturn, Direction::Sugar) => {
+                if self.tails.exit(extent) != Exit::Inferred {
+                    return None;
+                }
+                self.unreturned(&mut out, parts)?
+            },
+            (RewriteName::TailReturn, Direction::Desugar) => return None,
         };
         self.changed = Changed::Yes;
         Some(Spelled {
@@ -1731,6 +1759,34 @@ impl<'source> Respelling<'_, 'source>
         out.gap(Spelling(" "));
         out.place(&self.operand(body), Band::Atom);
         Some(())
+    }
+
+    /// Write the `return` whose parts are `parts` as the value it returns,
+    /// answering the value's band, or nothing when a comment stands among its
+    /// parts.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unreturned(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<Band>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let (owns, operands) = split(parts);
+        let (&[keyword], &[value]) = (owns.as_slice(), operands.as_slice())
+        else {
+            return None;
+        };
+        if <&str>::from(keyword) != "return" {
+            return None;
+        }
+        let operand = self.operand(value);
+        out.place(&operand, Band::Loose);
+        Some(operand.band)
     }
 
     /// Write the thunk of arrows the value-function alias whose parts are
@@ -2097,7 +2153,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 27] = [
+const RULES: [MoldName; 28] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -2125,6 +2181,7 @@ const RULES: [MoldName; 27] = [
     MoldName("binary_expression.then"),
     MoldName("send_session_type"),
     MoldName("receive_session_type"),
+    MoldName("return_expression"),
 ];
 
 /// `#{`.

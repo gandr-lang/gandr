@@ -6,8 +6,8 @@
 @[ checks ]
 def not(b : Unit + Unit) -> -F (Unit + Unit) {
   case b {
-    +{.0 = u} => return +{.1 = u},
-    +{.1 = u} => return +{.0 = u}
+    +{.0 = u} => +{.1 = u},
+    +{.1 = u} => +{.0 = u}
   }
 }
 
@@ -21,7 +21,7 @@ def not_not(b : Unit + Unit) -> -F (Unit + Unit) {
 /// The identity on the booleans.
 @[ checks ]
 def same(b : Unit + Unit) -> -F (Unit + Unit) {
-  return b
+  b
 }
 
 /// Negation twice is the identity: they agree at both booleans.

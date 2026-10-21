@@ -14,7 +14,7 @@ data Either(a : Type, b : Type) : Type {
 @[ checks ]
 def from_left() -> -F Integer {
   case (Left(5) : Either(Integer, String)) {
-    Left(x) => return x,
-    Right(y) => return 0
+    Left(x) => x,
+    Right(y) => 0
   }
 }

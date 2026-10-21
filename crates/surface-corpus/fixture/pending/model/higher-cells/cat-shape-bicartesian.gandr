@@ -15,7 +15,7 @@ data UnitHom(a : UnitOb, b : UnitOb) : Type {
 }
 
 def unit_id(a : UnitOb) -> -F UnitHom(a, a) {
-  return UnitId
+  UnitId
 }
 
 data PairOb(a : Type, b : Type) : Type {
@@ -38,7 +38,7 @@ data ProdHom(a : PairOb(Integer, String), b : PairOb(Integer, String)) : Type {
 
 def prod_id(x : PairOb(Integer, String)) -> -F ProdHom(x, x) {
   case x {
-    Pair(l, r) => return PairHom(0, 0)
+    Pair(l, r) => PairHom(0, 0)
   }
 }
 

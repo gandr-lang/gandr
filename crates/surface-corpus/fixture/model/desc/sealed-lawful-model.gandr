@@ -15,11 +15,11 @@ theory Unital {
 module Sealed :> Model(Unital) {
   type M = Integer;
 
-  def e() -> -F Integer { return 0 }
+  def e() -> -F Integer { 0 }
 
-  def mul(x : Integer, y : Integer) -> -F Integer { return y }
+  def mul(x : Integer, y : Integer) -> -F Integer { y }
 
   /// The unit law holds by computation: `mul(e(), x)` returns `x`.
   @[ checks ]
-  def unitL(x : Integer) -> -F Path(Integer, mul(e(), x), x) { return here(x) }
+  def unitL(x : Integer) -> -F Path(Integer, mul(e(), x), x) { here(x) }
 }

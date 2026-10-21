@@ -22,29 +22,29 @@ data Int : Type {
 /// The winding number: a loop counts one up, its inverse one down.
 def rec wind(p : Path(Circle, Base, Base)) -> -F Int {
   case p {
-    here => return Z,
-    loop ∷ q => { run n <- wind[<](q); return S(n) },
-    back(loop) ∷ q => { run n <- wind[<](q); return P(n) }
+    here => Z,
+    loop ∷ q => { run n <- wind[<](q); S(n) },
+    back(loop) ∷ q => { run n <- wind[<](q); P(n) }
   }
 }
 
 /// Spinning: a successor is a loop, a predecessor its inverse.
 def rec spin(n : Int) -> -F Path(Circle, Base, Base) {
   case n {
-    Z => return here(Base),
-    S(x) => { run c <- spin[<](x); return loop ∷ c },
-    P(x) => { run c <- spin[<](x); return back(loop) ∷ c }
+    Z => here(Base),
+    S(x) => { run c <- spin[<](x); loop ∷ c },
+    P(x) => { run c <- spin[<](x); back(loop) ∷ c }
   }
 }
 
 /// One loop more.
 def loopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
-  return loop ∷ p
+  loop ∷ p
 }
 
 /// One inverse loop more.
 def unloopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
-  return back(loop) ∷ p
+  back(loop) ∷ p
 }
 
 /// A forged section: the loop arm answers with the rest's path unchanged,
@@ -58,7 +58,7 @@ def rec forged(p : Path(Circle, Base, Base)) -> -F Path(
   p
 ) {
   case p {
-    here => return here(here(Base)),
+    here => here(here(Base)),
     loop ∷ q => become forged[<](q),
     back(loop) ∷ q => { run ih <- forged[<](q); become cong(unloopOn, ih) }
   }
@@ -72,8 +72,8 @@ def rec forged(p : Path(Circle, Base, Base)) -> -F Path(
 @[ refuses("RuleNotRespected") ]
 def rec rewound(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), p, p) {
   case p {
-    here => return here(here(Base)),
+    here => here(here(Base)),
     loop ∷ q => { run ih <- rewound[<](q); become cong(loopOn, ih) },
-    back(loop) ∷ q => return here(back(loop) ∷ q)
+    back(loop) ∷ q => here(back(loop) ∷ q)
   }
 }

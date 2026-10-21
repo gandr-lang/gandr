@@ -26,7 +26,7 @@ module SetoidCat : Model(CatShape) {
 
   /// The identity function at a type.
   @[ runs("fn (a) { fn (b) { b } }") ]
-  def ident(t : Type, x : t) -> -F t { return x }
+  def ident(t : Type, x : t) -> -F t { x }
 
   /// Composition of two functions, applied.
   @[ runs("fn (a) { fn (b) { fn (c) { fn (d) { fn (e) { fn (f) { run g <- d(f) ; e(g) } } } } } }") ]
@@ -45,7 +45,7 @@ module SetoidCat : Model(CatShape) {
   /// The interface's identity runs to a function that applies `ident`, which
   /// the signature hides, so the run is opaque at the model.
   @[ runs("⟨opaque at SetoidCat⟩ : (a : Type) => a => a") ]
-  def id(t : Type) -> -F (t => t) { return thunk { become ident(t) } }
+  def id(t : Type) -> -F (t => t) { thunk { become ident(t) } }
 
   /// Composition likewise runs through the hidden `compose`.
   @[ runs("⟨opaque at SetoidCat⟩ : (a : Type, b : Type, c : Type, a => b, b => c) => a => c") ]
@@ -56,7 +56,7 @@ module SetoidCat : Model(CatShape) {
     f : t => u,
     g : u => v
   ) -> -F (t => v) {
-    return thunk { become compose(t, u, v, f, g) }
+    thunk { become compose(t, u, v, f, g) }
   }
 
   /// The left unit law, by conversion.
@@ -66,7 +66,7 @@ module SetoidCat : Model(CatShape) {
     comp(p, p, q, id(p), f),
     f
   ) {
-    return here(f)
+    here(f)
   }
 
   /// The right unit law, by conversion.
@@ -76,7 +76,7 @@ module SetoidCat : Model(CatShape) {
     comp(p, q, q, f, id(q)),
     f
   ) {
-    return here(f)
+    here(f)
   }
 
   /// Associativity, by conversion through `compose`.
@@ -94,7 +94,7 @@ module SetoidCat : Model(CatShape) {
     comp(p, r, s, comp(p, q, r, f, g), h),
     comp(p, q, s, f, comp(q, r, s, g, h))
   ) {
-    return here(thunk { become compose(p, q, s, f, thunk { become compose(q, r, s, g, h) }) })
+    here(thunk { become compose(p, q, s, f, thunk { become compose(q, r, s, g, h) }) })
   }
 
   /// The left unit law stated by the right one, whose type converts to it.

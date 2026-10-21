@@ -9,5 +9,5 @@ import "./syntax.gandr" ;
 /// under the lifted substitution.
 @[ checks ]
 def subLam(t : Term, s : Env) -> -F Path(Term, subst(Lam(t), s), Lam(subst(t, Lift(s)))) {
-  return here(Lam(subst(t, Lift(s))))
+  here(Lam(subst(t, Lift(s))))
 }

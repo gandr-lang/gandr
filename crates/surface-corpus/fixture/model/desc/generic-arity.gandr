@@ -19,7 +19,7 @@ theory Monoid {
 def rec operations(chain : Theory) -> -F Integer {
   case chain {
     Oper(name, inputs, outputs, rest) => { run r <- operations[<](rest); return r + 1 },
-    _ => return 0
+    _ => 0
   }
 }
 
@@ -29,7 +29,7 @@ def rec operations(chain : Theory) -> -F Integer {
 def arity(presented : Theory) -> -F Integer {
   case presented {
     Presents(sorts, opers, rules) => become operations(opers),
-    _ => return 0
+    _ => 0
   }
 }
 
@@ -65,7 +65,7 @@ def typed = thunk { become arity(Monoid) } ;
 /// its two occurrences are one type.
 @[ checks ]
 def kept(presented : Theory, n : counted_at(presented)) -> -F counted_at(presented) {
-  return n
+  n
 }
 
 /// Text is no `Integer`, so it does not inhabit `counted_at(Monoid)`.

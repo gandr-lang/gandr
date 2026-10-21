@@ -19,13 +19,13 @@ data One : Type {
 /// Both points to the one.
 @[ checks ]
 def collapse(x : Two) -> -F One {
-  return Only
+  Only
 }
 
 /// The one point back to the first.
 @[ checks ]
 def pick(u : One) -> -F Two {
-  return Yes
+  Yes
 }
 
 /// Every point of `One` is `Only`, by induction on it.

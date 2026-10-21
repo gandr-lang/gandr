@@ -22,7 +22,7 @@ def remainder = int.mod(-7, 2);
 @[ checks ]
 def quotientOf(c : Integer) -> -F Integer {
   run lead <- int.div(c, 64);
-  return lead
+  lead
 }
 
 /// A list's length.

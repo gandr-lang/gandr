@@ -3,7 +3,7 @@ def leak() -> -F Cap {exit} {
   handle c : Proc {
     return c
   } with {
-    pure(x) => return x,
+    pure(x) => x,
     oper exit(code, k) => become k(unit)
   }
 }

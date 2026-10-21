@@ -28,7 +28,7 @@ module Counted : Model(Counting) {
   def next(n : Integer) -> -F Integer { become n + 1 }
   /// The count itself.
   @[ checks ]
-  def read(n : Integer) -> -F Integer { return n }
+  def read(n : Integer) -> -F Integer { n }
 }
 
 /// Two steps from the start, read out through the model's operations.

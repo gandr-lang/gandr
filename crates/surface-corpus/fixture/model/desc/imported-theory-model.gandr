@@ -9,7 +9,7 @@ import "./second-order-signatures.gandr" ;
 module Counting : Model(Nat) {
   type Nat = Integer;
 
-  def zero() -> -F Integer { return 0 }
+  def zero() -> -F Integer { 0 }
 
   def succ(n : Integer) -> -F Integer { return n + 1 }
 

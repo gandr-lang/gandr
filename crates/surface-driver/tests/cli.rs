@@ -713,7 +713,8 @@ fn fmt_rewrites_what_check_reports()
 /// #791: `fmt --form sugared` sugars a declaration whose match reads its
 /// parameter's stated sum as it sugars the one beside it, and reports no
 /// declaration as keeping its spelling. Before the fix, the match's
-/// declaration kept `+{Integer, Integer}` and standard error named it.
+/// declaration kept `+{Integer, Integer}` and standard error named it. Its
+/// arms' tail `return`s are left out (#1327).
 #[test]
 fn fmt_sugars_a_match_over_a_stated_sum_791()
 {
@@ -735,7 +736,7 @@ fn fmt_sugars_a_match_over_a_stated_sum_791()
     assert_eq!(
         std::fs::read_to_string(&source).expect("the source is readable"),
         "def pair : Integer * String ;\n\ndef pick(t : Integer + Integer) -> -F Integer {\n  case \
-         t {\n    +{.1 = x} => return x,\n    _ => return 0\n  }\n}\n",
+         t {\n    +{.1 = x} => x,\n    _ => 0\n  }\n}\n",
         "both declarations are sugared"
     );
 }

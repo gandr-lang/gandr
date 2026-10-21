@@ -4,7 +4,7 @@ module Schema {
   @[ checks ]
   def anonymise(old : Old) -> -F New {
     case old {
-      #{name, age} => return (age, "anonymous")
+      #{name, age} => (age, "anonymous")
     }
   }
   @[ refuses("ForwardUnsupported") ]
@@ -12,7 +12,7 @@ module Schema {
   def scrub = forward(anonymise) ;
   @[ checks ]
   def wrap(xs : List(Integer)) -> -F List(Integer) {
-    return xs
+    xs
   }
   @[ refuses("ForwardUnsupported") ]
   def lists = forward(wrap) ;

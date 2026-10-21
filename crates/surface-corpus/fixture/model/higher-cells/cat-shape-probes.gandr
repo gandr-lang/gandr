@@ -6,19 +6,19 @@
 /// Reflexivity at a variable of a type parameter.
 @[ checks ]
 def path_var(a : Type, x : a) -> -F Path(a, x, x) {
-  return here(x)
+  here(x)
 }
 
 /// Reflexivity at a function.
 @[ checks ]
 def path_fun(f : Integer => Integer) -> -F Path(Integer => Integer, f, f) {
-  return here(f)
+  here(f)
 }
 
 /// Reflexivity at an application.
 @[ checks ]
 def path_app(n : Integer) -> -F Path(Integer, n + 1, n + 1) {
-  return here(n + 1)
+  here(n + 1)
 }
 
 /// A family indexed by an integer, one element at each index.
@@ -30,11 +30,11 @@ data Ix(n : Integer) : Type {
 /// The identity at every index of the family.
 @[ checks ]
 def ix_id(n : Integer, w : Ix(n)) -> -F Ix(n) {
-  return w
+  w
 }
 
 /// The identity at one closed index.
 @[ checks ]
 def ix_ctor(w : Ix(1)) -> -F Ix(1) {
-  return w
+  w
 }

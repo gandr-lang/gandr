@@ -169,6 +169,123 @@ theory Counting {
     }
 }
 
+/// #1327: the sugared form leaves out a tail's `return` of a value, in a
+/// body, a match arm, a block and a nested function, as the lowering would
+/// infer it; an early `return`, one of a computation, one written as a
+/// statement, one under `explicit_exits` and one with a comment after its
+/// keyword keep it, and the explicit form writes the source as it was given.
+#[test]
+fn a_tail_return_is_left_out_where_the_lowering_would_infer_it_1327()
+{
+    let grammar = grammar();
+    let source = "\
+data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }
+
+def succeeded(n : Nat) -> -F Nat {
+  return Succ(n)
+}
+
+def early(k : Nat) -> -F Nat {
+  case k {
+    Zero => return k,
+    Succ(j) => {
+      run q <- case j {
+        Zero => return j,
+        Succ(r) => pure r,
+      } ;
+      pure q
+    },
+  }
+}
+
+def computed(n : Nat) -> -F Nat {
+  return succeeded(n)
+}
+
+def stated(n : Nat) -> -F Nat {
+  return n ;
+}
+
+def nested(n : Nat) -> -F (+U (Nat -> -F Nat)) {
+  return thunk { fn (x) { return Succ(x) } }
+}
+
+def blocked(n : Nat) -> -F Nat {
+  case n {
+    Zero => { run y <- succeeded(n) ; return y },
+    Succ(p) => p,
+  }
+}
+
+def noted(n : Nat) -> -F Nat {
+  return /* the argument */ n
+}
+
+@[ explicit_exits ]
+def asked(n : Nat) -> -F Nat {
+  return n
+}
+";
+    let sugared = "\
+data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }
+
+def succeeded(n : Nat) -> -F Nat {
+  Succ(n)
+}
+
+def early(k : Nat) -> -F Nat {
+  case k {
+    Zero => k,
+    Succ(j) => {
+      run q <- case j {
+        Zero => return j,
+        Succ(r) => pure r,
+      } ;
+      pure q
+    },
+  }
+}
+
+def computed(n : Nat) -> -F Nat {
+  return succeeded(n)
+}
+
+def stated(n : Nat) -> -F Nat {
+  return n ;
+}
+
+def nested(n : Nat) -> -F (Nat => Nat) {
+  thunk { fn (x) { Succ(x) } }
+}
+
+def blocked(n : Nat) -> -F Nat {
+  case n {
+    Zero => { run y <- succeeded(n) ; y },
+    Succ(p) => p,
+  }
+}
+
+def noted(n : Nat) -> -F Nat {
+  return /* the argument */ n
+}
+
+@[ explicit_exits ]
+def asked(n : Nat) -> -F Nat {
+  return n
+}
+";
+    assert_eq!(
+        spelled(&grammar, source, Form::Sugared, Selection::Every),
+        sugared,
+        "sugared"
+    );
+    assert_eq!(
+        spelled(&grammar, source, Form::Explicit, Selection::Every),
+        source,
+        "explicit"
+    );
+}
+
 /// The circle the path-composite goldens compose its loop in.
 const CIRCLE: &str = "\
 data Circle : Type {
@@ -597,18 +714,19 @@ fn a_declared_form_wins_over_the_option()
 /// `+{…}` is sugared like the declaration beside it, and nothing is
 /// withdrawn: the lowering reads `A + B` as it reads `+{A, B}`. Before the
 /// fix, the sugared match was refused and the declaration kept its spelling.
+/// Its arms' tail `return`s are left out (#1327).
 #[test]
 fn a_match_over_a_stated_sum_is_sugared_791()
 {
     let grammar = grammar();
-    let matched = |stated: &str| {
+    let matched = |stated: &str, exit: &str| {
         format!(
-            "def pick(t : {stated}) -> -F Integer {{\n  case t {{\n    +{{.1 = x}} => return x,\n    _ => return 0\n  }}\n}}"
+            "def pick(t : {stated}) -> -F Integer {{\n  case t {{\n    +{{.1 = x}} => {exit}x,\n    _ => {exit}0\n  }}\n}}"
         )
     };
     let source = format!(
         "{}\n\ndef pair : #{{Integer, String}} ;\n",
-        matched("+{Integer, Integer}")
+        matched("+{Integer, Integer}", "return ")
     );
     let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
     let options = FormatOptions {
@@ -621,7 +739,7 @@ fn a_match_over_a_stated_sum_is_sugared_791()
         (
             format!(
                 "{}\n\ndef pair : Integer * String ;\n",
-                matched("Integer + Integer")
+                matched("Integer + Integer", "")
             )
             .as_str(),
             [].as_slice()
@@ -633,7 +751,7 @@ fn a_match_over_a_stated_sum_is_sugared_791()
 /// rewrite respells formats, the hole kept: a hole is named by its place
 /// among the source's holes, so respelling the declaration beside it no
 /// longer renames it. Before the fix, the formatting was refused as a change
-/// of meaning.
+/// of meaning. The arm's tail `return` is left out (#1327).
 #[test]
 fn a_body_hole_keeps_its_meaning_beside_a_rewrite_893()
 {
@@ -652,6 +770,7 @@ fn a_body_hole_keeps_its_meaning_beside_a_rewrite_893()
         (
             source
                 .replace("#{Integer, String}", "Integer * String")
+                .replace("return 0", "0")
                 .as_str(),
             [].as_slice()
         )

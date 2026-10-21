@@ -13,14 +13,14 @@ import "./string-base.gandr" ;
 def encode(c : Integer) -> -F List(Integer) {
   run one <- c < 128;
   case one {
-    true => return Cons(c, Nil),
+    true => Cons(c, Nil),
     false => {
       run two <- c < 2048;
       case two {
         true => {
           run lead <- int.div(c, 64);
           run low <- int.mod(c, 64);
-          return Cons(192 + lead, Cons(128 + low, Nil))
+          Cons(192 + lead, Cons(128 + low, Nil))
         },
         false => {
           run three <- c < 65536;
@@ -30,7 +30,7 @@ def encode(c : Integer) -> -F List(Integer) {
               run rest <- int.mod(c, 4096);
               run mid <- int.div(rest, 64);
               run low <- int.mod(c, 64);
-              return Cons(224 + lead, Cons(128 + mid, Cons(128 + low, Nil)))
+              Cons(224 + lead, Cons(128 + mid, Cons(128 + low, Nil)))
             },
             false => {
               run lead <- int.div(c, 262144);
@@ -39,7 +39,7 @@ def encode(c : Integer) -> -F List(Integer) {
               run tail <- int.mod(c, 4096);
               run mid <- int.div(tail, 64);
               run low <- int.mod(c, 64);
-              return Cons(240 + lead, Cons(128 + high, Cons(128 + mid, Cons(128 + low, Nil))))
+              Cons(240 + lead, Cons(128 + high, Cons(128 + mid, Cons(128 + low, Nil))))
             }
           }
         }
@@ -52,7 +52,7 @@ def encode(c : Integer) -> -F List(Integer) {
 @[ checks ]
 def rec encodeAll(cs : List(Integer)) -> -F List(Integer) {
   case cs {
-    Nil => return Nil,
+    Nil => Nil,
     Cons(
       c,
       rest

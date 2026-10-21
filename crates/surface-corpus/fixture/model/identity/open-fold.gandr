@@ -20,13 +20,13 @@ import "./loop-space.gandr" ;
 /// reads as `S` over the held call.
 @[ checks ]
 def wind_unfolded(x : Words) -> -F Path(Int, windWords(Loop(x)), S(windWords(x))) {
-  return here(S(windWords(x)))
+  here(S(windWords(x)))
 }
 
 /// Two loops read through two binds, the inner call's first.
 @[ checks ]
 def twice_unfolded(x : Words) -> -F Path(Int, windWords(Loop(Loop(x))), S(S(windWords(x)))) {
-  return here(S(S(windWords(x))))
+  here(S(S(windWords(x))))
 }
 
 /// The round trip's step case: `spinWords` waits on the read
@@ -38,13 +38,13 @@ def round_unfolded(x : Words) -> -F Path(
   spinWords(windWords(Loop(x))),
   Loop(spinWords(windWords(x)))
 ) {
-  return here(Loop(spinWords(windWords(x))))
+  here(Loop(spinWords(windWords(x))))
 }
 
 /// The round trip's base case, closed: every call runs to its value.
 @[ checks ]
 def base_case() -> -F Path(Words, spinWords(windWords(Nil)), Nil) {
-  return here(Nil)
+  here(Nil)
 }
 
 /// Parity by structural recursion over the free naturals: the successor arm
@@ -54,12 +54,12 @@ def base_case() -> -F Path(Words, spinWords(windWords(Nil)), Nil) {
 @[ checks ]
 def rec parity(n : Nat) -> -F Nat {
   case n {
-    Zero => return Zero,
+    Zero => Zero,
     Succ(p) => {
       run q <- parity[<](p);
       case q {
-        Zero => return Succ(Zero),
-        Succ(r) => return Zero
+        Zero => Succ(Zero),
+        Succ(r) => Zero
       }
     }
   }
@@ -70,5 +70,5 @@ def rec parity(n : Nat) -> -F Nat {
 /// read as a constructor over it.
 @[ refuses("EndpointMismatch") ]
 def parity_stuck(n : Nat) -> -F Path(Nat, parity(Succ(n)), Succ(parity(n))) {
-  return here(Succ(parity(n)))
+  here(Succ(parity(n)))
 }

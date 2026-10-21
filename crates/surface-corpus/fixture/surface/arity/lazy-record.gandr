@@ -1,11 +1,11 @@
 @[ checks ]
 def lazy() -> &{get : -F Integer, put : -F String} {
-  &{.put => return "s", .get => return 1}
+  &{.put => "s", .get => 1}
 }
 
 @[ checks ]
 def binary : +U (-F Integer & -F String) ;
-def binary = thunk { &{.0 => return 1, .1 => return "s"} } ;
+def binary = thunk { &{.0 => 1, .1 => "s"} } ;
 
 @[ checks ]
 def observe(m : +U &{get : -F Integer, put : -F String}) -> -F Integer {
@@ -14,7 +14,7 @@ def observe(m : +U &{get : -F Integer, put : -F String}) -> -F Integer {
 
 @[ checks ]
 def offered(n : Integer) -> &{get : -F Integer, put : -F String} {
-  &{.put => return "s", .get => return n}
+  &{.put => "s", .get => n}
 }
 
 /// The empty lazy record is the empty lazy product, answered by the empty
@@ -27,14 +27,14 @@ def terminal = thunk { &{} } ;
 /// block answers the one entry.
 @[ checks ]
 def single() -> &{get : -F Integer} {
-  &{.get => return 1}
+  &{.get => 1}
 }
 
 /// A lazy record of three is one lazy product of three, its block answering
 /// each entry.
 @[ checks ]
 def triple() -> &{a : -F Integer, b : -F String, c : -F Integer} {
-  &{.a => return 1, .b => return "s", .c => return 3}
+  &{.a => 1, .b => "s", .c => 3}
 }
 
 /// The chain `C & D & E` is the lazy product the lazy record of three is.

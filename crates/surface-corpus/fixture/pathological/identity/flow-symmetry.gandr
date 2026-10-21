@@ -5,7 +5,7 @@ module Schema {
   @[ checks ]
   def toNew(old : Old) -> -F New {
     case old {
-      #{name, age} => return (age, name)
+      #{name, age} => (age, name)
     }
   }
   @[ checks ]
@@ -18,7 +18,7 @@ module Schema {
   @[ checks ]
   def age(record : Old) -> -F Count {
     case record {
-      #{name, years} => return years
+      #{name, years} => years
     }
   }
   @[ refuses("NonCovariantMotive") ]

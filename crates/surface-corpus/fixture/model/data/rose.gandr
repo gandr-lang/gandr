@@ -96,7 +96,7 @@ rec {
   @[ checks ]
   def rec treeSize(t : Rose) -> -F Nat {
     case t {
-      Node(kids) => { run s <- forestSize[<](kids); return Succ(s) }
+      Node(kids) => { run s <- forestSize[<](kids); Succ(s) }
     }
   }
 
@@ -104,7 +104,7 @@ rec {
   @[ checks ]
   def rec forestSize(ts : Forest) -> -F Nat {
     case ts {
-      Empty => return Zero,
+      Empty => Zero,
       More(t, rest) => { run a <- treeSize[<](t); run b <- forestSize[<](rest); plus(a, b) }
     }
   }

@@ -12,7 +12,7 @@ def pair = (greeting, greeting);
 /// The identity on integers.
 @[ checks ]
 def identity(x: Integer) -> -F Integer {
-  return x
+  x
 }
 
 /// A number at a stated width; the lowering admits no typed number yet

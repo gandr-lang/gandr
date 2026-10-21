@@ -16,7 +16,7 @@ module Seed :> #{ type T, zero : T, next : T => T, read : T => Integer } {
   def next(n : T) -> -F T { become n + 1 }
   /// The count read as an integer.
   @[ runs("fn (a) { a }") ]
-  def read(n : T) -> -F Integer { return n }
+  def read(n : T) -> -F Integer { n }
 }
 
 /// A functor from any counter to a sealed counter of its own: its seed,

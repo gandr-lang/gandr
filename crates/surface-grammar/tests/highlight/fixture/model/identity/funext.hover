@@ -22,21 +22,19 @@
 9:12-9:12 u ⇒ u : Unit @9:12-9:13
 9:13-9:13 } ⇒ +{.0 = u} : Bool @9:5-9:14
 9:15-9:16 => ⇒ -F Bool @8:3-11:4
-9:18-9:23 return ⇒ -F Bool @9:18-9:34
-9:25-9:30 +{.1 = ⇒ Bool @9:25-9:34
-9:32-9:32 u ⇒ u : Unit @9:32-9:33
-9:33-9:33 } ⇒ Bool @9:25-9:34
-9:34-9:34 , ⇒ -F Bool @8:3-11:4
+9:18-9:23 +{.1 = ⇒ Bool @9:18-9:27
+9:25-9:25 u ⇒ u : Unit @9:25-9:26
+9:26-9:26 } ⇒ Bool @9:18-9:27
+9:27-9:27 , ⇒ -F Bool @8:3-11:4
 10:5-10:7 +{. ⇒ +{.1 = u} : Bool @10:5-10:14
 10:8-10:8 1 ⇒ 1 : Unit @10:8-10:9
 10:10-10:10 = ⇒ +{.1 = u} : Bool @10:5-10:14
 10:12-10:12 u ⇒ u : Unit @10:12-10:13
 10:13-10:13 } ⇒ +{.1 = u} : Bool @10:5-10:14
 10:15-10:16 => ⇒ -F Bool @8:3-11:4
-10:18-10:23 return ⇒ -F Bool @10:18-10:34
-10:25-10:30 +{.0 = ⇒ Bool @10:25-10:34
-10:32-10:32 u ⇒ u : Unit @10:32-10:33
-10:33-10:33 } ⇒ Bool @10:25-10:34
+10:18-10:23 +{.0 = ⇒ Bool @10:18-10:27
+10:25-10:25 u ⇒ u : Unit @10:25-10:26
+10:26-10:26 } ⇒ Bool @10:18-10:27
 11:3-11:3 } ⇒ -F Bool @8:3-11:4
 12:1-12:1 } ⇒ not : Bool => Bool⏎⏎Negation on the booleans, `+{Unit, Unit}`. @7:1-12:2
 15:1-15:11 @[ checks ] ⇒ not_not : Bool => Bool⏎⏎Negation twice. @15:1-16:1
@@ -82,8 +80,7 @@
 23:41-23:44 Unit ⇒ Unit : Type @23:41-23:45
 23:45-23:45 ) ⇒ -F (Unit + Unit) : Type[-] @23:30-23:46
 23:47-23:47 { ⇒ same : Bool => Bool⏎⏎The identity on the booleans. @23:1-25:2
-24:3-24:8 return ⇒ -F Bool @24:3-24:11
-24:10-24:10 b ⇒ b : Bool @24:10-24:11
+24:3-24:3 b ⇒ b : Bool @24:3-24:4
 25:1-25:1 } ⇒ same : Bool => Bool⏎⏎The identity on the booleans. @23:1-25:2
 28:1-28:11 @[ checks ] ⇒ involution : Path(Bool => Bool, not_not, same)⏎⏎Negation twice is the identity: they agree at both booleans. @28:1-29:1
 29:1-29:3 def ⇒ involution : Path(Bool => Bool, not_not, same)⏎⏎Negation twice is the identity: they agree at both booleans. @29:1-29:67

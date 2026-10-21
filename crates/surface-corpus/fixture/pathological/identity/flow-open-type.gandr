@@ -1,4 +1,4 @@
 @[ refuses("ForwardUnsupported") ]
 def lift(t : Type, f : t => t) -> -F Flow(Type, t, t) {
-  return forward(f)
+  forward(f)
 }

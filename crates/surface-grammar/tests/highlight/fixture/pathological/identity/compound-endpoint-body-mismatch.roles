@@ -46,6 +46,5 @@
 147..148 Variable "x"
 148..149 Other ")"
 150..151 Other "{"
-154..160 Keyword "return"
-161..162 Number "5"
-163..164 Other "}"
+154..155 Number "5"
+156..157 Other "}"

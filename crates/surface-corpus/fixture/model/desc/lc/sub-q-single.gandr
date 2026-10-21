@@ -10,5 +10,5 @@ import "./syntax.gandr" ;
 /// Substituting `b` for the newest variable at that variable is `b`.
 @[ checks ]
 def subQSingle(b : Term) -> -F Path(Term, subst(Ix(Z), Cons(b, Shift(Z))), b) {
-  return here(b)
+  here(b)
 }
