@@ -1797,21 +1797,29 @@ fn a_terminal_on_standard_input_alone_is_refused_the_terminal_face()
         .stderr(Stdio::piped())
         .spawn()
         .expect("the driver starts");
-    // A face that took the terminal would wait on its keys; the master stays
-    // open, so the slave is a terminal throughout, and the wait is bounded.
-    let deadline = std::time::Instant::now() + core::time::Duration::from_secs(10);
-    while face.try_wait().expect("the driver is polled").is_none()
-        && std::time::Instant::now() < deadline
-    {
+    // A face that took the terminal puts it in raw mode before it waits on
+    // its keys, and the pair shares one mode, read here on the master. The
+    // wait ends on that or on the driver's exit, never on a clock: a loaded
+    // host only slows the refusal, which a deadline of seconds once read as
+    // the face holding the terminal (#1590).
+    let took = loop {
+        if face.try_wait().expect("the driver is polled").is_some() {
+            break false;
+        }
+        let mode =
+            nix::sys::termios::tcgetattr(&terminal.master).expect("the terminal's mode is read");
+        if !mode
+            .local_flags
+            .contains(nix::sys::termios::LocalFlags::ICANON)
+        {
+            face.kill().expect("the face stops");
+            break true;
+        }
         std::thread::sleep(core::time::Duration::from_millis(20));
-    }
-    let running = face.try_wait().expect("the driver is polled").is_none();
-    if running {
-        face.kill().expect("the face stops");
-    }
+    };
     let refused = face.wait_with_output().expect("the driver is reaped");
     drop(terminal.master);
-    assert!(!running, "the face took a terminal it was not given whole");
+    assert!(!took, "the face took a terminal it was not given whole");
     assert_eq!(code(&refused), Code(2));
     assert!(
         refused.stdout.is_empty(),
