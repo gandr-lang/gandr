@@ -220,7 +220,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   arity.
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `tests::modules::models::a_family_applied_to_too_few_indices_is_refused`
-    #[spec(ensures: |ret| ret.is_err() || self.plans.get(usize::from(site.at.node)) == Some(&Plan::Expansion(family, applied)))]
+    #[spec(ensures: |ret| ret.is_err() || self.plans.get(site.at.node) == Some(&Plan::Expansion(family, applied)))]
     pub(super) fn expansion(
         &mut self,
         site: Site,

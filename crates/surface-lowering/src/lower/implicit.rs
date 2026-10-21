@@ -330,7 +330,7 @@ impl<'source> Lowerer<'_, 'source>
         captures: start = self.operands.len(),
         ensures: |ret| match ret {
             Ok(arity::Planned(true)) => matches!(
-                self.plans.get(usize::from(site.at.node)),
+                self.plans.get(site.at.node),
                 Some(&Plan::Application(_, arguments)) if arguments.start == start && arguments.end == self.operands.len()
             ),
             Ok(arity::Planned(false)) => self.operands.len() == start,
@@ -384,7 +384,7 @@ impl<'source> Lowerer<'_, 'source>
         captures: start = self.operands.len(),
         ensures: |ret| match ret {
             Ok(arity::Planned(true)) => matches!(
-                self.plans.get(usize::from(site.at.node)),
+                self.plans.get(site.at.node),
                 Some(&Plan::Application(_, arguments)) if arguments.start == start && arguments.end == self.operands.len()
             ),
             Ok(arity::Planned(false)) => self.operands.len() == start,

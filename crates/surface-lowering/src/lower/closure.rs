@@ -769,6 +769,7 @@ fn suspend<'closure>(
         }
     }
     let tables = sink.into_tables();
+    lowerer.plans.share();
 
     Prefix::Suspended {
         rooted,

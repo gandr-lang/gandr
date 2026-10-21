@@ -199,7 +199,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(ensures: |ret| match ret {
         | Ok(Read::Unread) => matches!(self.parameter_named(site, self.name_at(head)), Maybe::Absent(_)),
-        | Ok(Read::Planned) => matches!(self.plans.get(usize::from(site.at.node)), Some(&super::Plan::Constant(_))),
+        | Ok(Read::Planned) => matches!(self.plans.get(site.at.node), Some(&super::Plan::Constant(_))),
         | Err(_) => true,
     })]
     pub(super) fn parameter_value(
@@ -276,7 +276,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(ensures: |ret| match ret {
         | Ok(Read::Unread) => matches!(self.parameter_named(site, self.name_at(head)), Maybe::Absent(_)),
-        | Ok(Read::Planned) => matches!(self.plans.get(usize::from(site.at.node)), Some(&(super::Plan::Sealed(_) | super::Plan::Transparent(_)))),
+        | Ok(Read::Planned) => matches!(self.plans.get(site.at.node), Some(&(super::Plan::Sealed(_) | super::Plan::Transparent(_)))),
         | Err(_) => true,
     })]
     pub(super) fn parameter_type(

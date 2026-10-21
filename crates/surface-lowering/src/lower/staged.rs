@@ -476,7 +476,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   body is refused.
     /// - witness: `lower::staged::tests::a_telescope_files_its_bounds_and_marks_its_stages`
     /// - witness: `lower::staged::tests::a_stage_outside_a_signature_leaves_the_fragment`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Staged(..))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Staged(..))))]
     pub(super) fn staged_type(
         &mut self,
         site: Site,

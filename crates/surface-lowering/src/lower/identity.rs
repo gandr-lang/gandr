@@ -1112,7 +1112,7 @@ impl<'source> Lowerer<'_, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&Plan::Path(carrier, left, right))
                         if match carrier {
                             Carrier::Written(carrier) => self.reading(carrier) == Reading::ValueType(site.reading.frame()),
@@ -1185,7 +1185,7 @@ impl<'source> Lowerer<'_, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&Plan::Path(Carrier::Written(carrier), left, right))
                         if [carrier, left, right] == written
                             && self.reading(carrier) == Reading::ValueType(site.reading.frame())
@@ -1240,7 +1240,7 @@ impl<'source> Lowerer<'_, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&Plan::Flow(carrier, left, right))
                         if [carrier, left, right] == written
                             && self.reading(carrier) == Reading::ValueType(site.reading.frame())
@@ -1289,7 +1289,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   spelling, read back as the exact core type the written record or flow
     ///   lowers to.
     /// - witness: `lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Relation(..))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Relation(..))))]
     pub(super) fn relation_type(
         &mut self,
         site: Site,
@@ -1336,7 +1336,7 @@ impl<'source> Lowerer<'_, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&Plan::Relation(planned, left, right))
                         if planned == relation && [left, right] == written
                             && match relation {
@@ -1413,7 +1413,7 @@ impl<'source> Lowerer<'_, 'source>
         let otherwise = Maybe::Absent(related::Absent::Otherwise);
         let mut at = stated;
         loop {
-            match self.plans.get(usize::from(at)) {
+            match self.plans.get(at) {
                 Some(&Plan::Transparent(inner)) => at = inner,
                 Some(&Plan::Relation(Relation::Isomorphism, ..)) => {
                     return Ok(Maybe::Present(Layout::Isomorphism));
@@ -1649,7 +1649,7 @@ impl<'source> Lowerer<'_, 'source>
         ensures: |ret| {
             self.operands.len() == start
                 && (ret.is_err()
-                    || match (operation, self.plans.get(usize::from(site.at.node))) {
+                    || match (operation, self.plans.get(site.at.node)) {
                         | (Operation::Here, Some(&Plan::Here(point)))
                         | (Operation::Stay, Some(&Plan::Stay(point))) => self.at_endpoint.contains(&point),
                         | (Operation::Funext, Some(&Plan::Funext(..)))
@@ -2101,10 +2101,10 @@ impl<'source> Lowerer<'_, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(
-                    self.plans.get(usize::from(site.at.node)),
+                    self.plans.get(site.at.node),
                     Some(&Plan::Derived(planned)) if planned.derivation == derivation && planned.frame == frame
                 ) || matches!(
-                    (self.plans.get(usize::from(site.at.node)), derivation),
+                    (self.plans.get(site.at.node), derivation),
                     (Some(&Plan::FlowThen(left, right)), Derivation::Then { first, second }) if left == first && right == second
                 )
         },
@@ -2305,7 +2305,7 @@ impl<'source> Lowerer<'_, 'source>
                 }) => Some(declaration.node),
                 Maybe::Present(_) | Maybe::Absent(_) => None,
             })?;
-        match self.plans.get(usize::from(tail)) {
+        match self.plans.get(tail) {
             Some(&Plan::Function(function)) => Some(function),
             _ => None,
         }
@@ -2371,7 +2371,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut at = declared;
         let mut thunked = false;
         loop {
-            match self.plans.get(usize::from(at)) {
+            match self.plans.get(at) {
                 Some(&Plan::Transparent(inner)) => at = inner,
                 Some(&Plan::Former(TypeFormer::Thunk, inner)) if !thunked => {
                     thunked = true;
@@ -2409,7 +2409,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — `cong` at a bound map in a body and in a type.
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
-    #[spec(ensures: |ret| ret.is_none() || !matches!(self.plans.get(usize::from(function)), Some(&Plan::Variable(..))))]
+    #[spec(ensures: |ret| ret.is_none() || !matches!(self.plans.get(function), Some(&Plan::Variable(..))))]
     fn used_in_type(
         &self,
         function: NodeIndex,
@@ -2417,7 +2417,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut at = function;
         loop {
-            match self.plans.get(usize::from(at)) {
+            match self.plans.get(at) {
                 Some(&Plan::Transparent(inner)) => at = inner,
                 Some(&Plan::StaticApplication(Code::Bound { from, .. }, arguments))
                     if arguments.start == arguments.end =>
@@ -2488,7 +2488,7 @@ impl<'source> Lowerer<'_, 'source>
                 derivation,
                 stance: Stance::Synthesised(synthesis, _),
                 ..
-            })) = self.plans.get(usize::from(at))
+            })) = self.plans.get(at)
             else {
                 continue;
             };
@@ -2565,7 +2565,7 @@ impl<'source> Lowerer<'_, 'source>
             if let Some(&mut Plan::Derived(Derived {
                 stance: Stance::Synthesised(ref mut held_synthesis, ref mut held_typings),
                 ..
-            })) = self.plans.get_mut(usize::from(at))
+            })) = self.plans.get_mut(at)
             {
                 *held_synthesis = synthesis;
                 *held_typings = typings;
@@ -2604,7 +2604,7 @@ impl<'source> Lowerer<'_, 'source>
             let Some(&Plan::Derived(Derived {
                 stance: Stance::Synthesised(synthesis, typings),
                 ..
-            })) = self.plans.get(usize::from(site.at.node))
+            })) = self.plans.get(site.at.node)
             else {
                 continue;
             };
@@ -2664,7 +2664,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let unread = Maybe::Absent(synthesised::Absent::Unread);
         let mut at = path;
-        while let Some(&Plan::Transparent(inner)) = self.plans.get(usize::from(at)) {
+        while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
             at = inner;
         }
         let parameter = |binder: ScopeId, in_type: Option<Frame>| match self.scope.declared(binder)
@@ -2674,7 +2674,7 @@ impl<'source> Lowerer<'_, 'source>
             },
             Maybe::Present(_) | Maybe::Absent(_) => unread,
         };
-        match self.plans.get(usize::from(at)) {
+        match self.plans.get(at) {
             Some(&Plan::Variable(_, binder)) => parameter(binder, None),
             Some(&Plan::StaticApplication(Code::Bound { from, binder, .. }, arguments))
                 if arguments.start == arguments.end =>
@@ -2683,14 +2683,14 @@ impl<'source> Lowerer<'_, 'source>
             },
             Some(&Plan::Application(head, arguments)) => {
                 let mut head = head;
-                while let Some(&Plan::Transparent(inner)) = self.plans.get(usize::from(head)) {
+                while let Some(&Plan::Transparent(inner)) = self.plans.get(head) {
                     head = inner;
                 }
-                let (callee, descends) = match self.plans.get(usize::from(head)) {
+                let (callee, descends) = match self.plans.get(head) {
                     Some(&Plan::Constant(constant)) => (self.callee_of(constant), false),
                     Some(&Plan::Variable(_, binder)) if self.recursions.contains_key(&binder) => {
                         let tail = match self.scope.declared(binder) {
-                            Maybe::Present(tail) => match self.plans.get(usize::from(tail)) {
+                            Maybe::Present(tail) => match self.plans.get(tail) {
                                 Some(&Plan::Function(function)) => self.tail_callee(function),
                                 _ => None,
                             },
@@ -2769,62 +2769,60 @@ impl<'source> Lowerer<'_, 'source>
             return None;
         };
         let through = |mut at: NodeIndex| {
-            while let Some(&Plan::Transparent(inner)) = self.plans.get(usize::from(at)) {
+            while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
                 at = inner;
             }
             at
         };
         let none = Stretch { start: 0, end: 0 };
-        let (parameters, arity, result, returned) =
-            match self.plans.get(usize::from(through(written.node))) {
-                Some(&Plan::Telescope(entries, codomain)) => (
-                    entries,
-                    entries.end.saturating_sub(entries.start),
-                    codomain,
-                    false,
-                ),
-                Some(&Plan::ValueFunction(domains, codomain)) => (
-                    none,
-                    domains.end.saturating_sub(domains.start),
-                    codomain,
-                    false,
-                ),
-                Some(&Plan::Former(TypeFormer::Thunk, held)) => {
-                    let mut at = through(held);
-                    let mut arity = 0_usize;
-                    let mut plain = false;
-                    let mut bound: Option<Stretch> = None;
-                    loop {
-                        match self.plans.get(usize::from(at)) {
-                            Some(&Plan::Arrow(_, codomain)) => {
-                                plain = true;
-                                arity = arity.saturating_add(1);
-                                at = through(codomain);
-                            },
-                            Some(&Plan::DependentArrow(entries, codomain)) => {
-                                bound = match bound {
-                                    None => Some(entries),
-                                    Some(held) if held.end == entries.start => Some(Stretch {
-                                        start: held.start,
-                                        end: entries.end,
-                                    }),
-                                    Some(_) => return None,
-                                };
-                                arity =
-                                    arity.saturating_add(entries.end.saturating_sub(entries.start));
-                                at = through(codomain);
-                            },
-                            Some(&Plan::Former(TypeFormer::Returner, _)) => break,
-                            _ => return None,
-                        }
+        let (parameters, arity, result, returned) = match self.plans.get(through(written.node)) {
+            Some(&Plan::Telescope(entries, codomain)) => (
+                entries,
+                entries.end.saturating_sub(entries.start),
+                codomain,
+                false,
+            ),
+            Some(&Plan::ValueFunction(domains, codomain)) => (
+                none,
+                domains.end.saturating_sub(domains.start),
+                codomain,
+                false,
+            ),
+            Some(&Plan::Former(TypeFormer::Thunk, held)) => {
+                let mut at = through(held);
+                let mut arity = 0_usize;
+                let mut plain = false;
+                let mut bound: Option<Stretch> = None;
+                loop {
+                    match self.plans.get(at) {
+                        Some(&Plan::Arrow(_, codomain)) => {
+                            plain = true;
+                            arity = arity.saturating_add(1);
+                            at = through(codomain);
+                        },
+                        Some(&Plan::DependentArrow(entries, codomain)) => {
+                            bound = match bound {
+                                None => Some(entries),
+                                Some(held) if held.end == entries.start => Some(Stretch {
+                                    start: held.start,
+                                    end: entries.end,
+                                }),
+                                Some(_) => return None,
+                            };
+                            arity = arity.saturating_add(entries.end.saturating_sub(entries.start));
+                            at = through(codomain);
+                        },
+                        Some(&Plan::Former(TypeFormer::Returner, _)) => break,
+                        _ => return None,
                     }
-                    if plain && bound.is_some() {
-                        return None;
-                    }
-                    (bound.unwrap_or(none), arity, at, true)
-                },
-                _ => return None,
-            };
+                }
+                if plain && bound.is_some() {
+                    return None;
+                }
+                (bound.unwrap_or(none), arity, at, true)
+            },
+            _ => return None,
+        };
         Some(Callee {
             parameters,
             arity,
@@ -2895,7 +2893,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::typed`].
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
-    #[spec(ensures: |ret| ret.is_none_or(|path| matches!(self.plans.get(usize::from(path)), Some(&Plan::Path(..)))))]
+    #[spec(ensures: |ret| ret.is_none_or(|path| matches!(self.plans.get(path), Some(&Plan::Path(..)))))]
     fn path_written(
         &self,
         written: NodeIndex,
@@ -2904,7 +2902,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut at = written;
         let mut returned = false;
         loop {
-            match self.plans.get(usize::from(at)) {
+            match self.plans.get(at) {
                 Some(&Plan::Transparent(inner)) => at = inner,
                 Some(&Plan::Former(TypeFormer::Returner, inner)) if !returned => {
                     returned = true;
@@ -2951,7 +2949,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut at = path;
         loop {
             self.fuel.spend()?;
-            let worded = match self.plans.get(usize::from(at)) {
+            let worded = match self.plans.get(at) {
                 Some(&Plan::Transparent(inner)) => {
                     at = inner;
                     continue;
