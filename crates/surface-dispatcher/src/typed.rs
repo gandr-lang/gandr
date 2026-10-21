@@ -220,6 +220,20 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
+    /// Why the table holds no refusal for a declaration.
+    pub mod unrefused {
+        /// The reason no refusal is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The table holds the declaration's type.
+            Typed,
+            /// No declaration has the key.
+            Undeclared,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
     /// Why a spelling has no reprint.
     pub mod reprinted {
         /// The reason the spelling was not printed again.
@@ -2177,6 +2191,43 @@ impl TypeTable
         }
     }
 
+    /// The refusal the table holds for the declaration one of whose forms has
+    /// the key `key`, read without spelling any type.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the refusal [`Self::declared`] answers for `key`; absent as
+    ///   [`unrefused::Absent::Typed`] where it answers a type or cannot spell
+    ///   one, and as [`unrefused::Absent::Undeclared`] where no declaration has
+    ///   the key.
+    /// - provides: a face's question whether a declaration was refused, at no
+    ///   printer's cost.
+    /// - fails: never; an absence names its reason.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refused and a typed declaration are each read as
+    ///   [`Self::declared`] answers them.
+    /// - witness: `typed::tests::a_refusal_is_read_as_the_declaration_answers_it`
+    #[spec(ensures: |ret| match (self.declared.get(&key), &ret) {
+        (Some(&Held::Refused(ref held)), &Maybe::Present(refusal)) => held.as_str() == <&str>::from(refusal),
+        (Some(&Held::Typed(_)), &Maybe::Absent(unrefused::Absent::Typed))
+            | (None, &Maybe::Absent(unrefused::Absent::Undeclared)) => true,
+        _ => false,
+    })]
+    #[inline]
+    pub fn refusal(
+        &self,
+        key: NodeKey,
+    ) -> Maybe<SourceText<'_>, unrefused::Absent>
+    {
+        match self.declared.get(&key) {
+            Some(&Held::Refused(ref refusal)) => Maybe::Present(SourceText::from(refusal.as_str())),
+            Some(&Held::Typed(_)) => Maybe::Absent(unrefused::Absent::Typed),
+            None => Maybe::Absent(unrefused::Absent::Undeclared),
+        }
+    }
+
     /// Every declaration's form key with its type or refusal, a type spelled
     /// in `style` on a page of `page` columns, in key order.
     ///
@@ -3663,6 +3714,7 @@ mod tests
     use super::TypeTable;
     use super::checked_against;
     use super::typing;
+    use super::unrefused;
 
     /// What the table answers at a position, as text.
     #[derive(Debug, Eq, PartialEq)]
@@ -4998,6 +5050,44 @@ mod tests
             keyed,
             ["Integer", "Integer", "Integer"],
             "the signature, the definition and the synthesised declaration are each keyed"
+        );
+    }
+
+    /// A declaration's refusal is read without spelling: it is the refusal
+    /// [`TypeTable::declared`] answers, and a typed declaration has none.
+    #[test]
+    fn a_refusal_is_read_as_the_declaration_answers_it()
+    {
+        let source = SourceText::from("def answer = 42 ; def sized = 1u32 ;");
+        let grammar = built_in().expect("the built-in grammar builds");
+        let tree = gandr_surface_parser::parse(&grammar, source)
+            .expect("the source parses")
+            .into_tree();
+        let table = table(source);
+        let mut read = Vec::new();
+        for key in tree.positions().filter_map(|position| tree.key(position)) {
+            let declared = table.declared(key, PageWidth::from(80_u32), Form::Explicit.into());
+            match (declared, table.refusal(key)) {
+                (Maybe::Present(Declared::Refused(held)), Maybe::Present(refusal)) => {
+                    assert_eq!(
+                        held.as_str(),
+                        <&str>::from(refusal),
+                        "the refusal is the one held"
+                    );
+                    read.push("refused");
+                },
+                (Maybe::Present(Declared::Typed(_)), Maybe::Absent(unrefused::Absent::Typed)) => {
+                    read.push("typed");
+                },
+                (Maybe::Absent(_), Maybe::Absent(unrefused::Absent::Undeclared)) => {},
+                (declared, refusal) => {
+                    panic!("the two readings disagree: {declared:?} and {refusal:?}")
+                },
+            }
+        }
+        assert!(
+            read.contains(&"refused") && read.contains(&"typed"),
+            "both kinds are read: {read:?}"
         );
     }
 

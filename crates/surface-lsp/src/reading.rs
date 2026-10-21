@@ -36,6 +36,8 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_surface_dispatcher::named_path;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::Sort;
 use gandr_surface_lowering::Address;
 use gandr_surface_lowering::written_imports;
 use gandr_surface_parser::parse;
@@ -123,6 +125,67 @@ pub enum Written
     Member,
 }
 
+/// One tile of a read text: its bytes, the rule it is a tile of, and whether
+/// a declaration writes it among its own tiles.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Tile
+{
+    /// The tile's bytes.
+    pub span: ByteSpan,
+    /// The name of the rule the tile is a tile of.
+    pub rule: &'static str,
+    /// Whether the tile is one of a declaration's own — a top-level item's or
+    /// a module member's, past an atom written as its operand.
+    pub declares: bool,
+}
+
+/// Every tile of `tree`, ascending by start, each with its rule and whether a
+/// declaration holds it.
+///
+/// # Specification
+/// trivial.
+fn tiles(
+    grammar: &Pbg,
+    tree: &SyntaxTree<'_>,
+) -> Vec<Tile>
+{
+    let mut tiles = Vec::new();
+    for position in tree.positions() {
+        let Some(node) = tree.node(position)
+        else {
+            continue;
+        };
+        let declaring = match node.label() {
+            NodeLabel::Meld(mold) => grammar
+                .rule_of(mold)
+                .ok()
+                .filter(|rule| matches!(rule.sort, Sort::Item | Sort::ModuleMember))
+                .map(|rule| rule.name),
+            NodeLabel::Wald
+            | NodeLabel::Tile(_)
+            | NodeLabel::Grout { .. }
+            | NodeLabel::GhostClose { .. }
+            | NodeLabel::Space
+            | NodeLabel::Doc => None,
+        };
+        for child in tree.children(position) {
+            if let Some(tile) = tree.node(child)
+                && let NodeLabel::Tile(mold) = tile.label()
+                && tile.span().start() < tile.span().end()
+                && let Ok(rule) = grammar.rule_of(mold)
+            {
+                tiles.push(Tile {
+                    span: tile.span(),
+                    rule: rule.name,
+                    declares: declaring == Some(rule.name),
+                });
+            }
+        }
+    }
+    tiles.sort_by_key(|tile| tile.span.start());
+    tiles
+}
+
 /// The head of the form at `at` declaring `symbol`: from the form's own start
 /// to the first brace among its own tiles, or to the symbol's end when the form
 /// has none.
@@ -161,7 +224,7 @@ fn head(
 }
 
 /// What one parse of a text answers: its highlighter spans, declarations,
-/// folds, selection skeleton, calls and path imports.
+/// folds, selection skeleton, calls, imports and tiles.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Readout
 {
@@ -180,6 +243,11 @@ struct Readout
     /// Where the last import of any address ends; none when the text writes
     /// none or its imports do not read.
     imports_end: Option<ByteOffset>,
+    /// The bytes of every import of any address, in source order; none when
+    /// the imports do not read.
+    imported: Vec<ByteSpan>,
+    /// Every tile, ascending by start.
+    tiles: Vec<Tile>,
 }
 
 /// The reading of one text, or why it has none.
@@ -199,8 +267,10 @@ impl Reading
     ///   disjoint and on character boundaries of `text`, its declarations each
     ///   beside its declaring form's key, its folds, its selection skeleton,
     ///   its calls, as [`crate::outline`] and [`Calls::of`] read each off the
-    ///   tree, the address of each path import as [`written_imports`] reads it
-    ///   and where the last import ends, none when the imports do not read.
+    ///   tree, the address of each path import as [`written_imports`] reads it,
+    ///   the bytes of every import and where the last one ends, none when the
+    ///   imports do not read, and every tile with its rule and whether a
+    ///   declaration holds it, ascending.
     /// - provides: the one parse a held text's structural requests share.
     /// - fails: never; an unread text names its reason.
     /// - panics: none.
@@ -281,9 +351,12 @@ impl Reading
             calls: Calls::of(grammar, &tree),
             imports_end: None,
             imports: Vec::new(),
+            imported: Vec::new(),
+            tiles: tiles(grammar, &tree),
         };
         if let Ok(written) = written_imports(grammar, &tree) {
             readout.imports_end = written.last().map(|import| import.span.end());
+            readout.imported = written.iter().map(|import| import.span).collect();
             readout.imports = written
                 .into_iter()
                 .filter(|import| import.address == Address::Path)
@@ -306,6 +379,59 @@ impl Reading
         match self.0 {
             Maybe::Present(ref readout) => &readout.spans,
             Maybe::Absent(_) => &[],
+        }
+    }
+
+    /// Every tile of the text, ascending by start; none when it was not read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn tiles(&self) -> &[Tile]
+    {
+        match self.0 {
+            Maybe::Present(ref readout) => &readout.tiles,
+            Maybe::Absent(_) => &[],
+        }
+    }
+
+    /// The tile holding `offset`, from its first byte to its last; none
+    /// between tiles or when the text was not read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn tile_at(
+        &self,
+        offset: ByteOffset,
+    ) -> Option<Tile>
+    {
+        let tiles = self.tiles();
+        let after = tiles.partition_point(|tile| tile.span.start() <= offset);
+        tiles
+            .get(after.checked_sub(1_usize)?)
+            .filter(|tile| offset < tile.span.end())
+            .copied()
+    }
+
+    /// The bytes of the import holding `offset`; none outside every import
+    /// or when the text was not read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn import_at(
+        &self,
+        offset: ByteOffset,
+    ) -> Option<ByteSpan>
+    {
+        match self.0 {
+            Maybe::Present(ref readout) => readout
+                .imported
+                .iter()
+                .copied()
+                .find(|span| span.start() <= offset && offset < span.end()),
+            Maybe::Absent(_) => None,
         }
     }
 
