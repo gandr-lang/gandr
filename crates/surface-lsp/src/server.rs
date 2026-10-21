@@ -4680,6 +4680,7 @@ impl Workspace
             |_| Resolved {
                 spans: written.to_vec(),
                 unresolved: Vec::new(),
+                marks: Vec::new(),
             },
             |session| {
                 classified(
@@ -4699,7 +4700,7 @@ impl Workspace
                 range.end.byte(&index),
             ),
         };
-        let data = encode(&index, &spans, &judged.unresolved);
+        let data = encode(&index, &spans, &judged.unresolved, &judged.marks);
         Answer::Tokens(SemanticTokens {
             result_id: matches!(window, Window::Whole).then(|| data.result_id()),
             data,
@@ -7232,7 +7233,7 @@ mod tests
                                     "parameter","property","enumMember","type","typeParameter",
                                     "number","string","comment","macro","label",
                                     "unresolvedReference"],
-                                "tokenModifiers":["declaration","defaultLibrary"]},
+                                "tokenModifiers":["declaration","defaultLibrary","value","computation"]},
                             "full":{"delta":true},
                             "range":true},
                         "completionProvider":{"resolveProvider":true,
@@ -7338,6 +7339,7 @@ mod tests
                 crate::reading::Reading::of(gandr_surface_syntax::SourceText::from(text.as_str()))
                     .spans(),
                 &[],
+                &[],
             );
             let absolute = |stream: &[u32]| {
                 let (mut line, mut column) = (0_u32, 0_u32);
@@ -7416,6 +7418,134 @@ mod tests
             "the name the lowering refused `pick` for, an expected refusal, sent as unresolved; \
              the lowering stops at a declaration's first refusal, so its other names keep \
              their guess"
+        );
+    }
+
+    /// Over a corpus source, judged, each name is sent with how the
+    /// judgement reads it: `declaration` on a binder's and a declaration's
+    /// own name, `computation` on a called name and `value` on a name read
+    /// without being run. The golden lists every token carrying a modifier
+    /// beyond `defaultLibrary`, as `line:column `text` type modifiers`.
+    #[test]
+    fn a_name_is_sent_with_its_reading()
+    {
+        let read = |name: &str, lines: core::ops::RangeInclusive<u32>| -> Vec<String> {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../surface-corpus/fixture/model/data")
+                .join(name);
+            let text = std::fs::read_to_string(&path).expect("the source is read");
+            let mut server = initialized();
+            let opened = format!(
+                r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"file:///tmp/judged.gandr","languageId":"gandr","version":1,"text":{}}}}}}}"#,
+                serde_json::to_string(&text).expect("the text serialises")
+            );
+            let _published = send(&mut server, Json(&opened));
+            let answered = send(
+                &mut server,
+                Json(
+                    r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full",
+                    "params":{"textDocument":{"uri":"file:///tmp/judged.gandr"}}}"#,
+                ),
+            )[0]["result"]["data"]
+                .clone();
+            let judged: Vec<u32> = serde_json::from_value(answered).expect("a token stream");
+            let (mut line, mut column) = (0_u32, 0_u32);
+            judged
+                .as_chunks::<5>()
+                .0
+                .iter()
+                .filter_map(|&[down, across, length, kind, bits]| {
+                    column = if down == 0 {
+                        column.saturating_add(across)
+                    }
+                    else {
+                        across
+                    };
+                    line = line.saturating_add(down);
+                    (bits & !2 != 0 && lines.contains(&line.saturating_add(1))).then(|| {
+                        let start = usize::try_from(column).unwrap_or(usize::MAX);
+                        let spelled = text
+                            .lines()
+                            .nth(usize::try_from(line).unwrap_or(usize::MAX))
+                            .and_then(|row| {
+                                row.get(
+                                    start
+                                        .. start
+                                            .saturating_add(usize::try_from(length).unwrap_or(0)),
+                                )
+                            })
+                            .unwrap_or("?");
+                        let row = format!(
+                            "{}:{column} `{spelled}` {} ",
+                            line.saturating_add(1),
+                            usize::try_from(kind)
+                                .ok()
+                                .and_then(|kind| crate::tokens::TOKEN_TYPES.get(kind))
+                                .copied()
+                                .unwrap_or("?"),
+                        );
+                        crate::tokens::TOKEN_MODIFIERS
+                            .iter()
+                            .zip([1_u32, 2, 4, 8])
+                            .filter(|&(_, bit)| bits & bit != 0)
+                            .enumerate()
+                            .fold(row, |mut row, (at, (name, _))| {
+                                if at > 0 {
+                                    row.push('+');
+                                }
+                                row.push_str(name);
+                                row
+                            })
+                    })
+                })
+                .collect()
+        };
+        assert_eq!(
+            read("data-maybe.gandr", 1 ..= u32::MAX),
+            [
+                "8:5 `Maybe` type declaration",
+                "9:2 `None` enumMember declaration+value",
+                "10:2 `Some` enumMember declaration+value",
+                "10:10 `x` parameter declaration+value",
+                "15:4 `unwrap_or_zero` function declaration",
+                "17:4 `None` enumMember value",
+                "18:4 `Some` enumMember value",
+                "18:9 `x` variable declaration+value",
+                "18:15 `x` variable value",
+                "25:4 `kept` function declaration",
+                "25:9 `m` parameter declaration+value",
+                "25:56 `m` parameter value",
+                "25:59 `m` parameter value",
+                "26:7 `m` parameter value",
+                "27:4 `None` enumMember value",
+                "27:17 `m` parameter value",
+                "28:4 `Some` enumMember value",
+                "28:9 `x` variable declaration+value",
+                "28:20 `m` parameter value",
+            ],
+            "the family, its constructors and their telescope binder, each definition, parameter \
+             and pattern variable declare; a constructor matched in a pattern and each name read \
+             are values, the value an arm answers included"
+        );
+        assert_eq!(
+            read("sigma-pair.gandr", 17 ..= 28),
+            [
+                "19:4 `tag_of` function declaration",
+                "19:11 `p` parameter declaration+value",
+                "19:17 `n` typeParameter declaration+value",
+                "19:30 `w` typeParameter declaration+value",
+                "19:37 `n` typeParameter value",
+                "20:7 `p` parameter value",
+                "21:6 `m` variable declaration+value",
+                "21:9 `w` variable declaration+value",
+                "21:15 `m` variable value",
+                "27:4 `tag` function declaration",
+                "28:4 `tag` function declaration",
+                "28:25 `tag_of` function computation",
+                "28:32 `tagged` function value",
+            ],
+            "a dependent pair's labels bind; the called `tag_of` is run as a computation and \
+             the `tagged` passed to it is a value; both halves of `tag` declare"
         );
     }
 

@@ -300,6 +300,37 @@ pub enum Subject
     Type,
 }
 
+/// Whether a written name binds there or uses what binds elsewhere.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Binding
+{
+    /// A use of a binder or of a declaration.
+    Uses,
+    /// A binder's own name.
+    Binds,
+}
+
+/// Whether a term is read as a value or run as a computation.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Polarity
+{
+    /// A value: a binder's, a constructor's, a thunk passed along.
+    Value,
+    /// A computation: a thunk forced where it is written, as a call forces
+    /// the function it names.
+    Computation,
+}
+
+/// How the table reads one span its source wrote a binder or a term at.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Reading
+{
+    /// Whether a binder's name is written there.
+    pub binding: Binding,
+    /// Whether a term there is run as a computation.
+    pub polarity: Polarity,
+}
+
 /// One node the source wrote, with the type a face shows for it.
 ///
 /// # Specification
@@ -712,6 +743,9 @@ pub struct TypeTable
     base: ByteOffset,
     /// Each written use the lowering resolved, with what it refers to.
     referents: Referents,
+    /// Each span of the source's own text an entry for a binder or a term
+    /// covers, with how the entries there read it, ascending.
+    readings: Vec<(ByteSpan, Reading)>,
     /// The binders in scope at each offset of the unit's text the lowering
     /// read under one.
     in_scope: InScope,
@@ -1910,7 +1944,7 @@ impl TypeTable
                 }
             }
         }
-        let entries = entries
+        let entries: Vec<Entry> = entries
             .into_iter()
             .filter_map(|entry| {
                 Some(Entry {
@@ -1919,6 +1953,42 @@ impl TypeTable
                 })
             })
             .collect();
+        let mut readings: Vec<(ByteSpan, Reading)> = entries
+            .iter()
+            .filter(|entry| {
+                entry.subject != Subject::Type
+                    && matches!(
+                        entry.provenance,
+                        Provenance::Written | Provenance::Inserted(Insertion::Force)
+                    )
+            })
+            .map(|entry| {
+                (entry.span, Reading {
+                    binding: if entry.subject == Subject::Binder {
+                        Binding::Binds
+                    }
+                    else {
+                        Binding::Uses
+                    },
+                    polarity: match entry.ty {
+                        TypeNode::Value(_) => Polarity::Value,
+                        TypeNode::Computation(_) => Polarity::Computation,
+                    },
+                })
+            })
+            .collect();
+        // A binder is read at the type it binds, whatever term the lowering
+        // locates at its name: a function's lambda is located at its
+        // parameter. So a span's binder entries come first and decide it.
+        readings
+            .sort_unstable_by_key(|&(span, reading)| (span, core::cmp::Reverse(reading.binding)));
+        readings.dedup_by(|later, kept| {
+            let same = later.0 == kept.0;
+            if same && later.1.binding == kept.1.binding {
+                kept.1.polarity = kept.1.polarity.max(later.1.polarity);
+            }
+            same
+        });
         let referents = Referents::of(
             &module,
             &arena,
@@ -1947,6 +2017,7 @@ impl TypeTable
             signatures,
             opened,
             referents,
+            readings,
             in_scope: module.into_in_scope(),
             refused: None,
             documented,
@@ -2204,6 +2275,42 @@ impl TypeTable
             .uses_of(source, named)
             .iter()
             .map(|&(_, span)| span)
+    }
+
+    /// Each span of the source's own text a written binder or term, or a
+    /// force the lowering inserted, covers, ascending, with how the table
+    /// reads it: [`Binding::Binds`] when a binder's name is written there,
+    /// [`Polarity::Computation`] when a written term or an inserted force
+    /// there has a computation type.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one row per span some entry covers whose subject is
+    ///   [`Subject::Binder`] or [`Subject::Term`] and whose provenance is
+    ///   [`Provenance::Written`] or an inserted [`Insertion::Force`], strictly
+    ///   ascending; its binding is [`Binding::Binds`] exactly when such a
+    ///   binder entry covers the span, and its polarity is
+    ///   [`Polarity::Computation`] exactly when such an entry there has a
+    ///   computation type — a binder entry when one covers the span, since a
+    ///   binder is read at the type it binds and a function's lambda is located
+    ///   at its parameter, and any term entry otherwise, as the force of a
+    ///   called name. Any other insertion — an arm's inferred `return`, a
+    ///   function's thunk, a match's binding — reads nothing.
+    /// - provides: the modifiers a face marks a written name with.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda binder, a `run` binder, a parameter, a
+    ///   constructor's own name, a called name, the argument passed to it, a
+    ///   binder's use and a value a body answers are each read apart.
+    /// - witness: `typed::tests::a_called_name_runs_and_a_binder_binds`
+    #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [(first, _), (second, _)] if first < second)))]
+    #[inline]
+    #[must_use]
+    pub fn readings(&self) -> &[(ByteSpan, Reading)]
+    {
+        &self.readings
     }
 
     /// The referent whose name, written in the table's own source, holds
@@ -5481,6 +5588,56 @@ mod tests
             at("\n\n"),
             Maybe::Absent(typing::Absent::Untyped),
             "layout between declarations is no node's"
+        );
+    }
+
+    #[test]
+    fn a_called_name_runs_and_a_binder_binds()
+    {
+        let written = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef id : \
+                       Nat => Nat ;\ndef id = thunk { fn (y) { pure y } } ;\ndef twice = thunk { fn \
+                       (x) { run a <- id(x) ; id(a) } } ;\ndef same(n : Nat) -> -F Nat { n }\n";
+        let table = table(SourceText::from(written));
+        let names: Vec<String> = table
+            .readings()
+            .iter()
+            .filter_map(|&(span, reading)| {
+                let start = usize::from(span.start());
+                let text = written.get(start .. usize::from(span.end()))?;
+                text.chars()
+                    .all(|letter| letter.is_alphanumeric() || letter == '_')
+                    .then(|| {
+                        let line = written
+                            .get(.. start)
+                            .unwrap_or_default()
+                            .matches('\n')
+                            .count()
+                            .saturating_add(1);
+                        std::format!("{line}:{text} {:?} {:?}", reading.binding, reading.polarity)
+                    })
+            })
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "2:Zero Binds Value",
+                "3:Succ Binds Value",
+                "3:n Binds Value",
+                "6:y Binds Value",
+                "6:y Uses Value",
+                "7:x Binds Value",
+                "7:run Uses Computation",
+                "7:a Binds Value",
+                "7:id Uses Computation",
+                "7:x Uses Value",
+                "7:id Uses Computation",
+                "7:a Uses Value",
+                "8:n Binds Value",
+                "8:n Uses Value",
+            ],
+            "a constructor's name, a telescope binder, a lambda binder, a `run` binder and a \
+             parameter bind; a called name runs as a computation, the values passed to it are \
+             values, and so is the value a body answers, its inferred `return` read as nothing"
         );
     }
 
