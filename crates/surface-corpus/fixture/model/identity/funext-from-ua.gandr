@@ -1,0 +1,233 @@
+// Function extensionality from univalence, Voevodsky's argument: the
+// diagonal of the path space of `b` is an equivalence, so `ua` makes it a
+// path between types, and carrying a function out of the path space back
+// along that path is injective. The two ends of the path space read back
+// alike along it, both the identity, so they are one function, and any map
+// into the path space gives a path between its two ends. The HoTT book's
+// § 4.9 credits the argument to Voevodsky and reworks it through weak
+// function extensionality. Reading a homotopy as a map into the path space
+// and its ends back as the two functions is
+// `../../pathological/identity/funext-from-ua.gandr`.
+
+/// The diagonal of the path space: a point, to itself, along reflexivity.
+@[ checks ]
+def diag(b : Type, v : b) -> -F #{ x : b, y : b, p : Path(b, x, y) } {
+  (v, (v, here(v)))
+}
+
+/// The first end of a path.
+@[ checks ]
+def source(b : Type, w : #{ x : b, y : b, p : Path(b, x, y) }) -> -F b {
+  case w {
+    #{.x = u, .y = v, .p = q} => u
+  }
+}
+
+/// The second end of a path.
+@[ checks ]
+def target(b : Type, w : #{ x : b, y : b, p : Path(b, x, y) }) -> -F b {
+  case w {
+    #{.x = u, .y = v, .p = q} => v
+  }
+}
+
+/// The diagonal at a path's first end is the path, by `J` on it.
+@[ checks ]
+def diagSource(b : Type, w : #{ x : b, y : b, p : Path(b, x, y) }) -> -F Path(
+  #{ x : b, y : b, p : Path(b, x, y) },
+  diag(b, source(b, w)),
+  w
+) {
+  case w {
+    #{.x = u, .y = v, .p = q} => become transport(
+      +U ((y : b) -> (z : Path(b, u, y)) -> -F Path(
+        #{ x : b, y : b, p : Path(b, x, y) },
+        diag(b, u),
+        (u, (y, z))
+      )),
+      q,
+      here(u),
+      here(q),
+      here(diag(b, u))
+    )
+  }
+}
+
+/// The diagonal is bi-invertible, the first end both its inverses.
+@[ checks ]
+def diagEquiv(b : Type) -> -F (b ≃ #{ x : b, y : b, p : Path(b, x, y) }) {
+  (
+    thunk { fn (v) { diag(b, v) } },
+    (
+      (thunk { fn (w) { source(b, w) } }, thunk { fn (v) { here(v) } }),
+      (thunk { fn (w) { source(b, w) } }, thunk { fn (w) { diagSource(b, w) } })
+    )
+  )
+}
+
+/// A function into `b` carried back along a path between types and forward
+/// again is itself, at every function, by `J` on the path.
+@[ checks ]
+def roundTrip(b : Type, x : Type, y : Type, p : Path(Type, x, y)) -> -F ((u : y => b) => Path(
+  y => b,
+  transport(\Z. Z => b, p, transport(\Z. Z => b, back(p), u)),
+  u
+)) {
+  become transport(
+    +U ((w : Type) -> (z : Path(Type, x, w)) -> -F ((v : w => b) => Path(
+      w => b,
+      transport(\Z. Z => b, z, transport(\Z. Z => b, back(z), v)),
+      v
+    ))),
+    p,
+    here(x),
+    here(p),
+    fn (v) { here(v) }
+  )
+}
+
+/// Two functions into `b` that are one stay one carried forward along a path
+/// between types, by `J` on the path between them.
+@[ checks ]
+def carryPath(
+  b : Type,
+  x : Type,
+  y : Type,
+  p : Path(Type, x, y),
+  u : x => b,
+  v : x => b,
+  e : Path(x => b, u, v)
+) -> -F Path(y => b, transport(\Z. Z => b, p, u), transport(\Z. Z => b, p, v)) {
+  become transport(
+    +U ((w : x => b) -> (z : Path(x => b, u, w)) -> -F Path(
+      y => b,
+      transport(\Z. Z => b, p, u),
+      transport(\Z. Z => b, p, w)
+    )),
+    e,
+    here(u),
+    here(e),
+    here(transport(\Z. Z => b, p, u))
+  )
+}
+
+/// Three paths between functions into `b`, the first reversed, in a row.
+@[ checks ]
+def chain(
+  b : Type,
+  y : Type,
+  u : y => b,
+  s : y => b,
+  r : y => b,
+  v : y => b,
+  l : Path(y => b, s, u),
+  c : Path(y => b, s, r),
+  m : Path(y => b, r, v)
+) -> -F Path(y => b, u, v) {
+  back(l) then c then m
+}
+
+/// Carrying back along a path between types is injective: two functions
+/// into `b` whose carried copies are one are one.
+@[ checks ]
+def carryInjective(
+  b : Type,
+  x : Type,
+  y : Type,
+  p : Path(Type, x, y),
+  u : y => b,
+  v : y => b,
+  e : Path(x => b, transport(\Z. Z => b, back(p), u), transport(\Z. Z => b, back(p), v))
+) -> -F Path(y => b, u, v) {
+  run all <- roundTrip(b, x, y, p);
+  run l <- all(u);
+  run m <- all(v);
+  run c <- carryPath(
+    b,
+    x,
+    y,
+    p,
+    transport(\Z. Z => b, back(p), u),
+    transport(\Z. Z => b, back(p), v),
+    e
+  );
+  become chain(
+    b,
+    y,
+    u,
+    transport(\Z. Z => b, p, transport(\Z. Z => b, back(p), u)),
+    transport(\Z. Z => b, p, transport(\Z. Z => b, back(p), v)),
+    v,
+    l,
+    c,
+    m
+  )
+}
+
+/// The two ends of the path space are one function: carried back along
+/// `ua` of the diagonal, each runs the diagonal and then reads an end, and
+/// both are the identity by conversion.
+@[ checks ]
+def endsAgree(b : Type) -> -F Path(
+  #{ x : b, y : b, p : Path(b, x, y) } => b,
+  thunk { fn (w) { source(b, w) } },
+  thunk { fn (w) { target(b, w) } }
+) {
+  become carryInjective(
+    b,
+    b,
+    type(#{ x : b, y : b, p : Path(b, x, y) }),
+    ua((
+      thunk { fn (v) { diag(b, v) } },
+      (
+        (thunk { fn (w) { source(b, w) } }, thunk { fn (v) { here(v) } }),
+        (thunk { fn (w) { source(b, w) } }, thunk { fn (w) { diagSource(b, w) } })
+      )
+    )),
+    thunk { fn (w) { source(b, w) } },
+    thunk { fn (w) { target(b, w) } },
+    here(thunk { fn (v) { v } })
+  )
+}
+
+/// Two functions out of the path space that are one stay one after any map
+/// into it, by `J` on the path between them.
+@[ checks ]
+def whisker(
+  a : Type,
+  b : Type,
+  k : a => #{ x : b, y : b, p : Path(b, x, y) },
+  s : #{ x : b, y : b, p : Path(b, x, y) } => b,
+  t : #{ x : b, y : b, p : Path(b, x, y) } => b,
+  e : Path(#{ x : b, y : b, p : Path(b, x, y) } => b, s, t)
+) -> -F Path(a => b, thunk { fn (x) { s(k(x)) } }, thunk { fn (x) { t(k(x)) } }) {
+  become transport(
+    +U ((w : #{ x : b, y : b, p : Path(b, x, y) } => b) -> (z : Path(
+      #{ x : b, y : b, p : Path(b, x, y) } => b,
+      s,
+      w
+    )) -> -F Path(a => b, thunk { fn (x) { s(k(x)) } }, thunk { fn (x) { w(k(x)) } })),
+    e,
+    here(s),
+    here(e),
+    here(thunk { fn (x) { s(k(x)) } })
+  )
+}
+
+/// Function extensionality at the path space: a map into it gives a path
+/// between its two ends, whatever the functions are.
+@[ checks ]
+def funextOfSpace(a : Type, b : Type, k : a => #{ x : b, y : b, p : Path(b, x, y) }) -> -F Path(
+  a => b,
+  thunk { fn (x) { source(b, k(x)) } },
+  thunk { fn (x) { target(b, k(x)) } }
+) {
+  become whisker(
+    a,
+    b,
+    k,
+    thunk { fn (w) { source(b, w) } },
+    thunk { fn (w) { target(b, w) } },
+    endsAgree(b)
+  )
+}
