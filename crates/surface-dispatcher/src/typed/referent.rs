@@ -300,10 +300,18 @@ impl Referents
     ///   written in a signature, a constructor in a term and in a pattern, and
     ///   an imported declaration's use each refer to their own site; a position
     ///   in no use refers to nothing; a constructor and a call's head in a
-    ///   declaration the lowering refused refer to their sites.
+    ///   declaration the lowering refused refer to their sites. A declaration
+    ///   refused as shadowing an import refers nowhere inside it while a use
+    ///   after it still refers, and a written variable refers to its binder, a
+    ///   recursive call's head to the name it calls. A name nothing declares
+    ///   beside a form refused as shadowing is kept as unresolved.
     /// - witness: `typed::tests::a_use_refers_to_its_binder_and_its_declaration_795`
     /// - witness: `typed::tests::an_imported_name_refers_to_its_sibling_795`
     /// - witness: `typed::tests::a_refused_declaration_s_uses_refer_to_their_sites_836`
+    /// - witness: `typed::tests::a_declaration_refused_as_shadowing_answers_at_no_site_677`
+    /// - witness: `typed::tests::a_name_ends_where_it_is_written`
+    /// - witness: `typed::tests::a_recursive_call_s_head_refers_to_the_name_it_calls`
+    /// - witness: `typed::tests::a_name_nothing_declares_is_kept_beside_a_form_refused_as_shadowing`
     #[spec(ensures: |ret| ret.uses.windows(2).all(|pair| matches!(*pair, [(first, _), (second, _)] if first.start() <= second.start()))
         && ret.uses.iter().all(|&(span, _)| usize::from(span.end()).saturating_sub(usize::from(span.start())) <= ret.widest))]
     pub(super) fn of(
@@ -676,8 +684,10 @@ impl Referents
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a declaration's name, a constructor's name and a used
-    ///   parameter's name each answer themselves; a use answers nothing here.
+    ///   parameter's name each answer themselves; a use answers nothing here; a
+    ///   name holds no byte past its end.
     /// - witness: `typed::tests::each_name_is_found_with_every_use_referring_to_it`
+    /// - witness: `typed::tests::a_name_ends_where_it_is_written`
     #[spec(ensures: |ret| ret.is_none_or(|found| found.source == source
         && found.named.start() <= offset && offset < found.named.end()))]
     pub(super) fn named_at(
@@ -737,8 +747,10 @@ impl Referents
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a constructor nested inside another's arguments
-    ///   answers itself, and the outer one answers at its own name.
+    ///   answers itself, and the outer one answers at its own name; a use holds
+    ///   no byte past its end, where what encloses it answers.
     /// - witness: `typed::tests::a_use_refers_to_its_binder_and_its_declaration_795`
+    /// - witness: `typed::tests::a_name_ends_where_it_is_written`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
