@@ -793,6 +793,7 @@ mod tests
             range,
             severity: Severity::ERROR,
             code: None,
+            code_description: None,
             source: "gandr",
             message: message.into(),
             related_information: Vec::new(),

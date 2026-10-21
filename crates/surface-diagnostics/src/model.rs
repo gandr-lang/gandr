@@ -47,6 +47,7 @@ use crate::report::Unsettlement;
 use crate::report::report_identifier;
 use crate::report::report_note;
 use crate::report::report_span;
+use crate::report::tracking;
 use crate::spelled::spelling;
 use crate::verbosity::Verbosity;
 
@@ -1030,19 +1031,58 @@ impl Diagnostic
         details
     }
 
+    /// The issue tracking what the diagnostic's refusal is missing, as the
+    /// sentence every face closes it with.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for an unimplemented refusal, `tracked by #N <url>`, naming
+    ///   the issue its class carries and that issue's address, on one line;
+    ///   absent, with the reason [`Class::tracking`] gives, for every other
+    ///   diagnostic.
+    /// - provides: the note the terminal and the editor close a diagnostic
+    ///   with.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an unimplemented refusal closes with its issue at
+    ///   every face; a malformed one and a goal close with none.
+    /// - witness: `tests::diagnostics::an_unimplemented_refusal_names_its_tracking_issue_in_every_face`
+    #[spec(ensures: |ref ret| match self.detail.class.tracking() {
+        Maybe::Present(issue) => matches!(
+            *ret,
+            Maybe::Present(ref sentence)
+                if sentence.ends_with(alloc::format!("{issue} <{}>", issue.url()).as_str())
+                    && !sentence.contains('\n')
+        ),
+        Maybe::Absent(held) => *ret == Maybe::Absent(held),
+    })]
+    #[inline]
+    pub fn tracked(&self) -> Maybe<String, tracking::Absent>
+    {
+        match self.detail.class.tracking() {
+            Maybe::Present(issue) => {
+                Maybe::Present(alloc::format!("tracked by {issue} <{}>", issue.url()))
+            },
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
     /// The diagnostic as one line of JSON.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a ledger line is `{"level":"line","path":…,"line":…}`; every
     ///   other diagnostic one object holding `level`, `name` (or null), `key`,
-    ///   `class`, `message`, `title`, `path`, `primary` (a locus, or null),
-    ///   `annotations` (the context loci), `contexts` (each with its `role`,
-    ///   `sentence`, `judged`, `binders` and locus, or null), `hypotheses`,
-    ///   `note` (or null) and `fix` (its byte `start` and `end` and its
-    ///   `replacement`, or null); a locus holds its byte `start` and `end`, its
-    ///   one-based `line` and `column` in characters, and its `label`. One
-    ///   line.
+    ///   `class`, `tracking` (the `issue` and its `url` an unimplemented
+    ///   refusal names, or null), `message`, `title`, `path`, `primary` (a
+    ///   locus, or null), `annotations` (the context loci), `contexts` (each
+    ///   with its `role`, `sentence`, `judged`, `binders` and locus, or null),
+    ///   `hypotheses`, `note` (or null) and `fix` (its byte `start` and `end`
+    ///   and its `replacement`, or null); a locus holds its byte `start` and
+    ///   `end`, its one-based `line` and `column` in characters, and its
+    ///   `label`. One line.
     /// - provides: the [`Verbosity::Json`] image every face shares.
     /// - fails: never; the image holds only strings, numbers, nulls and arrays,
     ///   which always encode.
@@ -1056,6 +1096,7 @@ impl Diagnostic
     /// - witness: `tests::diagnostics::each_verb_prints_its_entries`
     /// - witness: `tests::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`
     /// - witness: `report::tests::the_annotations_of_the_image_are_the_contexts_alone`
+    /// - witness: `tests::diagnostics::an_unimplemented_refusal_names_its_tracking_issue_in_every_face`
     #[spec(ensures: |ref ret| ret.starts_with('{') && !ret.contains('\n'))]
     #[inline]
     #[must_use]
@@ -1089,6 +1130,13 @@ impl Diagnostic
             },
             key: alloc::format!("{}", self.message.key),
             class: alloc::format!("{}", self.detail.class),
+            tracking: match self.detail.class.tracking() {
+                Maybe::Present(issue) => Some(JsonTracking {
+                    issue: alloc::format!("{issue}"),
+                    url: issue.url(),
+                }),
+                Maybe::Absent(_) => None,
+            },
             message: self.message.text.clone(),
             title: self.detail.title.clone(),
             path,
@@ -1163,6 +1211,8 @@ struct JsonDiagnostic
     key: String,
     /// The diagnostic's class.
     class: String,
+    /// The issue tracking what an unimplemented refusal is missing.
+    tracking: Option<JsonTracking>,
     /// The message it leads with.
     message: String,
     /// The producer's own wording.
@@ -1181,6 +1231,16 @@ struct JsonDiagnostic
     note: Option<String>,
     /// The fix it proposes: the bytes it replaces and their replacement.
     fix: Option<JsonFix>,
+}
+
+/// The tracking issue of a diagnostic's JSON image.
+#[derive(Clone, Debug, serde::Serialize)]
+struct JsonTracking
+{
+    /// `#` and the issue's number.
+    issue: String,
+    /// The issue's address.
+    url: String,
 }
 
 /// The fix of a diagnostic's JSON image.

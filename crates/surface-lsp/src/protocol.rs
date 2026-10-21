@@ -3325,6 +3325,10 @@ pub struct Diagnostic
     /// The vocabulary name of the refusal it reports, when it reports one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
+    /// Where the code is described: the issue tracking an unimplemented
+    /// refusal, when the diagnostic reports one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code_description: Option<CodeDescription>,
     /// The tool that produced it: always `gandr`.
     pub source: &'static str,
     /// What it says.
@@ -3341,7 +3345,7 @@ impl Diagnostic
     /// # Specification
     /// - requires: nothing.
     /// - ensures: an error at the empty range at line 0, character 0, carrying
-    ///   `message` and no code or related location.
+    ///   `message` and no code, code description or related location.
     /// - provides: the diagnostic a fault with no position is published as.
     /// - fails: never.
     /// - panics: none.
@@ -3352,6 +3356,7 @@ impl Diagnostic
     /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
     #[spec(ensures: |ret| ret.range == Range::default()
         && ret.severity == Severity::ERROR && ret.code.is_none()
+        && ret.code_description.is_none()
         && ret.source == SOURCE && ret.related_information.is_empty())]
     #[inline]
     #[must_use]
@@ -3361,6 +3366,7 @@ impl Diagnostic
             range: Range::default(),
             severity: Severity::ERROR,
             code: None,
+            code_description: None,
             source: SOURCE,
             message,
             related_information: Vec::new(),
@@ -3383,6 +3389,7 @@ impl Diagnostic
             range,
             severity,
             code: None,
+            code_description: None,
             source: SOURCE,
             message,
             related_information: Vec::new(),
@@ -3407,6 +3414,15 @@ impl Severity
     /// A hint: a declaration a refusal elsewhere in the document leaves
     /// unsettled, reported beside that refusal rather than as an error.
     pub const HINT: Self = Self(4);
+}
+
+/// Where a diagnostic's code is described.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CodeDescription
+{
+    /// The address a client opens for the code.
+    pub href: String,
 }
 
 /// A locus that explains a diagnostic.

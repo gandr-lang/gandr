@@ -11,6 +11,7 @@
 
 use alloc::collections::BTreeMap;
 use core::convert::Infallible;
+use core::fmt::Write as _;
 use core::ops::ControlFlow;
 use std::path::Path;
 use std::path::PathBuf;
@@ -345,10 +346,13 @@ fn position(
 /// - requires: index describes the diagnostic's source; located spans project.
 /// - ensures: the primary range, else the innermost located context's, else the
 ///   origin; the optional code; the message (the message, then the primary
-///   label, each unlocated context and the note on lines of their own when
-///   present); and the related ranges and labels in the document — every
-///   context annotation, then every located context — represented in the
-///   comparison object, in order; a ledger line is its line at the origin.
+///   label, each unlocated context, the note and, for an unimplemented refusal,
+///   `note: tracked by #N <url>` on lines of their own when present); the
+///   address the code is described at, the tracking issue's for an
+///   unimplemented refusal and null otherwise; and the related ranges and
+///   labels in the document — every context annotation, then every located
+///   context — represented in the comparison object, in order; a ledger line is
+///   its line at the origin.
 /// - provides: an independent model-stage observation of editor diagnostics.
 /// - fails: never for valid spans.
 /// - panics: a located span lies inside a character.
@@ -375,6 +379,7 @@ fn rendered(
         return json!({
             "range": at_origin,
             "code": null,
+            "href": null,
             "message": format!("{}: {}", diagnostic.path.display(), diagnostic.message.text),
             "related": [],
         });
@@ -422,7 +427,14 @@ fn rendered(
         message.push_str("\nnote: ");
         message.push_str(note);
     }
-    json!({"range": lead, "code": code, "message": message, "related": related})
+    let href = match diagnostic.detail.class.tracking() {
+        Maybe::Present(issue) => {
+            let _written = write!(message, "\nnote: tracked by {issue} <{}>", issue.url());
+            json!(issue.url())
+        },
+        Maybe::Absent(_) => Value::Null,
+    };
+    json!({"range": lead, "code": code, "href": href, "message": message, "related": related})
 }
 
 /// The range, code and message of each diagnostic a publication carries, with
@@ -430,11 +442,12 @@ fn rendered(
 ///
 /// # Specification
 /// - requires: publication carries a diagnostic array.
-/// - ensures: each diagnostic preserves its range, code, message and the ranges
-///   and labels of its related locations at the publication's own URI; an
-///   absent code is observed as null and absent context as an empty array,
-///   without changing diagnostic or context order. A location in an import is
-///   left out: its range is the import's, which the walk does not lay apart.
+/// - ensures: each diagnostic preserves its range, code, the address its code
+///   is described at, message and the ranges and labels of its related
+///   locations at the publication's own URI; an absent code or description is
+///   observed as null and absent context as an empty array, without changing
+///   diagnostic or context order. A location in an import is left out: its
+///   range is the import's, which the walk does not lay apart.
 /// - provides: the wire projection compared with renderer-stage reports.
 /// - fails: never in the valid domain.
 /// - panics: the diagnostic array is missing.
@@ -450,6 +463,7 @@ fn rendered(
                 projected.get("range") == original.get("range")
                     && projected.get("message") == original.get("message")
                     && projected.get("code") == Some(original.get("code").unwrap_or(&Value::Null))
+                    && projected.get("href") == Some(original.pointer("/codeDescription/href").unwrap_or(&Value::Null))
                     && projected.get("related").and_then(Value::as_array).is_some_and(|related|
                         related.len() <= original.get("relatedInformation").and_then(Value::as_array).map_or(0, Vec::len))))) ]
 fn published(publication: &Value) -> Vec<Value>
@@ -463,6 +477,7 @@ fn published(publication: &Value) -> Vec<Value>
                 let mut projected = json!({
                     "range": diagnostic["range"],
                     "code": diagnostic.get("code").cloned().unwrap_or(Value::Null),
+                    "href": diagnostic.pointer("/codeDescription/href").cloned().unwrap_or(Value::Null),
                     "message": diagnostic["message"],
                 });
                 if let Some(fields) = projected.as_object_mut() {

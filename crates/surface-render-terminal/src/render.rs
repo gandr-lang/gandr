@@ -22,7 +22,7 @@
 //!
 //! | Level | Adds |
 //! | ----- | ---- |
-//! | `User`, the default | the message, the labels, the contexts and the note |
+//! | `User`, the default | the message, labels, contexts, note and an unimplemented refusal's `tracked by #N <url>` |
 //! | `Detailed` | `class:`, `detail:` where the producer's wording differs from the message, `expression:` when the primary span is one line, `hypotheses:` when any are in scope |
 //! | `Debug` | `spans:` every locus's bytes, `rules:` each context's stable name, `refusal:` the producer's refusal and failure as their implementers print them |
 //! | `Json` | instead of the snippet, the diagnostic's one-line JSON image |
@@ -68,12 +68,13 @@ use crate::style::Rendered;
 ///   brackets when it has one and its message; quotes its excerpt with each
 ///   annotation and each located context marked at its bytes, under its path,
 ///   or names its path alone when it marks nothing; closes with each unlocated
-///   context as a note, its note, and then the details its level adds; and,
-///   when it proposes a fix inside its excerpt, a `help` group quoting the
-///   excerpt with the fix applied. A source with an empty path is named
-///   `<input>`. Plain adds no styling; styled adds the backend's colour
-///   sequences. Caller path controls remain literal in both modes. No framing
-///   terminator is appended.
+///   context as a note, its note, the issue tracking it as a note when its
+///   refusal is unimplemented, and then the details its level adds; and, when
+///   it proposes a fix inside its excerpt, a `help` group quoting the excerpt
+///   with the fix applied. A source with an empty path is named `<input>`.
+///   Plain adds no styling; styled adds the backend's colour sequences. Caller
+///   path controls remain literal in both modes. No framing terminator is
+///   appended.
 /// - provides: the plain text the driver prints and the tests compare.
 /// - fails: never.
 /// - panics: none; every span reaches the backend inside the excerpt.
@@ -89,6 +90,7 @@ use crate::style::Rendered;
 /// - witness: `tests::render::each_causal_shape_renders_as_its_golden`
 /// - witness: `tests::render::one_refusal_renders_at_every_verbosity`
 /// - witness: `tests::render::forced_styling_colors_actual_facade_annotations`
+/// - witness: `tests::render::an_unimplemented_refusal_closes_with_its_tracking_issue`
 /// - witness: `render::tests::literal_path_controls_are_not_styling_or_framing`
 #[spec(ensures: |ref ret| match verbosity {
     Verbosity::Json => ret.as_ref().starts_with('{') && !ret.as_ref().contains('\n'),
@@ -195,6 +197,10 @@ pub fn render(
     }
     if let Maybe::Present(ref note) = diagnostic.note {
         group = group.element(Level::NOTE.message(note.as_str()));
+    }
+    let tracked = diagnostic.tracked();
+    if let Maybe::Present(ref sentence) = tracked {
+        group = group.element(Level::NOTE.message(sentence.as_str()));
     }
     let details = diagnostic.details(verbosity);
     for detail in &details {
