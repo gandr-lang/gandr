@@ -53,7 +53,7 @@ def keptRun = thunk { become kept[a = Integer](0, 4) } ;
 
 /// A function applied to the integer it is passed.
 @[ checks ]
-def apply(f : (y : Integer) => Integer, x : Integer) -> -F Integer { become f(x) }
+def apply(f : Integer => Integer, x : Integer) -> -F Integer { become f(x) }
 
 /// `same` passed as a value, its implicit supplied where it is taken: the
 /// function applied to its implicits alone is a function of the rest.
@@ -70,7 +70,7 @@ module Adding {
 
 /// A value combined with itself, the combination and its carrier implicit.
 @[ checks ]
-def twice @[m : Type, combine : (x : m, y : m) => m] (x : m) -> -F m { become combine(x, x) }
+def twice @[m : Type, combine : (m, m) => m] (x : m) -> -F m { become combine(x, x) }
 
 /// `twice` with its combination supplied by a module path: a resident's value
 /// runs to the slot's next `,` or its `]` (#1188).

@@ -30,12 +30,12 @@ module SyntaxNat : Model(Nat) {
 /// The module packed into the record type of `Nat`'s models: its carrier and
 /// its two operations, in the order `Model(Nat)` mints them.
 @[ checks ]
-def syntaxModel : #{nat : Type, zero : () => nat, succ : (n : nat) => nat} ;
+def syntaxModel : #{nat : Type, zero : () => nat, succ : nat => nat} ;
 def syntaxModel = (N, (SyntaxNat.zero, SyntaxNat.succ)) ;
 
 /// A second model, on the integers: zero is `0` and the successor adds one.
 @[ checks ]
-def countingModel : #{nat : Type, zero : () => nat, succ : (n : nat) => nat} ;
+def countingModel : #{nat : Type, zero : () => nat, succ : nat => nat} ;
 def countingModel = (Integer, (thunk { 0 }, thunk { fn (n) { return n + 1 } })) ;
 
 /// The syntax model's successor at its zero builds the data's one: the

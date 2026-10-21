@@ -286,6 +286,46 @@ def asked(n : Nat) -> -F Nat {
     );
 }
 
+/// #1327: the sugared form writes a value-function alias at its shortest:
+/// one domain unparenthesised however deeply written, nested aliases among
+/// them, and a binder nothing later reads left out; a list of domains, a
+/// binder a later domain or the result reads, and a domain with a comment
+/// keep their spelling.
+#[test]
+fn a_value_function_alias_is_written_at_its_shortest_1327()
+{
+    let grammar = grammar();
+    let source = "\
+def step : (Integer) => Integer ;
+def named : (x : Integer) => Integer ;
+def nested : ((Integer)) => Integer ;
+def twice : (Integer) => (Integer) => Integer ;
+def unread : (a : Type, b : Integer) => a ;
+def pair : (Integer, String) => Unit ;
+def dependent : (a : Type, a) => a ;
+def noted : (/* the count */ Integer) => Integer ;
+";
+    let sugared = "\
+def step : Integer => Integer ;
+def named : Integer => Integer ;
+def nested : Integer => Integer ;
+def twice : Integer => Integer => Integer ;
+def unread : (a : Type, Integer) => a ;
+def pair : (Integer, String) => Unit ;
+def dependent : (a : Type, a) => a ;
+def noted : (/* the count */ Integer) => Integer ;
+";
+    assert_eq!(
+        spelled(&grammar, source, Form::Sugared, Selection::Every),
+        sugared
+    );
+    assert_eq!(
+        spelled(&grammar, sugared, Form::Sugared, Selection::Every),
+        sugared,
+        "the shortest spelling is kept"
+    );
+}
+
 /// The circle the path-composite goldens compose its loop in.
 const CIRCLE: &str = "\
 data Circle : Type {

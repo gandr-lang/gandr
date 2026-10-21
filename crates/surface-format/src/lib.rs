@@ -72,13 +72,14 @@
 //! (`gandr_surface_lowering::ElidableExit`). An early `return`, one of a
 //! computation, one an `explicit_exits` attribute asks for and every written
 //! `become` keep their keyword, and the explicit form writes none it was not
-//! given. Each moves its form on the
-//! concrete syntax
-//! tree: its operands and their comments are kept, its own tiles are the
-//! other spelling's, each comment it owns goes before the operand it
-//! preceded, and an operand is parenthesised or unwrapped as its new
-//! position's binding needs, as the printer writes it. [`Selection`] narrows
-//! the rewrites by [`RewriteName`]; there is no other knob.
+//! given. A value-function alias written longer than the printer writes it,
+//! `(A) => B` or `(x : A) => B` where nothing reads `x`, is sugared to its
+//! shortest, `A => B`. Each moves its form on the concrete syntax tree: its
+//! operands and their comments are kept, its own tiles are the other
+//! spelling's, each comment it owns goes before the operand it preceded, and
+//! an operand is parenthesised or unwrapped as its new position's binding
+//! needs, as the printer writes it. [`Selection`] narrows the rewrites by
+//! [`RewriteName`]; there is no other knob.
 //!
 //! | rewrite          | explicit                | sugared         |
 //! | ---------------- | ----------------------- | --------------- |
@@ -92,6 +93,7 @@
 //! | `path-inverse`   | `transport(\y. Path(A, y, a), p, here(a))` | `back(p)` |
 //! | `path-action`    | `transport(\y. Path(B, f(a), f(y)), p, here(f(a)))` | `cong(f, p)` |
 //! | `tail-return`    | `return v`, as written  | `v`, where a path ends |
+//! | `short-alias`    | `(x : A) => B`, as written | `A => B`, `x` unread |
 //!
 //! A rewrite changes tokens, so its check is the meaning, never the digest:
 //! the source and the rewritten text are each lowered into one core arena

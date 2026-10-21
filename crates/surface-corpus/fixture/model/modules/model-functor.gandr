@@ -37,7 +37,7 @@ def nine = thunk { become TimesSquared.square(3) } ;
 
 /// The integers under addition, ascribed the record signature the magma
 /// presents rather than its model signature.
-module Plus : #{ type M, mul : (x : M, y : M) => M } {
+module Plus : #{ type M, mul : (M, M) => M } {
   type M = Integer;
 
   def mul(a : Integer, b : Integer) -> -F Integer { become a + b }
