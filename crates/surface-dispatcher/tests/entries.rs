@@ -303,9 +303,9 @@ fn kind(
 /// lowering refused, as the head of a former's call, as a count of the
 /// stratum a head's annotation writes, as the module a path qualifies, as
 /// a run literal's move, as an inner link of a product, a sum or a lazy
-/// product chain, as
-/// the value a discarded bind drops, as an arrow of a data family's kind, or
-/// as the sort of a stage binder or the binder a call supplies.
+/// product chain, as the value a discarded bind drops, as an arrow of a data
+/// family's kind, as the sort of a stage binder or the binder a call
+/// supplies, or as the theory a model type names.
 ///
 /// # Specification
 /// trivial.
@@ -358,6 +358,11 @@ enum Placed
     /// supplies by name, `j` in `applyAt[i = j](f, x)`: the stage is erased
     /// from the core, so no node holds it, and the call answers.
     Stage,
+    /// The theory a model type is written over, `T` in `Model(T)`: the name
+    /// of a presentation, neither a term the checker judges nor a type the
+    /// lowering forms, the record it derives located there and inserted, so
+    /// the model type answers.
+    Theory,
 }
 
 /// Every gated node of `tree` with its kind, its span and where it stands.
@@ -493,6 +498,9 @@ fn gated(
             && def.label == "->"
             && def.sort == Sort::Type
             && parent.is_some_and(|(_, label, .., spine)| label == "data" || spine);
+        // The theory a model type names: every child of `Model(…)` in a type
+        // but its head.
+        let modelled = melded && def.sort == Sort::Type && spelled(opener) == "Model";
         stack.extend(
             children
                 .iter()
@@ -504,7 +512,12 @@ fn gated(
                     let qualifying = melded && opener == Some(child) && def.label == ".";
                     (
                         child,
-                        placed,
+                        if modelled && opener != Some(child) {
+                            placed.or(Some(Placed::Theory))
+                        }
+                        else {
+                            placed
+                        },
                         Some((
                             mold,
                             def.label,

@@ -2135,6 +2135,10 @@ struct Function
 /// declaration at two arguments.
 const STACK: &str = "Stack";
 
+/// The head of a theory's models as a type, resolved after every binder and
+/// earlier declaration at one argument.
+const MODEL: &str = "Model";
+
 /// What the mint sweep does for one node, decided by the classification.
 ///
 /// # Specification
@@ -2350,6 +2354,9 @@ enum Plan
     /// value types for the equivalence and the quasi-inverse, codes for the
     /// flow.
     Relation(Relation, NodeIndex, NodeIndex),
+    /// A theory's models as a type, `Model(S)`: the bundled record the
+    /// signature derived from `S` states.
+    Bundle(Arc<model::Bundled>),
     /// A first-class continuation's type over the computation types it runs
     /// from and to: `Stack(C, D)`.
     Stack(NodeIndex, NodeIndex),
@@ -9755,7 +9762,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Data(..) | Plan::Codata(..) | Plan::Expansion(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Relation(..) | Plan::Stack(..) | Plan::Constructor(_)))
+                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Data(..) | Plan::Codata(..) | Plan::Expansion(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Relation(..) | Plan::Stack(..) | Plan::Bundle(_) | Plan::Constructor(_)))
                 )
         },
     )]
@@ -9848,10 +9855,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   plans, one named `Flow` and applied to three the directed identity
     ///   type [`Self::flow_type`] plans, one named `Stack` and applied to two
     ///   the continuation type [`Self::stack_type`] plans, one named `Iso` and
-    ///   applied to two the quasi-inverse `A ≅ B` [`Self::relation_of`] plans;
-    ///   any other head applied to one argument resolves against the unary
-    ///   table, stands at the sort its former produces, reads its argument at
-    ///   the sort the former takes, and is planned over it.
+    ///   applied to two the quasi-inverse `A ≅ B` [`Self::relation_of`] plans,
+    ///   one named `Model` and applied to one the bundled record
+    ///   [`Self::model_type`] plans; any other head applied to one argument
+    ///   resolves against the unary table, stands at the sort its former
+    ///   produces, reads its argument at the sort the former takes, and is
+    ///   planned over it.
     /// - provides: the one table of type formers written as an application, in
     ///   a type and where a value is read.
     /// - fails: yields the unresolved-head refusal for a head no former takes
@@ -9879,7 +9888,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && (ret.is_err()
                     || matches!(
                         self.plans.get(site.at.node),
-                        Some(&(Plan::Former(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Relation(..)))
+                        Some(&(Plan::Former(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Relation(..) | Plan::Bundle(_)))
                     ))
         },
     )]
@@ -9923,6 +9932,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             return self.relation_of(site, Relation::Isomorphism, written);
         }
+        if let (Some(argument), 1_usize) = (first, count)
+            && name.as_ref() == MODEL
+        {
+            return self.model_type(site, argument);
+        }
         let unresolved = |arity| LoweringRefusal::UnresolvedTypeHead {
             span: head.span,
             name,
@@ -9945,7 +9959,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `head` is the first operand of the call at `site`.
     /// - ensures: the head's name when it is a capitalised name spelling
-    ///   `Path`, `Flow`, `Stack`, `Iso` or a unary type former, and no
+    ///   `Path`, `Flow`, `Stack`, `Iso`, `Model` or a unary type former, and no
     ///   constructor, binder, earlier declaration or stated type carries that
     ///   name; the unformed absence for any other head.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a mold the grammar does
@@ -9998,6 +10012,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             identity::FLOW,
             STACK,
             identity::ISO,
+            MODEL,
         ]
         .contains(&name.as_ref())
             || matches!(type_former(name), Maybe::Present(_));
@@ -11940,6 +11955,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Path(..)
                 | Plan::Flow(..)
                 | Plan::Relation(..)
+                | Plan::Bundle(_)
                 | Plan::Stack(..)
                 | Plan::Data(..)
                 | Plan::Expansion(..)
@@ -12198,6 +12214,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Relation(relation, left, right) => {
                 self.mint_relation(relation, [left, right], sink, origin)
             },
+            Plan::Bundle(ref signature) => self.mint_bundle(signature, sink, origin),
             Plan::Arrow(..)
             | Plan::StaticPi(..)
             | Plan::Path(..)
@@ -13200,7 +13217,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Recorded(_)
             | Plan::Ride(..)
             | Plan::FlowThen(..)
-            | Plan::Relation(..) => Maybe::Absent(lowered::Absent::Unminted),
+            | Plan::Relation(..)
+            | Plan::Bundle(_) => Maybe::Absent(lowered::Absent::Unminted),
         }
     }
 

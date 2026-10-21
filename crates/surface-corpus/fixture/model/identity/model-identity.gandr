@@ -1,0 +1,43 @@
+// Representation independence read at a theory's models: `Model(Toggle)` is
+// the bundled record its signature states — one type per sort, one value per
+// operation — so the toggles of `structure-operations.gandr` are models of
+// `Toggle`, and the path relating them as structures relates them as models.
+
+// Negation, `not`, and the identity, `same`, on the booleans.
+import "./funext.gandr" ;
+// The booleans' path to themselves by negation, `negation`.
+import "./transport-list.gandr" ;
+// The two toggles, `plainToggle` and `flippedToggle`, and their operations
+// carried along negation, `stepped` and `reread`.
+import "./structure-operations.gandr" ;
+
+/// A toggle: a carrier, where it starts, a step and a reading.
+@[ checks ]
+theory Toggle {
+  sort T : Type;
+  oper start : T;
+  oper step : (t : T) --> T;
+  oper read : (t : T) --> Bool;
+}
+
+/// The toggle that starts false and reads its state as it is, as a model.
+@[ checks ]
+def plainModel : Model(Toggle) ;
+def plainModel = plainToggle ;
+
+/// The toggle that starts true and reads its state negated, as a model.
+@[ checks ]
+def flippedModel : Model(Toggle) ;
+def flippedModel = flippedToggle ;
+
+/// The two models are one along negation: the carriers by negation, the start
+/// carried to `true`, and each operation carried to the other's.
+@[ checks ]
+def oneModel : Path(Model(Toggle), plainModel, flippedModel) ;
+def oneModel = (negation, (here(+{.1 = unit}), (stepped, reread))) ;
+
+/// The start left unmoved does not relate the models: negation carries `false`
+/// to `true`, so `here(false)` is no path from the carried start to `true`.
+@[ refuses("EndpointMismatch") ]
+def startUnmoved : Path(Model(Toggle), plainModel, flippedModel) ;
+def startUnmoved = (negation, (here(+{.0 = unit}), (stepped, reread))) ;

@@ -532,3 +532,125 @@ fn a_family_applied_to_too_few_indices_is_refused()
         "a family is applied to as many indices as it binds: {found:?}"
     );
 }
+
+/// Each derived type beside the type written for it, node for node.
+///
+/// # Specification
+/// - requires: every name in `pairs` declares a type in `source`.
+/// - ensures: nothing beyond the assertions.
+/// - fails: never.
+/// - panics: when a derived type differs from its written one.
+/// - executable: none — the helper returns nothing; its assertions are the
+///   relation it checks.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the caller's pairs.
+/// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
+fn states_the_written_types<Source, Name>(
+    source: Source,
+    pairs: &[(Name, Name)],
+) where
+    Source: AsRef<str>,
+    Name: AsRef<str>,
+{
+    let lowered = lower(source.as_ref());
+    for &(ref derived, ref written) in pairs {
+        let (derived, written) = (derived.as_ref(), written.as_ref());
+        let derived_type = declared_type_of(&lowered, derived, Role::Declared);
+        let written_type = declared_type_of(&lowered, written, Role::Declared);
+        assert_eq!(
+            equal_type_syntax(&lowered.arena, derived_type, written_type),
+            CertificateEquality::Equal,
+            "`{derived}` is `{written}`, node for node"
+        );
+    }
+}
+
+/// `Model(Toggle)` is the dependent record its signature states: the carrier
+/// bound by `Σ` and read by the start, the step and the reading, the labels
+/// erased as a written dependent record erases them. A theory of no sorts,
+/// whose fields read nothing, is the record keyed by its operations.
+#[test]
+fn a_model_type_is_the_record_its_theory_derives()
+{
+    states_the_written_types(
+        "theory Toggle {\n  sort T : Type;\n  oper start : T;\n  oper step : (t : T) --> T;\n  \
+         oper read : (t : T) --> Bool;\n}\ntheory Based {\n  oper base : Integer;\n  oper double : \
+         Integer;\n}\ndef derived : Model(Toggle) ;\ndef written : #{t : Type, start : t, step : t \
+         => t, read : t => Bool} ;\ndef based : Model(Based) ;\ndef plain : #{base : Integer, \
+         double : Integer} ;\n",
+        &[("derived", "written"), ("based", "plain")],
+    );
+}
+
+/// A law is a `Path` field over the rule's variables whose endpoints apply the
+/// fields before it, so a constant and an operation a law names bind.
+#[test]
+fn a_law_bearing_model_type_reads_its_operations()
+{
+    states_the_written_types(
+        "theory Unital {\n  sort M : Type;\n  oper e : M;\n  oper mul : (x : M, y : M) --> M;\n  \
+         rule unitL : mul(e(), x) ==> x;\n}\ndef derived : Model(Unital) ;\ndef written : #{m : \
+         Type, e : m, mul : (x : m, y : m) => m, unitL : (x : m) => Path(m, mul(e, x), x)} ;\n",
+        &[("derived", "written")],
+    );
+}
+
+/// An indexed sort is a function from its indices into the universe, and a
+/// later field reads it applied: the edges of a graph over two vertices, and
+/// a loop at a vertex an edge from it to itself.
+#[test]
+fn a_family_sort_is_a_function_into_the_universe()
+{
+    states_the_written_types(
+        "theory Graph {\n  sort V : Type;\n  sort E(s : V, t : V) : Type;\n  oper loop : (v : V) \
+         --> E(v, v);\n}\ndef derived : Model(Graph) ;\ndef written : #{v : Type, e : (s : v, t : \
+         v) => Type, loop : (x : v) => e(x, x)} ;\n",
+        &[("derived", "written")],
+    );
+}
+
+/// A family read at an index that applies an operation runs that call first,
+/// as a written family call does: the terms of a context extended by one, and
+/// the variable the extension binds.
+#[test]
+fn a_family_over_an_applied_index_runs_the_call_first()
+{
+    states_the_written_types(
+        "theory Scoped {\n  sort C : Type;\n  sort T(g : C) : Type;\n  oper ext : (g : C) --> C;\n  \
+         oper top : (g : C) --> T(ext(g));\n}\ndef derived : Model(Scoped) ;\ndef written : #{c : \
+         Type, t : (g : c) => Type, ext : (g : c) => c, top : (g : c) => t(ext(g))} ;\n",
+        &[("derived", "written")],
+    );
+}
+
+/// A theory's `oper x : Model(T)` is a field holding `Model(T)`'s own record.
+#[test]
+fn a_nesting_model_type_bundles_the_inner_one()
+{
+    states_the_written_types(
+        "theory Pointed {\n  sort T : Type;\n  oper z : T;\n}\ntheory Outer {\n  oper inner : \
+         Model(Pointed);\n}\ndef derived : Model(Outer) ;\ndef written : #{inner : #{t : Type, z : \
+         t}} ;\n",
+        &[("derived", "written")],
+    );
+}
+
+#[test]
+fn a_model_type_of_an_undeclared_theory_is_refused()
+{
+    let source = "def m : Model(Nowhere) ;";
+    assert_eq!(
+        rows(&lower(source)),
+        [row(
+            "m",
+            Role::Declared,
+            Amounts::Refused(LoweringRefusal::UnresolvedTypeHead {
+                span: span_of(source, "Nowhere", 0_usize),
+                name: name("Nowhere"),
+                arity: gandr_surface_lowering::HeadArity::Nullary,
+            })
+        )],
+        "a theory nothing declares before the type derives nothing"
+    );
+}

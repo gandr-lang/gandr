@@ -99,6 +99,13 @@ def lcSyntax = (
   )
 ) ;
 
+/// The record is `Model(LC)`: the packed syntax model stands at the type the
+/// derivation states, the families over contexts read applied and a term in an
+/// extended context read after its extension runs.
+@[ checks ]
+def lcModel : Model(LC) ;
+def lcModel = lcSyntax ;
+
 /// `(λx. x)(λx. x)` contracts, by the model's single substitution of the
 /// argument into the body, to `λx. x`.
 @[ runs("Lam(Ix(Z))") ]
