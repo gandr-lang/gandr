@@ -1447,6 +1447,7 @@ impl Component
     ///   a source whose import sits inside a module, laid beside the base the
     ///   import names, does not.
     /// - witness: `component::tests::an_importer_s_forms_are_read_as_its_parse_reads_them`
+    /// - witness: `component::tests::a_component_read_whole_confirms_without_reading_its_imports`
     #[must_use]
     #[inline]
     #[spec(ensures: |ret| ret == Confirmation::Confirmed || self.reading == Reading::ImportForms)]
@@ -1721,6 +1722,7 @@ impl Readings
     ///   a sibling whose text changed is read again and laid out as it now
     ///   reads.
     /// - witness: `component::tests::a_source_read_whole_is_parsed_once_per_text_776`
+    /// - witness: `component::tests::the_readings_store_keeps_each_reading_once_and_lets_the_oldest_go`
     #[spec(ensures: self.count <= READINGS_HELD)]
     fn keep(
         &mut self,
@@ -1807,6 +1809,7 @@ impl Stamp
     /// # Adequacy
     /// - hypothesis: L3 — as [`locate`].
     /// - witness: `component::tests::a_settled_file_is_read_once_per_change_776`
+    /// - witness: `component::tests::a_stamp_reads_the_file_it_is_taken_of`
     #[cfg(unix)]
     fn of(metadata: Option<&std::fs::Metadata>) -> Option<Self>
     {
@@ -1898,6 +1901,7 @@ impl Files
     /// # Adequacy
     /// - hypothesis: L3 — as [`locate`].
     /// - witness: `component::tests::a_settled_file_is_read_once_per_change_776`
+    /// - witness: `component::tests::the_file_store_lets_the_oldest_read_go_past_its_bound`
     #[spec(ensures: self.held.len() <= FILES_HELD)]
     fn keep(
         &mut self,
@@ -2156,6 +2160,7 @@ mod tests
     use super::Shadows;
     use super::group;
     use super::imports_named;
+    use super::laid;
     use super::lay_out;
     use super::lay_out_shadowed;
     use super::named_path;
@@ -2676,21 +2681,35 @@ mod tests
         );
     }
 
+    /// A source that writes no path import is alone: one that never spells
+    /// `import`, and one that spells it only inside a name.
     #[test]
     fn a_source_importing_nothing_is_alone()
     {
         let grammar = built_in().expect("the grammar builds");
-        let text = SourceText::from("def one : Integer ;\ndef one = 1 ;");
-
-        assert!(matches!(
-            lay_out(
-                &grammar,
-                &PathBuf::from("alone.gandr"),
-                SourceRoot::Strict,
-                text
+        for (written, reason) in [
+            (
+                "def one : Integer ;\ndef one = 1 ;",
+                "never spells `import`",
             ),
-            Maybe::Absent(_)
-        ));
+            (
+                "def important : Integer ;\ndef important = 1 ;",
+                "spells `import` only inside a name",
+            ),
+        ] {
+            assert!(
+                matches!(
+                    lay_out(
+                        &grammar,
+                        &PathBuf::from("alone.gandr"),
+                        SourceRoot::Strict,
+                        SourceText::from(written)
+                    ),
+                    Maybe::Absent(laid::Absent::Alone)
+                ),
+                "a source that {reason} is alone"
+            );
+        }
     }
 
     #[test]
@@ -2927,6 +2946,197 @@ mod tests
             named("base.gandr", base),
             Vec::<PathBuf>::new(),
             "a source that never spells `import` names nothing"
+        );
+    }
+
+    /// The readings store keeps one reading per text and grammar, and past
+    /// its bound lets the reading asked for longest ago go: the fresh reading
+    /// stays, and a text read under two grammars loses only the older one.
+    #[test]
+    fn the_readings_store_keeps_each_reading_once_and_lets_the_oldest_go()
+    {
+        use gandr_surface_syntax::GrammarFingerprint;
+
+        use super::Held;
+        use super::READINGS_HELD;
+        use super::Readings;
+
+        let held = |grammar: u64, used: u64| Held {
+            grammar: GrammarFingerprint::from(grammar),
+            written: Maybe::Present(Vec::new()),
+            used,
+        };
+        let grammars = |readings: &Readings, text: &str| -> Vec<u64> {
+            readings.held.get(text).map_or_else(Vec::new, |held| {
+                held.iter().map(|held| u64::from(held.grammar)).collect()
+            })
+        };
+        let mut readings = Readings {
+            held: BTreeMap::new(),
+            count: 0_usize,
+            clock: 0_u64,
+        };
+        readings.keep(String::from("twice"), held(1, 0));
+        readings.keep(String::from("twice"), held(1, 1));
+        assert_eq!(
+            (readings.count, grammars(&readings, "twice")),
+            (1_usize, Vec::from([1_u64])),
+            "a second reading under one grammar is not kept again"
+        );
+        readings.keep(String::from("twice"), held(2, u64::MAX));
+        let mut used = 1_u64;
+        while readings.count < READINGS_HELD {
+            used = used.saturating_add(1);
+            readings.keep(format!("text {used}"), held(1, used));
+        }
+        assert_eq!(
+            readings.count, READINGS_HELD,
+            "nothing goes while the store is within its bound"
+        );
+        readings.keep(String::from("fresh"), held(1, used.saturating_add(1)));
+        assert_eq!(
+            (
+                readings.count,
+                grammars(&readings, "twice"),
+                grammars(&readings, "fresh")
+            ),
+            (READINGS_HELD, Vec::from([2_u64]), Vec::from([1_u64])),
+            "past the bound only the reading asked for longest ago goes"
+        );
+    }
+
+    /// The file store holds one read per path, and past its bound lets the
+    /// read asked for longest ago go, keeping the fresh one.
+    #[test]
+    fn the_file_store_lets_the_oldest_read_go_past_its_bound()
+    {
+        use std::ffi::OsString;
+
+        use super::FILES_HELD;
+        use super::Files;
+        use super::HeldFile;
+        use super::Stamp;
+
+        let read = |used: u64| HeldFile {
+            stamp: Stamp {
+                device: 0,
+                inode: used,
+                length: 0,
+                modified: (0, 0),
+                changed: (0, 0),
+            },
+            named: PathBuf::from("held.gandr"),
+            found: SourceRoot::Strict,
+            text: String::new(),
+            used,
+        };
+        let mut files = Files {
+            held: BTreeMap::new(),
+            clock: 0_u64,
+        };
+        let mut used = 0_u64;
+        while files.held.len() < FILES_HELD {
+            files.keep(OsString::from(format!("{used}.gandr")), read(used));
+            used = used.saturating_add(1);
+        }
+        assert_eq!(
+            files.held.len(),
+            FILES_HELD,
+            "nothing goes while the store is within its bound"
+        );
+        files.keep(OsString::from("fresh.gandr"), read(used));
+        assert_eq!(
+            (
+                files.held.len(),
+                files.held.contains_key(&OsString::from("0.gandr")),
+                files.held.contains_key(&OsString::from("fresh.gandr"))
+            ),
+            (FILES_HELD, false, true),
+            "past the bound only the read asked for longest ago goes"
+        );
+    }
+
+    /// A stamp reads the file `stat` describes: two files of different
+    /// lengths stamp apart, and no metadata is no stamp.
+    #[cfg(unix)]
+    #[test]
+    fn a_stamp_reads_the_file_it_is_taken_of()
+    {
+        use super::Stamp;
+
+        let tree = Scratch::new(Path::new("stamped"), &[
+            (Path::new("short.gandr"), SourceText::from("def a = 1 ;")),
+            (Path::new("long.gandr"), SourceText::from("def b = 22 ;")),
+        ]);
+        let stamp = |file: &str| {
+            let metadata = std::fs::metadata(tree.0.join(file)).expect("the file is written");
+            Stamp::of(Some(&metadata))
+        };
+        assert!(
+            stamp("short.gandr").is_some_and(|short| stamp("long.gandr")
+                .is_some_and(|long| short != long && short.length == 11 && long.length == 12)),
+            "each file stamps as `stat` reads it"
+        );
+        assert_eq!(Stamp::of(None), None, "no metadata, no stamp");
+    }
+
+    /// An import written with its quote against the keyword is a form of its
+    /// own: read from its forms alone, the source names the file even where
+    /// the form sits inside a module, which a whole parse does not read.
+    #[test]
+    fn an_import_with_its_quote_against_the_keyword_is_read_as_a_form()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let nested = "module inner {\n  import\"./base.gandr\" ;\n}\ndef three : Integer ;\ndef \
+                      three = 3 ;";
+        let tree = Scratch::new(Path::new("quoted"), &[]);
+        assert_eq!(
+            imports_named(
+                &grammar,
+                &tree.0.join("nested.gandr"),
+                SourceText::from(nested)
+            ),
+            [tree.0.join("base.gandr")],
+            "the quoted form is read alone, as every form opening its line is"
+        );
+    }
+
+    /// A component read whole confirms without reading its imports again:
+    /// they were each source's own parse. Laid after a base whose last
+    /// declaration is left open, the importer's import is read into the base
+    /// by the whole parse, and the component still confirms.
+    #[test]
+    fn a_component_read_whole_confirms_without_reading_its_imports()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let tree = Scratch::new(Path::new("confirmed-whole"), &[
+            (Path::new("base.gandr"), SourceText::from("def one = 1")),
+            (
+                Path::new("importer.gandr"),
+                SourceText::from("import \"./base.gandr\" ;\ndef two = one ;"),
+            ),
+        ]);
+        let grouped = group(
+            &grammar,
+            Vec::from([tree.given(Path::new("importer.gandr"))]),
+            Reading::Whole,
+            &BTreeSet::new(),
+        );
+        let [ref component] = *grouped.components.as_slice()
+        else {
+            panic!("one component: {:?}", grouped.components);
+        };
+        assert_eq!(
+            component.members.len(),
+            2_usize,
+            "the importer is laid after its base"
+        );
+        let parsed = parse(&grammar, SourceText::from(component.text.as_str()))
+            .expect("the component parses");
+        assert_eq!(
+            component.confirms(&grammar, parsed.tree()),
+            Confirmation::Confirmed,
+            "read whole, the component confirms as laid out"
         );
     }
 }

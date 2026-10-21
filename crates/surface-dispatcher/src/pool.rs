@@ -308,6 +308,7 @@ impl Fork for Pooled
     ///   more, counting each item's visits and the states made, distinguish a
     ///   skipped or repeated item and a state made per item or per idle worker.
     /// - witness: `pool::tests::a_pool_visits_each_item_once_from_a_state_per_busy_worker`
+    /// - witness: `pool::tests::one_item_runs_on_the_caller_and_many_on_the_workers`
     #[inline]
     fn each<Item, State, Start, Job>(
         &self,
@@ -466,6 +467,37 @@ mod tests
             assert!(
                 made <= count.min(workers),
                 "{made} states for {count} items"
+            );
+        }
+    }
+
+    /// A stage of one item runs on the calling thread, and a stage of many on
+    /// the pool's workers alone: called from outside any pool, no item of a
+    /// wide stage runs on the caller.
+    #[test]
+    fn one_item_runs_on_the_caller_and_many_on_the_workers()
+    {
+        let pool = Pool::new(Width::Threads(Threads::from(
+            NonZeroUsize::new(4_usize).unwrap(),
+        )));
+        let Ok(Forked::Pooled(_threads, fork)) = pool.forked()
+        else {
+            panic!("a pool of four threads starts");
+        };
+        let caller = std::thread::current().id();
+        for (count, on_caller) in [(1_usize, true), (64, false)] {
+            let mut ran: Vec<Option<std::thread::ThreadId>> = vec![None; count];
+            fork.each(
+                &mut ran,
+                || (),
+                |_state, ran| {
+                    *ran = Some(std::thread::current().id());
+                },
+            );
+            assert!(
+                ran.iter()
+                    .all(|ran| ran.is_some_and(|thread| (thread == caller) == on_caller)),
+                "{count} items run on the caller: {on_caller}"
             );
         }
     }

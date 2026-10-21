@@ -1471,6 +1471,7 @@ struct Tree
 ///   refused naming the rule.
 /// - witness: `ledger::tests::every_rule_mold_and_attribute_has_one_row`
 /// - witness: `ledger::tests::a_form_short_of_molds_is_refused`
+/// - witness: `ledger::tests::both_files_carry_the_fingerprint_and_every_row`
 #[spec(ensures: |ref ret| ret.as_ref().map_or_else(|fault| matches!(*fault, LedgerFault::Molds { rule: named } if named == rule.0) || matches!(*fault, LedgerFault::Grammar(_)), |tree| tree.value.is_object()))]
 fn tree(
     pbg: &Pbg,
@@ -1557,6 +1558,7 @@ mod tests
     use super::Standing;
     use super::SyntaxLedger;
     use super::molds_by_rule;
+    use super::spelled;
     use super::standing::Internal;
     use super::standing::standing;
     use super::tree;
@@ -1702,6 +1704,22 @@ mod tests
         assert_eq!(Code("a | b").to_string(), "`a \\| b`");
         assert_eq!(Code("x").to_string(), "`x`");
         assert_eq!(
+            spelled(
+                Regex::alt([]).view(),
+                &[],
+                RuleName("nothing"),
+                gandr_surface_grammar::Spelling::Unicode
+            ),
+            "⦅  ⦆",
+            "an alternation of no branches is spelled whole, never as nothing"
+        );
+        assert_eq!(
+            Code("`x").to_string(),
+            "`` `x ``",
+            "a backtick opening the text is padded off the fence"
+        );
+        assert_eq!(Code("x`").to_string(), "`` x` ``", "and one closing it");
+        assert_eq!(
             Counted {
                 count: 1,
                 noun: "rule"
@@ -1845,19 +1863,60 @@ mod tests
                     class: "escape_sequence",
                 },
             ),
+            // The layout tile named is the first one passed, not the first
+            // tile nor a later layout tile.
+            (
+                rule(
+                    "parenthesised_comment",
+                    Sort::Item,
+                    "item.singleton",
+                    Regex::seq([
+                        tile("("),
+                        tile("/*"),
+                        Regex::repeat(tile("block_comment_content")),
+                        tile("*/"),
+                        tile("//"),
+                    ]),
+                ),
+                Internal::Layout { tile: "/*" },
+            ),
+            // A form of one layout tile passes it on every reading.
+            (
+                rule("comment_opener", Sort::Item, "item.singleton", tile("/*")),
+                Internal::Layout { tile: "/*" },
+            ),
         ];
+        // A lone literal that labels as one token other than a word is not
+        // captured, though the labeler offers that token a class another
+        // rule of its sort reads.
+        let committed = [rule(
+            "forty_two",
+            Sort::Expression,
+            "expression.atom",
+            tile("42"),
+        )];
         let mut rules = built_in().expect("the grammar builds").rules().to_vec();
         rules.extend(probes.iter().map(|&(ref probe, _)| probe.clone()));
+        rules.extend(committed.iter().cloned());
         let pbg = Pbg::build_table(precs, rules).expect("the probed grammar builds");
-        for &(ref probe, reason) in &probes {
-            let built = pbg
-                .rules()
+        let built = |probe: &Rule| {
+            pbg.rules()
                 .iter()
                 .find(|built| built.name() == probe.name())
-                .expect("the probe is a rule of the grammar");
+                .expect("the probe is a rule of the grammar")
+        };
+        for &(ref probe, reason) in &probes {
             assert_eq!(
-                standing(&pbg, built).expect("the standing derives"),
+                standing(&pbg, built(probe)).expect("the standing derives"),
                 Standing::Internal(reason),
+                "{}",
+                probe.name().0
+            );
+        }
+        for probe in &committed {
+            assert_eq!(
+                standing(&pbg, built(probe)).expect("the standing derives"),
+                Standing::Committed,
                 "{}",
                 probe.name().0
             );
@@ -1873,6 +1932,20 @@ mod tests
             markdown.matches(&ledger.fingerprint).count(),
             1,
             "the header names the fingerprint"
+        );
+        let committed = ledger
+            .rules
+            .iter()
+            .filter(|row| matches!(row.standing, Standing::Committed))
+            .count();
+        let header = format!(
+            "- Rules: {} — {committed} committed, {} internal\n",
+            ledger.rules.len(),
+            ledger.rules.len() - committed
+        );
+        assert!(
+            markdown.contains(&header),
+            "the header counts the committed and the internal rules: {header}"
         );
         let mut cell = String::new();
         for row in &ledger.rules {
@@ -1909,6 +1982,43 @@ mod tests
         let rules = parsed["rules"].as_array().expect("rules are an array");
         assert_eq!(rules.len(), ledger.rules.len());
         assert_eq!(rules[0]["name"], ledger.rules[0].name);
+        let mut roles: Vec<&str> = Vec::new();
+        let mut seen: alloc::collections::BTreeSet<&str> = alloc::collections::BTreeSet::new();
+        let mut pending: Vec<&serde_json::Value> = Vec::new();
+        for (json_row, row) in rules.iter().zip(&ledger.rules) {
+            assert_eq!(
+                json_row["tree_sitter"],
+                row.tree_sitter == super::TreeSitterKind::Shared,
+                "`{}` says whether tree-sitter shares it",
+                row.name
+            );
+            roles.clear();
+            seen.clear();
+            pending.clear();
+            pending.push(&json_row["tree"]);
+            while let Some(node) = pending.pop() {
+                if node["node"] == "tile" {
+                    let role = node["role"].as_str().expect("a tile's role is a string");
+                    if seen.insert(role) {
+                        roles.push(role);
+                    }
+                }
+                if let Some(items) = node["items"].as_array() {
+                    pending.extend(items.iter().rev());
+                }
+            }
+            assert!(
+                json_row["roles"]
+                    .as_array()
+                    .expect("roles are an array")
+                    .iter()
+                    .map(serde_json::Value::as_str)
+                    .eq(roles.iter().copied().map(Some)),
+                "`{}` lists each of its tiles' roles once, first use first: {}",
+                row.name,
+                json_row["roles"]
+            );
+        }
         let attributes = parsed["attributes"]
             .as_array()
             .expect("attributes are an array");

@@ -547,6 +547,7 @@ impl Walk
     /// - witness: `walk::tests::a_stopped_visit_hands_over_nothing_more`
     /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
     /// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
+    /// - witness: `walk::tests::a_source_given_twice_answers_twice_from_one_judgement`
     #[inline]
     pub fn visit<Stop, Visitor>(
         mut self,
@@ -1296,6 +1297,7 @@ fn given_of(component: &Component) -> Vec<Given>
 /// # Adequacy
 /// - hypothesis: L3 — as [`part`].
 /// - witness: `walk::tests::a_source_refused_whole_refuses_only_itself_and_its_importers_1027`
+/// - witness: `walk::tests::a_pair_refused_whole_in_its_importer_settles_its_base`
 #[spec(ensures: |ref ret| ret.is_none() || (component.members.len() > 1_usize
     && component.sources.iter().any(|source| Some(&source.path) == ret.as_ref())))]
 fn refused_member(
@@ -1344,6 +1346,7 @@ fn refused_member(
 ///   source stands alone, its importer refuses its import, and the others
 ///   settle as they do alone.
 /// - witness: `walk::tests::a_source_refused_whole_refuses_only_itself_and_its_importers_1027`
+/// - witness: `walk::tests::two_sources_refused_whole_are_each_set_apart`
 #[spec(ensures: |ref ret| ret.placed.len() == component.members.len())]
 fn part(
     grammar: &Pbg,
@@ -1868,6 +1871,62 @@ pub mod tests
                 visited(&scratch.0, paths.clone(), width),
                 (seen.clone(), report),
                 "a visit at {width:?} answers every path in the serial visit's order"
+            );
+        }
+    }
+
+    /// A source given twice answers twice, each time as judged once: its
+    /// component is lowered no more often than when each source is given
+    /// once, and every answer of each is handed over.
+    #[test]
+    fn a_source_given_twice_answers_twice_from_one_judgement()
+    {
+        let scratch = Scratch::new(Path::new("given-twice"));
+        scratch.file(
+            Path::new("fixture/base.gandr"),
+            SourceText::from("def one = 1 ;"),
+        );
+        scratch.file(
+            Path::new("fixture/importer.gandr"),
+            SourceText::from("import \"./base.gandr\" ;\ndef two = one ;"),
+        );
+        let [base, importer] =
+            ["base.gandr", "importer.gandr"].map(|file| scratch.0.join("fixture").join(file));
+        let paths = vec![
+            importer.clone(),
+            base.clone(),
+            importer.clone(),
+            base.clone(),
+        ];
+        for width in core::iter::once(Width::SERIAL).chain(widths()) {
+            let (_, once) = visited(&scratch.0, vec![importer.clone(), base.clone()], width);
+            let (seen, report) = visited(&scratch.0, paths.clone(), width);
+            assert_eq!(
+                seen,
+                rows(&[
+                    (
+                        Path::new("fixture/importer.gandr"),
+                        Seen::Source(Standing::Settled)
+                    ),
+                    (
+                        Path::new("fixture/base.gandr"),
+                        Seen::Source(Standing::Settled)
+                    ),
+                    (
+                        Path::new("fixture/importer.gandr"),
+                        Seen::Source(Standing::Settled)
+                    ),
+                    (
+                        Path::new("fixture/base.gandr"),
+                        Seen::Source(Standing::Settled)
+                    ),
+                ]),
+                "at {width:?}, each giving answers, in the order given"
+            );
+            assert_eq!(
+                report.lowerings(),
+                once.lowerings(),
+                "at {width:?}, giving the sources again lowers nothing again"
             );
         }
     }
@@ -2422,6 +2481,100 @@ pub mod tests
                 ],
                 "at {width:?}, only the refused source is refused whole, and its \
                  importer refuses its import"
+            );
+        }
+    }
+
+    /// A component of two sources refused whole within one of them is parted
+    /// too: the base the refused source imports settles as it does alone.
+    #[test]
+    fn a_pair_refused_whole_in_its_importer_settles_its_base()
+    {
+        let scratch = Scratch::new(Path::new("refused-pair"));
+        scratch.file(
+            Path::new("fixture/base.gandr"),
+            SourceText::from("@[ checks ]\ndef one : Integer ;\ndef one = 1 ;\n"),
+        );
+        scratch.file(
+            Path::new("fixture/bad.gandr"),
+            SourceText::from("import \"./base.gandr\" ;\n\npure one\n"),
+        );
+        for width in core::iter::once(Width::SERIAL).chain(widths()) {
+            let (seen, _report) = visited(&scratch.0, vec![scratch.0.join("fixture")], width);
+            assert_eq!(
+                seen,
+                rows(&[
+                    (
+                        Path::new("fixture/bad.gandr"),
+                        Seen::Source(Standing::Refused)
+                    ),
+                    (
+                        Path::new("fixture/base.gandr"),
+                        Seen::Source(Standing::Settled)
+                    ),
+                ]),
+                "at {width:?}, only the source refused whole is refused"
+            );
+        }
+    }
+
+    /// Two sources of one component refused whole are each set apart, one a
+    /// round: the lowering of the whole names the first, a part of more than
+    /// one source the second, and the base and sibling they import settle. A
+    /// lowering counts each source it lowers, so the walk lowers 13: the four
+    /// sources whole, the three left once the first is apart, the two left
+    /// once the second is, and each of the four again as regrouped. A part of
+    /// one source is never lowered to find a refusal.
+    #[test]
+    fn two_sources_refused_whole_are_each_set_apart()
+    {
+        let scratch = Scratch::new(Path::new("refused-twice"));
+        let checks = "@[ checks ]\ndef one : Integer ;\ndef one = 1 ;\n";
+        let bad = "import \"./base.gandr\" ;\n\npure one\n";
+        for (name, text) in [
+            ("base", checks),
+            ("bad1", bad),
+            ("bad2", bad),
+            (
+                "sibling",
+                "import \"./base.gandr\" ;\n\n@[ checks ]\ndef three : Integer ;\ndef three = \
+                 one ;\n",
+            ),
+        ] {
+            scratch.file(
+                Path::new(&format!("fixture/{name}.gandr")),
+                SourceText::from(text),
+            );
+        }
+        for width in core::iter::once(Width::SERIAL).chain(widths()) {
+            let (seen, report) = visited(&scratch.0, vec![scratch.0.join("fixture")], width);
+            assert_eq!(
+                seen,
+                rows(&[
+                    (
+                        Path::new("fixture/bad1.gandr"),
+                        Seen::Source(Standing::Refused)
+                    ),
+                    (
+                        Path::new("fixture/bad2.gandr"),
+                        Seen::Source(Standing::Refused)
+                    ),
+                    (
+                        Path::new("fixture/base.gandr"),
+                        Seen::Source(Standing::Settled)
+                    ),
+                    (
+                        Path::new("fixture/sibling.gandr"),
+                        Seen::Source(Standing::Settled)
+                    ),
+                ]),
+                "at {width:?}, only the two sources refused whole are refused"
+            );
+            assert_eq!(
+                usize::from(report.lowerings()),
+                13_usize,
+                "at {width:?}, the whole, each round's parts of more than one source, then \
+                 each regrouped source"
             );
         }
     }

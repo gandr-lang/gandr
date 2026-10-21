@@ -416,6 +416,7 @@ impl Classes
     /// - hypothesis: L2 — the summary lines of the power and double programs
     ///   count every family at every width.
     /// - witness: `stage::tests::every_width_stages_the_serial_run`
+    /// - witness: `stage::tests::a_fault_outranks_a_refusal`
     #[spec(ensures: |output| [output.admitted, output.partial, output.plain, output.refused,
         output.bound, output.faulted].iter().sum::<usize>() == checked.admissions.len())]
     fn of(checked: &Checked) -> Self
@@ -943,6 +944,12 @@ mod tests
         ] {
             assert_eq!(verdict(Vec::from(pair)), StageVerdict::Faulted);
         }
+        assert_eq!(
+            failed().to_string(),
+            "pow:0..0: 0 of 0 certificates readmitted; 1 families: 0 admitted, 0 partial, 0 \
+             plain, 0 refused, 0 over the work bound, 1 faulted",
+            "the summary counts the failed admission under its class"
+        );
         assert_eq!(
             unbuilt().to_string(),
             "pow:0..0: the program was not built: stage arithmetic overflow"
