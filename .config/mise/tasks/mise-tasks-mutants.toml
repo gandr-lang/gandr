@@ -10,9 +10,9 @@
 # survivors it answers (`mutants:named`). Further arguments pass through to
 # cargo-mutants (`--shard k/n`, `--list`, `--timeout`). Outcomes land in
 # `mutants.out/<crate>`, or in `MUTANTS_OUTPUT` when set. One run holds the
-# host at a time (`.config/mise/mutants-lock.bash`), in a scope of its own
-# (`.config/mise/scope`). The release ships no Apple-silicon binary, so the
-# pin stays `cargo:` (binstall fetches the rest).
+# host at a time, in a scope of its own whose memory is capped
+# (`.config/mise/mutants.bash`). The release ships no Apple-silicon binary,
+# so the pin stays `cargo:` (binstall fetches the rest).
 ["mutants"]
 description = "Mutation-test one crate with the campaign's measured settings"
 tools."cargo:cargo-mutants" = "27.1.0"
@@ -40,9 +40,9 @@ triple=$(tr '[:lower:]-' '[:upper:]_' <<< "$host")
 export "CARGO_TARGET_${triple}_RUSTFLAGS=-Ctarget-cpu=native"
 output=${MUTANTS_OUTPUT:-mutants.out/$crate}
 mkdir -p "$output"
-source .config/mise/mutants-lock.bash
+source .config/mise/mutants.bash
 hold_mutants_lock "mise run mutants -- $*"
-exec .config/mise/scope cargo mutants --test-tool nextest -j 4 --jobserver-tasks 8 --output "$output" "$@"
+exec "${mutants_scope[@]}" cargo mutants --test-tool nextest -j 4 --jobserver-tasks 8 --output "$output" "$@"
 '''
 
 # The survivors a witness batch answers, rerun alone: each `file:function`
