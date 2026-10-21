@@ -17,6 +17,8 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::Spelling as GrammarSpelling;
+use gandr_surface_grammar::UNRESTRICTED;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
@@ -63,6 +65,9 @@ pub enum RewriteName
     Tuple,
     /// The value function: `+U (A -> -F B)` and `A => B`.
     ValueFunction,
+    /// The default grade of a thunk type: `+U[ω] B` and `+U B`, both forms
+    /// leaving it unwritten as the printer does.
+    DefaultGrade,
     /// The path composite: `transport(\y. Path(A, a, y), q, p)` and
     /// `p then q`.
     PathComposite,
@@ -92,6 +97,7 @@ impl fmt::Display for RewriteName
             Self::LazyProduct => "lazy-product",
             Self::Tuple => "tuple",
             Self::ValueFunction => "value-function",
+            Self::DefaultGrade => "default-grade",
             Self::PathComposite => "path-composite",
             Self::PathInverse => "path-inverse",
             Self::PathAction => "path-action",
@@ -138,7 +144,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 16] = [
+pub const REWRITES: [Rewrite; 18] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -217,6 +223,22 @@ pub const REWRITES: [Rewrite; 16] = [
         mold: MoldName("value_function_type"),
         from: Spelling("(A, B) => C"),
         to: Spelling("+U (A -> B -> -F C)"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::DefaultGrade,
+        direction: Direction::Sugar,
+        mold: MoldName("u_type"),
+        from: Spelling("+U[ω] B"),
+        to: Spelling("+U B"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::DefaultGrade,
+        direction: Direction::Desugar,
+        mold: MoldName("u_type"),
+        from: Spelling("+U[ω] B"),
+        to: Spelling("+U B"),
         enabled: Enabled::On,
     },
     Rewrite {
@@ -602,6 +624,10 @@ enum Context
     /// After a rule's `<=>`: a parenthesised list there is the rule's
     /// outputs, never a tuple.
     Outputs,
+    /// An operation's judgment in a theory, after its `:`: a parenthesised
+    /// list there opens the judgment's own port group, so only the
+    /// value-function alias over one bare domain reads as a type (#1329).
+    Judgment,
     /// A call's argument: a thunk type there is written as its thunk, as
     /// the printer writes it.
     Argument,
@@ -783,7 +809,7 @@ impl<'source> Respelling<'_, 'source>
     }
 
     /// Where the form at `at` stands in its parent: after a rule's `<=>`, in
-    /// a type, or anywhere else.
+    /// a theory's judgment, in a type, or anywhere else.
     ///
     /// # Specification
     /// trivial.
@@ -818,6 +844,7 @@ impl<'source> Respelling<'_, 'source>
         }
         match (rule, preceding.map(<&str>::from)) {
             (_, Some("<=>")) => Context::Outputs,
+            (Some("theory_declaration"), Some(":")) => Context::Judgment,
             (_, Some(":")) => Context::Type,
             (Some(rule), _) if rule.ends_with("_type") || rule == "static_abstraction" => {
                 Context::Type
@@ -1347,6 +1374,10 @@ impl<'source> Respelling<'_, 'source>
                 self.thunk(&mut out, parts)?;
                 Band::Bridge
             },
+            (RewriteName::DefaultGrade, Direction::Sugar | Direction::Desugar) => {
+                self.ungraded(&mut out, parts)?;
+                Band::Bridge
+            },
             (RewriteName::PathComposite, Direction::Sugar) => {
                 if self.motives.standing(extent) != Standing::Returned {
                     return None;
@@ -1551,14 +1582,17 @@ impl<'source> Respelling<'_, 'source>
     }
 
     /// Write the value-function alias the thunk type whose parts are `parts`
-    /// spells, or nothing when its body is not a chain of arrows ending in a
-    /// pure returner. A domain that binds a name keeps it, `(x : A, …) =>
-    /// C`, where a later domain or the result reads it, and is written bare
-    /// otherwise, as the printer writes the dependent alias. Outside a type
-    /// only the alias over one bare domain, `A => B`, is written, as the
-    /// printer writes it there, and none as a call's argument: the printer
-    /// writes a thunk type standing there, a transport's family, as its
-    /// thunk, and `() => A` reads as an expression outside a type.
+    /// spells, its grade the default `ω` whether written or not, or nothing
+    /// when its body is not a chain of arrows ending in a pure returner or
+    /// its grade is another. A domain that binds a name keeps it, `(x : A, …)
+    /// => C`, where a later domain or the result reads it, and is written
+    /// bare otherwise, as the printer writes the dependent alias. Outside a
+    /// type only the alias over one bare domain, `A => B`, is written, as
+    /// the printer writes it there, and none as a call's argument: the
+    /// printer writes a thunk type standing there, a transport's family, as
+    /// its thunk, and `() => A` reads as an expression outside a type. A
+    /// theory's judgment writes `A => B` too and no other alias, its `(`
+    /// opening the judgment's port group.
     ///
     /// # Specification
     /// trivial.
@@ -1577,11 +1611,13 @@ impl<'source> Respelling<'_, 'source>
     ) -> Option<()>
     {
         let (owns, operands) = split(parts);
-        let (&[only], &[thunked]) = (owns.as_slice(), operands.as_slice())
+        let &[thunked] = operands.as_slice()
         else {
             return None;
         };
-        if <&str>::from(only) != "+U" {
+        if default_grade(&owns)? == Grade::Written
+            && parts.iter().any(|part| matches!(part.role, Role::Comment))
+        {
             return None;
         }
         let mut domains: Vec<Domain<'source>> = Vec::new();
@@ -1668,6 +1704,32 @@ impl<'source> Respelling<'_, 'source>
         }
         out.spaced(Spelling(" => "));
         out.place(&self.operand(result), Band::Loose);
+        Some(())
+    }
+
+    /// Write the thunk type whose parts are `parts`, written at the default
+    /// grade `+U[ω] B`, as `+U B`, or nothing when it writes another grade,
+    /// none, or a comment among its tiles.
+    ///
+    /// # Specification
+    /// trivial.
+    fn ungraded(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<()>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let (owns, operands) = split(parts);
+        let (Some(Grade::Written), &[body]) = (default_grade(&owns), operands.as_slice())
+        else {
+            return None;
+        };
+        out.token(Spelling("+U"));
+        out.gap(Spelling(" "));
+        out.place(&self.operand(body), Band::Atom);
         Some(())
     }
 
@@ -2177,6 +2239,39 @@ fn split<'source>(parts: &[Part<'source>]) -> (Vec<SourceFragment<'source>>, Vec
         }
     }
     (owns, operands)
+}
+
+/// How a thunk type writes the default grade `ω`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Grade
+{
+    /// `+U B`.
+    Unwritten,
+    /// `+U[ω] B`, or `+U[inf] B` in ASCII.
+    Written,
+}
+
+/// How the own tiles `owns` of a thunk type write its grade, or nothing when
+/// they are no thunk type's or write a grade other than the default `ω`.
+///
+/// # Specification
+/// trivial.
+fn default_grade(owns: &[SourceFragment<'_>]) -> Option<Grade>
+{
+    match *owns {
+        [bridge] if <&str>::from(bridge) == "+U" => Some(Grade::Unwritten),
+        [bridge, open, grade, close]
+            if <&str>::from(bridge) == "+U"
+                && <&str>::from(open) == "["
+                && [GrammarSpelling::Unicode, GrammarSpelling::Ascii]
+                    .into_iter()
+                    .any(|spelling| UNRESTRICTED.written(spelling).0 == <&str>::from(grade))
+                && <&str>::from(close) == "]" =>
+        {
+            Some(Grade::Written)
+        },
+        _ => None,
+    }
 }
 
 /// The entries of a list written `open … close`, separated by commas, a comma

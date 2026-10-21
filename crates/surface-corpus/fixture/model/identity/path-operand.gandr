@@ -87,7 +87,7 @@ def rec still(b : Nat) -> -F Path(Nat, b, b) {
 
 /// `cong` over a parameter function, read at the result its type writes.
 @[ checks ]
-def mapped(f : +U[ω] (Circle -> -F Nat)) -> -F Path(Nat, f(Base), f(Base)) {
+def mapped(f : Circle => Nat) -> -F Path(Nat, f(Base), f(Base)) {
   back(cong(f, loop))
 }
 

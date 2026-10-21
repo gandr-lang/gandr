@@ -1,18 +1,20 @@
-// A theory's operation written at its type: `oper next : +U[ω] (T -> -F T)`,
-// a thunk of curried arrows, is the operation of those inputs and that
-// output, `(_ : T) --> T`, as `functor-pair.gandr`'s record signature writes
-// `next`, and so is the value-function alias `T => T` standing for it. A port
-// at a builtin type the theory does not declare reads that type, so `read`
+// A theory's operation written at its type: `oper next : T => T`, the
+// value-function alias, is the operation of its domain and its result,
+// `(_ : T) --> T`, as `functor-pair.gandr`'s record signature writes `next`;
+// so is the thunk of curried arrows it stands for, which a judgment writes
+// for more than one input, `oper add : +U (M -> M -> -F M)`, since a
+// parenthesised list there opens the judgment's own port group. A port at a
+// builtin type the theory does not declare reads that type, so `read`
 // returns an `Integer`. A model gives each as the function it writes for an
 // operation.
 
 /// A counter, the theory of `functor-pair.gandr`'s signature
-/// `#{ type T, zero : T, next : +U[ω] (T -> -F T), read : +U[ω] (T -> -F Integer) }`.
+/// `#{ type T, zero : T, next : T => T, read : T => Integer }`.
 theory Counting {
   sort T : Type;
   oper zero : T;
-  oper next : +U[ω] (T -> -F T);
-  oper read : +U[ω] (T -> -F Integer);
+  oper next : T => T;
+  oper read : T => Integer;
 }
 
 /// The integers, counting up from zero.
@@ -39,12 +41,12 @@ def counted_two = thunk {
 } ;
 
 /// A sum, the theory of `nat-add.gandr`'s signature
-/// `#{ type M = Integer, zero : M, add : +U[ω] (M -> M -> -F M) }`: two
-/// arrows, two inputs.
+/// `#{ type M = Integer, zero : M, add : (M, M) => M }`: two inputs, written
+/// as the thunk of two arrows.
 theory Summing {
   sort M : Type;
   oper zero : M;
-  oper add : +U[ω] (M -> M -> -F M);
+  oper add : +U (M -> M -> -F M);
 }
 
 /// The integers under addition.
@@ -57,27 +59,3 @@ module Summed : Model(Summing) {
   @[ checks ]
   def add(x : Integer, y : Integer) -> -F Integer { become x + y }
 }
-
-/// A stepper, its operation written with the value-function alias:
-/// `oper step : T => T` is the operation `+U (T -> -F T)` is (#1329).
-theory Stepping {
-  sort T : Type;
-  oper start : T;
-  oper step : T => T;
-}
-
-/// The integers, stepping by two.
-module Stepped : Model(Stepping) {
-  type T = Integer;
-  /// The start.
-  @[ runs("0") ]
-  def start = 0;
-  /// Two more.
-  @[ checks ]
-  def step(n : Integer) -> -F Integer { become n + 2 }
-}
-
-/// One step from the start, through the model's operation.
-@[ runs("2") ]
-def stepped_once : () => Integer ;
-def stepped_once = thunk { become Stepped.step(Stepped.start) } ;

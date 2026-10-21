@@ -211,8 +211,8 @@ pathological/data/sigma-pair.gandr:tag_of:be201dd27bc5cb0b
 pathological/data/sigma-pair.gandr:unpaired:299fe56149a307b7
 pathological/data/sigma-pair.gandr:unpaired:c06eaab41701dce7
 pathological/dependent-instantiation-capture-accepts.gandr:<file>
-pathological/dependent-instantiation-capture-accepts.gandr:captured:fc00c0e000584c1b
-pathological/dependent-instantiation-capture-accepts.gandr:comp:72c8e1037faf3722
+pathological/dependent-instantiation-capture-accepts.gandr:captured:ec0cab10e2e52164
+pathological/dependent-instantiation-capture-accepts.gandr:comp:7ad9c7521546d4bf
 pathological/desc/eta-needs-one-constructor.gandr:<file>
 pathological/desc/eta-needs-one-constructor.gandr:NatPred:87013214ada72603
 pathological/desc/fillerless-rule-not-carried.gandr:<file>
@@ -262,8 +262,8 @@ pathological/module-signature-mismatch.gandr:Bad:f4ee7201d22073b4
 pathological/modules/generative-distinctness.gandr:<file>
 pathological/modules/generative-distinctness.gandr:A:bb2e95d8b2638614
 pathological/modules/generative-distinctness.gandr:B:9da5f588949ece61
-pathological/modules/generative-distinctness.gandr:MkCounter:5c2304e4bcfe34fb
-pathological/modules/generative-distinctness.gandr:Seed:1f049cd489195f66
+pathological/modules/generative-distinctness.gandr:MkCounter:8c6688c72d77c013
+pathological/modules/generative-distinctness.gandr:Seed:e7d72f037d047029
 pathological/modules/generative-distinctness.gandr:mixed:467c93346797500d
 pathological/modules/generative-distinctness.gandr:mixed:fd294c3054cde5bf
 pathological/modules/generative-distinctness.gandr:projected:ee94303fdce7e375

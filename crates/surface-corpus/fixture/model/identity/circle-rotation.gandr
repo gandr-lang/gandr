@@ -89,7 +89,7 @@ def distinct(e : Path((x : Circle) => Path(Circle, x, x), selfloop, selfrefl)) -
 /// the point's call before the loop's image is checked, and the image's type
 /// reads the point through what that call returns.
 @[ checks ]
-def toLoop(f : +U[ω] (Circle -> -F Int)) -> -F (#{point : Int, around : Path(Int, point, point)}) {
+def toLoop(f : Circle => Int) -> -F (#{point : Int, around : Path(Int, point, point)}) {
   (f(Base), cong(f, loop))
 }
 
@@ -107,6 +107,6 @@ def fromLoopAt(x : Int, p : Path(Int, x, x), c : Circle) -> -F Int {
 /// of `IsoFunSpaceS¹`), curried: from the record, the point's projection is
 /// bound before the loop's type reads it, as in `toLoop`.
 @[ checks ]
-def fromLoop(x : Int, p : Path(Int, x, x)) -> -F (+U[ω] (Circle -> -F Int)) {
+def fromLoop(x : Int, p : Path(Int, x, x)) -> -F (Circle => Int) {
   thunk { fn (c) { fromLoopAt(x, p, c) } }
 }

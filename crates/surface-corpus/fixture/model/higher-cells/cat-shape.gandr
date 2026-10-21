@@ -22,7 +22,7 @@ theory CatShape {
 /// Types and the functions between them as a model of the category shape.
 module SetoidCat : Model(CatShape) {
   type Ob = Type;
-  type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);
+  type Hom(a : Ob, b : Ob) = a => b;
 
   /// The identity function at a type.
   @[ runs("fn (a) { fn (b) { b } }") ]
@@ -34,8 +34,8 @@ module SetoidCat : Model(CatShape) {
     t : Type,
     u : Type,
     v : Type,
-    f : +U[ω] (t -> -F u),
-    g : +U[ω] (u -> -F v),
+    f : t => u,
+    g : u => v,
     x : t
   ) -> -F v {
     run y <- f(x);
@@ -45,7 +45,7 @@ module SetoidCat : Model(CatShape) {
   /// The interface's identity runs to a function that applies `ident`, which
   /// the signature hides, so the run is opaque at the model.
   @[ runs("⟨opaque at SetoidCat⟩ : (a : Type) => a => a") ]
-  def id(t : Type) -> -F (+U[ω] (t -> -F t)) { return thunk { become ident(t) } }
+  def id(t : Type) -> -F (t => t) { return thunk { become ident(t) } }
 
   /// Composition likewise runs through the hidden `compose`.
   @[ runs("⟨opaque at SetoidCat⟩ : (a : Type, b : Type, c : Type, a => b, b => c) => a => c") ]
@@ -53,16 +53,16 @@ module SetoidCat : Model(CatShape) {
     t : Type,
     u : Type,
     v : Type,
-    f : +U[ω] (t -> -F u),
-    g : +U[ω] (u -> -F v)
-  ) -> -F (+U[ω] (t -> -F v)) {
+    f : t => u,
+    g : u => v
+  ) -> -F (t => v) {
     return thunk { become compose(t, u, v, f, g) }
   }
 
   /// The left unit law, by conversion.
   @[ checks ]
-  def unitL(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path(
-    (+U[ω] (p -> -F q)),
+  def unitL(p : Type, q : Type, f : p => q) -> -F Path(
+    (p => q),
     comp(p, p, q, id(p), f),
     f
   ) {
@@ -71,8 +71,8 @@ module SetoidCat : Model(CatShape) {
 
   /// The right unit law, by conversion.
   @[ checks ]
-  def unitR(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path(
-    (+U[ω] (p -> -F q)),
+  def unitR(p : Type, q : Type, f : p => q) -> -F Path(
+    (p => q),
     comp(p, q, q, f, id(q)),
     f
   ) {
@@ -86,11 +86,11 @@ module SetoidCat : Model(CatShape) {
     q : Type,
     r : Type,
     s : Type,
-    f : +U[ω] (p -> -F q),
-    g : +U[ω] (q -> -F r),
-    h : +U[ω] (r -> -F s)
+    f : p => q,
+    g : q => r,
+    h : r => s
   ) -> -F Path(
-    (+U[ω] (p -> -F s)),
+    (p => s),
     comp(p, r, s, comp(p, q, r, f, g), h),
     comp(p, q, s, f, comp(q, r, s, g, h))
   ) {
@@ -99,8 +99,8 @@ module SetoidCat : Model(CatShape) {
 
   /// The left unit law stated by the right one, whose type converts to it.
   @[ checks ]
-  def unitLFromR : (p : Type, q : Type, f : +U[ω] (p -> -F q)) => Path(
-    (+U[ω] (p -> -F q)),
+  def unitLFromR : (p : Type, q : Type, f : p => q) => Path(
+    (p => q),
     comp(p, p, q, id(p), f),
     f
   ) ;
@@ -108,8 +108,8 @@ module SetoidCat : Model(CatShape) {
 
   /// The left unit law by either law, chosen by a boolean.
   @[ checks ]
-  def unitLEither(p : Type, q : Type, f : +U[ω] (p -> -F q), b : Bool) -> -F Path(
-    (+U[ω] (p -> -F q)),
+  def unitLEither(p : Type, q : Type, f : p => q, b : Bool) -> -F Path(
+    (p => q),
     comp(p, p, q, id(p), f),
     f
   ) {

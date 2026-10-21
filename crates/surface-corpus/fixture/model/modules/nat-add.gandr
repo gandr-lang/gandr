@@ -6,7 +6,7 @@
 
 /// The integers under addition, the signature exposing its type as
 /// `Integer`.
-module NatAdd : #{ type M = Integer, zero : M, add : +U[ω] (M -> M -> -F M) } {
+module NatAdd : #{ type M = Integer, zero : M, add : (M, M) => M } {
   /// The unit of the sum.
   @[ runs("0") ]
   def zero = 0;

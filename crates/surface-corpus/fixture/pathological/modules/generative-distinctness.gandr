@@ -1,4 +1,4 @@
-module Seed :> #{ type T, zero : T, next : +U[ω] (T -> -F T) } {
+module Seed :> #{ type T, zero : T, next : T => T } {
   type T = Integer;
   @[ runs("0") ]
   def zero = 0;
@@ -6,10 +6,10 @@ module Seed :> #{ type T, zero : T, next : +U[ω] (T -> -F T) } {
   def next(n : T) -> -F T { become n + 1 }
 }
 
-module MkCounter(S : #{ type T, zero : T, next : +U[ω] (T -> -F T) }) :> #{
+module MkCounter(S : #{ type T, zero : T, next : T => T }) :> #{
   type T,
   seed : T,
-  step : +U[ω] (T -> -F T)
+  step : T => T
 } {
   type T = S.T;
   def seed = S.zero;
