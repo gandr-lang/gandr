@@ -778,7 +778,7 @@ pub fn hover<Store, Blocks>(
 /// # Specification
 /// - requires: `quoted` is the document `import` was read from.
 /// - ensures: the import as written in a block; then, for a path the document's
-///   closure read, the file it reads and the module documentation's tracking
+///   closure read, the file it reads and the file documentation's tracking
 ///   line; for a path it did not, why: no file at the path, a file under
 ///   another root, a file whose imports lead back to the document, or a file
 ///   that does not parse; for an address with a scheme, its tracking line. None
@@ -2136,6 +2136,30 @@ mod tests
     }
 
     #[test]
+    fn a_documented_module_hovers_its_documentation_1135()
+    {
+        let text = SourceText::from(
+            "/// A module.\nmodule A {\n  /// A def.\n  def x = 1 ;\n  /// Nested.\n  module B { \
+             def y = 2 ; }\n}\n",
+        );
+        assert_eq!(
+            shown(text, (1.into(), 7.into())),
+            Ok(String::from("```gandr\nmodule A\n```\n\nA module.")),
+            "a module shows its head, then its own documentation"
+        );
+        assert_eq!(
+            shown(text, (5.into(), 9.into())),
+            Ok(String::from("```gandr\nmodule B\n```\n\nNested.")),
+            "a nested module shows its own"
+        );
+        assert_eq!(
+            shown(text, (3.into(), 6.into())),
+            Ok(String::from("```gandr\nx : Integer\n```\n\nA def.")),
+            "a member keeps its own, not its module's"
+        );
+    }
+
+    #[test]
     fn html_hovers_colour_the_name_and_the_type()
     {
         let html = Style {
@@ -2570,8 +2594,8 @@ mod tests
         assert_eq!(
             at(&importer, &written, "circle-base"),
             format!(
-                "{}\n\nReads `{}`.\n\nIts module documentation is not shown yet. The tracking issue \
-                 for this is: [#1135]\n\n[#1135]: https://github.com/gandr-lang/gandr/issues/1135",
+                "{}\n\nReads `{}`.\n\nIts file's own documentation is not read yet. The tracking \
+                 issue for this is: [#1365]\n\n[#1365]: https://github.com/gandr-lang/gandr/issues/1365",
                 fenced(SourceText::from(line)),
                 base.display()
             ),

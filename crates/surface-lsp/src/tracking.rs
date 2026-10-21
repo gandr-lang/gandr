@@ -22,7 +22,7 @@ pub enum Gap
 {
     /// An import whose address has a scheme, which nothing resolves.
     Foreign,
-    /// The documentation of the module a path import reads.
+    /// The documentation of the file a path import reads.
     Undocumented,
     /// In a root form that declares nothing: a run target or a stray.
     Undeclared,
@@ -39,7 +39,7 @@ impl Gap
     {
         match self {
             Self::Foreign => TrackingIssue::SCHEME,
-            Self::Undocumented => TrackingIssue::DOCUMENTATION,
+            Self::Undocumented => TrackingIssue::SOURCE_DOCUMENTATION,
             Self::Undeclared => TrackingIssue::RUN_TARGET,
         }
     }
@@ -54,7 +54,7 @@ impl Gap
     {
         let what = match self {
             Self::Foreign => String::from("An address with a scheme resolves to nothing yet."),
-            Self::Undocumented => String::from("Its module documentation is not shown yet."),
+            Self::Undocumented => String::from("Its file's own documentation is not read yet."),
             Self::Undeclared => String::from("A form that declares nothing has no hover yet."),
         };
         let issue = self.issue();

@@ -51,13 +51,15 @@ const SHAPELESS: &[(&str, &str)] = &[];
 /// The sources whose every hover is pinned in a golden beside its role golden:
 /// univalence's computation rule by `here`, path induction over the based
 /// path space, transport at `here`, function extensionality by computation,
-/// and the circle.
-const GOLDENS: [&str; 5] = [
+/// the circle, and a theory with a documented model module, whose hover shows
+/// the module's documentation (#1135).
+const GOLDENS: [&str; 6] = [
     "fixture/model/higher-cells/ua-corolla.gandr",
     "fixture/model/identity/transport-dependent.gandr",
     "fixture/model/identity/transport-path.gandr",
     "fixture/model/identity/funext.gandr",
     "fixture/model/identity/circle.gandr",
+    "fixture/model/include/monoid.gandr",
 ];
 
 /// How one position's answer stands against its kind's shape.

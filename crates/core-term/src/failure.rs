@@ -87,8 +87,6 @@ impl TrackingIssue
     pub const OPERATOR_DECLARATION: Self = Self(1111);
     /// A thunk type's grade.
     pub const THUNK_GRADE: Self = Self(1112);
-    /// A module's documentation, which no face shows.
-    pub const DOCUMENTATION: Self = Self(1135);
     /// Delegation: an endpoint sent over another endpoint.
     pub const DELEGATION: Self = Self(1167);
     /// A form the fragment refuses under a name that covers several features,
@@ -122,6 +120,9 @@ impl TrackingIssue
     pub const MODEL_CIRCUIT: Self = Self(1323);
     /// A model signature's binding operation.
     pub const MODEL_BINDING: Self = Self(1324);
+    /// A source file's own leading `//!` documentation, which the grammar
+    /// does not read.
+    pub const SOURCE_DOCUMENTATION: Self = Self(1365);
 
     /// The issue's page.
     ///

@@ -1344,6 +1344,10 @@ pub struct Collected<'source>
     pub abstracts: BTreeMap<SlotIndex, AbstractSlot>,
     /// Every top-level module an attribute block decorates, in source order.
     pub decorated: Vec<DecoratedModule<'source>>,
+    /// Every module form's documentation, each piece documenting its module
+    /// form, in source order: a module is no slot, so its documentation is
+    /// kept beside the slots' rather than in one (#1135).
+    pub module_docs: Vec<WrittenDoc>,
     /// The type family members, `type F(a : A, …) = τ ;`, and the manifest
     /// family components signatures state, in the order they are matched.
     pub families: Vec<FamilyMember>,
@@ -2290,6 +2294,7 @@ pub fn begin_collection<'source>(
         operation_names: BTreeMap::new(),
         abstracts: BTreeMap::new(),
         decorated: Vec::new(),
+        module_docs: Vec::new(),
         families: Vec::new(),
         parameter_lists: Vec::new(),
         models: Vec::new(),
@@ -3409,6 +3414,9 @@ impl<'source> Collector<'_, 'source>
         let mut attributes = Vec::new();
         for &written in decorations {
             self.decoration(written, module.node, &mut attributes)?;
+        }
+        for &written in decorations {
+            self.document_module(written.node, written.span.end(), module.node);
         }
         let first = SlotIndex(self.collected.slots.len());
         self.module(module)?;
@@ -4876,21 +4884,72 @@ impl<'source> Collector<'_, 'source>
     )
     {
         let tree = self.tree;
-        let Some(entry) = self.collected.slots.get_mut(slot.0)
+        if let Some(entry) = self.collected.slots.get_mut(slot.0) {
+            written_docs(tree, holder, before, documents, &mut entry.docs);
+        }
+    }
+
+    /// Keep beside the slots the documentation `holder` holds, ending at or
+    /// before `before`, as documenting the module form at `documents`.
+    ///
+    /// # Specification
+    /// - requires: `holder` is the module form at `documents`, or an attribute
+    ///   block standing before it.
+    /// - ensures: as [`Self::document`], into the collection's module
+    ///   documentation rather than a slot's.
+    /// - provides: the module half of the documentation's collection.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — documentation before a module, before a decorated one
+    ///   and before a nested one reaches its module form, while a member's
+    ///   stays its own.
+    /// - witness: `lower::tests::a_module_s_documentation_is_filed_under_its_key_1135`
+    #[spec(
+        captures: before_docs = self.collected.module_docs.len(),
+        ensures: self.collected.module_docs.len() >= before_docs,
+    )]
+    fn document_module(
+        &mut self,
+        holder: NodeIndex,
+        before: ByteOffset,
+        documents: NodeIndex,
+    )
+    {
+        written_docs(
+            self.tree,
+            holder,
+            before,
+            documents,
+            &mut self.collected.module_docs,
+        );
+    }
+}
+
+/// Push onto `out` each documentation child of `holder` in `tree` ending at or
+/// before `before`, as documenting the form at `documents`, in child order.
+///
+/// # Specification
+/// trivial.
+fn written_docs(
+    tree: &SyntaxTree<'_>,
+    holder: NodeIndex,
+    before: ByteOffset,
+    documents: NodeIndex,
+    out: &mut Vec<WrittenDoc>,
+)
+{
+    for child in tree.children(holder) {
+        let Some(node) = tree.node(child)
         else {
-            return;
+            continue;
         };
-        for child in tree.children(holder) {
-            let Some(node) = tree.node(child)
-            else {
-                continue;
-            };
-            if node.label() == NodeLabel::Doc && node.span().end() <= before {
-                entry.docs.push(WrittenDoc {
-                    at: Placed::of(child, node),
-                    documents,
-                });
-            }
+        if node.label() == NodeLabel::Doc && node.span().end() <= before {
+            out.push(WrittenDoc {
+                at: Placed::of(child, node),
+                documents,
+            });
         }
     }
 }
@@ -5814,6 +5873,7 @@ impl<'source> Collector<'_, 'source>
             stratum: Stratum::Module,
         });
         self.collected.modules.insert(key, structure);
+        self.document_module(form.node, opened.named.span.start(), form.node);
         if let Container::Module(parent) = container
             && let Some(entry) = self.collected.structures.get_mut(parent.0)
         {

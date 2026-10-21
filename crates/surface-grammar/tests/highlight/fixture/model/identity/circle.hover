@@ -1,5 +1,5 @@
-23:1-23:30 import "./circle-base.ga… ⇒ import "./circle-base.gandr" ;⏎⏎Reads `<corpus>/fixture/model/identity/circle-base.gandr`.⏎⏎Its module documentation is not shown yet. The tracking issue for this is: [#1135]⏎⏎[#1135]: https://github.com/gandr-lang/gandr/issues/1135 @23:1-23:31
-25:1-25:30 import "./equivalence.ga… ⇒ import "./equivalence.gandr" ;⏎⏎Reads `<corpus>/fixture/model/identity/equivalence.gandr`.⏎⏎Its module documentation is not shown yet. The tracking issue for this is: [#1135]⏎⏎[#1135]: https://github.com/gandr-lang/gandr/issues/1135 @25:1-25:31
+23:1-23:30 import "./circle-base.ga… ⇒ import "./circle-base.gandr" ;⏎⏎Reads `<corpus>/fixture/model/identity/circle-base.gandr`.⏎⏎Its file's own documentation is not read yet. The tracking issue for this is: [#1365]⏎⏎[#1365]: https://github.com/gandr-lang/gandr/issues/1365 @23:1-23:31
+25:1-25:30 import "./equivalence.ga… ⇒ import "./equivalence.gandr" ;⏎⏎Reads `<corpus>/fixture/model/identity/equivalence.gandr`.⏎⏎Its file's own documentation is not read yet. The tracking issue for this is: [#1365]⏎⏎[#1365]: https://github.com/gandr-lang/gandr/issues/1365 @25:1-25:31
 28:1-28:30 @[ runs("loop ∷ here(Bas… ⇒ once : () => Path(Circle, Base, Base)⏎⏎The loop's word: one letter before the empty word. @28:1-29:1
 29:1-29:3 def ⇒ once : () => Path(Circle, Base, Base)⏎⏎The loop's word: one letter before the empty word. @29:1-29:44
 29:5-29:8 once ⇒ once : () => Path(Circle, Base, Base)⏎⏎The loop's word: one letter before the empty word. @29:5-29:9

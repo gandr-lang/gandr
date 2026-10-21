@@ -31,7 +31,9 @@
 //! `LoweredModule::documentation` answers it under the content identity of the
 //! declaration form, the key the attribute table uses, and the parser keeps
 //! documentation out of that identity, so documenting a declaration re-keys
-//! nothing. Documentation inside a body, before a constructor say, is not read.
+//! nothing. A module form is documented the same way and answers under its
+//! own key, a nested module's included; its members keep their own.
+//! Documentation inside a body, before a constructor say, is not read.
 //!
 //! A link is a bracketed name, `[name]` or ``[`name`]``, a dotted path
 //! included, as an intra-doc link is in rustdoc: a bracket pair followed by
@@ -40,7 +42,9 @@
 //! does, as a declared path, any declared name, a module or a constructor, and
 //! one nothing answers refuses its declaration as `UnresolvedDocLink` at the
 //! linked name, so renaming or deleting a declaration breaks the documentation
-//! that names it where the link is written.
+//! that names it where the link is written. A module is no declaration, so a
+//! broken link in its documentation refuses its first member, as a module's
+//! refused attribute does; a module with no member has none to refuse.
 //!
 //! The alternative was storing documentation as an attribute entry with a text
 //! payload. It was declined because an entry's payload is minted into the core
