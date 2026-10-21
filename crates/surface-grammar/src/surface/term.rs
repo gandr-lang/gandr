@@ -137,7 +137,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
         cons: pat_cons,
         atom: pat_atom,
     });
-    instantiations(&mut out, atom);
+    instantiations(&mut out, atom, pure);
     expressions(&mut out, ExprPrecs {
         pure,
         or,
@@ -1562,12 +1562,16 @@ fn patterns(
 /// sigils, named measures, explicit residents (the reserved `size = e` and
 /// `cost = e` forms included), and `tail` inhabit only
 /// [`Sort::Instantiation`], an atom-only context for `<` and `>` distinct from
-/// their binary-expression molds.
+/// their binary-expression molds. An explicit resident's value is a whole
+/// expression up to the slot's next `,` or its `]`, `f[g = M.h]` and `f[n =
+/// a + 1]` alike: the resident stands at the loosest band, `explicit`, so no
+/// operator or projection after its `=` takes the resident as its operand.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: appends six ordered instantiation residents, all at the dedicated
-///   sort and supplied band with shared instantiation provenance.
+///   sort with shared instantiation provenance, the explicit resident at
+///   `explicit` and the rest at `p`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1578,10 +1582,11 @@ fn patterns(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 6 && added.iter().zip(["instantiation.type", "instantiation.direction.descent", "instantiation.direction.productivity", "instantiation.named_measure", "instantiation.explicit", "instantiation.tail"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Instantiation && rule.prec() == p && rule.provenance().0 == "instantiation_expression")))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 6 && added.iter().zip(["instantiation.type", "instantiation.direction.descent", "instantiation.direction.productivity", "instantiation.named_measure", "instantiation.explicit", "instantiation.tail"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Instantiation && rule.prec() == if name == "instantiation.explicit" { explicit } else { p } && rule.provenance().0 == "instantiation_expression")))]
 fn instantiations(
     out: &mut Vec<Rule>,
     p: Prec,
+    explicit: Prec,
 )
 {
     let s = Sort::Instantiation;
@@ -1617,7 +1622,7 @@ fn instantiations(
         RuleName("instantiation.explicit"),
         Provenance("instantiation_expression"),
         s,
-        p,
+        explicit,
         seq([
             t(TileLabel("identifier")),
             t(TileLabel("=")),

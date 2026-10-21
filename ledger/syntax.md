@@ -2,7 +2,7 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x009861a5e4a38a54`
+- Grammar fingerprint: `0x11cfb22f739acb94`
 - Rules: 152 — 151 committed, 1 internal
 - Molds: 2844
 - Attributes: 11
@@ -194,7 +194,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`instantiation.direction.descent`](exemplars/syntax/instantiation.direction.descent.gandr) | `<` | `expression.atom` | `instantiation_expression` | Operator |
 | [`instantiation.direction.productivity`](exemplars/syntax/instantiation.direction.productivity.gandr) | `>` | `expression.atom` | `instantiation_expression` | Operator |
 | [`instantiation.named_measure`](exemplars/syntax/instantiation.named_measure.gandr) | `‹identifier› <` | `expression.atom` | `instantiation_expression` | VariableParam, Operator |
-| [`instantiation.explicit`](exemplars/syntax/instantiation.explicit.gandr) | `‹identifier› = EXPRESSION` | `expression.atom` | `instantiation_expression` | VariableParam, Other |
+| [`instantiation.explicit`](exemplars/syntax/instantiation.explicit.gandr) | `‹identifier› = EXPRESSION` | `expression.pure` | `instantiation_expression` | VariableParam, Other |
 | [`instantiation.tail`](exemplars/syntax/instantiation.tail.gandr) | `tail` | `expression.atom` | `instantiation_expression` | Keyword |
 
 ## `module_member` — 4 rules
