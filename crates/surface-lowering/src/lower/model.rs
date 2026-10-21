@@ -60,6 +60,7 @@ use crate::form::Placed;
 use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::model::Binder;
+use crate::model::ConstantType;
 use crate::model::Dependent;
 use crate::model::ModelFault;
 use crate::model::ModelForm;
@@ -84,6 +85,7 @@ use crate::resolve::Frame;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
+use crate::resolve::type_atom;
 
 /// Why a derived type could not be minted.
 ///
@@ -126,6 +128,19 @@ enum Walk<'term>
     Apply(&'term Name, OperandCount),
 }
 
+/// How a law's term reads a member of the model it is minted in.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MemberRead
+{
+    /// An operation: the member forced and applied to the term's arguments.
+    Applied,
+    /// A constant: the member's value itself.
+    Held,
+}
+
 /// What a derived type is minted for: the module it is read in, its model's
 /// operations by name, and the origin every node it mints carries.
 ///
@@ -136,9 +151,9 @@ struct Minting<'source>
 {
     /// The module the type is read in.
     structure: StructureIndex,
-    /// Each operation of the model, by its name in the theory, with the
-    /// member name it reads in the module.
-    operations: BTreeMap<Name, SurfaceName<'source>>,
+    /// Each operation and constant of the model, by its name in the theory,
+    /// with the member name it reads in the module and how a term reads it.
+    operations: BTreeMap<Name, (SurfaceName<'source>, MemberRead)>,
     /// The origin every minted node carries.
     origin: Origin,
 }
@@ -432,7 +447,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: the mint sweep has run.
     /// - ensures: an operation's or a law's telescope Π, as the module's
-    ///   documentation states it, every node carrying `origin`.
+    ///   documentation states it, and a constant's type itself, every node
+    ///   carrying `origin`.
     /// - fails: a component the derivation cannot state or that is a sort, and
     ///   one naming a component that did not lower, as unlowered; one naming a
     ///   refused component, with its refusal.
@@ -444,6 +460,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::mint_models`].
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_constant_is_a_value_of_its_type_1226`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
     fn mint_component(
         &self,
@@ -464,6 +481,11 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(Missing::Unlowered);
         };
+        let minting = Minting {
+            structure,
+            operations: self.operation_names(model),
+            origin,
+        };
         let (telescope, tail) = match *form {
             ModelForm::Operation {
                 ref telescope,
@@ -475,12 +497,27 @@ impl<'source> Lowerer<'_, 'source>
                 ref left,
                 ref right,
             } => (telescope, Tail::Path(carrier, left, right)),
+            ModelForm::Constant(ConstantType::Sort(ref sort)) => {
+                let closed = Context {
+                    binders: &[],
+                    dependent: &[],
+                };
+                return self.sort_type(sort, closed, &minting, sink);
+            },
+            ModelForm::Constant(ConstantType::Ambient(ref name)) => {
+                let Maybe::Present(atom) = type_atom(SurfaceName::from(name.as_ref()))
+                else {
+                    return Err(Missing::Unlowered);
+                };
+                return match sink.atom(atom, origin) {
+                    Lowered::ValueType(id) => Ok(id),
+                    Lowered::Value(_)
+                    | Lowered::Computation(_)
+                    | Lowered::CompType(_)
+                    | Lowered::Function { .. } => Err(Missing::Unlowered),
+                };
+            },
             ModelForm::Sort { .. } => return Err(Missing::Unlowered),
-        };
-        let minting = Minting {
-            structure,
-            operations: self.operation_names(model),
-            origin,
         };
         let dependent = dependence(telescope, tail);
         let mut domains = Vec::with_capacity(telescope.len());
@@ -536,30 +573,40 @@ impl<'source> Lowerer<'_, 'source>
         Ok(id)
     }
 
-    /// Each operation of `model`, by its name in the theory, with the member
-    /// name the module reads it under.
+    /// Each operation and constant of `model`, by its name in the theory, with
+    /// the member name the module reads it under and how a term reads it.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one entry per operation component, its name tile's text the
-    ///   member name.
+    /// - ensures: one entry per operation and constant component, its name
+    ///   tile's text the member name, a constant held and an operation applied.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `comp` and `id` are found for the `CatShape` laws.
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_constant_is_a_value_of_its_type_1226`
     #[spec(ensures: |ret| ret.len() <= model.components.len())]
     fn operation_names(
         &self,
         model: &ModelSignature,
-    ) -> BTreeMap<Name, SurfaceName<'source>>
+    ) -> BTreeMap<Name, (SurfaceName<'source>, MemberRead)>
     {
         model
             .components
             .iter()
-            .filter(|component| matches!(component.form, Ok(ModelForm::Operation { .. })))
-            .map(|component| (component.name.clone(), self.name_at(component.named)))
+            .filter_map(|component| {
+                let read = match component.form {
+                    Ok(ModelForm::Operation { .. }) => MemberRead::Applied,
+                    Ok(ModelForm::Constant(_)) => MemberRead::Held,
+                    Ok(ModelForm::Sort { .. } | ModelForm::Law { .. }) | Err(_) => return None,
+                };
+                Some((
+                    component.name.clone(),
+                    (self.name_at(component.named), read),
+                ))
+            })
             .collect()
     }
 
@@ -708,18 +755,24 @@ impl<'source> Lowerer<'_, 'source>
                         .len()
                         .checked_sub(usize::from(count))
                         .ok_or(Missing::Unlowered)?;
-                    let constant = self.operation_constant(minting, name)?;
+                    let (constant, read) = self.operation_constant(minting, name)?;
                     let head = sink.arena.value_constant(constant);
                     sink.origins.record_value(head, origin);
-                    let mut applied = sink.arena.computation_force(head);
-                    sink.origins.record_computation(applied, origin);
-                    for argument in built.drain(start ..) {
-                        applied = sink.arena.computation_application(applied, argument);
-                        sink.origins.record_computation(applied, origin);
+                    match read {
+                        MemberRead::Held if usize::from(count) == 0 => built.push(head),
+                        MemberRead::Held => return Err(Missing::Unlowered),
+                        MemberRead::Applied => {
+                            let mut applied = sink.arena.computation_force(head);
+                            sink.origins.record_computation(applied, origin);
+                            for argument in built.drain(start ..) {
+                                applied = sink.arena.computation_application(applied, argument);
+                                sink.origins.record_computation(applied, origin);
+                            }
+                            let returned = sink.arena.value_returned(applied);
+                            sink.origins.record_value(returned, origin);
+                            built.push(returned);
+                        },
                     }
-                    let returned = sink.arena.value_returned(applied);
-                    sink.origins.record_value(returned, origin);
-                    built.push(returned);
                 },
             }
         }
@@ -730,12 +783,12 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The constant of the member the operation `name` reads in the
-    /// minting's module.
+    /// minting's module, and how a term reads it.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the admission position of the member the module declares
-    ///   under the operation's name.
+    ///   under the operation's name, beside the model's reading of it.
     /// - fails: an operation the model does not declare, or one the module does
     ///   not define, as unlowered; a refused member, with its refusal.
     /// - panics: none.
@@ -751,9 +804,9 @@ impl<'source> Lowerer<'_, 'source>
         &self,
         minting: &Minting<'source>,
         name: &Name,
-    ) -> Result<ConstantIndex, Missing<'source>>
+    ) -> Result<(ConstantIndex, MemberRead), Missing<'source>>
     {
-        let Some(&member) = minting.operations.get(name)
+        let Some(&(member, read)) = minting.operations.get(name)
         else {
             return Err(Missing::Unlowered);
         };
@@ -772,7 +825,7 @@ impl<'source> Lowerer<'_, 'source>
             return Err(Missing::Refused(refusal));
         }
 
-        Ok(declared.constant)
+        Ok((declared.constant, read))
     }
 
     /// Check every family component's indices against its member's

@@ -96,7 +96,9 @@ use crate::description::written::WrittenOperation;
 use crate::description::written::WrittenPort;
 use crate::description::written::WrittenSort;
 use crate::description::written::WrittenTerm;
+use crate::lower::atom_type;
 use crate::model::Binder;
+use crate::model::ConstantType;
 use crate::model::Dependent;
 use crate::model::Members;
 use crate::model::ModelFault;
@@ -109,6 +111,8 @@ use crate::model::Tail;
 use crate::model::dependence;
 use crate::model::derive_members;
 use crate::module::LoweredModule;
+use crate::resolve::SurfaceName;
+use crate::resolve::type_atom;
 
 /// What a described node is, for a face reading it.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -574,7 +578,8 @@ impl Typer<'_>
     }
 
     /// The type the sort term `sort` names under `scope`: the decode of the
-    /// sort's code, applied to its indices' values.
+    /// sort's code, applied to its indices' values, or the builtin type an
+    /// unindexed name no binder of `scope` answers names.
     ///
     /// # Specification
     /// trivial.
@@ -585,7 +590,13 @@ impl Typer<'_>
     ) -> Option<ValueTypeId>
     {
         let code = if sort.indices.is_empty() {
-            let index = scope.variable(&sort.sort)?;
+            let Some(index) = scope.variable(&sort.sort)
+            else {
+                return match type_atom(SurfaceName::from(sort.sort.as_ref())) {
+                    Maybe::Present(atom) => Some(atom_type(self.arena, atom)),
+                    Maybe::Absent(_) => None,
+                };
+            };
             self.arena.value_variable(Zone::Intuitionistic, index)
         }
         else {
@@ -679,7 +690,7 @@ impl Typer<'_>
     }
 
     /// Record a written sort at the universe its sorts are coded in, when its
-    /// head is one of `sorts`.
+    /// head is one of `sorts` or a builtin type.
     ///
     /// # Specification
     /// trivial.
@@ -690,7 +701,11 @@ impl Typer<'_>
         sorts: &[Name],
     )
     {
-        if sorts.contains(head) {
+        let builtin = matches!(
+            type_atom(SurfaceName::from(head.as_ref())),
+            Maybe::Present(_)
+        );
+        if sorts.contains(head) || builtin {
             let universe = self.universe(Level::zero());
             let closed = self.context(&Scope::default());
             self.emit(written.span, DescribedRole::Type, universe, closed);
@@ -1001,6 +1016,36 @@ impl Typer<'_>
                     self.port(&scope, telescope, &declared, &raw.sort, result, port);
                 }
                 scope.binders.truncate(base);
+            }
+            else if let Some(&Ok(ModelForm::Constant(ConstantType::Sort(ref sort)))) = form {
+                if let Some(ty) = self.sort(&scope, sort) {
+                    let context = self.context(&scope);
+                    if let Maybe::Present(named) = member.named {
+                        self.emit(named, DescribedRole::Name, ty, context);
+                    }
+                    let _first = declared.heads.insert(operation.name.clone(), (ty, context));
+                }
+                let _first = declared
+                    .operations
+                    .insert(operation.name.clone(), (&[], core::slice::from_ref(sort)));
+                let outputs = operation.outputs.iter().zip(&member.outputs);
+                for (raw, port) in outputs {
+                    self.port(&scope, &[], &declared, &raw.sort, sort, port);
+                }
+            }
+            else if let Some(&Ok(ModelForm::Constant(ConstantType::Ambient(ref ambient)))) = form
+            {
+                if let Maybe::Present(atom) = type_atom(SurfaceName::from(ambient.as_ref())) {
+                    let ty = atom_type(self.arena, atom);
+                    let context = self.context(&scope);
+                    if let Maybe::Present(named) = member.named {
+                        self.emit(named, DescribedRole::Name, ty, context);
+                    }
+                    let _first = declared.heads.insert(operation.name.clone(), (ty, context));
+                }
+                for port in &member.outputs {
+                    self.occurrence(&port.sort, ambient, &declared.sorts);
+                }
             }
             else if form == Some(&Err(ModelFault::Binding)) {
                 self.binding(&mut scope, operation, member, &declared);

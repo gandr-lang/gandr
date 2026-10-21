@@ -251,7 +251,10 @@ impl Reader<'_, '_>
         let Written(boundary) = self.text(extension.boundary);
         let Some(constant) = parts.operations.iter().position(|operation| {
             operation.name.as_ref() == boundary
-                && operation.kind == OperationKind::Operation
+                && matches!(
+                    operation.kind,
+                    OperationKind::Operation | OperationKind::Constant
+                )
                 && operation.inputs.is_empty()
                 && matches!(operation.outputs.as_slice(), [port]
                     if port.sort.as_ref() == carrier && port.indices.is_empty())

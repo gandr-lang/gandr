@@ -10,10 +10,12 @@
 //! component per sort, an indexed sort a type family over its index telescope;
 //! one value component per operation, whose type binds every sort variable the
 //! operation's ports leave free as a dependent parameter before the ports
-//! themselves; and one `Path`-typed law per rule, quantified over the rule's
-//! variables, between the operation terms it relates. This is Lawvere's
-//! reading of a theory — a model is a structure-preserving interpretation, and
-//! `Model(S)` the signature of such interpretations into the value universe —
+//! themselves, and per constant (`oper zero : T`), whose type is its own, a
+//! sort of the theory or a builtin type; and one `Path`-typed law per rule,
+//! quantified over the rule's variables, between the operation terms it
+//! relates. This is Lawvere's reading of a theory — a model is a
+//! structure-preserving interpretation, and `Model(S)` the signature of such
+//! interpretations into the value universe —
 //! with the sorts, operations and equations laid out as one telescope, as
 //! Kaposi and Kovács read a signature off a presentation. Laws are identity-
 //! typed fields, so two models with equal operations and different laws are
@@ -92,6 +94,7 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::NominalId;
+use gandr_theory_levitation::OperationKind;
 use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::TheoryFault;
 use gandr_theory_levitation::TheoryInclusion;
@@ -213,6 +216,8 @@ pub struct PresentedOperation
     pub name: Name,
     /// Its name tile.
     pub named: Placed,
+    /// An operation, an observation or a constant.
+    pub kind: OperationKind,
     /// Its input ports.
     pub inputs: Vec<Port>,
     /// Its output ports.
@@ -437,6 +442,7 @@ impl Presentation
             members.operations.push(PresentedOperation {
                 name: operation.name,
                 named,
+                kind: operation.kind,
                 inputs: ports(operation.inputs, names.by_ref()),
                 outputs: ports(operation.outputs, names),
             });
@@ -576,6 +582,8 @@ pub enum ModelForm
         /// One sort per output port.
         results: Vec<SortTerm>,
     },
+    /// A constant: a value of its type, which binds no variable.
+    Constant(ConstantType),
     /// A law: a path between two terms, quantified over their variables.
     Law
     {
@@ -588,6 +596,28 @@ pub enum ModelForm
         /// The term it rewrites to.
         right: FreeTerm,
     },
+}
+
+/// The type a constant is a value of.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: a sort of the theory with no variable in its indices, or a type
+///   the theory does not declare, by the name its block writes.
+/// - executable: none — a type is data the lowering mints from.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a constant at a sort and one at `Integer` derive their
+///   types.
+/// - witness: `model::tests::a_constant_derives_its_type_alone`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ConstantType
+{
+    /// A sort of the theory, closed.
+    Sort(SortTerm),
+    /// A type the theory reads from the scope it is written in, a builtin
+    /// type's name.
+    Ambient(Name),
 }
 
 /// Why the derivation cannot state a component.
@@ -736,9 +766,12 @@ pub fn derive(presentation: &Presentation) -> Result<ModelSignature, Presentatio
 ///   rule, in that order and each group in written order; a sort's or an
 ///   operation's telescope binds its free sort variables before its ports, a
 ///   law's binds the variables in another variable's sort first, and every
-///   application carries every argument its operation binds; a component that
-///   cannot be stated keeps its fault, an operation one of whose ports binds a
-///   variable keeps [`ModelFault::Binding`], and one naming such a component is
+///   application carries every argument its operation binds; a constant whose
+///   type leaves no variable free derives that type alone, a sort of the theory
+///   or a builtin type the theory does not declare, and one whose type does
+///   derives as an operation of no inputs; a component that cannot be stated
+///   keeps its fault, an operation one of whose ports binds a variable keeps
+///   [`ModelFault::Binding`], and one naming such a component is
 ///   [`ModelFault::Inherited`].
 /// - fails: never; a fault is kept on its component.
 /// - panics: none.
@@ -753,6 +786,7 @@ pub fn derive(presentation: &Presentation) -> Result<ModelSignature, Presentatio
 /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
 /// - witness: `model::tests::the_cat_shape_laws_relate_elaborated_terms`
 /// - witness: `model::tests::an_underivable_component_keeps_its_fault`
+/// - witness: `model::tests::a_constant_derives_its_type_alone`
 #[must_use]
 pub(crate) fn derive_members(
     members: &Members,
@@ -790,10 +824,33 @@ pub(crate) fn derive_members(
                 &operation.outputs,
             )
         };
-        let form = head.clone().map(|derived| ModelForm::Operation {
-            telescope: derived.binders,
-            results: derived.results,
-        });
+        let form = match (operation.kind, head.clone(), operation.outputs.as_slice()) {
+            (OperationKind::Constant, Ok(derived), _) if derived.binders.is_empty() => {
+                match *derived.results.as_slice() {
+                    [ref sort] => Ok(ModelForm::Constant(ConstantType::Sort(sort.clone()))),
+                    _ => Err(ModelFault::ManyOut),
+                }
+            },
+            (OperationKind::Constant, Err(ModelFault::UnknownHead), &[ref port])
+                if port.sort.indices.is_empty()
+                    && !heads.contains_key(&port.sort.sort)
+                    && matches!(
+                        crate::resolve::type_atom(port.sort.sort.as_ref().into()),
+                        Maybe::Present(_)
+                    ) =>
+            {
+                Ok(ModelForm::Constant(ConstantType::Ambient(
+                    port.sort.sort.clone(),
+                )))
+            },
+            (
+                OperationKind::Operation | OperationKind::Observation | OperationKind::Constant,
+                ..,
+            ) => head.clone().map(|derived| ModelForm::Operation {
+                telescope: derived.binders,
+                results: derived.results,
+            }),
+        };
         let _first = heads.insert(operation.name.clone(), head);
         components.push(ModelComponent {
             name: operation.name.clone(),

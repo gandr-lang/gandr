@@ -15615,14 +15615,46 @@ impl Sink<'_>
                 self.origins.record_value_type(unit, origin);
                 self.arena.value_type_sum(&[unit, unit])
             },
-            TypeAtom::Unit => self.arena.value_type_unit(),
-            TypeAtom::Integer => self.arena.value_type_base(BaseType::Integer),
-            TypeAtom::Text => self.arena.value_type_base(BaseType::String),
-            TypeAtom::Void => self.arena.value_type_sum(&[]),
+            TypeAtom::Unit | TypeAtom::Integer | TypeAtom::Text | TypeAtom::Void => {
+                atom_type(self.arena, atom)
+            },
         };
         self.origins.record_value_type(id, origin);
 
         Lowered::ValueType(id)
+    }
+}
+
+/// The value type the builtin type `atom` names, minted into `arena`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the two-summand sum of units for `Boolean`, the unit, the
+///   integers, the strings and the empty sum for `Unit`, `Integer`, `Text` and
+///   `Void`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each builtin type head mints its own core type.
+/// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+/// - witness: `described::tests::a_theory_answers_at_every_member`
+#[spec(ensures: |ret| arena.value_type(ret).is_some())]
+#[inline]
+pub fn atom_type(
+    arena: &mut CoreArena,
+    atom: TypeAtom,
+) -> ValueTypeId
+{
+    match atom {
+        TypeAtom::Boolean => {
+            let unit = arena.value_type_unit();
+            arena.value_type_sum(&[unit, unit])
+        },
+        TypeAtom::Unit => arena.value_type_unit(),
+        TypeAtom::Integer => arena.value_type_base(BaseType::Integer),
+        TypeAtom::Text => arena.value_type_base(BaseType::String),
+        TypeAtom::Void => arena.value_type_sum(&[]),
     }
 }
 
