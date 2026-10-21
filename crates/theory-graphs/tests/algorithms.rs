@@ -519,3 +519,35 @@ fn closure_oracle_separates_direction_and_cycles()
         vec![U, U, U, U]
     ]);
 }
+
+#[test]
+fn every_graph_refusal_renders_the_values_it_names()
+{
+    let node_count = NodeCount::from(3_u32);
+    let rendered = [
+        GraphValidationError::NodeCountTooLarge { node_count }.to_string(),
+        GraphValidationError::NodeOutOfBounds {
+            node: NodeId::from(5_u32),
+            node_count,
+        }
+        .to_string(),
+        GraphValidationError::EdgeOutOfBounds {
+            source: NodeId::from(1_u32),
+            target: NodeId::from(9_u32),
+            node_count,
+        }
+        .to_string(),
+        GraphValidationError::EdgeCountTooLarge.to_string(),
+        GraphValidationError::ArithmeticOverflow.to_string(),
+    ];
+    let [ref too_many, ref outside, ref leaving, ..] = rendered;
+    assert!(too_many.contains('3'), "{too_many}");
+    assert!(outside.contains('5') && outside.contains('3'), "{outside}");
+    assert!(
+        leaving.contains('1') && leaving.contains('9') && leaving.contains('3'),
+        "{leaving}"
+    );
+    assert_eq!(rendered.iter().collect::<BTreeSet<_>>().len(), 5);
+    let edge = ComponentEdge::new(ComponentIndex::from(2), ComponentIndex::from(7));
+    assert_eq!("2>7", edge.to_string());
+}
