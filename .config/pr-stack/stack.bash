@@ -24,13 +24,14 @@ stacking_current() {
 }
 
 # The open pull requests that land, drafts left out, as a JSON array of
-# `{number, head, base, created, landing}`: `landing` when the pull request is
-# in the merge queue or set to enter it (auto-merge), so its branch is about
-# to be deleted and nothing new stacks on it (#1455).
+# `{number, head, base, created, landing, stack}`: `landing` when the pull
+# request is in the merge queue or set to enter it (auto-merge), so its branch
+# is about to be deleted and nothing new stacks on it (#1455); `stack` the
+# number of the linked stack holding it, or null (#1520).
 open_prs() {
   gh api graphql --paginate -f owner="${repo%/*}" -f name="${repo#*/}" \
-    -f query='query($owner: String!, $name: String!, $endCursor: String) { repository(owner: $owner, name: $name) { pullRequests(states: OPEN, first: 100, after: $endCursor) { pageInfo { hasNextPage endCursor } nodes { number headRefName baseRefName isDraft createdAt isInMergeQueue autoMergeRequest { enabledAt } } } } }' \
-    --jq '.data.repository.pullRequests.nodes[] | select(.isDraft | not) | {number, head: .headRefName, base: .baseRefName, created: .createdAt, landing: (.isInMergeQueue or .autoMergeRequest != null)}' \
+    -f query='query($owner: String!, $name: String!, $endCursor: String) { repository(owner: $owner, name: $name) { pullRequests(states: OPEN, first: 100, after: $endCursor) { pageInfo { hasNextPage endCursor } nodes { number headRefName baseRefName isDraft createdAt isInMergeQueue autoMergeRequest { enabledAt } stack { number } } } } }' \
+    --jq '.data.repository.pullRequests.nodes[] | select(.isDraft | not) | {number, head: .headRefName, base: .baseRefName, created: .createdAt, landing: (.isInMergeQueue or .autoMergeRequest != null), stack: .stack.number}' \
     | jq -cs .
 }
 
