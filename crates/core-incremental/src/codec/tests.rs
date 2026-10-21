@@ -1238,6 +1238,23 @@ fn a_stage_refusal_round_trips_with_where_it_stood()
         assert_eq!(super::read_refusal(&mut reader), Ok(refusal));
         assert_eq!(reader.finish(), Ok(()));
     }
+    let disagreement = Refusal::StagesDisagree {
+        at,
+        binder: gandr_kernel_term::StageBinder::from(1_usize),
+    };
+    let mut bytes = CheckpointBytes::default();
+    super::write_refusal(&mut Writer { sink: &mut bytes }, &disagreement)
+        .expect("portable refusal");
+    let mut reader = Reader {
+        bytes: bytes.as_ref(),
+        cursor: 0,
+    };
+    assert_eq!(
+        super::read_refusal(&mut reader),
+        Ok(disagreement),
+        "a disagreement keeps its site and binder"
+    );
+    assert_eq!(reader.finish(), Ok(()));
     // A bound zero steps below its anchor is no bound.
     let mut zero = Reader {
         bytes: &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],

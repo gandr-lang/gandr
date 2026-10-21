@@ -725,6 +725,15 @@ pub enum Refusal
         /// The stage it was wanted at or below.
         bound: Stage,
     },
+    /// Two arguments of a call show stages for one binder of a definition
+    /// quantified over stages that no stage satisfies together.
+    StagesDisagree
+    {
+        /// The argument whose reading the solved stage does not satisfy.
+        at: Site,
+        /// The binder, by its position in the signature.
+        binder: gandr_kernel_term::StageBinder,
+    },
     /// Two accumulated rows assign different operation types to one interface.
     EffectSignatureConflict
     {
@@ -1406,6 +1415,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
      | (CheckRefusal::NonUniformOccurrence(site), &Refusal::NonUniformOccurrence(projected)) = (matched_left_value, matched_right_value) { site == projected }
  else if let CheckRefusal::CrossBlockReference { site, index } = matched_left_value && let Refusal::CrossBlockReference { site: projected, index: ref returned } = *matched_right_value { site == projected && *returned == self.layout.resolve(index) }
  else if let CheckRefusal::StageNotBelow { at, found, bound } = matched_left_value && let Refusal::StageNotBelow { at: projected, found: stood, bound: wanted } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stood == found && wanted == bound }
+ else if let CheckRefusal::StagesDisagree { at, binder } = matched_left_value && let Refusal::StagesDisagree { at: projected, binder: named } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && named == binder }
  else if let CheckRefusal::UnenclosedRun { at } = matched_left_value && let Refusal::UnenclosedRun { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::SessionMismatch { at, endpoint, state, defect } = matched_left_value && let Refusal::SessionMismatch { at: projected, endpoint: returned, state: ref stored, defect: kept } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && returned == self.endpoint(endpoint) && *stored == self.value_type(state) && kept == defect }
  else if let CheckRefusal::Linearity { at, defect } = matched_left_value && let Refusal::Linearity { at: projected, defect: ref stored } = *matched_right_value { projected == self.core_site(at) && *stored == self.linearity(defect) }
@@ -1712,6 +1722,10 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 at: self.site(ArenaNode::Value(at)),
                 found,
                 bound,
+            },
+            CheckRefusal::StagesDisagree { at, binder } => Refusal::StagesDisagree {
+                at: self.site(ArenaNode::Value(at)),
+                binder,
             },
             CheckRefusal::UnenclosedRun { at } => Refusal::UnenclosedRun {
                 at: self.site(ArenaNode::Value(at)),

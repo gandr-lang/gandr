@@ -739,6 +739,7 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
             | CheckRefusal::MachineInvariant | CheckRefusal::CapabilityUngranted { .. } => ret.primary == Maybe::Present(Annotation {
                 span: declaration, label,
             }) && ret.context == UNNAMED,
+        CheckRefusal::StagesDisagree { .. } |
         CheckRefusal::IndexedCase(_) | CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Codata { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
     }
 })]
@@ -876,6 +877,7 @@ fn checked(
         | CheckRefusal::RunNotAdmitted { at, .. }
         | CheckRefusal::ForwardUnsupported { at }
         | CheckRefusal::StageNotBelow { at, .. }
+        | CheckRefusal::StagesDisagree { at, .. }
         | CheckRefusal::Boundary { at } => (spanned(origins.value(at)), UNNAMED),
         CheckRefusal::StaticClassifierExpected { found, .. } => {
             (spanned(origins.value_type(found)), UNNAMED)
@@ -1367,6 +1369,10 @@ impl fmt::Display for Checked
                 "the value is not strictly below the parameter its structural recursion \
                  descends on: {}",
                 Stood(found)
+            ),
+            | CheckRefusal::StagesDisagree { .. } => f.write_str(
+                "the arguments stand at stages that no single stage of the callee's stage \
+                 parameter fits",
             ),
             | CheckRefusal::SessionMismatch { defect, .. } => match defect {
                 | ProtocolDefect::Action { expected, observed } => write!(
@@ -3228,6 +3234,7 @@ mod tests
                         | CheckRefusal::RunNotAdmitted { .. }
                         | CheckRefusal::ForwardUnsupported { .. }
                         | CheckRefusal::StageNotBelow { .. }
+                        | CheckRefusal::StagesDisagree { .. }
                         | CheckRefusal::Boundary { .. }
                         | CheckRefusal::NotSynthesisable {
                             form:

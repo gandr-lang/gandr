@@ -832,6 +832,10 @@ fn checked(
         CheckRefusal::StageNotBelow { found, .. } => {
             write!(f, "the recursion is not structural: {}", Stood(found))
         },
+        CheckRefusal::StagesDisagree { .. } => f.write_str(
+            "the call's arguments stand at stages that no single stage of the callee's stage \
+             parameter fits",
+        ),
         CheckRefusal::SessionMismatch { defect, .. } => match defect {
             ProtocolDefect::Action { expected, observed } => write!(
                 f,
@@ -1435,6 +1439,10 @@ mod tests
                 at: value,
                 found: Standing::Top,
                 bound: Stage::At(StageId::from(0_usize)),
+            },
+            CheckRefusal::StagesDisagree {
+                at: value,
+                binder: gandr_kernel_term::StageBinder::from(0_usize),
             },
             CheckRefusal::EndpointMismatch {
                 at: value,

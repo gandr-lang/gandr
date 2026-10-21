@@ -979,6 +979,7 @@ impl Machine<'_, '_>
             | CheckRefusal::NonUniformOccurrence(_)
             | CheckRefusal::CrossBlockReference { .. }
             | CheckRefusal::StageNotBelow { .. }
+            | CheckRefusal::StagesDisagree { .. }
             | CheckRefusal::SessionMismatch { .. }
             | CheckRefusal::Linearity { .. }
             | CheckRefusal::UnenclosedRun { .. }

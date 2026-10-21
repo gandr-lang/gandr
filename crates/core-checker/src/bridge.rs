@@ -561,6 +561,7 @@ fn fault(refusal: CheckRefusal) -> Refusal
         | CheckRefusal::NonUniformOccurrence(_)
         | CheckRefusal::CrossBlockReference { .. }
         | CheckRefusal::StageNotBelow { .. }
+        | CheckRefusal::StagesDisagree { .. }
         | CheckRefusal::SessionMismatch { .. }
         | CheckRefusal::Linearity { .. }
         | CheckRefusal::UnenclosedRun { .. }

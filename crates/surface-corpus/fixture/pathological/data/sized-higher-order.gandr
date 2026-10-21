@@ -4,8 +4,9 @@
 // (#393, #392). A helper whose signature names no type parameter and no stage
 // hands its argument on at no stage, and a helper with no recursion and no
 // stage opens none for its result to follow: the model's quantified
-// signatures lift both, `applyAt` the first and `predAt` the second. Shared
-// with `../../model/data/sized-higher-order.gandr`.
+// signatures lift both, `applyAt` the first and `predAt` the second. A call
+// whose arguments bound one stage binder where no stage fits is refused by
+// name (#1227). Shared with `../../model/data/sized-higher-order.gandr`.
 
 // The naturals the recursions take apart.
 import "../../model/data/data-base.gandr" ;
@@ -98,5 +99,18 @@ def rec looping_through_bound(n : Nat) -> -F Nat {
   case n {
     Zero => Zero,
     Succ(p) => { run q <- boundedAt(p, n); looping_through_bound[<](q) }
+  }
+}
+
+/// The number itself handed to `sameAt` beside the recursion's claim: the
+/// claim's domain bounds `i` from above, one below the number's stage, and
+/// the number bounds it from below at its own, which no stage under the claim
+/// reaches. The two readings disagree, refused by name at the claim, whose
+/// reading the number's stage leaves unmet (#1227).
+@[ refuses("StagesDisagree") ]
+def rec disagreeing(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(p) => Succ(sameAt(disagreeing[<], n))
   }
 }

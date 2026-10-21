@@ -4,11 +4,13 @@
 //! - **The definition's own body checks at minted stages.** [`minted`] mints
 //!   one stage per binder, a bounded binder's below its bound's, and
 //!   [`restaged`] refines each marked occurrence of the declared type there.
-//! - **A call reads its stages off its arguments.** [`instantiation`] reads
-//!   each binder's stage where a variable argument's type holds an occurrence
-//!   the signature marks, the first such mark's; a binder no argument shows
-//!   stands at no stage, so its occurrences stay plain. The arguments then
-//!   check against the re-staged type by the stage order.
+//! - **A call solves its stages from its arguments.** [`instantiation`] reads
+//!   each binder's readings where a variable argument's type holds an
+//!   occurrence the signature marks, and stands it at the least stage they
+//!   allow ([`crate::stage_order::StageOrder::solve`]), two readings no stage
+//!   satisfies refused as [`KernelError::StagesDisagree`]; a binder no argument
+//!   shows stands at no stage, so its occurrences stay plain. The arguments
+//!   then check against the re-staged type by the stage order.
 //! - **A mark reaches a data type.** Its path steps through the children the
 //!   stage order places; a path that ends anywhere else is refused as
 //!   [`KernelError::StageUnplaced`].
@@ -34,6 +36,8 @@ use super::recursion::placed;
 use super::recursion::rebuild;
 use crate::error::KernelError;
 use crate::stage_order::Fit;
+use crate::stage_order::Reading;
+use crate::stage_order::Side;
 use crate::stage_order::StageOrder;
 use crate::stage_order::below;
 
@@ -260,21 +264,25 @@ fn wrapped(
 }
 
 /// The stages a call of a definition declared `declared`, quantified over
-/// `signature`, instantiates its binders at: each read where the first mark
-/// of it lies in the domain of an argument of `spine` that is a variable of
+/// `signature`, instantiates its binders at: each solved from every mark of it
+/// that lies in the domain of an argument of `spine` that is a variable of
 /// `context` whose type holds a stage there.
 ///
 /// # Specification
 /// - requires: `spine` holds the call's arguments, first applied first;
 ///   `declared` is the thunk of the definition's arrows; `order` holds every
 ///   stage the arguments' types name.
-/// - ensures: one entry per binder: a stage read off an argument, a bounded
-///   binder no argument shows read one step below its bound's stage, and no
-///   stage otherwise. A mark at `<i` reads `i` off an argument bound `<s` at
-///   `s`, and off nothing at a stage itself.
-/// - fails: [`KernelError::StageNotBelow`] when `order` does not place the
-///   stage a bounded binder is read at off an argument below its bound's, where
-///   the body was checked with it.
+/// - ensures: one entry per binder: the stage [`StageOrder::solve`] finds for
+///   the readings its arguments show — a reading under a function argument's
+///   domain bounding it from above, one inside a data type's argument naming it
+///   exactly, any other from below — a bounded binder no argument shows read
+///   one step below its bound's stage, and no stage otherwise. A mark at `<i`
+///   reads `i` off an argument bound `<s` at `s`, and off nothing at a stage
+///   itself.
+/// - fails: [`KernelError::StagesDisagree`] naming the binder and two of its
+///   readings no stage satisfies together; [`KernelError::StageNotBelow`] when
+///   `order` does not place the stage a bounded binder is read at off an
+///   argument below its bound's, where the body was checked with it.
 /// - panics: none.
 ///
 /// # Errors
@@ -284,10 +292,12 @@ fn wrapped(
 /// - hypothesis: L3 — a recursion's claim handed to a helper typed at a stage
 ///   instantiates it at the recursion's own; a call on a value at no stage
 ///   instantiates nothing; a bounded binder read at its bound's own stage is
-///   refused.
+///   refused; two arguments at apart stages for one binder are refused by name,
+///   whichever comes first.
 /// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
 /// - witness: `tests::quantified::a_call_at_no_stage_reads_its_result_plain`
 /// - witness: `tests::quantified::a_bounded_binder_read_above_its_bound_is_refused_1241`
+/// - witness: `tests::quantified::arguments_at_apart_stages_disagree_by_name_1227`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| read.len() == signature.bounds().len()))]
 pub(super) fn instantiation(
     (arena, order): (&TermArena, &StageOrder),
@@ -296,17 +306,8 @@ pub(super) fn instantiation(
     spine: &[ValueId],
 ) -> Result<Vec<Maybe<Stage, Unread>>, KernelError>
 {
-    let mut read: Vec<Maybe<Stage, Unread>> = signature
-        .bounds()
-        .iter()
-        .map(|_| Maybe::Absent(Unread::Plain))
-        .collect();
-    let mut shown: Vec<bool> = signature.bounds().iter().map(|_| false).collect();
+    let mut readings: Vec<Vec<Reading>> = signature.bounds().iter().map(|_| Vec::new()).collect();
     for mark in signature.marks() {
-        let binder = usize::from(mark.binder());
-        if !matches!(read.get(binder), Some(&Maybe::Absent(_))) {
-            continue;
-        }
         let Maybe::Present((argument, inside)) = argument_at(arena, (declared, spine), mark.path())
         else {
             continue;
@@ -319,38 +320,33 @@ pub(super) fn instantiation(
         else {
             continue;
         };
-        let Maybe::Present(found) = stage_at(arena, found, inside)
+        let Maybe::Present((found, side)) = stage_at(arena, found, inside)
         else {
             continue;
         };
-        let instance = match (mark.reach(), found) {
-            (StageReach::At, found) => Maybe::Present(found),
-            (
-                StageReach::Below(depth),
-                Stage::Below {
-                    anchor,
-                    depth: under,
-                },
-            ) => match u32::from(under).checked_sub(u32::from(depth)) {
-                Some(0) => Maybe::Present(Stage::At(anchor)),
-                Some(rest) => {
-                    core::num::NonZeroU32::new(rest).map_or(Maybe::Absent(Unread::Plain), |rest| {
-                        Maybe::Present(Stage::Below {
-                            anchor,
-                            depth: gandr_kernel_term::StageDepth::from(rest),
-                        })
-                    })
-                },
-                None => Maybe::Absent(Unread::Plain),
-            },
-            (StageReach::Below(_), Stage::At(_)) => Maybe::Absent(Unread::Plain),
+        let Maybe::Present(stage) = lifted(mark.reach(), found)
+        else {
+            continue;
         };
-        if let Some(slot) = read.get_mut(binder) {
-            *slot = instance;
+        if let Some(held) = readings.get_mut(usize::from(mark.binder())) {
+            held.push(Reading { stage, side });
         }
-        if let Some(slot) = shown.get_mut(binder) {
-            *slot = true;
-        }
+    }
+    let mut read: Vec<Maybe<Stage, Unread>> = Vec::with_capacity(readings.len());
+    for (binder, held) in readings.iter().enumerate() {
+        read.push(match held.split_first() {
+            Some((&first, rest)) => {
+                let solved = order.solve(first, rest).map_err(|disagreement| {
+                    KernelError::StagesDisagree {
+                        binder: gandr_kernel_term::StageBinder::from(binder),
+                        first: disagreement.first,
+                        second: disagreement.second,
+                    }
+                })?;
+                Maybe::Present(solved)
+            },
+            None => Maybe::Absent(Unread::Plain),
+        });
     }
     for (binder, &bound) in signature.bounds().iter().enumerate() {
         let StageBound::Below(over) = bound
@@ -361,8 +357,8 @@ pub(super) fn instantiation(
         else {
             continue;
         };
-        match (read.get(binder), shown.get(binder)) {
-            (Some(&Maybe::Present(stage)), Some(&true)) => {
+        match read.get(binder) {
+            Some(&Maybe::Present(stage)) => {
                 if order.fit(stage, below(above)) == Fit::NotBelow {
                     return Err(KernelError::StageNotBelow {
                         found: gandr_kernel_term::Standing::Staged(stage),
@@ -370,15 +366,58 @@ pub(super) fn instantiation(
                     });
                 }
             },
-            (Some(&Maybe::Absent(_)), _) => {
+            Some(&Maybe::Absent(_)) => {
                 if let Some(slot) = read.get_mut(binder) {
                     *slot = Maybe::Present(below(above));
                 }
             },
-            (Some(&Maybe::Present(_)), Some(&false) | None) | (None, _) => {},
+            None => {},
         }
     }
     Ok(read)
+}
+
+/// The stage a binder stands at when a mark reaching `reach` below it holds
+/// `found`.
+///
+/// # Specification
+/// - ensures: `found` itself at the binder's own stage; for a mark `depth`
+///   below it, `found`'s anchor that many steps shallower, the anchor itself
+///   when no depth is left; absent where `found` is no deeper than the mark, an
+///   exact stage included.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`instantiation`].
+/// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
+#[spec(ensures: |ret| !matches!(reach, StageReach::At) || ret == Maybe::Present(found))]
+fn lifted(
+    reach: StageReach,
+    found: Stage,
+) -> Maybe<Stage, Unread>
+{
+    match (reach, found) {
+        (StageReach::At, found) => Maybe::Present(found),
+        (
+            StageReach::Below(depth),
+            Stage::Below {
+                anchor,
+                depth: under,
+            },
+        ) => match u32::from(under).checked_sub(u32::from(depth)) {
+            Some(0) => Maybe::Present(Stage::At(anchor)),
+            Some(rest) => {
+                core::num::NonZeroU32::new(rest).map_or(Maybe::Absent(Unread::Plain), |rest| {
+                    Maybe::Present(Stage::Below {
+                        anchor,
+                        depth: gandr_kernel_term::StageDepth::from(rest),
+                    })
+                })
+            },
+            None => Maybe::Absent(Unread::Plain),
+        },
+        (StageReach::Below(_), Stage::At(_)) => Maybe::Absent(Unread::Plain),
+    }
 }
 
 /// The argument of `spine` whose domain a mark's path enters, and the rest of
@@ -444,26 +483,31 @@ fn argument_at<'path>(
 }
 
 /// The stage of the node `path` reaches in `found`, each staged node on the
-/// way read through its base.
+/// way read through its base, and which way it bounds the binder marked
+/// there.
 ///
 /// # Specification
-/// - ensures: the stage of the reached node when it is staged; absent
-///   otherwise, a path past a former's placed children included.
+/// - ensures: the stage of the reached node when it is staged, with
+///   [`Side::Lower`] flipped at each arrow's domain the path enters and
+///   [`Side::Exact`] once it enters a data type's argument; absent otherwise, a
+///   path past a former's placed children included.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`instantiation`].
 /// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
+/// - witness: `tests::quantified::arguments_at_apart_stages_disagree_by_name_1227`
 #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_))
     || !path.is_empty()
-    || matches!(arena.value_type(found), Some(ValueType::Staged { .. })))]
+    || matches!(ret, Maybe::Present((_, Side::Lower))))]
 fn stage_at(
     arena: &TermArena,
     found: ValueTypeId,
     path: &[PlacedChild],
-) -> Maybe<Stage, Unread>
+) -> Maybe<(Stage, Side), Unread>
 {
     let mut node = Part::Value(found);
+    let mut side = Side::Lower;
     for &step in path {
         if let Part::Value(id) = node
             && let Some(&ValueType::Staged { base, .. }) = arena.value_type(id)
@@ -471,6 +515,21 @@ fn stage_at(
             node = Part::Value(base);
         }
         let wanted = usize::from(step);
+        side = match node {
+            Part::Value(id) if matches!(arena.value_type(id), Some(&ValueType::Data { .. })) => {
+                Side::Exact
+            },
+            Part::Computation(id)
+                if wanted == 0
+                    && matches!(
+                        arena.comp_type(id),
+                        Some(&(CompType::Arrow { .. } | CompType::Pi { .. }))
+                    ) =>
+            {
+                side.flipped()
+            },
+            Part::Value(_) | Part::Computation(_) => side,
+        };
         let mut next = None;
         let mut position = 0_usize;
         placed(arena, node, |child| {
@@ -487,7 +546,7 @@ fn stage_at(
     }
     match node {
         Part::Value(id) => match arena.value_type(id) {
-            Some(&ValueType::Staged { stage, .. }) => Maybe::Present(stage),
+            Some(&ValueType::Staged { stage, .. }) => Maybe::Present((stage, side)),
             Some(_) | None => Maybe::Absent(Unread::Plain),
         },
         Part::Computation(_) => Maybe::Absent(Unread::Plain),

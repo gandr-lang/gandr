@@ -908,6 +908,15 @@ pub enum CheckRefusal
         /// The stage it was wanted at or below.
         bound: gandr_kernel_term::Stage,
     },
+    /// Two arguments of a call show stages for one binder of a definition
+    /// quantified over stages that no stage satisfies together.
+    StagesDisagree
+    {
+        /// The argument whose reading the solved stage does not satisfy.
+        at: ValueId,
+        /// The binder, by its position in the signature.
+        binder: gandr_kernel_term::StageBinder,
+    },
     /// A session action the session type of its endpoint does not admit.
     SessionMismatch
     {
@@ -1157,7 +1166,7 @@ impl CheckRefusal
         | Self::FamilyArgumentClassifier { .. }
         | Self::StaticLambdaArgument { .. }
         | Self::StaticClassifierExpected { .. }
-        | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::StageNotBelow { .. } | Self::UnenclosedRun { .. }
+        | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::StageNotBelow { .. } | Self::StagesDisagree { .. } | Self::UnenclosedRun { .. }
         | Self::SessionMismatch { .. } | Self::Linearity { .. } | Self::Access { .. } | Self::Codata { .. } | Self::Located { .. }
         | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. }
         | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
@@ -1214,6 +1223,7 @@ impl CheckRefusal
             | Self::NonUniformOccurrence(_)
             | Self::CrossBlockReference { .. }
             | Self::StageNotBelow { .. }
+            | Self::StagesDisagree { .. }
             | Self::UnenclosedRun { .. }
             | Self::SessionMismatch { .. }
             | Self::Linearity { .. }
@@ -1428,6 +1438,7 @@ impl CheckRefusal
             | Self::NonUniformOccurrence(_)
             | Self::CrossBlockReference { .. }
             | Self::StageNotBelow { .. }
+            | Self::StagesDisagree { .. }
             | Self::UnenclosedRun { .. }
             | Self::Linearity { .. }
             | Self::Access { .. }

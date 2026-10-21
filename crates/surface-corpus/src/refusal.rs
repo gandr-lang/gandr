@@ -328,6 +328,9 @@ pub enum RefusalName
     CrossBlockReference,
     /// A value does not stand below the stage its structural recursion wants.
     StageNotBelow,
+    /// Two arguments of a call show stages for one stage binder that no stage
+    /// satisfies together.
+    StagesDisagree,
     /// An operation absent from its interface.
     UnknownOperation,
     /// Handler clauses do not cover their interface exactly.
@@ -673,7 +676,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 179_usize] = [
+    pub const VOCABULARY: [Self; 180_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -701,6 +704,7 @@ impl RefusalName
         Self::NonUniformOccurrence,
         Self::CrossBlockReference,
         Self::StageNotBelow,
+        Self::StagesDisagree,
         Self::PathCode,
         Self::EndpointMismatch,
         Self::CompoundEndpoint,
@@ -956,6 +960,7 @@ impl RefusalName
         | (Self::NonUniformOccurrence, b"NonUniformOccurrence")
         | (Self::CrossBlockReference, b"CrossBlockReference")
         | (Self::StageNotBelow, b"StageNotBelow")
+        | (Self::StagesDisagree, b"StagesDisagree")
         | (Self::EffectSignatureConflict, b"EffectSignatureConflict")
         | (Self::UnknownOperation, b"UnknownOperation") | (Self::HandlerCoverage, b"HandlerCoverage")
         | (Self::ShiftWithoutReset, b"ShiftWithoutReset") | (Self::DependentStack, b"DependentStack")
@@ -1071,6 +1076,7 @@ impl RefusalName
             Self::NonUniformOccurrence => "NonUniformOccurrence",
             Self::CrossBlockReference => "CrossBlockReference",
             Self::StageNotBelow => "StageNotBelow",
+            Self::StagesDisagree => "StagesDisagree",
             Self::UnknownOperation => "UnknownOperation",
             Self::HandlerCoverage => "HandlerCoverage",
             Self::ShiftWithoutReset => "ShiftWithoutReset",
@@ -1484,7 +1490,8 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::IndexOccurrence(_)), RefusalName::IndexOccurrence)
         | (Self::Checking(CheckRefusal::NonUniformOccurrence(_)), RefusalName::NonUniformOccurrence)
         | (Self::Checking(CheckRefusal::CrossBlockReference { .. }), RefusalName::CrossBlockReference)
-        | (Self::Checking(CheckRefusal::StageNotBelow { .. }), RefusalName::StageNotBelow) |
+        | (Self::Checking(CheckRefusal::StageNotBelow { .. }), RefusalName::StageNotBelow)
+        | (Self::Checking(CheckRefusal::StagesDisagree { .. }), RefusalName::StagesDisagree) |
         (Self::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { .. }),
         RefusalName::ExpectationOutsideFixtureRoot)
         | (Self::Checking(CheckRefusal::EffectSignatureConflict { .. }), RefusalName::EffectSignatureConflict)
@@ -1771,6 +1778,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::NonUniformOccurrence(_), RefusalName::NonUniformOccurrence)
         | (CheckRefusal::CrossBlockReference { .. }, RefusalName::CrossBlockReference)
         | (CheckRefusal::StageNotBelow { .. }, RefusalName::StageNotBelow)
+        | (CheckRefusal::StagesDisagree { .. }, RefusalName::StagesDisagree)
         | (CheckRefusal::EffectSignatureConflict { .. }, RefusalName::EffectSignatureConflict)
         | (CheckRefusal::UnknownOperation { .. }, RefusalName::UnknownOperation)
         | (CheckRefusal::HandlerCoverage { .. }, RefusalName::HandlerCoverage)
@@ -2001,6 +2009,7 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::NonUniformOccurrence(_) => RefusalName::NonUniformOccurrence,
         CheckRefusal::CrossBlockReference { .. } => RefusalName::CrossBlockReference,
         CheckRefusal::StageNotBelow { .. } => RefusalName::StageNotBelow,
+        CheckRefusal::StagesDisagree { .. } => RefusalName::StagesDisagree,
     }
 }
 

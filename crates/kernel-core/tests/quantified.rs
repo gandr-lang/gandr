@@ -220,6 +220,43 @@ fn a_call_handing_the_scrutinee_is_refused()
     );
 }
 
+/// #1227: `sameAt @[i : Size] (f : U (Nat[i] → F Nat), x : Nat[i])`. The
+/// claim's domain bounds `i` from above at one below the recursion's stage
+/// and the field bounds it from below at its own: they agree at the field's.
+/// The scrutinee bounds it from below at the recursion's stage, which no
+/// stage under the claim's domain reaches: the binder's readings disagree,
+/// refused by name whichever argument is read first.
+#[test]
+fn arguments_at_apart_stages_disagree_by_name_1227()
+{
+    let mut environment = Environment::new();
+    let nat = nat(&mut environment).position();
+    let at = |path: &[usize]| {
+        StageMark::new(
+            path.iter().copied().map(PlacedChild::from).collect(),
+            StageBinder::from(0_usize),
+            StageReach::At,
+        )
+    };
+    let same = apply_at(
+        &mut environment,
+        nat,
+        StageSignature::new(vec![StageBound::Unbounded], vec![
+            at(&[0, 0, 0, 0]),
+            at(&[0, 1, 0]),
+        ]),
+    )
+    .expect("the helper checks at its minted stage")
+    .position();
+    let agreed = helped(&mut environment, (nat, same), DeBruijnIndex::from(0));
+    assert!(agreed.is_ok(), "{agreed:?}");
+    let refused = helped(&mut environment, (nat, same), DeBruijnIndex::from(1));
+    assert!(
+        matches!(refused, Err(KernelError::StagesDisagree { binder, .. }) if binder == StageBinder::from(0_usize)),
+        "{refused:?}"
+    );
+}
+
 /// A mark whose path ends at the helper's arrow, no data type, is refused at
 /// admission, and so is a bound naming a binder not stated before it.
 #[test]

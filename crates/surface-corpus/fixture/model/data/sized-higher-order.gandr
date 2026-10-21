@@ -6,8 +6,9 @@
 // (#452). `applyAt` is quantified over a stage instead of a type, and a call
 // instantiates the stage from its arguments (#392); `predAt` states that its
 // result stands at its argument's stage, which a definition with no recursion
-// otherwise opens none for. What refuses is in
-// `../../pathological/data/sized-higher-order.gandr`.
+// otherwise opens none for; `sameAt` takes both arguments at the stage itself,
+// which a call solves from the bound each argument shows (#1227). What
+// refuses is in `../../pathological/data/sized-higher-order.gandr`.
 
 // The naturals the recursion takes apart.
 import "./data-base.gandr" ;
@@ -103,3 +104,28 @@ def rec boundedHelped(n : Nat) -> -F Nat {
 @[ runs("Succ(Succ(Zero))") ]
 def boundedTwo : () => Nat ;
 def boundedTwo = thunk { boundedHelped(Succ(Succ(Zero))) } ;
+
+/// A function applied to a number at a stage `i` itself, not below it.
+@[ checks ]
+def sameAt @[i : Size] (f : Nat[i] => Nat, x : Nat[i]) -> -F Nat {
+  f(x)
+}
+
+/// A number rebuilt, each predecessor handed through `sameAt` beside the
+/// recursion's claim: the claim's domain bounds `i` from above, one below the
+/// number's stage, and the predecessor from below at its own, which fits
+/// there, so the call solves `i` at the predecessor's stage. A call whose
+/// arguments no stage fits is refused in
+/// `../../pathological/data/sized-higher-order.gandr` (#1227).
+@[ checks ]
+def rec agreed(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(p) => Succ(sameAt(agreed[<], p))
+  }
+}
+
+/// Two rebuilt through `sameAt`.
+@[ runs("Succ(Succ(Zero))") ]
+def agreedTwo : () => Nat ;
+def agreedTwo = thunk { agreed(Succ(Succ(Zero))) } ;
