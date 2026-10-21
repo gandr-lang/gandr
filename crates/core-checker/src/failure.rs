@@ -317,6 +317,8 @@ pub enum FrameRole
     HoldValue,
     /// A hold's scope is being judged with the held slot bound.
     HoldBody,
+    /// An access at a place waits on its index's check, then lends the place.
+    AccessIndex,
     /// An access's body is being judged with its view bound.
     AccessBody,
     /// An access's unwind is being checked under the empty row.
@@ -466,6 +468,7 @@ impl fmt::Display for FrameRole
             Self::StayEndpoints => "StayEndpoints",
             Self::HoldValue => "HoldValue",
             Self::HoldBody => "HoldBody",
+            Self::AccessIndex => "AccessIndex",
             Self::AccessBody => "AccessBody",
             Self::AccessUnwind => "AccessUnwind",
             Self::ResumeValue => "ResumeValue",

@@ -1443,6 +1443,7 @@ fn covers_preserve_every_binding_former()
                     unwind: index(2_usize),
                 },
                 held: at(0_u32),
+                place: gandr_core_term::memory::Place::Whole,
                 body: index(1_usize),
             }),
             both,
@@ -1452,6 +1453,21 @@ fn covers_preserve_every_binding_former()
             ContentNode::Memory(MemoryForm::Access {
                 mode: AccessMode::Shared,
                 held: at(0_u32),
+                place: gandr_core_term::memory::Place::Whole,
+                body: index(1_usize),
+            }),
+            both,
+        ),
+        (
+            "access at a place",
+            ContentNode::Memory(MemoryForm::Access {
+                mode: AccessMode::Exclusive {
+                    unwind: index(2_usize),
+                },
+                held: at(0_u32),
+                place: gandr_core_term::memory::Place::At {
+                    index: index(2_usize),
+                },
                 body: index(1_usize),
             }),
             both,

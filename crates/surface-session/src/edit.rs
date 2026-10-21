@@ -2578,7 +2578,7 @@ enum Agreement
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 /// - witness: `edit::tests::child_mapping_preserves_payloads_without_replaying_the_callback`
-/// - witness: `edit::tests::a_memory_form_agrees_on_its_kind_mode_and_slot`
+/// - witness: `edit::tests::a_memory_form_agrees_on_its_kind_mode_place_and_slot`
 /// - witness: `edit::tests::every_node_family_agrees_exactly_on_its_payload`
 #[spec(
     ensures: |ret| {
@@ -4408,10 +4408,11 @@ def body = 1 ;
     }
 
     #[test]
-    fn a_memory_form_agrees_on_its_kind_mode_and_slot()
+    fn a_memory_form_agrees_on_its_kind_mode_place_and_slot()
     {
         use gandr_core_term::memory::AccessMode;
         use gandr_core_term::memory::MemoryForm;
+        use gandr_core_term::memory::Place;
         use gandr_kernel_term::DeBruijnIndex;
 
         use super::Agreement;
@@ -4422,6 +4423,7 @@ def body = 1 ;
             ContentNode::Memory(MemoryForm::Access {
                 mode: AccessMode::Exclusive { unwind: second },
                 held,
+                place: Place::Whole,
                 body: first,
             })
         };
@@ -4448,12 +4450,24 @@ def body = 1 ;
         let shared = ContentNode::Memory(MemoryForm::Access {
             mode: AccessMode::Shared,
             held: slot,
+            place: Place::Whole,
             body: first,
         });
         assert_eq!(
             super::agreement(&access(slot), &shared),
             Agreement::Differs,
             "a shared access and an exclusive one over one slot are two formers"
+        );
+        let placed = ContentNode::Memory(MemoryForm::Access {
+            mode: AccessMode::Exclusive { unwind: second },
+            held: slot,
+            place: Place::At { index: second },
+            body: first,
+        });
+        assert_eq!(
+            super::agreement(&access(slot), &placed),
+            Agreement::Differs,
+            "an access at a place and one of the whole held value are two formers"
         );
     }
 

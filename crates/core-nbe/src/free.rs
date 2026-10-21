@@ -42,6 +42,7 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::memory::Place;
 use gandr_core_term::session::SessionAction;
 use gandr_core_term::world::WorldForm;
 use gandr_core_term::world::WorldType;
@@ -1276,15 +1277,26 @@ Err(_) => false,
                             two(value(held), computation(body), Lowering::NONE)
                         },
                         MemoryForm::Access {
-                            mode: AccessMode::Exclusive { unwind },
-                            body,
-                            ..
-                        } => two(computation(body), computation(unwind), Lowering::NONE),
-                        MemoryForm::Access {
-                            mode: AccessMode::Shared,
-                            body,
-                            ..
-                        } => one(computation(body), Lowering::NONE),
+                            mode, place, body, ..
+                        } => {
+                            let body = Some((computation(body), Lowering::NONE));
+                            let unwind = match mode {
+                                AccessMode::Exclusive { unwind } => {
+                                    Some((computation(unwind), Lowering::NONE))
+                                },
+                                AccessMode::Shared => None,
+                            };
+                            match place {
+                                Place::Whole => [body, unwind, None, None, None],
+                                Place::At { index } => [
+                                    Some((value(index), Lowering::NONE)),
+                                    body,
+                                    unwind,
+                                    None,
+                                    None,
+                                ],
+                            }
+                        },
                         MemoryForm::Resume { value: written, .. } => {
                             one(value(written), Lowering::NONE)
                         },

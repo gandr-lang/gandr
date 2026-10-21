@@ -8,12 +8,15 @@ use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::LinearUse;
+use gandr_core_term::Value;
 use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::effect::Purity;
 use gandr_core_term::effect::RowInclusion;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::memory::Place;
 use gandr_kernel_term::DeBruijnIndex;
 
 use super::Control;
@@ -28,6 +31,7 @@ use super::session::Opened;
 use super::session::Resided;
 use super::session::Resident;
 use crate::access::AccessDefect;
+use crate::context::Atom;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::Mismatch;
@@ -35,21 +39,25 @@ use crate::refusal::TermNode;
 use crate::session::Capture;
 use crate::session::LinearityDefect;
 use crate::view::CompTypeView;
+use crate::view::ValueTypeView;
 use crate::view::comp_type_view;
+use crate::view::value_type_view;
 
 impl Machine<'_, '_>
 {
     /// The rules of the memory forms: a hold synthesises its value, an
-    /// access lends its held slot in its mode, a resume checks its value, an
-    /// abort ends its view at once.
+    /// access lends its held slot, or a place of it, in its mode, a resume
+    /// checks its value, an abort ends its view at once.
     ///
     /// # Specification
     /// - requires: `term` is a memory form.
     /// - ensures: a hold standing at a pure returner waits on its value's
-    ///   synthesis; an access opens its view at the held slot's type and waits
-    ///   on its body in `direction`; a resume waits on its value's check
-    ///   against the view's type; an abort spends its view and synthesises the
-    ///   returner of the unit.
+    ///   synthesis; an access of the whole value opens its view at the held
+    ///   slot's type and waits on its body in `direction`; an access at a place
+    ///   whose held slot it may lend waits on its index's check against the
+    ///   integer type; a resume waits on its value's check against the view's
+    ///   type; an abort spends its view and synthesises the returner of the
+    ///   unit.
     /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::HeldCaptured`]
     ///   for a hold at an impure type, [`AccessDefect::NotHeld`] for an access
     ///   of a slot that holds no value, [`AccessDefect::Lent`] for an access
@@ -70,6 +78,7 @@ impl Machine<'_, '_>
     /// - witness: `judgement::access::tests::a_view_resumed_twice_is_refused`
     /// - witness: `judgement::access::tests::a_held_value_lent_or_misnamed_is_refused`
     /// - witness: `judgement::access::tests::a_shared_view_reads_beside_its_held_value_and_ends_with_its_body`
+    /// - witness: `judgement::access::tests::a_place_of_a_held_list_is_lent_at_its_index`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(_) | Step::Ascend(Produced::CompType(_)))))]
     pub(super) fn memory(
         &mut self,
@@ -95,8 +104,29 @@ impl Machine<'_, '_>
                     direction: Direction::Synthesise,
                 }))
             },
-            MemoryForm::Access { mode, held, body } => {
-                self.access(term, held, mode.mode(), body, direction)
+            MemoryForm::Access {
+                mode,
+                held,
+                place: Place::Whole,
+                body,
+            } => self.access(term, held, mode.mode(), body, direction),
+            MemoryForm::Access {
+                mode,
+                held,
+                place: Place::At { index },
+                ..
+            } => {
+                let node = CoreNode::Term(TermNode::Computation(term));
+                let _lendable = self.lendable(node, held, mode.mode())?;
+                let integer = self.context.atom(Atom::Integer).id();
+                self.wait(Frame::AccessIndex {
+                    at: term,
+                    direction,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: index,
+                    direction: Direction::Check(integer),
+                }))
             },
             MemoryForm::Resume { view, value } => {
                 let node = CoreNode::Term(TermNode::Computation(term));
@@ -265,19 +295,71 @@ impl Machine<'_, '_>
         }
     }
 
-    /// Start the access `at` of the held slot `held` in `mode`: lend it and
-    /// judge the body with the view bound at the held slot's type.
+    /// The held slot `held` an access at `node` lends in `mode`, if its
+    /// lending admits the access.
     ///
     /// # Specification
-    /// - requires: `at` is an access of `held` in `mode` with body `body`.
-    /// - ensures: the held slot is lent in `mode`; one linear slot more, the
-    ///   view, at the held slot's type read where the access stands; one
-    ///   `AccessBody` frame waits on the body.
+    /// - requires: nothing.
+    /// - ensures: the slot's residence, unchanged.
     /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::NotHeld`] for a
     ///   slot that holds no value, and [`AccessDefect::Lent`] for a slot lent
     ///   exclusively, or lent shared to an exclusive access;
     ///   [`CheckRefusal::Linearity`] naming [`LinearityDefect::Unbound`] for an
     ///   index past the zone.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an access inside another of the same slot and one of
+    ///   a view are refused; two shared accesses nest, and an exclusive one
+    ///   inside a shared one is refused, of the whole value and at a place.
+    /// - witness: `judgement::access::tests::a_held_value_lent_or_misnamed_is_refused`
+    /// - witness: `judgement::access::tests::a_shared_view_reads_beside_its_held_value_and_ends_with_its_body`
+    /// - witness: `judgement::access::tests::a_place_of_a_held_list_is_lent_at_its_index`
+    #[spec(
+        captures: lent = self.sessions.lent.len(),
+        ensures: |ret| self.sessions.lent.len() == lent && (ret.is_err() || ret.as_ref().is_ok_and(|found| matches!(found.resident, Resident::Held { .. }))),
+    )]
+    fn lendable(
+        &mut self,
+        node: CoreNode,
+        held: DeBruijnIndex,
+        mode: AccessMode<()>,
+    ) -> Result<Resided, CheckRefusal>
+    {
+        let found = self.resided(node, held)?;
+        match found.resident {
+            Resident::Held { .. } => {},
+            Resident::Endpoint(_) | Resident::View { .. } | Resident::Capability { .. } => {
+                return Err(CheckRefusal::Access {
+                    at: node,
+                    defect: AccessDefect::NotHeld,
+                });
+            },
+        }
+        // Shared beside shared is the one lending two accesses of a slot share.
+        if self.sessions.lent.iter().any(|lent| {
+            lent.position == found.position
+                && !matches!((lent.mode, mode), (AccessMode::Shared, AccessMode::Shared))
+        }) {
+            return Err(CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Lent,
+            });
+        }
+        Ok(found)
+    }
+
+    /// Start the access `at` of the whole held slot `held` in `mode`: lend it
+    /// and judge the body with the view bound at the held slot's type.
+    ///
+    /// # Specification
+    /// - requires: `at` is an access of `held` in `mode` with body `body`.
+    /// - ensures: as [`Self::lend`], the view at the held slot's type read
+    ///   where the access stands.
+    /// - fails: as [`Self::lendable`].
     /// - panics: none.
     ///
     /// # Errors
@@ -306,27 +388,134 @@ impl Machine<'_, '_>
     ) -> Result<Step, CheckRefusal>
     {
         let node = CoreNode::Term(TermNode::Computation(at));
-        let found = self.resided(node, held)?;
-        match found.resident {
-            Resident::Held { .. } => {},
-            Resident::Endpoint(_) | Resident::View { .. } | Resident::Capability { .. } => {
+        let found = self.lendable(node, held, mode)?;
+        let view = self.here(found.state, found.depth)?;
+        Ok(self.lend(at, &found, mode, view, body, direction))
+    }
+
+    /// Continue the access `at` of a place, its index checked: lend the
+    /// place, and a linear index with it, and judge the body with the view
+    /// bound at the held list's element type.
+    ///
+    /// # Specification
+    /// - requires: `at` is an access at a place, its index checked against the
+    ///   integer type.
+    /// - ensures: as [`Self::lend`], the view at the element type of the held
+    ///   slot's list type, read where the access stands; an index that is a
+    ///   linear variable lent shared beside the held slot.
+    /// - fails: as [`Self::lendable`]; [`CheckRefusal::Access`] naming
+    ///   [`AccessDefect::Unindexed`] for a held slot whose type is no list;
+    ///   [`CheckRefusal::MachineInvariant`] when `at` is no access at a place.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a held list read at an index, shared and exclusively,
+    ///   views its element; a held integer at an index is refused; a held index
+    ///   is lent shared for the body.
+    /// - witness: `judgement::access::tests::a_place_of_a_held_list_is_lent_at_its_index`
+    #[spec(
+        captures: lent = self.sessions.lent.len(),
+        ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(Goal::Computation { .. })))
+            && self.sessions.lent.len() > lent),
+    )]
+    pub(super) fn placed(
+        &mut self,
+        at: ComputationId,
+        direction: Direction<CompTypeId>,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let Computation::Memory(MemoryForm::Access {
+            mode,
+            held,
+            place: Place::At { index },
+            body,
+        }) = *self.computation(at)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let node = CoreNode::Term(TermNode::Computation(at));
+        let mode = mode.mode();
+        let found = self.lendable(node, held, mode)?;
+        let list = self.here(found.state, found.depth)?;
+        let head = self.context.whnf_value_type(list)?;
+        let element = match value_type_view(self.context.arena(), head)? {
+            ValueTypeView::List(element) => element,
+            ValueTypeView::Unknown => head,
+            ValueTypeView::Data { .. }
+            | ValueTypeView::Record(_)
+            | ValueTypeView::PathUniverse { .. }
+            | ValueTypeView::Path { .. }
+            | ValueTypeView::Flow { .. }
+            | ValueTypeView::Run(_)
+            | ValueTypeView::Integer
+            | ValueTypeView::String
+            | ValueTypeView::Unit
+            | ValueTypeView::Product(_)
+            | ValueTypeView::Sigma { .. }
+            | ValueTypeView::Sum(_)
+            | ValueTypeView::Thunk(_)
+            | ValueTypeView::Universe { .. }
+            | ValueTypeView::Lift { .. }
+            | ValueTypeView::Element { .. }
+            | ValueTypeView::Abstract(_)
+            | ValueTypeView::Staged { .. }
+            | ValueTypeView::StaticPi { .. }
+            | ValueTypeView::Session(_)
+            | ValueTypeView::World(_)
+            | ValueTypeView::Stack { .. }
+            | ValueTypeView::Capability { .. } => {
                 return Err(CheckRefusal::Access {
                     at: node,
-                    defect: AccessDefect::NotHeld,
+                    defect: AccessDefect::Unindexed,
                 });
             },
-        }
-        // Shared beside shared is the one lending two accesses of a slot share.
-        if self.sessions.lent.iter().any(|lent| {
-            lent.position == found.position
-                && !matches!((lent.mode, mode), (AccessMode::Shared, AccessMode::Shared))
-        }) {
-            return Err(CheckRefusal::Access {
-                at: node,
-                defect: AccessDefect::Lent,
+        };
+        // A linear index is lent with the place: readable for the body, and
+        // spent by nothing until the access ends.
+        if let Some(&Value::Variable {
+            zone: Zone::Linear,
+            index: slot,
+        }) = self.context.arena().value(index)
+        {
+            let resident = self.resided(node, slot)?;
+            self.sessions.lent.push(Lent {
+                position: resident.position,
+                mode: AccessMode::Shared,
             });
         }
-        let view = self.here(found.state, found.depth)?;
+        Ok(self.lend(at, &found, mode, element, body, direction))
+    }
+
+    /// Lend the held slot `found` to the access `at` in `mode`, and descend
+    /// into its body with the view bound at `view`.
+    ///
+    /// # Specification
+    /// - requires: `found` is the held slot `at` lends, its lending checked.
+    /// - ensures: the held slot is lent in `mode`; one linear slot more, the
+    ///   view, at `view`; one `AccessBody` frame waits on the body.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::access`] and [`Self::placed`].
+    /// - witness: `judgement::access::tests::a_counter_observes_write_back_on_resume_and_none_on_abort`
+    /// - witness: `judgement::access::tests::a_place_of_a_held_list_is_lent_at_its_index`
+    #[spec(
+        captures: lent = self.sessions.lent.len(),
+        ensures: |ret| matches!(ret, Step::Descend(Goal::Computation { .. })) && self.sessions.lent.len() > lent,
+    )]
+    fn lend(
+        &mut self,
+        at: ComputationId,
+        found: &Resided,
+        mode: AccessMode<()>,
+        view: ValueTypeId,
+        body: ComputationId,
+        direction: Direction<CompTypeId>,
+    ) -> Step
+    {
         self.sessions.lent.push(Lent {
             position: found.position,
             mode,
@@ -338,23 +527,24 @@ impl Machine<'_, '_>
             depth,
         });
         self.wait(Frame::AccessBody { at, direction });
-        Ok(Step::Descend(Goal::Computation {
+        Step::Descend(Goal::Computation {
             term: body,
             direction,
-        }))
+        })
     }
 
     /// Continue an access whose body was judged. An exclusive access requires
     /// its view spent, closes it, takes back the held slot, and checks the
     /// unwind against the pure returner of the unit; a shared access spends
-    /// its view itself, closes it and takes back the held slot.
+    /// its view itself, closes it and takes back the held slot. An access at a
+    /// linear index takes the index back too.
     ///
     /// # Specification
     /// - requires: the body was judged.
-    /// - ensures: the view's slot is closed and the held slot no longer lent;
-    ///   for an exclusive access, one `AccessUnwind` frame, carrying the body's
-    ///   result, waits on the unwind's check; a shared access hands the body's
-    ///   result on.
+    /// - ensures: the view's slot is closed and the held slot, and a linear
+    ///   index, no longer lent; for an exclusive access, one `AccessUnwind`
+    ///   frame, carrying the body's result, waits on the unwind's check; a
+    ///   shared access hands the body's result on.
     /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::Unended`] at an
     ///   exclusive access whose view was neither resumed nor aborted;
     ///   [`CheckRefusal::MachineInvariant`] when the innermost slot is not this
@@ -378,7 +568,7 @@ impl Machine<'_, '_>
         produced: Produced,
     ) -> Result<Step, CheckRefusal>
     {
-        let Computation::Memory(MemoryForm::Access { mode, .. }) = *self.computation(at)?
+        let Computation::Memory(MemoryForm::Access { mode, place, .. }) = *self.computation(at)?
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
@@ -410,6 +600,17 @@ impl Machine<'_, '_>
             .lent
             .pop()
             .ok_or(CheckRefusal::MachineInvariant)?;
+        if let Place::At { index } = place
+            && let Some(&Value::Variable {
+                zone: Zone::Linear, ..
+            }) = self.context.arena().value(index)
+        {
+            let _index = self
+                .sessions
+                .lent
+                .pop()
+                .ok_or(CheckRefusal::MachineInvariant)?;
+        }
         match mode {
             AccessMode::Exclusive { unwind } => {
                 let unit = self.unit_returner();

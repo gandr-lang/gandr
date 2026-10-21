@@ -301,7 +301,8 @@ fn tier_stop(
         | Stuck::NonScalar(_)
         | Stuck::UndefinedConstant(_)
         | Stuck::CyclicConstant(_)
-        | Stuck::Unended(_) => {
+        | Stuck::Unended(_)
+        | Stuck::Outside(_) => {
             panic!("no focused pure core term stops a run as: {stuck}")
         },
     }

@@ -8,6 +8,7 @@ use gandr_core_term::effect::EffectRow;
 use gandr_core_term::effect::EffectSig;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::memory::Place;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
 
@@ -85,6 +86,7 @@ fn access(
     arena.computation_memory(MemoryForm::Access {
         mode: AccessMode::Exclusive { unwind },
         held,
+        place: Place::Whole,
         body,
     })
 }
@@ -102,6 +104,69 @@ fn shared(
     arena.computation_memory(MemoryForm::Access {
         mode: AccessMode::Shared,
         held,
+        place: Place::Whole,
+        body,
+    })
+}
+
+/// `x <- (return [0] : F (List Integer)); hold xs = x; body`: a list value
+/// only checks, so it is ascribed before it is held.
+///
+/// # Specification
+/// trivial.
+fn listed(
+    arena: &mut CoreArena,
+    body: ComputationId,
+) -> ComputationId
+{
+    let zero = arena.value_literal(integer_literal());
+    let nil = arena.value_list_nil();
+    let cons = arena.value_list_cons(zero, nil);
+    let returned = arena.computation_return(cons);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let list = arena.value_type_list(integer);
+    let lists = arena.comp_type_returner(list);
+    let ascribed = arena.computation_ascribe(returned, lists);
+    let value = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let held = arena.computation_memory(MemoryForm::Hold { value, body });
+    arena.computation_bind(ascribed, held)
+}
+
+/// `access lN[index] as v { body } unwind { unwind }`.
+///
+/// # Specification
+/// trivial.
+fn access_at(
+    arena: &mut CoreArena,
+    held: DeBruijnIndex,
+    index: ValueId,
+    body: ComputationId,
+    unwind: ComputationId,
+) -> ComputationId
+{
+    arena.computation_memory(MemoryForm::Access {
+        mode: AccessMode::Exclusive { unwind },
+        held,
+        place: Place::At { index },
+        body,
+    })
+}
+
+/// `access shared lN[index] as v { body }`.
+///
+/// # Specification
+/// trivial.
+fn shared_at(
+    arena: &mut CoreArena,
+    held: DeBruijnIndex,
+    index: ValueId,
+    body: ComputationId,
+) -> ComputationId
+{
+    arena.computation_memory(MemoryForm::Access {
+        mode: AccessMode::Shared,
+        held,
+        place: Place::At { index },
         body,
     })
 }
@@ -549,4 +614,68 @@ fn a_shared_view_reads_beside_its_held_value_and_ends_with_its_body()
             "a shared view is read-only and ends with its body"
         );
     }
+}
+
+#[test]
+fn a_place_of_a_held_list_is_lent_at_its_index()
+{
+    let mut arena = CoreArena::new();
+    let units = units(&mut arena);
+    let integers = integers(&mut arena);
+    let zero = arena.value_literal(integer_literal());
+    let unwind = done(&mut arena);
+    // hold xs = [0]; access xs[0] as v { let x = (v,).0; resume(v, x) } unwind {}
+    let (_viewed, read) = copied(&mut arena, l0());
+    let copy = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let written = resume(&mut arena, l0(), copy);
+    let body = arena.computation_bind(read, written);
+    let exclusive = access_at(&mut arena, l0(), zero, body, unwind);
+    let exclusive = listed(&mut arena, exclusive);
+    assert_eq!(
+        both(&mut arena, exclusive, units),
+        [Ok(()), Ok(())],
+        "an exclusive view of a held list's element reads it and writes an element back"
+    );
+    // hold xs = [0]; access shared xs[0] as v { (v,).0 }
+    let (_viewed, viewed) = copied(&mut arena, l0());
+    let element = shared_at(&mut arena, l0(), zero, viewed);
+    let element = listed(&mut arena, element);
+    assert_eq!(
+        both(&mut arena, element, integers),
+        [Ok(()), Ok(())],
+        "a shared view of a held list's element reads it at the element type"
+    );
+    // hold c = 0; access shared c[0] as v { (v,).0 }
+    let unindexed = shared_at(&mut arena, l0(), zero, viewed);
+    let unindexed_hold = hold(&mut arena, unindexed);
+    assert_eq!(
+        both(&mut arena, unindexed_hold, integers),
+        [Err(at(unindexed, AccessDefect::Unindexed)); 2],
+        "a held integer has no element at an index"
+    );
+    // hold i = 0; hold xs = [0]; access shared xs[i] as v { (i,).0 }; (i,).0
+    let index = arena.value_variable(Zone::Linear, l1());
+    let (_index, index_read) = copied(&mut arena, DeBruijnIndex::from(2_u32));
+    let reading = shared_at(&mut arena, l0(), index, index_read);
+    let (_after, after) = copied(&mut arena, l1());
+    let scope = arena.computation_bind(reading, after);
+    let scope = listed(&mut arena, scope);
+    let indexed = hold(&mut arena, scope);
+    assert_eq!(
+        both(&mut arena, indexed, integers),
+        [Ok(()), Ok(())],
+        "a held index reads beside its lend and again once the access ends"
+    );
+    // hold i = 0; hold xs = [0];
+    //   access shared xs[i] as v { access i as w { resume(w, 0) } unwind {} }
+    let resumed = resume(&mut arena, l0(), zero);
+    let inner = access(&mut arena, DeBruijnIndex::from(2_u32), resumed, unwind);
+    let frozen = shared_at(&mut arena, l0(), index, inner);
+    let frozen = listed(&mut arena, frozen);
+    let frozen = hold(&mut arena, frozen);
+    assert_eq!(
+        both(&mut arena, frozen, units),
+        [Err(at(inner, AccessDefect::Lent)); 2],
+        "an index is lent shared with its place, so it is frozen for the access"
+    );
 }

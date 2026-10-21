@@ -12,15 +12,19 @@
 //! missing unwind is `unwind { pure unit }`. `access exclusive x as v { … }`
 //! spells the same mode. `access shared x as v { t }` lends `x` shared: the
 //! view ends with the body, so the form takes no unwind, and an `unwind`
-//! after it is a misplaced tile. `resume(v, e)` and `abort(v)` end the view
-//! `v` names, `e` read as a value. Each name a form lends or ends resolves to
-//! a linear binder, counted among the linear binders alone as an endpoint is
-//! (the `lower::session` module); a name resolving to anything else is
-//! refused here, [`FragmentBoundary::Held`] for an access and
-//! [`FragmentBoundary::View`] for an eliminator. Which linear binder it is —
-//! a held value, a view or an endpoint — and whether a view's mode admits an
-//! eliminator are the checker's to judge. A read of either name elsewhere is
-//! a linear variable, which the checker reads as the value the slot holds.
+//! after it is a misplaced tile. Either mode lends a place of `x` when an
+//! index follows it, `access shared x[e] as v { t }`: `e` is read as a value
+//! where the access stands, and the view is the element of `x` at `e`.
+//! `resume(v, e)` and `abort(v)` end the view `v` names, `e` read as a value.
+//! Each name a form lends or ends resolves to a linear binder, counted among
+//! the linear binders alone as an endpoint is (the `lower::session` module);
+//! a name resolving to anything else is refused here,
+//! [`FragmentBoundary::Held`] for an access and [`FragmentBoundary::View`]
+//! for an eliminator. Which linear binder it is — a held value, a view or an
+//! endpoint — whether a view's mode admits an eliminator, and whether the
+//! held value has elements an index reads are the checker's to judge. A read
+//! of either name elsewhere is a linear variable, which the checker reads as
+//! the value the slot holds.
 //!
 //! # The body and the unwind are no bodies
 //!
@@ -39,6 +43,7 @@ use anodized::spec;
 use gandr_core_term::Zone;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::memory::Place;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
@@ -89,7 +94,8 @@ mod tests;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Accessed
 {
-    /// `access x as v { t } unwind { u }` or `access shared x as v { t }`.
+    /// `access x as v { t } unwind { u }` or `access shared x as v { t }`,
+    /// either of a place `x[e]`.
     Access
     {
         /// The mode the slot is lent in, with an exclusive access's unwind
@@ -97,6 +103,9 @@ pub(super) enum Accessed
         mode: AccessMode<Maybe<Block, unwound::Absent>>,
         /// The held slot lent, a linear index where the access stands.
         held: DeBruijnIndex,
+        /// The place of the held value lent, its index read where the access
+        /// stands.
+        place: Place<NodeIndex>,
         /// The body, under the view's linear binder.
         body: Block,
     },
@@ -306,15 +315,17 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Read an access, `access x as v { t } unwind { u }` or
-    /// `access shared x as v { t }`, at `site` under `frame`.
+    /// `access shared x as v { t }`, either of a place `x[e]`, at `site` under
+    /// `frame`.
     ///
     /// # Specification
     /// - requires: `pieces` are the access's own, from its `access` tile.
     /// - ensures: the mode the word after `access` names, exclusive when none
-    ///   is written; the slot `x` names, resolved under `frame`; `t` read as a
-    ///   block under `v`'s linear binder over `frame`, and an exclusive
-    ///   access's `u`, when written, as a block under `frame`, each block's
-    ///   last computation its result.
+    ///   is written; the slot `x` names, resolved under `frame`; the index `e`,
+    ///   when written, read as a value under `frame`; `t` read as a block under
+    ///   `v`'s linear binder over `frame`, and an exclusive access's `u`, when
+    ///   written, as a block under `frame`, each block's last computation its
+    ///   result.
     /// - fails: as [`Self::access_form`]; a misplaced-tile fault at the
     ///   `unwind` of a shared access.
     /// - panics: none.
@@ -323,9 +334,11 @@ impl<'source> Lowerer<'_, 'source>
     /// The access's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::access_form`].
+    /// - hypothesis: L3 — as [`Self::access_form`], and an access of a place
+    ///   reads its index.
     /// - witness: `lower::access::tests::the_counter_lowers_to_its_memory_forms`
     /// - witness: `lower::access::tests::a_shared_access_lowers_without_an_unwind`
+    /// - witness: `lower::access::tests::an_access_of_a_place_lowers_with_its_index`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |accessed| matches!(*accessed, Accessed::Access { body, .. } if self.results.contains(&body.last))))]
     fn access(
         &mut self,
@@ -357,6 +370,15 @@ impl<'source> Lowerer<'_, 'source>
         let Maybe::Present(lent) = cursor.tile(TileName::IDENTIFIER)
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        let place = match cursor.tile(TileName::BRACKET_OPEN) {
+            Maybe::Present(_) => {
+                let index = site.one(cursor.operands())?;
+                closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
+                self.read(index.node, Reading::Value(frame));
+                Place::At { index: index.node }
+            },
+            Maybe::Absent(_) => Place::Whole,
         };
         closed(site, &mut cursor, TileName::AS)?;
         let Maybe::Present(viewer) = cursor.tile(TileName::IDENTIFIER)
@@ -392,7 +414,12 @@ impl<'source> Lowerer<'_, 'source>
             },
         };
 
-        Ok(Accessed::Access { mode, held, body })
+        Ok(Accessed::Access {
+            mode,
+            held,
+            place,
+            body,
+        })
     }
 
     /// Mint the temporary-access form `accessed` plans.
@@ -400,9 +427,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: every node the plan names is already minted or absent.
     /// - ensures: the memory form over its children's lowered nodes at
-    ///   `origin`, an access's blocks minted as blocks and an exclusive
-    ///   access's missing unwind minted as `pure unit` at `origin`; the first
-    ///   absence among the children otherwise.
+    ///   `origin`, an access's blocks minted as blocks, its index as a value,
+    ///   and an exclusive access's missing unwind minted as `pure unit` at
+    ///   `origin`; the first absence among the children otherwise.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -423,7 +450,19 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let form = match accessed {
-            Accessed::Access { mode, held, body } => {
+            Accessed::Access {
+                mode,
+                held,
+                place,
+                body,
+            } => {
+                let place = match place {
+                    Place::Whole => Place::Whole,
+                    Place::At { index } => match self.value_at(index) {
+                        Maybe::Present(index) => Place::At { index },
+                        Maybe::Absent(reason) => return Maybe::Absent(reason),
+                    },
+                };
                 let body = match self.mint_block(body, sink) {
                     Maybe::Present(body) => body,
                     Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -446,7 +485,12 @@ impl<'source> Lowerer<'_, 'source>
                         AccessMode::Exclusive { unwind: returned }
                     },
                 };
-                MemoryForm::Access { mode, held, body }
+                MemoryForm::Access {
+                    mode,
+                    held,
+                    place,
+                    body,
+                }
             },
             Accessed::Resume { view, value } => match self.value_at(value) {
                 Maybe::Present(value) => MemoryForm::Resume { view, value },

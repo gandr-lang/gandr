@@ -3082,13 +3082,15 @@ fn session_expressions(
 }
 
 /// Append the temporary-access expression forms: the access that lends a
-/// held value to a view, and the two eliminators that end the view.
+/// held value, or a place of it, to a view, and the two eliminators that end
+/// the view.
 ///
 /// `access x as v { t } unwind { u }` names the held slot `x` and binds the
 /// view `v` over the body `t`; the optional `unwind` block runs when an
 /// `abort` ends the view and defaults to nothing. A mode word after `access`,
 /// `shared` or `exclusive`, names the mode; the grammar admits an `unwind`
-/// after either, and lowering refuses one after `shared`. `resume(v, e)` ends
+/// after either, and lowering refuses one after `shared`. An index after the
+/// held name, `x[e]`, lends the place of `x` at `e`. `resume(v, e)` ends
 /// the view writing `e` back and `abort(v)` ends it with nothing written. Each
 /// opens on its own reserved lead and names its view by an identifier tile,
 /// so no expression hole competes with the name. The tree-sitter grammar has
@@ -3121,6 +3123,7 @@ fn access_expressions(
             t(TileLabel("access")),
             opt(alt([t(TileLabel("shared")), t(TileLabel("exclusive"))])),
             t(TileLabel("identifier")),
+            opt(seq([t(TileLabel("[")), h(s), t(TileLabel("]"))])),
             t(TileLabel("as")),
             t(TileLabel("identifier")),
             block(),

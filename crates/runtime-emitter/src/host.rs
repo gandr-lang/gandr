@@ -110,6 +110,11 @@ const STATE: usize = 2;
 const WRITTEN: usize = 3;
 /// The word of a view holding the held cell it writes back to.
 const HELD: usize = 4;
+/// The word of a view at a place holding its index.
+const INDEX: usize = 5;
+/// The fields of a view at a place: its value, state, written value, held
+/// cell and index.
+const PLACED: usize = 5;
 
 /// A stack's words before its frames: the header, the captured frames' base
 /// and top.
@@ -260,6 +265,8 @@ pub enum Refused
     NonScalar(Word),
     /// This access's body answered with its view never ended.
     Unended(CommandId),
+    /// This access's index named no element of its held list.
+    Outside(CommandId),
     /// A constant the definitions do not hold was read.
     UndefinedConstant(ConstantIndex),
     /// A constant's unfolding read its own value.
@@ -472,6 +479,20 @@ impl<'run, 'host> Calls<'run, 'host>
                 let lent = unsafe { *held.wrapping_add(VALUE) };
                 allocate_cell(runtime, &[lent, Word::from(OPEN), Word::ZERO, first])
             },
+            Callee::AccessAt(at) => {
+                let lent = self.element(at, first, second)?;
+                allocate_cell(runtime, &[
+                    lent,
+                    Word::from(OPEN),
+                    Word::ZERO,
+                    first,
+                    second,
+                ])
+            },
+            Callee::Element(at) => {
+                let read = self.element(at, first, second)?;
+                allocate_cell(runtime, &[read])
+            },
             Callee::Resumed => {
                 settle(first, Word::from(RESUMED), second)?;
                 unit(runtime)
@@ -495,12 +516,42 @@ impl<'run, 'host> Calls<'run, 'host>
                 Callee::Primitive(_)
                 | Callee::Hold
                 | Callee::Access
+                | Callee::AccessAt(_)
+                | Callee::Element(_)
                 | Callee::Resumed
                 | Callee::Aborted
                 | Callee::Reify(_) => Some(Refused::Operands),
             };
         }
         answered
+    }
+
+    /// The element of the list the held cell `held` holds at the index
+    /// `index`, which the access `at` lends.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for an index naming no element, recorded as
+    /// [`Refused::Outside`] at `at`, and for a held value that is no native
+    /// list or an index that is no integer.
+    fn element(
+        &mut self,
+        at: CommandId,
+        held: Word,
+        index: Word,
+    ) -> Result<Word, Refusal>
+    {
+        let list = cell(held)?;
+        // SAFETY: a cell holds its value first.
+        let Walked::Reached(reached) = walk(unsafe { *list.wrapping_add(VALUE) }, index)?
+        else {
+            self.refused = Some(Refused::Outside(at));
+            return Err(Refusal::Operands);
+        };
+        // SAFETY: a list cell holds its head after its header.
+        Ok(unsafe { *reached.wrapping_add(1) })
     }
 
     /// Evaluate `callee` on `first` and, for a binary primitive, `second`,
@@ -1022,9 +1073,22 @@ impl<'run, 'host> Calls<'run, 'host>
         match state {
             RESUMED => {
                 let target = cell(held)?;
+                // SAFETY: a view's header counts its fields.
+                let fields = usize::from(Header::from_word(unsafe { *object }).arity());
+                let replacement = if fields == PLACED {
+                    // SAFETY: a view at a place holds its index after its held
+                    // cell.
+                    let index = unsafe { *object.wrapping_add(INDEX) };
+                    // SAFETY: a cell holds its value first.
+                    let list = unsafe { *target.wrapping_add(VALUE) };
+                    replaced(runtime, list, index, written)?
+                }
+                else {
+                    written
+                };
                 // SAFETY: a cell holds its value first.
                 unsafe {
-                    *target.wrapping_add(VALUE) = written;
+                    *target.wrapping_add(VALUE) = replacement;
                 }
                 Ok(answer)
             },
@@ -1388,6 +1452,123 @@ fn allocate_cell(
     object.push(object_header(Kind::Cell, fields)?);
     object.extend_from_slice(words);
     allocate(runtime, &object)
+}
+
+/// Where an index falls in a native list.
+///
+/// # Specification
+/// trivial.
+enum Walked
+{
+    /// The list's cell at the index.
+    Reached(*mut Word),
+    /// The index is negative or wider than a word, or the list ends before
+    /// it.
+    Outside,
+}
+
+/// Walk the native list `list` to its cell at the index `index`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::Operands`] for an index that is no integer, or a list whose
+/// cells are no native list cells.
+fn walk(
+    list: Word,
+    index: Word,
+) -> Result<Walked, Refusal>
+{
+    let written = kind(index)?;
+    let count = if written == Kind::Integer {
+        // SAFETY: an integer object holds its bits in its second word.
+        let bits = unsafe { *index.to_pointer::<Word>().wrapping_add(1) };
+        u64::try_from(i64::from(bits))
+            .ok()
+            .and_then(|count| usize::try_from(count).ok())
+    }
+    // A literal integer is wider than a word: no list reaches it.
+    else if written == Kind::Literal {
+        None
+    }
+    else {
+        return Err(Refusal::Operands);
+    };
+    let Some(count) = count
+    else {
+        return Ok(Walked::Outside);
+    };
+    let mut remaining = count;
+    let mut cursor = list;
+    loop {
+        let object = cursor.to_pointer::<Word>();
+        // SAFETY: a value addresses an object, whose first word is its header.
+        let header = Header::from_word(unsafe { *object });
+        if header.kind() != Ok(Kind::Head) {
+            return Err(Refusal::Operands);
+        }
+        match usize::from(header.arity()) {
+            0 => return Ok(Walked::Outside),
+            2 => {},
+            _other => return Err(Refusal::Operands),
+        }
+        let Some(rest) = remaining.checked_sub(1)
+        else {
+            return Ok(Walked::Reached(object));
+        };
+        remaining = rest;
+        // SAFETY: a list cell holds its head, then its tail, after its header.
+        cursor = unsafe { *object.wrapping_add(2) };
+    }
+}
+
+/// The native list `list` with its element at the index `index` replaced by
+/// `written`: the cells before it copied in order, the cells after it shared.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::Operands`] as [`walk`], and for an index naming no element;
+/// [`Refusal::Heap`] past the heap's limit.
+fn replaced(
+    runtime: &mut Runtime,
+    list: Word,
+    index: Word,
+    written: Word,
+) -> Result<Word, Refusal>
+{
+    let Walked::Reached(reached) = walk(list, index)?
+    else {
+        return Err(Refusal::Operands);
+    };
+    // SAFETY: a list cell holds its header first.
+    let header = unsafe { *reached };
+    // SAFETY: a list cell holds its tail in its third word.
+    let tail = unsafe { *reached.wrapping_add(2) };
+    let rebuilt = allocate(runtime, &[header, written, tail])?;
+    let mut first = rebuilt;
+    let mut previous: Option<*mut Word> = None;
+    let mut cursor = list;
+    while cursor.to_pointer::<Word>() != reached {
+        let earlier = cursor.to_pointer::<Word>();
+        // SAFETY: a list cell holds its header first.
+        let header = unsafe { *earlier };
+        // SAFETY: a list cell holds its head in its second word.
+        let head = unsafe { *earlier.wrapping_add(1) };
+        let copied = allocate(runtime, &[header, head, rebuilt])?;
+        match previous {
+            // SAFETY: the previous copy is a fresh list cell, its tail in its
+            // third word.
+            Some(copy) => unsafe { *copy.wrapping_add(2) = copied },
+            None => first = copied,
+        }
+        previous = Some(copied.to_pointer::<Word>());
+        // SAFETY: a list cell holds its tail in its third word.
+        cursor = unsafe { *earlier.wrapping_add(2) };
+    }
+    Ok(first)
 }
 
 /// End the view `view` in `state`, recording `written` for a resume.

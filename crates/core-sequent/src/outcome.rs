@@ -55,6 +55,9 @@ pub enum Stuck
     },
     /// An access answered with its view never ended: neither eliminator ran.
     Unended(CommandId),
+    /// An access's index named no element of its held list: negative, or
+    /// past the list's end.
+    Outside(CommandId),
 }
 
 impl fmt::Display for Stuck
@@ -88,6 +91,7 @@ impl fmt::Display for Stuck
                 write!(f, "match {arms} has no arm for value {value}")
             },
             Self::Unended(at) => write!(f, "access {at} reached its end with its view unended"),
+            Self::Outside(at) => write!(f, "access {at} names no element of its held list"),
         }
     }
 }

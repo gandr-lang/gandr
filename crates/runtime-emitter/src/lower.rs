@@ -108,6 +108,7 @@ use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::OperationName;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::memory::Place;
 use gandr_core_term::primitive::Primitive;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
@@ -576,6 +577,12 @@ pub enum Callee
     Hold,
     /// Lend a held cell's value through a fresh view; answers the view.
     Access,
+    /// Lend the element of a held cell's list at an index through a fresh
+    /// view, which writes back at the index; answers the view.
+    AccessAt(CommandId),
+    /// Read the element of a held cell's list at an index into a fresh cell;
+    /// answers the cell.
+    Element(CommandId),
     /// End a view, its value to be written back; answers the unit.
     Resumed,
     /// End a view with nothing written; answers the unit.
@@ -1520,9 +1527,11 @@ impl Lowering<'_>
     /// Lower the memory form `form` of the command `id` with its continuation
     /// in `scope`. A linear binder's slot holds a cell: a hold's holds the
     /// value, an exclusive access's view holds the value lent, how the view
-    /// ended and the held cell it writes back to. A shared access's view is
-    /// the held cell itself: the held value is frozen for the body, nothing
-    /// ends the view, and the body answers to the continuation directly.
+    /// ended and the held cell it writes back to, and, at a place, the index
+    /// it writes back at. A shared access's view of the whole value is the
+    /// held cell itself: the held value is frozen for the body, nothing ends
+    /// the view, and the body answers to the continuation directly. A shared
+    /// view at a place is a fresh cell holding the element.
     ///
     /// # Specification
     /// trivial.
@@ -1553,6 +1562,7 @@ impl Lowering<'_>
             MemoryForm::Access {
                 mode: AccessMode::Shared,
                 held,
+                place,
                 body,
             } => {
                 let cell = self
@@ -1563,6 +1573,13 @@ impl Lowering<'_>
                 self.tasks.push(Task::Command(body, inner));
                 self.tasks
                     .push(Task::Emit(StencilId::Bind, view.operand(), Operand::Unused));
+                if let Place::At { index } = place {
+                    let call = self.call(&Callee::Element(id), Immediate::from(2_u32))?;
+                    self.tasks.push(call);
+                    self.tasks.push(PUSH);
+                    self.tasks.push(Task::Producer(index, scope));
+                    self.tasks.push(PUSH);
+                }
                 self.tasks
                     .push(Task::Emit(StencilId::Var, cell.operand(), Operand::Unused));
                 self.tasks.push(Task::Load(continuation, scope));
@@ -1570,12 +1587,16 @@ impl Lowering<'_>
             MemoryForm::Access {
                 mode: AccessMode::Exclusive { unwind },
                 held,
+                place,
                 body,
             } => {
                 let cell = self
                     .scopes
                     .slot(scope, Binding::Linear, Index(u32::from(held)))?;
-                let call = self.call(&Callee::Access, Immediate::from(1_u32))?;
+                let call = match place {
+                    Place::Whole => self.call(&Callee::Access, Immediate::from(1_u32))?,
+                    Place::At { .. } => self.call(&Callee::AccessAt(id), Immediate::from(2_u32))?,
+                };
                 let (viewed, view) = self.bind(scope, Binding::Linear);
                 let (inner, _) = self.bind(viewed, Binding::FallThrough);
                 let ended = self.frame_label();
@@ -1594,6 +1615,10 @@ impl Lowering<'_>
                     .push(Task::Emit(StencilId::Bind, view.operand(), Operand::Unused));
                 self.tasks.push(call);
                 self.tasks.push(PUSH);
+                if let Place::At { index } = place {
+                    self.tasks.push(Task::Producer(index, scope));
+                    self.tasks.push(PUSH);
+                }
                 self.tasks
                     .push(Task::Emit(StencilId::Var, cell.operand(), Operand::Unused));
                 self.tasks.push(Task::Load(continuation, scope));

@@ -1512,7 +1512,8 @@ impl<'source> Program<'source>
                     | Stuck::Primitive(_)
                     | Stuck::UndefinedConstant(_)
                     | Stuck::CyclicConstant(_)
-                    | Stuck::Unended(_) => None,
+                    | Stuck::Unended(_)
+                    | Stuck::Outside(_) => None,
                 };
                 match observed {
                     Some(&HeapValue::Opaque(constant)) => Err(self.met(constant)),

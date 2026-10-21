@@ -9,6 +9,7 @@ use gandr_core_term::Value;
 use gandr_core_term::Zone;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::memory::Place;
 use gandr_surface_syntax::SourceText;
 
 use crate::error::FormFault;
@@ -40,8 +41,9 @@ const COUNTER: &str = r"def counter(n : Integer) -> -F Integer {
 
 /// The temporary-access forms reachable from `tail` through binds, splits,
 /// lambdas and memory forms, in source order, one token each: `hold`,
-/// `access @i` or `access shared @i`, `resume @i` and `abort @i` naming each
-/// slot's linear index, and `read @i` for a `return` of a linear variable.
+/// `access @i` or `access shared @i`, followed by `[index]` at a place,
+/// `resume @i` and `abort @i` naming each slot's linear index, and `read @i`
+/// for a `return` of a linear variable.
 ///
 /// # Specification
 /// trivial.
@@ -71,15 +73,18 @@ fn forms(
                 seen.push(match *form {
                     MemoryForm::Hold { .. } => String::from("hold"),
                     MemoryForm::Access {
-                        mode: AccessMode::Exclusive { .. },
-                        held,
-                        ..
-                    } => format!("access @{}", u32::from(held)),
-                    MemoryForm::Access {
-                        mode: AccessMode::Shared,
-                        held,
-                        ..
-                    } => format!("access shared @{}", u32::from(held)),
+                        mode, held, place, ..
+                    } => {
+                        let shared = match mode {
+                            AccessMode::Exclusive { .. } => "",
+                            AccessMode::Shared => " shared",
+                        };
+                        let place = match place {
+                            Place::Whole => String::new(),
+                            Place::At { index } => format!("[{}]", described(arena, index)),
+                        };
+                        format!("access{shared} @{}{place}", u32::from(held))
+                    },
                     MemoryForm::Resume { view, .. } => format!("resume @{}", u32::from(view)),
                     MemoryForm::Abort { view } => format!("abort @{}", u32::from(view)),
                 });
@@ -89,6 +94,30 @@ fn forms(
         }
     }
     seen
+}
+
+/// An access's index: `@i` for a linear variable, `%i` for an intuitionistic
+/// one, `literal` for a literal, and `other` for anything else.
+///
+/// # Specification
+/// trivial.
+fn described(
+    arena: &CoreArena,
+    index: gandr_core_term::ValueId,
+) -> String
+{
+    match arena.value(index) {
+        Some(&Value::Variable {
+            zone: Zone::Linear,
+            index,
+        }) => format!("@{}", u32::from(index)),
+        Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        }) => format!("%{}", u32::from(index)),
+        Some(&Value::Literal(_)) => String::from("literal"),
+        _ => String::from("other"),
+    }
 }
 
 #[test]
@@ -154,6 +183,46 @@ def unwound() -> -F Unit {
         ),
         "a shared view ends with its body, so its access takes no unwind"
     );
+}
+
+#[test]
+fn an_access_of_a_place_lowers_with_its_index()
+{
+    let source = SourceText::from(
+        r"def pair : List(Integer) ;
+def pair = cons(1, cons(2, nil)) ;
+def second() -> -F Integer {
+  hold xs = pair;
+  access xs[1] as v { resume(v, v + 1) };
+  access shared xs[1] as w { pure w }
+}
+def indexed(i : Integer) -> -F Integer {
+  hold xs = pair;
+  access shared xs[i] as w { pure w }
+}
+",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("second")));
+    assert_eq!(
+        forms(&arena, tail),
+        [
+            "hold",
+            "access @0[literal]",
+            "resume @0",
+            "access shared @0[literal]",
+            "read @0"
+        ],
+        "each access lends the held list at its index, and its view is the innermost slot"
+    );
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("indexed")));
+    assert_eq!(
+        forms(&arena, tail),
+        ["hold", "access shared @0[%0]", "read @0"],
+        "an index names a variable where the access stands"
+    );
+    assert_accepted(&judged(&module, &mut arena));
 }
 
 #[test]

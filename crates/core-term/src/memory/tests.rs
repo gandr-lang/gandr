@@ -6,6 +6,7 @@ use quenchant_shape::shape::Maybe;
 use super::AccessMode;
 use super::MemoryForm;
 use super::MemoryKind;
+use super::Place;
 use crate::Binders;
 use crate::Computation;
 use crate::CoreArena;
@@ -55,6 +56,7 @@ fn forms_name_their_resident_and_children()
     let access: MemoryForm = MemoryForm::Access {
         mode: AccessMode::Exclusive { unwind },
         held,
+        place: Place::Whole,
         body,
     };
     assert_eq!(access.kind(), MemoryKind::Access, "an access is an access");
@@ -71,6 +73,7 @@ fn forms_name_their_resident_and_children()
     let shared: MemoryForm = MemoryForm::Access {
         mode: AccessMode::Shared,
         held,
+        place: Place::Whole,
         body,
     };
     assert_eq!(
@@ -98,6 +101,50 @@ fn forms_name_their_resident_and_children()
             )
         ),
         "each keeps its mode through the map"
+    );
+    let indexed: MemoryForm = MemoryForm::Access {
+        mode: AccessMode::Exclusive { unwind },
+        held,
+        place: Place::At { index: other },
+        body,
+    };
+    assert_eq!(
+        indexed.values().collect::<Vec<_>>(),
+        [other],
+        "an access at an index has its index as its value child"
+    );
+    assert_ne!(
+        indexed.shape(),
+        access.shape(),
+        "an access at an index and one of the whole value are two formers"
+    );
+    let mut order = Vec::new();
+    for direction in [ChildOrder::Forward, ChildOrder::Reverse] {
+        let mapped = indexed
+            .try_map(
+                direction,
+                &mut order,
+                |order: &mut Vec<&str>, value| {
+                    order.push("index");
+                    Ok::<_, ()>(value)
+                },
+                |order, computation| {
+                    order.push(if computation == body {
+                        "body"
+                    }
+                    else {
+                        "unwind"
+                    });
+                    Ok(computation)
+                },
+            )
+            .expect("identity maps succeed");
+        assert_eq!(mapped, indexed, "a map keeps the place and its index");
+    }
+    assert_eq!(
+        order,
+        ["index", "body", "unwind", "unwind", "body", "index"],
+        "the index is read before the body forward, after it in reverse"
     );
     let view = DeBruijnIndex::from(0_u32);
     let resume: MemoryForm = MemoryForm::Resume { view, value: unit };

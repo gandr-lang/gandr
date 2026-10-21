@@ -1411,6 +1411,9 @@ impl fmt::Display for Checked
                 | AccessDefect::UnwindEffect => f.write_str(
                     "the access's unwind performs an effect: an unwind runs under the empty row",
                 ),
+                | AccessDefect::Unindexed => f.write_str(
+                    "the access at a place names a held value whose type is no list, so it has no element at an index",
+                ),
             },
             | CheckRefusal::Codata { fault, .. } => f.write_str(match fault {
                 | CodataFault::Undeclared => "the codata application names no admitted codata declaration",

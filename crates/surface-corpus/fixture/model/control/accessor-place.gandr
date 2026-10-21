@@ -1,0 +1,44 @@
+// Access at a place. `access xs[i] as w { … }` lends one element of a held
+// list to a view: the index is a value read where the access stands, and the
+// view is the element at it. An exclusive view writes its element back at its
+// index and the rest of the list stands as it was; a shared view reads it.
+// The held list is lent as a whole, whatever the index, so two views of one
+// list stand together only when both are shared. The place follows Rust's
+// index expression on a place (_The Rust Reference_, § Index expressions).
+
+/// The list each access below holds; a list's type is declared, never
+/// inferred.
+@[ runs("cons(1, cons(2, nil))") ]
+def pair : List(Integer) ;
+def pair = cons(1, cons(2, nil)) ;
+
+/// The element at an index, read through a shared view.
+@[ runs("2") ]
+def second() -> -F Integer {
+  hold xs = pair;
+  access shared xs[1] as w { pure w }
+}
+
+/// The element at an index written back through an exclusive view, then the
+/// list read whole: only that element moved.
+@[ runs("cons(1, cons(3, nil))") ]
+def bumped() -> -F List(Integer) {
+  hold xs = pair;
+  access xs[1] as v { resume(v, v + 1) };
+  pure xs
+}
+
+/// An abort writes nothing back: the list stands as it was.
+@[ runs("cons(1, cons(2, nil))") ]
+def kept() -> -F List(Integer) {
+  hold xs = pair;
+  access xs[0] as v { abort(v) } unwind { pure unit };
+  pure xs
+}
+
+/// The index is any value where the access stands, here a parameter.
+@[ checks ]
+def indexed(i : Integer) -> -F Integer {
+  hold xs = pair;
+  access shared xs[i] as w { pure w }
+}
