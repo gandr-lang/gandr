@@ -630,53 +630,69 @@ done < <(jq -c '.[]' .config/mutants/cases.json)
 echo "mutants check OK: $(jq length .config/mutants/cases.json) cases read as recorded"
 '''
 
-# A clone may wire a merge driver for Rust sources. A driver that merges a
-# rebase "cleanly" into something else than the line merge reaches CI unseen,
-# because `pr:land` pushes a conflict-free rebase without re-running the gates
-# (#1061: two unchanged `reason_enum!` items duplicated). This replays that
-# rebase through the clone's driver and refuses any output that differs from
-# `git merge-file`'s. The base and ours are `main`'s; theirs is the base with
-# the branch's patch. A clone with no driver for `*.rs` has nothing to check.
+# A clone may wire merge drivers. A driver that merges a rebase "cleanly" into
+# something else than the line merge reaches CI unseen, because `pr:land`
+# pushes a conflict-free rebase without re-running the gates (#1061: two
+# unchanged `reason_enum!` items duplicated). A driver that reports a conflict
+# git's line merge does not have stops `pr:land`'s restack, and one that leaves
+# its side of the file without conflict markers loses the other's lines to the
+# first `git add` (#1581: a task-table addition and three rows hundreds of
+# lines apart, kept as `main`'s file whole). This replays each recorded rebase
+# through the driver the clone wires for its path and refuses a conflict or
+# any output that differs from `git merge-file`'s. The base and ours are
+# `main`'s; theirs is the base with the branch's patch,
+# `.config/merge-driver/<issue>-theirs.patch`. A path with no driver has
+# nothing to check.
 ["check:merge-driver"]
-description = "A clone's merge driver for Rust sources merges the #1061 rebase as the line merge does"
-run = """
+description = "A clone's merge drivers merge the recorded rebases (Rust #1061, TOML #1581) as the line merge does"
+run = '''
 set -euo pipefail
-path=crates/surface-lowering/src/module.rs
-attribute=$(git check-attr merge -- "$path")
-name=${attribute##*: }
-case $name in
-  unspecified | unset | set | text | binary)
-    echo "merge driver check OK: no merge driver for Rust sources ($name)"
-    exit 0
-    ;;
-esac
-if ! driver=$(git config --get "merge.$name.driver"); then
-  echo "merge driver check OK: \\`$name\\` names no configured driver, so git merges by line"
-  exit 0
-fi
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
-git show "5855f5e8b:$path" > "$scratch/base.rs"
-git show "fdd16cf41:$path" > "$scratch/ours.rs"
-patch --silent --output="$scratch/theirs.rs" "$scratch/base.rs" < .config/merge-driver/1061-theirs.patch
-git merge-file --stdout "$scratch/ours.rs" "$scratch/base.rs" "$scratch/theirs.rs" > "$scratch/line.rs"
-cp "$scratch/ours.rs" "$scratch/merged.rs"
-command=${driver//%O/$scratch/base.rs}
-command=${command//%A/$scratch/merged.rs}
-command=${command//%B/$scratch/theirs.rs}
-command=${command//%L/7}
-command=${command//%P/$path}
-if ! sh -c "$command" > /dev/null 2>&1; then
-  echo "merge driver check FAILED: \\`$name\\` ($driver) reported a conflict on a rebase git merges cleanly" >&2
-  exit 1
-fi
-if ! cmp --silent "$scratch/merged.rs" "$scratch/line.rs"; then
-  echo "merge driver check FAILED: \\`$name\\` ($driver) merges the #1061 rebase into something other than the line merge" >&2
-  diff -u "$scratch/line.rs" "$scratch/merged.rs" >&2 || true
-  exit 1
-fi
-echo "merge driver check OK: \\`$name\\` merges the #1061 rebase as the line merge does"
-"""
+failed=0
+replay() {
+  local issue=$1 path=$2 base=$3 ours=$4 attribute name driver command
+  local dir="$scratch/$issue"
+  attribute=$(git check-attr merge -- "$path")
+  name=${attribute##*: }
+  case $name in
+    unspecified | unset | set | text | binary)
+      echo "merge driver check OK: #$issue, no merge driver for $path ($name)"
+      return
+      ;;
+  esac
+  if ! driver=$(git config --get "merge.$name.driver"); then
+    echo "merge driver check OK: #$issue, \`$name\` names no configured driver, so git merges $path by line"
+    return
+  fi
+  mkdir "$dir"
+  git show "$base:$path" > "$dir/base"
+  git show "$ours:$path" > "$dir/ours"
+  patch --silent --output="$dir/theirs" "$dir/base" < ".config/merge-driver/$issue-theirs.patch"
+  git merge-file --stdout "$dir/ours" "$dir/base" "$dir/theirs" > "$dir/line"
+  cp "$dir/ours" "$dir/merged"
+  command=${driver//%O/$dir/base}
+  command=${command//%A/$dir/merged}
+  command=${command//%B/$dir/theirs}
+  command=${command//%L/7}
+  command=${command//%P/$path}
+  if ! sh -c "$command" > /dev/null 2>&1; then
+    echo "merge driver check FAILED: #$issue, \`$name\` ($driver) reported a conflict on a rebase of $path git merges cleanly" >&2
+    failed=1
+    return
+  fi
+  if ! cmp --silent "$dir/merged" "$dir/line"; then
+    echo "merge driver check FAILED: #$issue, \`$name\` ($driver) merges the rebase of $path into something other than the line merge" >&2
+    diff -u "$dir/line" "$dir/merged" >&2 || true
+    failed=1
+    return
+  fi
+  echo "merge driver check OK: #$issue, \`$name\` merges the rebase of $path as the line merge does"
+}
+replay 1061 crates/surface-lowering/src/module.rs 5855f5e8b fdd16cf41
+replay 1581 .config/mise/tasks/mise-tasks-check.toml eb6f7620 3465e3d6a
+(( failed == 0 ))
+'''
 
 # A fixture source is read by people as often as by the checker (#355).
 # Every top-level item carries a comment immediately before its attribute
