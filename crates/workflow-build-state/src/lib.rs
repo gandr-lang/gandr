@@ -7,9 +7,7 @@
 //! same hash; a changed dependency, feature or lockfile entry writes the
 //! unit and everything above it under new hashes, and Cargo never deletes
 //! the superseded ones. A target directory restored, rebuilt and saved
-//! again on every landing therefore grows with every manifest change: the
-//! enforcing test state held 763 test executables for 106 test targets,
-//! 8.4 GB where one build is 1.5 GB.
+//! again on every landing grows with every manifest change.
 //!
 //! - [`units`] reads the JSON messages a build prints, fresh units included,
 //!   into the set of units it used.
@@ -18,35 +16,17 @@
 //!   names, and finds the unit behind each executable Cargo copied out under
 //!   its plain name by the hard link between the two.
 //!
-//! # Decisions
+//! # Boundaries
 //!
-//! **The keep set is Cargo's own account of the build.** The alternatives
-//! lost on correctness: `cargo-sweep`'s timestamp mode keeps what was read
-//! after a stamp, but a unit Cargo finds fresh is never read, so it would
-//! delete exactly the restored state a warm build reuses (the crate is also
-//! unmaintained); `cargo clean` before saving keeps nothing to reuse; and
-//! keying the saved state on the manifests, the design this replaces,
-//! discards every compiled dependency on any manifest edit. A prune
-//! refuses a message file without Cargo's successful `build-finished`
-//! message, so a partial account never deletes a unit the build needs.
+//! The keep set is the units the build's JSON messages name, fresh units
+//! included. A prune refuses a message file that lacks Cargo's successful
+//! `build-finished` message, so a partial account never deletes a unit the
+//! build needs.
 //!
-//! **Reversal**: Cargo collecting its own build directory's garbage (its
-//! `gc` work covers only the shared download cache today), at which point
-//! the directory is saved as the build left it.
+//! # References
 //!
 //! See the [crate README](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-build-state/README.md).
 
-// Module documentation that predates the shape lint: 1 heading outside the
-// vocabulary and 1 decision record. Each allow leaves with the rewrite that
-// clears its count.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        module_doc_heading,
-        doc_decision_record,
-        reason = "module documentation that predates the shape lint"
-    )
-)]
 pub mod error;
 pub mod prune;
 pub mod units;

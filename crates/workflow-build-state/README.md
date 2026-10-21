@@ -15,7 +15,7 @@ A Cargo profile directory pruned to the units the recorded builds used, so the b
 
 **Why.** Cargo names a unit's files with a hash of its package, features, profile and dependencies. A dependency, feature or lockfile change writes the unit and everything above it under new hashes and leaves the old ones in place, so a target directory restored and saved on every landing grows by a dependency cone with every manifest change, and every lane pays for the size in transfer, archiving and the caches it evicts.
 
-**How.** A build prints a `compiler-artifact` message for every unit it used, fresh ones included, and a `build-script-executed` message for every build-script output directory. The hashes those paths carry are the keep set. Cargo also copies each executable out under its plain name as a hard link, so the unit behind a plain-named path is the hashed file it shares an inode with. Every hashed entry of `deps`, `build`, `.fingerprint` and `examples` outside the keep set is removed. The [crate docs](src/lib.rs) record the alternatives and the reversal.
+**How.** A build prints a `compiler-artifact` message for every unit it used, fresh ones included, and a `build-script-executed` message for every build-script output directory. The hashes those paths carry are the keep set. Cargo also copies each executable out under its plain name as a hard link, so the unit behind a plain-named path is the hashed file it shares an inode with. Every hashed entry of `deps`, `build`, `.fingerprint` and `examples` outside the keep set is removed. The [crate docs](src/lib.rs) state the keep set and the refusal of an incomplete account.
 
 ## Provided features
 
