@@ -39,6 +39,18 @@ runs:
       # Composite actions have no default shell: `run` steps must name
       # their `shell:` explicitly or GitHub rejects the action at setup.
       shell: bash
+    # mise reads rust-toolchain.toml as its `rust` tool, so every later
+    # `mise run` would install that toolchain again through rustup, and on
+    # macOS runners that second install is killed by SIGKILL in about one
+    # run of five while rustup run directly is not (#1190). rustup installed
+    # the pin above and its proxies are on the runner's PATH, so the rest of
+    # the job leaves `rust` out of mise as the tool install step does. Under
+    # act mise's install is what provides rustup, so act keeps the tool. The
+    # line written is the workflow's own variable and a literal.
+    - name: "leave the toolchain to rustup"
+      if: ${{ inputs.install-toolchain == 'true' && env.ACT != 'true' }}
+      run: printf 'MISE_DISABLE_TOOLS=%s,rust\n' "$MISE_DISABLE_TOOLS" >> "$GITHUB_ENV" # zizmor: ignore[github-env]
+      shell: bash
     - name: "save rustup toolchain"
       if: ${{ inputs.install-toolchain == 'true' && inputs.cache-save == 'true' && steps.rustup-restore.outputs.cache-hit != 'true' }}
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
