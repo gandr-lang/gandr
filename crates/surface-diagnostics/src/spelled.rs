@@ -407,8 +407,10 @@ impl TypeSpellings
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`TypeSpellings::of`].
+/// - hypothesis: L3 — as [`TypeSpellings::of`], and a split opening two binders
+///   at once, the second's type naming the first.
 /// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
+/// - witness: `tests::diagnostics::a_later_binder_of_one_split_spells_under_the_earlier`
 #[spec(ensures: |ret| [&ret.unicode, &ret.ascii].iter().all(|spelled|
     spelled.0.values().all(|presentation| !presentation.as_ref().contains('\n'))))]
 fn spell<'failure>(
@@ -747,8 +749,10 @@ quenchant_shape::reason_enum! {
 /// - measure: the point's nodes still to spell.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`constant_names`].
+/// - hypothesis: L3 — as [`constant_names`], and points whose constructors take
+///   one argument and two.
 /// - witness: `tests::diagnostics::a_word_spells_by_its_letters`
+/// - witness: `tests::diagnostics::a_words_point_spells_its_constructors_arguments`
 #[spec(ensures: |ret| match ret {
     Maybe::Present((_, ref point)) => !point.is_empty(),
     Maybe::Absent(_) => true,

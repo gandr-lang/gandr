@@ -2566,3 +2566,93 @@ mod sweeps
         );
     }
 }
+
+/// The words of a family's loops are named by the point they are at, each
+/// constructor applied to its arguments: one argument in parentheses, two
+/// separated by a comma.
+#[test]
+fn a_words_point_spells_its_constructors_arguments()
+{
+    use gandr_surface_lowering::Role;
+
+    let grammar = built_in().expect("the grammar builds");
+    let text = SourceText::from(
+        "data Nat : Type {\n  Zero : Nat;\n  Succ : (p : Nat) --> Nat;\n  Pair : (a : Nat, b : \
+         Nat) --> Nat;\n  step : Succ(Zero) <-> Succ(Zero);\n  both : Pair(Zero, Zero) <-> \
+         Pair(Zero, Zero);\n}\n",
+    );
+    let Lowered::Module { module, .. } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is one module");
+    };
+    let names = constant_names(&module);
+    let points: Vec<_> = module
+        .declarations()
+        .iter()
+        .filter(|declaration| declaration.role() == Role::Words)
+        .map(|declaration| {
+            names
+                .get(usize::from(declaration.constant()))
+                .cloned()
+                .unwrap_or_default()
+        })
+        .collect();
+    assert_eq!(
+        points,
+        [
+            "Path(Nat, Succ(Zero), Succ(Zero))",
+            "Path(Nat, Pair(Zero, Zero), Pair(Zero, Zero))",
+        ],
+        "a point spells each constructor's arguments, comma-separated"
+    );
+}
+
+/// A split that opens two binders at once, the second's type naming the
+/// first, spells the second under the first: never under the binder before
+/// the split, which its type does not name. The mismatch's found type, the
+/// hypothesis and the split's binding note spell it alike.
+#[test]
+fn a_later_binder_of_one_split_spells_under_the_earlier()
+{
+    let text = SourceText::from(
+        "data Theory : Type {\n  Monoid : Theory;\n  Group : Theory;\n}\ndef counted_at(s : \
+         Theory) -> -F Type {\n  case s {\n    Monoid => return Integer,\n    Group => return \
+         String\n  }\n}\ndef bad(p : #{s : Theory, n : counted_at(s)}, other : Theory) -> -F \
+         counted_at(other) {\n  case p {\n    #{s, n} => return n\n  }\n}\n",
+    );
+    let diagnostic = only(Path::new("packed.gandr"), text);
+    let Maybe::Present(found) = diagnostic.detail.compared.found.clone()
+    else {
+        panic!("the mismatch spells the type it found");
+    };
+    assert_ne!(
+        found, "counted_at(other)",
+        "the returned binder's type names no binder outside its split"
+    );
+    let hypotheses: Vec<String> = diagnostic
+        .hypotheses
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    let later = hypotheses
+        .last()
+        .and_then(|hypothesis| hypothesis.split_once(" : "))
+        .map(|(_, ty)| ty);
+    assert_eq!(
+        later,
+        Some(found.as_str()),
+        "the later binder's hypothesis spells as the type found: {hypotheses:?}"
+    );
+    let split = contexts(text, &diagnostic)
+        .into_iter()
+        .find(|&(ref at, _)| at.starts_with("case p"))
+        .map(|(_, note)| note)
+        .expect("the split is a context");
+    assert!(
+        split.ends_with(&format!(" : {found}")),
+        "the split's binding note spells its later binder as the type found: {split}"
+    );
+}
