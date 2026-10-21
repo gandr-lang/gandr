@@ -351,10 +351,13 @@ impl<'source> Collector<'_, 'source>
         while let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER) {
             let declared = match cursor.tile(TileName::COLON) {
                 Maybe::Present(_) => {
-                    // A receiver's mode word: the receivers table keeps it, and
-                    // the function's lowering refuses one off a receiver.
-                    if let Maybe::Absent(_) = cursor.tile(TileName::SHARED) {
-                        let _consumed = cursor.tile(TileName::CONSUMED);
+                    // A receiver's mode word or mode variable: the receivers
+                    // table keeps it, and the function's lowering refuses one
+                    // off a receiver.
+                    if let Maybe::Absent(_) = cursor.tile(TileName::SHARED)
+                        && let Maybe::Absent(_) = cursor.tile(TileName::CONSUMED)
+                    {
+                        let _mode = cursor.tile(TileName::IDENTIFIER);
                     }
                     match cursor.read() {
                         Maybe::Present(Piece::Operand(typed)) => Maybe::Present(typed),
@@ -570,14 +573,15 @@ impl<'source> Collector<'_, 'source>
     }
 
     /// How a telescope entry's sort `sort` binds: a stage when it is the
-    /// type head `Size`, a region when it is the type head `Region`, a value
-    /// otherwise.
+    /// type head `Size`, a region when it is the type head `Region`, a mode
+    /// when it is the type head `Mode`, a value otherwise.
     ///
     /// # Specification
     /// - requires: `scratch` is free for reading pieces.
     /// - ensures: [`EntrySort::Stage`] exactly when the sort reads as one tile
-    ///   spelling `Size`, and [`EntrySort::Region`] exactly when it reads as
-    ///   one spelling `Region`.
+    ///   spelling `Size`, [`EntrySort::Region`] exactly when it reads as one
+    ///   spelling `Region`, and [`EntrySort::Mode`] exactly when it reads as
+    ///   one spelling `Mode`.
     /// - fails: a form fault reading the sort's pieces.
     /// - panics: none.
     ///
@@ -585,10 +589,11 @@ impl<'source> Collector<'_, 'source>
     /// As `- fails:`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a stage binder, a region binder and a type entry
-    ///   separate the three answers.
+    /// - hypothesis: L3 — a stage binder, a region binder, a mode binder and a
+    ///   type entry separate the four answers.
     /// - witness: `lower::implicit::tests::a_stage_telescope_merges_nothing`
     /// - witness: `lower::capability::tests::a_kept_type_at_a_region_binder_is_bound_to_it_1221`
+    /// - witness: `lower::method::tests::a_deduced_mode_is_erased_from_the_telescope`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |sorted| *sorted == EntrySort::Value || scratch.pieces.len() == 1))]
     fn sort_of(
         &self,
@@ -605,6 +610,7 @@ impl<'source> Collector<'_, 'source>
         Ok(match self.name_of(at).as_ref() {
             "Size" => EntrySort::Stage,
             "Region" => EntrySort::Region,
+            "Mode" => EntrySort::Mode,
             _ => EntrySort::Value,
         })
     }
@@ -622,6 +628,9 @@ enum EntrySort
     /// A region, sorted by `Region`: the caller's region the definition
     /// abstracts, erased.
     Region,
+    /// A mode, sorted by `Mode`: the access mode a method's call asks of the
+    /// place it answers, erased.
+    Mode,
     /// A value of the sort: an implicit parameter.
     Value,
 }

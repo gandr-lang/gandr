@@ -103,6 +103,7 @@ const KINDS: &[(&str, Standing)] = &[
     ),
     ("Expression abort", Standing::Owed(0)),
     ("Expression access", Standing::Owed(0)),
+    ("Expression as", Standing::Owed(0)),
     ("Expression become", Standing::Design(EXIT)),
     ("Expression break", Standing::Design(EXIT)),
     ("Expression case", Standing::Owed(0)),

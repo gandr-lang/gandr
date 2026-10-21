@@ -140,7 +140,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 73_usize] = [
+    pub const ALL: [Self; 74_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -214,6 +214,7 @@ impl FormName
         Self::STAGED_TYPE,
         Self::UNKNOWN_TYPE,
         Self::REPRESENTABLE_UNIVERSE_TYPE,
+        Self::INDEX,
     ];
     /// The statement `acquire …;`, inlined into its block.
     pub const ACQUIRE_STATEMENT: Self = Self("acquire_statement");
@@ -240,6 +241,8 @@ impl FormName
     pub const GRADE: Self = Self("grade");
     /// The statement `hold x = e ;`, inlined into its block.
     pub const HOLD_STATEMENT: Self = Self("hold_statement");
+    /// The index `e[i]`, the place a view-answering method's body ends in.
+    pub const INDEX: Self = Self("index_expression");
     /// An interpolation `${ e }`, folded into the string.
     pub const INTERPOLATION: Self = Self("string_interpolation");
     /// The instantiation `e[i, …]`, a recursive call's claim among its
@@ -847,6 +850,9 @@ pub enum Former
     /// A data type at a stage a definition's signature binds, `Nat[i]`, or
     /// one below it, `Nat[<i]`.
     StagedType,
+    /// A type at a mode variable, `m T`: a method's receiver at the mode its
+    /// telescope's `@[m : Mode]` binds, refused anywhere else.
+    ModedType,
     /// The capability scope `handle c : I { … } with { … }`: a deep handler
     /// for the host interface `I` whose body holds the capability it
     /// introduces.
@@ -879,8 +885,9 @@ pub enum Former
     /// chose.
     Offer,
     /// Temporary access to a held value: the access `access x as v { t }
-    /// unwind { u }` and the eliminators `resume(v, e)` and `abort(v)` that
-    /// end its view.
+    /// unwind { u }`, the eliminators `resume(v, e)` and `abort(v)` that end
+    /// its view, the view block `e as v { t }` a call of a method answering a
+    /// place lends its place to, and that method's place `self[e]`.
     Access,
     /// A located form the world register reads: the hold `hold v`, returning
     /// `v` held at the current world, and the migration `migrate [w] { t }`,
@@ -915,7 +922,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 66_usize] = [
+    pub const ALL: [Self; 67_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -966,6 +973,7 @@ impl Former
         Self::ManifestType,
         Self::CapabilityType,
         Self::StagedType,
+        Self::ModedType,
         Self::Scope,
         Self::Declaration,
         Self::AttributeBlock,
@@ -1004,7 +1012,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 80_usize] = [
+pub const FORMERS: [(&str, Former); 83_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1062,6 +1070,7 @@ pub const FORMERS: [(&str, Former); 80_usize] = [
     ("capability_type", Former::CapabilityType),
     ("at_type", Former::AtType),
     ("staged_type", Former::StagedType),
+    ("moded_type", Former::ModedType),
     ("handle_expression", Former::Scope),
     ("def_value", Former::Declaration),
     ("attribute_block", Former::AttributeBlock),
@@ -1081,6 +1090,8 @@ pub const FORMERS: [(&str, Former); 80_usize] = [
     ("access_expression", Former::Access),
     ("resume_expression", Former::Access),
     ("abort_expression", Former::Access),
+    ("view_expression", Former::Access),
+    ("index_expression", Former::Access),
     ("hold_expression", Former::World),
     ("migrate_expression", Former::World),
     ("world_declaration", Former::WorldDeclaration),

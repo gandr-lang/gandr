@@ -1091,6 +1091,24 @@ pub enum LoweringRefusal<'source>
         more: CandidateCount,
     },
 
+    /// A method whose receiver is at a mode its telescope binds, `self : m T`,
+    /// whose result is no `-F View[m](a)` over that mode, or whose body is no
+    /// place of its receiver, `{ self[i] }`; or a view type `View[m](a)`
+    /// anywhere but such a method's result.
+    ViewNotPlace
+    {
+        /// The bytes of the result, the body or the view type out of shape.
+        span: ByteSpan,
+    },
+
+    /// A view block `e as w { … }` whose `e` is no call of a method answering
+    /// a place.
+    ViewOfNoPlace
+    {
+        /// The bytes of the call, or of the method's name at it.
+        span: ByteSpan,
+    },
+
     /// A match some scrutinee reaches no arm of: a constructor, or an integer
     /// or boolean value, that every arm's pattern refuses.
     NonExhaustiveMatch
@@ -1488,6 +1506,15 @@ impl fmt::Display for LoweringRefusal<'_>
                     )
                 }
             },
+            Self::ViewNotPlace { .. } => f.write_str(
+                "a method whose receiver's mode is deduced answers a place of its receiver: its \
+                 result is `-F View[m](a)` at the receiver's mode `m`, and its body is that \
+                 place, `{ self[i] }`",
+            ),
+            Self::ViewOfNoPlace { .. } => f.write_str(
+                "`e as w { … }` lends a view only of the place a method whose receiver's mode is \
+                 deduced answers, `s.f(…) as w { … }`",
+            ),
             Self::NonExhaustiveMatch { .. } => {
                 f.write_str("the match leaves a value of its scrutinee that no arm matches")
             },
@@ -1661,6 +1688,8 @@ impl LoweringRefusal<'_>
             | Self::RegionAsValue { span, .. }
             | Self::StrayReceiverMode { span, .. }
             | Self::AmbiguousMethod { span, .. }
+            | Self::ViewNotPlace { span }
+            | Self::ViewOfNoPlace { span }
             | Self::NonExhaustiveMatch { span }
             | Self::UnmarkedSelfReference { span, .. }
             | Self::UnguardedCorecursion { span, .. }
@@ -1741,7 +1770,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 51_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 53_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -1978,6 +2007,12 @@ mod tests
                 second: SurfaceName::from("Bytes"),
                 more: CandidateCount::from(0_usize),
             },
+            LoweringRefusal::ViewNotPlace {
+                span: s(95_usize, 96_usize),
+            },
+            LoweringRefusal::ViewOfNoPlace {
+                span: s(97_usize, 98_usize),
+            },
         ]
     }
 
@@ -2040,6 +2075,8 @@ mod tests
             s(89_usize, 90_usize),
             s(91_usize, 92_usize),
             s(93_usize, 94_usize),
+            s(95_usize, 96_usize),
+            s(97_usize, 98_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

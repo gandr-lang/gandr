@@ -495,6 +495,12 @@ pub enum RefusalName
     StrayReceiverMode,
     /// A method call whose name more than one module's receivers declare.
     AmbiguousMethod,
+    /// A method at a deduced mode whose result is no view of its receiver's
+    /// mode or whose body is no place of its receiver, or a view type off such
+    /// a method's result.
+    ViewNotPlace,
+    /// A view block after a call of no method answering a place.
+    ViewOfNoPlace,
     /// A match some scrutinee value reaches no arm of.
     NonExhaustiveMatch,
     /// A recursive definition's own name written without a descent claim.
@@ -713,7 +719,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 194_usize] = [
+    pub const VOCABULARY: [Self; 196_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -814,6 +820,8 @@ impl RefusalName
         Self::RegionAsValue,
         Self::StrayReceiverMode,
         Self::AmbiguousMethod,
+        Self::ViewNotPlace,
+        Self::ViewOfNoPlace,
         Self::NonExhaustiveMatch,
         Self::UnmarkedSelfReference,
         Self::UnguardedCorecursion,
@@ -960,6 +968,8 @@ impl RefusalName
         (Self::RegionAsValue, b"RegionAsValue") |
         (Self::StrayReceiverMode, b"StrayReceiverMode") |
         (Self::AmbiguousMethod, b"AmbiguousMethod") |
+        (Self::ViewNotPlace, b"ViewNotPlace") |
+        (Self::ViewOfNoPlace, b"ViewOfNoPlace") |
         (Self::NonExhaustiveMatch, b"NonExhaustiveMatch") |
         (Self::UnmarkedSelfReference, b"UnmarkedSelfReference") |
         (Self::UnguardedCorecursion, b"UnguardedCorecursion") |
@@ -1271,6 +1281,8 @@ impl RefusalName
             Self::RegionAsValue => "RegionAsValue",
             Self::StrayReceiverMode => "StrayReceiverMode",
             Self::AmbiguousMethod => "AmbiguousMethod",
+            Self::ViewNotPlace => "ViewNotPlace",
+            Self::ViewOfNoPlace => "ViewOfNoPlace",
             Self::NonExhaustiveMatch => "NonExhaustiveMatch",
             Self::UnmarkedSelfReference => "UnmarkedSelfReference",
             Self::UnguardedCorecursion => "UnguardedCorecursion",
@@ -1497,6 +1509,10 @@ impl Refusal<'_>
         RefusalName::StrayReceiverMode) |
         (Self::Lowering(LoweringRefusal::AmbiguousMethod { .. }),
         RefusalName::AmbiguousMethod) |
+        (Self::Lowering(LoweringRefusal::ViewNotPlace { .. }),
+        RefusalName::ViewNotPlace) |
+        (Self::Lowering(LoweringRefusal::ViewOfNoPlace { .. }),
+        RefusalName::ViewOfNoPlace) |
         (Self::Lowering(LoweringRefusal::NonExhaustiveMatch { .. }),
         RefusalName::NonExhaustiveMatch) |
         (Self::Lowering(LoweringRefusal::UnmarkedSelfReference { .. }),
@@ -1725,7 +1741,9 @@ impl Refusal<'_>
         RefusalName::ImplicitInParentheses) | (LoweringRefusal::RegionAsValue { .. },
         RefusalName::RegionAsValue) | (LoweringRefusal::StrayReceiverMode { .. },
         RefusalName::StrayReceiverMode) | (LoweringRefusal::AmbiguousMethod { .. },
-        RefusalName::AmbiguousMethod) | (LoweringRefusal::NonExhaustiveMatch { .. },
+        RefusalName::AmbiguousMethod) | (LoweringRefusal::ViewNotPlace { .. },
+        RefusalName::ViewNotPlace) | (LoweringRefusal::ViewOfNoPlace { .. },
+        RefusalName::ViewOfNoPlace) | (LoweringRefusal::NonExhaustiveMatch { .. },
         RefusalName::NonExhaustiveMatch) | (LoweringRefusal::UnmarkedSelfReference { .. },
         RefusalName::UnmarkedSelfReference) | (LoweringRefusal::UnguardedCorecursion { .. },
         RefusalName::UnguardedCorecursion) | (LoweringRefusal::DescentOnSeveralParameters { .. },
@@ -1790,6 +1808,8 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::RegionAsValue { .. } => RefusalName::RegionAsValue,
         LoweringRefusal::StrayReceiverMode { .. } => RefusalName::StrayReceiverMode,
         LoweringRefusal::AmbiguousMethod { .. } => RefusalName::AmbiguousMethod,
+        LoweringRefusal::ViewNotPlace { .. } => RefusalName::ViewNotPlace,
+        LoweringRefusal::ViewOfNoPlace { .. } => RefusalName::ViewOfNoPlace,
         LoweringRefusal::NonExhaustiveMatch { .. } => RefusalName::NonExhaustiveMatch,
         LoweringRefusal::UnmarkedSelfReference { .. } => RefusalName::UnmarkedSelfReference,
         LoweringRefusal::UnguardedCorecursion { .. } => RefusalName::UnguardedCorecursion,

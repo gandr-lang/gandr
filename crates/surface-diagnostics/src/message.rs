@@ -484,6 +484,14 @@ fn lowered(
                 )
             }
         },
+        LoweringRefusal::ViewNotPlace { .. } => f.write_str(
+            "a method whose receiver's mode is a variable answers a place of its receiver: write \
+             its result `-F View[m](a)` at that mode and its body as the place, `{ self[i] }`",
+        ),
+        LoweringRefusal::ViewOfNoPlace { .. } => f.write_str(
+            "`as w { … }` lends a view only after a call of a method that answers a place of its \
+             receiver",
+        ),
         LoweringRefusal::NonExhaustiveMatch { .. } => {
             f.write_str("this match does not cover every value it can be given")
         },
@@ -1323,6 +1331,8 @@ mod tests
                 second: name,
                 more: CandidateCount::from(0_usize),
             },
+            LoweringRefusal::ViewNotPlace { span },
+            LoweringRefusal::ViewOfNoPlace { span },
             LoweringRefusal::NonExhaustiveMatch { span },
             LoweringRefusal::UnmarkedSelfReference { span, name },
             LoweringRefusal::UnguardedCorecursion { span, name },
