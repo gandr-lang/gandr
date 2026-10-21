@@ -3715,7 +3715,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: every source before `source` is lowered, and none after.
     /// - ensures: `source`'s declarations are collected and every pass over
     ///   them has run, its core nodes minted into `sink` after the earlier
-    ///   sources'.
+    ///   sources', and its nodes' entries forgotten ([`Self::end_source`]).
     /// - provides: one step of [`lower_unit`], and what a resumed lowering
     ///   takes after its closure's.
     /// - fails: the module-level refusals [`lower_unit`] names, raised by this
@@ -3759,7 +3759,112 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.mint_operations(sink);
         self.mint_instances(sink);
 
+        self.end_source();
         Ok(())
+    }
+
+    /// Forget what the lowering kept about the nodes of the source it has
+    /// just lowered: every table keyed by a syntax node that the passes read
+    /// only while that node's source is lowered.
+    ///
+    /// A later source's passes look up only their own nodes, and a lowering
+    /// suspended after its closure holds none of the closure's entries, so a
+    /// document resumed after it neither copies nor searches them.
+    ///
+    /// # Specification
+    /// - requires: every pass over the current source has run.
+    /// - ensures: each of those tables is empty.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source lowers alike whatever precedes and follows
+    ///   it, and a document resumed after its closure lowers as the whole unit
+    ///   does.
+    /// - witness: `tests::namespace::a_source_lowers_alike_whatever_follows_it_776`
+    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    #[spec(ensures: self.classifiers.is_empty()
+        && self.argued.is_empty()
+        && self.awaiting.is_empty()
+        && self.thunked.is_empty()
+        && self.inherited.is_empty()
+        && self.stand_ins.is_empty()
+        && self.answers.is_empty()
+        && self.cocased.is_empty()
+        && self.in_type.is_empty()
+        && self.in_quote.is_empty()
+        && self.at_endpoint.is_empty()
+        && self.exits.is_empty()
+        && self.exitable.is_empty()
+        && self.joined.is_empty()
+        && self.leaving.is_empty()
+        && self.iterated.is_empty()
+        && self.looping.is_empty()
+        && self.breaking.is_empty()
+        && self.reentered.is_empty()
+        && self.tested.is_empty()
+        && self.threading.is_empty()
+        && self.carries.is_empty()
+        && self.results.is_empty()
+        && self.framed.is_empty()
+        && self.looped_past.is_empty()
+        && self.bodies.is_empty()
+        && self.crossing.is_empty()
+        && self.delimited.is_empty()
+        && self.inferred.is_empty()
+        && self.stated.is_empty()
+        && self.trailing.is_empty()
+        && self.stage_marks.is_empty()
+        && self.pattern_stated.is_empty()
+        && self.scrutinised.is_empty()
+        && self.descents.is_empty()
+        && self.injected.is_empty()
+        && self.type_read.is_empty()
+        && self.nullary.is_empty()
+        && self.supplied.is_empty()
+        && self.regions.is_empty())]
+    fn end_source(&mut self)
+    {
+        self.classifiers.clear();
+        self.argued.clear();
+        self.awaiting.clear();
+        self.thunked.clear();
+        self.inherited.clear();
+        self.stand_ins.clear();
+        self.answers.clear();
+        self.cocased.clear();
+        self.in_type.clear();
+        self.in_quote.clear();
+        self.at_endpoint.clear();
+        self.exits.clear();
+        self.exitable.clear();
+        self.joined.clear();
+        self.leaving.clear();
+        self.iterated.clear();
+        self.looping.clear();
+        self.breaking.clear();
+        self.reentered.clear();
+        self.tested.clear();
+        self.threading.clear();
+        self.carries.clear();
+        self.results.clear();
+        self.framed.clear();
+        self.looped_past.clear();
+        self.bodies.clear();
+        self.crossing.clear();
+        self.delimited.clear();
+        self.inferred.clear();
+        self.stated.clear();
+        self.trailing.clear();
+        self.stage_marks.clear();
+        self.pattern_stated.clear();
+        self.scrutinised.clear();
+        self.descents.clear();
+        self.injected.clear();
+        self.type_read.clear();
+        self.nullary.clear();
+        self.supplied.clear();
+        self.regions.clear();
     }
 
     /// The module every source lowered amounts to: its attributes,
