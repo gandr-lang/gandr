@@ -451,6 +451,11 @@ fn lowered(
             "`{function}`'s implicit `{implicit}` is supplied by name, \
              `{function}[{implicit} = …](…)`, not among the parentheses"
         ),
+        LoweringRefusal::RegionAsValue { name, .. } => write!(
+            f,
+            "`{name}` is a region, never a value; name it only where a type keeps a value in it, \
+             `A at {name}`"
+        ),
         LoweringRefusal::NonExhaustiveMatch { .. } => {
             f.write_str("this match does not cover every value it can be given")
         },
@@ -1270,6 +1275,7 @@ mod tests
                 function: name,
                 implicit: name,
             },
+            LoweringRefusal::RegionAsValue { span, name },
             LoweringRefusal::NonExhaustiveMatch { span },
             LoweringRefusal::UnmarkedSelfReference { span, name },
             LoweringRefusal::UnguardedCorecursion { span, name },

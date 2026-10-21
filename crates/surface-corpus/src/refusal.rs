@@ -486,6 +486,8 @@ pub enum RefusalName
     ImplicitUnsupplied,
     /// A call writing a function's implicit arguments among its parentheses.
     ImplicitInParentheses,
+    /// A definition's region binder named as a value.
+    RegionAsValue,
     /// A match some scrutinee value reaches no arm of.
     NonExhaustiveMatch,
     /// A recursive definition's own name written without a descent claim.
@@ -699,7 +701,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 188_usize] = [
+    pub const VOCABULARY: [Self; 189_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -796,6 +798,7 @@ impl RefusalName
         Self::TelescopeCycle,
         Self::ImplicitUnsupplied,
         Self::ImplicitInParentheses,
+        Self::RegionAsValue,
         Self::NonExhaustiveMatch,
         Self::UnmarkedSelfReference,
         Self::UnguardedCorecursion,
@@ -936,6 +939,7 @@ impl RefusalName
         (Self::TelescopeCycle, b"TelescopeCycle") |
         (Self::ImplicitUnsupplied, b"ImplicitUnsupplied") |
         (Self::ImplicitInParentheses, b"ImplicitInParentheses") |
+        (Self::RegionAsValue, b"RegionAsValue") |
         (Self::NonExhaustiveMatch, b"NonExhaustiveMatch") |
         (Self::UnmarkedSelfReference, b"UnmarkedSelfReference") |
         (Self::UnguardedCorecursion, b"UnguardedCorecursion") |
@@ -1240,6 +1244,7 @@ impl RefusalName
             Self::TelescopeCycle => "TelescopeCycle",
             Self::ImplicitUnsupplied => "ImplicitUnsupplied",
             Self::ImplicitInParentheses => "ImplicitInParentheses",
+            Self::RegionAsValue => "RegionAsValue",
             Self::NonExhaustiveMatch => "NonExhaustiveMatch",
             Self::UnmarkedSelfReference => "UnmarkedSelfReference",
             Self::UnguardedCorecursion => "UnguardedCorecursion",
@@ -1457,6 +1462,8 @@ impl Refusal<'_>
         RefusalName::ImplicitUnsupplied) |
         (Self::Lowering(LoweringRefusal::ImplicitInParentheses { .. }),
         RefusalName::ImplicitInParentheses) |
+        (Self::Lowering(LoweringRefusal::RegionAsValue { .. }),
+        RefusalName::RegionAsValue) |
         (Self::Lowering(LoweringRefusal::NonExhaustiveMatch { .. }),
         RefusalName::NonExhaustiveMatch) |
         (Self::Lowering(LoweringRefusal::UnmarkedSelfReference { .. }),
@@ -1679,7 +1686,8 @@ impl Refusal<'_>
         RefusalName::ImplicitTelescope) | (LoweringRefusal::TelescopeCycle { .. },
         RefusalName::TelescopeCycle) | (LoweringRefusal::ImplicitUnsupplied { .. },
         RefusalName::ImplicitUnsupplied) | (LoweringRefusal::ImplicitInParentheses { .. },
-        RefusalName::ImplicitInParentheses) | (LoweringRefusal::NonExhaustiveMatch { .. },
+        RefusalName::ImplicitInParentheses) | (LoweringRefusal::RegionAsValue { .. },
+        RefusalName::RegionAsValue) | (LoweringRefusal::NonExhaustiveMatch { .. },
         RefusalName::NonExhaustiveMatch) | (LoweringRefusal::UnmarkedSelfReference { .. },
         RefusalName::UnmarkedSelfReference) | (LoweringRefusal::UnguardedCorecursion { .. },
         RefusalName::UnguardedCorecursion) | (LoweringRefusal::DescentOnSeveralParameters { .. },
@@ -1739,6 +1747,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::TelescopeCycle { .. } => RefusalName::TelescopeCycle,
         LoweringRefusal::ImplicitUnsupplied { .. } => RefusalName::ImplicitUnsupplied,
         LoweringRefusal::ImplicitInParentheses { .. } => RefusalName::ImplicitInParentheses,
+        LoweringRefusal::RegionAsValue { .. } => RefusalName::RegionAsValue,
         LoweringRefusal::NonExhaustiveMatch { .. } => RefusalName::NonExhaustiveMatch,
         LoweringRefusal::UnmarkedSelfReference { .. } => RefusalName::UnmarkedSelfReference,
         LoweringRefusal::UnguardedCorecursion { .. } => RefusalName::UnguardedCorecursion,

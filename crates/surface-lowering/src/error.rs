@@ -1041,6 +1041,17 @@ pub enum LoweringRefusal<'source>
         implicit: SurfaceName<'source>,
     },
 
+    /// A definition's region binder, bound `r : Region` in its telescope,
+    /// named as a value: a region is erased and never computed, so the body
+    /// reads one only in a kept type `A at r`.
+    RegionAsValue
+    {
+        /// The bytes of the name.
+        span: ByteSpan,
+        /// The region binder's name.
+        name: SurfaceName<'source>,
+    },
+
     /// A match some scrutinee reaches no arm of: a constructor, or an integer
     /// or boolean value, that every arm's pattern refuses.
     NonExhaustiveMatch
@@ -1394,6 +1405,11 @@ impl fmt::Display for LoweringRefusal<'_>
                  supply `{implicit}` by name, `{function}[{implicit} = …](…)`, and pass the \
                  explicit arguments alone"
             ),
+            Self::RegionAsValue { name, .. } => write!(
+                f,
+                "`{name}` binds a region, which is no value: it is read only where a type keeps a \
+                 value in it, `A at {name}`"
+            ),
             Self::NonExhaustiveMatch { .. } => {
                 f.write_str("the match leaves a value of its scrutinee that no arm matches")
             },
@@ -1558,6 +1574,7 @@ impl LoweringRefusal<'_>
             | Self::TelescopeCycle { span, .. }
             | Self::ImplicitUnsupplied { span, .. }
             | Self::ImplicitInParentheses { span, .. }
+            | Self::RegionAsValue { span, .. }
             | Self::NonExhaustiveMatch { span }
             | Self::UnmarkedSelfReference { span, .. }
             | Self::UnguardedCorecursion { span, .. }
@@ -1636,7 +1653,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 47_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 48_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -1854,6 +1871,10 @@ mod tests
                 function: SurfaceName::from("same"),
                 implicit: SurfaceName::from("a"),
             },
+            LoweringRefusal::RegionAsValue {
+                span: s(89_usize, 90_usize),
+                name: SurfaceName::from("r"),
+            },
         ]
     }
 
@@ -1912,6 +1933,7 @@ mod tests
             s(83_usize, 84_usize),
             s(85_usize, 86_usize),
             s(87_usize, 88_usize),
+            s(89_usize, 90_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

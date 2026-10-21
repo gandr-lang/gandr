@@ -180,6 +180,10 @@ pub(super) struct Sessions
     /// a capability scope's subject, or a hold's scope past its held slot —
     /// outermost first: a slot below a region's mark outlives the region.
     pub regions: Vec<usize>,
+    /// How the run's own type reaches a region its definition abstracts, `A at
+    /// r` under `@[r : Region]`: where it reaches one, a captor or a child may
+    /// name a value kept in a region while no region is open.
+    pub abstracted: crate::capability::Reach,
     /// Each capability scope and operation whose clause receives a
     /// continuation holding an obligation, in the order met.
     pub owing: Vec<(ComputationId, gandr_core_term::effect::OperationName)>,
@@ -198,11 +202,16 @@ pub(super) struct Sessions
 
 impl Sessions
 {
-    /// The linear state of a run that begins with `base` linear slots open.
+    /// The linear state of a run that begins with `base` linear slots open,
+    /// its own type reaching a region its definition abstracts as `abstracted`
+    /// says.
     ///
     /// # Specification
     /// trivial.
-    pub(super) fn new(base: BinderDepth) -> Self
+    pub(super) fn new(
+        base: BinderDepth,
+        abstracted: crate::capability::Reach,
+    ) -> Self
     {
         Self {
             base,
@@ -210,6 +219,7 @@ impl Sessions
             lent: Vec::new(),
             kept: Vec::new(),
             regions: Vec::new(),
+            abstracted,
             owing: Vec::new(),
             owed: Vec::new(),
             ending: None,
@@ -647,9 +657,9 @@ impl Machine<'_, '_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a goal of another former, or any goal while the run holds no
-    ///   linear slot and no scope is open, passes without its free indices
-    ///   read; a kept thunk or stack keeps each shared view it names, and
-    ///   nothing else changes.
+    ///   linear slot, no scope is open and the checked type abstracts no
+    ///   region, passes without its free indices read; a kept thunk or stack
+    ///   keeps each shared view it names, and nothing else changes.
     /// - fails: [`CheckRefusal::Linearity`] naming
     ///   [`LinearityDefect::Captured`] at the goal's term, with the first
     ///   endpoint it names and what may run it, and
@@ -674,12 +684,14 @@ impl Machine<'_, '_>
     /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
     /// - witness: `judgement::session::tests::a_scope_names_only_residents_that_owe_nothing_1336`
     /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
+    /// - witness: `judgement::access::tests::a_thunk_naming_a_value_kept_at_a_region_binder_is_kept_there_1221`
     #[spec(
         captures: [
             holding = self.context.depth(Zone::Linear) > self.sessions.base,
             scoped = !self.sessions.regions.is_empty(),
+            abstracted = self.sessions.abstracted != crate::capability::Reach::Clear,
         ],
-        ensures: |ret| holding || scoped || ret.is_ok(),
+        ensures: |ret| holding || scoped || abstracted || ret.is_ok(),
     )]
     pub(super) fn fence(
         &mut self,
@@ -687,7 +699,8 @@ impl Machine<'_, '_>
     ) -> Result<(), CheckRefusal>
     {
         let holding = self.context.depth(Zone::Linear) > self.sessions.base;
-        if !holding && self.sessions.regions.is_empty() {
+        let abstracted = self.sessions.abstracted != crate::capability::Reach::Clear;
+        if !holding && !abstracted && self.sessions.regions.is_empty() {
             return Ok(());
         }
         let (term, node, by) = match goal {
@@ -806,7 +819,10 @@ impl Machine<'_, '_>
                 Region::Held
             },
         };
-        if matches!(by, Capture::Thunk | Capture::Stack) && !self.sessions.regions.is_empty() {
+        if matches!(by, Capture::Thunk | Capture::Stack)
+            && (self.sessions.abstracted != crate::capability::Reach::Clear
+                || !self.sessions.regions.is_empty())
+        {
             self.contained(term, node, kept)?;
         }
         if !holding {
@@ -910,23 +926,25 @@ impl Machine<'_, '_>
     {
         let head = self.context.whnf_value_type(expected)?;
         if let ValueTypeView::Kept { region, .. } = value_type_view(self.context.arena(), head)? {
-            return Ok(Region::Scoped(region));
+            return Ok(region);
         }
         Ok(Region::Held)
     }
 
     /// Refuse the thunk or stack `term` at `node` naming a variable kept in a
-    /// region deeper than `kept`, the region its own type is kept in: forced
-    /// past that region's scope, the variable would outlive it.
+    /// region that ends while `kept`, the region its own type is kept in, is
+    /// still live: forced past that region's end, the variable would outlive
+    /// it.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: nothing changes.
     /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::KeptEscaped`]
     ///   at `node` for the first free intuitionistic variable whose type
-    ///   reaches a type kept in a region deeper than `kept`, or in any region
-    ///   when `kept` is [`Region::Held`]; [`CheckRefusal::DanglingNode`] and
-    ///   [`CheckRefusal::MachineInvariant`] as [`Self::free_linear`].
+    ///   reaches a type kept in a region that ends while `kept` is still live,
+    ///   any region at all when `kept` is [`Region::Held`];
+    ///   [`CheckRefusal::DanglingNode`] and [`CheckRefusal::MachineInvariant`]
+    ///   as [`Self::free_linear`].
     /// - panics: none.
     ///
     /// # Errors
@@ -934,8 +952,11 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a thunk forcing a kept thunk is refused at a type
-    ///   kept in no region and checks at one kept in the same region.
+    ///   kept in no region and checks at one kept in the same region; a thunk
+    ///   forcing a parameter kept at a region its definition abstracts is
+    ///   refused at a type kept in no region.
     /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
+    /// - witness: `capability::tests::a_bound_region_outlives_every_scope_and_no_held_one_1221`
     #[spec(ensures: |ret| match ret {
         | Err(CheckRefusal::Access { at, defect }) => at == node && defect == AccessDefect::KeptEscaped,
         | Ok(()) | Err(_) => true,
@@ -947,13 +968,6 @@ impl Machine<'_, '_>
         kept: Region,
     ) -> Result<(), CheckRefusal>
     {
-        let floor = match kept {
-            Region::Held => RegionDepth::from(1_u32),
-            Region::Scoped(depth) => u32::from(depth)
-                .checked_add(1)
-                .map(RegionDepth::from)
-                .ok_or(CheckRefusal::MachineInvariant)?,
-        };
         let free = self
             .sessions
             .free
@@ -969,11 +983,8 @@ impl Machine<'_, '_>
                 .binders()
                 .declared(Zone::Intuitionistic, index)
                 .map_err(|_fault| CheckRefusal::MachineInvariant)?;
-            let reach = crate::capability::reaches(
-                self.context.arena(),
-                TypeNode::Value(declared),
-                Region::Scoped(floor),
-            )?;
+            let reach =
+                crate::capability::reaches(self.context.arena(), TypeNode::Value(declared), kept)?;
             if matches!(reach, crate::capability::Reach::Keeps) {
                 return Err(CheckRefusal::Access {
                     at: node,
@@ -986,14 +997,15 @@ impl Machine<'_, '_>
 
     /// Refuse the child `term` of the fork `at` naming a variable that lives
     /// in a region: the child runs as a peer no region bounds, so the region
-    /// could end while the child still holds the variable.
+    /// could end while the child still holds the variable. A region the
+    /// definition abstracts is the caller's, and ends as soon.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: nothing changes.
     /// - fails: [`CheckRefusal::CapabilityEscaped`] at the fork for the first
     ///   free intuitionistic variable whose type reaches a capability living in
-    ///   a region, and [`CheckRefusal::Access`] naming
+    ///   any region but the held one, and [`CheckRefusal::Access`] naming
     ///   [`AccessDefect::KeptEscaped`] for one whose type reaches a value kept
     ///   in one; [`CheckRefusal::DanglingNode`] and
     ///   [`CheckRefusal::MachineInvariant`] as [`Self::free_linear`].
@@ -1037,7 +1049,7 @@ impl Machine<'_, '_>
             match crate::capability::reaches(
                 self.context.arena(),
                 TypeNode::Value(declared),
-                Region::Scoped(RegionDepth::from(1_u32)),
+                Region::Held,
             )? {
                 crate::capability::Reach::Clear => {},
                 crate::capability::Reach::Mentions => {
@@ -2710,12 +2722,10 @@ impl Machine<'_, '_>
         }
         let node = CoreNode::Term(TermNode::Computation(at));
         // The child runs as a peer no region bounds: a value its protocol
-        // carries in a region would outlive the region's end.
-        match crate::capability::reaches(
-            self.context.arena(),
-            TypeNode::Value(head),
-            Region::Scoped(RegionDepth::from(1_u32)),
-        )? {
+        // carries in a region, or a capability living in one, would outlive
+        // the region's end.
+        match crate::capability::reaches(self.context.arena(), TypeNode::Value(head), Region::Held)?
+        {
             crate::capability::Reach::Clear => {},
             crate::capability::Reach::Mentions => {
                 return Err(CheckRefusal::CapabilityEscaped {
@@ -2730,7 +2740,9 @@ impl Machine<'_, '_>
                 });
             },
         }
-        if !self.sessions.regions.is_empty() {
+        if self.sessions.abstracted != crate::capability::Reach::Clear
+            || !self.sessions.regions.is_empty()
+        {
             self.unbounded(CoreTerm::Computation(child), at)?;
         }
         // A child could end the continuation after the clause returned.

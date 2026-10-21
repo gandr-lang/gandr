@@ -50,6 +50,7 @@ The control subjects take a case that is hard in other languages and write it as
 | Async drop | `drop` | Rust's async-drop experiment and its `AsyncDrop` proposal; Swift's synchronous `deinit` (SE-0371); C++ destructors, which cannot await |
 | Cancellation safety | `cancellation` | Rust's futures dropped at an `.await`; Kotlin's `NonCancellable` section |
 | Completion-based I/O | `completion` | io_uring's submission and completion queues; Rust's owned-buffer completion APIs |
+| Lifetime parameters | `regions` | Rust's lifetime parameters, `fn f<'a>(x: &'a T) -> &'a T`, and the free theorem of a function generic in `'a`: it cannot keep what it borrows |
 | Move semantics | `moves` | C++'s moved-from objects and move constructors; Rust's `Copy` and move split, and `mem::forget` |
 | Self-reference | `self-reference` | Rust's `Pin` for a future that borrows from itself (RFC 2349); C++ objects kept immobile by convention |
 | Structured concurrency | `tasks` | Trio's nurseries; Rust's scoped threads (`std::thread::scope`) |

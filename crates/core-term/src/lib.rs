@@ -19,8 +19,9 @@
 //!   walk enters only the nodes whose support reaches what it moves;
 //!   [`constructor_classifier`] reads a constructor's field telescope as the
 //!   function its name answers at; [`rename_value_traced`] and
-//!   [`rename_value_type_traced`] rename constants and atoms by a [`Renaming`],
-//!   the step a functor application instantiates its body by.
+//!   [`rename_value_type_traced`] rename constants, atoms and region binders by
+//!   a [`Renaming`], the step a functor application instantiates its body by
+//!   and a call places a definition's regions by.
 //! - [`Context`] is the two-zone typing context `Γ; Σ`: flat, de Bruijn,
 //!   id-addressed and name-free. Names live in the surface syntax and in
 //!   diagnostics, above this crate.
@@ -225,6 +226,7 @@ pub use gandr_kernel_term::RuleVariable;
 pub use gandr_kernel_term::Summand;
 
 pub use crate::arena::ArenaWatermark;
+pub use crate::arena::BinderPrecedence;
 pub use crate::arena::CompTypeId;
 pub use crate::arena::ComputationId;
 pub use crate::arena::CoreArena;

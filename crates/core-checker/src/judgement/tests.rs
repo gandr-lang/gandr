@@ -2339,7 +2339,7 @@ fn a_result_of_the_wrong_kind_is_a_machine_fault()
         marking: Marking::Strict,
         anchors: Vec::new(),
         marks: Vec::new(),
-        sessions: Sessions::new(BinderDepth::default()),
+        sessions: Sessions::new(BinderDepth::default(), crate::capability::Reach::Clear),
         root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
         staged_motives: Vec::new(),
     };
@@ -2379,7 +2379,7 @@ fn machine_bookkeeping_preserves_zero_and_one_boundaries()
         marking: Marking::Strict,
         anchors: Vec::new(),
         marks: Vec::new(),
-        sessions: Sessions::new(BinderDepth::default()),
+        sessions: Sessions::new(BinderDepth::default(), crate::capability::Reach::Clear),
         root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
         staged_motives: Vec::new(),
     };

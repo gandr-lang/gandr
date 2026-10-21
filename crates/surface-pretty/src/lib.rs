@@ -880,9 +880,13 @@ quenchant_shape::reason_enum! {
 ///   `xᵢ` is its dependent arrow's binder where the source names it and neither
 ///   the definition nor an earlier parameter takes it, otherwise the next
 ///   generated name that neither `name`, the definition nor an earlier
-///   parameter takes. The presentation is approximate, its unspelled reasons
-///   collected, when a header type or the body is. Absent for any other shape,
-///   and when no names for the parameters are found.
+///   parameter takes. Where a header type or the body keeps a value at a region
+///   binder, the header writes `@[r : Region, …]` before the parameters, one
+///   binder per ordinal up to the greatest kept at, each `r`, `r1`, … where the
+///   definition takes no such name and named as a parameter is otherwise, and
+///   every `at` names its binder. The presentation is approximate, its
+///   unspelled reasons collected, when a header type or the body is. Absent for
+///   any other shape, and when no names for the parameters are found.
 /// - provides: the declaration a function definition reads back as, written
 ///   whole: a recursive one where `def name = body` would write a fixpoint the
 ///   surface spells only in its declaration, and any other where its
@@ -908,6 +912,7 @@ quenchant_shape::reason_enum! {
 /// - witness: `tests::goldens::a_recursive_parameter_skips_the_names_its_body_mentions_941`
 /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
 /// - witness: `tests::goldens::a_function_definition_spells_whole_941`
+/// - witness: `tests::goldens::a_definition_over_a_region_spells_its_binder_1221`
 #[spec(ensures: |ref ret| match *ret {
     Ok(Maybe::Present(ref presentation)) => presentation.as_ref().starts_with("def ")
         && presentation.as_ref().ends_with('}')
@@ -994,21 +999,41 @@ pub fn present_whole(
         .collect();
     roots.push((codomain, Admits::Type));
     roots.push((inner, Admits::Computation(Tail::Ends)));
-    let preferred: Vec<Option<Name<'_>>> = arrows
+    // The region binders the types and the body keep values at are named
+    // first, then the parameters, all distinct and none mentioned.
+    let Maybe::Present(regions) = walk::regioned(source, &roots)
+    else {
+        return Ok(Maybe::Absent(whole::Absent::Unnamed));
+    };
+    let wanted: Vec<String> = regions
         .iter()
-        .map(|&(arrow, _, dependent)| {
+        .map(|&binder| match u32::from(binder) {
+            0_u32 => String::from("r"),
+            ordinal => format!("r{ordinal}"),
+        })
+        .collect();
+    let preferred: Vec<Option<Name<'_>>> = wanted
+        .iter()
+        .map(|region| Some(Name::from(region.as_str())))
+        .chain(arrows.iter().map(|&(arrow, _, dependent)| {
             if dependent {
                 source.arrow_binder(arrow)
             }
             else {
                 None
             }
-        })
+        }))
         .collect();
-    let Some(names) = walk::parameters(source, &roots, &[name], &preferred)
+    let Some(mut binders) = walk::parameters(source, &roots, &[name], &preferred)
     else {
         return Ok(Maybe::Absent(whole::Absent::Unnamed));
     };
+    let names = binders.split_off(regions.len());
+    let bounding: Vec<Option<Name<'_>>> = binders
+        .iter()
+        .map(|region| Some(Name::from(region.as_str())))
+        .collect();
+    let source = source.bounding(&bounding);
     // A type stands under the binders of the dependent arrows before it;
     // the body under the parameters, the definition's own binder among them
     // where it recurses, after the uniform ones.
@@ -1042,7 +1067,20 @@ pub fn present_whole(
     });
     let narrower = PageWidth::from(u32::from(page).saturating_sub(2_u32).max(1_u32));
     let spelled = present_computation(&under, inner, narrower, style)?;
-    let mut text = format!("{opener} {}({header}) -> {returned} {{", name.as_ref());
+    let telescope = if binders.is_empty() {
+        String::new()
+    }
+    else {
+        let regions: Vec<String> = binders
+            .iter()
+            .map(|region| format!("{region} : Region"))
+            .collect();
+        format!(" @[{}] ", regions.join(", "))
+    };
+    let mut text = format!(
+        "{opener} {}{telescope}({header}) -> {returned} {{",
+        name.as_ref()
+    );
     for line in spelled.as_ref().lines() {
         text.push('\n');
         if !line.is_empty() {

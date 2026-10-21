@@ -817,13 +817,14 @@ pub enum ContentNode
     Sum(Vec<NodeIndex>),
     /// A finite-list type.
     List(NodeIndex),
-    /// A value type kept in the region of the capability scope at `region`.
+    /// A value type kept in a region: a capability scope's or a hold's by its
+    /// depth, or a definition's region binder by its ordinal.
     KeptType
     {
         /// The kept value's type.
         value: NodeIndex,
-        /// The capability scope it lives in.
-        region: gandr_core_term::effect::capability::RegionDepth,
+        /// The region it lives in.
+        region: gandr_core_term::effect::capability::Region,
     },
     /// A thunk type.
     ThunkType(NodeIndex),

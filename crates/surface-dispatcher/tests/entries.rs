@@ -303,9 +303,9 @@ fn kind(
 /// a run literal's move, as an inner link of a product, a sum or a lazy
 /// product chain, as the value a discarded bind drops, as an arrow of a data
 /// family's kind, as the sort of a stage binder or the binder a call
-/// supplies, as the theory a model type names, as the module and the model
-/// type a pack names, or as a binding operation or a variable a binding port
-/// binds in a theory's rule.
+/// supplies, as the sort of a region binder, as the theory a model type
+/// names, as the module and the model type a pack names, or as a binding
+/// operation or a variable a binding port binds in a theory's rule.
 ///
 /// # Specification
 /// trivial.
@@ -358,6 +358,11 @@ enum Placed
     /// supplies by name, `j` in `applyAt[i = j](f, x)`: the stage is erased
     /// from the core, so no node holds it, and the call answers.
     Stage,
+    /// The sort `Region` a region binder of a function's telescope is read
+    /// at, `Region` in `def read @[r : Region] (…)`: the lowering reads the
+    /// binder as a region of the signature and forms no type for its sort,
+    /// so the kept types naming the binder answer.
+    Region,
     /// The theory a model type is written over, `T` in `Model(T)`: the name
     /// of a presentation, neither a term the checker judges nor a type the
     /// lowering forms, the record it derives located there and inserted, so
@@ -624,6 +629,10 @@ fn gated(
             && def.label == "type_identifier"
             && text == "Size"
             && parent.is_some_and(|(_, label, ..)| label == "def");
+        let regioned = !melded
+            && def.label == "type_identifier"
+            && text == "Region"
+            && parent.is_some_and(|(_, label, ..)| label == "def");
         let supplied = !melded
             && def.label == "identifier"
             && stages.contains(text.trim())
@@ -647,6 +656,7 @@ fn gated(
             .or_else(|| dropped.then_some(Placed::Discarded))
             .or_else(|| kinded.then_some(Placed::Kind))
             .or_else(|| (sized || supplied).then_some(Placed::Stage))
+            .or_else(|| regioned.then_some(Placed::Region))
             .or_else(|| unstated.then_some(Placed::Unstated));
         gated.push((kind(grammar, tree, position, *def), span, placed));
     }

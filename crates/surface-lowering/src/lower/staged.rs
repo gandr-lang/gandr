@@ -1,6 +1,7 @@
-//! Definitions quantified over stages in the lowering: the telescope `@[i :
-//! Size, j < i]` after a function's name, and the staged types `Nat[i]` and
-//! `Nat[<i]` its parameter and result types write.
+//! Definitions quantified over stages and regions in the lowering: the
+//! telescope `@[i : Size, j < i, r : Region]` after a function's name, the
+//! staged types `Nat[i]` and `Nat[<i]` its parameter and result types write,
+//! and the region binders a kept type `A at r` names.
 //!
 //! # A binder is its ordinal
 //!
@@ -23,6 +24,16 @@
 //! caller's binder `j` mints. It never reaches the kernel, which re-derives
 //! every stage from the arguments; the checker holds the supply to the stage
 //! they show.
+//!
+//! # A region binder is the caller's region
+//!
+//! An entry `r : Region` binds a region its caller holds, by its ordinal among
+//! the telescope's region binders. The binders are filed under the
+//! declaration's key, and a kept type `A at r` anywhere in the definition
+//! that names no capability scope or hold reads `r` there
+//! ([`Lowerer::at_type`]), so the type keeps its value at
+//! [`gandr_core_term::effect::capability::Region::Bound`]. A region binder is
+//! no value: the body reads it only in a kept type.
 //!
 //! # Boundaries
 //!
@@ -47,6 +58,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::effect::capability::RegionBinder;
 use gandr_kernel_term::Stage;
 use gandr_kernel_term::StageBinder;
 use gandr_kernel_term::StageBound;
@@ -124,9 +136,10 @@ enum Placement
 
 impl<'source> Lowerer<'_, 'source>
 {
-    /// Read the stage telescope `@[i : Size, j < i]` a function's name is
-    /// followed by, when it is, and mark each staged type its parameter and
-    /// result types write.
+    /// Read the telescope `@[i : Size, j < i, r : Region]` a function's name
+    /// is followed by, when it is: file its stage binders' bounds and its
+    /// region binders, and mark each staged type its parameter and result
+    /// types write.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the function's name; `site` is the
@@ -135,15 +148,16 @@ impl<'source> Lowerer<'_, 'source>
     ///   telescope binds a stage, the declaration's bounds are filed under its
     ///   key, one per binder in written order, and every staged type under the
     ///   parameter and result types is marked with the stage its binder's
-    ///   ordinal names; an entry `a : T` of another sort is passed over, the
-    ///   function's merged telescope binding it; without a telescope nothing
-    ///   changes.
+    ///   ordinal names; when it binds a region, its region binders are filed
+    ///   under the key by name, each at its ordinal among them; an entry `a :
+    ///   T` of another sort is passed over, the function's merged telescope
+    ///   binding it; without a telescope nothing changes.
     /// - fails: [`LoweringRefusal::ImplicitTelescope`] at the declaration for
     ///   an entry out of shape, or one of another sort where the function has
     ///   no merged telescope; [`LoweringRefusal::UnresolvedName`] for a bound
-    ///   naming no binder, or none written before the one it bounds, and for a
-    ///   staged type naming no binder; a fault naming the function for a tile
-    ///   out of place.
+    ///   naming no stage binder, or none written before the one it bounds, and
+    ///   for a staged type naming no binder; a fault naming the function for a
+    ///   tile out of place.
     /// - panics: none.
     ///
     /// # Errors
@@ -153,10 +167,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a telescope of one binder and of a bounded pair files
     ///   its bounds and marks its staged types; a bound on a later binder and a
     ///   stage naming no binder are refused, each exactly; a stage beside an
-    ///   implicit is filed as alone.
+    ///   implicit is filed as alone; a region binder is filed by its ordinal
+    ///   and its kept types bound to it.
     /// - witness: `lower::implicit::tests::a_stage_telescope_merges_nothing`
     /// - witness: `lower::staged::tests::a_telescope_files_its_bounds_and_marks_its_stages`
     /// - witness: `lower::staged::tests::a_bound_or_stage_naming_no_binder_is_refused_by_name`
+    /// - witness: `lower::capability::tests::a_kept_type_at_a_region_binder_is_bound_to_it_1221`
     #[spec(captures: before = self.stage_bounds.len(), ensures: |ret| ret.is_err() || self.stage_bounds.len() >= before)]
     pub(super) fn stage_telescope(
         &mut self,
@@ -171,6 +187,7 @@ impl<'source> Lowerer<'_, 'source>
         let implicit = LoweringRefusal::ImplicitTelescope { span: site.at.span };
         let mut names: BTreeMap<SurfaceName<'source>, StageBinder> = BTreeMap::new();
         let mut bounds: Vec<StageBound> = Vec::new();
+        let mut regions: BTreeMap<SurfaceName<'source>, RegionBinder> = BTreeMap::new();
         loop {
             if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_CLOSE) {
                 break;
@@ -182,11 +199,14 @@ impl<'source> Lowerer<'_, 'source>
             let name = self.name_at(written);
             if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
                 let sort = site.one(cursor.operands())?;
-                if matches!(self.form_at(sort)?, Some((_, Former::TypeHead)))
-                    && self.name_at(sort).as_ref() == "Size"
-                {
+                let head = matches!(self.form_at(sort)?, Some((_, Former::TypeHead)));
+                if head && self.name_at(sort).as_ref() == "Size" {
                     let _shadowed = names.insert(name, StageBinder::from(bounds.len()));
                     bounds.push(StageBound::Unbounded);
+                }
+                else if head && self.name_at(sort).as_ref() == "Region" {
+                    let ordinal = u32::try_from(regions.len()).map_err(|_wide| implicit)?;
+                    let _shadowed = regions.insert(name, RegionBinder::from(ordinal));
                 }
                 else if let Maybe::Absent(_) = self.merged_at(site.at.node) {
                     return Err(implicit);
@@ -233,6 +253,11 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
             }
         }
+        if !regions.is_empty()
+            && let Maybe::Present(slot) = self.collected.owner_of(site.at.node)
+        {
+            let _first = self.region_binders.insert(slot, regions);
+        }
         if bounds.is_empty() {
             return Ok(());
         }
@@ -254,6 +279,35 @@ impl<'source> Lowerer<'_, 'source>
         let _first = self.stage_bounds.insert(key, bounds);
 
         Ok(())
+    }
+
+    /// The region binder `name` names at `at`: the binder of that name in the
+    /// telescope of the definition owning `at`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the binder [`Self::stage_telescope`] filed under the slot
+    ///   owning `at` by `name`; none where no slot owns `at` or its definition
+    ///   binds no region of that name.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parameter's kept type and a body's value name the
+    ///   binder of their definition's telescope.
+    /// - witness: `lower::capability::tests::a_kept_type_at_a_region_binder_is_bound_to_it_1221`
+    #[spec(ensures: |ret| ret.is_none() || matches!(self.collected.owner_of(at), Maybe::Present(_)))]
+    pub(super) fn region_binder(
+        &self,
+        at: NodeIndex,
+        name: SurfaceName<'source>,
+    ) -> Option<RegionBinder>
+    {
+        let Maybe::Present(slot) = self.collected.owner_of(at)
+        else {
+            return None;
+        };
+        self.region_binders.get(&slot)?.get(&name).copied()
     }
 
     /// The stages a call at `site` supplies the stage binders of the function

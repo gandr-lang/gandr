@@ -1,0 +1,6 @@
+// A region named as a value: a region is erased and never computed, so a body
+// reads its region binder only in a kept type, `A at r`.
+
+/// Answers its region binder as though it were a value.
+@[ refuses("RegionAsValue") ]
+def named @[r : Region] (k : (() => Integer) at r) -> -F Integer { pure r }

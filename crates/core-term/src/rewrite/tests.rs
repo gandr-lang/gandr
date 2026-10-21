@@ -55,6 +55,11 @@ use crate::arena::ComputationId;
 use crate::arena::CoreArena;
 use crate::arena::ValueId;
 use crate::arena::ValueTypeId;
+use crate::effect::EffectRow;
+use crate::effect::capability::CapabilityGrade;
+use crate::effect::capability::Region;
+use crate::effect::capability::RegionBinder;
+use crate::effect::capability::RegionDepth;
 use crate::hole::HoleId;
 use crate::hole::MarkIndex;
 use crate::hole::TermId;
@@ -3038,6 +3043,90 @@ fn a_renaming_replaces_exactly_the_named_constants_and_atoms()
         renamed_atom,
         integer
     )]);
+}
+
+#[test]
+fn a_renaming_places_each_named_bound_region_wherever_it_stands()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let named = Region::Bound(RegionBinder::from(0_u32));
+    let unnamed = Region::Bound(RegionBinder::from(1_u32));
+    let scoped = Region::Scoped(RegionDepth::from(1_u32));
+    let placed = Region::Scoped(RegionDepth::from(3_u32));
+    let kept_named = arena.value_type_kept(integer, named);
+    let kept_unnamed = arena.value_type_kept(integer, unnamed);
+    let kept_scoped = arena.value_type_kept(integer, scoped);
+    let capability = arena.value_type_capability(EffectRow::EMPTY, CapabilityGrade::Durable, named);
+    let parts = arena.value_type_product(&[kept_named, kept_unnamed, kept_scoped, capability]);
+    let inner = arena.comp_type_returner(parts);
+    let suspended = arena.value_type_thunk(inner);
+    let answer = arena.comp_type_returner(suspended);
+    let arrow = arena.comp_type_arrow(kept_named, answer);
+    let function = arena.value_type_thunk(arrow);
+    let mut renaming = Renaming::new();
+    renaming.region(RegionBinder::from(0_u32), placed);
+    let mut carried = Vec::new();
+    let renamed = rename_value_type_traced(&mut arena, function, &renaming, &mut carried);
+    let Some(&ValueType::Thunk(body)) = arena.value_type(renamed)
+    else {
+        panic!("a renamed thunk type");
+    };
+    let Some(&CompType::Arrow { domain, codomain }) = arena.comp_type(body)
+    else {
+        panic!("a renamed arrow");
+    };
+    assert_eq!(
+        arena.value_type(domain),
+        Some(&ValueType::Kept {
+            value: integer,
+            region: placed
+        }),
+        "the domain keeps its value at the region the binder is placed at"
+    );
+    let Some(&CompType::Returner { result, .. }) = arena.comp_type(codomain)
+    else {
+        panic!("a renamed returner");
+    };
+    let Some(&ValueType::Thunk(suspended_body)) = arena.value_type(result)
+    else {
+        panic!("a renamed suspension");
+    };
+    let Some(&CompType::Returner {
+        result: product, ..
+    }) = arena.comp_type(suspended_body)
+    else {
+        panic!("a renamed inner returner");
+    };
+    let Some(&ValueType::Product(ref components)) = arena.value_type(product)
+    else {
+        panic!("a renamed product");
+    };
+    let &[first, second, third, fourth] = &**components
+    else {
+        panic!("four components");
+    };
+    assert_eq!(
+        arena.value_type(first),
+        Some(&ValueType::Kept {
+            value: integer,
+            region: placed
+        }),
+        "a kept type inside a suspension's answer is placed too"
+    );
+    assert_eq!(
+        (second, third),
+        (kept_unnamed, kept_scoped),
+        "a bound region the renaming does not name and a scoped region stand"
+    );
+    assert!(
+        matches!(arena.value_type(fourth), Some(&ValueType::Capability { region, .. }) if region == placed),
+        "a capability at the binder lives at the region it is placed at"
+    );
+    assert!(
+        carried.contains(&Carried::ValueType(kept_named, domain)),
+        "the placed kept type is reported beside the one it was rewritten from"
+    );
 }
 
 #[test]

@@ -1160,7 +1160,7 @@ fn convert(
                     ) => {
                         pending.push(values(found_value, wanted_value));
                         if subtyping {
-                            found <= wanted
+                            found.outlives(wanted) == RegionOrder::Outlives
                         }
                         else {
                             found == wanted

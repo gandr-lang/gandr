@@ -2438,9 +2438,9 @@ enum Plan
     /// A data type at a stage its function's telescope binds: the type and
     /// the stage.
     Staged(NodeIndex, gandr_kernel_term::Stage),
-    /// A value type kept in a capability scope's region: the type and the
-    /// region's depth.
-    Kept(NodeIndex, gandr_core_term::effect::capability::RegionDepth),
+    /// A value type kept in a region: the type and the region, a capability
+    /// scope's or a hold's by its depth, or the definition's region binder.
+    Kept(NodeIndex, gandr_core_term::effect::capability::Region),
 }
 
 /// A node's lowered core node, at the sort its own form produced.
@@ -3067,6 +3067,13 @@ struct Lowerer<'run, 'source>
     /// The bound of each stage binder of each quantified function, in
     /// written order, by the function's declaration key.
     stage_bounds: BTreeMap<UnitKey, Vec<gandr_kernel_term::StageBound>>,
+    /// Each region binder of each definition abstracted over regions, by its
+    /// name, at its ordinal among them, by the slot of the definition: every
+    /// node the definition owns reads them there.
+    region_binders: BTreeMap<
+        SlotIndex,
+        BTreeMap<SurfaceName<'source>, gandr_core_term::effect::capability::RegionBinder>,
+    >,
     /// The stages a call supplies its callee's binders at, `f[i = s]`, by the
     /// node of the callee's name, beside the declaration making the call.
     planned_supplies: BTreeMap<
@@ -3120,9 +3127,9 @@ struct Lowerer<'run, 'source>
     presented: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
     /// The frame of every capability a capability scope binds.
     capabilities: BTreeSet<ScopeId>,
-    /// The region each capability type written at a scope lives in, by the
-    /// capability type's node.
-    regions: BTreeMap<NodeIndex, gandr_core_term::effect::capability::RegionDepth>,
+    /// The region each capability type written at a scope, a hold or a
+    /// region binder lives in, by the capability type's node.
+    regions: BTreeMap<NodeIndex, gandr_core_term::effect::capability::Region>,
     /// Each application's renaming, in source order, or the refusal of the
     /// argument type it could not read: built during the mint sweep, before
     /// the first type written after the application mints.
@@ -4371,6 +4378,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             staged_parameters: BTreeMap::new(),
             stage_marks: BTreeMap::new(),
             stage_bounds: BTreeMap::new(),
+            region_binders: BTreeMap::new(),
             planned_supplies: BTreeMap::new(),
             supplies: BTreeMap::new(),
             ran: BTreeMap::new(),
@@ -6436,8 +6444,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   inside a type is planned as [`Self::resolved_term`] plans it.
     /// - provides: the term-name half of resolution.
     /// - fails: yields the wrong-sort refusal for a name in computation
-    ///   position, and the unresolved-name refusal when no scope answers;
-    ///   propagates [`LoweringRefusal::BudgetExceeded`] from the binder walk.
+    ///   position, [`LoweringRefusal::RegionAsValue`] for a region binder of
+    ///   the definition the name stands in that nothing nearer binds, and the
+    ///   unresolved-name refusal when no scope answers; propagates
+    ///   [`LoweringRefusal::BudgetExceeded`] from the binder walk.
     /// - panics: none.
     ///
     /// # Errors
@@ -6486,6 +6496,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 {
                     self.plan(site, Plan::Primitive(primitive));
                     Ok(())
+                }
+                else if self.region_binder(site.at.node, name).is_some() {
+                    Err(LoweringRefusal::RegionAsValue {
+                        span: site.at.span,
+                        name,
+                    })
                 }
                 else {
                     Err(LoweringRefusal::UnresolvedName {

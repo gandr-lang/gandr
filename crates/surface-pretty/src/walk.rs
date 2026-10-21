@@ -193,7 +193,8 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_term::Sort;
 use gandr_core_term::Zone;
-use gandr_core_term::effect::capability::RegionDepth;
+use gandr_core_term::effect::capability::Region;
+use gandr_core_term::effect::capability::RegionBinder;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::session::ActionKind;
@@ -3506,6 +3507,63 @@ fn candidate(ordinal: Ordinal) -> Maybe<BinderName, binder::Absent>
     }))
 }
 
+/// Each former read from `root` in a position admitting `admits`, its thunks
+/// read as `bodies` says, handed to `visit` in the walk's order.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: `visit` reads each former the walk spells from `root`, once per
+///   path reaching it, at most the visit budget of them; absent when the scan
+///   takes more than that budget.
+/// - provides: the one traversal [`mentioned`] and [`regioned`] read.
+/// - fails: never; an over-long scan is an absence.
+/// - panics: none.
+/// - executable: none — the answer is what `visit` reads; a clause restating it
+///   would run the scan again.
+/// - intension: the walk's traversal on an explicit stack, stopped by [`reach`]
+///   and descending by [`children`] exactly as the walk does.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`mentioned`] and [`regioned`].
+/// - witness: `walk::tests::the_name_scan_visits_exactly_its_budget`
+/// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
+fn scanned<'source, S, Visit>(
+    source: &'source S,
+    root: S::Node,
+    admits: Admits,
+    bodies: Bodies,
+    mut visit: Visit,
+) -> Maybe<(), scan::Absent>
+where
+    S: Source + ?Sized,
+    Visit: FnMut(Former<'source, S::Node>),
+{
+    let mut pending = Vec::from([(root, admits, ValueDepth::ROOT)]);
+    let mut visits = 0_u32;
+    while let Some((node, admits, depth)) = pending.pop() {
+        visits = visits.saturating_add(1_u32);
+        if visits > VISIT_BUDGET {
+            return Maybe::Absent(scan::Absent::OverBudget);
+        }
+        let former = source.read(node);
+        let kind = kind(&former);
+        if reach(admits, depth, kind) != Reach::Spell {
+            continue;
+        }
+        visit(former);
+        let below = below(depth, kind);
+        for slot in children(source, node, &former, admits, bodies)
+            .into_iter()
+            .rev()
+        {
+            if let Some(child) = slot.node {
+                pending.push((child, slot.admits, below));
+            }
+        }
+    }
+    Maybe::Present(())
+}
+
 /// Every constant or abstract-type name encountered under `root`, including
 /// malformed names that the spelling pass will replace with `?`.
 ///
@@ -3517,8 +3575,7 @@ fn candidate(ordinal: Ordinal) -> Maybe<BinderName, binder::Absent>
 /// - provides: the names binders must avoid, and the bound on the walk.
 /// - fails: never; an over-long scan is an absence.
 /// - panics: none.
-/// - intension: the walk's traversal on an explicit stack, stopped by [`reach`]
-///   and descending by [`children`] exactly as the walk does.
+/// - intension: the scan of [`scanned`].
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a stable cyclic source refuses, and a binder skips an
@@ -3542,18 +3599,7 @@ where
     S: Source + ?Sized,
 {
     let mut names = BTreeSet::new();
-    let mut pending = Vec::from([(root, admits, ValueDepth::ROOT)]);
-    let mut visits = 0_u32;
-    while let Some((node, admits, depth)) = pending.pop() {
-        visits = visits.saturating_add(1_u32);
-        if visits > VISIT_BUDGET {
-            return Maybe::Absent(scan::Absent::OverBudget);
-        }
-        let former = source.read(node);
-        let kind = kind(&former);
-        if reach(admits, depth, kind) != Reach::Spell {
-            continue;
-        }
+    let scan = scanned(source, root, admits, bodies, |former| {
         if let Former::Abstract(name)
         | Former::Constant(name)
         | Former::Data {
@@ -3569,17 +3615,69 @@ where
         {
             let _fresh = names.insert(name);
         }
-        let below = below(depth, kind);
-        for slot in children(source, node, &former, admits, bodies)
-            .into_iter()
-            .rev()
-        {
-            if let Some(child) = slot.node {
-                pending.push((child, slot.admits, below));
+    });
+    match scan {
+        Maybe::Present(()) => Maybe::Present(names),
+        Maybe::Absent(absent) => Maybe::Absent(absent),
+    }
+}
+
+/// The region binders a definition over `roots` abstracts: every ordinal up to
+/// the greatest a kept type or a capability under them lives at.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the binders at ordinals zero through the greatest ordinal of a
+///   region binder that a kept type's or a capability's region is, under any
+///   root scanned at its [`Admits`] with its thunks spelled, in order; none
+///   where no region is a binder. Absent when a scan takes more than the visit
+///   budget.
+/// - provides: the region binders a definition's header writes, every ordinal
+///   below the greatest included, so the header reads back at the ordinals the
+///   type uses.
+/// - fails: never; an over-long scan is an absence.
+/// - panics: none.
+/// - intension: the scan of [`scanned`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a definition kept at its one region binder writes it, and
+///   one kept at none writes none.
+/// - witness: `tests::goldens::a_definition_over_a_region_spells_its_binder_1221`
+#[spec(ensures: |ref ret| match *ret {
+    Maybe::Present(ref binders) => binders.last().is_none_or(|&last| usize::try_from(u32::from(last)).ok().and_then(|ordinal| ordinal.checked_add(1_usize)) == Some(binders.len())),
+    Maybe::Absent(scan::Absent::OverBudget) => true,
+})]
+pub fn regioned<S>(
+    source: &S,
+    roots: &[(S::Node, Admits)],
+) -> Maybe<Vec<RegionBinder>, scan::Absent>
+where
+    S: Source + ?Sized,
+{
+    let mut greatest: Option<RegionBinder> = None;
+    for &(root, admits) in roots {
+        let visited = scanned(source, root, admits, Bodies::Spelled, |former| {
+            if let Former::Kept {
+                region: Region::Bound(binder),
+                ..
             }
+            | Former::Capability {
+                region: Region::Bound(binder),
+                ..
+            } = former
+            {
+                greatest = greatest.max(Some(binder));
+            }
+        });
+        if let Maybe::Absent(absent) = visited {
+            return Maybe::Absent(absent);
         }
     }
-    Maybe::Present(names)
+    Maybe::Present(greatest.map_or_else(Vec::new, |greatest| {
+        (0_u32 ..= u32::from(greatest))
+            .map(RegionBinder::from)
+            .collect()
+    }))
 }
 
 /// The names of binders opened above every one of `roots`, one per entry of
@@ -5789,9 +5887,11 @@ impl Walk<'_, '_>
                     ),
                     // A scoped capability names the scope whose region it
                     // lives in, `Cap {…} at c`; past the scopes the source
-                    // names, its region goes unwritten.
-                    gandr_core_term::effect::capability::Region::Scoped(depth) => {
-                        let named = self.region(source, depth).filter(|name| {
+                    // names, and at a definition's region binder, whose name
+                    // the core keeps no record of, its region goes unwritten.
+                    gandr_core_term::effect::capability::Region::Scoped(_)
+                    | gandr_core_term::effect::capability::Region::Bound(_) => {
+                        let named = self.region(source, region).filter(|name| {
                             !name.0.is_empty() && !name.0.contains(char::is_whitespace)
                         });
                         match named {
@@ -7312,16 +7412,18 @@ impl Walk<'_, '_>
         self.opened.push(zone);
     }
 
-    /// The name of the capability scope or hold whose region is `depth`,
+    /// The name of the capability scope or hold whose region is `region`,
     /// counted from the outermost: the regions the source's roots stand in
-    /// first, then the ones the walk is inside.
+    /// first, then the ones the walk is inside; or of the definition's region
+    /// binder `region` is.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the name the source writes for an ambient region, or the name
-    ///   the walk gave the binder of a scope or hold it is inside; none for
-    ///   depth zero, for a depth past every region open around the node, and
-    ///   for a region whose binder took no name.
+    /// - ensures: the name the source writes for an ambient region or a region
+    ///   binder, or the name the walk gave the binder of a scope or hold it is
+    ///   inside; none for the held region, for depth zero, for a depth past
+    ///   every region open around the node, for a binder past the ones the
+    ///   source names, and for a region whose binder took no name.
     /// - provides: the region a capability type's and a kept type's `at` names.
     /// - fails: never.
     /// - panics: none.
@@ -7329,19 +7431,31 @@ impl Walk<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — an ambient scope, a scope the walk enters and a hold
     ///   it enters each name the region they open, counted on from the ambient
-    ///   ones; a region past them goes unnamed.
+    ///   ones; a region past them goes unnamed; a definition's region binder is
+    ///   named by its ordinal.
     /// - witness: `tests::goldens::a_scoped_capability_names_its_scope_400`
     /// - witness: `tests::goldens::a_kept_value_names_the_scope_it_is_kept_in`
     /// - witness: `tests::goldens::a_kept_value_names_the_hold_it_is_kept_in`
-    #[spec(ensures: |ret| u32::from(depth) != 0_u32 || ret.is_none())]
+    /// - witness: `tests::goldens::a_definition_over_a_region_spells_its_binder_1221`
+    #[spec(ensures: |ret| matches!(region, Region::Scoped(depth) if u32::from(depth) != 0_u32) || matches!(region, Region::Bound(_)) || ret.is_none())]
     fn region<S>(
         &self,
         source: &S,
-        depth: RegionDepth,
+        region: Region,
     ) -> Option<BinderName>
     where
         S: Source + ?Sized,
     {
+        let depth = match region {
+            Region::Scoped(depth) => depth,
+            Region::Bound(binder) => {
+                let named = *source
+                    .region_binders()
+                    .get(usize::try_from(u32::from(binder)).ok()?)?;
+                return named.map(|name| BinderName(String::from(name.as_ref())));
+            },
+            Region::Held => return None,
+        };
         let at = usize::try_from(u32::from(depth))
             .ok()?
             .checked_sub(1_usize)?;
@@ -8121,7 +8235,8 @@ impl Walk<'_, '_>
                 writes(Production("at_type"), Binding::Cons)
             },
             // `A at c` names the capability scope whose region the value is
-            // kept in, and binds as `A at w` does.
+            // kept in, or the definition's region binder, and binds as
+            // `A at w` does.
             Former::Kept { region, .. } => {
                 let named = self.region(source, region);
                 let scope = self.spelled(
@@ -8784,6 +8899,7 @@ where
     let context = source.context();
     mentioned.extend(context.iter().flatten().copied());
     mentioned.extend(source.regions().iter().flatten().copied());
+    mentioned.extend(source.region_binders().iter().flatten().copied());
     let mut walk = Walk {
         builder,
         pieces: Vec::new(),

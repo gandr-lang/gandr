@@ -1,6 +1,7 @@
 use quenchant_shape::shape::Maybe;
 
 use super::Region;
+use super::RegionBinder;
 use super::RegionDepth;
 use super::RegionOrder;
 use super::RestrictionError;
@@ -17,8 +18,11 @@ use crate::effect::host::HostSignatures;
 #[test]
 fn a_region_outlives_only_regions_nested_in_it()
 {
+    let body = Region::Scoped(RegionDepth::from(0_u32));
     let outer = Region::Scoped(RegionDepth::from(1_u32));
     let inner = Region::Scoped(RegionDepth::from(2_u32));
+    let bound = Region::Bound(RegionBinder::from(0_u32));
+    let other = Region::Bound(RegionBinder::from(1_u32));
     for (first, second, expected) in [
         (Region::Held, Region::Held, RegionOrder::Outlives),
         (Region::Held, outer, RegionOrder::Outlives),
@@ -26,6 +30,16 @@ fn a_region_outlives_only_regions_nested_in_it()
         (outer, inner, RegionOrder::Outlives),
         (inner, outer, RegionOrder::EndsFirst),
         (inner, inner, RegionOrder::Outlives),
+        (body, outer, RegionOrder::Outlives),
+        (bound, bound, RegionOrder::Outlives),
+        (bound, other, RegionOrder::EndsFirst),
+        (other, bound, RegionOrder::EndsFirst),
+        (Region::Held, bound, RegionOrder::Outlives),
+        (bound, Region::Held, RegionOrder::EndsFirst),
+        (bound, body, RegionOrder::Outlives),
+        (body, bound, RegionOrder::EndsFirst),
+        (bound, inner, RegionOrder::Outlives),
+        (inner, bound, RegionOrder::EndsFirst),
     ] {
         assert_eq!(
             first.outlives(second),
@@ -130,7 +144,7 @@ fn attenuation_is_inclusion_on_grant_atoms()
 fn a_kept_type_keeps_its_region_across_substitution()
 {
     let mut arena = CoreArena::default();
-    let region = RegionDepth::from(1_u32);
+    let region = Region::Scoped(RegionDepth::from(1_u32));
     let code = arena.value_variable(
         crate::Zone::Intuitionistic,
         gandr_kernel_term::DeBruijnIndex::from(0_u32),

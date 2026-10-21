@@ -29,13 +29,18 @@
 //!
 //! A capability the host holds lives for the whole run, [`Region::Held`]. One a
 //! scope introduces lives until the scope's body ends, [`Region::Scoped`] at
-//! the scope's nesting depth, counted from one at the outermost scope. A region
-//! is named by its depth rather than by a fresh name: no source spells a
-//! region, so no type mentions a region outside the scope that introduced it,
-//! and two scopes at one depth are siblings whose capabilities never meet. A
-//! longer region stands where a shorter one is expected, [`Region::outlives`],
-//! never the reverse, which is what keeps a scoped capability from passing
-//! where a held one is promised.
+//! the scope's nesting depth, counted from one at the outermost scope; depth
+//! zero is the definition's own body, which every scope in it nests inside. A
+//! region a scope opens is named by its depth rather than by a fresh name, so
+//! two scopes at one depth are siblings whose capabilities never meet. A
+//! definition may abstract over a region its caller holds, `@[r : Region]`:
+//! [`Region::Bound`] names that binder by its ordinal, and each call
+//! instantiates it at a region of the caller's. A bound region is live
+//! throughout the call, so it outlives the body and every scope in it, and
+//! the held region outlives it; two bound regions are ordered by nothing the
+//! definition states. A longer region stands where a shorter one is
+//! expected, [`Region::outlives`], never the reverse, which is what keeps a
+//! scoped capability from passing where a held one is promised.
 //!
 //! # The grade
 //!
@@ -94,15 +99,50 @@ impl From<RegionDepth> for u32
     }
 }
 
-/// The extent a capability is valid for.
+/// The ordinal of a region binder in its definition's telescope, counted
+/// from zero over the binders of sort `Region` in written order.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RegionBinder(u32);
+
+impl From<u32> for RegionBinder
+{
+    /// Wraps an ordinal as a region binder.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(ordinal: u32) -> Self
+    {
+        Self(ordinal)
+    }
+}
+
+impl From<RegionBinder> for u32
+{
+    /// Unwraps a region binder to its ordinal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(binder: RegionBinder) -> Self
+    {
+        binder.0
+    }
+}
+
+/// The extent a capability is valid for, or a value is kept in.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Region
 {
     /// Held by the host from the checker's entry, valid for the whole run.
     Held,
-    /// Introduced by the capability scope at this depth, valid until that
-    /// scope's body ends.
+    /// Introduced by the capability scope or hold at this depth, valid until
+    /// that scope's body ends; depth zero is the definition's own body.
     Scoped(RegionDepth),
+    /// The caller's region the definition's region binder at this ordinal
+    /// abstracts, valid throughout the call.
+    Bound(RegionBinder),
 }
 
 /// Whether one region lasts at least as long as another.
@@ -120,19 +160,22 @@ impl Region
     /// Whether `self` is live wherever `other` is.
     ///
     /// # Specification
-    /// - ensures: the held region outlives every region; a scoped region
-    ///   outlives exactly the scoped regions at its own depth or deeper, and
-    ///   never the held region.
+    /// - ensures: the held region outlives every region; a bound region
+    ///   outlives itself and every scoped region, and neither the held region
+    ///   nor another bound one; a scoped region outlives exactly the scoped
+    ///   regions at its own depth or deeper.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the held region against itself and a scoped one in
-    ///   both orders, and two scoped regions one depth apart in both orders and
-    ///   at equal depth, each asserted exactly.
+    ///   both orders, two scoped regions one depth apart in both orders and at
+    ///   equal depth, and a bound region against itself, another bound one, the
+    ///   held region and the body in both orders, each asserted exactly.
     /// - witness: `effect::capability::tests::a_region_outlives_only_regions_nested_in_it`
     #[spec(ensures: |ret| (ret == RegionOrder::Outlives) == match (self, other) {
-        (Self::Held, _) => true,
-        (Self::Scoped(_), Self::Held) => false,
+        (Self::Held, _) | (Self::Bound(_), Self::Scoped(_)) => true,
+        (Self::Bound(this), Self::Bound(that)) => this == that,
+        (Self::Bound(_) | Self::Scoped(_), Self::Held) | (Self::Scoped(_), Self::Bound(_)) => false,
         (Self::Scoped(outer), Self::Scoped(inner)) => outer <= inner,
     })]
     #[inline]
@@ -142,17 +185,19 @@ impl Region
         other: Self,
     ) -> RegionOrder
     {
-        match (self, other) {
-            (Self::Held, _) => RegionOrder::Outlives,
-            (Self::Scoped(_), Self::Held) => RegionOrder::EndsFirst,
-            (Self::Scoped(outer), Self::Scoped(inner)) => {
-                if outer <= inner {
-                    RegionOrder::Outlives
-                }
-                else {
-                    RegionOrder::EndsFirst
-                }
+        let outlives = match (self, other) {
+            (Self::Held, _) | (Self::Bound(_), Self::Scoped(_)) => true,
+            (Self::Bound(this), Self::Bound(that)) => this == that,
+            (Self::Bound(_) | Self::Scoped(_), Self::Held) | (Self::Scoped(_), Self::Bound(_)) => {
+                false
             },
+            (Self::Scoped(outer), Self::Scoped(inner)) => outer <= inner,
+        };
+        if outlives {
+            RegionOrder::Outlives
+        }
+        else {
+            RegionOrder::EndsFirst
         }
     }
 }
@@ -398,8 +443,7 @@ impl crate::CoreArena
         })
     }
 
-    /// Mint the type of a value of `value` kept in the region of the
-    /// capability scope at `region`.
+    /// Mint the type of a value of `value` kept in `region`.
     ///
     /// # Specification
     /// - requires: `value` resolves in this arena.
@@ -415,7 +459,7 @@ impl crate::CoreArena
     pub fn value_type_kept(
         &mut self,
         value: crate::ValueTypeId,
-        region: RegionDepth,
+        region: Region,
     ) -> crate::ValueTypeId
     {
         self.alloc_value_type(crate::ValueType::Kept { value, region })

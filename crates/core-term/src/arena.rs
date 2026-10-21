@@ -104,6 +104,7 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::Summand;
 
 use crate::classifier::Sort;
+use crate::effect::capability::Region;
 use crate::hole::HoleId;
 use crate::hole::MarkIndex;
 use crate::support::Slot;
@@ -207,6 +208,19 @@ fn id_offset(index: ArenaIndex) -> ArenaLength
     ArenaLength(usize::try_from(index.0).unwrap_or(usize::MAX))
 }
 
+/// Where a type stands against its arena's first type naming a region binder,
+/// a capability or kept type at a [`Region::Bound`].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum BinderPrecedence
+{
+    /// Minted before it: neither the type nor any node it reaches names a
+    /// region binder.
+    Before,
+    /// Minted at or after it, or not minted in this arena: only a walk says
+    /// whether the type names one.
+    Unread,
+}
+
 /// A snapshot of the four family lengths and of the supports' word arena.
 ///
 /// Restoring an arena to a watermark drops exactly the nodes allocated after
@@ -262,6 +276,11 @@ pub struct CoreArena
     comp_types: Vec<Row<CompType>>,
     /// The words of every support wider than a slot.
     words: WordArena,
+    /// The watermark just before the arena's first value type naming a region
+    /// binder, a capability or kept type at a [`Region::Bound`]: a type below
+    /// it in its family was minted earlier, so neither it nor any node it
+    /// reaches names one.
+    region_binders_from: Option<ArenaWatermark>,
 }
 
 impl CoreArena
@@ -496,7 +515,9 @@ impl CoreArena
     ///   watermark-many leading nodes, and a mark above the entry lengths
     ///   leaves that family where it was. Removed nodes do not resolve
     ///   immediately after truncation; later allocation can reuse their
-    ///   indices, so the caller discards the corresponding ids.
+    ///   indices, so the caller discards the corresponding ids. A truncation
+    ///   that drops the first value type naming a region binder forgets it, so
+    ///   [`Self::value_type_binder_precedence`] reads the arena left.
     /// - provides: the wholesale truncation a per-run arena is torn down by.
     ///   The clause checks the four family lengths and the word arena's,
     ///   including the documented stale-mark no-op. Arena provenance and the
@@ -535,6 +556,12 @@ impl CoreArena
         self.value_types.truncate(watermark.value_types);
         self.comp_types.truncate(watermark.comp_types);
         self.words.truncate(watermark.words);
+        if self
+            .region_binders_from
+            .is_some_and(|from| self.value_types.len() <= from.value_types)
+        {
+            self.region_binders_from = None;
+        }
     }
 
     /// Resolve a value id, or `None` when it dangles.
@@ -740,6 +767,71 @@ impl CoreArena
             .map(|row| self.support_of(row.support))
     }
 
+    /// Where the value type at `id` stands against the arena's first type
+    /// naming a region binder.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling id is admissible.
+    /// - ensures: [`BinderPrecedence::Before`] exactly when `id` resolves and
+    ///   sits below the first value type naming a region binder, or the arena
+    ///   holds none; [`BinderPrecedence::Unread`] otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type minted before the first kept type at a bound
+    ///   region, that kept type, a thunk minted after it over a closed body, a
+    ///   dangling id, and the same arena truncated below the kept type.
+    /// - witness: `arena::tests::a_type_minted_before_the_first_region_binder_names_none`
+    #[spec(ensures: |ret| ret == BinderPrecedence::Unread || self.value_type(id).is_some())]
+    #[inline]
+    #[must_use]
+    pub fn value_type_binder_precedence(
+        &self,
+        id: ValueTypeId,
+    ) -> BinderPrecedence
+    {
+        let first = self
+            .region_binders_from
+            .map_or(self.value_types.len(), |from| from.value_types);
+        if id_offset(ArenaIndex(id.0)).0 < first {
+            BinderPrecedence::Before
+        }
+        else {
+            BinderPrecedence::Unread
+        }
+    }
+
+    /// Where the computation type at `id` stands against the arena's first
+    /// value type naming a region binder.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling id is admissible.
+    /// - ensures: as [`Self::value_type_binder_precedence`], at the
+    ///   computation-type family's length when that type was minted.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value_type_binder_precedence`].
+    /// - witness: `arena::tests::a_type_minted_before_the_first_region_binder_names_none`
+    #[spec(ensures: |ret| ret == BinderPrecedence::Unread || self.comp_type(id).is_some())]
+    #[inline]
+    #[must_use]
+    pub fn comp_type_binder_precedence(
+        &self,
+        id: CompTypeId,
+    ) -> BinderPrecedence
+    {
+        let first = self
+            .region_binders_from
+            .map_or(self.comp_types.len(), |from| from.comp_types);
+        if id_offset(ArenaIndex(id.0)).0 < first {
+            BinderPrecedence::Before
+        }
+        else {
+            BinderPrecedence::Unread
+        }
+    }
+
     /// The support a computation type carries, or `None` when its id
     /// dangles.
     ///
@@ -877,7 +969,8 @@ impl CoreArena
     /// - requires: every child of `value_type` is minted in this arena.
     /// - ensures: appends `value_type` to the value-type family and returns the
     ///   id at the family's previous end, which is above every value-type id
-    ///   already minted; records its support beside it.
+    ///   already minted; records its support beside it, and the watermark
+    ///   before it when it is the arena's first type naming a region binder.
     /// - provides: the single append point every value-type constructor goes
     ///   through.
     /// - panics: none.
@@ -901,6 +994,20 @@ impl CoreArena
     ) -> ValueTypeId
     {
         let id = ValueTypeId(id_index(ArenaLength(self.value_types.len())).0);
+        if self.region_binders_from.is_none()
+            && matches!(
+                value_type,
+                ValueType::Kept {
+                    region: Region::Bound(_),
+                    ..
+                } | ValueType::Capability {
+                    region: Region::Bound(_),
+                    ..
+                }
+            )
+        {
+            self.region_binders_from = Some(self.watermark());
+        }
         let support = self.value_type_carried(&value_type);
         self.value_types.push(Row {
             node: value_type,

@@ -9,6 +9,7 @@ use gandr_core_term::control::EffectClause;
 use gandr_core_term::effect::EffectOp;
 use gandr_core_term::effect::EffectRow;
 use gandr_core_term::effect::EffectSig;
+use gandr_core_term::effect::capability::Region;
 use gandr_core_term::effect::capability::RegionDepth;
 use gandr_core_term::effect::host::HostSignatures;
 use gandr_core_term::memory::AccessMode;
@@ -896,7 +897,7 @@ fn a_view_kept_in_a_region_lives_as_long_as_its_scope()
     let suspended = arena.value_type_thunk(integers);
     // The hold around the scope opens the first region and the scope the
     // second: one sort of regions, counted outermost first.
-    let kept = arena.value_type_kept(suspended, RegionDepth::from(2_u32));
+    let kept = arena.value_type_kept(suspended, Region::Scoped(RegionDepth::from(2_u32)));
     let keeps = arena.comp_type_returner(kept);
     let suspends = arena.comp_type_returner(suspended);
     let zero = arena.value_literal(integer_literal());
@@ -963,7 +964,7 @@ fn a_view_kept_in_a_region_lives_as_long_as_its_scope()
     // scope Proc (c) { () } checked at F (U F Integer at ρ), ρ its own region,
     // the first with no hold around it.
     let answering_scope = scope(&mut arena, returned);
-    let own = arena.value_type_kept(suspended, RegionDepth::from(1_u32));
+    let own = arena.value_type_kept(suspended, Region::Scoped(RegionDepth::from(1_u32)));
     let own_keeps = arena.comp_type_returner(own);
     assert_eq!(
         checked(&mut arena, answering_scope, own_keeps),
@@ -1012,7 +1013,7 @@ fn a_view_kept_in_a_region_lives_as_long_as_its_scope()
     // x <- …; force x } } : F (U F Integer)); () }, x kept in the scope's region,
     // the first: a hold stands in a scope only where its type is pure, inside a
     // thunk.
-    let scope_kept = arena.value_type_kept(suspended, RegionDepth::from(1_u32));
+    let scope_kept = arena.value_type_kept(suspended, Region::Scoped(RegionDepth::from(1_u32)));
     let scope_keeps = arena.comp_type_returner(scope_kept);
     let scope_bind = arena.computation_ascribe(suspend, scope_keeps);
     let inner_body = arena.computation_bind(scope_bind, forced);
@@ -1049,7 +1050,7 @@ fn a_view_kept_in_a_hold_lives_as_long_as_the_hold()
     // x <- (return thunk { (w,).0 } : F (U F Integer at ρ)); force x, with `w`
     // the view and ρ the region at `depth`.
     let kept_force = |arena: &mut CoreArena, depth: u32| {
-        let kept = arena.value_type_kept(suspended, RegionDepth::from(depth));
+        let kept = arena.value_type_kept(suspended, Region::Scoped(RegionDepth::from(depth)));
         let keeps = arena.comp_type_returner(kept);
         let (_viewed, read) = copied(arena, l0());
         let thunk = arena.value_thunk(read);
@@ -1099,5 +1100,49 @@ fn a_view_kept_in_a_hold_lives_as_long_as_the_hold()
         Ok(()),
         "a view kept in an inner hold's region frees the outer held value when \
          the inner hold ends"
+    );
+}
+
+/// A definition over a region binder holds nothing and opens no scope, yet a
+/// thunk it builds may not outlive the binder's region: the fence runs for
+/// the abstracted type alone (#1221).
+#[test]
+fn a_thunk_naming_a_value_kept_at_a_region_binder_is_kept_there_1221()
+{
+    let mut arena = CoreArena::new();
+    let integers = integers(&mut arena);
+    let suspended = arena.value_type_thunk(integers);
+    let bound = Region::Bound(gandr_core_term::effect::capability::RegionBinder::from(
+        0_u32,
+    ));
+    let lent = arena.value_type_kept(suspended, bound);
+    let lent_back = arena.comp_type_returner(lent);
+    let unkept = arena.comp_type_returner(suspended);
+    let [reads, hands_back, stashes] =
+        [integers, lent_back, unkept].map(|codomain| arena.comp_type_arrow(lent, codomain));
+    let k = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    // λk. force k : (U F Integer at r) -> F Integer
+    let forced = arena.computation_force(k);
+    let read = arena.computation_lambda(forced);
+    // λk. return k : (U F Integer at r) -> F (U F Integer at r)
+    let returned = arena.computation_return(k);
+    let handed_back = arena.computation_lambda(returned);
+    // λk. return thunk { force k } : (U F Integer at r) -> F (U F Integer)
+    let wrapper = arena.value_thunk(forced);
+    let wrapped = arena.computation_return(wrapper);
+    let stash = arena.computation_lambda(wrapped);
+    assert_eq!(
+        [(read, reads), (handed_back, hands_back), (stash, stashes)]
+            .map(|(term, expected)| checked(&mut arena, term, expected)),
+        [
+            Ok(()),
+            Ok(()),
+            Err(CheckRefusal::Access {
+                at: CoreNode::Term(TermNode::Value(wrapper)),
+                defect: AccessDefect::KeptEscaped,
+            })
+        ],
+        "a lent value is read and handed back at its region, and a thunk naming it \
+         kept in no region is refused"
     );
 }

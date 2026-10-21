@@ -1,0 +1,21 @@
+// An answer read past its region, as Rust refuses a reference that outlives
+// the borrow it came from: what `pass` hands back is kept in the handler's
+// region, so a binding kept in none cannot hold it.
+
+/// Hands back the thunk it is lent, kept in the same region.
+@[ checks ]
+def pass @[r : Region] (k : (() => Integer) at r) -> -F ((() => Integer) at r) { pure k }
+
+/// Binds what `pass` hands back at a type kept in no region.
+@[ refuses("TypeMismatch") ]
+def outlived() -> -F Integer {
+  hold s = 4;
+  handle c : Proc {
+    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } } ;
+    run back : () => Integer <- pass(k) ;
+    force back
+  } with {
+    pure(x) => pure x,
+    oper exit(code, rest) => pure 0
+  }
+}

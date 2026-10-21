@@ -518,7 +518,8 @@ impl<'source> Lowerer<'_, 'source>
         let region = self
             .regions
             .get(&site.at.node)
-            .map_or(Region::Held, |&depth| Region::Scoped(depth));
+            .copied()
+            .unwrap_or(Region::Held);
         self.plan(site, super::Plan::Capability(authority, grade, region));
 
         Ok(())
@@ -533,17 +534,20 @@ impl<'source> Lowerer<'_, 'source>
     ///   the type's region is the one that scope or hold opens:
     ///   [`Region::Scoped`] at the number of capability scopes and holds from
     ///   the outermost to the one binding `c`, counted from one, the depth the
-    ///   checker gives that region. A capability type operand stands as the
+    ///   checker gives that region. Where `c` names none and is a region binder
+    ///   of the definition the type stands in, the region is [`Region::Bound`]
+    ///   at that binder's ordinal. A capability type operand stands as the
     ///   type, its region recorded; any other operand is kept in the region,
     ///   the operand read as a value type where the at type stands. Where `c`
-    ///   names an earlier declaration, the type is the handle `T at c` to a
-    ///   value of the operand meaningful at the world that declaration
-    ///   declares, the operand read as a value type where the at type stands (a
-    ///   declaration that declares no world is the checker's to refuse).
+    ///   names none of these and an earlier declaration, the type is the handle
+    ///   `T at c` to a value of the operand meaningful at the world that
+    ///   declaration declares, the operand read as a value type where the at
+    ///   type stands (a declaration that declares no world is the checker's to
+    ///   refuse).
     /// - fails: the wrong-sort refusal where no value type is read;
     ///   [`LoweringRefusal::UnresolvedName`] at `c` when neither a capability
-    ///   scope, a hold nor an earlier declaration binds it; a misplaced tile or
-    ///   missing operand fault for a type out of shape.
+    ///   scope, a hold, a region binder nor an earlier declaration binds it; a
+    ///   misplaced tile or missing operand fault for a type out of shape.
     /// - panics: none.
     ///
     /// # Errors
@@ -554,8 +558,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   the outer one mint their depths, a name no scope binds is refused, an
     ///   integer kept at a scope mints the kept type and one kept at a hold
     ///   inside the scope counts both, each asserted exactly; a handle at a
-    ///   declared world mints the handle type.
+    ///   declared world mints the handle type; a thunk kept at a region binder
+    ///   in a parameter and in a body's ascription keeps it at the binder's
+    ///   ordinal, and a scope of the binder's name inside the body shadows it.
     /// - witness: `lower::capability::tests::a_capability_at_a_scope_lives_in_its_region`
+    /// - witness: `lower::capability::tests::a_kept_type_at_a_region_binder_is_bound_to_it_1221`
     /// - witness: `lower::world::tests::the_located_forms_lower_to_their_world_forms`
     #[spec(ensures: |ret| ret.is_err()
         || matches!(self.plans.get(site.at.node), Some(&super::Plan::Transparent(operand)) if self.regions.contains_key(&operand))
@@ -580,33 +587,39 @@ impl<'source> Lowerer<'_, 'source>
             span: written.span,
             name,
         };
-        let bound = match self.resolve_name(site, frame, name) {
+        let region = match self.resolve_name(site, frame, name) {
             Ok(Maybe::Present(Resolved::Binder(bound)))
                 if self.capabilities.contains(&bound.binder)
                     || self.held.contains(&bound.binder) =>
             {
-                bound
+                let depth = self
+                    .scope
+                    .chain(Frame::Inner(bound.binder))
+                    .filter(|binder| {
+                        self.capabilities.contains(binder) || self.held.contains(binder)
+                    })
+                    .count();
+                Region::Scoped(RegionDepth::from(
+                    u32::try_from(depth).map_err(|_overflow| unbound())?,
+                ))
             },
-            Ok(Maybe::Present(Resolved::Declaration { constant, .. })) => {
-                return self.located_type(site, operand, constant);
-            },
-            Ok(Maybe::Present(Resolved::Binder(_)) | Maybe::Absent(_)) | Err(_) => {
-                return Err(unbound());
+            resolved => match (self.region_binder(site.at.node, name), resolved) {
+                (Some(binder), _) => Region::Bound(binder),
+                (None, Ok(Maybe::Present(Resolved::Declaration { constant, .. }))) => {
+                    return self.located_type(site, operand, constant);
+                },
+                (None, Ok(Maybe::Present(Resolved::Binder(_)) | Maybe::Absent(_)) | Err(_)) => {
+                    return Err(unbound());
+                },
             },
         };
-        let depth = self
-            .scope
-            .chain(Frame::Inner(bound.binder))
-            .filter(|binder| self.capabilities.contains(binder) || self.held.contains(binder))
-            .count();
-        let depth = RegionDepth::from(u32::try_from(depth).map_err(|_overflow| unbound())?);
         self.read(operand.node, site.reading);
         if let Some((_, Former::CapabilityType)) = self.form_at(operand)? {
-            let _first = self.regions.insert(operand.node, depth);
+            let _first = self.regions.insert(operand.node, region);
             self.plan(site, super::Plan::Transparent(operand.node));
         }
         else {
-            self.plan(site, super::Plan::Kept(operand.node, depth));
+            self.plan(site, super::Plan::Kept(operand.node, region));
         }
 
         Ok(())

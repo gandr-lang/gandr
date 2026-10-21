@@ -650,6 +650,7 @@ fn control_nodes_persist_names_frames_and_branch_order()
     use gandr_core_term::effect::EffectSig;
     use gandr_core_term::effect::capability::CapabilityGrade;
     use gandr_core_term::effect::capability::Region;
+    use gandr_core_term::effect::capability::RegionBinder;
     use gandr_core_term::effect::capability::RegionDepth;
     use gandr_kernel_term::Component;
     let index = NodeIndex::from;
@@ -732,17 +733,26 @@ fn control_nodes_persist_names_frames_and_branch_order()
             region: Region::Scoped(RegionDepth::from(2_u32)),
         },
         ContentNode::Capability {
+            authority: authority.clone(),
+            grade: CapabilityGrade::Durable,
+            region: Region::Bound(RegionBinder::from(2_u32)),
+        },
+        ContentNode::Capability {
             authority,
             grade: CapabilityGrade::Consumable,
             region: Region::Held,
         },
         ContentNode::KeptType {
             value: index(1_usize),
-            region: RegionDepth::from(0_u32),
+            region: Region::Scoped(RegionDepth::from(0_u32)),
         },
         ContentNode::KeptType {
             value: index(1_usize),
-            region: RegionDepth::from(2_u32),
+            region: Region::Scoped(RegionDepth::from(2_u32)),
+        },
+        ContentNode::KeptType {
+            value: index(1_usize),
+            region: Region::Bound(RegionBinder::from(2_u32)),
         },
         ContentNode::Resume(index(1_usize), index(2_usize)),
         ContentNode::Abandon(index(1_usize)),

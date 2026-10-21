@@ -1,0 +1,9 @@
+// A lent value stashed past its region, as Rust refuses `fn stash<'a>(k: &'a
+// T) -> &'static T`: a thunk kept in no region would outlive the caller's
+// scope.
+
+/// Stashes what it is lent in a thunk kept in no region.
+@[ refuses("KeptEscaped") ]
+def stash @[r : Region] (k : (() => Integer) at r) -> -F (() => Integer) {
+  pure thunk { force k }
+}

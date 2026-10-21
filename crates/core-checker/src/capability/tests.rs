@@ -569,3 +569,66 @@ fn a_named_entry_reads_as_the_declared_worlds()
         "a world the module declares nowhere grants nothing"
     );
 }
+
+/// A value kept at a definition's region binder lives longer than every scope
+/// the definition opens and no longer than the held region; a capability
+/// there is read the same way, and a type naming the binder abstracts a
+/// region where the same type at a scope does not (#1221).
+#[test]
+fn a_bound_region_outlives_every_scope_and_no_held_one_1221()
+{
+    use gandr_core_term::effect::capability::RegionBinder;
+
+    use super::Reach;
+    use super::abstracts;
+    use super::binders;
+    use super::reaches;
+
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let [first, second] = [0_u32, 1].map(|ordinal| Region::Bound(RegionBinder::from(ordinal)));
+    let scope = Region::Scoped(RegionDepth::from(2_u32));
+    let kept = arena.value_type_kept(integer, first);
+    let held = arena.value_type_capability(EffectRow::EMPTY, CapabilityGrade::Durable, second);
+    let both = arena.value_type_product(&[kept, held]);
+    let at_scope = arena.value_type_kept(integer, scope);
+    let reach = |outside| reaches(&arena, TypeNode::Value(kept), outside);
+    assert_eq!(
+        [
+            reach(Region::Held),
+            reach(second),
+            reach(first),
+            reach(scope),
+            reach(Region::Scoped(RegionDepth::from(0_u32))),
+        ],
+        [
+            Ok(Reach::Keeps),
+            Ok(Reach::Keeps),
+            Ok(Reach::Clear),
+            Ok(Reach::Clear),
+            Ok(Reach::Clear)
+        ],
+        "kept at r, the value ends before the held region and any other binder's, outlives \
+         every scope and lives as long as r"
+    );
+    assert_eq!(
+        reaches(&arena, TypeNode::Value(held), Region::Held),
+        Ok(Reach::Mentions),
+        "a capability at a region binder ends before the held region"
+    );
+    assert_eq!(
+        [both, at_scope].map(|root| {
+            abstracts(&arena, TypeNode::Value(root)).map(|reach| reach != Reach::Clear)
+        }),
+        [Ok(true), Ok(false)],
+        "a type naming a region binder abstracts a region, and one kept at a scope does not"
+    );
+    assert_eq!(
+        binders(&arena, TypeNode::Value(both)),
+        Ok(alloc::collections::BTreeSet::from([
+            RegionBinder::from(0_u32),
+            RegionBinder::from(1_u32)
+        ])),
+        "both binders are named, the capability's included"
+    );
+}
