@@ -1273,7 +1273,7 @@ impl Machine<'_, '_>
         self.context.binders().open(Zone::Intuitionistic, first);
         self.context.binders().open(Zone::Intuitionistic, second);
         self.wait(Frame::NativeYield(Produced::CompType(result)));
-        self.wait(Frame::SplitBody(arity));
+        self.wait(Frame::SplitBody { at: term, arity });
         Ok(Step::Descend(Goal::Computation {
             term: body,
             direction: Direction::Check(expected),

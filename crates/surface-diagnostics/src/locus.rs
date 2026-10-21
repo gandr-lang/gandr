@@ -896,7 +896,6 @@ fn checked(
                 | CheckingForm::Shift(at)
                 | CheckingForm::With(at)
                 | CheckingForm::Case(at)
-                | CheckingForm::Split(at)
                 | CheckingForm::Lambda(at)
                 | CheckingForm::Fixpoint(at)
                 | CheckingForm::Offer(at)
@@ -1273,7 +1272,6 @@ impl fmt::Display for Checked
                     | CheckingForm::Injection(_) => "an injection",
                     | CheckingForm::List(_) => "a List introduction",
                     | CheckingForm::Case(_) => "a case",
-                    | CheckingForm::Split(_) => "a split",
                     | CheckingForm::Thunk(_) => "a thunk",
                     | CheckingForm::Lambda(_) => "a lambda",
                     | CheckingForm::Hole(_) => "a hole",
@@ -2866,9 +2864,6 @@ mod tests
                 form: CheckingForm::Case(computation),
             },
             CheckRefusal::NotSynthesisable {
-                form: CheckingForm::Split(computation),
-            },
-            CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Lambda(computation),
             },
             CheckRefusal::NotSynthesisable {
@@ -3303,7 +3298,6 @@ mod tests
                                 | CheckingForm::Shift(_)
                                 | CheckingForm::With(_)
                                 | CheckingForm::Case(_)
-                                | CheckingForm::Split(_)
                                 | CheckingForm::Lambda(_)
                                 | CheckingForm::Fixpoint(_)
                                 | CheckingForm::Offer(_)
@@ -3828,7 +3822,6 @@ mod tests
             CheckingForm::Injection(value),
             CheckingForm::List(value),
             CheckingForm::Case(computation),
-            CheckingForm::Split(computation),
             CheckingForm::Thunk(value),
             CheckingForm::Lambda(computation),
             CheckingForm::Hole(1_usize.into()),

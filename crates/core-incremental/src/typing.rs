@@ -110,8 +110,6 @@ pub enum Form
     Injection(Site),
     /// A sum case.
     Case(Site),
-    /// A product split.
-    Split(Site),
     /// A thunk.
     Thunk(Site),
     /// A lambda.
@@ -1405,7 +1403,6 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 at == self.site(ArenaNode::Value(id))
             },
             | (CheckingForm::Case(id), Form::Case(at))
-            | (CheckingForm::Split(id), Form::Split(at))
             | (CheckingForm::Handle(id), Form::Handle(at))
             | (CheckingForm::Reset(id), Form::Reset(at))
             | (CheckingForm::Shift(id), Form::Shift(at))
@@ -1684,7 +1681,6 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                     CheckingForm::List(id) => Form::List(self.site(ArenaNode::Value(id))),
                     CheckingForm::Injection(id) => Form::Injection(self.site(ArenaNode::Value(id))),
                     CheckingForm::Case(id) => Form::Case(self.site(ArenaNode::Computation(id))),
-                    CheckingForm::Split(id) => Form::Split(self.site(ArenaNode::Computation(id))),
                     CheckingForm::Thunk(id) => Form::Thunk(self.site(ArenaNode::Value(id))),
                     CheckingForm::Lambda(id) => Form::Lambda(self.site(ArenaNode::Computation(id))),
                     CheckingForm::Hole(_) => Form::Hole,

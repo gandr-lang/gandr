@@ -375,8 +375,7 @@ fn n_ary_tuples_injections_and_cases_check_at_their_arity()
 /// A split binds one variable per component, component zero outermost:
 /// reading component zero checks at its type and reading component one
 /// there does not; a split of the unit binds nothing; a split of another
-/// arity or of a non-product is a shape mismatch, and a split is never
-/// synthesised.
+/// arity or of a non-product is a shape mismatch.
 #[test]
 fn a_split_binds_every_component_of_its_product()
 {
@@ -428,14 +427,66 @@ fn a_split_binds_every_component_of_its_product()
         }
         context.binders().close(Zone::Intuitionistic).unwrap();
     }
-    context
-        .binders()
-        .open(Zone::Intuitionistic, triple_type.id());
-    assert_eq!(
-        synthesise_comp(&mut context, reads_first).map(|found| found.produced().id()),
-        Err(CheckRefusal::NotSynthesisable {
-            form: CheckingForm::Split(reads_first),
-        })
+}
+
+/// A split synthesises its body's type strengthened out from under the
+/// binders it opens: a body whose type reads no component gives the split
+/// that type, the unit split a statement lowers to included, and every binder
+/// closes; a body whose type reads a component is the bind's refusal, at the
+/// split (#1374).
+#[test]
+fn a_split_synthesises_its_body_type_outside_its_binders()
+{
+    // def produce : U (F Integer) ; def pick : U ((A : Type) -> F El A) ;
+    use gandr_core_term::ComponentCount;
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let string = arena.value_type_base(BaseType::String);
+    let unit_type = arena.value_type_unit();
+    let pair_type = arena.value_type_product(&[integer, string]);
+    let returns_integer = arena.comp_type_returner(integer);
+    let produces = arena.value_type_thunk(returns_integer);
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let codes = arena.value_type_product(&[small]);
+    let bound_code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let decoded = arena.value_type_element(bound_code, Level::zero());
+    let returns_decoded = arena.comp_type_returner(decoded);
+    let pi = arena.comp_type_pi(small, returns_decoded);
+    let picks = arena.value_type_thunk(pi);
+    let produce = arena.value_constant(ConstantIndex::from(0_usize));
+    let pick = arena.value_constant(ConstantIndex::from(1_usize));
+    let scrutinee = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = arena.computation_force(produce);
+    let over_pair = arena.computation_split(scrutinee, ComponentCount::from(2_usize), forced);
+    let statement = arena.computation_split(scrutinee, ComponentCount::default(), forced);
+    let head = arena.computation_force(pick);
+    let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let picked = arena.computation_application(head, code);
+    let dependent = arena.computation_split(scrutinee, ComponentCount::from(1_usize), picked);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    seed(&mut context, &[produces, picks]);
+    let pair_type = form_value_type(&mut context, pair_type).unwrap();
+    let unit_type = form_value_type(&mut context, unit_type).unwrap();
+    let codes = form_value_type(&mut context, codes).unwrap();
+    for (split, scrutinised) in [(over_pair, pair_type.id()), (statement, unit_type.id())] {
+        context.binders().open(Zone::Intuitionistic, scrutinised);
+        assert_eq!(
+            synthesise_comp(&mut context, split).map(|found| found.produced().id()),
+            Ok(returns_integer),
+            "{split:?} has its body's type, which reads none of its components"
+        );
+        assert_eq!(
+            context.binders().depth(Zone::Intuitionistic),
+            BinderDepth::from(1_usize),
+            "{split:?} closes every binder it opened"
+        );
+        context.binders().close(Zone::Intuitionistic).unwrap();
+    }
+    context.binders().open(Zone::Intuitionistic, codes.id());
+    let refusal = synthesise_comp(&mut context, dependent).unwrap_err();
+    assert!(
+        matches!(refusal, CheckRefusal::DependentBind { at, .. } if at == dependent),
+        "the body has `F El a`, which has no reading outside the split: {refusal:?}"
     );
 }
 

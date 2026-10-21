@@ -1,0 +1,19 @@
+// A statement inside a block a binder reads. The statement is a split of its
+// unit result, and a split whose components its body's type does not read
+// synthesises that type, as a bind does: an elimination whose principal
+// premise synthesises synthesises (Dunfield and Krishnaswami, "Bidirectional
+// Typing", ACM Computing Surveys 54(5), 2021, doi:10.1145/3450952).
+
+/// An exit performed as a statement in a block a binder reads, the binder
+/// stating no type: the block synthesises its last computation's type, and
+/// the clause resumes the rest once (#1374).
+@[ runs("0") ]
+def statement() -> -F Integer {
+  handle c : Proc {
+    run n <- { c.exit(1); pure 0 };
+    pure n
+  } with {
+    pure(y) => pure y,
+    oper exit(code, k) => k(unit)
+  }
+}
